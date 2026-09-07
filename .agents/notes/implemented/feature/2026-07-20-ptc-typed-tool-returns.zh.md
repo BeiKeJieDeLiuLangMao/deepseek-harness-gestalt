@@ -1,22 +1,22 @@
-# Agent Note: Code Mode 的类型化工具返回值
+# Agent Note: PTC 模式的类型化工具返回值
 
 Status: implemented
 
-[English](2026-07-20-code-mode-typed-tool-returns.md) | 中文
+[English](2026-07-20-ptc-typed-tool-returns.md) | 中文
 
 ## 问题
 
-Code Mode 过去会把每个嵌套工具的结果从 `ContentBlock[]` 重新投影为一个字符串。这样虽然保留了适合人类阅读的 Native 呈现，却丢失了工具已经生成的规范结果：程序只能从自然语言中提取 job id 和动态挂载 id；结构化搜索与工作流结果失去原有形态；非文本块则变为占位符。生成的 SDK 可以描述参数，却无论工具实际输出为何都只能承诺 `Promise<string>`。
+PTC 模式过去会把每个嵌套工具的结果从 `ContentBlock[]` 重新投影为一个字符串。这样虽然保留了适合人类阅读的 Native 呈现，却丢失了工具已经生成的规范结果：程序只能从自然语言中提取 job id 和动态挂载 id；结构化搜索与工作流结果失去原有形态；非文本块则变为占位符。生成的 SDK 可以描述参数，却无论工具实际输出为何都只能承诺 `Promise<string>`。
 
 运行时还把绑定值和程序最终返回值当作展示数据。日志和完成值分别设置上限，导致过大或无法克隆的完成值可能被替换为检查后生成的文本，而中间值本来就不会进入模型上下文。这种设计使程序化组合产生信息损失，也混淆了内存边界与提示词边界。
 
-[规范工具输出约定](../architecture/2026-07-20-canonical-tool-output-contract.zh.md)确立了单一、经过校验的执行期值，并将 Native 渲染器与之分离。Code Mode 应直接消费该值，在跨越 worker 边界时完整保留它，并且只限制程序有意返回给模型的最终输出。
+[规范工具输出约定](../architecture/2026-07-20-canonical-tool-output-contract.zh.md)确立了单一、经过校验的执行期值，并将 Native 渲染器与之分离。PTC 模式应直接消费该值，在跨越 worker 边界时完整保留它，并且只限制程序有意返回给模型的最终输出。
 
 ## 决策
 
-Code Mode 是可见工具注册表的类型化投影。每个成功的绑定调用都会解析为 post-execute 策略处理后的最终规范 `JsonValue`，失败的绑定调用则会以真正的 `ToolCallError` 拒绝 Promise。中间值只存在于本次运行中，并完整跨越 worker 边界。外层 `run_code` 的日志、完成值或失败诊断会进入可配置的输出账本以及面向模型的输出落盘流水线；如果成功结算的子调用最终 Native 内容包含图片，其完整有序内容还会经父结果延后为写入日志且带来源归属的上下文。
+PTC 模式是可见工具注册表的类型化投影。每个成功的绑定调用都会解析为 post-execute 策略处理后的最终规范 `JsonValue`，失败的绑定调用则会以真正的 `ToolCallError` 拒绝 Promise。中间值只存在于本次运行中，并完整跨越 worker 边界。外层 `run_code` 的日志、完成值或失败诊断会进入可配置的输出账本以及面向模型的输出落盘流水线；如果成功结算的子调用最终 Native 内容包含图片，其完整有序内容还会经父结果延后为写入日志且带来源归属的上下文。
 
-本文档定义叠加在原始 [Code Mode 基础](2026-06-15-code-mode.zh.md)之上的返回值与失败约定。统一 schema 词汇由 [JSON 值 schema DSL Agent Note](../architecture/2026-07-20-unified-json-value-schema-dsl.zh.md)负责定义；Native 渲染与策略投影仍由规范输出 Agent Note 负责定义。
+本文档定义叠加在原始 [PTC 模式基础](2026-06-15-ptc.zh.md)之上的返回值与失败约定。统一 schema 词汇由 [JSON 值 schema DSL Agent Note](../architecture/2026-07-20-unified-json-value-schema-dsl.zh.md)负责定义；Native 渲染与策略投影仍由规范输出 Agent Note 负责定义。
 
 ### 生成的 SDK
 
@@ -51,7 +51,7 @@ declare const tools: {
 
 分发前，桥接层会把绑定参数快照为无损 JSON，再对分离后的值生成一次快照，供独立的持久摘要事件使用。宿主侧的值分离、执行数据的不可变处理与输出 schema 投影均采用迭代遍历，而不使用嵌套结构化克隆或递归冻结。`undefined`、非有限数、`-0`、稀疏数组、循环引用、函数和非普通对象都会使该调用在工具运行前被拒绝。成功分发会返回 `ToolExecutionResult.value`；Native `content`、元数据和内部错误信息不会传入程序。含图片的最终内容不是第二份绑定值：桥接层会在外层结果之后转运它，使下一次模型请求可以看到持久图片；post-execute 阻止／内容替换仍具有权威性，纯文本结果不会重复。
 
-Code Mode 通过运行时请求中的 `{ name: "ToolCallError", memberNameProperty: "toolName" }` 声明其以异常拒绝 Promise 的能力。运行时 Service Definition 只把这些名称视为数据：worker 会动态生成并注入真正用于 `tools` 绑定失败的构造函数，因此无需让通用运行时了解工具，`error instanceof ToolCallError` 也能成立。worker 使用模块初始化时捕获的 Error 构造函数与属性定义内建方法，配合原型为 null 的属性描述符，构造失败对象并定义其公开字段，因此模型代码的修改不会把约定承诺的 reject 变成 worker 失败。该错误包含标准的 `Error` 消息和确切的 `toolName`，并有意省略 `ToolFailure.info`、错误代码与 Native 内容。这是一项用于控制流的异常约定，而不是供程序分类的失败联合。
+PTC 模式通过运行时请求中的 `{ name: "ToolCallError", memberNameProperty: "toolName" }` 声明其以异常拒绝 Promise 的能力。运行时 Service Definition 只把这些名称视为数据：worker 会动态生成并注入真正用于 `tools` 绑定失败的构造函数，因此无需让通用运行时了解工具，`error instanceof ToolCallError` 也能成立。worker 使用模块初始化时捕获的 Error 构造函数与属性定义内建方法，配合原型为 null 的属性描述符，构造失败对象并定义其公开字段，因此模型代码的修改不会把约定承诺的 reject 变成 worker 失败。该错误包含标准的 `Error` 消息和确切的 `toolName`，并有意省略 `ToolFailure.info`、错误代码与 Native 内容。这是一项用于控制流的异常约定，而不是供程序分类的失败联合。
 
 绑定参数与绑定返回值会在不可信 worker 协议的两端重新校验为无损 JSON，且不设字节上限。每个分离后的值在通过结构化克隆跨越边界前，都会编码为扁平的前序 token 流，其传输结构的嵌套深度有界；接收方再以迭代方式重建该值。因此，有效应用数据的嵌套深度既不受 JavaScript 调用栈深度上限限制，也不受特定平台对嵌套结构化克隆施加的上限限制。模块初始化时，worker 会捕获自身 JavaScript 运行域中 `Array.prototype` 和 `Object.prototype` 的引用、仅用于识别其他运行域普通容器原型、可获取原生函数源码的内建函数，以及 JSON 边界用于结构处理和计量的全部内建方法。属性写入使用原型为 null 的属性描述符；内部的数组与集合操作直接调用捕获的方法，不会访问可变的全局或原型槽位。因此，即使模型代码替换 `Object.keys`、`Array.isArray`、集合方法、字符串方法或 `Buffer.byteLength` 等辅助方法，重写内建原型的构造函数槽位，或向 `Object.prototype` 添加形如属性描述符的字段，也不会改变校验、协议传输或字节计量。面向其他运行域的原生函数源码检查仍会拒绝由用户编写、冒充 `Object` 或 `Array` 的构造函数。为保持依赖轻量，运行时 Service Definition 将结构等价类型命名为 `CodeJsonValue`，从而无需依赖会话侧拥有的规范类型；生成的 SDK 和工具 API 则使用 `JsonValue`。这些值不会经过提示词截断、上下文 spill 或持久化。因此，程序可以完整筛选已经采集的搜索、工作流、任务、文件系统与 MCP 值，同时提供方和执行器的采集上限仍会实际生效。
 
@@ -79,7 +79,7 @@ Code Mode 通过运行时请求中的 `{ name: "ToolCallError", memberNameProper
 
 ## 测试
 
-编译期测试与快照测试锁定了精确的 `ToolArgsMap`、`ToolOutputMap`、`ToolName`、schema 到 TypeScript 的覆盖范围、特殊名称，以及组装后的 Code Mode 图片转发。注册表与真实 worker 测试覆盖标量、数组、对象和 null 值；字符串原文渲染；缺席的 `undefined`；消费方声明、实际用于拒绝 Promise 的异常类，包括 `ToolCallError`；无效参数与完成值，包括伪装为内建原型的伪造原型；模型代码修改过的 JSON 边界全局对象、原型方法、构造函数槽位，以及继承而来的属性描述符字段；上述修改后的类型化绑定失败；不设上限的大型中间绑定值；嵌套输出落盘抑制；通用含图片上下文延后以及 post-execute 替换／阻止优先级；64 MiB 上限内外的精确计量；日志、值与诊断的组合计量；抛出的超大堆栈；有界失败的输出落盘；不可信对端伪造的流量；以及构建后包的执行。
+编译期测试与快照测试锁定了精确的 `ToolArgsMap`、`ToolOutputMap`、`ToolName`、schema 到 TypeScript 的覆盖范围、特殊名称，以及组装后的 PTC 模式图片转发。注册表与真实 worker 测试覆盖标量、数组、对象和 null 值；字符串原文渲染；缺席的 `undefined`；消费方声明、实际用于拒绝 Promise 的异常类，包括 `ToolCallError`；无效参数与完成值，包括伪装为内建原型的伪造原型；模型代码修改过的 JSON 边界全局对象、原型方法、构造函数槽位，以及继承而来的属性描述符字段；上述修改后的类型化绑定失败；不设上限的大型中间绑定值；嵌套输出落盘抑制；通用含图片上下文延后以及 post-execute 替换／阻止优先级；64 MiB 上限内外的精确计量；日志、值与诊断的组合计量；抛出的超大堆栈；有界失败的输出落盘；不可信对端伪造的流量；以及构建后包的执行。
 
 无密钥的真实 worker 集成测试锁定了自然语言结果无法安全支持的两种句柄工作流。后台 bash 调用返回 job id，外层运行结束，之后的运行再根据该 id 轮询直至任务完成；其他用例分别证明，预先中止不会创建任务、发布后的调用取消会保留任务、前台执行仍与信号耦合，并且由 `job_kill` 负责取消。Cordis 程序会直接读取 active 或 pending 挂载的 id 和 `waitingFor` 字段，按该 id 卸载，并在不解析渲染文本的情况下确认挂载已移除。
 
@@ -93,13 +93,13 @@ Code Mode 通过运行时请求中的 `{ name: "ToolCallError", memberNameProper
 
 **静默检查格式化或截断过大的完成值：**不予采纳。把 JSON 值改成字符串既有损又违反类型。显式的 `output-limit` 失败让模型可以选择返回更小的结果，而保留的日志和诊断仍可使用普通的外层 spill 机制。
 
-**要求每个丰富叶子工具检查 `exec.parent` 并自行延后。** 不予采用，因为这会把叶子工具与 Code Mode 内部机制耦合、重复策略处理，并遗漏未来丰富工具。分发桥接层负责从已经结算的最终结果通用转发。
+**要求每个丰富叶子工具检查 `exec.parent` 并自行延后。** 不予采用，因为这会把叶子工具与 PTC 模式内部机制耦合、重复策略处理，并遗漏未来丰富工具。分发桥接层负责从已经结算的最终结果通用转发。
 
 **把 Native 丰富内容暴露为每个绑定规范值的一部分。** 不予采用，因为规范值是无损 JSON 且由工具定义；附件块是具有持久生命周期语义的模型投影。保持值与投影分离，既能保留类型化程序，也不会从后续模型上下文中丢弃图片。
 
 ## 后果
 
-Code Mode 程序可以通过稳定值组合工具，无需逆向解析 Native 自然语言。Native 和 Both Mode 保留现有文本与 UI 展示，Code Mode 则获得输出 schema 类型和精确的运行时 JSON。工具作者必须把规范值视为程序化 API，并将仅用于展示的格式化放入渲染器。
+PTC 模式程序可以通过稳定值组合工具，无需逆向解析 Native 自然语言。Native 和 Both Mode 保留现有文本与 UI 展示，PTC 模式则获得输出 schema 类型和精确的运行时 JSON。工具作者必须把规范值视为程序化 API，并将仅用于展示的格式化放入渲染器。
 
 worker 会以嵌套深度有界的扁平协议格式传输数据并执行无损校验，但不会降低中间值的开销，也不会使其具备持久性。外层输出溢出会显式导致运行失败，错误处理则有意由人类引导，而不是依赖带版本的错误代码联合。
 
@@ -110,7 +110,7 @@ worker 会以嵌套深度有界的扁平协议格式传输数据并执行无损�
 - 中间规范值仅存在于执行期间，无法用于回放，因为持久事件只存储展示和有界摘要。
 - 中间值没有字节上限，可能因值的保留、扁平协议格式副本或结构化克隆开销而耗尽进程或 worker 内存。
 - 64 MiB 硬上限只适用于外层可变负载，不计固定的结果封装语法与展示空白；spill 无法恢复超出该上限后被拒绝的字节。
-- 提供方或执行器的采集上限可能在规范值到达 Code Mode 前就已丢弃部分源数据。
+- 提供方或执行器的采集上限可能在规范值到达 PTC 模式前就已丢弃部分源数据。
 - 不支持的 MCP 输出 schema 会回退为 `JsonValue`；已准入的 MCP 图片使用通用延后投影，而音频和嵌入资源载荷仍只提供诊断。
 - 每个外层 `run_code` 只有一张结果卡片，嵌套调用不会各自生成卡片。
-- Code Mode 失败只暴露 `ToolCallError` 的消息与工具名，不提供程序可用的错误代码联合。
+- PTC 模式失败只暴露 `ToolCallError` 的消息与工具名，不提供程序可用的错误代码联合。
