@@ -129,27 +129,31 @@ describe('assembled Desktop Relay live Session projection on shipped dsh web', (
       }
       desktopToMobile.push(ciphertext)
       if (deliveryPump !== undefined) return
-      deliveryPump = (async () => {
-        for (;;) {
-          const frame = desktopToMobile.shift()
-          if (frame === undefined) return
-          const receiver = receiverRef.current
-          // Frames that arrive before the Mobile transport attaches stay queued;
-          // the pump retries once the receiver installs.
-          if (receiver === undefined) {
-            desktopToMobile.unshift(frame)
-            await new Promise<void>((resolve) => { setTimeout(resolve, 0) })
-            continue
+      const claimDelivery = (): void => {
+        deliveryPump = Promise.resolve().then(async () => {
+          for (;;) {
+            const frame = desktopToMobile.shift()
+            if (frame === undefined) return
+            const receiver = receiverRef.current
+            // Frames that arrive before the Mobile transport attaches stay queued;
+            // the pump retries once the receiver installs.
+            if (receiver === undefined) {
+              desktopToMobile.unshift(frame)
+              await new Promise<void>((resolve) => { setTimeout(resolve, 0) })
+              continue
+            }
+            receiver.receive(frame)
           }
-          receiver.receive(frame)
-        }
-      })()
-      void deliveryPump.then(() => {
-        deliveryPump = undefined
-      }, (error: unknown) => {
-        deliveryPump = undefined
-        transportErrors.push(new Error('[delivery desktop→mobile] pump failed', { cause: error }))
-      })
+        })
+        void deliveryPump.then(() => {
+          deliveryPump = undefined
+          if (desktopToMobile.length > 0) claimDelivery()
+        }, (error: unknown) => {
+          deliveryPump = undefined
+          transportErrors.push(new Error('[delivery desktop→mobile] pump failed', { cause: error }))
+        })
+      }
+      claimDelivery()
     }
     // Real attachment authentication: the Desktop attachment owner verifies
     // the Mobile IK transcript against the paired static state, and the Mobile
@@ -310,7 +314,7 @@ describe('assembled Desktop Relay live Session projection on shipped dsh web', (
     // authenticates through the Desktop attachment owner, the response finishes
     // the Mobile negotiation, and the relay owner publishes the channel.
     const ik2Frame = nextTransportFrame()
-    await scheduleInbound('ik1', begun.payload)
+    await scheduleInbound('handshake', begun.payload)
     const mobileNegotiation = mobileAttachmentOwner.finish(
       await ik2Frame, channels.desktopAttachmentId,
     )
@@ -329,7 +333,7 @@ describe('assembled Desktop Relay live Session projection on shipped dsh web', (
       (offset) => { surface.trackSurfaceRefresh(product.refreshSurface(offset)) },
     )
     receiverRef.current = receiver
-    await scheduleInbound('ik3', mobileNegotiation.payload)
+    await scheduleInbound('handshake', mobileNegotiation.payload)
 
 
     const localSessionId = sessionId as SessionId
