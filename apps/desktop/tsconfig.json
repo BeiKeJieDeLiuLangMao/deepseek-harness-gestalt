@@ -9,7 +9,10 @@
     "types": ["node"]
   },
   "include": ["src", "tests", "scripts"],
+  "files": ["tests/e2e-sub2api/session-surface.ts"],
   "exclude": [
+    "tests/companion-host-assembled.spec.ts",
+    "tests/companion-fixture",
     "tests/member-question-e2e",
     "tests/e2e-sub2api",
     "scripts/run-e2e-sub2api.mjs",
@@ -18,6 +21,9 @@
     "scripts/run-e2e-electron.mjs"
   ],
   "references": [
+    { "path": "../mobile" },
+    { "path": "../../packages/core/agent-loop" },
+    { "path": "../../packages/session-query/session-query-sqlite" },
     { "path": "../../packages/attachment/attachment" },
     { "path": "../../packages/attachment/attachment-local" },
     { "path": "../../packages/browser/browser-runtime-electron" },

@@ -74,7 +74,7 @@ async function fakeInstallWrites(dirs2: { profileDir: string; runtimeDir: string
 interface Harness {
   controller: DesktopSub2ApiController
   events: DesktopSub2ApiSnapshot[]
-  host: Sub2ApiHostControl & { restart: ReturnType<typeof vi.fn> }
+  host: Sub2ApiHostControl & { restart: ReturnType<typeof vi.fn<Sub2ApiHostControl['restart']>> }
   probe: ReturnType<typeof vi.fn<(origin: string) => Promise<boolean>>>
   install: Sub2ApiInstall
   installRuns: () => number
@@ -89,20 +89,25 @@ async function harness(overrides?: {
   disabled?: boolean
   noPackage?: boolean
   probe?: (origin: string) => Promise<boolean>
+  probeTimeoutMs?: number
   restart?: (startTimeoutMs?: number) => Promise<string>
   origin?: string | undefined
   installGate?: (input: Sub2ApiInstallInput) => Promise<void>
 }): Promise<Harness> {
-  const paths = await fixture({ installed: overrides?.installed, disabled: overrides?.disabled, noPackage: overrides?.noPackage })
+  const paths = await fixture({
+    ...(overrides?.installed === undefined ? {} : { installed: overrides.installed }),
+    ...(overrides?.disabled === undefined ? {} : { disabled: overrides.disabled }),
+    ...(overrides?.noPackage === undefined ? {} : { noPackage: overrides.noPackage }),
+  })
   const events: DesktopSub2ApiSnapshot[] = []
   let currentOrigin: string | undefined = overrides && 'origin' in overrides
     ? overrides.origin
     : 'http://127.0.0.1:9/'
   const host = {
-    restart: overrides?.restart ?? vi.fn(async () => {
+    restart: vi.fn<Sub2ApiHostControl['restart']>(overrides?.restart ?? (async () => {
       currentOrigin = 'http://127.0.0.1:10/'
       return currentOrigin
-    }),
+    })),
     origin: () => currentOrigin,
   }
   const probeImpl: (origin: string) => Promise<boolean> = overrides?.probe ?? (async () => true)
@@ -129,7 +134,7 @@ async function harness(overrides?: {
     install,
     probe: (origin: string) => probe(origin),
     probeIntervalMs: 1,
-    probeTimeoutMs: 50,
+    probeTimeoutMs: overrides?.probeTimeoutMs ?? 50,
   })
   controller.subscribe((snapshot) => { events.push(snapshot) })
   await controller.start()
@@ -243,6 +248,21 @@ describe('DesktopSub2ApiController', () => {
     const final = await h.controller.enable()
     expect(final).toMatchObject({ state: 'error', error: STARTUP_TIMEOUT_ERROR })
     expect(final.version).toBeUndefined()
+  })
+
+  it('omits an unavailable installed version while running and disabling', async () => {
+    const h = await harness({ installed: true, noPackage: true })
+    await vi.waitFor(() => { expect(h.controller.getSnapshot().state).toBe('running') })
+    expect(h.controller.getSnapshot()).not.toHaveProperty('version')
+
+    const firstDisableEvent = h.events.length
+    const disabled = await h.controller.disable()
+    expect(disabled).toMatchObject({ state: 'installed', enabled: false })
+    expect(disabled).not.toHaveProperty('version')
+    expect(h.events.slice(firstDisableEvent)).toEqual([
+      { state: 'starting', enabled: false },
+      { state: 'installed', enabled: false },
+    ])
   })
 
   it('disables through the patch row and a restart, then re-enables without reinstalling', async () => {

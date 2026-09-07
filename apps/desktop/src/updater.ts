@@ -7,6 +7,7 @@ import { dirname } from 'node:path'
 import type {
   UpdaterPhase, UpdaterStatus,
 } from '@deepseek-ai/dsh-client-ui-desktop/protocol'
+import type { Event } from 'electron'
 
 const INITIAL_CHECK_DELAY_MS = 3_000
 const CHECK_INTERVAL_MS = 15 * 60 * 1_000
@@ -34,10 +35,40 @@ export interface AutoUpdaterPort {
   readonly removeListener: (event: string, listener: (...args: unknown[]) => void) => this
 }
 
-/** Electron `autoUpdater` events that mean Squirrel finished staging. */
+/** Electron `autoUpdater` adapter that retains listener identity through disposal. */
 export interface NativeStagePort {
-  readonly on: (event: 'update-downloaded' | 'error', listener: (...args: unknown[]) => void) => this
-  readonly removeListener: (event: 'update-downloaded' | 'error', listener: (...args: unknown[]) => void) => this
+  /**
+   * Register the native Squirrel downloaded listener retained until lifecycle disposal.
+   * @param listener - exact listener object later passed to `removeDownloadedListener`.
+   */
+  addDownloadedListener(listener: (
+    event: Event,
+    releaseNotes: string,
+    releaseName: string,
+    releaseDate: Date,
+    updateUrl: string,
+  ) => void): void
+  /**
+   * Remove the downloaded listener during lifecycle disposal.
+   * @param listener - exact listener object previously passed to `addDownloadedListener`.
+   */
+  removeDownloadedListener(listener: (
+    event: Event,
+    releaseNotes: string,
+    releaseName: string,
+    releaseDate: Date,
+    updateUrl: string,
+  ) => void): void
+  /**
+   * Register the native Squirrel error listener retained until lifecycle disposal.
+   * @param listener - exact listener object later passed to `removeErrorListener`.
+   */
+  addErrorListener(listener: (error: Error) => void): void
+  /**
+   * Remove the error listener during lifecycle disposal.
+   * @param listener - exact listener object previously passed to `addErrorListener`.
+   */
+  removeErrorListener(listener: (error: Error) => void): void
 }
 
 /** Node ESM view of electron-updater's named or CommonJS default export. */
@@ -185,12 +216,18 @@ export function startAutoUpdater(options: {
     clearTimeout(stageTimer)
     stageTimer = undefined
   }
-  const handleStaged = (): void => {
+  const handleStaged = (
+    _event: Event,
+    _releaseNotes: string,
+    _releaseName: string,
+    _releaseDate: Date,
+    _updateUrl: string,
+  ): void => {
     if (current.state !== 'preparing') return
     clearStageTimer()
     transition('downloaded', versionDetail(availableVersion))
   }
-  const handleStageError = (error: unknown): void => {
+  const handleStageError = (error: Error): void => {
     if (current.state !== 'preparing') return
     handleError(error)
   }
@@ -212,8 +249,8 @@ export function startAutoUpdater(options: {
   options.updater.on('download-progress', handleProgress)
   options.updater.on('update-downloaded', handleDownloaded)
   options.updater.on('error', handleError)
-  options.nativeStage?.on('update-downloaded', handleStaged)
-  options.nativeStage?.on('error', handleStageError)
+  options.nativeStage?.addDownloadedListener(handleStaged)
+  options.nativeStage?.addErrorListener(handleStageError)
 
   const initial = setTimeout(check, INITIAL_CHECK_DELAY_MS)
   const interval = setInterval(check, CHECK_INTERVAL_MS)
@@ -243,8 +280,8 @@ export function startAutoUpdater(options: {
       options.updater.removeListener('download-progress', handleProgress)
       options.updater.removeListener('update-downloaded', handleDownloaded)
       options.updater.removeListener('error', handleError)
-      options.nativeStage?.removeListener('update-downloaded', handleStaged)
-      options.nativeStage?.removeListener('error', handleStageError)
+      options.nativeStage?.removeDownloadedListener(handleStaged)
+      options.nativeStage?.removeErrorListener(handleStageError)
     },
   }
 }

@@ -42,6 +42,22 @@ export interface WebHostExit {
   readonly requestedStop: WebHostRequestedStop
 }
 
+/** Startup rejected because stopping an unreturned child failed; child exit is unproven. */
+export class WebHostStartupCleanupError extends AggregateError {
+  /** Distinguishes unproven child cleanup from ordinary startup rejection. */
+  readonly kind = 'startup-cleanup-failed'
+
+  /**
+   * Preserve both startup failure and raw stop failure; neither establishes child exit.
+   * @param startupError - Original abort or readiness-timeout failure.
+   * @param cleanupError - Unmodified failure from the exact child's stop operation.
+   */
+  constructor(readonly startupError: Error, readonly cleanupError: unknown) {
+    super([startupError, cleanupError], 'dsh web startup cleanup failed', { cause: startupError })
+    this.name = 'WebHostStartupCleanupError'
+  }
+}
+
 /** A running Web Host plus the loopback URL it printed. */
 export interface RunningWebHost {
   /** Child process. */
@@ -61,10 +77,6 @@ const SENSITIVE_ENVIRONMENT_NAME = /(?:KEY|SECRET|TOKEN|PASSWORD|CREDENTIAL)/iu
 const DIAGNOSTIC_MAX = 800
 const URL_SCAN_MAX = 512
 const ABORT_STOP_WARNING_MAX = 200
-
-function assertNever(value: never): never {
-  throw new Error(`unexpected Web Host requested-stop: ${String(value)}`)
-}
 
 function knownSecrets(environment: NodeJS.ProcessEnv): readonly string[] {
   return [...new Set(Object.entries(environment).flatMap(([name, value]) => (
@@ -96,7 +108,12 @@ function abortStopWarning(error: unknown, environment: NodeJS.ProcessEnv): strin
   return text.length <= ABORT_STOP_WARNING_MAX ? text : `${text.slice(0, ABORT_STOP_WARNING_MAX)}…`
 }
 
-/** Remove inherited or supplied credential values from child diagnostics. */
+/**
+ * Remove inherited or supplied credential values from child diagnostics.
+ * @param output - Child diagnostic text.
+ * @param environment - Environment containing credential values to mask.
+ * @returns Redacted diagnostic text.
+ */
 export function redactWebHostDiagnostic(output: string, environment: NodeJS.ProcessEnv): string {
   let redacted = output
   const secrets = knownSecrets(environment)
@@ -109,6 +126,9 @@ export function redactWebHostDiagnostic(output: string, environment: NodeJS.Proc
 /**
  * Return a bounded diagnostic. Redacts complete known secrets on one buffer,
  * then masks a trailing suffix that is an incomplete known-secret prefix, then truncates.
+ * @param output - Complete startup diagnostic buffer.
+ * @param environment - Environment containing credential values to mask.
+ * @returns Redacted startup summary bounded to 800 characters.
  */
 export function webHostDiagnosticSummary(output: string, environment: NodeJS.ProcessEnv): string {
   const secrets = knownSecrets(environment)
@@ -123,14 +143,7 @@ export function webHostDiagnosticSummary(output: string, environment: NodeJS.Pro
  * @returns One line naming pid, code, signal, and requested-stop kind.
  */
 export function formatWebHostExit(record: WebHostExit): string {
-  switch (record.requestedStop.kind) {
-    case 'none':
-    case 'stop':
-    case 'abort':
-      return `web host exit pid=${String(record.pid)} code=${String(record.code)} signal=${String(record.signal)} requestedStop=${record.requestedStop.kind}`
-    default:
-      return assertNever(record.requestedStop)
-  }
+  return `web host exit pid=${String(record.pid)} code=${String(record.code)} signal=${String(record.signal)} requestedStop=${record.requestedStop.kind}`
 }
 
 function freezeWebHostExit(record: WebHostExit): WebHostExit {
@@ -146,7 +159,8 @@ function freezeWebHostExit(record: WebHostExit): WebHostExit {
  * Spawn `dsh web` and resolve when it prints the loopback URL.
  * @param command - node, args, cwd.
  * @param timeoutMs - fail if the URL line does not appear.
- * @returns the child and URL.
+ * @returns the child and URL. Pre-ready stop failure rejects with WebHostStartupCleanupError;
+ * ordinary cancellation rejects only after the exact child's exit has been observed.
  */
 export function spawnWebHost(
   command: WebHostCommand,
@@ -168,7 +182,6 @@ export function spawnWebHost(
     const exited = new Promise<WebHostExit>((onResolve) => { resolveExit = onResolve })
     const publishExit = (code: number | null, signal: NodeJS.Signals | null): void => {
       command.signal?.removeEventListener('abort', onAbort)
-      if (record !== undefined) return
       record = freezeWebHostExit({
         pid: child.pid,
         code,
@@ -191,19 +204,18 @@ export function spawnWebHost(
         if (child.exitCode === null && child.signalCode === null) child.kill()
         void exited.then(resolveStop, rejectStop)
       } catch (error) {
-        rejectStop(error instanceof Error ? error : new Error(String(error)))
+        rejectStop(error)
       }
       return stopPromise
     }
     const stop = (): Promise<WebHostExit> => requestStop('stop')
     const terminateBeforeReady = (error: Error, cause: 'stop' | 'abort'): void => {
-      if (settled) return
       settled = true
       clearTimeout(timer)
       void requestStop(cause).then(
         () => { reject(error) },
         (stopError: unknown) => {
-          reject(stopError instanceof Error ? stopError : new Error(String(stopError)))
+          reject(new WebHostStartupCleanupError(error, stopError))
         },
       )
     }

@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   createCompanionNegotiationChannel, createCompanionVersionOffer, encodeCompanionMessage,
   decodeRelayMessage, encodeRelayMessage, parseRelayAttachmentId, parseRelayPairingSelector,
-  negotiateCompanionProtocol, parseRelayAttachChallengeId,
+  negotiateCompanionProtocol, parseRelayAttachChallengeId, parseCompanionOperationId, parseCompanionSessionId,
   generateRelayCredential,
   REMOTE_PROTOCOL_LIMITS,
 } from '@deepseek-ai/dsh-remote-protocol'
@@ -12,6 +12,8 @@ import {
   createDesktopRemoteRelay,
   DesktopSnowRelayChannelOwner,
   loadDesktopRemoteRelayConfig,
+  type DesktopCompanionLiveProjectionAdapter,
+  type DesktopCompanionOperationHandler,
 } from '../src/remote-relay.ts'
 import { DesktopSnowPairingVault } from '../src/snow-pairing-vault.ts'
 import { parseRelayRouteId } from '@deepseek-ai/dsh-remote-protocol'
@@ -24,15 +26,29 @@ import type { RelayEndpointSocket } from '@deepseek-ai/dsh-remote-access-client'
 import type { DesktopCompanionLiveProjectionChange } from '../src/companion-live-projection.ts'
 import { DesktopCompanionLiveProjectionSource } from '../src/companion-live-projection.ts'
 
-const DEVELOPMENT = {
-  environment: 'development',
+import { loadOperatedPlatformEnvironment, loadPlatformEnvironment } from '@deepseek-ai/dsh-platform-account-core'
+
+const PRODUCTION = loadOperatedPlatformEnvironment({
+  environment: 'production',
   origin: 'https://platform.example',
-  callbackUrl: 'http://127.0.0.1:9327/callback',
-  githubClientId: 'client',
-  credentialReference: 'credential',
-  databaseIdentity: 'development',
-  identityNamespace: 'development',
-} as const
+  callbackUrl: 'https://platform.example/v1/account/oauth/github/callback',
+  githubClientId: 'production-client',
+  credentialReference: 'production-credential',
+  databaseIdentity: 'production-database',
+  identityNamespace: 'production-namespace',
+})
+const DEVELOPMENT = loadPlatformEnvironment({
+  selection: 'development',
+  development: {
+    origin: 'https://development.platform.example',
+    callbackUrl: 'https://development.platform.example/v1/account/oauth/github/callback',
+    githubClientId: 'development-client',
+    credentialReference: 'development-credential',
+    databaseIdentity: 'development-database',
+    identityNamespace: 'development-namespace',
+  },
+  production: PRODUCTION,
+})
 
 const SOURCE = {
   DSH_REMOTE_RELAY_WSS_URL: 'wss://platform.example/v1/remote-access/relay',
@@ -47,7 +63,7 @@ const RELAY_CONFIG = loadDesktopRemoteRelayConfig(SOURCE)
 
 const AUTHENTICATED_DESKTOP_NAME = (): string => 'Authenticated Desktop'
 const NEGOTIATION_TIMEOUT_MS = 1_000
-const UNUSED_OPERATION_HANDLER = async (operation: { operationId: string }) => ({
+const UNUSED_OPERATION_HANDLER: DesktopCompanionOperationHandler = async operation => ({
   type: 'operation-failed' as const,
   operationId: operation.operationId,
   failure: { kind: 'business' as const, code: 'test-unused', message: 'unused' },
@@ -566,6 +582,7 @@ describe('Desktop Remote Relay composition', () => {
   ] as const)(
     'bounds %s before Snow sealing without reconnecting',
     async (_scenario, nodes) => {
+      const sessionId = parseCompanionSessionId('session-live-bytes')
       const selector = parseRelayPairingSelector('pairing-live-bytes')
       const desktopAttachmentId = parseRelayAttachmentId('desktop-live-bytes')
       const mobileAttachmentId = parseRelayAttachmentId('mobile-live-bytes')
@@ -595,7 +612,7 @@ describe('Desktop Remote Relay composition', () => {
       }) }, async () => {}, undefined, AUTHENTICATED_DESKTOP_NAME, NEGOTIATION_TIMEOUT_MS, {
         connect: (_selector, listener) => { changed = listener; return () => {} },
         project: async () => ({
-          sessionId: 'session-live-bytes', position: 0,
+          sessionId, position: 0,
           summary: liveSummary('session-live-bytes', 1), workspaces: [],
           conversation: liveConversation('session-live-bytes', nodes),
         }),
@@ -615,7 +632,7 @@ describe('Desktop Remote Relay composition', () => {
       )
       channel.seal.mockClear()
       changed?.({
-        type: 'session', sessionId: 'session-live-bytes' as never,
+        type: 'session', sessionId,
         includeConversation: true, observationEpoch: 1,
       })
       await owner.drain()
@@ -645,7 +662,7 @@ describe('Desktop Remote Relay composition', () => {
     const mobileAttachmentId = parseRelayAttachmentId('mobile-live-overflow')
     const channel = fakeSnowChannel()
     let changed: ((change: DesktopCompanionLiveProjectionChange) => void) | undefined
-    const firstProjection = deferred<Record<string, unknown>>()
+    const firstProjection = deferred<Awaited<ReturnType<DesktopCompanionLiveProjectionAdapter['project']>>>()
     const reconnect = vi.fn()
     const disposeLive = vi.fn()
     const owner = new DesktopSnowRelayChannelOwner({ accept: async () => ({
@@ -670,14 +687,14 @@ describe('Desktop Remote Relay composition', () => {
     )
 
     changed?.({
-      type: 'session', sessionId: 'session-live-active', includeConversation: false, observationEpoch: 0,
-    } as DesktopCompanionLiveProjectionChange)
+      type: 'session', sessionId: parseCompanionSessionId('session-live-active'), includeConversation: false, observationEpoch: 0,
+    })
     await Promise.resolve()
     for (let index = 0; index <= REMOTE_PROTOCOL_LIMITS.liveProjectionPendingSessions; index += 1) {
       changed?.({
-        type: 'session', sessionId: `session-live-${String(index)}`,
+        type: 'session', sessionId: parseCompanionSessionId(`session-live-${String(index)}`),
         includeConversation: false, observationEpoch: 0,
-      } as DesktopCompanionLiveProjectionChange)
+      })
     }
 
     expect(reconnect).toHaveBeenCalledWith(selector, expect.objectContaining({
@@ -685,7 +702,7 @@ describe('Desktop Remote Relay composition', () => {
     }))
     expect(disposeLive).toHaveBeenCalledOnce()
     expect(channel.dispose).toHaveBeenCalledOnce()
-    firstProjection.resolve({ sessionId: 'session-live-active', removed: true })
+    firstProjection.resolve({ sessionId: parseCompanionSessionId('session-live-active'), removed: true })
     await owner.drain()
     expect(channel.seal).toHaveBeenCalledTimes(1)
   })
@@ -830,7 +847,7 @@ describe('Desktop Remote Relay composition', () => {
         targetAttachmentId: mobileAttachmentId, payload: Uint8Array.of(3), negotiation: fakeNegotiation(recoveredChannel.channel),
         pairingSelector: selector, generation: 2,
       })
-    const send = vi.fn(async () => {
+    const send = vi.fn(async (): Promise<void> => {
       owner.invalidate(selector)
       throw new Error('Relay send lost the attachment')
     })
@@ -925,12 +942,14 @@ describe('Desktop Remote Relay composition', () => {
       routeId: parseRelayRouteId('route-assembled-mount'), relayRevision: 1,
     })
     const mobileGrant = await mobileHandshake.openRelayAuthority(delivery.sealedRelayAuthority)
+    const pairingSelector = mobileGrant.pairingSelector
+    if (pairingSelector === undefined) throw new Error('Mobile Relay authority omitted its pairing selector')
     const desktopGrant = vault.desktopRelayGrant(pendingPairingId)
     await vault.commitConfirmation(pendingPairingId)
 
     const socket = new TestRelaySocket()
     const relay = createDesktopRemoteRelay({
-      environment: { ...DEVELOPMENT, environment: 'production' }, config: RELAY_CONFIG,
+      environment: PRODUCTION, config: RELAY_CONFIG,
       snowPairingVault: vault, connect: async () => socket,
       desktopName: AUTHENTICATED_DESKTOP_NAME, handleOperation: UNUSED_OPERATION_HANDLER,
     })
@@ -952,15 +971,15 @@ describe('Desktop Remote Relay composition', () => {
     const ready = {
       type: 'ready' as const, transportVersion: 1 as const, routeId: mobileGrant.routeId,
       attachmentId: attach.attachmentId,
-      peers: [{ attachmentId: mobileAttachmentId, pairingSelector: mobileGrant.pairingSelector, generation }],
+      peers: [{ attachmentId: mobileAttachmentId, pairingSelector, generation }],
     }
     socket.push(encodeRelayMessage(ready))
     await starting
     const mobileOwner = new SnowMobileAttachmentOwner(
-      mobileHandshake.exportReconnectState(), mobileGrant.pairingSelector,
+      mobileHandshake.exportReconnectState(), pairingSelector,
     )
     const begun = await mobileOwner.begin({ ...ready, attachmentId: mobileAttachmentId, peers: [{
-      attachmentId: attach.attachmentId, pairingSelector: mobileGrant.pairingSelector, generation,
+      attachmentId: attach.attachmentId, pairingSelector, generation,
     }] })
     socket.push(encodeRelayMessage({
       type: 'ciphertext', transportVersion: 1, routeId: mobileGrant.routeId,
@@ -1015,7 +1034,7 @@ describe('Desktop Remote Relay composition', () => {
       signal.addEventListener('abort', () => { reject(new Error('cancelled')) }, { once: true })
     }))
     const production = createDesktopRemoteRelay({
-      environment: { ...DEVELOPMENT, environment: 'production' },
+      environment: PRODUCTION,
       config: RELAY_CONFIG,
       connect,
       snowPairingVault: new DesktopSnowPairingVault(),
@@ -1044,7 +1063,7 @@ describe('Desktop Remote Relay composition', () => {
     const socket = new TestRelaySocket()
     const connect = vi.spyOn(NodeRelayEndpointSocket, 'connect').mockResolvedValue(socket)
     const relay = createDesktopRemoteRelay({
-      environment: { ...DEVELOPMENT, environment: 'production' }, config: RELAY_CONFIG,
+      environment: PRODUCTION, config: RELAY_CONFIG,
       snowPairingVault: new DesktopSnowPairingVault(), initializeWasm: () => {},
       desktopName: AUTHENTICATED_DESKTOP_NAME, handleOperation: UNUSED_OPERATION_HANDLER,
     })
@@ -1083,7 +1102,7 @@ describe('Desktop Remote Relay composition', () => {
     const connectWithProxy = vi.fn(async () => socket)
     const resolveProxy = vi.fn(async () => 'PROXY 127.0.0.1:6152; DIRECT')
     const relay = createDesktopRemoteRelay({
-      environment: { ...DEVELOPMENT, environment: 'production' }, config: RELAY_CONFIG,
+      environment: PRODUCTION, config: RELAY_CONFIG,
       snowPairingVault: new DesktopSnowPairingVault(), initializeWasm: () => {}, resolveProxy,
       connectWithProxy,
       desktopName: AUTHENTICATED_DESKTOP_NAME, handleOperation: UNUSED_OPERATION_HANDLER,
@@ -1169,7 +1188,7 @@ describe('Desktop Remote Relay composition', () => {
   it('cancels a pending system proxy resolution during Relay stop', async () => {
     const resolveProxy = vi.fn(async () => await new Promise<string>(() => {}))
     const relay = createDesktopRemoteRelay({
-      environment: { ...DEVELOPMENT, environment: 'production' }, config: RELAY_CONFIG,
+      environment: PRODUCTION, config: RELAY_CONFIG,
       snowPairingVault: new DesktopSnowPairingVault(), initializeWasm: () => {}, resolveProxy,
       desktopName: AUTHENTICATED_DESKTOP_NAME, handleOperation: UNUSED_OPERATION_HANDLER,
     })
@@ -1231,7 +1250,7 @@ function deferred<T>(): { promise: Promise<T>; resolve(value: T): void } {
 function fakeSnowChannel(applicationMajor: 3 | 4 = 4) {
   const channel = Object.create(SnowCompanionProtocolChannel.prototype) as SnowCompanionProtocolChannel
   const open = vi.fn<(ciphertext: Uint8Array) => ReturnType<SnowCompanionProtocolChannel['open']>>(
-    () => ({ type: 'result', result: { type: 'status', operationId: 'fake' as never, absent: true } }),
+    () => ({ type: 'result', result: { type: 'status', operationId: parseCompanionOperationId('fake'), absent: true } }),
   )
   const seal = vi.fn<(
     message: Parameters<SnowCompanionProtocolChannel['seal']>[0],
@@ -1267,7 +1286,7 @@ function fakeNegotiation(channel: SnowCompanionProtocolChannel) {
 }
 
 function liveSummary(sessionId: string, updatedAt: number) {
-  return { sessionId, displayTitle: sessionId, running: true, blank: false, updatedAt }
+  return { sessionId: parseCompanionSessionId(sessionId), displayTitle: sessionId, running: true, blank: false, updatedAt }
 }
 
 function liveConversation(sessionId: string, nodes: readonly unknown[]) {

@@ -90,30 +90,29 @@ describe('Desktop Companion live projection', () => {
     const opened = parseCompanionSessionId('session-opened')
     const calls: string[] = []
     let archivedSessionIds: string[] = []
-    const host: DesktopHostRpc = {
-      call: vi.fn(async (method: string) => {
-        calls.push(method)
-        if (method === 'session.list') return { ok: true, value: { items: [
-          { sessionId: 'session-hidden', updatedAt: 10, running: true, blank: false },
-          { sessionId: opened, updatedAt: 20, running: true, blank: false },
-        ] } }
-        if (method === 'workspace.list') return { ok: true, value: { items: [{
-          workspaceId: 'workspace-live', path: '/work', title: 'Work',
-          sessionIds: [opened], createdAt: '2026-08-24T00:00:00.000Z',
-          updatedAt: '2026-08-24T00:00:00.000Z',
-        }], archivedSessionIds } }
-        if (method === 'session.history') return { ok: true, value: { events: [
-          { event: { type: 'step/start', seq: 0, time: 1, data: { turn: 1, step: 1 } } },
-          { event: { type: 'assistant/chunk', seq: 1, time: 2, data: {
-            turn: 1, step: 1, chunk: { type: 'block-start', index: 0, blockType: 'text' },
-          } } },
-          { event: { type: 'assistant/chunk', seq: 2, time: 3, data: {
-            turn: 1, step: 1, chunk: { type: 'text-delta', index: 0, text: 'live output' },
-          } } },
-        ], hasMore: false } }
-        throw new Error(`unexpected Host method ${method}`)
-      }),
-    }
+    const call = vi.fn<DesktopHostRpc['call']>(async (method) => {
+      calls.push(method)
+      if (method === 'session.list') return { ok: true, value: { items: [
+        { sessionId: 'session-hidden', updatedAt: 10, running: true, blank: false },
+        { sessionId: opened, updatedAt: 20, running: true, blank: false },
+      ] } }
+      if (method === 'workspace.list') return { ok: true, value: { items: [{
+        workspaceId: 'workspace-live', path: '/work', title: 'Work',
+        sessionIds: [opened], createdAt: '2026-08-24T00:00:00.000Z',
+        updatedAt: '2026-08-24T00:00:00.000Z',
+      }], archivedSessionIds } }
+      if (method === 'session.history') return { ok: true, value: { events: [
+        { event: { type: 'step/start', seq: 0, time: 1, data: { turn: 1, step: 1 } } },
+        { event: { type: 'assistant/chunk', seq: 1, time: 2, data: {
+          turn: 1, step: 1, chunk: { type: 'block-start', index: 0, blockType: 'text' },
+        } } },
+        { event: { type: 'assistant/chunk', seq: 2, time: 3, data: {
+          turn: 1, step: 1, chunk: { type: 'text-delta', index: 0, text: 'live output' },
+        } } },
+      ], hasMore: false } }
+      throw new Error(`unexpected Host method ${method}`)
+    })
+    const host: DesktopHostRpc = { call }
     const hidden = await projectDesktopCompanionLiveSession(
       parseCompanionSessionId('session-hidden'), false, liveDependencies(host), new AbortController().signal,
     )

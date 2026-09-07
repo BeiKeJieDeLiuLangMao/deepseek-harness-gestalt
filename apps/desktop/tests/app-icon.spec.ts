@@ -56,7 +56,7 @@ describe('Desktop application icons', () => {
 
     const main = readFileSync(join(desktopRoot, 'src/main.ts'), 'utf8')
     expect(main).toContain('...desktopIconOptions({')
-    expect(main).toContain('setDockIcon: (path) => { app.dock.setIcon(path) }')
+    expect(main).toContain('setDockIcon: (path) => { app.dock?.setIcon(path) }')
   })
 
   it('uses the PNG for the development Dock and Windows runtime window', () => {

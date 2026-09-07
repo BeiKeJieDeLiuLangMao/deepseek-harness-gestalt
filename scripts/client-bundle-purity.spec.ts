@@ -2,9 +2,12 @@
  * Pins shared client-bundle preset rules: the module-edge purity gate and
  * the physical watch dependencies hidden behind virtual CSS Modules.
  */
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it, vi } from 'vitest'
-import { clientBundle, requestedExternals } from '../packages/client/tsdown.client.ts'
+import { browserSubpath, clientBundle, requestedExternals } from '../packages/client/tsdown.client.ts'
 
 type ResolveId = (source: string) => null | { id: string; external: boolean }
 
@@ -12,6 +15,15 @@ interface CssModulePlugin {
   name: string
   resolveId?: (source: string, importer: string | undefined) => null | string
   load?: (this: { addWatchFile: (id: string) => void }, id: string) => Promise<unknown>
+}
+
+interface CssAssetPlugin {
+  name: string
+  resolveId?: (
+    this: { emitFile: (file: { fileName: string; source: Uint8Array; originalFileName: string }) => string },
+    source: string,
+    importer: string | undefined,
+  ) => Promise<unknown>
 }
 
 /** A representative dynamic bundle using the shared client baseline. */
@@ -218,6 +230,75 @@ describe('client bundle debug artifacts', () => {
     const dependencySource = '../../../../node_modules/.pnpm/zod@4.4.3/node_modules/zod/index.js'
     expect(transform(dependencySource, sourceMapPath)).toBe(dependencySource)
   })
+})
+
+describe('browser subpath stylesheet assets', () => {
+  it.each<{
+    sourceRoot: '.' | undefined
+    emittedSuffix: string
+    sourceSuffix: string
+    fileName: string
+  }>([
+    {
+      sourceRoot: undefined, emittedSuffix: 'client/Foo.module.css', sourceSuffix: 'src/client/Foo.module.css',
+      fileName: 'client/Foo.module.css',
+    },
+    {
+      sourceRoot: '.', emittedSuffix: 'src/Foo.module.css', sourceSuffix: 'src/Foo.module.css',
+      fileName: 'Foo.module.css',
+    },
+  ])('maps emitted $emittedSuffix through asset source root $sourceRoot', async ({
+    sourceRoot, emittedSuffix, sourceSuffix, fileName,
+  }) => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-browser-subpath-css-'))
+    const importer = join(root, 'lib', 'types', emittedSuffix.replace(/\.css$/u, '.js'))
+    const stylesheet = join(root, sourceSuffix)
+    await mkdir(join(importer, '..'), { recursive: true })
+    await mkdir(join(stylesheet, '..'), { recursive: true })
+    await writeFile(stylesheet, '.page { display: flex; }\n')
+    const build = browserSubpath('@deepseek-ai/dsh-client-fixture', [importer],
+      sourceRoot === undefined ? {} : { assetSourceRoot: sourceRoot })
+    const config = build({ env: { DSH_BUILD_FACE: 'client' } })[0]
+    const plugins = (config as { plugins: CssAssetPlugin[] }).plugins
+    const plugin = plugins.find(candidate => candidate.name === 'dsh-css-asset')
+    if (plugin?.resolveId === undefined) throw new Error('CSS asset plugin missing from browser subpath config')
+    const emitted: { fileName: string; source: Uint8Array; originalFileName: string }[] = []
+
+    const resolved = await plugin.resolveId.call({ emitFile(file) { emitted.push(file); return file.fileName } },
+      './Foo.module.css', importer)
+
+    expect(resolved).toEqual({ id: `./${fileName}`, external: true })
+    expect(emitted).toHaveLength(1)
+    expect(emitted[0]?.fileName).toBe(fileName)
+    expect(emitted[0]?.originalFileName).toBe(stylesheet)
+    expect((await readFile(emitted[0]?.originalFileName ?? '', 'utf8'))).toContain('display: flex')
+    await rm(root, { recursive: true, force: true })
+  })
+
+  it.each(['src', '.'] as const)('rejects a stylesheet escaping the %s owner root through another src path', async (sourceRoot) => {
+    const parent = await mkdtemp(join(tmpdir(), 'dsh-browser-subpath-css-outside-'))
+    const root = join(parent, 'owner')
+    const importer = join(root, 'lib', 'types', 'src', 'Foo.js')
+    const stylesheet = join(parent, 'other', 'src', 'Foo.module.css')
+    await mkdir(join(importer, '..'), { recursive: true })
+    await mkdir(join(stylesheet, '..'), { recursive: true })
+    await writeFile(stylesheet, '.page { display: flex; }\n')
+    const config = browserSubpath('@deepseek-ai/dsh-client-fixture', [importer], {
+      assetSourceRoot: sourceRoot,
+    })({ env: { DSH_BUILD_FACE: 'client' } })[0]
+    const plugins = (config as { plugins: CssAssetPlugin[] }).plugins
+    const plugin = plugins.find(candidate => candidate.name === 'dsh-css-asset')
+    if (plugin?.resolveId === undefined) throw new Error('CSS asset plugin missing from browser subpath config')
+
+    await expect(plugin.resolveId.call({ emitFile: () => '' }, '../../../../other/src/Foo.module.css', importer))
+      .rejects.toThrow(/outside the package sources/)
+    await rm(parent, { recursive: true, force: true })
+  })
+
+  if (false) {
+    // @ts-expect-error Browser subpath asset roots are the two supported compiler layouts.
+    browserSubpath('@deepseek-ai/dsh-client-fixture', ['lib/types/Foo.js'], { assetSourceRoot: '../other/src' })
+  }
 })
 
 describe('client bundle CSS Modules watch graph', () => {

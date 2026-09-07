@@ -55,7 +55,7 @@ describe('Host HTTP failure Companion projection', () => {
   it('carries a real HTTP 400 through the codec into the visible Mobile alert', async () => {
     const operationId = parseCompanionOperationId('visible-host-400')
     const tsxLoader = pathToFileURL(createRequire(join(repo, 'package.json')).resolve('tsx')).href
-    const probe = join(repo, 'apps', 'desktop', 'tests', 'host-400-codec-probe.ts')
+    const probe = join(repo, 'apps', 'desktop', 'tests', 'companion-fixture', 'host-400-codec-probe.ts')
     const probeResult = await startProbe(
       ['--import', tsxLoader, probe],
       10_000,
