@@ -99,6 +99,7 @@ describe('Remote attachment HTTP assembled transfer', () => {
     }> = []
     const result = await handleCompanionProductOperation(offer, {
       host: unusedHost,
+      workspaceSnapshot: async () => ({ items: [], archivedSessionIds: [] }),
       pairingId: pairingA,
       attachmentKey,
       now: () => offer.expiresAt - 1,
