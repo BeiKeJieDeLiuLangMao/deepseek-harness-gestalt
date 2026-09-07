@@ -55,8 +55,11 @@ async function commandHarness(): Promise<{
   return { ctx, controller: new SessionCommandController(ctx, agents, '/workspace'), agent, inbox, steer, cancel }
 }
 
-async function expectFailure(operation: Promise<unknown>, code: string): Promise<void> {
-  await expect(operation).rejects.toMatchObject({ code })
+async function expectFailure(operation: Promise<unknown>, code: string, reason?: string): Promise<void> {
+  await expect(operation).rejects.toMatchObject({
+    code,
+    ...(reason === undefined ? {} : { details: { reason } }),
+  })
 }
 
 describe('Session queue commands', () => {
@@ -72,7 +75,7 @@ describe('Session queue commands', () => {
       itemId: queued.id,
       action: {
         kind: 'edit',
-        content: [{ type: 'image', mediaType: 'image/png', data: 'AAAA' }],
+        content: [{ type: 'image', attachment: imageRef('att-edit') }],
       },
     })), 'session/attachment-invalid')
     await expectFailure(Promise.resolve().then(() => controller.updateQueue({
@@ -114,15 +117,77 @@ describe('Session queue commands', () => {
     expect(cancel).toHaveBeenCalledWith({ kind: 'user' }, { keepInbox: true })
     await ctx.fiber.dispose()
   })
+
+  it('rewrites text while reusing every authorized image reference', async () => {
+    const { ctx, controller, agent, inbox } = await commandHarness()
+    const attachment = imageRef('queued-image', { width: 64, height: 48 })
+    const queued = createUserMessage({
+      content: [
+        { type: 'text', text: 'caption' },
+        { type: 'image', attachment },
+      ],
+      source: { kind: 'user' },
+    })
+    inbox.append('next-turn', queued)
+    const callerRef: ImageAttachmentRef = {
+      ...attachment,
+      mediaType: 'image/jpeg',
+      bytes: 200,
+      width: 20,
+      height: 10,
+      name: 'caller.jpg',
+    }
+
+    expect(controller.updateQueue({
+      sessionId: agent.id,
+      itemId: queued.id,
+      action: {
+        kind: 'edit',
+        content: [
+          { type: 'text', text: 'caption edited' },
+          { type: 'image', attachment: callerRef },
+        ],
+      },
+    })).toEqual({ accepted: true })
+    expect(inbox.nextTurn[0]?.content).toEqual([
+      { type: 'text', text: 'caption edited' },
+      { type: 'image', attachment },
+    ])
+
+    await expectFailure(Promise.resolve().then(() => controller.updateQueue({
+      sessionId: agent.id,
+      itemId: queued.id,
+      action: { kind: 'edit', content: [{ type: 'image', attachment: imageRef('foreign') }] },
+    })), 'session/attachment-invalid', 'QUEUE_EDIT_ATTACHMENT_NOT_REFERENCED')
+    expect(inbox.nextTurn[0]?.content).toEqual([
+      { type: 'text', text: 'caption edited' },
+      { type: 'image', attachment },
+    ])
+
+    await expectFailure(Promise.resolve().then(() => controller.updateQueue({
+      sessionId: agent.id,
+      itemId: queued.id,
+      action: { kind: 'edit', content: [{ type: 'text', text: 'caption only' }] },
+    })), 'session/attachment-invalid', 'QUEUE_EDIT_ATTACHMENT_OMITTED')
+    expect(inbox.nextTurn[0]?.content).toEqual([
+      { type: 'text', text: 'caption edited' },
+      { type: 'image', attachment },
+    ])
+    await ctx.fiber.dispose()
+  })
 })
 
-function imageRef(id: string): ImageAttachmentRef {
+function imageRef(
+  id: string,
+  originalDimensions?: ImageAttachmentRef['originalDimensions'],
+): ImageAttachmentRef {
   return {
     attachmentId: AttachmentId(id),
     mediaType: 'image/png',
     bytes: 1,
     width: 1,
     height: 1,
+    ...(originalDimensions === undefined ? {} : { originalDimensions }),
   }
 }
 
