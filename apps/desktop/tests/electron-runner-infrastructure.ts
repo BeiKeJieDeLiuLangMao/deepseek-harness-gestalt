@@ -1,4 +1,4 @@
-/** Process, TLS, and loopback infrastructure for the Project Members Electron lane. */
+/** Shared process, TLS, and loopback infrastructure for source Electron acceptance lanes. */
 
 import { execFile, spawn } from 'node:child_process'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
@@ -167,11 +167,36 @@ export async function assertProcessesExited(pids: readonly number[]): Promise<vo
   if (remaining.length > 0) throw new Error(`Electron acceptance left owned processes running: ${remaining.join(', ')}`)
 }
 
+/**
+ * Stop exact owned Electron and Host processes, escalating after a bounded TERM wait.
+ * @param pids - Exact process ids recorded by the acceptance run.
+ */
+export async function terminateProcesses(pids: readonly number[]): Promise<void> {
+  const unique = [...new Set(pids)]
+  for (const pid of unique) signalProcess(pid, 'SIGTERM')
+  const termDeadline = Date.now() + 5_000
+  while (Date.now() < termDeadline && unique.some(processExists)) {
+    await new Promise(resolve => setTimeout(resolve, 100))
+  }
+  for (const pid of unique.filter(processExists)) signalProcess(pid, 'SIGKILL')
+  await assertProcessesExited(unique)
+}
+
 function processExists(pid: number): boolean {
   try {
     process.kill(pid, 0)
     return true
-  } catch {
-    return false
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ESRCH') return false
+    throw error
+  }
+}
+
+function signalProcess(pid: number, signal: NodeJS.Signals): void {
+  try {
+    process.kill(pid, signal)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ESRCH') return
+    throw error
   }
 }
