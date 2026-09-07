@@ -62,6 +62,12 @@ remote.goals.create.mockResolvedValue({
 expect(view.getByRole('alert')).toHaveTextContent('goal/not-found')
 ```
 
+### Session 准入与输入 fixture
+
+`TestSessions` 镜像公开准入 registry：精确路由按 token 替换，优先于有序 adapter，向订阅方通知变化，并驱动 command、skill 与 model lookup。普通已列出的 fixture Session 暴露与库存路由同形的 model route；本测试替身没有 Host，因此调用其中方法会直接失败。未知身份与 subagent 自有身份没有库存 model route。注册的 `modelRoute` 只在路由拥有该字段时替换库存路由，包括回调返回 `undefined` 以隐藏模型选择。
+
+`inputState(overrides)` 返回全新且完整的 `InputState`，其中包括 annotations。`inputActions(overrides)` 返回全部公开 action；只覆盖场景实际使用的 action，任何未覆盖 action 被调用时都会抛错。请用这些构造器替代对不完整 owner props 的类型断言。
+
 ### 何时使用
 
 当功能套件要在真实运行时下检验 slot、store、渲染与销毁时使用本测试台——生产 `SlotRegistry`、渲染器与 provide bundle 物化都会被挂载，绝不重实现。它是浏览器侧测试基础设施：永远不触及模型请求，feature 包仅以 `devDependencies` 依赖之。
@@ -91,8 +97,9 @@ expect(view.getByRole('alert')).toHaveTextContent('goal/not-found')
 | 文件 | 职责 |
 |---|---|
 | [`src/index.ts`](src/index.ts) | `SlotTestRuntime` 组装、`TestRoot`、自动 frame、`mount`/`dispose` |
-| [`src/sessions.ts`](src/sessions.ts) + [`src/workspaces.ts`](src/workspaces.ts) | `ISessions`/`IWorkspaces` 测试替身与 `FixtureSession` 行为桩 |
+| [`src/sessions.ts`](src/sessions.ts) + [`src/workspaces.ts`](src/workspaces.ts) | `ISessions`/`IWorkspaces` 测试替身、Session 准入 lookup 与 `FixtureSession` 行为桩 |
 | [`src/fixtures.ts`](src/fixtures.ts) | 普通 fixture 构造器：会话快照、workspace 列表状态 |
+| [`src/input.ts`](src/input.ts) | 完整输入状态与未配置即报错的 action 构造器 |
 | [`src/snapshot.ts`](src/snapshot.ts) | DOM 快照序列化器（类名哈希折叠、`<svg>` 指纹） |
 | [`src/remote.ts`](src/remote.ts) | 用于 host RPC 的 `TestRemote` 替身、`RemoteError` 值转出 |
 | [`src/translate.ts`](src/translate.ts) + [`src/locale-env.ts`](src/locale-env.ts) | 翻译与固定浏览器语言测试辅助 |

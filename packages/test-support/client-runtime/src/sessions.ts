@@ -60,6 +60,22 @@ function testModelRoute(route: SessionAdmissionModelRoute): SessionModelRoute {
   }
 }
 
+function testStockModelRoute(sessionId: SessionId): SessionModelRoute {
+  const unstubbed = (method: 'models' | 'selectModel'): Promise<never> => Promise.reject(
+    new Error(`test sessions: stock model route "${method}" is not stubbed for session "${sessionId}"`),
+  )
+  return {
+    models: (signal) => {
+      signal?.throwIfAborted()
+      return unstubbed('models')
+    },
+    selectModel: (_selection, signal) => {
+      signal?.throwIfAborted()
+      return unstubbed('selectModel')
+    },
+  }
+}
+
 /**
  * The fixture-backed session face: lifecycle reads delegate to the fixture's
  * snapshot store; Session verbs are fail-loud stubs unless the
@@ -621,12 +637,21 @@ export class TestSessions implements ISessions {
     return () => { this.admissionListeners.delete(listener) }
   }
 
-  /** Resolve a registered admission model route; stock Remote behavior stays unstubbed. */
+  /** Resolve a feature model route or a fail-loud stock-shaped route for an ordinary fixture Session. */
   modelRoute(sessionId: SessionId): SessionModelRoute | undefined {
     const admission = this.resolveAdmission(sessionId)
-    if (admission === undefined || !('modelRoute' in admission)) return undefined
-    const route = admission.modelRoute(sessionId)
-    return route === undefined ? undefined : testModelRoute(route)
+    if (admission !== undefined && 'modelRoute' in admission) {
+      const route = admission.modelRoute(sessionId)
+      return route === undefined ? undefined : testModelRoute(route)
+    }
+    if (
+      !this.records.has(sessionId)
+      || this.subagentAddress(sessionId) !== undefined
+      || this.list.getSnapshot().byId[sessionId]?.origin === 'subagent'
+    ) {
+      return undefined
+    }
+    return testStockModelRoute(sessionId)
   }
 
   /** Resolve the command catalog identity selected by the active admission route. */

@@ -240,10 +240,49 @@ describe('Session fixture lifecycle', () => {
     expect(runtime.sessions.modelRoute(sessionId)).toBeDefined()
     expect(changed).toHaveBeenCalledTimes(2)
     dropSecond()
-    expect(runtime.sessions.modelRoute(sessionId)).toBeUndefined()
+    expect(runtime.sessions.modelRoute(sessionId)?.models).toBeTypeOf('function')
+    expect(runtime.sessions.modelRoute(sessionId)?.selectModel).toBeTypeOf('function')
     expect(runtime.sessions.commandCatalogSessionId(sessionId)).toBe(sessionId)
     expect(changed).toHaveBeenCalledTimes(3)
     unsubscribe()
+    await runtime.dispose()
+  })
+
+  it('matches production model-route availability while stock methods stay fail-loud', async () => {
+    const runtime = await SlotTestRuntime.create()
+    const ordinary = await runtime.sessions.add({ id: 'ordinary' }, { current: false })
+    const subagent = await runtime.sessions.add({
+      id: 'subagent',
+      summary: { origin: 'subagent', parentId: ordinary },
+    }, { current: false })
+
+    const stock = runtime.sessions.modelRoute(ordinary)
+    expect(stock?.models).toBeTypeOf('function')
+    expect(stock?.selectModel).toBeTypeOf('function')
+    await expect(stock?.models?.()).rejects.toThrow(
+      'stock model route "models" is not stubbed for session "ordinary"',
+    )
+    await expect(stock?.selectModel?.({ provider: 'fixture', model: 'fixture' })).rejects.toThrow(
+      'stock model route "selectModel" is not stubbed for session "ordinary"',
+    )
+    expect(runtime.sessions.modelRoute('unknown' as SessionId)).toBeUndefined()
+    expect(runtime.sessions.modelRoute(subagent)).toBeUndefined()
+
+    const route: SessionAdmissionRoute = {
+      prompt: async () => ({ ok: true, value: { accepted: true } }),
+      cancel: async () => ({ ok: true, value: { accepted: true } }),
+    }
+    const dropOmitted = runtime.sessions.registerAdmission(ordinary, route)
+    expect(runtime.sessions.modelRoute(ordinary)?.selectModel).toBeTypeOf('function')
+    dropOmitted()
+
+    const dropHidden = runtime.sessions.registerAdmission(ordinary, {
+      ...route,
+      modelRoute: () => undefined,
+    })
+    expect(runtime.sessions.modelRoute(ordinary)).toBeUndefined()
+    dropHidden()
+    expect(runtime.sessions.modelRoute(ordinary)?.selectModel).toBeTypeOf('function')
     await runtime.dispose()
   })
 
