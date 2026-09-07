@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-05-durable-web-schedule.md
-2026-08-05-durable-web-schedule.md: 1e55b5f3c5505d480d31e26ce0adb587942606c6
-2026-08-05-durable-web-schedule.zh.md: 58cd0acbc8782e2391bae3dcf33441c37d92549a
+2026-08-05-durable-web-schedule.md: 548df548d582a398235dd499708d9551fc2b9a80
+2026-08-05-durable-web-schedule.zh.md: b1b49a39c648f9300e8ba2aa19cdf682376ab6dd

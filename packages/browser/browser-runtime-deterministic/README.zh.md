@@ -1,9 +1,26 @@
+---
+description: "为临时、命名持久和共享 Profile 提供确定性无密钥 Browser Runtime Provider。"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-browser-runtime-deterministic
 
 [English](README.md) | 中文
 
+## 概述
+
 这是服务临时、命名持久与共享 Browser Profile 的确定性无密钥 Browser Runtime Provider。一个 Profile 可以拥有多个 Workspace、浏览器实例与标签页。它是可运行存储与 fixture 后端，不是操作系统浏览器。
 
+## 目录
+
+- [配置](#configuration)
+- [模型体验](#model-experience)
+- [已知限制与后续工作](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+-----
+
+<a id="configuration"></a>
 ## 配置
 
 `idPrefix` 控制稳定的不透明 fixture 身份，默认值为 `browser-trace`。必填 `pages` 条目包含 `url`、`title`、`text` 与 `screenshotPngBase64`；截图数据必须是非空 canonical base64，且解码后的字节以 PNG signature 开头。空页面集合、重复 URL 与无效截图会让插件加载失败。
@@ -12,6 +29,7 @@
 
 Provider state 是权威来源。其 invariant companion 在首次安装与热重载时从该状态建立基线，随后为身份、精确修订顺序与终态关闭注册同步 pre-commit validator。invariant 失败时，原 state 仍是权威来源。`browser/runtime-state` 是受容纳的提交后通知，因此损坏的普通 observer 不会让已提交操作表现为失败。
 
+<a id="model-experience"></a>
 ## 模型体验
 
 通过 dsh-tool-browser 间接影响模型；该 Consumer 会渲染全部确定性页面与生命周期事实。
@@ -21,5 +39,16 @@ Provider state 是权威来源。其 invariant companion 在首次安装与热�
 Provider 自身不贡献请求文本；Consumer schema 与已记录结果决定缓存变化。
 
 ## 已知限制与后续工作
+<a id="known-limitations-and-deferred-work"></a>
 
 - 导航与合成输入 URL 只对配置的 fixture URL 成功；原生浏览器自动化仍不在本包中。
+
+<a id="dev-note"></a>
+### 开发备注
+
+<details>
+<summary>维护者工作上下文——点击展开</summary>
+
+暂无。
+
+</details>

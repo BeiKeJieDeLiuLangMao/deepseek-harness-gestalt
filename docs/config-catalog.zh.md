@@ -1892,7 +1892,7 @@ interface MemberQuestionHumanImageContent {
 }
 ```
 
-依赖：[`Branded`](../packages/util/brand/src/index.ts) · [`CompanionMemberQuestionOperation`](../packages/platform/remote-protocol/src/index.ts) · [`CompanionMemberQuestionSettledResult`](../packages/platform/remote-protocol/src/index.ts) · [`HostSessionId`](subsystems/core.zh.md) · [`ImageAttachmentRef`](subsystems/attachment.zh.md) · [`MemberQuestionId`](../packages/platform/remote-protocol/src/index.ts) · [`PlatformAccountId`](../packages/platform/platform-account/src/index.ts) · [`ProjectId`](../packages/platform/project-membership/src/index.ts)
+依赖：[`Branded`](subsystems/core.zh.md) · [`CompanionMemberQuestionOperation`](../packages/platform/remote-protocol/src/index.ts) · [`CompanionMemberQuestionSettledResult`](subsystems/user-questions.zh.md) · [`HostSessionId`](subsystems/core.zh.md) · [`ImageAttachmentRef`](subsystems/attachment.zh.md) · [`MemberQuestionId`](subsystems/user-questions.zh.md) · [`PlatformAccountId`](subsystems/platform-account.zh.md) · [`ProjectId`](subsystems/project-membership.zh.md)
 
 Source: [`packages/interaction/member-question-receiver/src/index.ts:152`](../packages/interaction/member-question-receiver/src/index.ts)
 
@@ -2049,9 +2049,9 @@ export interface MemberMembershipWatchInput {
 }
 ```
 
-依赖：[`CompanionMemberQuestionSettledResult`](../packages/platform/remote-protocol/src/index.ts) · [`CompanionMessage`](../packages/platform/remote-protocol/src/index.ts) · [`CompanionOperationId`](../packages/platform/remote-protocol/src/index.ts) · [`DocumentTransferId`](../packages/platform/remote-protocol/src/index.ts) · [`MemberQuestionId`](../packages/platform/remote-protocol/src/index.ts) · [`ProjectId`](../packages/platform/remote-protocol/src/index.ts) · [`SealedProjectPeerGrant`](../packages/platform/remote-access/src/index.ts)
+依赖：[`CompanionMemberQuestionSettledResult`](subsystems/user-questions.zh.md) · [`CompanionMessage`](../packages/platform/remote-protocol/src/index.ts) · [`CompanionOperationId`](../packages/platform/remote-protocol/src/index.ts) · [`DocumentTransferId`](../packages/platform/remote-protocol/src/index.ts) · [`MemberQuestionId`](subsystems/user-questions.zh.md) · [`ProjectId`](subsystems/project-membership.zh.md) · [`SealedProjectPeerGrant`](subsystems/personal-pairing.zh.md)
 
-来源：[`packages/interaction/member-question-sender/src/index.ts:180`](../packages/interaction/member-question-sender/src/index.ts)
+来源：[`packages/interaction/member-question-sender/src/index.ts:181`](../packages/interaction/member-question-sender/src/index.ts)
 
 <a id="deepseek-aidsh-message-feedback"></a>
 
@@ -2326,7 +2326,7 @@ export interface AccountRecord extends PlatformAccountView {
 }
 ```
 
-依赖：[`AccountProofJti`](../packages/platform/platform-account/src/index.ts) · [`AccountSessionId`](../packages/platform/platform-account/src/index.ts) · [`InstallationId`](../packages/platform/platform-account/src/index.ts) · [`InstallationKind`](../packages/platform/platform-account/src/index.ts) · [`InstallationPresentation`](../packages/platform/platform-account/src/index.ts) · [`LoginAttemptId`](../packages/platform/platform-account/src/index.ts) · [`PlatformAccountId`](../packages/platform/platform-account/src/index.ts) · [`PlatformAccountView`](../packages/platform/platform-account/src/index.ts) · [`PlatformCapacityState`](../packages/platform/platform-account/src/index.ts) · [`PlatformEnvironment`](../packages/platform/platform-account/src/index.ts) · [`SelectedPlatformEnvironment`](../packages/platform/platform-account/src/index.ts)
+依赖：[`AccountProofJti`](../packages/platform/platform-account/src/index.ts) · [`AccountSessionId`](subsystems/platform-account.zh.md) · [`InstallationId`](subsystems/platform-account.zh.md) · [`InstallationKind`](../packages/platform/platform-account/src/index.ts) · [`InstallationPresentation`](../packages/platform/platform-account/src/index.ts) · [`LoginAttemptId`](subsystems/platform-account.zh.md) · [`PlatformAccountId`](subsystems/platform-account.zh.md) · [`PlatformAccountView`](subsystems/platform-account.zh.md) · [`PlatformCapacityState`](../packages/platform/platform-account/src/index.ts) · [`PlatformEnvironment`](../packages/platform/platform-account/src/index.ts) · [`SelectedPlatformEnvironment`](../packages/platform/platform-account/src/index.ts)
 
 来源：[`packages/platform/platform-account-core/src/index.ts:522`](../packages/platform/platform-account-core/src/index.ts)
 
@@ -3325,7 +3325,7 @@ export interface Config {
 }
 ```
 
-Depends on: [`SubagentRoute`](../packages/subagent/subagent-route-preauthorization/src/index.ts)
+Depends on: [`SubagentRoute`](subsystems/subagent.zh.md)
 
 Source: [`packages/subagent/subagent-route-preauthorization-static/src/index.ts:11`](../packages/subagent/subagent-route-preauthorization-static/src/index.ts)
 
@@ -3543,7 +3543,7 @@ export interface MemberQuestionRoute {
 }
 ```
 
-依赖：[`Agent`](subsystems/core.zh.md) · [`AskUserQuestionMemberOrigin`](../packages/interaction/user-questions/src/index.ts) · [`PlatformAccountId`](../packages/platform/platform-account/src/index.ts) · [`ProjectId`](../packages/platform/remote-protocol/src/index.ts)
+依赖：[`Agent`](subsystems/core.zh.md) · [`AskUserQuestionMemberOrigin`](../packages/interaction/user-questions/src/index.ts) · [`PlatformAccountId`](subsystems/platform-account.zh.md) · [`ProjectId`](subsystems/project-membership.zh.md)
 
 来源：[`packages/interaction/tool-ask-user/src/index.ts:89`](../packages/interaction/tool-ask-user/src/index.ts)
 
@@ -3825,7 +3825,7 @@ export interface MemberPresentation {
 export type MemberPresence = 'online' | 'offline'
 ```
 
-依赖：[`Agent`](subsystems/core.zh.md) · [`Branded`](../packages/util/brand/src/index.ts) · [`RosterView`](../packages/platform/project-membership/src/index.ts)
+依赖：[`Agent`](subsystems/core.zh.md) · [`Branded`](subsystems/core.zh.md) · [`RosterView`](subsystems/project-membership.zh.md)
 
 来源：[`packages/interaction/tool-project-members/src/index.ts:122`](../packages/interaction/tool-project-members/src/index.ts)
 

@@ -1,6 +1,13 @@
+---
+description: "Pinned DSH-better-sidebar snapshot: right sidebar and bottom-panel workbench host and client halves."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-client-ui-better-sidebar
 
 English | [中文](README.zh.md)
+
+## Summary
 
 Pinned source snapshot of [omdsh-dev/DSH-better-sidebar](https://github.com/omdsh-dev/DSH-better-sidebar). The host half mounts `/sidebar` JSON, media, HTML preview, lazy-chunk, and terminal WebSocket routes behind the webServer trust fence. The client half publishes `ctx.betterSidebar` and paints the right sidebar plus bottom panel. Only the public `./client` entry augments Cordis with that Client service; the shared snapshot mirror is named `SidebarContext` so Host type catalogs cannot mistake it for Cordis `Context`. SHA and refresh steps live in [UPSTREAM.md](UPSTREAM.md). Repository-owned edits are listed in [LOCAL-MODIFICATIONS.md](LOCAL-MODIFICATIONS.md).
 
@@ -14,6 +21,15 @@ The Side Chat tab mounts the repository's declared `conversation` slot under a p
 
 Side Chat tabs survive a Host restart. A thread is a durable child Session while the tab strip lives in origin-scoped localStorage, so a restart under a new origin can lose the strip without losing the threads. When a Session's sidebar state activates, the strip restores every published, unarchived direct Side Chat child that lacks a tab. A cold child whose Session summary has no title projection uses the matching direct parent catalog label for the reserved `Side: ` classification and tab title. Restored tabs land in the active pane without replacing its active tab; blank children and renderer-only provisional identities do not restore. A restored thread resumes with the model route from its latest child-owned request, or its creation descriptor before any request exists; a provisional draft still reads the live parent's route. The Host serializes close against an admitted first prompt, reports publication from its live and durable Session stores, and releases the live handle. The client archives a published Session without deleting its log; an unsent draft has no Session to archive. The tab closes only when those operations succeed; failure is reported and leaves it open. Plugin disposal waits for in-flight closes without letting them commit stale browser state. A local tombstone then prevents list refreshes from reopening the tab before the archive projection arrives. The `?dsh-sidebar-reset` escape hatch skips restoration for that load.
 
+## Table of Contents
+
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
+
+-----
+
+<a id="model-experience"></a>
 ## Model Experience
 
 ### Side Chat
@@ -59,7 +75,18 @@ Enabling the setting adds the optional tool schemas to later requests.
 There is no effect while `agentTerminalTools` is off. Enabling it invalidates a cached request prefix that omitted the optional tool schemas.
 
 ## Known Limitations and Deferred Work
+<a id="known-limitations-and-deferred-work"></a>
 
 - **Iframe browser implementation stays in the snapshot** — product composition replaces its rendered chrome through `workbenchBrowser`; a standalone snapshot install still uses the iframe.
 - **Host fs/git/pty routes are the snapshot's own stack** — they do not yet consume the repository `fs` or `terminal` capability seams.
 - **Right overlay plus official details Dock can both paint** — layout unification is deferred.
+
+<a id="dev-note"></a>
+### Dev Note
+
+<details>
+<summary>Working context for maintainers — click to expand</summary>
+
+None.
+
+</details>

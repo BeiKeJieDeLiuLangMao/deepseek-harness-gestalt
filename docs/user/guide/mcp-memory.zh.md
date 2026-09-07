@@ -1,8 +1,8 @@
 # 第三方记忆 MCP 示例
 
-[English](README.md) | 中文
+[English](mcp-memory.md) | 中文
 
-这三份**默认关闭的参考配置**通过 [`@deepseek-ai/dsh-mcp-client`](../../packages/mcp/mcp-client/README.zh.md) 将一个记忆系统连接到 DSH。请选择其中一份，或复制相同的通用 MCP 配置项来连接其他服务器。
+这三份**默认关闭的参考配置**通过 [`@deepseek-ai/dsh-mcp-client`](../../../packages/mcp/mcp-client/README.zh.md) 将一个记忆系统连接到 DSH。请选择其中一份，或复制相同的通用 MCP 配置项来连接其他服务器。
 
 这些第三方配置仅作为互操作参考；收录不代表 DeepSeek 的认可、推荐、合作关系或持续支持承诺。
 
@@ -25,7 +25,7 @@ stdio 桥接器在启动子进程前会主动移除环境中名称通常表示�
 将一份 overlay 传给 DSH：
 
 ```sh
-dsh web --patch "$PWD/examples/mcp-memory/memorix.cordis.yml"
+dsh web --patch "$PWD/apps/cli/config/examples/mcp-memory/memorix.cordis.yml"
 ```
 
 请将文件名替换为 `mcp-reference-memory.cordis.yml` 或 `engram.cordis.yml`。该路径可以指向磁盘任意位置的一份复制文件。交付组合不包含任何记忆服务器，因此不传 `--patch` 就会让这三项全部保持关闭。
@@ -38,7 +38,7 @@ dsh web --patch "$PWD/examples/mcp-memory/memorix.cordis.yml"
 
 ```sh
 npm install --global memorix@1.3.0
-dsh web --patch "$PWD/examples/mcp-memory/memorix.cordis.yml"
+dsh web --patch "$PWD/apps/cli/config/examples/mcp-memory/memorix.cordis.yml"
 ```
 
 Memorix 无需 LLM（大语言模型）或 embedding 服务，即可在本地启发式模式下运行。请在 Memorix 自己的 `~/.memorix/config.toml` 或项目 `memorix.toml` 中配置可选提供方。该示例沿用 DSH 工作目录中的 Git 项目标识，并使用 Memorix 自身的默认目录 `~/.memorix/data`。若要覆盖该目录，请在启动 DSH 前设置 `MEMORIX_DATA_DIR`。
@@ -47,7 +47,7 @@ Memorix 无需 LLM（大语言模型）或 embedding 服务，即可在本地启
 
 ```sh
 npm install --global @modelcontextprotocol/server-memory@2026.7.4
-dsh web --patch "$PWD/examples/mcp-memory/mcp-reference-memory.cordis.yml"
+dsh web --patch "$PWD/apps/cli/config/examples/mcp-memory/mcp-reference-memory.cordis.yml"
 ```
 
 该参考服务器存储本地知识图谱，并公开实体、关系、观察、读取、搜索和打开工具。它不需要模型或 embedding 服务。该示例将 JSONL 存储在 `$HOME/.dsh-mcp-reference-memory.jsonl`，而不是已安装的 npm 包目录中。若要覆盖该路径，请在启动 DSH 前设置 `MEMORY_FILE_PATH`。
@@ -58,7 +58,7 @@ dsh web --patch "$PWD/examples/mcp-memory/mcp-reference-memory.cordis.yml"
 
 ```sh
 go install github.com/Gentleman-Programming/engram/cmd/engram@v1.20.0
-dsh web --patch "$PWD/examples/mcp-memory/engram.cordis.yml"
+dsh web --patch "$PWD/apps/cli/config/examples/mcp-memory/engram.cordis.yml"
 ```
 
 Engram 负责存储和项目选择：它默认使用 `~/.engram`，从 DSH 工作目录检测 Git 项目，并接受 `ENGRAM_DATA_DIR` 或 `ENGRAM_PROJECT` 作为环境覆盖项。

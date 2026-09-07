@@ -1,6 +1,13 @@
+---
+description: "HTTP consumer for Project Membership project creation, roster reads, invitations, presence heartbeat and close, and member role, tag, and removal routes."
+kind: "package-reference"
+---
+
 # `@deepseek-ai/dsh-project-membership-http`
 
 English | [中文](README.zh.md)
+
+## Summary
 
 HTTP Consumer for `ctx.projectMembership`. It registers project creation, current-Account recovery by normalized remote, roster reads, invitation issuance, authoritative invitee and project-scoped issuer pending reads, the body-discriminated `accept-with-link`/`decline` decision, retraction, member role, function-tag, and removal routes, and the per-installation presence heartbeat and close. Creation and remote recovery attach the authenticated Account id; invitation presentations join only public GitHub logins and the granted role. Issue requests carry `grantedRole`; the membership operation owns the grant gate. Every route is a thin adapter onto one membership operation, which owns each role gate; the Consumer copies no membership state. Responses disable caching; errors use stable JSON envelopes that carry the domain code — membership `INVALID_*` answers 400, `ROLE_REQUIRED` and `NOT_A_MEMBER` answer 403, `*_NOT_FOUND` answers 404, `DUPLICATE_INVITEE`, `PROJECT_NAME_TAKEN`, `PROJECT_REMOTE_TAKEN`, `INVITATION_NOT_PENDING`, and `LAST_OWNER` answer 409, revoked Account sessions answer 401, and Account `QUOTA`/`PLATFORM_CAPACITY` answer 429 with a `Retry-After` header. Its required non-empty `origins` Config must include the Account provider's selected validated environment origin; request bodies are capped at 64 KiB and parsed through the `@deepseek-ai/dsh-host-webserver` JSON helpers.
 
@@ -10,16 +17,36 @@ Presence is heartbeat-registered and liveness-only. One `/v1/projects/presence` 
 
 Presence entries live in a process-local TTL map behind the reserved `PresenceStore` adapter (`record`, `clear`, `onlineAccountIds`); a shared store that keeps presence consistent across Platform instances is deferred deployment work, not a service change.
 
+## Table of Contents
+
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
+
+-----
+
+<a id="model-experience"></a>
 ## Model Experience
 
-None, as installation UI and product clients consume these routes.
+Indirectly, through project, roster, invitation, role, tag, and presence routes that mutate data rendered by model-facing membership consumers.
 
 #### KV Cache effect
 
-None.
+The HTTP layer adds no stable request prefix; successful mutations change later `project_members` results and member-question routing.
 
 ## Known Limitations and Deferred Work
+<a id="known-limitations-and-deferred-work"></a>
 
 - TLS termination, rate limiting, and deployment observability belong to the Platform edge.
 - The Consumer assumes the Platform composition mounted one authoritative membership provider beside the Account service.
 - Presence entries are process-local; a multi-instance deployment needs a shared TTL store (for example Redis) implementing `PresenceStore` before presence is consistent across Platform instances.
+
+<a id="dev-note"></a>
+### Dev Note
+
+<details>
+<summary>Working context for maintainers — click to expand</summary>
+
+None.
+
+</details>

@@ -1,9 +1,28 @@
+---
+description: "Host-owned durable receiver for authenticated member questions and receiving-session admission."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-member-question-receiver
 
 English | [中文](README.zh.md)
 
+## Summary
+
 Host-owned Service Definition, file Provider, and authenticated-ingress Consumer adapter for member-question receiving state. `ctx.memberQuestionReceiver` owns arrival, Host Session materialization, route threads, terminal projection, expiry, and explicit human-turn admission. Arrival creates one Host Session in the invitation-bound Workspace and injects the Decision Brief without spending model tokens.
 
+## Table of Contents
+
+- [Service: `MemberQuestionReceiverService` (ctx key: `memberQuestionReceiver`)](#service-memberquestionreceiverservice-ctx-key-memberquestionreceiver)
+- [Persistence and ordering](#persistence-and-ordering)
+- [Configuration](#configuration)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
+
+-----
+
+<a id="service-memberquestionreceiverservice-ctx-key-memberquestionreceiver"></a>
 ## Service: `MemberQuestionReceiverService` (ctx key: `memberQuestionReceiver`)
 
 ### Public API
@@ -16,12 +35,14 @@ Host-owned Service Definition, file Provider, and authenticated-ingress Consumer
 - `createAuthenticatedMemberQuestionIngress(receiver)` is the package-folded Consumer adapter for a future authenticated endpoint. It accepts only an `AuthenticatedMemberQuestionEnvelope`; authentication remains the endpoint's responsibility.
 - `registerTerminalAuthority(authority)` installs the single first-claim adapter used by this Host, matching `registerSessionMaterializer` and `registerHumanTurnAdmitter`.
 
+<a id="persistence-and-ordering"></a>
 ## Persistence and ordering
 
 The Provider writes one owner-only JSON document at `<storagePath>/<environment>/member-question-receiver.json` through random-sibling atomic replacement. Pre-release format version `1` stores bounded origin, background, question/options, reference path/reason metadata, receiver-owned `cachedPath` values, route identity, terminal metadata, exact Account/Project Workspace bindings, and each reserved human action as text plus durable attachment references under a SHA-256 request digest. Referenced document bodies and raw browser image bytes remain outside this ledger; transferred copies live under the bound Workspace at `.dsh/member-questions/<questionId>/`.
 
 One serialized transaction owner orders load, arrival, terminal publication, file commit, admission reservation, materialization, and admission commit. A newer same-route ask becomes pending only after the previous pending ask's canonical `superseded` or already-due `expired` terminal commits. The one earliest-deadline scheduler claims and persists expiry; publication failure retries after `terminalRetryMs`. Startup settles overdue rows before reads become available, so restart cannot revive an expired card. Disposal clears timers and listeners, waits for the transaction tail, and retains the ledger.
 
+<a id="configuration"></a>
 ## Configuration
 
 - `storagePath` — non-empty root directory for receiver ledgers.
@@ -35,16 +56,28 @@ One serialized transaction owner orders load, arrival, terminal publication, fil
 - `clock`, `timer`, and `stateWriter` — injected time, scheduling, and atomic-storage faces used by deterministic compositions and storage-boundary tests; production uses the system clock/timer and owner-only atomic replacement.
 - `memberQuestionInstallationId` and `memberQuestionDeviceName` — optional Host settlement identity. Both must be non-empty and configured together; production leaves them absent until authenticated cross-machine publication is composed. Remote settlement uses this Host identity, never a wire field.
 
+<a id="model-experience"></a>
 ## Model Experience
 
-None, as authenticated arrival, receiver projection, terminal settlement, and reservation bookkeeping do not enter a model request; only a later explicit human turn reaches the ordinary Host admission adapter.
+Indirectly, through the Host Session materializer, which injects each bounded Decision Brief, and through admitted human turns.
 
 #### KV Cache effect
 
-Arrival and terminal browsing have no token cost or cache invalidation. The Host materializer injects each bounded brief before any human prompt; the Host admission adapter produces one ordinary Session request only after explicit human submission.
+Each received question adds bounded origin, background, question, and reference context; an admitted answer then changes the Session prefix like an ordinary human turn.
 
 ## Known Limitations and Deferred Work
+<a id="known-limitations-and-deferred-work"></a>
 
 - **Arrival and admission require the invitation-time local Workspace binding** — the Host resolves the receiver Account and Project only through the persisted exact Workspace id. A missing or deleted association fails Session materialization and the human-turn RPC without exposing Session creation or prompt compensation to the Client.
 - **Cross-machine terminal authority remains injected** — real multi-Installation first-claim publication depends on the project-registry transport. A composition without that authority can retain future pending arrivals but fails closed before decline, expiry, or supersession.
 - **Document reassembly is a consumer of T4 frames** — `MemberQuestionDocumentAssembler` validates ordering, duplicate identity, and the 8 MiB cumulative budget after the codec has already admitted each independent `document-chunk`.
+
+<a id="dev-note"></a>
+### Dev Note
+
+<details>
+<summary>Working context for maintainers — click to expand</summary>
+
+None.
+
+</details>

@@ -1,14 +1,14 @@
-# Agent Note: Code Mode 的 UI 基础——run_code 的 description 参数，以及与原生同等保真的分发日志
+# Agent Note: PTC 模式的 UI 基础——run_code 的 description 参数，以及与原生同等保真的分发日志
 
 Status: implemented
 
-[English](2026-07-26-code-dispatch-ui-foundation.md) | 中文
+[English](2026-07-26-ptc-dispatch-ui-foundation.md) | 中文
 
-> 范围：让 UI 能以与原生工具调用相同的保真度渲染 Code Mode 轮次的宿主侧约定变更，即其他 Code Mode UI Agent Note 赖以构建的基础。传输设计归 [Code Mode 基础](2026-06-15-code-mode.zh.md)所有；模型可见的 `description` 参数、携带完整内容的 `tool/code-dispatch` 载荷，以及 `dsh` 配置树上临时的 `DSH_TOOLS_MODE` 启用开关，归本篇所有。
+> 范围：让 UI 能以与原生工具调用相同的保真度渲染 PTC 模式轮次的宿主侧约定变更，即其他 PTC 模式 UI Agent Note 赖以构建的基础。传输设计归 [PTC 模式基础](2026-06-15-ptc.zh.md)所有；模型可见的 `description` 参数、携带完整内容的 `tool/code-dispatch` 载荷，以及 `dsh` 配置树上临时的 `DSH_TOOLS_MODE` 启用开关，归本篇所有。
 
 ## 问题
 
-`run_code` 轮次过去在每个产品界面上都不透明。调用卡片的标题就是原始程序文本，在行宽内无法阅读；而且不同于 `bash`（其必填的 `description` 用作卡片标签，命令本身放在展开后的输入里），`run_code` 完全没有模型撰写的标签。`tool/code-dispatch` 事件过去只携带每个子调用的 `resultSummary`（上限 200 字符、经 cwd 归一化），因此任何 UI 都无从展示子调用实际返回的内容：Web 对话视图（[chat 子调用行](2026-07-26-code-mode-chat-subcall-rows.zh.md)）会用渲染原生 `tool/result` 卡片的同一批组件来渲染子调用，而有界摘要无法支撑一张与原生同等保真的卡片。同时，`dsh web` 组合此前根本无法启用 Code Mode：`tools` 行钉死在 schema 默认值上，配置树里也完全没有该运行时。
+`run_code` 轮次过去在每个产品界面上都不透明。调用卡片的标题就是原始程序文本，在行宽内无法阅读；而且不同于 `bash`（其必填的 `description` 用作卡片标签，命令本身放在展开后的输入里），`run_code` 完全没有模型撰写的标签。`tool/code-dispatch` 事件过去只携带每个子调用的 `resultSummary`（上限 200 字符、经 cwd 归一化），因此任何 UI 都无从展示子调用实际返回的内容：Web 对话视图（[chat 子调用行](2026-07-26-ptc-chat-subcall-rows.zh.md)）会用渲染原生 `tool/result` 卡片的同一批组件来渲染子调用，而有界摘要无法支撑一张与原生同等保真的卡片。同时，`dsh web` 组合此前根本无法启用 PTC 模式：`tools` 行钉死在 schema 默认值上，配置树里也完全没有该运行时。
 
 ## 决策
 
@@ -20,7 +20,7 @@ Status: implemented
 
 ## 曾考虑的替代方案
 
-**保留有界摘要（提高上限，或上限加 `truncated` 标志）。** 否决：本堆叠 PR（Pull Request）链已敲定的要求是，子调用的行与详情必须与原生调用渲染得*完全一致*；任何上限都会强制引入第二条降级的渲染路径，外加截断 UI。转而接受的代价是：读取大文件的程序会把渲染后的内容原样记录在分发事件上，不设上限、位于 spill 策略之外，并以同样的字节数增大会话日志。持久化副本的 spill 集成已作为 [code-dispatch 日志 spill](2026-07-26-code-dispatch-log-spill.zh.md) 交付。
+**保留有界摘要（提高上限，或上限加 `truncated` 标志）。** 否决：本堆叠 PR（Pull Request）链已敲定的要求是，子调用的行与详情必须与原生调用渲染得*完全一致*；任何上限都会强制引入第二条降级的渲染路径，外加截断 UI。转而接受的代价是：读取大文件的程序会把渲染后的内容原样记录在分发事件上，不设上限、位于 spill 策略之外，并以同样的字节数增大会话日志。持久化副本的 spill 集成已作为 [code-dispatch 日志 spill](2026-07-26-ptc-dispatch-log-spill.zh.md) 交付。
 
 **一个 `--tools-mode` CLI（命令行界面）标志或 profile 配置键。** 推迟，而非否决：标志语法暗示永久性，profile JSON 又是用户配置；两者都会固化这个 seam，而按会话选择的设计本就打算移除它。环境变量则如实呈现了它权宜之计的本质。
 
@@ -28,4 +28,4 @@ Status: implemented
 
 ## 后果
 
-会话格式保持 `SESSION_FORMAT_VERSION` 为 0（预发布阶段的变动不递增版本号；携带 `resultSummary` 的旧日志只是多出一个不被读取的字段并缺少 `content`；v0 不作任何兼容性承诺）。既有的 Code Mode 快照 fixture（测试前置数据）已重新录制。模型可见范围扩大了：`run_code` 的 schema（新增一个必填参数）以及每一份 Code Mode 系统提示词／工具 schema 快照都发生了变化。Web UI 工作直接构建在新的事件载荷之上；每个子调用的实时运行状态已把本事件重塑为一对分发 start/end 事件（[实时并行分发](2026-07-26-code-mode-live-parallel-dispatch.zh.md)）。
+会话格式保持 `SESSION_FORMAT_VERSION` 为 0（预发布阶段的变动不递增版本号；携带 `resultSummary` 的旧日志只是多出一个不被读取的字段并缺少 `content`；v0 不作任何兼容性承诺）。既有的 PTC 模式快照 fixture（测试前置数据）已重新录制。模型可见范围扩大了：`run_code` 的 schema（新增一个必填参数）以及每一份 PTC 模式系统提示词／工具 schema 快照都发生了变化。Web UI 工作直接构建在新的事件载荷之上；每个子调用的实时运行状态已把本事件重塑为一对分发 start/end 事件（[实时并行分发](2026-07-26-ptc-live-parallel-dispatch.zh.md)）。

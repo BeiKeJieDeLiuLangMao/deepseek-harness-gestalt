@@ -36,7 +36,7 @@ Status: implemented
 
 ## 验证
 
-- `pnpm exec vitest run packages/client/ui-workbench packages/client/ui-browser packages/browser/browser-runtime-electron packages/client/ui-conversation/tests/preview-rail.client.spec.ts packages/client/ui-conversation/tests/chat-view.client.spec.tsx packages/browser/browser-workspace/tests/workspace.spec.ts apps/desktop/tests/browser-present.spec.ts apps/desktop/tests/chrome-overlay.spec.ts packages/client/ui-desktop/tests/desktop-chrome-overlay.client.spec.tsx packages/client/ui-layout/tests/app-frame.client.spec.tsx packages/client/ui-sidebar/tests/sidebar-root.client.spec.tsx`
+- `pnpm exec vitest run packages/client/ui-workbench packages/client/ui-browser packages/browser/browser-runtime-electron packages/client/ui-chat/tests/preview-rail.client.spec.ts packages/client/ui-chat/tests/chat-view.client.spec.tsx packages/browser/browser-workspace/tests/workspace.spec.ts apps/desktop/tests/browser-present.spec.ts apps/desktop/tests/chrome-overlay.spec.ts packages/client/ui-desktop/tests/desktop-chrome-overlay.client.spec.tsx packages/client/ui-layout/tests/app-frame.client.spec.tsx packages/client/ui-sidebar/tests/sidebar-root.client.spec.tsx`
 - `pnpm run test:electron-runtime-e2e` 在真实 Electron 进程中验证隐藏页面截图与 Profile 隔离。
 - `DSH_COVERAGE_PARTITIONS=4 pnpm run check:ci:coverage` 覆盖全部变更过的 Browser 与工作台分支。
 - `apps/web/tests/browser-dock.snapshot.ts` 固定收起预览、打开与刷新后的工作台页面 chrome，以及模拟 Runtime 重启后的页面替换与导航。

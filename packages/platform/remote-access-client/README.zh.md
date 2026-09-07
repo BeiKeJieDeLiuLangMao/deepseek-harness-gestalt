@@ -1,6 +1,13 @@
+---
+description: "Personal Pairing HTTP transport 与可重连 Mobile/Desktop Relay 生命周期客户端。"
+kind: "package-reference"
+---
+
 # 远程访问客户端
 
 [English](README.md) | 中文
+
+## 概述
 
 面向公开远程访问服务的 Desktop 与 Mobile 鉴权 HTTP 传输。每次操作转发一份当前安装的账号证明，并在暴露带品牌的个人配对标识符前校验所有 JSON 响应。`QUOTA` 与 `PLATFORM_CAPACITY` 会把整数秒 `retryAfter` 保留在抛出的 `RemoteAccessError` 上。
 
@@ -12,15 +19,35 @@ HTTP 客户端不实现握手，也不存储配对密钥。产品控制器提供
 
 Desktop 设置所有者只在手机访问开启期间启动该生命周期。它会在 lifecycle authority 串行区内发起物理启动，但释放串行区后才等待网络就绪，因此 WSS attachment 等待期间，设置同步与配对操作仍然可用。关闭窗口会退出 Desktop 进程；sleep、quit、退出账号或关闭手机访问都会停止并排空 socket。不存在 daemon、后台 Host 或 remote wake 路径。
 
+## 目录
+
+- [模型体验](#model-experience)
+- [已知限制与暂缓事项](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+-----
+
+<a id="model-experience"></a>
 ## 模型体验
 
-无。远程访问传输值不会进入模型请求。
+无，因为该客户端只携带经鉴权的 Companion operation 与路由，不创建发往模型的内容。
 
 #### KV Cache 影响
 
-无。
+该客户端不增加模型请求内容，因此不影响提供方缓存复用。
 
 ## 已知限制与暂缓事项
+<a id="known-limitations-and-deferred-work"></a>
 
 - 产品组合提供已校验的 WSS URL、重试与 heartbeat 间隔和在线 queue 限制；本包拥有 Node 与浏览器 adapter、生命周期和编码后的 Relay frame。
 - 生产使用仍要求 Platform 部署组装经过评审的握手提供方。
+
+<a id="dev-note"></a>
+### 开发备注
+
+<details>
+<summary>维护者工作上下文——点击展开</summary>
+
+暂无。
+
+</details>

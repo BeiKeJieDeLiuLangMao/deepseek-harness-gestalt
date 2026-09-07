@@ -1,9 +1,26 @@
+---
+description: "Web Host provider for Desktop-owned authenticated Project Membership reads."
+kind: "package-reference"
+---
+
 # `@deepseek-ai/dsh-project-membership-desktop`
 
 English | [中文](README.zh.md)
 
+## Summary
+
 Desktop-only Web Host provider for authenticated Project Membership reads used by agent presets. Electron retains the Platform Account session and installation proof; this package reads a bearer token from an owner-only file and calls a token-protected loopback projection for the current public Account identity, the cloud Project bound to an Agent's Workspace, and one complete roster with public presentation fields. It exposes `ctx.desktopProjectMembership` without placing Platform credentials in the Web Host, model tool arguments, or Session log.
 
+## Table of Contents
+
+- [Configuration](#configuration)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
+
+-----
+
+<a id="configuration"></a>
 ## Configuration
 
 - `baseUrl` — absolute loopback HTTP origin published by Desktop Host. Non-loopback, non-HTTP, or path-bearing values fail at load.
@@ -13,6 +30,7 @@ Desktop-only Web Host provider for authenticated Project Membership reads used b
 
 Every response is parsed from `unknown`. HTTP failures, missing Account state, malformed identity or roster fields, an unbound Workspace, and an Account absent from its Project fail rather than inventing an identity or Project.
 
+<a id="model-experience"></a>
 ## Model Experience
 
 Indirectly, through `@deepseek-ai/dsh-tool-project-members` roster results and `@deepseek-ai/dsh-tool-ask-user` member-question origin fields.
@@ -22,6 +40,17 @@ Indirectly, through `@deepseek-ai/dsh-tool-project-members` roster results and `
 The provider adds no independent request prefix; consumers own the schema and append the provider-derived values only when their tools run.
 
 ## Known Limitations and Deferred Work
+<a id="known-limitations-and-deferred-work"></a>
 
 - **Desktop Host is required** — browser-only `dsh web` has no Account proof owner or loopback projection, so the standard preset omits `project_members` and member-directed eligibility there.
 - **The bridge is read-only** — Project creation, invitations, roles, tags, and removals remain renderer-to-Desktop operations and are not exposed to agent presets.
+
+<a id="dev-note"></a>
+### Dev Note
+
+<details>
+<summary>Working context for maintainers — click to expand</summary>
+
+None.
+
+</details>

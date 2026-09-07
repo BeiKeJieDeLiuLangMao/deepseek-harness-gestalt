@@ -1,20 +1,47 @@
+---
+description: "负责 Platform Account 登录、证明、存储隔离与退出的 Desktop 和 Mobile 安装客户端。"
+kind: "package-reference"
+---
+
 # `@deepseek-ai/dsh-platform-account-client`
 
 [English](README.md) | 中文
+
+## 概述
 
 本包是 Desktop 与 Mobile 共用的安装客户端。它在授权前展示唯一规范的中英文数据保留说明，创建 P-256 密钥，在用户激活打开系统浏览器前准备好五分钟登录尝试，再以签名轮询完成授权。`load()` 会先向 Platform 确认已存储会话再发布账号；若没有会话但存在仍有效的待完成登录，则恢复为轮询；过期的待完成登录会被清除。当前进程仍持有授权 URL、等待必要的用户激活时，延迟到达的 `load()` 会让新准备的登录保持 ready。
 
 `PlatformAccountHttpTransport` 只接受从已校验开发／生产环境对中选出的身份，把默认 Fetch 实现绑定到全局以便浏览器调用，并把请求头复制为记录以免 Host 调用方构造 Chromium `Headers`，再从 `unknown` 解析每种响应，包括带可选 `retryAfter` 的 `QUOTA` 与 `PLATFORM_CAPACITY`。`PlatformAccountTransport.beginLogin` 及其 HTTP 实现接受可选 `{ signal?: AbortSignal }`，用于中止 login-attempt POST；`SystemBrowser.open` 也可带同一可选 signal，以便 Desktop 取消登录时等到 `shell.openExternal` 静止。`PlatformAccountInstallation.authorizeCurrentInstallation()` 会在需要时刷新，并在不暴露安装私钥的情况下签署新的 `current` 证明；Desktop 在 Electron Host 拥有的账号控制器内实现相同权限。`IndexedDbInstallationAccountStore` 解析持久化记录，要求真正的 P-256 私有签名 `CryptoKey`，并保存不可导出的 Mobile WebCrypto 密钥与账号会话；Desktop 复用相同传输，但使用加密存储。一个可关闭的 `AccountLifecycleTransitions` owner 串行化加载、登录、轮询、刷新、切换、退出与当前安装鉴权，避免并发恢复清除或复活较新的会话，并让关闭过程排空已经接纳的工作。快照发布会分别隔离每个订阅方，并在后续订阅方运行后才报告失败。单个安装切换账号时，`accountStorageNamespace` 为配对密钥、缓存与回执提供按账号和环境隔离的前缀。
 
+## 目录
+
+- [模型体验](#model-experience)
+- [已知限制与暂缓事项](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+-----
+
+<a id="model-experience"></a>
 ## 模型体验
 
-无。控制器不会贡献模型可见状态。
+通过经鉴权的 Account Session 和安装证明间接影响模型；Project Membership 与 Personal Pairing Consumer 使用它们处理面向模型的工作。
 
 #### KV Cache 影响
 
-无。
+Account 状态本身不增加稳定请求前缀；授权会改变哪些成员关系与配对设备数据能够抵达后续面向模型的 Consumer。
 
 ## 已知限制与暂缓事项
+<a id="known-limitations-and-deferred-work"></a>
 
 - 本库向个人配对提供当前安装账号鉴权，但不授予 Desktop 或 Companion 权限。
 - Mobile 原生打包必须提供稳定的 WebView 存储 origin；Mobile composition 自己拥有 Capacitor Browser 适配器。
+
+<a id="dev-note"></a>
+### 开发备注
+
+<details>
+<summary>维护者工作上下文——点击展开</summary>
+
+暂无。
+
+</details>

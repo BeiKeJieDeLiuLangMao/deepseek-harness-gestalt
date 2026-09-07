@@ -1,6 +1,13 @@
+---
+description: "Personal Pairing HTTP transport and reconnecting Mobile/Desktop Relay lifecycle."
+kind: "package-reference"
+---
+
 # Remote Access client
 
 English | [中文](README.zh.md)
+
+## Summary
 
 Authenticated Desktop and Mobile HTTP transport for the public Remote Access service. It forwards one current-Installation Account proof per operation and validates every JSON response before exposing branded Personal Pairing identifiers. `QUOTA` and `PLATFORM_CAPACITY` responses preserve integer `retryAfter` seconds on the thrown `RemoteAccessError`.
 
@@ -12,15 +19,35 @@ The browser and Node adapters enforce the Relay wire ceiling on the physical soc
 
 The Desktop Settings owner starts this lifecycle only while Mobile Access is enabled. It initiates physical starts under the lifecycle authority serial but awaits network readiness after releasing that serial, so Settings synchronization and pairing actions remain available while WSS attachment waits. Window close quits the Desktop process, and sleep, quit, sign-out, or disabling Mobile Access stops and drains the socket. There is no daemon, background Host, or remote wake path.
 
+## Table of Contents
+
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
+
+-----
+
+<a id="model-experience"></a>
 ## Model Experience
 
-None, as Remote Access transport values never enter a model request.
+None, as the client carries authenticated Companion operations and routes without creating model-bound content.
 
 #### KV Cache effect
 
-None.
+The client adds no model request content, so it does not affect provider cache reuse.
 
 ## Known Limitations and Deferred Work
+<a id="known-limitations-and-deferred-work"></a>
 
 - Product composition supplies the validated WSS URL, retry and heartbeat intervals, and live-queue limits; this package owns the Node and browser adapters, lifecycle, and encoded Relay frames.
 - Production use still requires a reviewed handshake provider in the Platform deployment.
+
+<a id="dev-note"></a>
+### Dev Note
+
+<details>
+<summary>Working context for maintainers — click to expand</summary>
+
+None.
+
+</details>

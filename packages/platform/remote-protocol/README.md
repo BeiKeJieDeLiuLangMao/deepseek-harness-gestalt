@@ -1,15 +1,36 @@
+---
+description: "Versioned Relay Transport and Encrypted Companion wire codecs."
+kind: "package-reference"
+---
+
 # `@deepseek-ai/dsh-remote-protocol`
 
 English | [中文](README.zh.md)
 
+## Summary
+
 Pure codecs and negotiators for Remote Access. This package owns two independently versioned protocols and imports no Harness Workspace, Session, prompt, tool, model, approval, Host API, or WebSocket type.
 
+## Table of Contents
+
+- [Relay Transport Protocol](#relay-transport-protocol)
+- [Encrypted Companion Protocol](#encrypted-companion-protocol)
+- [Endpoint attachment cipher](#endpoint-attachment-cipher)
+- [Wire limits and errors](#wire-limits-and-errors)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
+
+-----
+
+<a id="relay-transport-protocol"></a>
 ## Relay Transport Protocol
 
 Version 1 exposes only route attachment, opaque ciphertext forwarding, heartbeat, revocation, stable transport errors, and transport-version negotiation. Attachment authorization uses an endpoint-owned P-256 signing key: Relay issues a fresh expiring challenge bound to the route, attachment id, endpoint kind, public key, challenge id, and nonce, then accepts one signature over that complete tuple. The Platform persists only the public-key digest; neither attach frame contains replayable bearer authority. After authentication, `ready` binds the local route and attachment and projects current opposite-endpoint attachment ids with a credential-bound, non-secret pairing selector and connection generation. The selector chooses endpoint-local Snow static state but grants no Relay or application authority. Relay identifiers are protocol-native branded values. `REMOTE_OFFLINE` reports a missing live target without implying queued delivery. Decoding rejects unknown message types, duplicate ready peers, and extra fields, so a complete Host request cannot be smuggled beside transport metadata.
 
 A Mobile endpoint selects one retained Personal Pairing before attachment. Each pairing owns an independent Mobile route grant, pairing selector, Snow static state, and Companion projection. Selection is endpoint-local and adds no Relay or Companion wire operation. Switching first invalidates and drains the prior physical channel, then attaches with only the selected grant; Relay never multiplexes or merges Session authority across Paired Desktops.
 
+<a id="encrypted-companion-protocol"></a>
 ## Encrypted Companion Protocol
 
 Companion majors 4 and 3 are the current and immediately preceding application versions. Both endpoints must advertise authenticated encryption, pairing-key separation, and replay protection at the selected major. After Snow IK, Desktop sends its encrypted offer with IK message 2 and Mobile returns its encrypted offer as the next ciphertext; neither endpoint constructs an application codec from a locally synthesized peer offer. Negotiation selects the highest safe shared major regardless of offer-array order, so an unsafe shared major can fall back only to a safe immediately preceding major. Each logical endpoint connection owns a negotiation channel. Starting a negotiation on that channel invalidates its prior application-codec token before the offers are evaluated; a failed attempt leaves the channel inactive, while other channels remain valid. No safe version overlap fails with an endpoint-specific update requirement before application plaintext or foreground synchronization can be encoded.
@@ -22,10 +43,12 @@ A conversation projection echoes the optional exclusive `beforeSeq` from its his
 
 Major 4 also carries member-directed questions exchanged between the paired installations of two Platform accounts. The `member-question` operation carries the branded question, cloud-project, and originating Session ids; the absolute `expiresAt` epoch; the bounded Decision Brief origin (project name, originating Session title, asker account, role, display name, avatar URL); the agent-authored background; one question batch reusing the user-questions item fields; and up to eight referenced document paths with reasons. The `member-question-settled` result commits one globally idempotent outcome — `answered` with the echoing answer batch, `declined`, `expired`, `withdrawn`, or `superseded` — at the absolute `settledAt` epoch. Answered and declined results require the settling `InstallationId` and user-facing device name; system-owned expiry, withdrawal, and supersession forbid those claimant fields. The `member-question-state` projection applies the same terminal metadata rules so every receiver can distinguish the winning Installation from a system terminal. Every member-question carrier requires application major 4 and rejects missing, unknown, or legacy fields. Referenced documents of any file type travel as `document-chunk` operation frames: each frame carries the branded transfer id, the correlated question id, a zero-based index, the declared chunk total of at most 64, and at most 32 KiB of canonical base64url bytes, so one frame fits the application ceiling. The `document-transfer-state` projection reports `{transferId, received, total}` transfer progress. The codec validates each frame independently — exact fields, index below total, chunk byte ceiling, canonical base64url — and reassembly is a consumer duty that validates ordering and the cumulative 8 MiB decoded-byte budget. `deriveMemberQuestionDocumentTransferId(questionId, referenceIndex)` is the protocol-native transfer identity for one reference position, so encrypted frames need not carry document paths.
 
+<a id="endpoint-attachment-cipher"></a>
 ## Endpoint attachment cipher
 
 `deriveCompanionAttachmentKey`, `sealCompanionAttachment`, `openCompanionAttachment`, and `hashCompanionCiphertext` implement the endpoint side of encrypted attachment transfer with HKDF-SHA-256 key derivation and AES-256-GCM. The sealed payload is `iv(12) ‖ ciphertext ‖ tag(16)` (`COMPANION_ATTACHMENT_SEAL_OVERHEAD_BYTES` = 28). Both endpoints link these functions; the Platform blob store receives only `sealCompanionAttachment` output and its SHA-256 and never derives the key. Key material is supplied by the Personal Pairing layer. The 100 MiB blob ceiling is a ciphertext limit; Mobile rejects plaintext that cannot fit after this overhead.
 
+<a id="wire-limits-and-errors"></a>
 ## Wire limits and errors
 
 | Limit | Value |
@@ -68,15 +91,27 @@ Major 4 also carries member-directed questions exchanged between the paired inst
 
 The package does not encrypt Companion message traffic. Mobile and Desktop supply the [`dsh-noise-channel`](../noise-channel/README.md) endpoint channel, then encrypt version offers and encoded Companion messages before Relay forwarding. The [keyless assembled example](../../../examples/remote-protocol/start.ts) retains an example-only AES-GCM adapter for codec isolation; it is not product cryptography or security-review evidence. Product Mobile and Desktop assemble endpoint-owned first pairing, credential-bound peer discovery, fresh-ephemeral IK, and encrypted Companion messages. The [two-instance product snapshot](../../../examples/two-instance-relay/start.ts) crosses real WSS Relay instances with the opaque endpoint mailbox, sealed Mobile authority, and Snow IK rather than the example adapter.
 
+<a id="model-experience"></a>
 ## Model Experience
 
-None, as Remote Protocol metadata and device origin never enter a model request.
+None, as the codecs carry already-produced Companion operation content without creating model-bound content or choosing its presentation.
 
 #### KV Cache effect
 
-None.
+The codecs add no model request content, so they do not affect provider cache reuse.
 
 ## Known Limitations and Deferred Work
+<a id="known-limitations-and-deferred-work"></a>
 
 - Session rename, archive, deletion, and fork; Workspace administration; terminal input; and settings, credential, plugin, model, and preset mutations are not part of Companion major 4.
 - Pairing handshakes, credential persistence, challenge lifecycle, and production Companion message encryption belong to service or reviewed endpoint integrations, not these codecs.
+
+<a id="dev-note"></a>
+### Dev Note
+
+<details>
+<summary>Working context for maintainers — click to expand</summary>
+
+None.
+
+</details>

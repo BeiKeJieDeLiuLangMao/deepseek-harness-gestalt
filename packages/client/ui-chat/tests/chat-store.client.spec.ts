@@ -49,7 +49,7 @@ describe('createChatStore', () => {
 
   it('clears a focused document when a tool is selected', () => {
     const store = createChatStore().create()
-    store.actions.focusDocument({ path: 'docs/plan.md', filename: 'plan.md', from: '李四' })
+    store.actions.focusDocument({ path: 'docs/subsystems/plan.md', filename: 'plan.md', from: '李四' })
     expect(store.store.getSnapshot().documentFocus).not.toBeNull()
     store.actions.select({ turnSeq: 2, stepSeq: 1, callId: 'c1', toolName: 'read' })
     expect(store.store.getSnapshot().documentFocus).toBeNull()

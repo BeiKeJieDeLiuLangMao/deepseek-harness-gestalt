@@ -1892,7 +1892,7 @@ interface MemberQuestionHumanImageContent {
 }
 ```
 
-Depends on: [`Branded`](../packages/util/brand/src/index.ts) · [`CompanionMemberQuestionOperation`](../packages/platform/remote-protocol/src/index.ts) · [`CompanionMemberQuestionSettledResult`](../packages/platform/remote-protocol/src/index.ts) · [`HostSessionId`](subsystems/core.md) · [`ImageAttachmentRef`](subsystems/attachment.md) · [`MemberQuestionId`](../packages/platform/remote-protocol/src/index.ts) · [`PlatformAccountId`](../packages/platform/platform-account/src/index.ts) · [`ProjectId`](../packages/platform/project-membership/src/index.ts)
+Depends on: [`Branded`](subsystems/core.md) · [`CompanionMemberQuestionOperation`](../packages/platform/remote-protocol/src/index.ts) · [`CompanionMemberQuestionSettledResult`](subsystems/user-questions.md) · [`HostSessionId`](subsystems/core.md) · [`ImageAttachmentRef`](subsystems/attachment.md) · [`MemberQuestionId`](subsystems/user-questions.md) · [`PlatformAccountId`](subsystems/platform-account.md) · [`ProjectId`](subsystems/project-membership.md)
 
 Source: [`packages/interaction/member-question-receiver/src/index.ts:152`](../packages/interaction/member-question-receiver/src/index.ts)
 
@@ -2049,9 +2049,9 @@ export interface MemberMembershipWatchInput {
 }
 ```
 
-Depends on: [`CompanionMemberQuestionSettledResult`](../packages/platform/remote-protocol/src/index.ts) · [`CompanionMessage`](../packages/platform/remote-protocol/src/index.ts) · [`CompanionOperationId`](../packages/platform/remote-protocol/src/index.ts) · [`DocumentTransferId`](../packages/platform/remote-protocol/src/index.ts) · [`MemberQuestionId`](../packages/platform/remote-protocol/src/index.ts) · [`ProjectId`](../packages/platform/remote-protocol/src/index.ts) · [`SealedProjectPeerGrant`](../packages/platform/remote-access/src/index.ts)
+Depends on: [`CompanionMemberQuestionSettledResult`](subsystems/user-questions.md) · [`CompanionMessage`](../packages/platform/remote-protocol/src/index.ts) · [`CompanionOperationId`](../packages/platform/remote-protocol/src/index.ts) · [`DocumentTransferId`](../packages/platform/remote-protocol/src/index.ts) · [`MemberQuestionId`](subsystems/user-questions.md) · [`ProjectId`](subsystems/project-membership.md) · [`SealedProjectPeerGrant`](subsystems/personal-pairing.md)
 
-Source: [`packages/interaction/member-question-sender/src/index.ts:180`](../packages/interaction/member-question-sender/src/index.ts)
+Source: [`packages/interaction/member-question-sender/src/index.ts:181`](../packages/interaction/member-question-sender/src/index.ts)
 
 <a id="deepseek-aidsh-message-feedback"></a>
 
@@ -2326,7 +2326,7 @@ export interface AccountRecord extends PlatformAccountView {
 }
 ```
 
-Depends on: [`AccountProofJti`](../packages/platform/platform-account/src/index.ts) · [`AccountSessionId`](../packages/platform/platform-account/src/index.ts) · [`InstallationId`](../packages/platform/platform-account/src/index.ts) · [`InstallationKind`](../packages/platform/platform-account/src/index.ts) · [`InstallationPresentation`](../packages/platform/platform-account/src/index.ts) · [`LoginAttemptId`](../packages/platform/platform-account/src/index.ts) · [`PlatformAccountId`](../packages/platform/platform-account/src/index.ts) · [`PlatformAccountView`](../packages/platform/platform-account/src/index.ts) · [`PlatformCapacityState`](../packages/platform/platform-account/src/index.ts) · [`PlatformEnvironment`](../packages/platform/platform-account/src/index.ts) · [`SelectedPlatformEnvironment`](../packages/platform/platform-account/src/index.ts)
+Depends on: [`AccountProofJti`](../packages/platform/platform-account/src/index.ts) · [`AccountSessionId`](subsystems/platform-account.md) · [`InstallationId`](subsystems/platform-account.md) · [`InstallationKind`](../packages/platform/platform-account/src/index.ts) · [`InstallationPresentation`](../packages/platform/platform-account/src/index.ts) · [`LoginAttemptId`](subsystems/platform-account.md) · [`PlatformAccountId`](subsystems/platform-account.md) · [`PlatformAccountView`](subsystems/platform-account.md) · [`PlatformCapacityState`](../packages/platform/platform-account/src/index.ts) · [`PlatformEnvironment`](../packages/platform/platform-account/src/index.ts) · [`SelectedPlatformEnvironment`](../packages/platform/platform-account/src/index.ts)
 
 Source: [`packages/platform/platform-account-core/src/index.ts:522`](../packages/platform/platform-account-core/src/index.ts)
 
@@ -3323,7 +3323,7 @@ export interface Config {
 }
 ```
 
-Depends on: [`SubagentRoute`](../packages/subagent/subagent-route-preauthorization/src/index.ts)
+Depends on: [`SubagentRoute`](subsystems/subagent.md)
 
 Source: [`packages/subagent/subagent-route-preauthorization-static/src/index.ts:11`](../packages/subagent/subagent-route-preauthorization-static/src/index.ts)
 
@@ -3543,7 +3543,7 @@ export interface MemberQuestionRoute {
 }
 ```
 
-Depends on: [`Agent`](subsystems/core.md) · [`AskUserQuestionMemberOrigin`](../packages/interaction/user-questions/src/index.ts) · [`PlatformAccountId`](../packages/platform/platform-account/src/index.ts) · [`ProjectId`](../packages/platform/remote-protocol/src/index.ts)
+Depends on: [`Agent`](subsystems/core.md) · [`AskUserQuestionMemberOrigin`](../packages/interaction/user-questions/src/index.ts) · [`PlatformAccountId`](subsystems/platform-account.md) · [`ProjectId`](subsystems/project-membership.md)
 
 Source: [`packages/interaction/tool-ask-user/src/index.ts:89`](../packages/interaction/tool-ask-user/src/index.ts)
 
@@ -3825,7 +3825,7 @@ export interface MemberPresentation {
 export type MemberPresence = 'online' | 'offline'
 ```
 
-Depends on: [`Agent`](subsystems/core.md) · [`Branded`](../packages/util/brand/src/index.ts) · [`RosterView`](../packages/platform/project-membership/src/index.ts)
+Depends on: [`Agent`](subsystems/core.md) · [`Branded`](subsystems/core.md) · [`RosterView`](subsystems/project-membership.md)
 
 Source: [`packages/interaction/tool-project-members/src/index.ts:124`](../packages/interaction/tool-project-members/src/index.ts)
 

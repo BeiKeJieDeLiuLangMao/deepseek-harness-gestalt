@@ -1,6 +1,13 @@
+---
+description: "从 preset、Workspace 与 Session 配置解析 allow-only 工具资格。"
+kind: "package-reference"
+---
+
 # dsh-tools-eligibility
 
 [English](README.md) | 中文
+
+## 概述
 
 allow-only 工具资格的宿主平面解析器。Preset 许可作为基础；`tool-eligibility` settings 分节按稳定 id 依次添加 Workspace 与 Session 条目。
 
@@ -18,6 +25,15 @@ tool-eligibility:
 
 `session.toolEligibility` 直接读取权威 `ctx.tools` 许可与 schema 目录。settings schema 只包含 `workspaces` 和 `sessions`；内部支持 deny 的 `ctx.tools.restrict()` API 不会投影到用户配置。
 
+## 目录
+
+- [模型体验](#model-experience)
+- [已知限制与暂缓事项](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+-----
+
+<a id="model-experience"></a>
 ## 模型体验
 
 ### 最终具资格 schema
@@ -35,5 +51,16 @@ tool-eligibility:
 settings 变化若改变最终 schema 集合，会从首个变化的工具 schema 或 SDK token 起使请求前缀失效。
 
 ## 已知限制与暂缓事项
+<a id="known-limitations-and-deferred-work"></a>
 
 - Workspace 匹配使用 Session header 的规范 cwd 与实时 Workspace 注册表。位于未注册 Workspace 的 Session 只接收 preset 与 Session 条目。
+
+<a id="dev-note"></a>
+### 开发备注
+
+<details>
+<summary>维护者工作上下文——点击展开</summary>
+
+暂无。
+
+</details>

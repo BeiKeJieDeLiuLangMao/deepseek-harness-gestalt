@@ -1,9 +1,29 @@
+---
+description: "基于 ctx.projectMembership seam 查询成员名册的模型工具。"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-tool-project-members
 
 [English](README.md) | 中文
 
+## 概述
+
 面向模型的 `project_members` 工具，构建在 `ctx.projectMembership` 之上：一次读取即返回一个云项目的完整成员名册——每位成员的账号引用、公开展示身份、权限角色、项目定义的职能标签与在线状态——查询不受任何角色限制。
 
+## 目录
+
+- [工具](#tool)
+- [注入的提供方接口](#injected-provider-faces)
+- [渲染](#rendering)
+- [角色](#role)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+-----
+
+<a id="tool"></a>
 ## 工具
 
 `project_members` 接受一个可选参数：
@@ -12,6 +32,7 @@
 
 调用先解析会话绑定账号，再解析项目绑定，然后通过注入的 resolver 或 `ctx.projectMembership.roster()` 读取存储的名册。规范结果为按加入顺序排列的成员数组 `[{ accountId, displayName?, avatarRef?, role, tags, presence, self }]`；要么返回全部存储成员，要么调用失败——不存在部分名册。`displayName` 是从 `self` 为 false 的行复制进 `ask_user_question.to_project_member` 的公开 GitHub 登录名；`accountId` 是持久 Platform id，不是该收件人。`self` 对提问会话账号为 true。
 
+<a id="injected-provider-faces"></a>
 ## 注入的提供方接口
 
 本包只导入成员关系 Service Definition——从不依赖平台提供方包。组合注入四个可选的 Config 函数；账号、项目与名册解析器接收当前 Agent 与工具取消信号，使 Host 适配器能在不依赖模型提供身份的情况下推导 Workspace 上下文并中止待处理读取：
@@ -21,14 +42,17 @@
 - `rosterResolver` — 经组合自有已鉴权桥读取权威名册。缺失时，工具使用 `ctx.projectMembership.roster()`，两者皆缺则失败。
 - `rosterPresenter` — 为一次读取附加在线状态与公开展示身份。缺失时，所有成员读作 `presence: "offline"` 且不带身份字段——与已组合但无任何活跃心跳的在线状态注册表给出的结论一致。
 
+<a id="rendering"></a>
 ## 渲染
 
 Native 渲染器保持规范值的紧凑 JSON 形态。本工具不声明自定义 UI presenter：名册是纯数据，通用卡片（标题 = 工具名，原始参数）就是预期的渲染意图。
 
+<a id="role"></a>
 ## 角色
 
 这是 project-membership 接缝读取面的 Consumer 包。它不持有任何权限判定：查询不受角色限制，而成员关系服务继续强制"读取账号须持有有效成员关系"。稳定错误的存在让模型可以分支处理——提示用户登录，或将工作区关联到项目——而不是徒劳重试。
 
+<a id="model-experience"></a>
 ## Model Experience
 
 ### Tool schema
@@ -60,7 +84,18 @@ Native 渲染器保持规范值的紧凑 JSON 形态。本工具不声明自定�
 只追加；新可见内容跟随可复用的请求前缀，不会使既有 KV-cache 条目失效。
 
 ## Known Limitations and Deferred Work
+<a id="known-limitations-and-deferred-work"></a>
 
 - **在线状态与展示身份依赖平台提供方一侧** — 未注入 `rosterPresenter` 的组合会将所有成员报告为 `offline` 且不带身份字段。Desktop Host 通过受 token 保护的 loopback projection 提供该 presenter。
 - **设计上只读** — 本工具不暴露任何成员关系变更；邀请、角色调整与标签编辑留在 project-membership HTTP 面之后，不进入模型工具集。
 - **工作区绑定由组合定义** — 工具自身无法解析绑定的项目；未注入 `boundProjectResolver` 时，所有省略 `projectId` 的调用都返回 `PROJECT_UNBOUND`。
+
+<a id="dev-note"></a>
+### 开发备注
+
+<details>
+<summary>维护者工作上下文——点击展开</summary>
+
+暂无。
+
+</details>

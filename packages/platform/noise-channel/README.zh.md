@@ -1,15 +1,34 @@
+---
+description: "用于配对和每 attachment Companion 通道的 Snow 0.10.0 adapter。"
+kind: "package-reference"
+---
+
 # `@deepseek-ai/dsh-noise-channel`
 
 [English](README.md) | 中文
 
+## 概述
+
 用于 Personal Pairing 与加密 Companion 消息的 Snow 0.10.0 WebAssembly 适配器。同一个已提交模块运行于 Node 与浏览器 WebView；首次配对只选择 `Noise_XKpsk3_25519_ChaChaPoly_SHA256`，重连只选择 `Noise_IK_25519_ChaChaPoly_SHA256`。
 
+## 目录
+
+- [配对](#pairing)
+- [重连与消息](#reconnect-and-messages)
+- [Model Experience](#model-experience)
+- [已知限制与延后工作](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+-----
+
+<a id="pairing"></a>
 ## 配对
 
 `SnowDesktopEndpointPairingOwner` 与 `SnowMobileHandshakeClient` 完成 XKpsk3 的全部三条消息，Platform 只转发不透明 mailbox 消息与路由元数据。Desktop 在本地构造 QR payload，因此邀请 PSK 不会进入 Platform HTTP 请求或持久化。完成后的握手哈希只用于认证词，绝不作为应用密钥材料。Desktop 在 durable confirmation transaction 中生成独立的 32 字节 attachment key，并把它与 Mobile Relay authority 一起密封为首条 responder transport payload；Platform 与 Relay 只能观察密文。端点保护的恢复记录可跨进程重启保留未完成 transcript。确认事务持久化后，密封操作才擦除 Desktop invitation state；Mobile 仅在打开的 grant、attachment key 与 reconnect record 一起提交后才擦除 invitation state。
 
 `SnowPairingHandshakeProvider` 保留较早的 Platform 中介证明面，并通过 Snow 的 `fixed_ephemeral_key_for_testing_only` API 重建短生命周期状态。产品 Desktop 不选择该 provider；它通过不透明 mailbox 事务在本地保留 endpoint owner。
 
+<a id="reconnect-and-messages"></a>
 ## 重连与消息
 
 `SnowDesktopEndpointPairingOwner` 与 `SnowMobileHandshakeClient` 完成三条 XKpsk3 消息，Platform 只转发不透明 mailbox 消息与路由元数据。Desktop 在本地构造 QR payload，邀请 PSK 不进入 Platform HTTP 或持久化。端点保护的恢复记录让未完成 transcript 可以跨进程重启继续。Desktop 只在确认事务持久化后擦除邀请状态；Mobile 只在打开的 grant 与 reconnect record 同一次提交成功后擦除邀请状态。
@@ -20,15 +39,27 @@ IK 完成后，`SnowDesktopAttachmentOwner` 会把 Desktop 的加密 Companion �
 
 `SnowCompanionProtocolChannel` 只能通过完成的对端 offer 交换构造，并且只加密由 `@deepseek-ai/dsh-remote-protocol` 接纳的值。Snow 的有序 transport 会拒绝重放和乱序 ciphertext。Foreground Synchronization 携带 attachment generation 与 Desktop revision；原始 1 字节 frame 无法解码成同步 authority。wire 尺寸探测使用从已收到对端 offer 协商出的协议，而不会在本地虚构对端 capability。
 
+<a id="model-experience"></a>
 ## Model Experience
 
-无，因为配对、Relay authority 与 Companion transport metadata 都不会进入模型请求。
+无，因为该通道只携带配对 capability 与密文，不创建发往模型的内容。
 
 #### KV Cache effect
 
-无。
+该通道不增加模型请求内容，因此不影响提供方缓存复用。
 
 ## 已知限制与延后工作
+<a id="known-limitations-and-deferred-work"></a>
 
 - Desktop 与 Mobile 产品入口已经组装 endpoint-owned 首配、持久 static state、credential-bound Relay peer discovery，以及每个物理 attachment 一条 Snow IK channel。Platform 挂载不透明 mailbox 与 digest-only Relay authority，不持有 endpoint key 或应用明文。
 - Node 22 与 24 以及现有 simulator 与 emulator proof 覆盖所选 Snow 依赖。物理 iOS 与 Android 证据，以及针对这一确切适配器的独立安全审查记录，仍是 release blocker。
+
+<a id="dev-note"></a>
+### 开发备注
+
+<details>
+<summary>维护者工作上下文——点击展开</summary>
+
+暂无。
+
+</details>

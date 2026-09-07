@@ -19,7 +19,7 @@
 
 | Tool package | Model-visible names | Requires | Writes / affects | Shipped aliases | Deployment note |
 | --- | --- | --- | --- | --- | --- |
-| `@deepseek-ai/dsh-tool-ask-user` | `ask_user_question` | `ctx.tools`、`ctx.userQuestions` | `tool/call`、`tool/result after a UI/provider answers the question, or after member-question sender delivery` | - | ask_user_question 会暂停本地调用，直到当前 UI 提供方返回人类答案。`to_project_member` 改为经 `ctx.memberQuestionSender` 路由。运行期资格过滤会在工作区未绑定云端项目时从组装后的提示中隐藏该参数；该发送器在采集时可选，因此目录记录包含路由参数的静态 schema。 |
+| `@deepseek-ai/dsh-tool-ask-user` | `ask_user_question` | `ctx.tools`、`ctx.userQuestions` | `tool/call`、`tool/result after a composed answerer answers the question` | - | ask_user_question 会暂停工具调用，直到组合的 answerer waterfall 返回人类答案。 |
 | `@deepseek-ai/dsh-tools` | `run_code`、`tool_search` | `ctx.tools`、`ctx.codeRuntime (execution time)`、`ctx.systemPrompt`、`toolSearch config for deferred discovery` | `tool/call`、`one tool/code-dispatch-start + tool/code-dispatch pair per bridged sub-call`、`tool/result` | - | 由工具注册表所有。`run_code` 在 `mode: ptc`／`mode: both` 下是可过滤能力层之外的保留传输机制（参见 PTC mode Agent Note）。配置 `toolSearch` 时（随附 SDK），`tool_search` 是保留的 deferred schema 发现工具。在 `ptc` 下，其他可见能力在使用已加载运行时语言生成的 SDK 章节中声明。程序通过 binding 调用这些能力，调用按照原生并发约定调度：启动顺序和策略遵循提交顺序，并发安全的函数体最多重叠执行 `maxParallelSubCalls` 个。调用会重新进入完整且受守卫保护的工具流水线，并将每个嵌套执行关联到此外层结果。 |
 | `@deepseek-ai/dsh-plan-mode` | `exit_plan_mode` | `ctx.tools`、`ctx.systemPrompt`、`ctx.userQuestions (execution time, opportunistic)` | `tool/call`、`plan/mode inactive on an approved review`、`tool/result` | - | 规划未激活时，exit_plan_mode 仍保留在面向模型的 schema 中，这样状态转换不会在规划策略变更之外额外造成工具目录变动。其执行路径会拒绝规划模式之外的调用；在规划模式下，它通过用户交互 seam 提交计划（批准／根据反馈继续规划），批准后会在步骤边界记录规划模式已停用。 |
 | `@deepseek-ai/dsh-tool-bash` | `bash` | `ctx.tools`、`ctx.shell`、`ctx.systemPrompt`、`ctx.shellEnv`、`ctx.jobs at call time for run_in_background` | `tool/call`、`tool/result` | - | bash 工具是 bash 执行器 seam 面向模型的消费方。使用 `run_in_background` 的运行会注册到通用 `ctx.jobs` 运行时，并通过 `job_*` 工具（来自 `@deepseek-ai/dsh-tool-jobs`）收集／停止；禁用 `enableRunInBackground` 配置（默认为 true）后，该参数会被完全移除。 |
@@ -148,7 +148,7 @@
 
 来源：[`packages/interaction/tool-ask-user/src/index.ts`](../packages/interaction/tool-ask-user/src/index.ts)
 
-ask_user_question 会暂停本地调用，直到当前 UI 提供方返回人类答案。`to_project_member` 改为经 `ctx.memberQuestionSender` 路由。运行期资格过滤会在工作区未绑定云端项目时从组装后的提示中隐藏该参数；该发送器在采集时可选，因此目录记录包含路由参数的静态 schema。
+ask_user_question 会暂停工具调用，直到组合的 answerer waterfall 返回人类答案。
 
 <a id="deepseek-aidsh-tool-project-members"></a>
 
@@ -1560,7 +1560,7 @@ create、edit、pause 和 resume 要求直接来自人类的根权限；complete
 
 ### `schedule_delete`
 
-使用 schedule_create 或 schedule_list 返回的确切 id，删除当前会话中保留的活动或已暂停提醒。未知或已经结束的 id 会返回 deleted false。
+使用 schedule_create 或 schedule_list 返回的确切 id，删除当前会话中保留的提醒，包括已暂停的提醒。未知或已经结束的 id 会返回 deleted false。
 
 ```json
 {
@@ -1581,7 +1581,7 @@ create、edit、pause 和 resume 要求直接来自人类的根权限；complete
 
 ### `schedule_list`
 
-按创建顺序列出当前会话中保留的所有活动或已暂停提醒，包括确切 id、UTC 目标、scheduled、overdue 或 paused 状态，以及 session-local 交付模式。
+按创建顺序列出当前会话中保留的所有提醒，包括确切 id、UTC 目标、scheduled、overdue 或 paused 状态，以及 session-local 交付模式。
 
 ```json
 {

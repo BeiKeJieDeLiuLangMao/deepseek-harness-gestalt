@@ -44,4 +44,4 @@ focus 使用被操作列表行的修订号，与 Dock chrome 和收起预览相�
 
 ## 测试
 
-`packages/client/ui-conversation/tests/browser-tab-focus.client.spec.ts` 锁定 args 与 result 身份、列表修订号、标签页已消失，以及被拒绝的 focus。`apply-inject.client.spec.tsx` 锁定 inject 层 focus。`packages/client/ui-tool/tests/toolview-slot.client.spec.tsx` 通过 conversation+tool 栈点击真实的 `browser_navigate` 卡片，并要求 `focus(sessionId, target, listedRevision)`。无密钥 fixture Session 仍只有一个标签页，因此组装后的快照无法覆盖双标签页的对话选择。
+`packages/client/ui-chat/tests/browser-tab-focus.client.spec.ts` 锁定 args 与 result 身份、列表修订号、标签页已消失，以及被拒绝的 focus。`apply-inject.client.spec.tsx` 锁定 inject 层 focus。`packages/client/ui-tool/tests/toolview-slot.client.spec.tsx` 通过 conversation+tool 栈点击真实的 `browser_navigate` 卡片，并要求 `focus(sessionId, target, listedRevision)`。无密钥 fixture Session 仍只有一个标签页，因此组装后的快照无法覆盖双标签页的对话选择。

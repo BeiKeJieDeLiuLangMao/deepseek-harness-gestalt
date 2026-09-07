@@ -1,9 +1,27 @@
+---
+description: "Member-question sender Service Definition and codec-backed Provider that delivers member-question operations over project peer grants."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-member-question-sender
 
 English | [中文](README.zh.md)
 
+## Summary
+
 Service Definition and codec-backed Provider for member-directed questions. The Provider prepends a Host-root unscoped `user-questions/request` answerer: ordinary requests call `next()`, while requests carrying `memberRoute` are claimed before previously registered Remote or UI answerers, encoded as one Companion `member-question` operation through the T4 remote-protocol codec, delivered through an injected port, and settled from the authoritative first terminal. Peer credentials are retrieved through an injected B-side lookup over Remote Access `getProjectPeerGrant`.
 
+## Table of Contents
+
+- [Service: `MemberQuestionSenderService` (ctx key: `memberQuestionSender`)](#service-memberquestionsenderservice-ctx-key-memberquestionsender)
+- [Role](#role)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
+
+-----
+
+<a id="service-memberquestionsenderservice-ctx-key-memberquestionsender"></a>
 ## Service: `MemberQuestionSenderService` (ctx key: `memberQuestionSender`)
 
 ### Public API
@@ -38,10 +56,12 @@ When `send()` is given an asking session, it appends an ignorable log-only `memb
 
 The sender keeps at most one pending ask per `(originSessionId, toProjectMember)` route key. Answer, decline, expiry, initiator withdrawal, same-route supersession, and membership removal all publish a terminal candidate before the local promise settles. A newer same-key send claims `superseded` for the previous ask; membership removal claims the receiver-facing `withdrawn` terminal while the initiating caller retains `REVOKED_DURING_FLIGHT` when that local claim wins.
 
+<a id="role"></a>
 ## Role
 
 This package is the Service Definition and the codec-backed Provider for the member-question sender seam. Encoding is owned by [`dsh-remote-protocol`](../../platform/remote-protocol/README.md); grant records are owned by [`dsh-remote-access`](../../platform/remote-access/README.md). The model-facing Consumer is [`dsh-tool-ask-user`](../tool-ask-user/README.md).
 
+<a id="model-experience"></a>
 ## Model Experience
 
 Indirectly, through `dsh-tool-ask-user`, which routes `to_project_member` onto `ctx.userQuestions.ask()` with `memberRoute`; this sender's Host-root answerer claims that request and retains its stable errors as ordinary tool results.
@@ -51,5 +71,16 @@ Indirectly, through `dsh-tool-ask-user`, which routes `to_project_member` onto `
 No direct token cost or invalidation. `dsh-tool-ask-user` owns schema growth for `to_project_member`, `background`, and `references`, plus retained tool-result tokens for answered batches and sender lifetime errors.
 
 ## Known Limitations and Deferred Work
+<a id="known-limitations-and-deferred-work"></a>
 
 - **Cross-machine delivery rides the deferred project-registry transport** — encoding, chunk frames, and the delivery interface are defined; keyless tests inject the in-memory implementation, while compositions without a production port fail closed. Opening a sealed peer grant on the addressee's installation and carrying it across machines remain the [Remote Access Known Limitation](../../platform/remote-access/README.md#known-limitations-and-deferred-work). Production sealing stays behind the independent encryption review recorded there. This package does not invent a new protocol.
+
+<a id="dev-note"></a>
+### Dev Note
+
+<details>
+<summary>Working context for maintainers — click to expand</summary>
+
+None.
+
+</details>

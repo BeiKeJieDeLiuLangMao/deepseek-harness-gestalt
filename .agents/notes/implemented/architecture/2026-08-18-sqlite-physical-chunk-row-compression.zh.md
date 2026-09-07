@@ -6,7 +6,7 @@ Status: implemented
 
 ## 问题
 
-标量 [`session-persistence-sqlite`](../../../../packages/session/session-persistence-sqlite/README.zh.md) 后端为每个逻辑 `SessionEvent` 存储一个物理行。提供方流会生成 token 大小的 `assistant/chunk` 事件，并重复轮次、步骤、块、类型和 envelope 字段，因此事务批处理可以减少提交次数，却不能减少行数或重复 JSON payload。逻辑流不能合并，因为分片边界、序列号、时间戳、回放、部分输出、UI 保真度和 `sourceEventSeqs` 仍然可观察。
+[已移除的 SQLite Session 提供方](../simplification/2026-08-30-jsonl-only-session-persistence.zh.md)在其标量布局中为每个逻辑 `SessionEvent` 存储一个物理行。提供方流会生成 token 大小的 `assistant/chunk` 事件，并重复轮次、步骤、块、类型和 envelope 字段，因此事务批处理可以减少提交次数，却不能减少行数或重复 JSON payload。逻辑流不能合并，因为分片边界、序列号、时间戳、回放、部分输出、UI 保真度和 `sourceEventSeqs` 仍然可观察。
 
 一个表示多个事件的物理行会影响追加连续性、崩溃修复、后缀定位、schema 所有权、revision 和陈旧写入方。持久解码规则还必须由包版本固定；可配置 codec 集可能导致同一 schema 版本在不同 Cordis 组合下无法读取。
 

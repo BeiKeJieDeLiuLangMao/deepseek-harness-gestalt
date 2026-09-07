@@ -28,4 +28,4 @@ Status: implemented
 
 ## 测试
 
-`packages/client/ui-conversation/tests/details-document-focus.client.spec.tsx` 钉住三向分派（markdown 标题、无授权 sandbox、已清理导航、全禁内容策略与无下载入口的纯文件 tab）、席位的 owner 货币与聚焦写入/清除通道。`packages/client/ui-member-questions/tests/member-questions-apply.client.spec.ts` 钉住 provider 的延迟注册、释放与贡献释放。卡片测试钉住 chip 载荷、在已打开面板旁恢复卡片、随后的原生最小化与再次打开详情面板。组装后的 Web 场景呈现恶意被动、主动、refresh 与链接导航请求，并由服务端 tripwire 证明没有请求到达；该场景会点击清理后的链接文本，在不关闭详情的情况下恢复卡片，并通过共享呈现作答。
+`packages/client/ui-chat/tests/details-document-focus.client.spec.tsx` 钉住三向分派（markdown 标题、无授权 sandbox、已清理导航、全禁内容策略与无下载入口的纯文件 tab）、席位的 owner 货币与聚焦写入/清除通道。`packages/client/ui-member-questions/tests/member-questions-apply.client.spec.ts` 钉住 provider 的延迟注册、释放与贡献释放。卡片测试钉住 chip 载荷、在已打开面板旁恢复卡片、随后的原生最小化与再次打开详情面板。组装后的 Web 场景呈现恶意被动、主动、refresh 与链接导航请求，并由服务端 tripwire 证明没有请求到达；该场景会点击清理后的链接文本，在不关闭详情的情况下恢复卡片，并通过共享呈现作答。
