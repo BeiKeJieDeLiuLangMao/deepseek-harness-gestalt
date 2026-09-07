@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events'
 import { randomUUID } from 'node:crypto'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { resolve } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
@@ -46,11 +46,23 @@ interface RegisteredRoute {
 const closeServers: Array<() => Promise<void>> = []
 afterEach(async () => { await Promise.all(closeServers.splice(0).map(close => close())) })
 
-const requiredGeneratedRemotes = [
-  '../../../api/session-controller/lib/remote.js',
-  '../../../api/workspace-controller/lib/remote.js',
-].map(path => resolve(import.meta.dirname, path))
+const requiredGeneratedRemotes = ['session-controller', 'workspace-controller']
+  .map(packageName => generatedRemoteExport(resolve(import.meta.dirname, `../../../api/${packageName}`)))
 let handleCompanionProductOperation: typeof HandleCompanionProductOperation
+
+function generatedRemoteExport(packageRoot: string): string {
+  const manifest = JSON.parse(readFileSync(resolve(packageRoot, 'package.json'), 'utf8')) as unknown
+  if (!isRecord(manifest) || !isRecord(manifest.exports)
+    || !isRecord(manifest.exports['./remote'])
+    || typeof manifest.exports['./remote'].default !== 'string') {
+    throw new Error(`${packageRoot}/package.json must declare exports["./remote"].default`)
+  }
+  return resolve(packageRoot, manifest.exports['./remote'].default)
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
 
 const pairingA = parsePersonalPairingId('pairing-a')
 const attachmentKey = crypto.getRandomValues(new Uint8Array(32))
