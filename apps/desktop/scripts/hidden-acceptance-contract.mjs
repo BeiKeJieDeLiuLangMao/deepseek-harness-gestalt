@@ -174,7 +174,9 @@ export async function shutdownDetachedWdioSession(browser) {
 
   let quitFailure
   try {
-    await browser.electron.execute((electron) => { electron.app.quit() })
+    await browser.electron.execute((electron) => {
+      setImmediate(() => { electron.app.quit() })
+    })
   } catch (error) {
     quitFailure = error
   }

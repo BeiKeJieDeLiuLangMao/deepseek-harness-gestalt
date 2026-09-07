@@ -10,6 +10,7 @@ const here = dirname(fileURLToPath(import.meta.url))
 const desktopRoot = join(here, '..', '..')
 const artifactDir = process.env.DSH_ELECTRON_E2E_ARTIFACT_DIR
 const hiddenAcceptance = process.env.DSH_HIDDEN_PHONE_ACCEPTANCE === '1'
+let hiddenAcceptanceBrowser: WebdriverIO.Browser | undefined
 if (artifactDir === undefined || artifactDir.length === 0) {
   throw new TypeError('DSH_ELECTRON_E2E_ARTIFACT_DIR is required')
 }
@@ -72,8 +73,12 @@ export const config: WebdriverIO.Config = {
     }
   },
   ...(hiddenAcceptance ? {
+    before: (_capabilities, _specs, browserInstance: WebdriverIO.Browser) => {
+      hiddenAcceptanceBrowser = browserInstance
+    },
     after: async () => {
-      await shutdownDetachedWdioSession(browser)
+      if (hiddenAcceptanceBrowser === undefined) throw new Error('hidden acceptance browser was not captured')
+      await shutdownDetachedWdioSession(hiddenAcceptanceBrowser)
     },
   } : {}),
 }

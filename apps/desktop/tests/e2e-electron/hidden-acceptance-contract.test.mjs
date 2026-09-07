@@ -114,8 +114,10 @@ test('detached WDIO shutdown deletes the browser session before normal Desktop q
     },
   }
   await shutdownDetachedWdioSession(browser)
-  assert.deepEqual(events, ['delete-session', 'main-cdp', 'app-quit'])
+  assert.deepEqual(events, ['delete-session', 'main-cdp'])
   assert.equal(browser.sessionId, undefined)
+  await new Promise(resolve => { setImmediate(resolve) })
+  assert.deepEqual(events, ['delete-session', 'main-cdp', 'app-quit'])
 })
 
 test('detached WDIO shutdown still requests app quit and preserves both failures', async () => {
@@ -141,7 +143,28 @@ test('only the hidden acceptance runner enables detached WDIO teardown', () => {
   assert.match(runner, /DSH_HIDDEN_PHONE_ACCEPTANCE: '1'/u)
   assert.match(wdio, /const hiddenAcceptance = process\.env\.DSH_HIDDEN_PHONE_ACCEPTANCE === '1'/u)
   assert.match(wdio, /\.\.\.\(hiddenAcceptance \? \{ detach: true \} : \{\}\)/u)
-  assert.match(wdio, /\.\.\.\(hiddenAcceptance \? \{\s+after: async \(\) => \{/u)
+  assert.match(wdio, /before: \(_capabilities, _specs, browserInstance: WebdriverIO\.Browser\) => \{\s+hiddenAcceptanceBrowser = browserInstance/u)
+  assert.match(wdio, /shutdownDetachedWdioSession\(hiddenAcceptanceBrowser\)/u)
+})
+
+test('teardown clears the real WDIO instance hidden behind the globals proxy', async () => {
+  const events = []
+  const actual = {
+    sessionId: 'wdio-session',
+    async deleteSession() { events.push('delete-session') },
+    electron: { async execute() { events.push('main-cdp') } },
+  }
+  const proxy = new Proxy(class Browser {}, {
+    get: (_target, property) => {
+      const value = actual[property]
+      return typeof value === 'function' ? value.bind(actual) : value
+    },
+  })
+  proxy.sessionId = undefined
+  assert.equal(actual.sessionId, 'wdio-session')
+  await shutdownDetachedWdioSession(actual)
+  assert.equal(actual.sessionId, undefined)
+  assert.deepEqual(events, ['delete-session', 'main-cdp'])
 })
 
 test('credential fallback check inspects existence without reading contents', () => {
