@@ -677,6 +677,9 @@ describe('Issue lifecycle workflow', () => {
     const ownerStep = steps.find(s => s.name === 'Validate project owner')
     const tokenStep = steps.find(s => s.name === 'Create project token')
     const handleStep = steps.find(s => s.name === 'Handle repository event')
+    if (ownerStep === undefined || tokenStep === undefined || handleStep === undefined) {
+      throw new TypeError('Issue lifecycle workflow must define owner, token, and handler steps')
+    }
     expect(steps.indexOf(ownerStep)).toBeLessThan(steps.indexOf(tokenStep))
     expect(ownerStep).toMatchObject({
       if: lifecycleEnabled,

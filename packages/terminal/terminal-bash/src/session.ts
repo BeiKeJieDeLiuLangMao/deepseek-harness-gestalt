@@ -25,6 +25,16 @@ import type {
 import type { ResolvedConfig } from './config.ts'
 import { CONTROLLED_PROMPT, TerminalSanitizer } from './sanitize.ts'
 
+/**
+ * Host Enter for a submitted pwsh line. Linux/macOS PSReadLine executes LF;
+ * Windows ConPTY executes CR. CRLF still homes first and does not run.
+ * @param platform - `process.platform` of the PTY host.
+ * @returns CR on Windows, LF otherwise.
+ */
+export function pwshSubmitTerminator(platform: NodeJS.Platform): '\r' | '\n' {
+  return platform === 'win32' ? '\r' : '\n'
+}
+
 // Node exposes this package's CommonJS main as default-only, so load its named export through require.
 const { Terminal: HeadlessTerminal } = createRequire(import.meta.url)('@xterm/headless') as typeof import('@xterm/headless')
 
@@ -311,7 +321,14 @@ export class LocalPtySession implements TerminalBackendSession {
     try {
       if (this.active !== operation || this.closing || this.interrupting === operation) return
       operation.setInitialForeground(foreground)
-      const input = `${request.text}${request.submit ? '\r' : ''}`
+      // Linux/macOS pwsh PSReadLine treats CR as cursor-home; CRLF still
+      // homes first, so the setup line echoes and never runs. Unix Enter is
+      // LF. Windows ConPTY still uses CR.
+      const input = `${request.text}${request.submit
+        ? (this.config.shellDialect === 'pwsh'
+          ? pwshSubmitTerminator(process.platform)
+          : '\r')
+        : ''}`
       if (input.length > 0 && !operation.cancelRequested) {
         this.resetReadinessEvidence()
         const write = this.terminal.write(input)
@@ -498,7 +515,10 @@ export class LocalPtySession implements TerminalBackendSession {
       const startupHasOutput = !this.initializing || this.scrollback.snapshot().text.length > 0
       const acceptsStdinWait = startupHasOutput && foreground !== undefined
         && operation.acceptsStdinWait(foreground.processGroupId, foreground.inputWaiting)
-      if (elapsed >= this.config.exactProbeAfterMs && acceptsStdinWait) {
+      const exactWaitOwnsGeneration = foreground !== undefined
+        && (this.config.shellDialect !== 'pwsh'
+          || (this.shellPgid !== undefined && foreground.processGroupId !== this.shellPgid))
+      if (elapsed >= this.config.exactProbeAfterMs && acceptsStdinWait && exactWaitOwnsGeneration) {
         this.settleActive('stdin_read')
         return
       }

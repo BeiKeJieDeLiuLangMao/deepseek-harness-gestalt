@@ -109,6 +109,7 @@
     "apps/mobile/src/personal-pairing-model.ts",
     "apps/mobile/src/personal-pairing.ts",
     "apps/mobile/src/random-uuid.ts",
+    "snapshots/session/member-question-routed-ask/memory-member-question.ts",
     "apps/cli/tests/**/*.ts",
     "packages/*/*/tests/**/*.ts",
     "scripts/**/*.ts",
