@@ -12,7 +12,7 @@ The Web queue dock edits text-only rows. A pending inbox occurrence may neverthe
 
 ## Decision
 
-`QueueAction.edit.content` is the closed JSON-safe `QueueEditContentPart` union: `{ type: 'text'; text: string }` plus `{ type: 'image'; attachment: ImageAttachmentRef }`. The Host copies text and resolves each submitted image id against the exact pending occurrence, then writes that occurrence's authoritative reference. Caller-supplied media type, byte count, dimensions, and name never replace the stored values. Unknown ids fail with `QUEUE_EDIT_ATTACHMENT_NOT_REFERENCED`; omitting any current image fails with `QUEUE_EDIT_ATTACHMENT_OMITTED`. Both failures use `session/attachment-invalid` and leave the occurrence unchanged. Raw prompt image bytes, tool blocks, and plugin blocks are outside the generated Remote type and fail wire validation before this operation.
+`QueueAction.edit.content` is the closed JSON-safe `QueueEditContentPart` union: `{ type: 'text'; text: string }` plus `{ type: 'image'; attachment: ImageAttachmentRef }`. The Host groups the exact pending occurrence's image refs by id in content order, and each submitted image consumes the next ref for that id. Caller-supplied media type, byte count, dimensions, and name never replace the stored values. Unknown ids fail with `QUEUE_EDIT_ATTACHMENT_NOT_REFERENCED`; consuming an id more times than it occurs fails with `QUEUE_EDIT_ATTACHMENT_MULTIPLICITY`; leaving any occurrence unconsumed fails with `QUEUE_EDIT_ATTACHMENT_OMITTED`. All failures use `session/attachment-invalid` and leave the occurrence unchanged. Raw prompt image bytes, tool blocks, and plugin blocks are outside the generated Remote type and fail wire validation before this operation.
 
 ## Alternatives considered
 
@@ -28,4 +28,4 @@ The Web queue dock edits text-only rows. A pending inbox occurrence may neverthe
 
 ## Consequences
 
-Typert can analyze and emit Session and Workspace Host-for-Client Remotes, including `ctx.remote.directoryPicker`. Queue-edit callers may rewrite text while retaining images by id, but cannot mutate their authorized references or admit new images. The Web queue dock remains text-only and keeps mixed rows non-editable.
+Typert can analyze and emit Session and Workspace Host-for-Client Remotes, including `ctx.remote.directoryPicker`. Queue-edit callers may rewrite text while retaining the exact image occurrence multiset, but cannot mutate authorized references, multiply repeated model inputs, or admit new images. The generated Client and Gateway exercise legal mixed edits, multiplicity rejection, and raw prompt-image rejection. The Web queue dock remains text-only and keeps mixed rows non-editable.

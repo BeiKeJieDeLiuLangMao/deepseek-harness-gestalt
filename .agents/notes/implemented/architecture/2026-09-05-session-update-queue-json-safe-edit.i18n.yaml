@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-05-session-update-queue-json-safe-edit.md
-2026-09-05-session-update-queue-json-safe-edit.md: 2a0c64901c62a41a8d586d4684b9b3efed916355
-2026-09-05-session-update-queue-json-safe-edit.zh.md: ccc66aa4959c33f8b3879c0deabf1bf84c59b12b
+2026-09-05-session-update-queue-json-safe-edit.md: 1a25cd89396efd94c5b83c9c1b91e3a579209541
+2026-09-05-session-update-queue-json-safe-edit.zh.md: 017c45dffa0d302b3734a0ef3a22972cf8a123eb

@@ -157,6 +157,22 @@ describe('Session queue commands', () => {
     await expectFailure(Promise.resolve().then(() => controller.updateQueue({
       sessionId: agent.id,
       itemId: queued.id,
+      action: {
+        kind: 'edit',
+        content: [
+          { type: 'image', attachment: callerRef },
+          { type: 'image', attachment: callerRef },
+        ],
+      },
+    })), 'session/attachment-invalid', 'QUEUE_EDIT_ATTACHMENT_MULTIPLICITY')
+    expect(inbox.nextTurn[0]?.content).toEqual([
+      { type: 'text', text: 'caption edited' },
+      { type: 'image', attachment },
+    ])
+
+    await expectFailure(Promise.resolve().then(() => controller.updateQueue({
+      sessionId: agent.id,
+      itemId: queued.id,
       action: { kind: 'edit', content: [{ type: 'image', attachment: imageRef('foreign') }] },
     })), 'session/attachment-invalid', 'QUEUE_EDIT_ATTACHMENT_NOT_REFERENCED')
     expect(inbox.nextTurn[0]?.content).toEqual([
@@ -171,6 +187,50 @@ describe('Session queue commands', () => {
     })), 'session/attachment-invalid', 'QUEUE_EDIT_ATTACHMENT_OMITTED')
     expect(inbox.nextTurn[0]?.content).toEqual([
       { type: 'text', text: 'caption edited' },
+      { type: 'image', attachment },
+    ])
+    await ctx.fiber.dispose()
+  })
+
+  it('preserves repeated authorized image occurrences and rejects dropping one', async () => {
+    const { ctx, controller, agent, inbox } = await commandHarness()
+    const attachment = imageRef('repeated-image')
+    const queued = createUserMessage({
+      content: [
+        { type: 'image', attachment },
+        { type: 'text', text: 'between' },
+        { type: 'image', attachment },
+      ],
+      source: { kind: 'user' },
+    })
+    inbox.append('next-turn', queued)
+
+    expect(controller.updateQueue({
+      sessionId: agent.id,
+      itemId: queued.id,
+      action: {
+        kind: 'edit',
+        content: [
+          { type: 'image', attachment },
+          { type: 'text', text: 'rewritten' },
+          { type: 'image', attachment },
+        ],
+      },
+    })).toEqual({ accepted: true })
+    expect(inbox.nextTurn[0]?.content).toEqual([
+      { type: 'image', attachment },
+      { type: 'text', text: 'rewritten' },
+      { type: 'image', attachment },
+    ])
+
+    await expectFailure(Promise.resolve().then(() => controller.updateQueue({
+      sessionId: agent.id,
+      itemId: queued.id,
+      action: { kind: 'edit', content: [{ type: 'image', attachment }] },
+    })), 'session/attachment-invalid', 'QUEUE_EDIT_ATTACHMENT_OMITTED')
+    expect(inbox.nextTurn[0]?.content).toEqual([
+      { type: 'image', attachment },
+      { type: 'text', text: 'rewritten' },
       { type: 'image', attachment },
     ])
     await ctx.fiber.dispose()

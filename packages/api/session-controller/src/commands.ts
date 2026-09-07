@@ -388,7 +388,7 @@ export class SessionCommandController {
    * Mutate one still-pending queue occurrence without resuming a cold Agent.
    * Edit content is the JSON-safe {@link QueueEditContentPart} vocabulary.
    * Image ids must already appear on that occurrence; the Host reuses its
-   * authoritative references and refuses omissions.
+   * authoritative references and preserves each id's occurrence count.
    * @param request - Session, queue item, and requested mutation.
    * @returns acknowledgement that the queue mutation was applied.
    */
@@ -563,27 +563,39 @@ function queueEditContent(
   content: readonly QueueEditContentPart[],
   current: UserMessage['content'],
 ): UserMessage['content'] {
-  const authorized = new Map(
-    current.flatMap(block => block.type === 'image'
-      ? [[String(block.attachment.attachmentId), block.attachment] as const]
-      : []),
-  )
-  const retained = new Set<string>()
+  const authorized = new Map<string, ImageAttachmentRef[]>()
+  for (const block of current) {
+    if (block.type !== 'image') continue
+    const id = String(block.attachment.attachmentId)
+    const occurrences = authorized.get(id)
+    if (occurrences === undefined) authorized.set(id, [block.attachment])
+    else occurrences.push(block.attachment)
+  }
+  const retained = new Map<string, number>()
   const next = content.map((block) => {
     if (block.type === 'text') return { type: 'text' as const, text: block.text }
     const id = String(block.attachment.attachmentId)
-    const attachment = authorized.get(id)
-    if (attachment === undefined) {
+    const occurrences = authorized.get(id)
+    if (occurrences === undefined) {
       throw new RemoteError(
         'session/attachment-invalid',
         'queue edit image is not referenced by the pending item',
         { reason: 'QUEUE_EDIT_ATTACHMENT_NOT_REFERENCED' },
       )
     }
-    retained.add(id)
+    const index = retained.get(id) ?? 0
+    const attachment = occurrences[index]
+    if (attachment === undefined) {
+      throw new RemoteError(
+        'session/attachment-invalid',
+        'queue edit repeats an image more times than the pending item',
+        { reason: 'QUEUE_EDIT_ATTACHMENT_MULTIPLICITY' },
+      )
+    }
+    retained.set(id, index + 1)
     return { type: 'image' as const, attachment }
   })
-  if (retained.size !== authorized.size) {
+  if ([...authorized].some(([id, occurrences]) => retained.get(id) !== occurrences.length)) {
     throw new RemoteError(
       'session/attachment-invalid',
       'queue edit must retain every image referenced by the pending item',

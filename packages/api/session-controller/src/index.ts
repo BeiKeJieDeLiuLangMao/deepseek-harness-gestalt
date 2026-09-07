@@ -419,7 +419,7 @@ export class SessionController extends TypertRemoteService {
   /**
    * Mutate one still-pending queue occurrence on a live Agent.
    * Edit content uses JSON-safe {@link QueueEditContentPart}; image ids must
-   * refer to that occurrence and resolve to its authoritative references.
+   * resolve to its authoritative references with unchanged occurrence counts.
    * @param request - Session, queue item, and requested mutation.
    * @returns acknowledgement that the queue mutation was applied.
    */

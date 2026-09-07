@@ -158,7 +158,8 @@ export interface ModelCatalog {
 
 /**
  * JSON-safe queue-edit content. Text may change; image ids authorize reuse of
- * the exact {@link ImageAttachmentRef} already stored on the pending item.
+ * the exact {@link ImageAttachmentRef} occurrences already stored on the
+ * pending item, with the same count for each id.
  */
 export type QueueEditContentPart =
   | { readonly type: 'text'; readonly text: string }

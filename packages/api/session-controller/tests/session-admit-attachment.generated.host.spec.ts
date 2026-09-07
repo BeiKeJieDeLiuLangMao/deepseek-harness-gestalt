@@ -1,4 +1,4 @@
-/** Generated Session Remote codecs for Companion opaque-file admission. */
+/** Generated Session Remote codecs for attachment admission and queue editing. */
 
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { access, mkdtemp, rm } from 'node:fs/promises'
@@ -7,10 +7,12 @@ import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import AgentRegistry from '@deepseek-ai/dsh-agent'
+import AgentRegistry, { Inbox } from '@deepseek-ai/dsh-agent'
 import type { Agent, AgentHandle, CreateAgentOptions } from '@deepseek-ai/dsh-agent'
 import { apply as applyClientRemote, inject as clientRemoteInject } from '@deepseek-ai/dsh-api-gateway/client'
 import TypertGatewayService from '@deepseek-ai/dsh-api-gateway'
+import { AttachmentId } from '@deepseek-ai/dsh-attachment'
+import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import LocalAttachmentStore from '@deepseek-ai/dsh-attachment-local'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
@@ -84,9 +86,21 @@ function pdfPayload(extras: {
   }
 }
 
+function imageRef(id: string): ImageAttachmentRef {
+  return {
+    attachmentId: AttachmentId(id),
+    mediaType: 'image/png',
+    bytes: 1,
+    width: 1,
+    height: 1,
+    name: 'authorized.png',
+  }
+}
+
 async function createGeneratedHost(origin?: 'subagent'): Promise<{
   readonly ctx: Context
   readonly sessionId: SessionId
+  readonly inbox: Inbox
 }> {
   const dshHome = await mkdtemp(join(tmpdir(), 'dsh-admit-generated-'))
   roots.push(dshHome)
@@ -140,12 +154,13 @@ async function createGeneratedHost(origin?: 'subagent'): Promise<{
   }), { surfaceOp: 'append' })
   session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
   ctx.effect(() => () => { void liveHandle.close() })
-  ctx.agents.register({ id: session.id, session, status: 'idle', ctx } as Agent)
+  const inbox = new Inbox(session, { inserted: () => {}, discarded: () => {}, claimed: () => {} })
+  ctx.agents.register({ id: session.id, session, status: 'idle', ctx, inbox } as Agent)
   await ctx.plugin(SessionController, { nativeOpen: false })
-  return { ctx, sessionId: session.id }
+  return { ctx, sessionId: session.id, inbox }
 }
 
-describe('generated session.admitAttachment Remote codecs', () => {
+describe('generated Session Remote codecs', () => {
   it('analyzes the Host face without an illegal receiving-materializer effect', () => {
     expect(() => new WorkspaceTypertGenerator(workspaceRoot)
       .generate(['@deepseek-ai/dsh-api-session-controller'], ['host'])).not.toThrow()
@@ -190,7 +205,7 @@ describe('generated session.admitAttachment Remote codecs', () => {
     })).rejects.toMatchObject({ code: 'session/agent-busy' })
   })
 
-  it('mounts the generated Client remote and codec-rejects empty names', async () => {
+  it('mounts the generated Client remote and enforces attachment and queue-edit codecs', async () => {
     const { TYPERT_REMOTE } = await requireGeneratedArtifacts()
     const host = await createGeneratedHost()
     const ctx = new Context()
@@ -233,6 +248,119 @@ describe('generated session.admitAttachment Remote codecs', () => {
       ok: true,
       value: { attachment: { name: 'notes.pdf' } },
     })
+
+    const attachment = imageRef('generated-queue-image')
+    const queued = createUserMessage({
+      content: [
+        { type: 'text', text: 'before' },
+        { type: 'image', attachment },
+      ],
+      source: { kind: 'user' },
+    })
+    host.inbox.append('next-turn', queued)
+    const callerRef: ImageAttachmentRef = {
+      ...attachment,
+      mediaType: 'image/jpeg',
+      bytes: 200,
+      width: 20,
+      height: 10,
+      name: 'caller.jpg',
+    }
+    await expect(ctx.remote.session.updateQueue({
+      sessionId: host.sessionId,
+      itemId: queued.id,
+      action: {
+        kind: 'edit',
+        content: [
+          { type: 'text', text: 'after' },
+          { type: 'image', attachment: callerRef },
+        ],
+      },
+    })).resolves.toEqual({ ok: true, value: { accepted: true } })
+    expect(host.inbox.nextTurn[0]?.content).toEqual([
+      { type: 'text', text: 'after' },
+      { type: 'image', attachment },
+    ])
+
+    await expect(ctx.remote.session.updateQueue({
+      sessionId: host.sessionId,
+      itemId: queued.id,
+      action: {
+        kind: 'edit',
+        content: [{ type: 'image', attachment: imageRef('foreign-generated-image') }],
+      },
+    })).resolves.toMatchObject({
+      ok: false,
+      error: {
+        code: 'session/attachment-invalid',
+        details: { reason: 'QUEUE_EDIT_ATTACHMENT_NOT_REFERENCED' },
+      },
+    })
+    expect(host.inbox.nextTurn[0]?.content).toEqual([
+      { type: 'text', text: 'after' },
+      { type: 'image', attachment },
+    ])
+
+    await expect(ctx.remote.session.updateQueue({
+      sessionId: host.sessionId,
+      itemId: queued.id,
+      action: {
+        kind: 'edit',
+        content: [{ type: 'text', text: 'drops image' }],
+      },
+    })).resolves.toMatchObject({
+      ok: false,
+      error: {
+        code: 'session/attachment-invalid',
+        details: { reason: 'QUEUE_EDIT_ATTACHMENT_OMITTED' },
+      },
+    })
+    expect(host.inbox.nextTurn[0]?.content).toEqual([
+      { type: 'text', text: 'after' },
+      { type: 'image', attachment },
+    ])
+
+    await expect(ctx.remote.session.updateQueue({
+      sessionId: host.sessionId,
+      itemId: queued.id,
+      action: {
+        kind: 'edit',
+        content: [
+          { type: 'image', attachment: callerRef },
+          { type: 'image', attachment: callerRef },
+        ],
+      },
+    })).resolves.toMatchObject({
+      ok: false,
+      error: {
+        code: 'session/attachment-invalid',
+        details: { reason: 'QUEUE_EDIT_ATTACHMENT_MULTIPLICITY' },
+      },
+    })
+    expect(host.inbox.nextTurn[0]?.content).toEqual([
+      { type: 'text', text: 'after' },
+      { type: 'image', attachment },
+    ])
+
+    const rawImageEdit = {
+      sessionId: host.sessionId,
+      itemId: queued.id,
+      action: {
+        kind: 'edit',
+        content: [{ type: 'image', mediaType: 'image/png', data: 'AAAA' }],
+      },
+    }
+    await expect(Promise.resolve().then(() => ctx.remote.session.updateQueue(rawImageEdit as never)))
+      .rejects.toThrow('client api: session/updateQueue rejected "request"')
+    await expect(host.ctx.typertGateway.invoke({
+      namespace: 'session',
+      method: 'updateQueue',
+      args: { request: rawImageEdit },
+    })).rejects.toMatchObject({ code: 'gateway/input-invalid' })
+    expect(host.inbox.nextTurn[0]?.content).toEqual([
+      { type: 'text', text: 'after' },
+      { type: 'image', attachment },
+    ])
     await dispose()
   })
 })

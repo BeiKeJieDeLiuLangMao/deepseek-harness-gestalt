@@ -39,7 +39,7 @@
 - text: {{clock}}
 - button "queued.png, click to view original":
   - img "queued.png"
-- text: Compare with this screenshot {{clock}}
+- text: Compare this edited caption with the screenshot {{clock}}
 - button "Copy":
   - img
 - button "Thought for a while":

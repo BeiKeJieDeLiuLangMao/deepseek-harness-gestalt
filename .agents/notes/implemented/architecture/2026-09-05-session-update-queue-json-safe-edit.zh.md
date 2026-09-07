@@ -12,7 +12,7 @@ Web queue dock 只编辑纯文本行。pending inbox occurrence 仍可能同时�
 
 ## Decision
 
-`QueueAction.edit.content` 是封闭的 JSON-safe `QueueEditContentPart` 联合：`{ type: 'text'; text: string }` 与 `{ type: 'image'; attachment: ImageAttachmentRef }`。Host 复制文本，并针对精确的 pending occurrence 解析每个提交的图片 id，然后写回该 occurrence 的权威引用。调用方提供的媒体类型、字节数、尺寸和名称不会替换已存值。未知 id 以 `QUEUE_EDIT_ATTACHMENT_NOT_REFERENCED` 失败；遗漏任何现有图片以 `QUEUE_EDIT_ATTACHMENT_OMITTED` 失败。两者都使用 `session/attachment-invalid`，并保持 occurrence 不变。原始 prompt 图片字节、tool block 与插件 block 不在生成的 Remote 类型中，会在操作前被 wire 校验拒绝。
+`QueueAction.edit.content` 是封闭的 JSON-safe `QueueEditContentPart` 联合：`{ type: 'text'; text: string }` 与 `{ type: 'image'; attachment: ImageAttachmentRef }`。Host 按内容顺序将精确 pending occurrence 的图片引用按 id 分组，每个提交的图片逐次消费该 id 的下一个引用。调用方提供的媒体类型、字节数、尺寸和名称不会替换已存值。未知 id 以 `QUEUE_EDIT_ATTACHMENT_NOT_REFERENCED` 失败；消费次数超过该 id 的现有次数以 `QUEUE_EDIT_ATTACHMENT_MULTIPLICITY` 失败；任何 occurrence 未被消费则以 `QUEUE_EDIT_ATTACHMENT_OMITTED` 失败。所有失败都使用 `session/attachment-invalid`，并保持 occurrence 不变。原始 prompt 图片字节、tool block 与插件 block 不在生成的 Remote 类型中，会在操作前被 wire 校验拒绝。
 
 ## Alternatives considered
 
@@ -28,4 +28,4 @@ Web queue dock 只编辑纯文本行。pending inbox occurrence 仍可能同时�
 
 ## Consequences
 
-Typert 可以分析并生成 Session 与 Workspace 的 Host-for-Client Remote，包括 `ctx.remote.directoryPicker`。queue-edit 调用方可以按 id 保留图片并改写文本，但不能修改已授权引用或准入新图片。Web queue dock 仍只编辑纯文本行，并保持混合行不可编辑。
+Typert 可以分析并生成 Session 与 Workspace 的 Host-for-Client Remote，包括 `ctx.remote.directoryPicker`。queue-edit 调用方可以在保留精确图片 occurrence 多重集的同时改写文本，但不能修改已授权引用、增加重复的模型图片输入或准入新图片。生成的 Client 与 Gateway 覆盖合法混合 edit、重复次数拒绝和原始 prompt 图片拒绝。Web queue dock 仍只编辑纯文本行，并保持混合行不可编辑。
