@@ -57,7 +57,10 @@ beforeAll(async () => {
   ;({ DesktopCompanionProductOwner } = await import('../src/companion-product.ts'))
 }, 120_000)
 
-afterEach(() => runTeardown([...cleanups, ...uninstalls], () => stopShippedWebHosts(children, homes)))
+// Splice both registries empty (a repeated suite run must not reuse old
+// disposers) and order the merged list so the reversed drain runs cleanups —
+// cancel, settle, dispose, key-zeroing — before the Host uninstalls.
+afterEach(() => runTeardown([...uninstalls.splice(0), ...cleanups.splice(0)], () => stopShippedWebHosts(children, homes)))
 
 describe('assembled Desktop Relay live Session projection on shipped dsh web', () => {
   it('delivers a real Host turn live without a manual history pull', async () => {
