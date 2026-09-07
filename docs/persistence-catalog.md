@@ -250,12 +250,13 @@ Source: [`packages/core/session/src/types.ts:302`](../packages/core/session/src/
  * Whole Session-owned Browser Workspace snapshot. Log-only, last-wins.
  * Carries every owned instance, tab, per-tab revision, and last non-blank
  * URL so Session switch, reload, and replay restore the same Workspace
- * without exposing another Session's tabs.
+ * without exposing another Session's tabs. Writers mark the event
+ * `ignorable: true` so readers that do not know this type can skip it.
  */
 'browser/workspace': BrowserWorkspaceProjection
 ```
 
-Source: [`packages/browser/browser-workspace/src/types.ts:86`](../packages/browser/browser-workspace/src/types.ts)
+Source: [`packages/browser/browser-workspace/src/types.ts:87`](../packages/browser/browser-workspace/src/types.ts)
 
 ### `command/*`
 
@@ -569,7 +570,7 @@ Source: [`packages/interaction/member-question-sender/src/index.ts:98`](../packa
 }
 ```
 
-Source: [`packages/interaction/member-question-receiver/src/types.ts:283`](../packages/interaction/member-question-receiver/src/types.ts)
+Source: [`packages/interaction/member-question-receiver/src/types.ts:331`](../packages/interaction/member-question-receiver/src/types.ts)
 
 <a id="member-questionsettled--log-only"></a>
 
@@ -580,7 +581,7 @@ Source: [`packages/interaction/member-question-receiver/src/types.ts:283`](../pa
 'member-question/settled': CompanionMemberQuestionSettledResult
 ```
 
-Source: [`packages/interaction/member-question-receiver/src/types.ts:296`](../packages/interaction/member-question-receiver/src/types.ts)
+Source: [`packages/interaction/member-question-receiver/src/types.ts:344`](../packages/interaction/member-question-receiver/src/types.ts)
 
 ### `model/*`
 
@@ -596,7 +597,7 @@ Source: [`packages/interaction/member-question-receiver/src/types.ts:296`](../pa
 'model/selection': ModelSelection
 ```
 
-Source: [`packages/api/session-controller/src/types.ts:41`](../packages/api/session-controller/src/types.ts)
+Source: [`packages/api/session-controller/src/types.ts:40`](../packages/api/session-controller/src/types.ts)
 
 ### `permission/*`
 
@@ -707,7 +708,7 @@ Source: [`packages/sandbox/sandbox-policy/src/session-mode.ts:33`](../packages/s
 
 Types: [ScheduleChange](subsystems/schedule.md)
 
-Source: [`packages/schedule/schedule/src/types.ts:219`](../packages/schedule/schedule/src/types.ts)
+Source: [`packages/schedule/schedule/src/types.ts:244`](../packages/schedule/schedule/src/types.ts)
 
 ### `session/*`
 
@@ -717,20 +718,20 @@ Source: [`packages/schedule/schedule/src/types.ts:219`](../packages/schedule/sch
 
 ```ts persistence-catalog
 /**
- * Records one immutable file admitted through the authenticated Companion path.
- * This log-only event never enters model history.
- * @param attachment - durable verified file reference.
+ * Records one immutable Companion file after Host admission.
+ * Log-only: it never enters derived model history.
+ * @param attachment - durable verified opaque-byte reference.
  * @param operationId - idempotency identity from the encrypted Companion operation.
  * @param source - authenticated Companion admission source.
  */
 'session/attachment-admitted': {
-  attachment: FileAttachmentRef
+  attachment: ByteAttachmentRef
   operationId: string
   source: 'companion'
 }
 ```
 
-Source: [`packages/host/apiproxy/src/api/sessions.ts:29`](../packages/host/apiproxy/src/api/sessions.ts)
+Source: [`packages/api/session-controller/src/types.ts:48`](../packages/api/session-controller/src/types.ts)
 
 <a id="sessionend-seed--log-only"></a>
 
@@ -860,13 +861,13 @@ Source: [`packages/subagent/subagent/src/descriptor.ts:38`](../packages/subagent
 
 ```ts persistence-catalog
 /**
- * Records that this session's delegation tool exposes child provider,
- * model, and reasoning-effort selection. Appended before the first model
- * request; absence means the fixed-route definition. Log-only: it carries
+ * Records this Session's child-route selection decision. Appended before
+ * the first model request; an empty route list records disabled selection,
+ * while event absence means no decision was recorded. Log-only: it carries
  * no `surfaceOp` and never enters model history.
  */
 'subagent/model-selection-policy': {
-  /** Exact routes this Session may select explicitly for a child. */
+  /** Exact routes this Session may select explicitly; empty disables selection. */
   allowedModels: AllowedModelRoute[]
 }
 ```

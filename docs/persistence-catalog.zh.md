@@ -252,12 +252,13 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
  * Whole Session-owned Browser Workspace snapshot. Log-only, last-wins.
  * Carries every owned instance, tab, per-tab revision, and last non-blank
  * URL so Session switch, reload, and replay restore the same Workspace
- * without exposing another Session's tabs.
+ * without exposing another Session's tabs. Writers mark the event
+ * `ignorable: true` so readers that do not know this type can skip it.
  */
 'browser/workspace': BrowserWorkspaceProjection
 ```
 
-来源：[`packages/browser/browser-workspace/src/types.ts:86`](../packages/browser/browser-workspace/src/types.ts)
+来源：[`packages/browser/browser-workspace/src/types.ts:87`](../packages/browser/browser-workspace/src/types.ts)
 
 ### `command/*`
 
@@ -719,20 +720,20 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 ```ts persistence-catalog
 /**
- * Records one immutable file admitted through the authenticated Companion path.
- * This log-only event never enters model history.
- * @param attachment - durable verified file reference.
+ * Records one immutable Companion file after Host admission.
+ * Log-only: it never enters derived model history.
+ * @param attachment - durable verified opaque-byte reference.
  * @param operationId - idempotency identity from the encrypted Companion operation.
  * @param source - authenticated Companion admission source.
  */
 'session/attachment-admitted': {
-  attachment: FileAttachmentRef
+  attachment: ByteAttachmentRef
   operationId: string
   source: 'companion'
 }
 ```
 
-来源：[`packages/host/apiproxy/src/api/sessions.ts:29`](../packages/host/apiproxy/src/api/sessions.ts)
+来源：[`packages/api/session-controller/src/types.ts:48`](../packages/api/session-controller/src/types.ts)
 
 <a id="sessionend-seed--log-only"></a>
 
@@ -862,13 +863,13 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 ```ts persistence-catalog
 /**
- * Records that this session's delegation tool exposes child provider,
- * model, and reasoning-effort selection. Appended before the first model
- * request; absence means the fixed-route definition. Log-only: it carries
+ * Records this Session's child-route selection decision. Appended before
+ * the first model request; an empty route list records disabled selection,
+ * while event absence means no decision was recorded. Log-only: it carries
  * no `surfaceOp` and never enters model history.
  */
 'subagent/model-selection-policy': {
-  /** Exact routes this Session may select explicitly for a child. */
+  /** Exact routes this Session may select explicitly; empty disables selection. */
   allowedModels: AllowedModelRoute[]
 }
 ```

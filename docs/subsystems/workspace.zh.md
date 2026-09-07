@@ -123,7 +123,7 @@ interface Workspace {
 
 ## 消费方
 
-[dsh-host-apiproxy](../../packages/host/apiproxy) 是产品消费方：它经 `ctx.workspaceRegistry` 向 GUI 客户端提供工作区的 CRUD，并执行上文「先建会话再 attach」的流程。[dsh-agent-instructions](../../packages/context/agent-instructions) 尽管名字如此，却**不是**消费方：它在 agent 自己的 cwd 下发现 AGENTS.md 风格的指令文件，从不触碰 `ctx.workspaceRegistry`——两者共用的这个词指的是用户的工作目录，而非本注册表的实体。
+[dsh-workspace-controller](../../packages/api/workspace-controller) 负责工作区 CRUD、排序、归档以及通过生成式 Remote 暴露的可重连工作区 feed。[dsh-session-controller](../../packages/api/session-controller) 解析请求中的 `workspaceId`，以工作区路径作为 cwd 创建会话，并将会话挂接到该工作区。[dsh-agent-instructions](../../packages/context/agent-instructions) 尽管名字如此，却**不是**消费方：它在 agent 自己的 cwd 下发现 AGENTS.md 风格的指令文件，从不触碰 `ctx.workspaceRegistry`——两者共用的这个词指的是用户的工作目录，而非本注册表的实体。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
