@@ -1,8 +1,10 @@
 import { EventEmitter } from 'node:events'
 import { randomUUID } from 'node:crypto'
+import { existsSync } from 'node:fs'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
+import { resolve } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { AccountError } from '@deepseek-ai/dsh-platform-account'
 import { parseAttachmentBlobReservationId, parsePersonalPairingId, RemoteAccessError } from '@deepseek-ai/dsh-remote-access'
 import {
@@ -24,7 +26,9 @@ import {
   downloadCompanionAttachment,
   receiveCompanionAttachment,
 } from '../../../../apps/desktop/src/companion-attachments.ts'
-import { handleCompanionProductOperation } from '../../../../apps/desktop/src/companion-product.ts'
+import type {
+  handleCompanionProductOperation as HandleCompanionProductOperation,
+} from '../../../../apps/desktop/src/companion-product.ts'
 import type { DesktopHostRpc } from '../../../../apps/desktop/src/host-rpc.ts'
 import {
   COMPANION_ATTACHMENT_SEAL_OVERHEAD_BYTES,
@@ -42,6 +46,12 @@ interface RegisteredRoute {
 const closeServers: Array<() => Promise<void>> = []
 afterEach(async () => { await Promise.all(closeServers.splice(0).map(close => close())) })
 
+const requiredGeneratedRemotes = [
+  '../../../api/session-controller/lib/remote.js',
+  '../../../api/workspace-controller/lib/remote.js',
+].map(path => resolve(import.meta.dirname, path))
+let handleCompanionProductOperation: typeof HandleCompanionProductOperation
+
 const pairingA = parsePersonalPairingId('pairing-a')
 const attachmentKey = crypto.getRandomValues(new Uint8Array(32))
 const ready = { isCurrent: () => true, requireCurrent: () => {} }
@@ -53,7 +63,15 @@ const unusedHost: DesktopHostRpc = {
   followWorkspaces: async () => { throw new Error('attachment must not follow Host workspaces') },
 }
 
-describe('Remote attachment HTTP assembled transfer', () => {
+describe.skipIf(process.env.DSH_EXAMPLE_MODE !== 'lib')('Remote attachment HTTP assembled transfer', () => {
+  beforeAll(async () => {
+    const missing = requiredGeneratedRemotes.filter(path => !existsSync(path))
+    if (missing.length > 0) {
+      throw new Error(`built Remote Attachments lane is missing generated Remote artifacts:\n${missing.join('\n')}`)
+    }
+    ;({ handleCompanionProductOperation } = await import('../../../../apps/desktop/src/companion-product.ts'))
+  })
+
   it.each([
     ['binary', 'archive.bin', Uint8Array.of(0, 255, 1, 128, 64, 32)],
     ['image', 'pixel.png', Uint8Array.of(137, 80, 78, 71, 13, 10, 26, 10)],

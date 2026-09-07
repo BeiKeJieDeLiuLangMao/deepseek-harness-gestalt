@@ -64,7 +64,7 @@ Host 与 Client 保持两个 aggregate program，是因为两侧在相同键下�
 - 构造全仓 `ts.Program` 的脚本显式以 `tsconfig.host.json` 或 `tsconfig.client.json` 为种子——根 solution 永不作为种子，因为把两个 aggregate 展平进一个 program 会撞上 `Context` 合并冲突。
 - 新包只登记进一个 aggregate。包同时具有 Node loader 入口和 browser 入口并不构成拆分理由；普通 Client 插件的两份运行时产物都在 Client 构建阶段生成。
 
-Desktop 是应用组合，不是 package compiler face。workspace constraints 门禁保证它不进入任一根 aggregate，并要求在 Client tsc 之后执行完整的不发射检查。
+Desktop 是应用组合，不是 package compiler face。workspace constraints 门禁保证它不进入任一根 aggregate，并要求在 Client tsc 之后执行完整的不发射检查。同时导入两侧的精确 Platform 集成测试仍由各自 package 拥有，并列入 `POST_GENERATION_CROSS_FACE_TESTS`；第二个不发射检查只以这些测试为 root，复用现有 Project Reference，且不展平任何 aggregate。
 
 `api/remotes` 是唯一拆分 Host/Client tsconfig 的仓库特例。它的 Host 入口必须进入 Host Typert 图，而 Client 入口导入 Host tsdown 才会生成的 `/remote` 声明，因此本包根 `tsconfig.json` 只作为 solution，两个 aggregate 和直接消费方分别引用 `tsconfig.host.json` 或 `tsconfig.client.json`。workspace `constraints` 门禁遍历可达的 Project Reference 图，并按各引用 project 自身的 compiler face 检查：只有单一配置的目标可由任一 face 引用，拆分配置的目标则必须引用匹配的 leaf，不得引用 solution 根或另一侧 leaf；该门禁按「两个 leaf 配置同时存在」自动发现拆分包，所以新拆分的包会自动纳入管辖。不要把该结构推广到其他包；[`api-remotes` README](../packages/api/remotes/README.zh.md) 说明 Host/Client 拆分与构建顺序。
 
@@ -76,6 +76,7 @@ tsdown --env.DSH_BUILD_FACE host
 pnpm run typecheck:host-contracts-ready
 tsc -b tsconfig.client.json
 pnpm run typecheck:desktop-contracts-ready
+pnpm run typecheck:cross-face-contracts-ready
 tsdown --env.DSH_BUILD_FACE client
 pnpm run build:web
 ```
@@ -84,7 +85,7 @@ pnpm run build:web
 
 导入生成 `/remote` 声明的 Host 测试以 `.generated.host.spec.ts` 结尾。首次 Host tsc 排除这个精确模式；Host tsdown 生成声明后，`typecheck:host-contracts-ready` 使用 Host aggregate 的 compiler options 与 Project References 检查选中的测试。这些文件仍是 Host 测试和普通 Vitest 输入；生成后检查不构成新的 package 或 Client compiler face。
 
-Typert 只在 Host tsdown 中以 `tsconfig.host.json` 为种子运行。它分析 Host 类型并生成 Host 反射产物及 Host-for-Client Remote 投影；Client tsdown 不启动 Typert。`pnpm run typecheck` 因此先执行完整 Host lib 阶段，再运行 Client tsc 与 Desktop 应用检查；`pnpm run build` 继续执行 Client tsdown 和 Web 构建。该顺序的决策记录见 [API Remotes 生成约定构建 Note](../.agents/notes/implemented/process/2026-08-08-api-remotes-generated-contract-build.zh.md)。
+Typert 只在 Host tsdown 中以 `tsconfig.host.json` 为种子运行。它分析 Host 类型并生成 Host 反射产物及 Host-for-Client Remote 投影；Client tsdown 不启动 Typert。`pnpm run typecheck` 因此先执行完整 Host lib 阶段，再运行 Client tsc、Desktop 应用检查与精确跨 face 集成检查；`pnpm run build` 继续执行 Client tsdown 和 Web 构建。该顺序的决策记录见 [API Remotes 生成约定构建 Note](../.agents/notes/implemented/process/2026-08-08-api-remotes-generated-contract-build.zh.md)。
 
 `pnpm run build` 会内联调用方精确的 `DSH_CLIENT_*` 环境；未设置时不使用任何公开 client 值。`pnpm run build:official` 是与 CI 和 release 产物构建等价的跨平台本地命令。每次完整构建成功后都会写入一份被 gitignore 的记录，把这些值与 Vite 输出及动态 client bundle 绑定；release 打包和 built Web 测试会拒绝缺少记录或被后续局部构建改动的产物。
 

@@ -60,7 +60,7 @@ Host and Client stay two aggregate programs because both sides declaration-merge
 - A script that builds a repo-wide `ts.Program` seeds `tsconfig.host.json` or `tsconfig.client.json` explicitly — never the root solution, because flattening both aggregates into one program collides the `Context` merges.
 - A new package is registered in exactly one aggregate. Having both a Node loader entry and a browser entry is not a reason to split a package; an ordinary Client plugin produces both runtime artifacts during the Client build phase.
 
-Desktop is an application composition rather than a package compiler face. The workspace constraints gate keeps it out of both root aggregates and requires its complete no-emit check after Client tsc.
+Desktop is an application composition rather than a package compiler face. The workspace constraints gate keeps it out of both root aggregates and requires its complete no-emit check after Client tsc. Exact Platform integration tests that import both faces stay with their package owners in `POST_GENERATION_CROSS_FACE_TESTS`; a second no-emit check uses only those tests as roots and reuses existing Project References without flattening either aggregate.
 
 `api/remotes` is the repository's only package with split Host and Client tsconfigs. Its Host entry must participate in the Host Typert graph, while its Client entry imports `/remote` declarations that Host tsdown must generate first. The package-root `tsconfig.json` is therefore only a solution, and the two aggregates and direct consumers reference `tsconfig.host.json` or `tsconfig.client.json` respectively. The workspace `constraints` gate walks the reachable Project Reference graph and checks each referencing project's own compiler face: a single-config target remains valid from either face, while a split target must name the matching leaf rather than its solution root or opposite leaf; it discovers split packages from the presence of both leaf configs, so a new split joins the gate automatically. Do not copy this structure to other packages; the [`api-remotes` README](../packages/api/remotes/README.md) explains the Host/Client split and build order.
 
@@ -72,6 +72,7 @@ tsdown --env.DSH_BUILD_FACE host
 pnpm run typecheck:host-contracts-ready
 tsc -b tsconfig.client.json
 pnpm run typecheck:desktop-contracts-ready
+pnpm run typecheck:cross-face-contracts-ready
 tsdown --env.DSH_BUILD_FACE client
 pnpm run build:web
 ```
@@ -80,7 +81,7 @@ Both tsdown passes use the same complete workspace match. They neither scan buil
 
 Host tests that import generated `/remote` declarations end in `.generated.host.spec.ts`. The first Host tsc excludes that exact pattern; after Host tsdown generates the declarations, `typecheck:host-contracts-ready` checks the selected tests with the Host aggregate's compiler options and Project References. They remain Host tests and ordinary Vitest inputs; the post-generation check forms no package or Client compiler face.
 
-Typert runs only during Host tsdown, seeded by `tsconfig.host.json`. It analyzes Host types and generates both Host reflection artifacts and the Host-for-Client Remote projection; Client tsdown does not start Typert. Consequently, `pnpm run typecheck` runs the complete Host lib phase before Client tsc and the Desktop application check, while `pnpm run build` continues through Client tsdown and the Web build. The [API Remotes generated-contract build note](../.agents/notes/implemented/process/2026-08-08-api-remotes-generated-contract-build.md) records this ordering decision.
+Typert runs only during Host tsdown, seeded by `tsconfig.host.json`. It analyzes Host types and generates both Host reflection artifacts and the Host-for-Client Remote projection; Client tsdown does not start Typert. Consequently, `pnpm run typecheck` runs the complete Host lib phase before Client tsc, the Desktop application check, and the exact cross-face integration check, while `pnpm run build` continues through Client tsdown and the Web build. The [API Remotes generated-contract build note](../.agents/notes/implemented/process/2026-08-08-api-remotes-generated-contract-build.md) records this ordering decision.
 
 `pnpm run build` embeds the caller's exact `DSH_CLIENT_*` environment and uses no public client values when none are set. `pnpm run build:official` is the cross-platform local equivalent of the CI and release artifact build. Each successful complete build writes a gitignored record that binds those values to the Vite output and dynamic client bundles; release packing and built Web tests reject a missing record or artifacts changed by a later partial build.
 

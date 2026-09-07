@@ -9,9 +9,14 @@ import {
   collectPostGenerationApplicationViolations,
   collectProjectReferenceFaceViolations,
   collectWebHostTestFaceViolations,
+  POST_GENERATION_APPLICATION_PROJECTS,
+  POST_GENERATION_CROSS_FACE_TESTS,
 } from './project-reference-faces.ts'
 
 const roots: string[] = []
+const desktopApplication = POST_GENERATION_APPLICATION_PROJECTS[0]
+if (desktopApplication === undefined) throw new Error('Desktop post-generation application inventory is missing')
+const crossFaceTests = [...POST_GENERATION_CROSS_FACE_TESTS]
 
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
@@ -26,7 +31,8 @@ function generatedContractBuildScripts(): Record<string, string> {
     'build:lib': 'npm run build:lib:host && npm run build:lib:client',
     'build:lib:client': 'npm run typecheck:contracts-ready && tsdown --env.DSH_BUILD_FACE client',
     typecheck: 'npm run build:lib:host && npm run typecheck:contracts-ready',
-    'typecheck:contracts-ready': 'tsc -b tsconfig.client.json && npm run typecheck:desktop-contracts-ready',
+    'typecheck:contracts-ready': 'tsc -b tsconfig.client.json && npm run typecheck:desktop-contracts-ready && npm run typecheck:cross-face-contracts-ready',
+    'typecheck:cross-face-contracts-ready': 'tsx scripts/typecheck-cross-face-contracts-ready.ts',
     'typecheck:desktop-contracts-ready': 'tsc -p apps/desktop/tsconfig.json',
   }
 }
@@ -41,6 +47,11 @@ function writePostGenerationDesktop(
   writeFileSync(join(root, 'apps/desktop/src/main.ts'), 'export {}\n')
   writeFileSync(join(root, 'apps/desktop/tests/main.spec.ts'), 'export {}\n')
   writeFileSync(join(root, 'apps/desktop/scripts/build.mjs'), 'export {}\n')
+  for (const test of crossFaceTests) {
+    const path = join(root, test)
+    mkdirSync(dirname(path), { recursive: true })
+    writeFileSync(path, 'export {}\n')
+  }
   writeJson(join(root, 'apps/desktop/tsconfig.json'), {
     compilerOptions: {
       noEmit: true,
@@ -59,7 +70,10 @@ function postGenerationApplicationFixture(): string {
   roots.push(root)
   mkdirSync(join(root, 'packages/core/shared'), { recursive: true })
   writeJson(join(root, 'packages/core/shared/tsconfig.json'), { compilerOptions: { composite: true } })
-  writeJson(join(root, 'tsconfig.host.json'), { references: [] })
+  writeJson(join(root, 'tsconfig.host.json'), {
+    exclude: crossFaceTests,
+    references: [],
+  })
   writeJson(join(root, 'tsconfig.client.json'), { references: [] })
   writeJson(join(root, 'package.json'), { scripts: generatedContractBuildScripts() })
   writePostGenerationDesktop(root)
@@ -117,6 +131,7 @@ function workspaceFixture(options: {
   writeJson(join(split, 'tsconfig.host.json'), { references: [{ path: '../../core/shared' }] })
   writeJson(join(split, 'tsconfig.client.json'), { references: [{ path: '../../core/shared' }] })
   writeJson(join(root, 'tsconfig.host.json'), {
+    exclude: crossFaceTests,
     include: ['apps/web/tests/example.e2e.ts'],
     references: options.host.map(path => ({ path })),
   })
@@ -159,7 +174,10 @@ describe('Project Reference compiler faces', () => {
 
   it('rejects a post-generation application in either root aggregate', () => {
     const root = postGenerationApplicationFixture()
-    writeJson(join(root, 'tsconfig.host.json'), { references: [{ path: './apps/desktop' }] })
+    writeJson(join(root, 'tsconfig.host.json'), {
+      exclude: crossFaceTests,
+      references: [{ path: './apps/desktop' }],
+    })
     writeJson(join(root, 'tsconfig.client.json'), { references: [{ path: './apps/desktop' }] })
 
     expect(collectPostGenerationApplicationViolations(root)).toEqual([
@@ -191,6 +209,59 @@ describe('Project Reference compiler faces', () => {
     ])
   })
 
+  it('rejects a missing post-generation cross-face test', () => {
+    const root = postGenerationApplicationFixture()
+    const test = crossFaceTests[0]
+    if (test === undefined) throw new Error('Post-generation cross-face test inventory is empty')
+    rmSync(join(root, test))
+
+    expect(collectPostGenerationApplicationViolations(root)).toEqual([
+      `POST_GENERATION_CROSS_FACE_TESTS: ${JSON.stringify(test)} is not a file`,
+    ])
+  })
+
+  it('requires an exact Host exclusion for every post-generation cross-face test', () => {
+    const root = postGenerationApplicationFixture()
+    const [test, ...remaining] = crossFaceTests
+    if (test === undefined) throw new Error('Post-generation cross-face test inventory is empty')
+    writeJson(join(root, 'tsconfig.host.json'), {
+      exclude: [...remaining, 'packages/platform/**'],
+      references: [],
+    })
+
+    expect(collectPostGenerationApplicationViolations(root)).toEqual([
+      `tsconfig.host.json: post-generation cross-face test ${JSON.stringify(test)} must be excluded exactly`,
+    ])
+  })
+
+  it('rejects an empty or duplicate post-generation cross-face test inventory', () => {
+    const root = postGenerationApplicationFixture()
+    const test = crossFaceTests[0]
+    if (test === undefined) throw new Error('Post-generation cross-face test inventory is empty')
+
+    expect(collectPostGenerationApplicationViolations(root, POST_GENERATION_APPLICATION_PROJECTS, []))
+      .toContain('POST_GENERATION_CROSS_FACE_TESTS: inventory must not be empty')
+    expect(collectPostGenerationApplicationViolations(
+      root,
+      POST_GENERATION_APPLICATION_PROJECTS,
+      [...crossFaceTests, test],
+    )).toContain(`POST_GENERATION_CROSS_FACE_TESTS: duplicate entry ${JSON.stringify(test)}`)
+  })
+
+  it('rejects a stale exact post-generation cross-face test exclusion', () => {
+    const root = postGenerationApplicationFixture()
+    const [stale, ...current] = crossFaceTests
+    if (stale === undefined) throw new Error('Post-generation cross-face test inventory is empty')
+
+    expect(collectPostGenerationApplicationViolations(
+      root,
+      POST_GENERATION_APPLICATION_PROJECTS,
+      current,
+    )).toEqual([
+      `tsconfig.host.json: stale post-generation cross-face test exclusion ${JSON.stringify(stale)} is absent from POST_GENERATION_CROSS_FACE_TESTS`,
+    ])
+  })
+
   it('rejects scripts that check Desktop before generated contracts and the Client aggregate', () => {
     const root = postGenerationApplicationFixture()
     writeJson(join(root, 'package.json'), {
@@ -205,7 +276,7 @@ describe('Project Reference compiler faces', () => {
     expect(collectPostGenerationApplicationViolations(root)).toEqual([
       'package.json: script "build:lib" must be "npm run build:lib:host && npm run build:lib:client"',
       'package.json: script "build:lib:client" must be "npm run typecheck:contracts-ready && tsdown --env.DSH_BUILD_FACE client"',
-      'package.json: script "typecheck:contracts-ready" must be "tsc -b tsconfig.client.json && npm run typecheck:desktop-contracts-ready"',
+      'package.json: script "typecheck:contracts-ready" must be "tsc -b tsconfig.client.json && npm run typecheck:desktop-contracts-ready && npm run typecheck:cross-face-contracts-ready"',
     ])
   })
 

@@ -102,6 +102,46 @@ export function createCompilerFaceConsumerProgram(
   })
 }
 
+/**
+ * Create a no-emit program for integration tests that intentionally consume both compiler faces.
+ *
+ * The selected tests are the only root files. Project References are reused
+ * from the application checker and both aggregates, so this program consumes
+ * their emitted declarations without flattening either aggregate's file list.
+ *
+ * @param projectRoot - repository root containing both compiler aggregates.
+ * @param rootNames - exact repository-relative cross-face test roots.
+ * @param applicationConfig - no-emit application config supplying compiler options and references.
+ * @returns a program over only the selected tests and their imported dependencies.
+ */
+export function createPostGenerationCrossFaceProgram(
+  projectRoot: string,
+  rootNames: readonly string[],
+  applicationConfig = 'apps/desktop/tsconfig.json',
+): ts.Program {
+  const application = parseConfig(resolve(projectRoot, applicationConfig))
+  const aggregateReferences = (['host', 'client'] as const)
+    .flatMap(face => parseConfig(resolve(projectRoot, `tsconfig.${face}.json`)).projectReferences ?? [])
+  const projectReferences = deduplicateProjectReferences([
+    ...(application.projectReferences ?? []),
+    ...aggregateReferences,
+  ])
+  return ts.createProgram({
+    rootNames: rootNames.map(file => resolve(projectRoot, file)),
+    options: semanticCompilerOptions(application.options),
+    ...projectReferences.length === 0 ? {} : { projectReferences },
+  })
+}
+
+function deduplicateProjectReferences(references: readonly ts.ProjectReference[]): ts.ProjectReference[] {
+  const unique = new Map<string, ts.ProjectReference>()
+  for (const reference of references) {
+    const path = ts.resolveProjectReferencePath(reference)
+    if (!unique.has(path)) unique.set(path, reference)
+  }
+  return [...unique.values()]
+}
+
 /** A repository-scoped TypeScript Program and its shared TypeChecker. */
 export class TypeScriptProject {
   /** The bound cross-file TypeScript program. */

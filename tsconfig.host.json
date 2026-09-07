@@ -1,9 +1,9 @@
 {
   // Host aggregate (one of the two aggregate check units; see tsconfig.json).
   // packages/client type-checks in tsconfig.client.json, then the Desktop
-  // application checks its complete mixed graph after generated contracts
-  // exist. The two sides merge cordis Context under the same keys, so one
-  // aggregate program cannot see both.
+  // application and exact cross-face integration roots check their mixed
+  // graphs after generated contracts exist. The two sides merge cordis Context
+  // under the same keys, so one aggregate program cannot see both.
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
     "noEmit": true,
@@ -118,8 +118,13 @@
   // suffixes are mutually exclusive, so each aggregate excludes the other's
   // and the package test glob above needs no per-file entry.
   "exclude": [
-    // Generated Remote consumers run after Host tsdown materializes their declarations.
+    // Generated Remote and cross-face consumers run after their dependencies emit.
     "packages/*/*/tests/**/*.generated.host.spec.ts",
+    "packages/platform/platform-account-http/tests/assembled.spec.ts",
+    "packages/platform/remote-access-http/tests/assembled.spec.ts",
+    "packages/platform/remote-access-http/tests/two-instance-assembled.spec.ts",
+    "packages/platform/remote-access/tests/invariant-companions.spec.ts",
+    "packages/platform/remote-attachments/tests/http-assembled.built.e2e.ts",
     "packages/client/*/src/**",
     "packages/*/*/tests/**/*.client.ts",
     "packages/*/*/tests/**/*.client.tsx",

@@ -22,6 +22,15 @@ export const POST_GENERATION_APPLICATION_PROJECTS: readonly PostGenerationApplic
   },
 ]
 
+/** Integration tests that require emitted Host and Client Project References. */
+export const POST_GENERATION_CROSS_FACE_TESTS = [
+  'packages/platform/platform-account-http/tests/assembled.spec.ts',
+  'packages/platform/remote-access-http/tests/assembled.spec.ts',
+  'packages/platform/remote-access-http/tests/two-instance-assembled.spec.ts',
+  'packages/platform/remote-access/tests/invariant-companions.spec.ts',
+  'packages/platform/remote-attachments/tests/http-assembled.built.e2e.ts',
+] as const
+
 export const GESTALT_COMPILER_FACES: Readonly<Record<ProjectFace, readonly string[]>> = {
   host: [
     'apps/platform',
@@ -90,7 +99,8 @@ const GENERATED_CONTRACT_BUILD_SCRIPTS: Readonly<Record<string, string>> = {
   'build:lib': 'npm run build:lib:host && npm run build:lib:client',
   'build:lib:client': 'npm run typecheck:contracts-ready && tsdown --env.DSH_BUILD_FACE client',
   typecheck: 'npm run build:lib:host && npm run typecheck:contracts-ready',
-  'typecheck:contracts-ready': 'tsc -b tsconfig.client.json && npm run typecheck:desktop-contracts-ready',
+  'typecheck:contracts-ready': 'tsc -b tsconfig.client.json && npm run typecheck:desktop-contracts-ready && npm run typecheck:cross-face-contracts-ready',
+  'typecheck:cross-face-contracts-ready': 'tsx scripts/typecheck-cross-face-contracts-ready.ts',
   'typecheck:desktop-contracts-ready': 'tsc -p apps/desktop/tsconfig.json',
 }
 
@@ -152,11 +162,13 @@ export function collectProjectReferenceFaceViolations(root: string): string[] {
  *
  * @param root - Repository root containing compiler configs and package scripts.
  * @param applications - Application projects checked after both aggregates.
+ * @param crossFaceTests - Integration tests checked after both aggregates.
  * @returns Repo-relative diagnostics for misplaced or emitting application checks.
  */
 export function collectPostGenerationApplicationViolations(
   root: string,
   applications: readonly PostGenerationApplicationProject[] = POST_GENERATION_APPLICATION_PROJECTS,
+  crossFaceTests: readonly string[] = POST_GENERATION_CROSS_FACE_TESTS,
 ): string[] {
   const violations: string[] = []
   const aggregateReferences = new Map<ProjectFace, Set<string>>()
@@ -196,6 +208,33 @@ export function collectPostGenerationApplicationViolations(
     }
     if (projectReferences(config).length === 0) {
       violations.push(`${application.config}: post-generation application check must retain its Project References`)
+    }
+  }
+
+  const hostConfigPath = resolve(root, 'tsconfig.host.json')
+  const hostExcludes = existsSync(hostConfigPath)
+    ? stringEntries(projectConfig(root, hostConfigPath).exclude)
+    : new Set<string>()
+  if (crossFaceTests.length === 0) {
+    violations.push('POST_GENERATION_CROSS_FACE_TESTS: inventory must not be empty')
+  }
+  const crossFaceSet = new Set<string>()
+  for (const test of crossFaceTests) {
+    if (crossFaceSet.has(test)) {
+      violations.push(`POST_GENERATION_CROSS_FACE_TESTS: duplicate entry ${JSON.stringify(test)}`)
+      continue
+    }
+    crossFaceSet.add(test)
+    if (statSync(resolve(root, test), { throwIfNoEntry: false })?.isFile() !== true) {
+      violations.push(`POST_GENERATION_CROSS_FACE_TESTS: ${JSON.stringify(test)} is not a file`)
+    }
+    if (!hostExcludes.has(test)) {
+      violations.push(`tsconfig.host.json: post-generation cross-face test ${JSON.stringify(test)} must be excluded exactly`)
+    }
+  }
+  for (const excluded of hostExcludes) {
+    if (isExactPackageTestFileEntry(excluded) && !crossFaceSet.has(excluded)) {
+      violations.push(`tsconfig.host.json: stale post-generation cross-face test exclusion ${JSON.stringify(excluded)} is absent from POST_GENERATION_CROSS_FACE_TESTS`)
     }
   }
 
@@ -340,6 +379,11 @@ function isExactWebTestFileEntry(entry: string, prefix: string): boolean {
   if (!entry.startsWith(prefix) || entry.slice(prefix.length).includes('/')) return false
   if (/[?*{}[\]]/.test(entry)) return false
   return /\.(?:e2e|snapshot|acceptance|perf|spec|test)\.(?:ts|tsx)$/.test(entry)
+}
+
+function isExactPackageTestFileEntry(entry: string): boolean {
+  if (/[?*{}[\]]/.test(entry)) return false
+  return /^packages\/[^/]+\/[^/]+\/tests\/.+\.(?:e2e|spec|test)\.(?:ts|tsx)$/u.test(entry)
 }
 
 function stringEntries(values: readonly unknown[] | undefined): Set<string> {

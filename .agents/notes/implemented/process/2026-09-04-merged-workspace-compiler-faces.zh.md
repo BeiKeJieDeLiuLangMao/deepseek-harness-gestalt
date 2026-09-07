@@ -12,7 +12,9 @@ Status: implemented
 
 Lockfile 从完整 pnpm workspace 生成，包含 pnpm 发现的全部 306 个 workspace project。干净安装只选择当前 host 可执行的 binary payload；跨平台 packaging 仍在隔离树中负责覆盖 `supportedArchitectures`。
 
-每个保留的 Gestalt Host 或 Client project 都有显式根 aggregate reference。仓库自有 discovery pattern 独立于 `GESTALT_COMPILER_FACES` 对保留下游 compiler project 分类；workspace constraints 会拒绝显式 inventory 或匹配 aggregate 中缺失的 project。Split project 仍必须引用匹配的 leaf config；因此 Better Sidebar Client project 引用 `client/connection/tsconfig.client.json`，而不是其 solution root。同一个已执行 constraint 通过 TypeScript AST 发现所有以静态方式直接导入 `./scaffold.ts` 的现有顶层 Web test，要求其精确路径同时出现在 Web project exclude 与根 Host include 中，拒绝任一清单中失效的精确 Web test 文件条目，并在 discovery 没有得到任何 consumer 时失败。
+每个保留的 Gestalt package project 都有显式根 aggregate reference。仓库自有 discovery pattern 独立于 `GESTALT_COMPILER_FACES` 对保留下游 compiler project 分类；workspace constraints 会拒绝显式 inventory 或匹配 aggregate 中缺失的 project。Split project 仍必须引用匹配的 leaf config；因此 Better Sidebar Client project 引用 `client/connection/tsconfig.client.json`，而不是其 solution root。完整应用组合改在两个 aggregate 之后检查：Desktop 的不发射 project 保留全部 `src`、`tests` 与 `scripts`，`POST_GENERATION_CROSS_FACE_TESTS` 则列出同时导入两侧的精确 Platform 集成测试。生成后检查器复用现有配置中的直接 Project Reference，永不展平任一 aggregate 的文件。
+
+Mobile 生产源码只属于 Mobile Client project。Remote Access Client 测试使用 `.client.spec.ts` 后缀，由 Client aggregate 拥有。跨 face 集成测试仍由各自 Platform package 拥有，以精确路径从 Host 排除；清单为空、重复、缺失、失效或被宽泛 exclusion 替代时，公共生成后类型检查都会失败。同一个已执行 constraint 通过 TypeScript AST 发现所有以静态方式直接导入 `./scaffold.ts` 的现有顶层 Web test，要求其精确路径同时出现在 Web project exclude 与根 Host include 中，拒绝任一清单中失效的精确 Web test 文件条目，并在 discovery 没有得到任何 consumer 时失败。
 
 Client-only Cordis `Context` augmentation 只能从公开 Client 入口到达。共享快照类型使用包内专用名称，不再导出另一个 `Context`，因此 Typert 可以独立索引 Host 与 Client compiler face，而不会把 Host service signature 解析为 Client 结构镜像。Cordis catalog partition 仍会扫描每个 augmentation，并要求每个 Host 已渲染或显式归为 Client-only 的 service 具有唯一 owner。
 
@@ -28,8 +30,8 @@ Client-only Cordis `Context` augmentation 只能从公开 Client 入口到达。
 
 ## 后果
 
-Frozen clean install 会从生成的 lockfile 重新链接 Zod 与全部 workspace dependency。Direct Host 与 Client aggregate program 不再报告由 compiler face 缺失导致的 `TS6307` source-missing diagnostic；剩余失败属于后续 API 与迁移工作。
+Frozen clean install 会从生成的 lockfile 重新链接 Zod 与全部 workspace dependency。Direct Host 与 Client aggregate program 不再报告由 compiler face 缺失导致的 `TS6307` source-missing diagnostic；混合应用检查只在两侧构建完成后消费两组发射声明。
 
-显式 Gestalt compiler-face inventory 与独立 discovery classification 都是持续维护义务。新增或移除保留下游 project 时，必须同步更新 discovery pattern、aggregate 与 inventory；focused regression test 会从两个声明清单同时移除一个 project，并仍然观察到遗漏。静态导入 Host scaffold 的 Web test 由 discovery 发现，而不是人工抽样；因此新增、移除或重命名这类 test 时，必须保持 Web exclude 与 Host include 同步。
+显式 Gestalt compiler-face 与生成后测试 inventory 都是持续维护义务。新增或移除保留下游 project 时，必须同步更新 discovery pattern、aggregate 与 inventory；新增或移除跨 face 测试时，必须同步更新精确 Host exclusion 与生成后 inventory。静态导入 Host scaffold 的 Web test 由 discovery 发现，而不是人工抽样；因此新增、移除或重命名这类 test 时，必须保持 Web exclude 与 Host include 同步。
 
 Host catalog 会省略 Client-only service，而 Client Typert discovery 仍可解析其 declaration。Client augmentation 若变得可从 Host 到达，或快照镜像以通用 `Context` 名称导出，face-specific catalog regression 会失败，而不是由 runtime exclusion 隐藏。

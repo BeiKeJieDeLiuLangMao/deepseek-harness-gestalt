@@ -1,7 +1,8 @@
 {
   // Solution file: the Host and Client aggregate graph for `tsc -b
-  // tsconfig.json` and the tsserver entry. The Desktop application check runs
-  // after the Client aggregate through `typecheck:contracts-ready`. `extends`
+  // tsconfig.json` and the tsserver entry. The Desktop application and exact
+  // cross-face integration checks run after the Client aggregate through
+  // `typecheck:contracts-ready`. `extends`
   // carries the base paths for get-tsconfig
   // consumers — tsx running scripts/ (no nearer tsconfig)
   // resolves workspace imports through this file. `files: []` keeps it
