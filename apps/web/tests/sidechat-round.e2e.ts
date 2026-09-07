@@ -26,7 +26,6 @@ const FAILURE_EXPECTED = join(SNAPSHOT_DIR, 'failure.expected.md')
 const MODE = webSnapshotMode()
 const PROMPT = 'Reply with a one-sentence description of event sourcing, then stop.'
 const FAILURE_PROMPT = 'Keep this draft after the Side Chat admission refusal.'
-const FAILURE_MESSAGE = 'Side Chat admission rejected by fixture'
 const RESUME_PROMPT = 'Restate that description in one sentence after restoring this Side Chat.'
 const DESCENDANT_PROMPT = 'Describe event sourcing in one sentence for a nested Side Chat, then stop.'
 const SIDE_BOUNDARY_PREFIX = 'Side conversation boundary'
@@ -191,41 +190,32 @@ describe.skipIf(MODE === 'record')('web e2e: Side Chat through the shipped workb
       MODE,
     )
 
-    const childEventCount = child?.session.events.length
-    await page.route('**/sidebar/api/sidechat.prompt', async (route) => {
-      expect(route.request().postDataJSON()).toEqual({
-        childId,
-        text: FAILURE_PROMPT,
-        mode: 'queue',
-      })
-      await route.fulfill({
-        status: 409,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          ok: false,
-          error: { code: 'sidechat-error', message: FAILURE_MESSAGE },
-        }),
-      })
-    }, { times: 1 })
-    await sideComposer.fill(FAILURE_PROMPT)
-    await sideComposer.press('Enter')
-    const failureAlert = page.getByRole('alert').filter({
-      hasText: `${FAILURE_MESSAGE} (gateway/internal)`,
-    })
-    await failureAlert.waitFor({ timeout: 10_000 })
-    await expect(sideComposer).toHaveValue(FAILURE_PROMPT)
-    expect(child?.session.events.length).toBe(childEventCount)
-    await compareOrRefreshGolden(
-      FAILURE_EXPECTED,
-      await captureStableAria(page, '[role="alert"]', scaffold.workspaceCwd),
-      MODE,
-    )
-
     const disposed = await page.request.post(`${scaffold.baseUrl}/sidebar/api/sidechat.dispose`, {
       data: { childId },
     })
     expect(disposed.ok()).toBe(true)
     await expect.poll(() => scaffold.ctx.agents.get(childId)).toBeUndefined()
+    const exclusiveWriter = await scaffold.ctx.sessionPersistence.open(childId, 'write')
+    try {
+      const childEventsBeforeFailure = await exclusiveWriter.read()
+      const failureMessage = `thread resume failed: session "${childId}" is already owned by an active write handle`
+      await sideComposer.fill(FAILURE_PROMPT)
+      await sideComposer.press('Enter')
+      const failureAlert = page.getByRole('alert').filter({
+        hasText: `${failureMessage} (gateway/internal)`,
+      })
+      await failureAlert.waitFor({ timeout: 10_000 })
+      await expect(sideComposer).toHaveValue(FAILURE_PROMPT)
+      expect(await exclusiveWriter.read()).toEqual(childEventsBeforeFailure)
+      await compareOrRefreshGolden(
+        FAILURE_EXPECTED,
+        await captureStableAria(page, '[role="alert"]', scaffold.workspaceCwd),
+        MODE,
+      )
+    } finally {
+      await exclusiveWriter.close()
+    }
+
     await page.evaluate(() => {
       for (const key of Object.keys(localStorage)) {
         if (key.startsWith('dsh-sidebar:v1:')) localStorage.removeItem(key)

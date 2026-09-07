@@ -1,1 +1,1 @@
-- alert: Side Chat admission rejected by fixture (gateway/internal)
+- alert: 'thread resume failed: session "{{uuid}}" is already owned by an active write handle (gateway/internal)'
