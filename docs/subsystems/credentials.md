@@ -34,13 +34,17 @@ interface ResolvedCredential {
 `describe(ref)` answers configuration surfaces without ever exposing a value: whether the reference resolves, from which layer, and whether `set` would currently succeed. The local provider reports a reference supplied by the live process environment as `writable: false` — a write would appear to succeed while resolution kept returning the shadowing value, so the seam rejects it and the UI can render the reference read-only up front.
 
 ```ts type-equiv
-/** Source and writability facts for one reference, safe for configuration UIs — never the value. */
+/**
+ * Source and writability facts for one reference, safe for configuration UIs —
+ * never the value. The view has no slot a value could ride in, which is what
+ * lets the whole read half cross the Remote wire.
+ */
 interface CredentialInfo {
-  /** Whether {@link CredentialProvider.resolve} would currently return a value. */
+  /** Whether resolving the reference would currently return a value. */
   configured: boolean
   /** Source layer currently supplying the value; absent while unconfigured. */
   source?: string
-  /** Whether {@link CredentialProvider.set} would currently succeed for this reference. */
+  /** Whether the active provider can write this reference. */
   writable: boolean
 }
 ```

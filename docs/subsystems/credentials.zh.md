@@ -34,13 +34,17 @@ interface ResolvedCredential {
 `describe(ref)` 在绝不暴露值的前提下回应配置界面：引用当前是否可解析、来自哪一层、`set` 当前能否成功。本地提供方把由当前进程环境供值的引用报告为 `writable: false`——那样的写入会表面成功而解析持续返回遮蔽值，因此 seam 直接拒绝，界面也得以提前把该引用渲染为只读。
 
 ```ts type-equiv
-/** Source and writability facts for one reference, safe for configuration UIs — never the value. */
+/**
+ * Source and writability facts for one reference, safe for configuration UIs —
+ * never the value. The view has no slot a value could ride in, which is what
+ * lets the whole read half cross the Remote wire.
+ */
 interface CredentialInfo {
-  /** Whether {@link CredentialProvider.resolve} would currently return a value. */
+  /** Whether resolving the reference would currently return a value. */
   configured: boolean
   /** Source layer currently supplying the value; absent while unconfigured. */
   source?: string
-  /** Whether {@link CredentialProvider.set} would currently succeed for this reference. */
+  /** Whether the active provider can write this reference. */
   writable: boolean
 }
 ```
