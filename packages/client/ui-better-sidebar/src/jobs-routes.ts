@@ -100,8 +100,10 @@ interface JobOutputTrace {
 /** Extract the job_output trace of one raw session event (undefined = unrelated). */
 function traceOf(event: SidebarSessionEvent): JobOutputTrace | undefined {
   if (event.type === 'tool/call') {
-    const data = event.data as { name?: unknown; callId?: unknown; arguments?: unknown }
-    if (data.name !== 'job_output' || typeof data.callId !== 'string') return undefined
+    const data = event.data !== null && typeof event.data === 'object'
+      ? event.data as { name?: unknown; callId?: unknown; arguments?: unknown }
+      : undefined
+    if (data === undefined || data.name !== 'job_output' || typeof data.callId !== 'string') return undefined
     let jobId: string | undefined
     try {
       const args = JSON.parse(typeof data.arguments === 'string' ? data.arguments : '') as { job_id?: unknown }
@@ -113,7 +115,10 @@ function traceOf(event: SidebarSessionEvent): JobOutputTrace | undefined {
     return { seq: event.seq, kind: 'call', callId: data.callId, jobId }
   }
   if (event.type === 'tool/result') {
-    const message = (event.data as { message?: unknown }).message as ToolResultMessageLike | undefined
+    const payload = event.data !== null && typeof event.data === 'object'
+      ? event.data as { message?: unknown }
+      : undefined
+    const message = payload?.message as ToolResultMessageLike | undefined
     if (message === undefined) return undefined
     const callId = message.source?.callId
     if (typeof callId !== 'string') return undefined

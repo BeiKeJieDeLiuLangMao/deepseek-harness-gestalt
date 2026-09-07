@@ -16,7 +16,7 @@
  * the open turn and carrying the partial content as a structured text
  * snapshot inside the boundary prompt.
  */
-import type { SessionId } from '@deepseek-ai/dsh-session'
+import { SessionId } from '@deepseek-ai/dsh-session/types'
 /** The durable thread-label prefix used to identify Side Chat Sessions. */
 export const SIDE_LABEL_PREFIX = 'Side: '
 
@@ -91,7 +91,9 @@ export interface SidechatInheritance {
 
 /** The data record of one event (narrowed from the loose face). */
 function dataOf(event: SidechatLogEvent): Record<string, unknown> {
-  return event.data as Record<string, unknown>
+  return event.data !== null && typeof event.data === 'object'
+    ? event.data as Record<string, unknown>
+    : {}
 }
 
 /** Copy parent events verbatim (their live seq === array index contract).
@@ -314,13 +316,13 @@ export function buildOpenTurnSnapshot(events: readonly SidechatLogEvent[]): stri
 /** The thread a Side Chat tab is bound to, read from its opaque tab meta. */
 export function sidechatTabThreadId(meta: unknown): SessionId | undefined {
   const record = meta as { threadId?: unknown } | undefined
-  return typeof record?.threadId === 'string' ? record.threadId as SessionId : undefined
+  return typeof record?.threadId === 'string' ? SessionId(record.threadId) : undefined
 }
 
 /** Return the root thread retained while a Side Chat tab displays a descendant. */
 export function sidechatTabRootThreadId(meta: unknown): SessionId | undefined {
   const record = meta as { rootThreadId?: unknown } | undefined
-  return typeof record?.rootThreadId === 'string' ? record.rootThreadId as SessionId : sidechatTabThreadId(meta)
+  return typeof record?.rootThreadId === 'string' ? SessionId(record.rootThreadId) : sidechatTabThreadId(meta)
 }
 
 /** Truncate + prefix a question into a durable thread label. */

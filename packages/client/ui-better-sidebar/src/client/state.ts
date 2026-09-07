@@ -1090,7 +1090,7 @@ export function reconcileSideThreads(state: SidebarState, threads: readonly Side
       .concat(state.floats.map(float => float.tab))
       .filter(tab => tab.type === 'sidechat')
       .map(tab => sidechatTabRootThreadId(tab.meta))
-      .filter((id): id is string => id !== undefined),
+      .filter((id): id is SessionId => id !== undefined),
   )
   const toRestore = threads.filter(thread =>
     !openThreadIds.has(thread.threadId) && !state.closedSideThreads.includes(thread.threadId))

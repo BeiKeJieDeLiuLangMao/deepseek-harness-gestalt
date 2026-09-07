@@ -194,7 +194,7 @@ export interface SidebarSessionEvent {
   type: string
   seq: number
   time: number
-  data: Record<string, unknown>
+  data: unknown
 }
 
 /** One history row: the durable event plus an optional tool presentation view. */
@@ -382,8 +382,8 @@ export interface SidebarSessionsService {
   refreshSubagents?(parentSessionId: string): Promise<void>
   /** Project a renderer-only Side Chat identity until its first prompt publishes it. */
   stageProvisional(descriptor: {
-    sessionId: string
-    parentSessionId: string
+    sessionId: SessionId
+    parentSessionId: SessionId
     origin: 'subagent'
     title: string
   }): () => void

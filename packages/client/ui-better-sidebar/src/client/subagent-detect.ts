@@ -74,7 +74,7 @@ export function collectBranchIds(
 /** List published, unarchived direct Side Chat children eligible for tab restoration. */
 export function restorableSideThreads(
   byId: SidebarSessionList['byId'],
-  sessionId: string,
+  sessionId: SessionId,
   archive: SideThreadArchiveSnapshot,
 ): SideThreadRef[] {
   if (archive.phase !== 'ready') return []
@@ -102,7 +102,7 @@ export function restorableSideThreads(
 export function detectNewDirectSubagent(
   prev: SidebarSessionList,
   next: SidebarSessionList,
-  sessionId: string,
+  sessionId: SessionId,
 ): boolean {
   return directSubagentCount(prev.byId, sessionId) === 0
     && directSubagentCount(next.byId, sessionId) > 0
