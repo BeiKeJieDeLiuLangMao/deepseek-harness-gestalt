@@ -382,13 +382,9 @@ export interface BetterSidebarService {
    */
   getTab(id: string): TabDescriptor | undefined
   /**
-   * Whether a tab type is enabled in the side card prefs. An absent
-   * `tabsEnabled[id]` entry means enabled — only an explicit `false`
-   * disables the type (hidden from the + menu, `openTab` refuses, and
-   * derived flows gate on it).
-   */
-  /**
-   * Test whether one tab type is enabled.
+   * Test whether one tab type is enabled in side-card preferences. An absent
+   * entry means enabled; only explicit false hides it from the add menu,
+   * makes `openTab` a no-op, and disables derived flows.
    * @param id - tab type to inspect.
    * @returns false only for an explicit disabled preference.
    */
@@ -400,11 +396,8 @@ export interface BetterSidebarService {
    */
   isViewerEnabled(id: string): boolean
   /**
-   * Find a file viewer for a path (priority desc; detect first, then exts).
-   * Disabled viewers are skipped, so files fall through to the next match.
-   */
-  /**
-   * Find the highest-priority enabled viewer that accepts a file.
+   * Find the highest-priority enabled viewer that accepts a file. Matching
+   * tests custom detection before extensions and skips disabled viewers.
    * @param path - file path used for extension and custom detection.
    * @param head - optional leading bytes supplied to custom detection.
    * @returns the matching viewer, or undefined when none accepts the file.
