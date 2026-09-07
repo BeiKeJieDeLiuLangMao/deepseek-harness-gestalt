@@ -688,7 +688,7 @@ const SERVICE_ROLES: ServiceRole[] = [
     mode: 'seam',
     implementations: ['platform-account-core'],
     consumers: ['platform-account-http', 'project-membership-http'],
-    note: 'The service owns account state and authentication operations; HTTP adapters expose those operations without becoming direct Cordis consumers.',
+    note: 'The service owns account state and authentication operations; the HTTP adapters consume it directly.',
   },
   {
     key: 'projectMembership',

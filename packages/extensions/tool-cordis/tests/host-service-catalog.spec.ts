@@ -28,10 +28,13 @@ describe('Host Service inspect catalog', () => {
     expect(agents.service.key).toBe('agents')
     expect(agents.referencedTypes.map(type => type.declaration).join('\n')).not.toContain('SidebarContextShape')
     expect(SERVICE_API.some(service => service.key === 'betterSidebar')).toBe(false)
-    expect(TYPE_API.map(type => type.name)).not.toEqual(expect.arrayContaining([
-      'BetterSidebarService',
-      'SidebarContextShape',
-      'TabDescriptor',
-    ]))
+  })
+
+  it.each([
+    'BetterSidebarService',
+    'SidebarContextShape',
+    'TabDescriptor',
+  ])('omits Client-only type %s independently', (forbiddenName) => {
+    expect(TYPE_API.map(type => type.name)).not.toContain(forbiddenName)
   })
 })

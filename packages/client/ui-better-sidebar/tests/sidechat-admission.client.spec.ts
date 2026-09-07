@@ -15,7 +15,7 @@ import {
 } from '../../../api/session-controller/tests/fake-api.client.ts'
 import { registerSidechatDraft } from '../src/client/api.ts'
 import { installSidechatAdmission } from '../src/client/sidechat-admission.ts'
-import type { Context as SidebarContext } from '../src/context-types.ts'
+import type { SidebarContext } from '../src/context-types.ts'
 import { SIDE_LABEL_PREFIX } from '../src/sidechat-core.ts'
 
 const sid = (value: string): SessionId => value as SessionId
