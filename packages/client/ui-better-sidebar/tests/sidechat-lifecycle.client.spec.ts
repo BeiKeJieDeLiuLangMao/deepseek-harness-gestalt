@@ -39,6 +39,7 @@ describe('sidechat route lifecycle', () => {
       sessionId: 'parent',
       childId: 'draft-child',
       text: 'first question',
+      requestId: 'request-sidechat-first',
     })).resolves.toEqual({ childId: 'draft-child', accepted: true })
 
     expect(create).toHaveBeenCalledWith(expect.objectContaining({
@@ -52,7 +53,9 @@ describe('sidechat route lifecycle', () => {
       seq: createOptions.inheritedEventCount,
     })
     expect(inject).toHaveBeenCalledOnce()
-    expect(followup).toHaveBeenCalledOnce()
+    expect(followup).toHaveBeenCalledWith(expect.objectContaining({
+      source: { kind: 'user', rpcId: 'request-sidechat-first' },
+    }))
     await sidechat.dispose()
   })
 

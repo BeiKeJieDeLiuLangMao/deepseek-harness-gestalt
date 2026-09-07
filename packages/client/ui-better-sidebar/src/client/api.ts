@@ -8,6 +8,7 @@
  */
 import { encodeHtmlUrl } from '../html-route.ts'
 import type { MessageId, ModelSelection, QueueAction, SessionId } from '@deepseek-ai/dsh-api-remotes/client'
+import type { SessionRequestId } from '@deepseek-ai/dsh-api-session-controller/types'
 import type { LastActivity } from '../subagent-activity.ts'
 import type { SidebarSessionEvent } from '../context-types.ts'
 import type { BrowserProbeResult } from './browser.ts'
@@ -414,6 +415,7 @@ export const api = {
     childId: SessionId,
     text: string,
     selection: ModelSelection | undefined,
+    requestId: SessionRequestId | undefined,
     signal?: AbortSignal,
   ) => {
     const result = await call<{ childId: SessionId; accepted: true }>('sidechat.start', {
@@ -421,6 +423,7 @@ export const api = {
       childId,
       text,
       ...(selection === undefined ? {} : { selection }),
+      ...(requestId === undefined ? {} : { requestId }),
     }, signal)
     sidechatSessionIds.add(result.childId)
     return result
@@ -449,8 +452,18 @@ export const api = {
     ...(provisional ? { provisional: true } : {}),
   }, signal),
   /** Deliver one queued or steering message to a Side Chat thread. */
-  sidechatPrompt: (childId: SessionId, text: string, mode: 'queue' | 'steer', signal?: AbortSignal) =>
-    call<{ accepted: true }>('sidechat.prompt', { childId, text, mode }, signal),
+  sidechatPrompt: (
+    childId: SessionId,
+    text: string,
+    mode: 'queue' | 'steer',
+    requestId: SessionRequestId | undefined,
+    signal?: AbortSignal,
+  ) => call<{ accepted: true }>('sidechat.prompt', {
+    childId,
+    text,
+    mode,
+    ...(requestId === undefined ? {} : { requestId }),
+  }, signal),
   /** Abort a Side Chat thread's running turn (queued work is preserved). */
   sidechatCancel: (childId: SessionId) =>
     call<{ accepted: true }>('sidechat.cancel', { childId }),

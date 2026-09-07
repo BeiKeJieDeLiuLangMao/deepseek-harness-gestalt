@@ -9,7 +9,7 @@
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
 import type { RemoteFailure, RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
-import type { ModelSelection, PromptContentPart, QueueAction } from '../../types.ts'
+import type { ModelSelection, PromptContentPart, QueueAction, SessionRequestId } from '../../types.ts'
 
 type AdmissionFailureFields<Failure extends RemoteFailure> = Failure extends RemoteFailure
   ? Pick<Failure, 'code' | 'message' | 'details'>
@@ -96,6 +96,7 @@ export interface SessionAdmissionRoute {
    * @param content - text and temporary image parts.
    * @param mode - 'queue' appends after active turn; 'steer' interrupts it.
    * @param signal - optional cancellation signal for the complete round-trip.
+   * @param requestId - local submission identity to preserve in the durable user message.
    * @returns accepted receipt, or Remote failure.
    */
   prompt(
@@ -103,6 +104,7 @@ export interface SessionAdmissionRoute {
     content: readonly PromptContentPart[],
     mode: 'queue' | 'steer',
     signal?: AbortSignal,
+    requestId?: SessionRequestId,
   ): Promise<SessionAdmissionResult<{ accepted: true }>>
 
   /**

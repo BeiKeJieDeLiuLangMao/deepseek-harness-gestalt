@@ -10,6 +10,7 @@ import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import type { RemoteFailure, RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
+import type { SessionRequestId } from '../../../api/session-controller/src/types.ts'
 import { ClientSessions } from '../../../api/session-controller/src/client/sessions/service.ts'
 import {
   FakeApiClient,
@@ -91,12 +92,19 @@ describe('Side Chat Session admission', () => {
     const result = await svc.binding(childId)!.session.prompt(
       [{ type: 'text', text: 'first question' }],
       'queue',
+      undefined,
+      'request-sidechat-first' as SessionRequestId,
     )
 
     expect(result).toEqual({ ok: true, value: { accepted: true } })
     expect(fetches).toEqual([{
       method: 'sidechat.start',
-      body: { sessionId: parentId, childId, text: 'first question' },
+      body: {
+        sessionId: parentId,
+        childId,
+        text: 'first question',
+        requestId: 'request-sidechat-first',
+      },
     }])
     expect(api.callsOf('session.prompt')).toEqual([])
     expect(api.callsOf('subagents.prompt')).toEqual([])

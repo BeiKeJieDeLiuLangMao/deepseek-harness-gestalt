@@ -15,6 +15,7 @@ import type { RemoteFailure, RemoteResult } from '@deepseek-ai/dsh-typert-protoc
 import { describe, expect, it, vi } from 'vitest'
 import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { SessionRequestId } from '../src/types.ts'
 import { ClientSessions } from '../src/client/sessions/service.ts'
 import type {
   SessionAdmissionAdapter,
@@ -83,6 +84,8 @@ describe('Session Client admission dispatch', () => {
     const result = await binding!.session.prompt(
       [{ type: 'text', text: 'start side chat' }],
       'queue',
+      undefined,
+      'request-sidechat-1' as SessionRequestId,
     )
 
     expect(result).toEqual({ ok: true, value: { accepted: true } })
@@ -92,6 +95,7 @@ describe('Session Client admission dispatch', () => {
       [{ type: 'text', text: 'start side chat' }],
       'queue',
       undefined,
+      'request-sidechat-1',
     )
 
     // Stock Remote prompt must NOT have been called

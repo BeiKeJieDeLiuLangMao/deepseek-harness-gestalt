@@ -250,7 +250,7 @@ export class Session implements SessionFace {
     let result: RemoteResult<{ accepted: true }>
     const admission = this.options.admission?.(this.sessionId)
     if (admission !== undefined) {
-      result = await runSessionAdmission(() => admission.prompt(this.sessionId, content, mode, signal))
+      result = await runSessionAdmission(() => admission.prompt(this.sessionId, content, mode, signal, requestId))
     } else if (this.address === undefined) {
       const clientTimeZone = resolvedClientTimeZone()
       result = await this.remote.session.prompt({

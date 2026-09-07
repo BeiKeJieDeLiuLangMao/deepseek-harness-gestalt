@@ -28,7 +28,7 @@ function createSidechatAdmission(ctx: SidebarContext): SessionAdmissionAdapter {
     handles: sessionId => isKnownSidechatSession(sessionId),
     historyScope: 'owned-suffix',
     skillCatalogSessionId: sessionId => sidechatDraftOf(sessionId)?.parentSessionId ?? sessionId,
-    prompt: async (sessionId, content, mode, signal) => {
+    prompt: async (sessionId, content, mode, signal, requestId) => {
       if (content.some(part => part.type !== 'text')) {
         return {
           ok: false,
@@ -44,13 +44,14 @@ function createSidechatAdmission(ctx: SidebarContext): SessionAdmissionAdapter {
         .join('\n\n')
       const draft = sidechatDraftOf(sessionId)
       if (draft === undefined) {
-        await api.sidechatPrompt(sessionId, text, mode, signal)
+        await api.sidechatPrompt(sessionId, text, mode, requestId, signal)
       } else {
         await api.sidechatStart(
           draft.parentSessionId,
           sessionId,
           text,
           draft.selection,
+          requestId,
           signal,
         )
         settleSidechatDraft(sessionId)

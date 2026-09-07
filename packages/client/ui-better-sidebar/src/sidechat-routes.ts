@@ -31,6 +31,7 @@ import {
 import { foldSubagentDescriptor, snapshotSubagentDescriptor } from '@deepseek-ai/dsh-subagent'
 import type { Context as CordisContext } from '@deepseek-ai/cordis'
 import { foldRequestHeader, SessionId, SessionLogOffset, type SessionEvent } from '@deepseek-ai/dsh-session'
+import type { SessionRequestId } from '@deepseek-ai/dsh-api-session-controller/types'
 import type {
   SidebarContext,
   SidebarAgentPresetsService,
@@ -287,8 +288,16 @@ function textPrompt(text: string): ContentBlock[] {
 }
 
 /** Deliver one user message at the requested inbox boundary. */
-function admitPrompt(agent: Agent, blocks: ContentBlock[], mode: 'queue' | 'steer'): void {
-  const message: UserMessage = createUserMessage({ content: blocks, source: { kind: 'user' } })
+function admitPrompt(
+  agent: Agent,
+  blocks: ContentBlock[],
+  mode: 'queue' | 'steer',
+  requestId?: SessionRequestId,
+): void {
+  const source = requestId === undefined
+    ? { kind: 'user' as const }
+    : { kind: 'user' as const, rpcId: requestId }
+  const message: UserMessage = createUserMessage({ content: blocks, source })
   if (mode === 'steer') agent.steer(message)
   else agent.followup(message)
 }
@@ -305,12 +314,17 @@ function admitPrompt(agent: Agent, blocks: ContentBlock[], mode: 'queue' | 'stee
  * is stamped `kind: 'plugin'` so recognition is structural; its text still
  * opens with SIDE_BOUNDARY_PREFIX, keeping boundaryDelivered intact.
  */
-function admitFirstContact(agent: Agent, injectionText: string, question: string): void {
+function admitFirstContact(
+  agent: Agent,
+  injectionText: string,
+  question: string,
+  requestId?: SessionRequestId,
+): void {
   agent.inject(createUserMessage({
     content: textPrompt(injectionText),
     source: { kind: 'plugin', plugin: SIDE_INJECTION_PLUGIN },
   }))
-  admitPrompt(agent, textPrompt(question), 'queue')
+  admitPrompt(agent, textPrompt(question), 'queue', requestId)
 }
 
 /** The live thread agent, or undefined (cold — the caller resumes). */
@@ -380,6 +394,10 @@ export function buildSidechatApi(ctx: SidebarContext): SidechatApi {
       const sessionId = SessionId(requireString(payload, 'sessionId'))
       const childId = SessionId(requireString(payload, 'childId'))
       const text = requireString(payload, 'text').trim()
+      const rawRequestId = (payload as { requestId?: unknown }).requestId
+      const requestId = rawRequestId === undefined
+        ? undefined
+        : requireString(payload, 'requestId') as SessionRequestId
       if (text === '') throw new SidebarError('bad-request', 'text is required')
       const parent = liveThreadAgent(ctx, sessionId)
       if (parent === undefined) {
@@ -463,7 +481,7 @@ export function buildSidechatApi(ctx: SidebarContext): SidechatApi {
       }
       const promptParts = [SIDE_BOUNDARY_PROMPT]
       if (inheritance.snapshot !== null) promptParts.push(inheritance.snapshot)
-      admitFirstContact(handle.agent, promptParts.join('\n\n'), text)
+      admitFirstContact(handle.agent, promptParts.join('\n\n'), text, requestId)
       return { childId, accepted: true as const }
     },
 
@@ -471,6 +489,10 @@ export function buildSidechatApi(ctx: SidebarContext): SidechatApi {
       const childId = SessionId(requireString(payload, 'childId'))
       const text = requireString(payload, 'text').trim()
       const rawMode = requireString(payload, 'mode')
+      const rawRequestId = (payload as { requestId?: unknown }).requestId
+      const requestId = rawRequestId === undefined
+        ? undefined
+        : requireString(payload, 'requestId') as SessionRequestId
       if (rawMode !== 'queue' && rawMode !== 'steer') {
         throw new SidebarError('bad-request', 'invalid "mode"')
       }
@@ -507,11 +529,11 @@ export function buildSidechatApi(ctx: SidebarContext): SidechatApi {
         }
       }
       if (boundaryDelivered(agent.session.snapshotEvents() as unknown as readonly SidechatLogEvent[])) {
-        admitPrompt(agent, textPrompt(text), rawMode)
+        admitPrompt(agent, textPrompt(text), rawMode, requestId)
       } else {
         // Compatibility for persisted empty Side Chat Sessions created by an
         // earlier build: their first prompt still installs the boundary.
-        admitFirstContact(agent, SIDE_BOUNDARY_PROMPT, text)
+        admitFirstContact(agent, SIDE_BOUNDARY_PROMPT, text, requestId)
         const titles = ctx.get('sessionTitle') as SidebarSessionTitleService | undefined
         if (titles !== undefined) {
           try {
