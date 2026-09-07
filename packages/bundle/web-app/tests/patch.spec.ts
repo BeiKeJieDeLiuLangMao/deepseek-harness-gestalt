@@ -35,7 +35,23 @@ describe('web-app tools overlay over dsh-base', () => {
       toolSearch: { maxResultBytes: 65536 },
       mode: { __jsExpr: 'process.env.DSH_TOOLS_MODE' },
     })
-    expect(compose([base, overlay]).some(entry => entry.id === 'tool-browser')).toBe(true)
+    expect(compose([base, overlay]).find(entry => entry.id === 'tool-browser'))
+      .toMatchObject({ disabled: true })
+  })
+
+  it('keeps the retained Better Sidebar and Browser rows', () => {
+    const base = loadPatches(new URL('../../base/cordis.patch.yml', import.meta.url))
+    const overlay = loadPatches(new URL('../cordis.patch.yml', import.meta.url))
+    const entries = compose([base, overlay])
+    expect(entries.filter(entry => [
+      'ui-better-sidebar',
+      'ui-workbench',
+      'ui-browser',
+    ].includes(entry.id ?? '')).map(entry => ({ id: entry.id, name: entry.name }))).toEqual([
+      { id: 'ui-better-sidebar', name: '@deepseek-ai/dsh-client-ui-better-sidebar' },
+      { id: 'ui-workbench', name: '@deepseek-ai/dsh-client-ui-workbench' },
+      { id: 'ui-browser', name: '@deepseek-ai/dsh-client-ui-browser' },
+    ])
   })
 
   it('registers deferred browser_create from the composed tools config', async () => {

@@ -2139,6 +2139,12 @@ importers:
       '@deepseek-ai/dsh-client-ui-brand-official':
         specifier: workspace:^
         version: link:../../client/ui-brand-official
+      '@deepseek-ai/dsh-client-ui-browser':
+        specifier: workspace:^
+        version: link:../../client/ui-browser
+      '@deepseek-ai/dsh-client-ui-better-sidebar':
+        specifier: workspace:^
+        version: link:../../client/ui-better-sidebar
       '@deepseek-ai/dsh-client-ui-chat':
         specifier: workspace:^
         version: link:../../client/ui-chat
@@ -2235,6 +2241,9 @@ importers:
       '@deepseek-ai/dsh-client-ui-workflow-run':
         specifier: workspace:^
         version: link:../../client/ui-workflow-run
+      '@deepseek-ai/dsh-client-ui-workbench':
+        specifier: workspace:^
+        version: link:../../client/ui-workbench
       '@deepseek-ai/dsh-client-ui-workspace':
         specifier: workspace:^
         version: link:../../client/ui-workspace
