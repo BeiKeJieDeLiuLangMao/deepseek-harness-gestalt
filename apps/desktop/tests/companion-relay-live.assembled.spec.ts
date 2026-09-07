@@ -124,10 +124,10 @@ describe('assembled Desktop Relay live Session projection on shipped dsh web', (
     ): Promise<void> => {
       const waiter = ik2Waiters.shift()
       if (waiter !== undefined) {
-        waiter.resolve(ciphertext)
+        waiter.resolve(ciphertext.slice())
         return
       }
-      desktopToMobile.push(ciphertext)
+      desktopToMobile.push(ciphertext.slice())
       if (deliveryPump !== undefined) return
       const claimDelivery = (): void => {
         deliveryPump = Promise.resolve().then(async () => {
@@ -142,7 +142,9 @@ describe('assembled Desktop Relay live Session projection on shipped dsh web', (
               await new Promise<void>((resolve) => { setTimeout(resolve, 0) })
               continue
             }
+            console.log('DELIVER', frame.length)
             receiver.receive(frame)
+            console.log('DELIVER-END', frame.length)
           }
         })
         void deliveryPump.then(() => {
@@ -239,7 +241,7 @@ describe('assembled Desktop Relay live Session projection on shipped dsh web', (
       console.log('ENQUEUE', seq, kind, frame.length)
       const queued = new Promise<void>((resolve, reject) => {
         inboundQueue.push({
-          frame, kind, seq,
+          frame: frame.slice(), kind, seq,
           settle: (outcome) => {
             if (outcome === 'ok') {
               console.log('RECEIVE-END', seq, kind)
