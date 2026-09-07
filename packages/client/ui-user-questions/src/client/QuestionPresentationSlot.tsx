@@ -24,5 +24,11 @@ export function QuestionPresentationSlot(props: QuestionPresentationSlotProps) {
     // requestKey is the Host pending identity; a same-key rerender must keep drafts.
     [props.answer, props.cancel, props.requestKey, props.sessionId],
   )
-  return <QuestionComposer {...props as QuestionComposerProps} matched={pending} />
+  const composerProps = {
+    ...props,
+    session: props.useSession(snapshot => snapshot),
+    pendingInteraction: props.useSessionPendingInteraction(interactions => interactions.get(props.sessionId)),
+    matched: pending,
+  } satisfies QuestionComposerProps
+  return <QuestionComposer {...composerProps} />
 }
