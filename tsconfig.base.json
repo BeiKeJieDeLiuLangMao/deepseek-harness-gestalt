@@ -378,6 +378,8 @@
       "@deepseek-ai/dsh-remote-access": ["./packages/platform/remote-access/src"],
       "@deepseek-ai/dsh-remote-access/invariant": ["./packages/platform/remote-access/src/invariant.ts"],
       "@deepseek-ai/dsh-remote-access-client": ["./packages/platform/remote-access-client/src"],
+      "@deepseek-ai/dsh-remote-access-client/desktop-relay-lifecycle": ["./packages/platform/remote-access-client/src/desktop-relay-lifecycle.ts"],
+      "@deepseek-ai/dsh-remote-access-client/node-relay-socket": ["./packages/platform/remote-access-client/src/node-relay-socket.ts"],
       "@deepseek-ai/dsh-remote-access-client/invariant": ["./packages/platform/remote-access-client/src/invariant.ts"],
       "@deepseek-ai/dsh-remote-access-http": ["./packages/platform/remote-access-http/src"],
       "@deepseek-ai/dsh-remote-access-http/invariant": ["./packages/platform/remote-access-http/src/invariant.ts"],
