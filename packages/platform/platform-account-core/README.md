@@ -1,6 +1,13 @@
+---
+description: "Platform Account provider with GitHub OAuth, signed polling, P-256 proof, rotation, and invalidation."
+kind: "package-reference"
+---
+
 # `@deepseek-ai/dsh-platform-account-core`
 
 English | [中文](README.zh.md)
+
+## Summary
 
 Platform Account provider. A Login Attempt lasts five minutes, carries random OAuth state and S256 PKCE, and can be consumed once with a signed polling token plus P-256 installation proof. The GitHub OAuth adapter requests no scope, rejects inherited non-empty scopes, retains only the immutable numeric id plus public login and avatar, and discards the provider token after identity lookup.
 
@@ -10,10 +17,21 @@ Account Sessions bind one Account to one Installation key and immutable Installa
 
 `loadPlatformEnvironment` requires and selects a complete pair. Development and production cannot share an origin, callback, GitHub OAuth App id, credential reference, database identity, or identity namespace. The provider rejects a GitHub adapter or backend whose selected identity does not match before serving traffic.
 
+## Table of Contents
+
+- [Extension Points](#extension-points)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
+
+-----
+
+<a id="extension-points"></a>
 ## Extension Points
 
 `AccountBackend` supplies atomic persistence, and `AccountInvalidationBus` supplies cross-instance delivery. `GitHubIdentityProvider` owns provider exchange. Production composition supplies all three; the in-memory implementations exist for keyless acceptance and development.
 
+<a id="model-experience"></a>
 ## Model Experience
 
 None, as Account authorization is outside agent sessions and model requests.
@@ -23,6 +41,17 @@ None, as Account authorization is outside agent sessions and model requests.
 None.
 
 ## Known Limitations and Deferred Work
+<a id="known-limitations-and-deferred-work"></a>
 
 - This package defines no production database, distributed invalidation, secret manager, rate limiter, or audit sink; the Platform deployment composition owns those adapters.
 - The GitHub adapter supports OAuth Apps only and accepts public identity without provider scopes.
+
+<a id="dev-note"></a>
+### Dev Note
+
+<details>
+<summary>Working context for maintainers — click to expand</summary>
+
+None.
+
+</details>

@@ -1,9 +1,29 @@
+---
+description: "Model-facing project_members roster query tool over the ctx.projectMembership seam."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-tool-project-members
 
 English | [中文](README.zh.md)
 
+## Summary
+
 Model-facing `project_members` tool over `ctx.projectMembership`: one read that returns the full roster of a cloud project — each member's account reference, public display identity, permission role, project-defined function tags, and presence — with no role-based restriction on querying.
 
+## Table of Contents
+
+- [Tool](#tool)
+- [Injected provider faces](#injected-provider-faces)
+- [Rendering](#rendering)
+- [Role](#role)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
+
+-----
+
+<a id="tool"></a>
 ## Tool
 
 `project_members` accepts one optional argument:
@@ -12,6 +32,7 @@ Model-facing `project_members` tool over `ctx.projectMembership`: one read that 
 
 The call resolves the session-bound account first, then the project binding, then reads the stored roster through an injected resolver or `ctx.projectMembership.roster()`. The canonical result is the member array `[{ accountId, displayName?, avatarRef?, role, tags, presence, self }]` in join order; every stored member appears or the call fails — there are no partial rosters. `displayName` is the public GitHub login copied into `ask_user_question.to_project_member` from a row whose `self` is false; `accountId` is the durable Platform id and is not that addressee. `self` is true for the asking session account.
 
+<a id="injected-provider-faces"></a>
 ## Injected provider faces
 
 The package imports only the membership Service Definition — never a platform provider package. The composition injects four optional Config functions; account, project, and roster resolvers receive the current Agent and tool cancellation signal so a Host adapter can derive Workspace context without model-supplied identity and stop pending reads:
@@ -21,14 +42,17 @@ The package imports only the membership Service Definition — never a platform 
 - `rosterResolver` — reads the authoritative roster through a composition-owned authenticated bridge. Absent, the tool uses `ctx.projectMembership.roster()` and fails if neither source is composed.
 - `rosterPresenter` — attaches presence and public display identity to one read. Absent, every member reads `presence: "offline"` with no identity fields — the same verdict a composed presence registry with no live heartbeats produces.
 
+<a id="rendering"></a>
 ## Rendering
 
 The Native renderer preserves the compact JSON shape of the canonical value. No custom UI presenters are declared: a roster is plain data, so the generic card (title = tool name, raw arguments) is the intended render intent.
 
+<a id="role"></a>
 ## Role
 
 This is the Consumer package for the project-membership seam's read face. It owns no permission decision: querying is unrestricted by role, and the membership service keeps enforcing that the reading account holds an active membership. Its stable errors exist so the model can branch — tell the user to sign in, or to link the workspace — instead of retrying.
 
+<a id="model-experience"></a>
 ## Model Experience
 
 ### Tool schema
@@ -60,7 +84,18 @@ Result growth scales with the member count of the queried roster, and those toke
 Append-only; newly visible content follows the reusable request prefix and does not invalidate existing KV-cache entries.
 
 ## Known Limitations and Deferred Work
+<a id="known-limitations-and-deferred-work"></a>
 
 - **Presence and display identity need the platform provider face** — a composition without an injected `rosterPresenter` reports every member `offline` with no identity fields. Desktop Host supplies that presenter through the token-protected loopback projection.
 - **Read-only by design** — the tool exposes no membership mutations; invitations, role changes, and tag edits stay behind the project-membership HTTP surface and out of the model's toolset.
 - **The workspace binding is composition-defined** — the tool cannot resolve a bound project on its own; without an injected `boundProjectResolver` every omitted-`projectId` call answers `PROJECT_UNBOUND`.
+
+<a id="dev-note"></a>
+### Dev Note
+
+<details>
+<summary>Working context for maintainers — click to expand</summary>
+
+None.
+
+</details>

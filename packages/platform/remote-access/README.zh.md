@@ -1,6 +1,13 @@
+---
+description: "Personal Pairing authority 与无状态多实例 Remote Relay 生命周期服务。"
+kind: "package-reference"
+---
+
 # `@deepseek-ai/dsh-remote-access`
 
 [English](README.md) | 中文
+
+## 概述
 
 远程访问 Service Definition 与个人配对 Service Provider。`ctx.remoteAccess` 对每个 Desktop Installation 默认关闭手机访问，直到用户在设置中开启；它分配两分钟端点 mailbox 路由，通过 `AccountService.currentInstallation()` 鉴别每个 Account Session 的 Installation id、类型与 Mobile 展示，要求两个 Installation 解析到同一账号，并且仅在 Desktop 明确确认后授予 Device Principal。端点完成请求不携带调用方提供的设备元数据；待确认与已确认记录会复制已鉴别 Mobile Installation 展示。开放注册配额限制安装、配对与附件；容量水位会以 `PLATFORM_CAPACITY` 和 `retryAfter` 拒绝新的登录、配对、附件或 WSS 接入，已建立的密文流继续。配对挑战 HTTP 使用 TCP 对端地址并忽略 `x-forwarded-for`。每小时挑战、并发附件和每日上传窗口位于共享配对事务状态中，因此共用一个 `PersonalPairingAuthorityStore` 的两个提供方执行同一份账号完整上限。硬上限返回 60 秒 `retryAfter`；滑动窗口返回剩余窗口秒数。`admitAttachmentBlob` 会在返回前提交带绝对过期时间的账号 quota lease；之后每次成功的 pairing 事务都会把旧 reservation 迁移为有界 lease，并淘汰已过期 lease。实际运行的 lease 时长是已配置 attachment capability lifetime 的两倍，attachment store 会拒绝早于 blob authority 结束的 lease。因此结果不明的 publish 只会造成有界 orphan overcount，不会造成 active blob undercount。`releaseAttachmentBlob` 负责主动清理，且不存储密文。开发与生产使用独立的 origin、OAuth App、回调、凭据、数据库与身份命名空间；密钥只来自部署托管引用，缺失则该能力失败关闭。`PersonalPairingAuthorityStore` 原子持有共享 Desktop route 关联、端点 mailbox、prepared publication 与补偿记录、已确认 Mobile 结果及配额窗口；内存适配器是确定性测试适配器，部署必须向每个 Platform Instance 提供同一个持久适配器。
 
@@ -18,6 +25,15 @@ Platform 返回不含邀请 PSK 的路由元数据。Desktop 在本地创建完�
 
 部署持久状态仅限 route identity、credential digest、单调 revision 与撤销／关联状态。临时协调仅限会过期的 attachment 位置、失效事件与直达密文 Pub/Sub。实例退出会关闭其 socket；Mobile 与 Desktop 获取新的 non-sticky 连接，Desktop 发送权威加密 resync，而不迁移在线 socket。容量、目录、心跳、缓冲、连接与 attach timeout 都是组合中显式校验的配置值。
 
+## 目录
+
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+-----
+
+<a id="model-experience"></a>
 ## Model Experience
 
 无，因为配对元数据、设备主体来源与设置状态从不进入模型请求。
@@ -27,8 +43,19 @@ Platform 返回不含邀请 PSK 的路由元数据。Desktop 在本地创建完�
 无。
 
 ## Known Limitations and Deferred Work
+<a id="known-limitations-and-deferred-work"></a>
 
 - 产品组合已组装仅端点 mailbox、持久 authority store、密封 Mobile authority 与 Snow channel。独立安全评审以及 WKWebView／Android WebView 真机证据仍是发布证据，而不是运行时功能开关。
 - 已运营 Platform 通过 PostgreSQL 持久化 mailbox、publication、pairing-to-route 与 Relay 摘要权限，并且只用 Redis 处理会过期的 attachment discovery 与密文投递。本仓库不供应 PostgreSQL、Redis、TLS 或云实例。
 - 产品 Desktop 与 Mobile 使用 endpoint-owned Snow mailbox 和 Companion channel；Platform 不挂载配对密码实现。物理 WebView 证据与针对确切实现的独立评审仍是 release blocker。
 - 项目对等授权的交付止步于密封信封与持久记录：对端 installation 侧打开信封，以及承载它的跨机注册表传输，都要等该传输存在后再做；生产级密封继续处于独立加密评审之后。
+
+<a id="dev-note"></a>
+### 开发备注
+
+<details>
+<summary>维护者工作上下文——点击展开</summary>
+
+暂无。
+
+</details>

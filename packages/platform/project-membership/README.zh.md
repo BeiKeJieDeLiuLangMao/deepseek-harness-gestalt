@@ -1,6 +1,13 @@
+---
+description: "云端项目、成员角色、职能标签与邀请的 Project Membership Service Definition。"
+kind: "package-reference"
+---
+
 # `@deepseek-ai/dsh-project-membership`
 
 [English](README.md) | 中文
+
+## 概述
 
 云端项目的成员 Service Definition:一个项目将规范化后的 git remote 作为已验证的唯一属性绑定,以三种权限角色 `owner|admin|member` 承载成员,并支持项目自定义功能标签。该 remote 可以是 Git origin,也可以是无 Git 工作区哨兵 `local://workspace/<id>`。一个 remote 在同一环境中至多归属一个 Project(`PROJECT_REMOTE_TAKEN`),因此恢复不会任意选择 association。角色只治理这一协作层面;它不从 Git 平台权限派生,Git 权限也不从它派生。
 
@@ -8,6 +15,16 @@
 
 读取同样有门:`roster` 要求调用者持有有效成员身份,被移除账户即刻丧失枚举能力。每次改变 roster 视图结果的变更都会在落盘之后发布一条 `project-membership/roster-invalidated` 事件,携带前后两个投影版本;消费方以 `rosterVersion(projectId)` 作缓存键,根据事件重建而非信任旧视图。
 
+## 目录
+
+- [服务面](#service-surface)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+-----
+
+<a id="service-surface"></a>
 ## 服务面
 
 `createProject(actor, {name, remoteUrl})`(创建者成为创始 owner)· `invite` · `retractInvitation`(发起人或 owner)· `acceptInvitation` · `declineInvitation`(仅收件人;收件人身份保持私密,其他账户只会看到 `INVITATION_NOT_FOUND`)· `changeRole` · `setMemberTags` · `removeMember` · `roster` · `pendingInvitationsFor` · `pendingInvitationsIssuedBy`(admin 或 owner)· `projectByRemote` · `rosterVersion`。
@@ -16,6 +33,7 @@
 
 `normalizeGitRemoteUrl` 将 `https://host/path[.git]`、scp 形式的 `user@host:path[.git]` 与 `local://workspace/<id>` 规范化为唯一绑定形态:Git 拼写的 scheme/host 小写,忽略大小写地去掉一个末尾 `.git` 后缀,修剪尾部斜杠,路径中段与 Workspace identity 保持原样。`localWorkspaceRemoteUrl(workspaceId)` 是无 Git 构造函数。只需要该纯操作的浏览器 bundle 会导入 `@deepseek-ai/dsh-project-membership/remote-url`;邀请授予策略位于 `@deepseek-ai/dsh-project-membership/invite-role`。两个 subpath 都不携带 Service 或 registry identity。
 
+<a id="model-experience"></a>
 ## Model Experience
 
 无:项目成员权威数据从不进入智能体会话与模型请求。
@@ -25,6 +43,17 @@
 无。
 
 ## Known Limitations and Deferred Work
+<a id="known-limitations-and-deferred-work"></a>
 
 - 本包只定义词汇与门;不拥有存储。文件持久化的开发 Provider 位于 [`dsh-project-membership-core`](../project-membership-core/README.zh.md),运营部署需自行提供后端。
 - 成员提问路由与在线推导消费本能力但不属于本能力;路由提问的生产激活仍受[放置决策 Agent Note](../../../.agents/notes/implemented/feature/2026-08-27-project-membership-core.zh.md) 所记录的现行加密评审门约束。
+
+<a id="dev-note"></a>
+### 开发备注
+
+<details>
+<summary>维护者工作上下文——点击展开</summary>
+
+暂无。
+
+</details>

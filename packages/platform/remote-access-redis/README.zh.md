@@ -1,6 +1,13 @@
+---
+description: "无状态多实例 Remote Relay 的 Redis 临时协调 Provider。"
+kind: "package-reference"
+---
+
 # 远程访问 Redis
 
 [English](README.md) | 中文
+
+## 概述
 
 无状态多实例 Remote Relay 的 Redis 协调 adapter。它使用维护中的 `redis` 客户端，以及由部署提供的环境域 key prefix。Redis URL 在运行时通过 secret 注入，本包不会记录或持久化它。
 
@@ -8,6 +15,15 @@ adapter 只存储会过期的 attachment 目录值：不透明 route 与 attachm
 
 本包绝不创建 Redis Stream、List 或其他离线 queue。publish 的订阅者数量只表示 transport 接纳；发送方还会等待由不透明 id 关联、有时限且不含内容的 delivery acknowledgement。因此 stale target、静默丢弃或 acknowledgement 超时都会返回 `REMOTE_OFFLINE`。Redis 不含 prompt、Session、approval、model、Workspace 或其他 DSH business value。
 
+## 目录
+
+- [模型体验](#model-experience)
+- [已知限制与暂缓事项](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+-----
+
+<a id="model-experience"></a>
 ## 模型体验
 
 无，因为 Redis Relay 协调永不进入模型请求。
@@ -17,6 +33,17 @@ adapter 只存储会过期的 attachment 目录值：不透明 route 与 attachm
 无。
 
 ## 已知限制与暂缓事项
+<a id="known-limitations-and-deferred-work"></a>
 
 - Redis 服务供应、TLS、鉴权、监控与可用性由部署负责。
 - 持久 route credential digest 与 revision 属于部署的 `RelayRouteStore`，不属于 Redis 协调。
+
+<a id="dev-note"></a>
+### 开发备注
+
+<details>
+<summary>维护者工作上下文——点击展开</summary>
+
+暂无。
+
+</details>

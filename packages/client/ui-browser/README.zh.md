@@ -1,6 +1,13 @@
+---
+description: "dsh Web GUI 中由 Session 持有的官方 Browser chrome 与折叠标签页预览。"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-client-ui-browser
 
 [English](README.md) | 中文
+
+## 概述
 
 Session 持有的官方 Browser chrome 与收起后的标签页预览。[`dsh-client-ui-workbench`](../ui-workbench/README.zh.md) 直接导入页面 chrome，并把它挂在快照 `browser` 标签里。本插件占用 Chat 声明的 `conversation.browser.preview`，并注册设置分区 `id: 'browser'`。实时 Workspace 事实通过 Session 标准席 `useProjection('browserWorkspace')` 到达；变更走生成的 `remote.browserWorkspace` 命名空间。页面 chrome 带窗格本地已提交 URL 轨迹上的后退/前进，以及在默认浏览器打开的控件；建页被拒会显示重试。
 
@@ -10,6 +17,15 @@ Session 持有的官方 Browser chrome 与收起后的标签页预览。[`dsh-cl
 
 行为由 [工作台官方浏览器 Agent Note](../../../.agents/notes/implemented/feature/2026-08-21-workbench-official-browser.zh.md) 与 [Browser Dock Agent Note](../../../.agents/notes/implemented/feature/2026-08-19-browser-dock.zh.md) 规定。
 
+## 目录
+
+- [模型体验](#model-experience)
+- [已知限制与延后工作](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+-----
+
+<a id="model-experience"></a>
 ## 模型体验
 
 无，因为这个面向人的 chrome 不增加工具、消息、提示词或 provider 请求；页面操作仍由 `dsh-tool-browser` 负责。
@@ -19,7 +35,18 @@ Session 持有的官方 Browser chrome 与收起后的标签页预览。[`dsh-cl
 无；本包从不组装或发送 provider 请求。
 
 ## 已知限制与延后工作
+<a id="known-limitations-and-deferred-work"></a>
 
 - **Desktop 展示 Runtime 窗口；`dsh web` 仍是截图加文本**——`window.dshDesktop.browserPresent` 把同一份官方 `webContents` 贴到 chrome 视口上。设置页和侧栏 `+` 菜单挂在该页之上的原生 overlay 视图里；该 overlay 文档不 present 或 conceal 页面。observe 或 navigate 进行中时刷新控件旋转。已提交的 Chromium 网络错误把错误文档留在该实况视口里。浏览器 `dsh web` 没有 Host 窗口，仍画 observe/screenshot 事实。
 - **无密钥 web 与 headless Runtime 仍是确定性的**——浏览器 `dsh web` 与 headless 继续使用 `dsh-browser-runtime-deterministic`。Desktop Host 持有进程内 Electron `webContents`，并把叠加层 HTTP 客户端指向该 loopback origin。
 - **Profile 设置页不会创建标签页**——该分区只写名册与默认身份。
+
+<a id="dev-note"></a>
+### 开发备注
+
+<details>
+<summary>维护者工作上下文——点击展开</summary>
+
+暂无。
+
+</details>

@@ -1,9 +1,28 @@
+---
+description: "Host 持有的已认证成员提问持久接收器与接收会话准入服务。"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-member-question-receiver
 
 [English](README.md) | 中文
 
+## 概述
+
 Host 所有的成员提问接收状态 Service Definition、文件 Provider 与认证 ingress Consumer adapter。`ctx.memberQuestionReceiver` 负责到达、Host Session 物化、路线线程、终态投影、到期与显式 human turn admission。到达会在邀请绑定的 Workspace 中创建一个 Host Session，并注入 Decision Brief，但不花费模型 token。
 
+## 目录
+
+- [Service：`MemberQuestionReceiverService`（ctx key：`memberQuestionReceiver`）](#service-memberquestionreceiverservice-ctx-key-memberquestionreceiver)
+- [Persistence and ordering](#persistence-and-ordering)
+- [Configuration](#configuration)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+-----
+
+<a id="service-memberquestionreceiverservice-ctx-key-memberquestionreceiver"></a>
 ## Service：`MemberQuestionReceiverService`（ctx key：`memberQuestionReceiver`）
 
 ### Public API
@@ -16,12 +35,14 @@ Host 所有的成员提问接收状态 Service Definition、文件 Provider 与�
 - `createAuthenticatedMemberQuestionIngress(receiver)` 是包内折叠的未来认证 endpoint Consumer adapter。它只接受 `AuthenticatedMemberQuestionEnvelope`；认证仍由 endpoint 负责。
 - `registerTerminalAuthority(authority)` 安装本 Host 使用的单一 first-claim adapter，与 `registerSessionMaterializer` 和 `registerHumanTurnAdmitter` 一致。
 
+<a id="persistence-and-ordering"></a>
 ## Persistence and ordering
 
 Provider 通过随机同目录临时文件原子替换，把一个仅所有者可读写的 JSON 文档写到 `<storagePath>/<environment>/member-question-receiver.json`。预发布格式版本 `1` 存有界 origin、background、question/options、reference path/reason 元数据、receiver 所有的 `cachedPath`、路线 identity、terminal 元数据、精确 Account／Project Workspace binding，以及由 text 与持久 attachment reference 组成、受 SHA-256 request digest 保护的 reserved human action。参考文档正文与浏览器原始图片 bytes 不进入该 ledger；传输副本位于绑定 Workspace 的 `.dsh/member-questions/<questionId>/`。
 
 一个串行 transaction owner 对 load、arrival、terminal publication、file commit、admission reservation、materialization 与 admission commit 排序。同路线新提问只有在旧 pending 提问的 canonical `superseded` 或已到期 `expired` terminal 提交后才会成为 pending。唯一 earliest-deadline scheduler claim 并持久化到期；publication 失败会在 `terminalRetryMs` 后重试。启动会在 read 可用前结算逾期行，因此重启不会复活已过期卡片。dispose 会清理 timer 与 listener、等待 transaction tail，并保留 ledger。
 
+<a id="configuration"></a>
 ## Configuration
 
 - `storagePath` — receiver ledger 的非空根目录。
@@ -35,6 +56,7 @@ Provider 通过随机同目录临时文件原子替换，把一个仅所有者�
 - `clock`、`timer` 与 `stateWriter` — 确定性 composition 与存储边界测试注入的时间、调度与原子存储接口；生产使用系统 clock/timer 与仅所有者可读写的原子替换。
 - `memberQuestionInstallationId` 与 `memberQuestionDeviceName` — 可选的 Host settlement identity。两者必须同时配置且非空；在跨机器认证 publication 组成之前，生产组合不提供这些字段。Remote settlement 使用本 Host identity，从不使用线字段。
 
+<a id="model-experience"></a>
 ## Model Experience
 
 None, as 认证 arrival、receiver projection、terminal settlement 与 reservation 记账都不会进入模型请求；只有之后的显式 human turn 会进入普通 Host admission adapter。
@@ -44,7 +66,18 @@ None, as 认证 arrival、receiver projection、terminal settlement 与 reservat
 Arrival 与 terminal 浏览没有 token 成本或 cache invalidation。Host materializer 会在任何 human prompt 之前注入每条有界 brief；只有显式提交 human message 后，Host admission adapter 才会产生一次普通 Session request。
 
 ## Known Limitations and Deferred Work
+<a id="known-limitations-and-deferred-work"></a>
 
 - **Arrival 与 admission 需要邀请接受时的本地 Workspace binding** — Host 只通过持久化的精确 Workspace id 解析 receiver Account 与 Project。关联缺失或对应 Workspace 已删除时，Session 物化与 human-turn RPC 都会失败，Client 不会获得 Session creation 或 prompt compensation 接口。
 - **跨机器 terminal authority 仍由注入提供** — 真实多 Installation first-claim publication 依赖 project-registry transport。没有该 authority 的 composition 可以保留未来 pending arrival，但会在 decline、expiry 或 supersession 前 fail closed。
 - **文档重组是 T4 帧的消费方** — codec 已独立接纳每一帧 `document-chunk` 后，`MemberQuestionDocumentAssembler` 再校验顺序、重复 identity 与累计 8 MiB 预算。
+
+<a id="dev-note"></a>
+### 开发备注
+
+<details>
+<summary>维护者工作上下文——点击展开</summary>
+
+暂无。
+
+</details>

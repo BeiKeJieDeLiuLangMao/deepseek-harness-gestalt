@@ -1,15 +1,33 @@
+---
+description: "Browser Runtime 的延迟加载模型工具 Consumer。"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-tool-browser
 
 [English](README.md) | 中文
 
+## 概述
+
 这是 `ctx.browserRuntime` 的模型 Consumer。它把 `browser_create`、`browser_navigate`、`browser_observe`、`browser_screenshot`、`browser_focus`、`browser_input` 与 `browser_close` 注册为普通延迟工具。`browser_input` 发送 Agent 合成输入，并要求提供非空 URL 或文本。
 
+## 目录
+
+- [配置](#configuration)
+- [模型体验](#model-experience)
+- [已知限制与后续工作](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+-----
+
+<a id="configuration"></a>
 ## 配置
 
 `timeoutMs` 是每次调用的正安全整数协作超时，默认值为 `30000`。无效值会让插件加载失败。Consumer 依赖 Browser Runtime 与工具注册表；禁用 `toolSearch` 时注册会明确失败。当调用 Agent Session 存在且已组合 `ctx.browserWorkspace` 时，操作会把创建的标签页绑定到该 Session。
 
 `tool_search` 返回匹配 schema，但绝不激活工具。eligibility 仍是发现与调度的唯一权威。工具不提供自定义 presenter，因此 Host 客户端沿用与其他普通工具相同的通用 MCP 风格工具卡路径。
 
+<a id="model-experience"></a>
 ## 模型体验
 
 ### 浏览器工具发现与结果
@@ -27,5 +45,16 @@
 首次请求不把较大的 Browser schema 放入前缀。发现会改变下一次请求的工具列表；此后追加式结果在该变化后的前缀之后保留复用。
 
 ## 已知限制与后续工作
+<a id="known-limitations-and-deferred-work"></a>
 
 - Consumer 暴露临时、命名持久与共享 Browser Profile，不添加账号选择器或浏览器专用对话卡片。持久与共享 chrome 是运行时事实，不是 Dock 页眉。Session 本地 Workspace 所有权见 [`dsh-browser-workspace`](../browser-workspace/README.zh.md)。Dock chrome 见 [`dsh-client-ui-browser`](../../client/ui-browser/README.zh.md)。无密钥 Browser Runtime 快照保持不含 Binder，因为它们证明发现与已渲染 Runtime 事实，而不是 Session 隔离。
+
+<a id="dev-note"></a>
+### 开发备注
+
+<details>
+<summary>维护者工作上下文——点击展开</summary>
+
+暂无。
+
+</details>

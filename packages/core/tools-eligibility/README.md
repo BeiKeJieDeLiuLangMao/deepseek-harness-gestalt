@@ -1,6 +1,13 @@
+---
+description: "Allow-only tool eligibility resolved from preset, Workspace, and Session configuration."
+kind: "package-reference"
+---
+
 # dsh-tools-eligibility
 
 English | [中文](README.zh.md)
+
+## Summary
 
 The host-plane resolver for allow-only tool eligibility. Preset allowances form the base; the `tool-eligibility` settings section adds Workspace and then Session entries by stable id.
 
@@ -18,6 +25,15 @@ The resolver owns one mutable registry contribution for each live Agent. Every r
 
 `session.toolEligibility` reads the authoritative `ctx.tools` allowance and schema catalog directly. The settings schema contains `workspaces` and `sessions` only; the internal deny-capable `ctx.tools.restrict()` API is not projected into user configuration.
 
+## Table of Contents
+
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
+
+-----
+
+<a id="model-experience"></a>
 ## Model Experience
 
 ### Effective eligible schemas
@@ -35,5 +51,16 @@ The service adds no prompt text. It removes every ineligible end-tool schema and
 A settings change that changes the effective schema set invalidates the request prefix from the first changed tool schema or SDK token.
 
 ## Known Limitations and Deferred Work
+<a id="known-limitations-and-deferred-work"></a>
 
 - Workspace matching uses the Session header's canonical cwd and the live Workspace registry. A Session outside a registered Workspace receives only preset and Session entries.
+
+<a id="dev-note"></a>
+### Dev Note
+
+<details>
+<summary>Working context for maintainers — click to expand</summary>
+
+None.
+
+</details>

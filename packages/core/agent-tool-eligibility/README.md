@@ -1,6 +1,13 @@
+---
+description: "Agent-preset positive tool eligibility declaration."
+kind: "package-reference"
+---
+
 # dsh-agent-tool-eligibility
 
 English | [中文](README.zh.md)
+
+## Summary
 
 The allow-only row an agent preset carries to declare its base tool eligibility.
 
@@ -13,6 +20,15 @@ The allow-only row an agent preset carries to declare its base tool eligibility.
 
 `allow` is required and is the only configuration field. The row contributes names to the preset's standing scope; Workspace and Session settings may add names later through [`dsh-tools-eligibility`](../tools-eligibility/README.md). An empty list means the preset allows no end tool. Names may refer to tools registered later, so dynamic tool registration does not require remounting the preset.
 
+## Table of Contents
+
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
+
+-----
+
+<a id="model-experience"></a>
 ## Model Experience
 
 ### Preset allowance
@@ -30,5 +46,16 @@ The row adds no prompt text. It removes every ineligible tool schema and its rep
 The allowance is fixed when the preset is composed. A changed eligible schema set invalidates the request prefix at the first changed tool schema.
 
 ## Known Limitations and Deferred Work
+<a id="known-limitations-and-deferred-work"></a>
 
 - The row names exact tool ids; it does not define aliases, patterns, categories, or a deny list.
+
+<a id="dev-note"></a>
+### Dev Note
+
+<details>
+<summary>Working context for maintainers — click to expand</summary>
+
+None.
+
+</details>

@@ -1,6 +1,13 @@
+---
+description: "提供 GitHub OAuth、签名轮询、P-256 证明、轮换与失效处理的 Platform Account Provider。"
+kind: "package-reference"
+---
+
 # `@deepseek-ai/dsh-platform-account-core`
 
 [English](README.md) | 中文
+
+## 概述
 
 本包是 Platform 账号提供方。登录尝试有效期为五分钟，携带随机 OAuth state 与 S256 PKCE，只能凭签名轮询令牌和 P-256 安装证明消费一次。GitHub OAuth 适配器不请求 scope，拒绝继承得到的非空 scope，只保留不可变数字 id、公开登录名和头像，并在身份查询后丢弃提供方令牌。
 
@@ -10,10 +17,21 @@
 
 `loadPlatformEnvironment` 要求并选择完整环境对。开发与生产不能共享 origin、回调、GitHub OAuth App id、凭证引用、数据库身份或身份命名空间。提供方会在处理流量前拒绝与所选身份不匹配的 GitHub 适配器或后端。
 
+## 目录
+
+- [扩展点](#extension-points)
+- [模型体验](#model-experience)
+- [已知限制与暂缓事项](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+-----
+
+<a id="extension-points"></a>
 ## 扩展点
 
 `AccountBackend` 提供原子持久化，`AccountInvalidationBus` 提供跨实例投递，`GitHubIdentityProvider` 拥有提供方交换。生产 composition root 提供三者；内存实现只用于无密钥验收与开发。
 
+<a id="model-experience"></a>
 ## 模型体验
 
 无。账号授权位于 agent 会话与模型请求之外。
@@ -23,6 +41,17 @@
 无。
 
 ## 已知限制与暂缓事项
+<a id="known-limitations-and-deferred-work"></a>
 
 - 本包不提供生产数据库、分布式失效、密钥管理、限流器或审计接收器；这些适配器归 Platform 部署 composition root 所有。
 - GitHub 适配器只支持 OAuth Apps，并以无提供方 scope 的方式接收公开身份。
+
+<a id="dev-note"></a>
+### 开发备注
+
+<details>
+<summary>维护者工作上下文——点击展开</summary>
+
+暂无。
+
+</details>

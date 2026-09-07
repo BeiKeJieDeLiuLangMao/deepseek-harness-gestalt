@@ -1,6 +1,13 @@
+---
+description: "DSH-better-sidebar 的固定源码快照，提供右侧栏与底部面板的 Host 和 Client 两半。"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-client-ui-better-sidebar
 
 [English](README.md) | 中文
+
+## 概述
 
 [omdsh-dev/DSH-better-sidebar](https://github.com/omdsh-dev/DSH-better-sidebar) 的钉死源码快照。宿主半边在 webServer 信任围栏后挂上 `/sidebar` JSON、媒体、HTML 预览、懒加载分块与终端 WebSocket 路由。客户端半边发布 `ctx.betterSidebar`，并绘制右侧栏与底部面板。只有公开 `./client` 入口会用该 Client service 扩充 Cordis；共享快照镜像命名为 `SidebarContext`，避免 Host 类型目录把它误认成 Cordis `Context`。SHA 与更新步骤见 [UPSTREAM.md](UPSTREAM.md)。本仓持有的改动列在 [LOCAL-MODIFICATIONS.md](LOCAL-MODIFICATIONS.md)。
 
@@ -12,6 +19,15 @@ Side Chat 标签页以临时子 Session id 挂载本仓已声明的 `conversatio
 
 Side Chat 标签页可在 Host 重启后恢复。线程是持久化子 Session，而标签条存放在按 origin 隔离的 localStorage 中，因此新 origin 可能丢失标签条，但不会丢失线程。当某个 Session 的侧栏状态激活时，标签条会恢复所有已发布、未归档且尚无标签页的直属 Side Chat 子线程。恢复的标签页落在活动 pane 中，但不会替换原有活动标签；空白子线程和仅存在于渲染器侧的临时身份不会恢复。恢复的线程使用最新的子会话自有请求所记录的模型路由；尚无请求时回退到创建 descriptor，临时草稿则仍读取在线父会话的路由。Host 会让关闭操作与已准入的首次提示词串行执行，从在线与持久化 Session 存储判断发布结果，并释放在线句柄。客户端归档已发布的 Session，但不删除日志；尚未发送内容的草稿没有需要归档的 Session。只有这些操作成功后才会关闭标签页；失败会被报告，标签页仍保持打开。插件卸载会等待在途关闭，但不会允许它们延迟提交浏览器状态。随后，本地墓碑会在归档投影到达前阻止列表刷新重新打开标签页。`?dsh-sidebar-reset` 逃逸参数会在本次加载中跳过恢复。
 
+## 目录
+
+- [模型体验](#model-experience)
+- [已知限制与延期工作](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+-----
+
+<a id="model-experience"></a>
 ## 模型体验
 
 ### Side Chat
@@ -57,7 +73,18 @@ Side Chat 标签页可在 Host 重启后恢复。线程是持久化子 Session�
 `agentTerminalTools` 关闭时无影响。启用它会使未包含可选工具 schema 的已缓存请求前缀失效。
 
 ## 已知限制与延期工作
+<a id="known-limitations-and-deferred-work"></a>
 
 - **快照仍带 iframe 浏览器实现** — 产品组合通过 `workbenchBrowser` 替换它所渲染的 chrome；独立安装快照时仍使用 iframe。
 - **宿主 fs/git/pty 路由是快照自有栈** — 尚未消费本仓的 `fs` 或 `terminal` 能力缝。
 - **右侧 overlay 与官方 details Dock 可能同时绘制** — 布局合一延期。
+
+<a id="dev-note"></a>
+### 开发备注
+
+<details>
+<summary>维护者工作上下文——点击展开</summary>
+
+暂无。
+
+</details>
