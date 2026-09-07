@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { act, cleanup, renderHook } from '@testing-library/react'
-import type { SessionLiveEventEntry } from '@deepseek-ai/dsh-api-session-controller/client'
+import type {
+  SessionAdmissionAdapter, SessionAdmissionRoute, SessionLiveEventEntry,
+} from '@deepseek-ai/dsh-api-session-controller/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { EMPTY_CHAT_SNAPSHOT } from '@deepseek-ai/dsh-client-ui-chat/client'
 import { EMPTY_CONVERSATION_SNAPSHOT } from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -10,6 +12,8 @@ import {
   bindSnapshotSelector,
   chatSnapshot,
   conversationSnapshot,
+  inputActions,
+  inputState,
   SlotTestRuntime,
   usePinnedBrowserLanguages,
 } from '../src/index.ts'
@@ -65,6 +69,29 @@ describe('fixture helpers', () => {
   it('pins both browser language fields for the calling suite', () => {
     expect(navigator.languages).toEqual(['zh-CN', 'en-US'])
     expect(navigator.language).toBe('zh-CN')
+  })
+
+  it('builds fresh complete input state and fail-loud overridable actions', () => {
+    const first = inputState()
+    const second = inputState({ draft: 'hello', annotations: [] })
+    expect(first).toEqual({
+      draft: '',
+      imageIds: [],
+      draftRev: 0,
+      phase: 'plain',
+      occurrences: [],
+      queue: [],
+      annotations: [],
+    })
+    expect(second.draft).toBe('hello')
+    expect(second.imageIds).not.toBe(first.imageIds)
+    expect(second.annotations).not.toBe(first.annotations)
+
+    const addImages = vi.fn(() => true)
+    const actions = inputActions({ addImages })
+    expect(actions.addImages([])).toBe(true)
+    expect(addImages).toHaveBeenCalledWith([])
+    expect(() => { actions.submit() }).toThrow('test input action "submit" is not stubbed')
   })
 })
 
@@ -172,5 +199,81 @@ describe('Session fixture lifecycle', () => {
     runtime.releaseWorkspaceSource()
     await runtime.dispose()
     expect(release).toHaveBeenCalledOnce()
+  })
+
+  it('registers, replaces, and revokes exact admission routes with token-safe disposers', async () => {
+    const runtime = await SlotTestRuntime.create()
+    const sessionId = await runtime.sessions.add({ id: 'admitted' }, { current: false })
+    const parentId = await runtime.sessions.add({ id: 'parent' }, { current: false })
+    const changed = vi.fn()
+    const unsubscribe = runtime.sessions.subscribeAdmission(changed)
+    const first: SessionAdmissionRoute = {
+      prompt: async () => ({ ok: true, value: { accepted: true } }),
+      cancel: async () => ({ ok: true, value: { accepted: true } }),
+      commandCatalogSessionId: () => parentId,
+      skillCatalogSessionId: () => parentId,
+    }
+    const selected = { provider: 'fixture', model: 'replacement' }
+    const second: SessionAdmissionRoute = {
+      prompt: async () => ({ ok: true, value: { accepted: true } }),
+      cancel: async () => ({ ok: true, value: { accepted: true } }),
+      modelRoute: () => ({
+        selectModel: async () => ({ ok: true, value: { selected } }),
+      }),
+    }
+
+    const dropFirst = runtime.sessions.registerAdmission(sessionId, first)
+    expect(runtime.sessions.commandCatalogSessionId(sessionId)).toBe(parentId)
+    expect(runtime.sessions.skillCatalogSessionId(sessionId)).toBe(parentId)
+    expect(changed).toHaveBeenCalledTimes(1)
+
+    const dropSecond = runtime.sessions.registerAdmission(sessionId, second)
+    expect(runtime.sessions.commandCatalogSessionId(sessionId)).toBeUndefined()
+    expect(runtime.sessions.skillCatalogSessionId(sessionId)).toBeUndefined()
+    await expect(runtime.sessions.modelRoute(sessionId)?.selectModel?.(selected)).resolves.toEqual({
+      ok: true,
+      value: { selected },
+    })
+    expect(changed).toHaveBeenCalledTimes(2)
+
+    dropFirst()
+    expect(runtime.sessions.modelRoute(sessionId)).toBeDefined()
+    expect(changed).toHaveBeenCalledTimes(2)
+    dropSecond()
+    expect(runtime.sessions.modelRoute(sessionId)).toBeUndefined()
+    expect(runtime.sessions.commandCatalogSessionId(sessionId)).toBe(sessionId)
+    expect(changed).toHaveBeenCalledTimes(3)
+    unsubscribe()
+    await runtime.dispose()
+  })
+
+  it('orders adapters behind exact routes and disposes them by registration identity', async () => {
+    const runtime = await SlotTestRuntime.create()
+    const sessionId = await runtime.sessions.add({ id: 'adapter' }, { current: false })
+    const parentId = await runtime.sessions.add({ id: 'adapter-parent' }, { current: false })
+    const adapter: SessionAdmissionAdapter = {
+      id: 'fixture-adapter',
+      handles: id => id === sessionId,
+      prompt: async () => ({ ok: true, value: { accepted: true } }),
+      cancel: async () => ({ ok: true, value: { accepted: true } }),
+      commandCatalogSessionId: () => parentId,
+    }
+    const dropAdapter = runtime.sessions.registerAdmissionAdapter(adapter)
+    expect(runtime.sessions.commandCatalogSessionId(sessionId)).toBe(parentId)
+    expect(() => { runtime.sessions.registerAdmissionAdapter(adapter) })
+      .toThrow('duplicate admission adapter "fixture-adapter"')
+
+    const route: SessionAdmissionRoute = {
+      prompt: async () => ({ ok: true, value: { accepted: true } }),
+      cancel: async () => ({ ok: true, value: { accepted: true } }),
+      commandCatalogSessionId: () => sessionId,
+    }
+    const dropExact = runtime.sessions.registerAdmission(sessionId, route)
+    expect(runtime.sessions.commandCatalogSessionId(sessionId)).toBe(sessionId)
+    dropExact()
+    expect(runtime.sessions.commandCatalogSessionId(sessionId)).toBe(parentId)
+    dropAdapter()
+    expect(runtime.sessions.commandCatalogSessionId(sessionId)).toBe(sessionId)
+    await runtime.dispose()
   })
 })

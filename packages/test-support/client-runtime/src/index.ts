@@ -54,6 +54,7 @@ export type {
 } from './fixtures.ts'
 export { makeTranslate } from './translate.ts'
 export { usePinnedBrowserLanguages } from './locale-env.ts'
+export { inputActions, inputState } from './input.ts'
 
 /**
  * Bind an observable source to the production renderer's selector hook.

@@ -21,6 +21,7 @@ import type {
 } from '@deepseek-ai/dsh-api-session-controller/types'
 import type { WorkspaceRemote } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { WorkspaceFollowFrame } from '@deepseek-ai/dsh-api-workspace-controller/types'
+import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import type { RemoteFailure, RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import {
   RemoteStream,
@@ -109,6 +110,11 @@ interface OpenValueStream<F> {
  */
 export type RuntimeRemotes = SessionRemotes & { readonly workspace: WorkspaceRemote }
 
+type SessionListHandler = SessionRemotes['session']['list']
+type SessionAdmitAttachmentHandler = SessionRemotes['session']['admitAttachment']
+type WorkspaceCloneGitHandler = WorkspaceRemote['cloneGit']
+type WorkspaceGitRemoteHandler = WorkspaceRemote['gitRemote']
+
 export function fakeRemote(api = new FakeApiClient()): RuntimeRemotes {
   return api.sessionRemotes()
 }
@@ -122,7 +128,8 @@ export class FakeApiClient {
   historySeedLength: number | undefined
 
   // Programmable slots (defaults answer OK-empty); reassign per case.
-  onList: (payload: unknown) => Promise<RemoteResult<{ items: never[] }>> = () => Promise.resolve(ok({ items: [] }))
+  onList: (...args: Parameters<SessionListHandler>) => ReturnType<SessionListHandler> =
+    () => Promise.resolve(ok({ items: [] }))
   onSearch: (payload: unknown, signal?: AbortSignal) => Promise<RemoteResult<{ items: SessionSearchItem[]; hasMore: boolean }>> =
     () => Promise.resolve(ok({ items: [], hasMore: false }))
   onCreate: (payload: unknown) => Promise<RemoteResult<{ sessionId: SessionId }>> = () => Promise.resolve(ok({ sessionId: 'fk-new' as SessionId }))
@@ -145,6 +152,17 @@ export class FakeApiClient {
   onPrompt: (payload: unknown) => Promise<RemoteResult<{ accepted: true }>> = () => Promise.resolve(ok({ accepted: true as const }))
   onAttachment: (payload: unknown) => Promise<RemoteResult<{ attachment: { attachmentId: never; mediaType: 'image/png'; bytes: number; width: number; height: number }; data: string }>> =
     () => Promise.resolve(ok({ attachment: { attachmentId: 'a' as never, mediaType: 'image/png', bytes: 1, width: 1, height: 1 }, data: 'AA==' }))
+  onAdmitAttachment: (
+    ...args: Parameters<SessionAdmitAttachmentHandler>
+  ) => ReturnType<SessionAdmitAttachmentHandler> = payload => Promise.resolve(ok({
+    attachment: {
+      attachmentId: AttachmentId('fake-byte-attachment'),
+      mediaType: payload.mediaType,
+      bytes: 0,
+      sha256: '0'.repeat(64),
+      name: payload.name,
+    },
+  }))
   onUpdateQueue: (payload: unknown) => Promise<RemoteResult<{ accepted: true }>> = () => Promise.resolve(ok({ accepted: true as const }))
   onCancel: (payload: unknown) => Promise<RemoteResult<{ accepted: true }>> = () => Promise.resolve(ok({ accepted: true as const }))
   onOpenWorkspacePath: (payload: unknown) => Promise<RemoteResult<{ opened: true }>> =
@@ -193,6 +211,18 @@ export class FakeApiClient {
   onWorkspaceArchiveSession: (payload: unknown) => Promise<RemoteResult<{ archivedSessionIds: SessionId[] }>> =
     payload => Promise.resolve(ok({ archivedSessionIds: [(payload as { sessionId: SessionId }).sessionId] }))
 
+  onWorkspaceCloneGit: (
+    ...args: Parameters<WorkspaceCloneGitHandler>
+  ) => ReturnType<WorkspaceCloneGitHandler> = payload => Promise.resolve(ok({
+    workspace: fakeWorkspace('fk-clone', {
+      path: `${payload.parentPath}/${payload.directoryName}`,
+    }),
+  }))
+
+  onWorkspaceGitRemote: (
+    ...args: Parameters<WorkspaceGitRemoteHandler>
+  ) => ReturnType<WorkspaceGitRemoteHandler> = () => Promise.resolve(ok({}))
+
   /** Remote namespaces bound to this fake's programmable unary slots and stream pumps. */
   sessionRemotes(): RuntimeRemotes {
     return {
@@ -233,6 +263,11 @@ export class FakeApiClient {
         fork: payload => this.record('session.fork', payload, this.onFork(payload)),
         prompt: payload => this.record('session.prompt', payload, this.onPrompt(payload)),
         attachment: payload => this.record('session.attachment', payload, this.onAttachment(payload)),
+        admitAttachment: payload => this.record(
+          'session.admitAttachment',
+          payload,
+          this.onAdmitAttachment(payload),
+        ),
         updateQueue: payload => this.record('session.updateQueue', payload, this.onUpdateQueue(payload)),
         cancel: payload => this.record('session.cancel', payload, this.onCancel(payload)),
         openWorkspacePath: payload => this.record(
@@ -278,6 +313,16 @@ export class FakeApiClient {
           'workspace.archiveSession',
           payload,
           this.onWorkspaceArchiveSession(payload),
+        ),
+        cloneGit: (payload, signal) => this.record(
+          'workspace.cloneGit',
+          payload,
+          this.onWorkspaceCloneGit(payload, signal),
+        ),
+        gitRemote: (payload, signal) => this.record(
+          'workspace.gitRemote',
+          payload,
+          this.onWorkspaceGitRemote(payload, signal),
         ),
         follow: signal => this.openWorkspace(signal),
       },
