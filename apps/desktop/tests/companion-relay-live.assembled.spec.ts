@@ -17,8 +17,9 @@ import {
 import {
   initializeSnowChannel,
   SnowDesktopAttachmentOwner, SnowDesktopEndpointPairingOwner, SnowMobileAttachmentOwner, SnowMobileHandshakeClient,
+  type SnowCompanionProtocolChannel,
 } from '@deepseek-ai/dsh-noise-channel'
-import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { SessionId } from '@deepseek-ai/dsh-session/types'
 import { decompressZstdFrame, scanZstdFrames } from '../../../packages/session/session-persistence-jsonl/src/zstd.ts'
 import {
   DesktopCompanionOperationLedger, FileDesktopCompanionOperationStore,
@@ -247,18 +248,20 @@ describe('assembled Desktop Relay live Session projection on shipped dsh web', (
     const relayOwner = new DesktopSnowRelayChannelOwner(
       desktopAttachmentOwner,
       relaySend,
-      async (operation, _selector, context) => await owner.handle(operation, {
-        ...pairingDependencies(channels),
-        generation: context.generation,
-        desktopRevision: context.desktopRevision,
-      }),
+      async (operation, selector, context) => operation.type === 'query-operation-status'
+        ? await owner.queryOperationStatus(parsePersonalPairingId(selector), operation.operationId)
+        : await owner.handle(operation, {
+          ...pairingDependencies(owner, channels),
+          generation: context.generation,
+          desktopRevision: context.desktopRevision,
+        }),
       () => 'Assembled Desktop',
       10_000,
       {
         connect: (selector, changed, disconnect) => owner.connectLiveProjection(
           parsePersonalPairingId(selector), changed, disconnect,
         ),
-        project: async (change, selector, signal) => await owner.projectLiveSession(
+        project: async (change, _selector, signal) => await owner.projectLiveSession(
           change, channels.attachmentKey.slice(), signal,
         ),
         retainsConversation: (change, selector) => owner.retainsLiveConversation(
@@ -369,7 +372,7 @@ describe('assembled Desktop Relay live Session projection on shipped dsh web', (
     await scheduleInbound('handshake', mobileNegotiation.payload)
 
 
-    const localSessionId = sessionId as SessionId
+    const localSessionId = SessionId(sessionId)
 
     await expect.poll(() => {
       if (transportErrors.length > 0) {
@@ -421,7 +424,7 @@ describe('assembled Desktop Relay live Session projection on shipped dsh web', (
     await expect(owner.handle({
       type: 'submit-prompt', operationId: 'relay-live-after-disconnect' as never,
       sessionId, text: 'the observed Session continues without its projection stream',
-    }, pairingDependencies(channels))).resolves.toMatchObject({ type: 'confirmed' })
+    }, pairingDependencies(owner, channels))).resolves.toMatchObject({ type: 'confirmed' })
     await expect.poll(async () => await countTurnEnds(first.home, sessionId) > turnsBeforeDisconnect).toBe(true)
     expect(surface.getSnapshot().conversations[localSessionId]?.nodes.length).toBe(nodesBeforeDisconnect)
   }, 180_000)
@@ -437,7 +440,12 @@ describe('assembled Desktop Relay live Session projection on shipped dsh web', (
       async () => { throw new Error('no operations in the rejection case') },
       () => 'Assembled Desktop',
       10_000,
-      { connect: () => { throw new Error('no live projection in the rejection case') } },
+      {
+        connect: () => { throw new Error('no live projection in the rejection case') },
+        project: async () => { throw new Error('no live projection in the rejection case') },
+        retainsConversation: () => false,
+        reconnect: () => {},
+      },
     )
     // Ownership registers the moment each resource exists — the staged release
     // below runs even when the handshake rejection throws, and the Mobile
@@ -536,25 +544,22 @@ async function startControlledStreamingLlm(apiKey: string): Promise<{
   }
 }
 
-function pairingDependencies(channels: Awaited<ReturnType<typeof snowProductChannels>>): {
-  pairingId: ReturnType<typeof parsePersonalPairingId>
-  attachmentKey: Uint8Array
-  now: () => number
-  generation: number
-  desktopRevision: number
-  desktopName: string
-  downloadAttachment: () => Promise<never>
-  submitAttachment: () => Promise<never>
-} {
+function pairingDependencies(
+  owner: InstanceType<typeof DesktopCompanionProductOwner>,
+  channels: Awaited<ReturnType<typeof snowProductChannels>>,
+): Parameters<InstanceType<typeof DesktopCompanionProductOwner>['handle']>[1] {
+  const attachmentKey = channels.attachmentKey.slice()
   return {
     pairingId: parsePersonalPairingId(channels.pairingSelector),
-    attachmentKey: channels.attachmentKey.slice(),
+    attachmentKey,
     now: Date.now,
     generation: channels.generation,
     desktopRevision: 0,
     desktopName: 'Assembled Desktop',
     downloadAttachment: () => Promise.reject(new Error('live must not download an attachment')),
     submitAttachment: () => Promise.reject(new Error('live must not submit an attachment')),
+    resolveInteraction: interactionId => owner.resolveInteraction(interactionId, attachmentKey),
+    pendingInteractions: sessionId => owner.pendingInteractions(sessionId, attachmentKey),
   }
 }
 

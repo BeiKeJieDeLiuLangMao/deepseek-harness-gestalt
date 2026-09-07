@@ -22,7 +22,7 @@ import {
   SnowDesktopEndpointPairingOwner, SnowMobileHandshakeClient,
   type SnowCompanionProtocolChannel,
 } from '@deepseek-ai/dsh-noise-channel'
-import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { SessionId } from '@deepseek-ai/dsh-session/types'
 import { decompressZstdFrame, scanZstdFrames } from '../../../packages/session/session-persistence-jsonl/src/zstd.ts'
 import {
   DesktopCompanionOperationLedger, FileDesktopCompanionOperationStore,
@@ -134,7 +134,9 @@ describe('assembled Desktop Companion Ask User question on shipped dsh web', () 
         await Promise.resolve()
         const opened = channels.desktop.open(ciphertext)
         if (opened.type !== 'operation') throw new Error('assembled Desktop expected a Companion operation')
-        const output = await owner.handle(opened.operation, pairingDependencies(owner, channels))
+        const output = opened.operation.type === 'query-operation-status'
+          ? await owner.queryOperationStatus(parsePersonalPairingId(channels.pairingSelector), opened.operation.operationId)
+          : await owner.handle(opened.operation, pairingDependencies(owner, channels))
         const receiver = receiverRef.current
         if (receiver === undefined) throw new Error('assembled Mobile receiver is not installed')
         for (const item of isResultList(output) ? output : [output]) {
@@ -165,7 +167,7 @@ describe('assembled Desktop Companion Ask User question on shipped dsh web', () 
         generation: channels.generation, desktopRevision: 1,
       },
     }))
-    const localSessionId = sessionId as SessionId
+    const localSessionId = SessionId(sessionId)
     await expect.poll(() => surface.getSnapshot().sessions.ids.includes(localSessionId)).toBe(true)
     await surface.submit(localSessionId, 'ask the user one snow question')
     await expect.poll(() => llm.requests.length > 0).toBe(true)
@@ -433,6 +435,8 @@ async function durableSessionLog(home: string, sessionId: string): Promise<strin
 function isProjection(value: CompanionProjection | CompanionResult): value is CompanionProjection {
   return value.type === 'foreground-sync' || value.type === 'transcript-page'
     || value.type === 'surface-snapshot' || value.type === 'conversation-snapshot'
+    || value.type === 'session-live' || value.type === 'member-question-state'
+    || value.type === 'document-transfer-state'
 }
 
 function isResultList(value: unknown): value is readonly CompanionResult[] {

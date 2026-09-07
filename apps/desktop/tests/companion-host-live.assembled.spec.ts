@@ -8,6 +8,7 @@ import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { parsePersonalPairingId } from '@deepseek-ai/dsh-remote-access'
 import {
   generateRelayCredential,
+  parseCompanionOperationId,
   parseCompanionSessionId,
   parseRelayAttachmentId,
   parseRelayPairingSelector,
@@ -21,7 +22,7 @@ import {
   SnowDesktopEndpointPairingOwner, SnowMobileHandshakeClient,
   type SnowCompanionProtocolChannel,
 } from '@deepseek-ai/dsh-noise-channel'
-import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { SessionId } from '@deepseek-ai/dsh-session/types'
 import { decompressZstdFrame, scanZstdFrames } from '../../../packages/session/session-persistence-jsonl/src/zstd.ts'
 import {
   DesktopCompanionOperationLedger, FileDesktopCompanionOperationStore,
@@ -183,16 +184,21 @@ describe('assembled Desktop Companion live Session projection on shipped dsh web
         await Promise.resolve()
         const opened = channels.desktop.open(ciphertext)
         if (opened.type !== 'operation') throw new Error('assembled Desktop expected a Companion operation')
-        const output = await owner.handle(opened.operation, pairingDependencies(owner, channels, desktopRevision))
+        const output = opened.operation.type === 'query-operation-status'
+          ? await owner.queryOperationStatus(parsePersonalPairingId(channels.pairingSelector), opened.operation.operationId)
+          : await owner.handle(opened.operation, pairingDependencies(owner, channels, desktopRevision))
         const receiver = receiverRef.current
         if (receiver === undefined) throw new Error('assembled Mobile receiver is not installed')
         for (const item of isResultList(output) ? output : [output]) {
           const projection = isProjection(item)
             ? { ...item, generation: channels.generation, desktopRevision: allocateDesktopRevision() } as CompanionProjection
             : undefined
-          receiver.receive(channels.desktop.seal(projection === undefined
-            ? { type: 'result', result: item }
-            : { type: 'projection', projection }))
+          if (projection === undefined) {
+            if (isProjection(item)) throw new Error('assembled projection classification changed while sealing')
+            receiver.receive(channels.desktop.seal({ type: 'result', result: item }))
+          } else {
+            receiver.receive(channels.desktop.seal({ type: 'projection', projection }))
+          }
         }
       },
     })
@@ -223,7 +229,7 @@ describe('assembled Desktop Companion live Session projection on shipped dsh web
         generation: channels.generation, desktopRevision: 1,
       },
     }))
-    const localSessionId = sessionId as SessionId
+    const localSessionId = SessionId(sessionId)
     await expect.poll(() => {
       return surface.getSnapshot().sessions.ids.includes(localSessionId)
     }).toBe(true)
@@ -267,17 +273,17 @@ describe('assembled Desktop Companion live Session projection on shipped dsh web
     const second = parseCompanionSessionId('desktop-snow-live-after-disconnect')
     await expect(createDesktopHostSession(rpc, second)).resolves.toMatchObject({ ok: true })
     await expect(owner.handle({
-      type: 'submit-prompt', operationId: parseOperationId('live-after-disconnect-prompt'),
+      type: 'submit-prompt', operationId: parseCompanionOperationId('live-after-disconnect-prompt'),
       sessionId: second, text: 'host continues without the projected connection',
     }, pairingDependencies(owner, channels, desktopRevision))).resolves.toMatchObject({ type: 'confirmed' })
     await expect.poll(() => durableSessionLog(first.home, second).then(text => text.includes('turn/end'))).toBe(true)
     await expect(owner.handle({
-      type: 'submit-prompt', operationId: parseOperationId('live-observed-after-disconnect-prompt'),
+      type: 'submit-prompt', operationId: parseCompanionOperationId('live-observed-after-disconnect-prompt'),
       sessionId, text: 'the observed Session continues without its projection stream',
     }, pairingDependencies(owner, channels, desktopRevision))).resolves.toMatchObject({ type: 'confirmed' })
     await expect.poll(async () => await countTurnEnds(first.home, sessionId) > turnsBeforeDisconnect).toBe(true)
     expect(liveTasks.size).toBe(0)
-    expect(surface.getSnapshot().sessions.ids).not.toContain(second as SessionId)
+    expect(surface.getSnapshot().sessions.ids).not.toContain(SessionId(second))
     expect(surface.getSnapshot().conversations[localSessionId]?.nodes.length).toBe(nodesBeforeDisconnect)
   }, 180_000)
 })
@@ -345,12 +351,6 @@ function requireEncodableProjection(
 async function countTurnEnds(home: string, sessionId: string): Promise<number> {
   const log = await durableSessionLog(home, sessionId)
   return (log.match(/"type":"turn\/end"/g) ?? []).length
-}
-
-function parseOperationId(value: string): Parameters<
-  ReturnType<typeof import('../src/companion-product.ts')['DesktopCompanionProductOwner']>['handle']
->[0]['operationId'] {
-  return value as never
 }
 
 function pairingDependencies(
@@ -454,7 +454,8 @@ async function durableSessionLog(home: string, sessionId: string): Promise<strin
 function isProjection(value: CompanionProjection | CompanionResult): value is CompanionProjection {
   return value.type === 'foreground-sync' || value.type === 'transcript-page'
     || value.type === 'surface-snapshot' || value.type === 'conversation-snapshot'
-    || value.type === 'session-live'
+    || value.type === 'session-live' || value.type === 'member-question-state'
+    || value.type === 'document-transfer-state'
 }
 
 function isResultList(value: unknown): value is readonly CompanionResult[] {

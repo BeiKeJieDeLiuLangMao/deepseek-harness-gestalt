@@ -8,12 +8,13 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { parsePersonalPairingId } from '@deepseek-ai/dsh-remote-access'
 import {
   generateRelayCredential, parseCompanionSessionId, parseRelayAttachmentId, parseRelayPairingSelector,
-  parseRelayRouteId, REMOTE_PROTOCOL_LIMITS, type CompanionOperation, type CompanionResult,
+  parseRelayRouteId, REMOTE_PROTOCOL_LIMITS, type CompanionOperation, type CompanionProjection, type CompanionResult,
 } from '@deepseek-ai/dsh-remote-protocol'
 import {
   acceptSnowDesktopReconnect, beginSnowCompanionProtocol, beginSnowMobileReconnect, initializeSnowChannel,
   SnowDesktopEndpointPairingOwner, SnowMobileHandshakeClient, type SnowCompanionProtocolChannel,
 } from '@deepseek-ai/dsh-noise-channel'
+import { SessionId } from '@deepseek-ai/dsh-session/types'
 import {
   bootstrapDesktopHostCookie, createDesktopHostRpc, createDesktopHostSession, promptDesktopHostSession,
 } from '../src/host-rpc.ts'
@@ -93,7 +94,7 @@ describe('assembled Desktop Companion attachments on shipped dsh web', () => {
         const message = channels.desktop.open(sealed)
         if (message.type !== 'operation') throw new Error('Desktop expected a Snow operation')
         opened.push(message.operation)
-        const dependencies = {
+        const dependencies: Parameters<InstanceType<typeof DesktopCompanionProductOwner>['handle']>[1] = {
           pairingId: parsePersonalPairingId(channels.pairingSelector),
           attachmentKey: channels.attachmentKey.slice(), now: Date.now,
           generation: channels.generation, desktopRevision: 1, desktopName: 'Assembled Desktop',
@@ -105,12 +106,13 @@ describe('assembled Desktop Companion attachments on shipped dsh web', () => {
           resolveInteraction: (id: never) => owner.resolveInteraction(id, channels.attachmentKey),
           pendingInteractions: (id: never) => owner.pendingInteractions(id, channels.attachmentKey),
         }
-        const result = await owner.handle(message.operation, dependencies)
-        if (Array.isArray(result) || result.type === 'foreground-sync' || result.type === 'transcript-page'
-          || result.type === 'surface-snapshot' || result.type === 'conversation-snapshot') {
+        const result = message.operation.type === 'query-operation-status'
+          ? await owner.queryOperationStatus(dependencies.pairingId, message.operation.operationId)
+          : await owner.handle(message.operation, dependencies)
+        if (isResultList(result) || isProjection(result)) {
           throw new Error('attachment operation returned a projection')
         }
-        const openedResult = channels.mobile.open(channels.desktop.seal({ type: 'result', result: result as CompanionResult }))
+        const openedResult = channels.mobile.open(channels.desktop.seal({ type: 'result', result }))
         if (openedResult.type !== 'result') throw new Error('Mobile expected a Snow result')
         results.push(openedResult.result)
         product.acceptResult(openedResult.result)
@@ -147,7 +149,7 @@ describe('assembled Desktop Companion attachments on shipped dsh web', () => {
         ['notes.txt', 'text/plain', new TextEncoder().encode('assembled exact text bytes')],
       ] as const
       for (const [name, mediaType, bytes] of expectedFiles) {
-        const transfer = product.attach(sessionId, new File([bytes], name, { type: mediaType }))
+        const transfer = product.attach(SessionId(sessionId), new File([bytes], name, { type: mediaType }))
         await transfer.completion
         const operation = opened.find(candidate => candidate.operationId === transfer.operationId)
         if (operation?.type !== 'offer-attachment') throw new Error(`missing Snow attachment operation for ${name}`)
@@ -273,6 +275,17 @@ function admittedAttachments(log: string): Array<{
     })
   }
   return values
+}
+
+function isProjection(value: CompanionProjection | CompanionResult): value is CompanionProjection {
+  return value.type === 'foreground-sync' || value.type === 'transcript-page'
+    || value.type === 'surface-snapshot' || value.type === 'conversation-snapshot'
+    || value.type === 'session-live' || value.type === 'member-question-state'
+    || value.type === 'document-transfer-state'
+}
+
+function isResultList(value: unknown): value is readonly CompanionResult[] {
+  return Array.isArray(value)
 }
 
 async function durableSessionLog(home: string, sessionId: string): Promise<string> {

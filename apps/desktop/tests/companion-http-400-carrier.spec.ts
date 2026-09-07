@@ -74,7 +74,8 @@ describe('Companion external HTTP carrier failure codec', () => {
       if (target) {
         mutationCount += 1
         observed = {
-          originalMethod: incoming.method, originalPath: incoming.url,
+          ...(incoming.method === undefined ? {} : { originalMethod: incoming.method }),
+          ...(incoming.url === undefined ? {} : { originalPath: incoming.url }),
           mutatedMethod: 'GET', mutatedPath: '/%zz',
         }
         delete headers['content-length']
@@ -133,6 +134,9 @@ describe('Companion external HTTP carrier failure codec', () => {
         message: 'Desktop Host returned HTTP 400', status: 400,
       },
     })
+    if (!('type' in result) || result.type !== 'operation-failed') {
+      throw new Error('expected one Companion operation failure')
+    }
     const protocol = negotiateCompanionProtocol(
       createCompanionNegotiationChannel(),
       createCompanionVersionOffer('mobile'),

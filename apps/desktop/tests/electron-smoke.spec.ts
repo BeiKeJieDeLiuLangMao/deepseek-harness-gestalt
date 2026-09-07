@@ -28,7 +28,7 @@ describe.skipIf(process.env.DSH_DESKTOP_SMOKE !== '1')('Desktop Host smoke', () 
     let output = ''
     let processOutput = (): string => ''
     let hostIdentity: ReturnType<typeof smokeHostIdentity>
-    let processFailure = (): Error | undefined => () => undefined
+    let processFailure: () => Error | undefined = () => undefined
     try {
       child = spawn(electronBin, ['out/main.mjs'], {
         cwd: desktopRoot,

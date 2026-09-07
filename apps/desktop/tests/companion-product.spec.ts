@@ -10,18 +10,24 @@ import {
   parseCompanionSessionId,
   parseDocumentTransferId,
   parseMemberQuestionId,
+  parseMemberQuestionProjectId,
   REMOTE_PROTOCOL_LIMITS,
   sealCompanionAttachment,
   type CompanionOfferAttachmentOperation,
   type CompanionSearchSessionsOperation,
   type CompanionOperation,
 } from '@deepseek-ai/dsh-remote-protocol'
+import { SessionId } from '@deepseek-ai/dsh-session/types'
+import { WorkspaceId } from '@deepseek-ai/dsh-workspace'
 import {
   DesktopCompanionOperationLedger,
 } from '../src/companion-operation-ledger.ts'
 import type {
   DesktopCompanionSurfaceDiscovery as DesktopCompanionSurfaceDiscoveryType,
   DesktopCompanionProductOwner as DesktopCompanionProductOwnerType,
+  CompanionProductOperationDependencies,
+  DesktopWorkspaceSnapshot,
+  DesktopWorkspaceSnapshotFailure,
   DesktopSessionHistoryCache as DesktopSessionHistoryCacheType,
   handleCompanionProductOperation as HandleCompanionProductOperationType,
 } from '../src/companion-product.ts'
@@ -164,10 +170,10 @@ describe('Desktop Companion product operations', () => {
       throw new Error(`unexpected Host method ${method}`)
     }), {
       items: [{
-        workspaceId: 'workspace-product', path: '/work', title: 'Work',
-        sessionIds: ['session-product'], createdAt: '2026-08-23T00:00:00.000Z',
+        workspaceId: WorkspaceId('workspace-product'), path: '/work', title: 'Work',
+        sessionIds: [SessionId('session-product')], createdAt: '2026-08-23T00:00:00.000Z',
         updatedAt: '2026-08-23T00:00:00.000Z',
-      }], archivedSessionIds: ['session-archived'],
+      }], archivedSessionIds: [SessionId('session-archived')],
     })
     const operation = op({ type: 'refresh-surface', offset: 0 })
     await expect(handleCompanionProductOperation(operation, dependencies)).resolves.toMatchObject({
@@ -406,8 +412,8 @@ describe('Desktop Companion product operations', () => {
     let sessionListCalls = 0
     const workspaceSnapshot = () => Promise.resolve({
       items: items.map((item, index) => ({
-        workspaceId: `workspace-${String(index)}`, path: `/work/${String(index)}`, title: `Work ${String(index)}`,
-        sessionIds: [item.sessionId],
+        workspaceId: WorkspaceId(`workspace-${String(index)}`), path: `/work/${String(index)}`, title: `Work ${String(index)}`,
+        sessionIds: [SessionId(item.sessionId)],
         createdAt: '2026-08-23T00:00:00.000Z', updatedAt: '2026-08-23T00:00:00.000Z',
       })),
       archivedSessionIds: [],
@@ -800,7 +806,7 @@ describe('Desktop Companion product operations', () => {
     })
     const operation = op({
       type: 'settle-interaction', sessionId, interactionId,
-      settlement: { kind: 'approval', outcome: 'allowed-once' },
+      settlement: { kind: 'approval' as const, outcome: 'allowed-once' as const },
     })
     await expect(handleCompanionProductOperation(operation, dependencies)).resolves.toEqual({
       type: 'interaction-receipt', operationId: operation.operationId, accepted: true,
@@ -812,7 +818,7 @@ describe('Desktop Companion product operations', () => {
     })
     const reject = op({
       type: 'settle-interaction', sessionId, interactionId,
-      settlement: { kind: 'approval', outcome: 'rejected' },
+      settlement: { kind: 'approval' as const, outcome: 'rejected' as const },
     })
     await expect(handleCompanionProductOperation(reject, dependencies)).resolves.toEqual({
       type: 'interaction-receipt', operationId: reject.operationId, accepted: true,
@@ -831,7 +837,7 @@ describe('Desktop Companion product operations', () => {
     const missing = op({
       type: 'settle-interaction', sessionId,
       interactionId: parseCompanionInteractionId('interaction-missing'),
-      settlement: { kind: 'question', answers: [{ id: 'q1', selected: ['Yes'] }] },
+      settlement: { kind: 'question' as const, answers: [{ id: 'q1', selected: ['Yes'] }] },
     })
     await expect(handleCompanionProductOperation(missing, dependencies)).resolves.toEqual({
       type: 'interaction-receipt', operationId: missing.operationId, accepted: false, reason: 'not-pending',
@@ -845,7 +851,7 @@ describe('Desktop Companion product operations', () => {
     })
     const cancel = op({
       type: 'settle-interaction', sessionId, interactionId,
-      settlement: { kind: 'question-cancelled' },
+      settlement: { kind: 'question-cancelled' as const },
     })
     await expect(handleCompanionProductOperation(cancel, dependencies)).resolves.toEqual({
       type: 'interaction-receipt', operationId: cancel.operationId, accepted: true,
@@ -869,9 +875,12 @@ describe('Desktop Companion product operations', () => {
     const question = op({
       type: 'member-question',
       questionId: parseMemberQuestionId('member-question-product'),
+      projectId: parseMemberQuestionProjectId('project-product'),
+      originSessionId: sessionId,
+      expiresAt: 2_000,
       origin: {
         projectName: 'Atlas', originSessionTitle: 'Refactor the ingest pipeline',
-        askerAccountId: 'account-asker', askerRole: 'admin',
+        askerAccountId: 'account-asker', askerRole: 'admin' as const,
         askerDisplayName: 'Ada', askerAvatarUrl: 'https://example.test/ada.png',
       },
       background: 'Pick a rollback window before the freeze.',
@@ -936,12 +945,11 @@ describe('Desktop Companion product operations', () => {
   ) => {
     const prepared = await offer(fileName, plaintext, `operation-${kind}`)
     const host = hostRpc(() => { throw new Error('attachment must not become a placeholder Host prompt') })
-    const submitAttachment = vi.fn(async () => ({ ok: true, value: { accepted: true } } as const))
+    const submitAttachment = vi.fn<CompanionProductOperationDependencies['submitAttachment']>(
+      async () => ({ ok: true, value: { accepted: true } } as const),
+    )
     const result = await handleCompanionProductOperation(prepared.operation, {
-      host,
-      pairingId,
-      attachmentKey,
-      now: () => 1_000,
+      ...baseDependencies(host),
       downloadAttachment: async () => prepared.ciphertext,
       submitAttachment,
     })
@@ -959,9 +967,7 @@ describe('Desktop Companion product operations', () => {
     const expired = await offer('expired.bin', Uint8Array.of(1), 'operation-expired')
     const hash = await offer('hash.bin', Uint8Array.of(2), 'operation-hash')
     const dependencies = {
-      host: hostRpc(() => { throw new Error('rejected attachment must not call Host') }),
-      pairingId,
-      attachmentKey,
+      ...baseDependencies(hostRpc(() => { throw new Error('rejected attachment must not call Host') })),
       now: () => 2_000,
       downloadAttachment: async () => hash.ciphertext,
       submitAttachment: async () => { throw new Error('rejected attachment must not submit') },
@@ -1020,7 +1026,7 @@ describe('Desktop Companion product operations', () => {
         { sessionId: 'session-visible', snippet: 'Visible needle' },
         { sessionId: 'session-archived', snippet: 'Archived needle' },
       ], hasMore: false } }
-    }), { items: [], archivedSessionIds: ['session-archived'] })
+    }), { items: [], archivedSessionIds: [SessionId('session-archived')] })
 
     await expect(handleCompanionProductOperation(operation, dependencies)).resolves.toEqual({
       type: 'session-search',
@@ -1170,10 +1176,13 @@ function historyCache(events: unknown[], hasMore = false) {
   } as never
 }
 
-function baseDependencies(host: DesktopHostRpc, workspaceValue: unknown = { items: [], archivedSessionIds: [] }) {
+function baseDependencies(
+  host: DesktopHostRpc,
+  workspaceValue: DesktopWorkspaceSnapshot | DesktopWorkspaceSnapshotFailure = { items: [], archivedSessionIds: [] },
+): CompanionProductOperationDependencies {
   return {
     host,
-    workspaceSnapshot: () => Promise.resolve(workspaceValue as never),
+    workspaceSnapshot: () => Promise.resolve(workspaceValue),
     sessionHistory: historyCache([]),
     pairingId,
     attachmentKey,

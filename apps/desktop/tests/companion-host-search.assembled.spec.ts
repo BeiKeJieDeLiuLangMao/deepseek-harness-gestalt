@@ -205,11 +205,7 @@ async function search(
     resolveInteraction: () => undefined,
     pendingInteractions: () => [],
   })
-  if (Array.isArray(output)
-    || output.type === 'foreground-sync'
-    || output.type === 'transcript-page'
-    || output.type === 'surface-snapshot'
-    || output.type === 'conversation-snapshot'
+  if (!('type' in output)
     || (output.type !== 'session-search' && output.type !== 'operation-failed')) {
     throw new Error('assembled search returned an invalid output kind')
   }
