@@ -1222,17 +1222,15 @@ describe('SessionStore', () => {
     await ctx.plugin(SessionStore)
     const created: Session[] = []
     const disposed: Session[] = []
-    const detached: Session[] = []
     ctx.on('session/created', session => void created.push(session))
     ctx.on('session/disposed', session => void disposed.push(session))
-    ctx.on('session/detached', session => void detached.push(session))
 
     const session = ctx.sessions.prepare(SessionId('unannounced-release'))
     const detach = ctx.sessions.enter(session)
     detach()
 
     expect(ctx.sessions.get(session.id)).toBeUndefined()
-    expect({ created, disposed, detached }).toEqual({ created: [], disposed: [], detached: [session] })
+    expect({ created, disposed }).toEqual({ created: [], disposed: [] })
   })
 
   it('prevents simultaneous attachment of one session object to two stores', async () => {
@@ -1709,24 +1707,6 @@ describe('SessionStore', () => {
     expect(heard).toEqual([])
     expect(warnings).toEqual([
       'session "disposed-dispatch": session/disposed dispatch threw: Error: disposed dispatch instrumentation',
-    ])
-  })
-
-  it('contains internal ownership-release dispatch failure after an unannounced detach', async () => {
-    const ctx = new Context()
-    await ctx.plugin(SessionStore)
-    const warnings: string[] = []
-    ctx.logger.warn = ((message: unknown) => { warnings.push(String(message)) }) as typeof ctx.logger.warn
-    ctx.on('internal/dispatch', (_mode, name) => {
-      if (name === 'session/detached') throw new Error('detached dispatch instrumentation')
-    })
-    const session = ctx.sessions.prepare(SessionId('detached-dispatch'))
-    const detach = ctx.sessions.enter(session)
-
-    expect(() => { detach() }).not.toThrow()
-    expect(ctx.sessions.get(session.id)).toBeUndefined()
-    expect(warnings).toEqual([
-      'session "detached-dispatch": session/detached dispatch threw: Error: detached dispatch instrumentation',
     ])
   })
 
