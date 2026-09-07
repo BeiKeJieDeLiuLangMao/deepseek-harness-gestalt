@@ -89,6 +89,7 @@ jobs:
       - name: Validate or renew certificate
         env:
           PLATFORM_ALIYUN_REGION: ${{ vars.PLATFORM_ALIYUN_REGION }}
+          ALIBABA_CLOUD_REGION_ID: ${{ vars.PLATFORM_ALIYUN_REGION }}
           PLATFORM_CERT_DOMAIN: ${{ vars.PLATFORM_CERT_DOMAIN }}
           PLATFORM_CERT_WWW_DOMAIN: ${{ vars.PLATFORM_CERT_WWW_DOMAIN }}
           PLATFORM_CERT_ALB_EIPS: ${{ vars.PLATFORM_CERT_ALB_EIPS }}
