@@ -51,7 +51,7 @@ kind: "package-reference"
 
 ### 布局
 
-Trajectory 要求会话壳把 composer 作为浮层置于全高记录表上方；其响应式纵向滚动容器会预留 composer 的实时高度，确保仍可滚动到最后几行。可滚动的 Summary 区域在悬停或聚焦前保持滚动条滑块透明，同时不改变预留的滚动几何空间。本包不提供 service，也不声明 Context 合并。
+Trajectory 要求会话壳把 composer 作为浮层置于全高记录表上方；其响应式纵向滚动容器会预留 composer 的实时高度，确保仍可滚动到最后几行。可滚动的 Summary 区域在悬停或聚焦前保持滚动条滑块透明，同时不改变预留的滚动几何空间。右对齐的工具栏扩展注册在 `conversation.trajectory.toolbar.utilities`，并在实时记录表搜索框后渲染。本包不提供 service，也不声明 Context 合并。
 
 </details>
 
