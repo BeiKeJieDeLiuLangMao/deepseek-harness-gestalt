@@ -61,7 +61,7 @@ pnpm run typecheck
 Host 与 Client 保持两个 aggregate program，是因为两侧在相同键下以不同服务对 cordis `Context` 接口做声明合并；单一 program 同时看到两份合并会报冲突。这种冲突只存在于 `ts.Program` 内部——模块解析永远不会触发它——所以 solution 可以同时引用两个 aggregate，一个 paths 门面也可以横跨两侧。由此推出三条纪律：
 
 - `tsconfig.base.json` 永不添加 `include` 或 `files`：它们会泄漏进每个 extends 它的包项目，并收窄门面的全匹配范围。
-- 构造全仓 `ts.Program` 的脚本显式以 `tsconfig.host.json` 或 `tsconfig.client.json` 为种子——根 solution 永不作为种子，因为把两个 aggregate 展平进一个 program 会撞上 `Context` 合并冲突。
+- 仓库 `ts.Program` 要么以 `tsconfig.host.json` 或 `tsconfig.client.json` 为种子，要么使用精确选中的 root 和从所属配置复用的直接 Project Reference。它永不以根 solution 为种子，也不展平两个 aggregate 的文件，否则会撞上 `Context` 合并冲突。
 - 新包只登记进一个 aggregate。包同时具有 Node loader 入口和 browser 入口并不构成拆分理由；普通 Client 插件的两份运行时产物都在 Client 构建阶段生成。
 
 Desktop 是应用组合，不是 package compiler face。workspace constraints 门禁保证它不进入任一根 aggregate，并要求在 Client tsc 之后执行完整的不发射检查。同时导入两侧的精确 Platform 集成测试仍由各自 package 拥有，并列入 `POST_GENERATION_CROSS_FACE_TESTS`；第二个不发射检查只以这些测试为 root，复用现有 Project Reference，且不展平任何 aggregate。

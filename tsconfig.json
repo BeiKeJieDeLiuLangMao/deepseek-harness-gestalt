@@ -7,8 +7,9 @@
   // consumers — tsx running scripts/ (no nearer tsconfig)
   // resolves workspace imports through this file. `files: []` keeps it
   // program-less, so the host/client cordis Context merges never meet.
-  // NEVER add include/files entries, and NEVER flatten this solution into a
-  // single ts.Program (scripts seed tsconfig.host.json or tsconfig.client.json).
+  // NEVER add include/files entries. Repository programs either seed one
+  // aggregate or use exact selected roots with direct Project References
+  // reused from the owning configs; they never flatten both aggregates' files.
   "extends": "./tsconfig.base.json",
   "files": [],
   "references": [
