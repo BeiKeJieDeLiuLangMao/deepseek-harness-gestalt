@@ -10,6 +10,7 @@ export const name = 'phone-capture-wire-keyless-scenario'
 export const inject = ['phoneDevices', 'phoneStream', 'webServer']
 
 const DEVICE_ID = 'emulator-5554'
+const IOS_SIMULATOR_ID = 'simulator-selected'
 const COMPATIBLE = { width: 1_124, height: 540, x: 562, y: 270 } as const
 const WRONG = { width: 1_080, height: 2_248, x: 540, y: 1_124 } as const
 const IO_TIMEOUT_MS = 5_000
@@ -23,7 +24,9 @@ interface CaptureUrl {
 interface SessionBody {
   readonly deviceId: string
   readonly ioPath: string
+  readonly agentManaged: boolean
   readonly preferredFormat: string
+  readonly mjpeg: CaptureUrl
   readonly h264: CaptureUrl
 }
 
@@ -54,6 +57,27 @@ function projectSession(session: SessionBody): unknown {
       expiresAt: '{{expiresAt}}',
     },
   }
+}
+
+function projectIosSimulatorSession(session: SessionBody): unknown {
+  return {
+    deviceId: session.deviceId,
+    agentManaged: session.agentManaged,
+    preferredFormat: session.preferredFormat,
+    preferredUrl: session.mjpeg.url.replace(/token=[^&]+/u, 'token={{token}}'),
+  }
+}
+
+async function mintSession(origin: string, host: string, selectedDeviceId: string): Promise<SessionBody> {
+  const response = await fetch(`${origin}/phone/session`, {
+    method: 'POST',
+    headers: { host, 'content-type': 'application/json' },
+    body: JSON.stringify({ deviceId: selectedDeviceId }),
+  })
+  if (response.status !== 200) {
+    throw new Error(`phone-capture-wire mint failed: ${String(response.status)} ${await response.text()}`)
+  }
+  return await response.json() as SessionBody
 }
 
 function projectReply(reply: JsonRpcReply): unknown {
@@ -177,15 +201,8 @@ export async function apply(ctx: Context): Promise<void> {
   await waitUntilReady(ctx)
   const origin = `http://${ctx.webServer.host}:${String(ctx.webServer.port)}`
   const host = new URL(origin).host
-  const mint = await fetch(`${origin}/phone/session`, {
-    method: 'POST',
-    headers: { host, 'content-type': 'application/json' },
-    body: JSON.stringify({ deviceId: DEVICE_ID }),
-  })
-  if (mint.status !== 200) {
-    throw new Error(`phone-capture-wire mint failed: ${String(mint.status)} ${await mint.text()}`)
-  }
-  const session = await mint.json() as SessionBody
+  const iosSimulatorSession = await mintSession(origin, host, IOS_SIMULATOR_ID)
+  const session = await mintSession(origin, host, DEVICE_ID)
   const logical = await listingLogical(origin, host)
   const capture = await fetch(`${origin}${session.h264.url}`, { headers: { host } })
   if (capture.status !== 200) {
@@ -198,6 +215,7 @@ export async function apply(ctx: Context): Promise<void> {
     const ok = await jsonRpc(origin, captureTap(session, COMPATIBLE), 2)
     const afterOk = await readCounters(fakeBaseUrl)
     process.stdout.write(`${JSON.stringify({
+      iosSimulatorMint: projectIosSimulatorSession(iosSimulatorSession),
       mint: projectSession(session),
       listingLogical: logical,
       wrongPlane: {
