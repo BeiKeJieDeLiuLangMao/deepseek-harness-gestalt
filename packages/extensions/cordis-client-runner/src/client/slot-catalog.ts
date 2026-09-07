@@ -125,7 +125,11 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ownerProps: [
       '/** Stable identity handed to an optional approval-detail renderer. */\nexport interface ApprovalDetailOwnerProps {\n  /** Tool call correlated with the request. */\n  callId: ToolCallId\n}',
     ],
-    ownerPropsReferences: [],
+    ownerPropsReferences: [
+      'CordisDynamicPackageId',
+      'CordisDynamicPluginId',
+      'CordisDynamicPluginRunId',
+    ],
     standardProps: [
       'useWorkspaces: SnapshotSelectorHook<WorkspaceSnapshot>',
       'useSessions: UseSessions',
