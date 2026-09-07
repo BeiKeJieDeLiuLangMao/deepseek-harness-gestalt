@@ -12,7 +12,7 @@ Better Sidebar 冷路由调用了 `sessionPersistence.inspect()`，而基于句�
 
 `SidebarSessionPersistenceService` 是来自 Service Definition 包的 `Pick<SessionPersistence, 'list' | 'open' | 'stat'>`，并遵循[基于句柄的 persistence 决策](../architecture/2026-08-27-handle-based-session-persistence.zh.md)。本包把该能力声明为 peer dependency 与 development dependency，其 TypeScript 项目引用 Service Definition 项目。后续方法或返回结果变化会直接进入 Better Sidebar 类型检查。
 
-`readPersistedSession()` 打开一个不取得归属的 read 句柄，读取经过校验的完整日志，并在返回 `SessionInspection` 元数据与事件前关闭句柄。如果读取失败且同一个已损坏 reader 也关闭失败，读取失败仍是主错误。路由专属解析与 preset 组合会在句柄关闭后开始。冷工作目录查询会传播读取失败；Changes 视图把不可用的冷读取映射为空窗口。Side Chat 使用同一 helper 完成持久模型检查与冷恢复 setup，使用 `stat()` 检查冷模型选择身份是否存在，并在关闭时使用 `list()` 判断持久化发布状态。未被调用的 thread-log reader 被删除。
+`readPersistedSession()` 打开一个不取得归属的 read 句柄，读取经过校验的完整日志，并在返回 `SessionInspection` 元数据、精确 `inheritedEventCount` 与事件前关闭句柄。读取成功后的关闭失败会拒绝操作；同时发生读取与关闭失败时会生成携带两个失败的 `AggregateError`。路由专属解析与 preset 组合会在句柄关闭后开始。冷工作目录查询会传播读取失败；Changes 视图把不可用的冷读取映射为空窗口。Side Chat 使用同一 helper 完成持久模型检查与冷恢复 setup，只从精确 child-owned 后缀折叠模型状态，使用 `stat()` 检查冷模型选择身份是否存在，并在关闭时使用 `list()` 判断持久化发布状态。未被调用的 thread-log reader 被删除。
 
 ## Alternatives considered
 
@@ -22,8 +22,8 @@ Better Sidebar 冷路由调用了 `sessionPersistence.inspect()`，而基于句�
 
 ## Consequences
 
-Side Chat 冷恢复会在释放 read 句柄后进入 Agent 写入归属，因此活跃 writer 会产生预期的归属错误，而不是缺少方法错误。持久模型检查、冷工作目录回退、Changes 事件重放与关闭时的持久发布判断都会消费当前 persistence 服务结果。每次正文读取都会在成功和失败时释放句柄。
+Side Chat 冷恢复会在释放 read 句柄后进入 Agent 写入归属，因此活跃 writer 会产生预期的归属错误，而不是缺少方法错误。嵌套 Side Chat 尚无自有请求时会使用自身 descriptor 模型，而不是继承的父 descriptor 或请求。持久模型检查、冷工作目录回退、Changes 事件重放与关闭时的持久发布判断都会消费当前 persistence 服务结果。每次正文读取都会报告句柄关闭失败，并在成功和失败时释放句柄。
 
 ## Testing
 
-Persistence read 测试覆盖成功读取元数据与事件、读取失败、冷工作目录错误传播、Changes 空结果回退，以及每条路径上的句柄关闭。Side Chat 生命周期测试覆盖正式 `stat` 与 `list` 结果、成功恢复模型与 preset、读取和解析失败、下游 preset 组合失败，以及在这些下游操作前关闭句柄。无密钥 Web Side Chat 流程会持有活跃 write 句柄，并验证冷恢复到达预期归属拒绝、保留草稿且不改变持久化日志。
+Persistence read 测试覆盖成功读取元数据与事件、读取失败、关闭失败、读取与关闭同时失败、冷工作目录错误传播、Changes 空结果回退，以及每条路径上的句柄关闭。Side Chat 生命周期测试覆盖正式 `stat` 与 `list` 结果、按精确 inherited cut 恢复模型、成功恢复 preset、读取和解析失败、下游 preset 组合失败，以及在这些下游操作前关闭句柄。无密钥 Web Side Chat 流程会持有活跃 write 句柄，并验证冷恢复到达预期归属拒绝、保留草稿且不改变持久化日志。

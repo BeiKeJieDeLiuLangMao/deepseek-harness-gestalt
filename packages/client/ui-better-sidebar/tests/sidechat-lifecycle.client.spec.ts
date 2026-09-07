@@ -24,6 +24,7 @@ function persistedSidechat(
   events: readonly unknown[] = [],
   options: {
     readonly header?: Partial<SessionHeader>
+    readonly inheritedEventCount?: number
     readonly listed?: boolean
     readonly readFailure?: Error
   } = {},
@@ -43,7 +44,7 @@ function persistedSidechat(
     id,
     access,
     header: header(id),
-    inheritedEventCount: SessionLogOffset(0),
+    inheritedEventCount: SessionLogOffset(options.inheritedEventCount ?? 0),
     read,
     append: () => Promise.resolve(),
     flush: () => Promise.resolve(),
@@ -473,7 +474,7 @@ describe('sidechat route lifecycle', () => {
         }),
       },
     ]
-    const persisted = persistedSidechat(events)
+    const persisted = persistedSidechat(events, { inheritedEventCount: 1 })
     const ctx = {
       get: (name: string) => {
         if (name === 'sessionPersistence') return persisted.persistence
@@ -488,6 +489,60 @@ describe('sidechat route lifecycle', () => {
       routable: true,
     })
     expect(persisted.open).toHaveBeenCalledWith('cold-child', 'read')
+    expect(persisted.close).toHaveBeenCalledOnce()
+    await sidechat.dispose()
+  })
+
+  it('uses the nested child descriptor instead of inherited parent model events', async () => {
+    const events = [
+      {
+        type: 'subagent/descriptor',
+        seq: 0,
+        time: 1,
+        data: snapshotSubagentDescriptor({
+          mode: 'continuable',
+          provider: 'sidechat',
+          label: 'Side: parent',
+          agentProvider: 'parent-initial',
+          agentModel: 'parent-initial-model',
+        }),
+      },
+      {
+        type: 'request/header',
+        seq: 1,
+        time: 2,
+        data: {
+          header: { config: { provider: 'parent-current', model: 'parent-current-model' } },
+          reason: 'change',
+        },
+      },
+      {
+        type: 'subagent/descriptor',
+        seq: 2,
+        time: 3,
+        data: snapshotSubagentDescriptor({
+          mode: 'continuable',
+          provider: 'sidechat',
+          label: 'Side: child',
+          agentProvider: 'child-provider',
+          agentModel: 'child-model',
+        }),
+      },
+    ]
+    const persisted = persistedSidechat(events, { inheritedEventCount: 2 })
+    const ctx = {
+      get: (name: string) => {
+        if (name === 'sessionPersistence') return persisted.persistence
+        if (name === 'llm') return { listProviders: () => [{ id: 'child-provider' }] }
+        return undefined
+      },
+    } as unknown as Context
+
+    const sidechat = buildSidechatApi(ctx)
+    await expect(sidechat.routes['sidechat.model']({ childId: 'nested-child' })).resolves.toEqual({
+      current: { provider: 'child-provider', model: 'child-model' },
+      routable: true,
+    })
     expect(persisted.close).toHaveBeenCalledOnce()
     await sidechat.dispose()
   })

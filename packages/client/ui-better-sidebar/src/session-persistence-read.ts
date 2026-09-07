@@ -4,8 +4,8 @@ import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionInspection } from '@deepseek-ai/dsh-session-persistence'
 import type { SidebarSessionPersistenceService } from './context-types.ts'
 
-/** Header and validated events obtained from one non-owning persistence read. */
-export type PersistedSessionRead = Pick<SessionInspection, 'meta' | 'events'>
+/** Header, inherited cut, and validated events obtained from one non-owning persistence read. */
+export type PersistedSessionRead = Pick<SessionInspection, 'meta' | 'inheritedEventCount' | 'events'>
 
 /**
  * Read one persisted Session and release the read handle before returning.
@@ -21,16 +21,23 @@ export async function readPersistedSession(
   let events: PersistedSessionRead['events']
   try {
     events = await reader.read()
-  } catch (error: unknown) {
+  } catch (readError: unknown) {
     try {
       await reader.close()
-    } catch {
-      // The read failure remains actionable; a close failure on the same broken reader adds no recovery path.
+    } catch (closeError: unknown) {
+      throw new AggregateError(
+        [readError, closeError],
+        `failed to read and close persisted Session "${sessionId}"`,
+      )
     }
-    throw error
+    throw readError
   }
   await reader.close()
-  return { meta: reader.header, events }
+  return {
+    meta: reader.header,
+    inheritedEventCount: reader.inheritedEventCount,
+    events,
+  }
 }
 
 /** Read the persisted working directory used by cold Host file and tool routes. */

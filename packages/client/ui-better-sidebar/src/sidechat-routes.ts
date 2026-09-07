@@ -235,10 +235,12 @@ async function composeChildSetup(
   }
 }
 
-/** Recover the model route last adopted by a persisted Side Chat. */
-function persistedModelSelection(events: readonly SidebarSessionEvent[]): ModelSelection | undefined {
-  const descriptorIndex = events.findIndex(event => event.type === 'subagent/descriptor')
-  const ownedEvents = descriptorIndex < 0 ? events : events.slice(descriptorIndex + 1)
+/** Recover the model route from the exact child-owned suffix of a persisted Side Chat. */
+function persistedModelSelection(
+  events: readonly SidebarSessionEvent[],
+  inheritedEventCount: number,
+): ModelSelection | undefined {
+  const ownedEvents = events.slice(inheritedEventCount)
   const requestHeader = foldRequestHeader(ownedEvents as unknown as readonly SessionEvent[])
   if (requestHeader !== undefined) {
     const { provider, model, reasoningEffort } = requestHeader.config
@@ -248,7 +250,7 @@ function persistedModelSelection(events: readonly SidebarSessionEvent[]): ModelS
       ...(reasoningEffort === undefined ? {} : { reasoningEffort }),
     }
   }
-  const descriptor = foldSubagentDescriptor(events as unknown as readonly SessionEvent[])
+  const descriptor = foldSubagentDescriptor(ownedEvents as unknown as readonly SessionEvent[])
   if (descriptor?.mode !== 'continuable'
     || descriptor.agentProvider === undefined
     || descriptor.agentModel === undefined) {
@@ -272,7 +274,7 @@ async function composePersistedSetup(
     return { setup: () => Promise.resolve(), selection: undefined }
   }
   const persisted = await readPersistedSession(persistence, childId)
-  const selection = persistedModelSelection(persisted.events)
+  const selection = persistedModelSelection(persisted.events, persisted.inheritedEventCount)
   const presetId = resolvePresetId(persisted.meta, persisted.events)
   const presets = ctx.get('agentPresets') as SidebarAgentPresetsService | undefined
   if (presets === undefined || presetId === undefined) {
@@ -531,7 +533,7 @@ export function buildSidechatApi(ctx: SidebarContext): SidechatApi {
         const persistence = ctx.get('sessionPersistence') as SidebarSessionPersistenceService | undefined
         if (persistence !== undefined) {
           const persisted = await readPersistedSession(persistence, childId)
-          current = persistedModelSelection(persisted.events)
+          current = persistedModelSelection(persisted.events, persisted.inheritedEventCount)
           if (current !== undefined) {
             threadSelections.set(childId, { current, assembled: undefined })
           }

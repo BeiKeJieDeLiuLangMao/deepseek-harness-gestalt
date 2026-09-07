@@ -13,11 +13,16 @@ import {
   tryReadPersistedSessionEvents,
 } from '../src/session-persistence-read.ts'
 
-function persistenceReader(events: readonly SessionEvent[], readFailure?: Error) {
-  const close = vi.fn(() => Promise.resolve())
-  const read = vi.fn(() => readFailure === undefined
+function persistenceReader(
+  events: readonly SessionEvent[],
+  options: { readonly closeFailure?: Error; readonly readFailure?: Error } = {},
+) {
+  const close = vi.fn(() => options.closeFailure === undefined
+    ? Promise.resolve()
+    : Promise.reject(options.closeFailure))
+  const read = vi.fn(() => options.readFailure === undefined
     ? Promise.resolve(events)
-    : Promise.reject(readFailure))
+    : Promise.reject(options.readFailure))
   const open = vi.fn(async (id: SessionId, access: SessionAccess): Promise<SessionHandle> => ({
     id,
     access,
@@ -56,6 +61,7 @@ describe('persisted sidebar Session reads', () => {
 
     await expect(readPersistedSession(fixture.persistence, sessionId)).resolves.toEqual({
       meta: expect.objectContaining({ id: sessionId, cwd: '/workspace' }),
+      inheritedEventCount: 0,
       events,
     })
     expect(fixture.open).toHaveBeenCalledWith(sessionId, 'read')
@@ -65,10 +71,31 @@ describe('persisted sidebar Session reads', () => {
 
   it('preserves a read failure after closing the handle', async () => {
     const failure = new Error('persisted read failed')
-    const fixture = persistenceReader([], failure)
+    const fixture = persistenceReader([], { readFailure: failure })
 
     await expect(readPersistedSession(fixture.persistence, SessionId('persisted-session')))
       .rejects.toBe(failure)
+    expect(fixture.close).toHaveBeenCalledOnce()
+  })
+
+  it('reports a close failure after a successful read', async () => {
+    const closeFailure = new Error('persisted close failed')
+    const fixture = persistenceReader([], { closeFailure })
+
+    await expect(readPersistedSession(fixture.persistence, SessionId('persisted-session')))
+      .rejects.toBe(closeFailure)
+    expect(fixture.close).toHaveBeenCalledOnce()
+  })
+
+  it('reports read and close failures together', async () => {
+    const readFailure = new Error('persisted read failed')
+    const closeFailure = new Error('persisted close failed')
+    const fixture = persistenceReader([], { readFailure, closeFailure })
+
+    const failure = await readPersistedSession(fixture.persistence, SessionId('persisted-session'))
+      .then(() => undefined, (error: unknown) => error)
+    expect(failure).toBeInstanceOf(AggregateError)
+    expect((failure as AggregateError).errors).toEqual([readFailure, closeFailure])
     expect(fixture.close).toHaveBeenCalledOnce()
   })
 
@@ -82,7 +109,7 @@ describe('persisted sidebar Session reads', () => {
 
   it('propagates a cold Host-route cwd failure after closing its handle', async () => {
     const failure = new Error('cwd read failed')
-    const fixture = persistenceReader([], failure)
+    const fixture = persistenceReader([], { readFailure: failure })
 
     await expect(readPersistedSessionCwd(fixture.persistence, SessionId('cold-cwd')))
       .rejects.toBe(failure)
@@ -104,7 +131,7 @@ describe('persisted sidebar Session reads', () => {
   })
 
   it('maps an unavailable cold Changes read to empty after closing its handle', async () => {
-    const fixture = persistenceReader([], new Error('changes read failed'))
+    const fixture = persistenceReader([], { readFailure: new Error('changes read failed') })
 
     await expect(tryReadPersistedSessionEvents(fixture.persistence, SessionId('cold-changes')))
       .resolves.toBeUndefined()
