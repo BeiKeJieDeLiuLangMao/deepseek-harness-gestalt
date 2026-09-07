@@ -31,7 +31,8 @@
   - img
   - text: Ran for {{duration}}
 - text: {{clock}}
-- textbox "Message or run a task... / commands, @ files or sessions"
+- textbox "Message or run a task... / commands, @ files or sessions":
+  - paragraph: Keep this draft after the Side Chat admission refusal.
 - button "Commands":
   - img
 - 'button "Access mode, current: Read Only"': Read Only
@@ -39,5 +40,5 @@
   - text: DeepSeek-V4-Flash
   - img
 - button "6% of context used"
-- button "Send message" [disabled]
+- button "Send message"
 - text: 2 turns · 2 steps LLM {{duration}} TTFT avg {{duration}} · {{throughput}} tok/s Cache hit 99% Input 15.6K tok · Output 158 tok

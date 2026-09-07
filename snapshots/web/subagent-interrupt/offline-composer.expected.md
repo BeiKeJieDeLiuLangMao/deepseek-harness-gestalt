@@ -22,10 +22,8 @@
 - paragraph: partial
 - status: Deep diving...
 - textbox "Parent session offline; sending is unavailable but you can still stop the run" [disabled]
-- button "Commands and skills" [disabled]:
+- button "Commands" [disabled]:
   - img
-- 'button "Access mode, current: Workspace Write" [disabled]': Workspace Write
-- button "Select model, current DeepSeek-V4-Flash":
-  - text: DeepSeek-V4-Flash
-  - img
+- 'button "Access mode, current: Custom" [disabled]': Custom
 - button "Stop generating"
+- button "Send message" [disabled]

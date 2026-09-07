@@ -1,1 +1,1 @@
-- alert: 'thread resume failed: session "session-{{uuid}}" is already owned by an active write handle (gateway/internal)'
+- alert: "thread resume failed: session \"session-{{uuid}}\" is already owned by an active write handle (gateway/internal)"
