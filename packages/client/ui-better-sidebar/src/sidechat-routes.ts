@@ -124,7 +124,7 @@ function updateThreadQueue(agent: Agent, itemId: MessageId, action: SidechatQueu
 
 interface SidechatPermissionService {
   readonly names: readonly string[]
-  setAgent(agent: Agent, name: string): void
+  set(session: Agent['session'], name: string): void
 }
 
 /** Activation-owned routes and the quiescent teardown for their live Agent handles. */
@@ -645,8 +645,8 @@ export function buildSidechatApi(ctx: SidebarContext): SidechatApi {
       if (child.session.header.parentSession !== parentSessionId) {
         throw new SidebarError('bad-request', 'Side Chat parent does not match the requested parent')
       }
-      permissions.setAgent(parent, preset)
-      permissions.setAgent(child, preset)
+      permissions.set(parent.session, preset)
+      permissions.set(child.session, preset)
       return { selected: preset }
     },
 

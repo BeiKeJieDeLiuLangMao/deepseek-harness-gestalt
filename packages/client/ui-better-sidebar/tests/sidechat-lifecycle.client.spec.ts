@@ -208,7 +208,7 @@ describe('sidechat route lifecycle', () => {
   })
 
   it('synchronizes a Side Chat permission selection with its direct parent', async () => {
-    const setAgent = vi.fn()
+    const set = vi.fn()
     const parent = { id: 'parent', session: { header: {} } } as unknown as Agent
     const child = {
       id: 'child',
@@ -217,7 +217,7 @@ describe('sidechat route lifecycle', () => {
     const ctx = {
       get: (name: string) => {
         if (name === 'agents') return { get: (id: string) => id === 'parent' ? parent : id === 'child' ? child : undefined }
-        if (name === 'permissionPresets') return { names: ['workspace-write'], setAgent }
+        if (name === 'permissionPresets') return { names: ['workspace-write'], set }
         return undefined
       },
     } as unknown as Context
@@ -227,18 +227,18 @@ describe('sidechat route lifecycle', () => {
       childId: 'child', parentSessionId: 'parent', preset: 'workspace-write',
     })).resolves.toEqual({ selected: 'workspace-write' })
 
-    expect(setAgent).toHaveBeenNthCalledWith(1, parent, 'workspace-write')
-    expect(setAgent).toHaveBeenNthCalledWith(2, child, 'workspace-write')
+    expect(set).toHaveBeenNthCalledWith(1, parent.session, 'workspace-write')
+    expect(set).toHaveBeenNthCalledWith(2, child.session, 'workspace-write')
     await sidechat.dispose()
   })
 
   it('rejects a provisional permission request without an owned live child', async () => {
-    const setAgent = vi.fn()
+    const set = vi.fn()
     const parent = { id: 'parent', session: { header: {} } } as unknown as Agent
     const ctx = {
       get: (name: string) => {
         if (name === 'agents') return { get: (id: string) => id === 'parent' ? parent : undefined }
-        if (name === 'permissionPresets') return { names: ['workspace-write'], setAgent }
+        if (name === 'permissionPresets') return { names: ['workspace-write'], set }
         return undefined
       },
     } as unknown as Context
@@ -251,7 +251,7 @@ describe('sidechat route lifecycle', () => {
       provisional: true,
     })).rejects.toThrow('Side Chat session "draft-child" is not running')
 
-    expect(setAgent).not.toHaveBeenCalled()
+    expect(set).not.toHaveBeenCalled()
     await sidechat.dispose()
   })
 
