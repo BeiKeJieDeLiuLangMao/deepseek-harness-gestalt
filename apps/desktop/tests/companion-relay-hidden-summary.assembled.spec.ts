@@ -373,9 +373,16 @@ describe('assembled Desktop Relay hidden Session summary on shipped dsh web', ()
 
     const observedId = sessionId as SessionId
     await expect.poll(() => surface.getSnapshot().sessions.ids.includes(observedId), { timeout: 90_000 }).toBe(true)
+    await expect(promptDesktopHostSession(rpc, {
+      requestId: 'desktop-observed-summary-baseline', sessionId, mode: 'queue',
+      content: [{ type: 'text', text: 'persist the observed conversation baseline' }],
+    })).resolves.toMatchObject({ ok: true, value: { accepted: true } })
     surface.observeSession(observedId)
-    await expect.poll(() => surface.getSnapshot().conversations[observedId] !== undefined).toBe(true)
-    const observedNodes = surface.getSnapshot().conversations[observedId]?.nodes.length
+    await expect.poll(() => observedConversationEvidence(surface, observedId)).toEqual([
+      { kind: 'user', text: 'persist the observed conversation baseline' },
+      { kind: 'assistant', text: 'observed-stable-answer' },
+    ])
+    const observedNodes = observedConversationEvidence(surface, observedId)
 
     const hiddenId = parseCompanionSessionId('desktop-relay-hidden-summary-session')
     await expect(createDesktopHostSession(rpc, hiddenId)).resolves.toMatchObject({
@@ -395,7 +402,7 @@ describe('assembled Desktop Relay hidden Session summary on shipped dsh web', ()
       return row !== undefined && row.running === false && row.blank === false
     }, { timeout: 60_000 }).toBe(true)
     expect(surface.getSnapshot().conversations[hiddenId as SessionId]).toBeUndefined()
-    expect(surface.getSnapshot().conversations[observedId]?.nodes.length).toBe(observedNodes)
+    expect(observedConversationEvidence(surface, observedId)).toEqual(observedNodes)
     expect(surface.getSnapshot().operationFailure).toBeUndefined()
     await drainTransport()
   }, 180_000)
@@ -415,6 +422,7 @@ async function startControlledStreamingLlm(apiKey: string): Promise<{
 }> {
   let release: () => void = () => {}
   const held = new Promise<void>((resolve) => { release = resolve })
+  let requestCount = 0
   const server: Server = createServer((request, response) => {
     request.on('data', () => {})
     request.on('end', () => {
@@ -423,10 +431,18 @@ async function startControlledStreamingLlm(apiKey: string): Promise<{
         return
       }
       response.writeHead(200, { 'content-type': 'text/event-stream' })
+      requestCount += 1
       const send = (payload: unknown): void => {
         response.write(`data: ${JSON.stringify(payload)}\n\n`)
       }
       send({ choices: [{ index: 0, delta: { role: 'assistant' }, finish_reason: null }] })
+      if (requestCount === 1) {
+        send({ choices: [{ index: 0, delta: { content: 'observed-stable-answer' }, finish_reason: null }] })
+        send({ choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] })
+        response.write('data: [DONE]\n\n')
+        response.end()
+        return
+      }
       send({ choices: [{ index: 0, delta: { content: 'live-projected-' }, finish_reason: null }] })
       void held.then(() => {
         send({ choices: [{ index: 0, delta: { content: 'answer' }, finish_reason: null }] })
@@ -444,6 +460,29 @@ async function startControlledStreamingLlm(apiKey: string): Promise<{
     baseUrl: `http://127.0.0.1:${String(address.port)}`,
     close: () => new Promise<void>((resolve) => { server.close(() => resolve()) }),
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function observedConversationEvidence(
+  surface: MobileCompanionSurface,
+  sessionId: SessionId,
+): Array<{ kind: string; text: string }> {
+  const nodes = surface.getSnapshot().conversations[sessionId]?.nodes ?? []
+  const evidence: Array<{ kind: string; text: string }> = []
+  for (const node of nodes) {
+    if (!isRecord(node)) continue
+    if (node.kind === 'user' && Array.isArray(node.content)) {
+      const text = node.content.find(block => isRecord(block) && block.type === 'text')
+      if (isRecord(text) && typeof text.text === 'string') evidence.push({ kind: 'user', text: text.text })
+    } else if (node.kind === 'assistant' && Array.isArray(node.blocks)) {
+      const text = node.blocks.find(block => isRecord(block) && block.kind === 'text')
+      if (isRecord(text) && typeof text.text === 'string') evidence.push({ kind: 'assistant', text: text.text })
+    }
+  }
+  return evidence
 }
 
 function pairingDependencies(channels: Awaited<ReturnType<typeof snowProductChannels>>): {
