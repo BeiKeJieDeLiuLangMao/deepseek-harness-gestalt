@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/proposed/testing/2026-09-05-prebuilt-hidden-phone-acceptance.md
+2026-09-05-prebuilt-hidden-phone-acceptance.md: 43b0e22ca0580c9640f1e08459690f2a81db1287
+2026-09-05-prebuilt-hidden-phone-acceptance.zh.md: e20f8da85fc867857cd99e62cf7d7a1291537b4b

@@ -227,12 +227,21 @@ function reply(res, id, payload) {
 // One capture payload: an MJPEG multipart stream or a raw H264 Annex-B stream.
 // With streamFrameCount the MJPEG body stays open, emitting a frame every 40ms
 // until the client disconnects — so a mid-stream teardown reaches the proxy.
+const heldH264 = new Set()
+let acceptanceHold = knobs.acceptanceHoldH264 === true
+
 function serveCapture(res, format, deviceId) {
   state.captures.push({ deviceId, format })
   if (format === 'avc') {
     res.writeHead(200, { 'content-type': 'video/h264', 'cache-control': 'no-store' })
     if (knobs.h264FailureDeviceIds?.includes(deviceId) === true) {
       res.end('Error: Error 0x80001001')
+      return
+    }
+    if (acceptanceHold) {
+      res.flushHeaders()
+      heldH264.add(res)
+      res.once('close', () => heldH264.delete(res))
       return
     }
     res.write(h264Stream())
@@ -431,6 +440,23 @@ const server = http.createServer((req, res) => {
         }
         const deviceId = new URL(req.url ?? '/stream', 'http://127.0.0.1').searchParams.get('deviceId') ?? ''
         serveCapture(res, s === 'avc' ? 'avc' : 'mjpeg', deviceId)
+        return
+      }
+      if (knobs.acceptanceHoldH264 === true && req.method === 'POST' && req.url?.startsWith('/__test/h264/')) {
+        const action = req.url.slice('/__test/h264/'.length)
+        if (!['hold', 'paint', 'fail'].includes(action)) {
+          res.writeHead(400).end()
+          return
+        }
+        acceptanceHold = true
+        if (action !== 'hold') {
+          for (const stream of heldH264) {
+            if (action === 'paint') stream.write(h264Stream())
+            else stream.end('invalid H264 fixture')
+          }
+          if (action === 'fail') heldH264.clear()
+        }
+        res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ action, held: heldH264.size }))
         return
       }
       if (req.method === 'GET' && req.url === '/__test/counters') {
