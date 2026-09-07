@@ -178,11 +178,16 @@ describe('assembled Desktop Companion history image on shipped dsh web', () => {
     const localSessionId = sessionId as SessionId
     await expect.poll(() => surface.getSnapshot().sessions.ids.includes(localSessionId)).toBe(true)
     surface.loadOlder(localSessionId)
-    await expect.poll(() => historyEvidence(surface, localSessionId)).toEqual({
+    await expect.poll(() => historyEvidence(surface, localSessionId)).toMatchObject({
       userText: true, assistantText: true,
+      attachment: expect.objectContaining({
+        attachmentId: persistedImage.attachmentId, mediaType: 'image/png',
+      }),
     })
+    const history = historyEvidence(surface, localSessionId)
+    if (history.attachment === undefined) throw new Error('Mobile history did not project its image attachment')
     const before = received.length
-    const dataUrl = await surface.loadImage(localSessionId, persistedImage as never)
+    const dataUrl = await surface.loadImage(localSessionId, history.attachment as never)
     await expect.poll(() => received.slice(before).some(result => result.type === 'image-chunk')).toBe(true)
     const match = /^data:image\/png;base64,(.+)$/u.exec(dataUrl)
     if (match?.[1] === undefined) throw new Error('Mobile image result was not a PNG data URL')
@@ -194,14 +199,22 @@ describe('assembled Desktop Companion history image on shipped dsh web', () => {
 function historyEvidence(surface: MobileCompanionSurface, sessionId: SessionId): {
   userText: boolean
   assistantText: boolean
+  attachment?: Record<string, unknown>
 } {
   const nodes = surface.getSnapshot().conversations[sessionId]?.nodes ?? []
-  const userText = nodes.some(node => isRecord(node) && node.kind === 'user' && Array.isArray(node.content)
-    && node.content.some(block => isRecord(block)
-      && block.type === 'text' && block.text === 'persist this image history'))
+  let userText = false
+  let attachment: Record<string, unknown> | undefined
+  for (const node of nodes) {
+    if (!isRecord(node) || node.kind !== 'user' || !Array.isArray(node.content)) continue
+    for (const block of node.content) {
+      if (!isRecord(block)) continue
+      if (block.type === 'text' && block.text === 'persist this image history') userText = true
+      if (block.type === 'image' && isRecord(block.attachment)) attachment = block.attachment
+    }
+  }
   const assistantText = nodes.some(node => isRecord(node) && node.kind === 'assistant' && Array.isArray(node.blocks)
     && node.blocks.some(block => isRecord(block) && block.kind === 'text' && block.text === 'persisted assistant answer'))
-  return { userText, assistantText }
+  return { userText, assistantText, ...(attachment === undefined ? {} : { attachment }) }
 }
 
 function imageAttachment(frames: readonly unknown[]): unknown {
