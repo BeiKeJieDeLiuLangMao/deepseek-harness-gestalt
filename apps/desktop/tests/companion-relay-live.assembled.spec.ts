@@ -160,6 +160,10 @@ describe('assembled Desktop Relay live Session projection on shipped dsh web', (
       selector === channels.pairingSelector ? channels.desktopReconnectState : undefined)
     const mobileAttachmentOwner = new SnowMobileAttachmentOwner(
       channels.mobileReconnectState, channels.pairingSelector)
+    // The negotiated Mobile channel lives in a nullable slot: the lifecycle
+    // cleanup registers before the handshake runs and releases the channel only
+    // when the handshake got far enough to finish it.
+    const negotiatedChannel: { mobile?: SnowCompanionProtocolChannel } = {}
     const begun = await mobileAttachmentOwner.begin({
       type: 'ready', transportVersion: 1, routeId: parseRelayRouteId('route-assembled-relay-live'),
       attachmentId: channels.mobileAttachmentId,
@@ -191,6 +195,43 @@ describe('assembled Desktop Relay live Session projection on shipped dsh web', (
         reconnect: () => {},
       },
     )
+    // One ordered lifecycle cleanup, registered as soon as the pre-handshake
+    // resources exist: retire the relay projection first, settle ALL transport
+    // and relay work (allSettled — one rejecting drain never skips the other or
+    // the relay drain), dispose the Mobile attachment owner and — only when the
+    // handshake got far enough — the negotiated Mobile channel, then zero the
+    // secrets last so nothing in flight observes wiped bytes. Each stage
+    // collects its own error and the remaining stages still run.
+    cleanups.push(async () => {
+      const stageErrors: unknown[] = []
+      const stage = async (run: () => void | Promise<void>): Promise<void> => {
+        try { await run() } catch (error) { stageErrors.push(error instanceof Error ? error : new Error(String(error))) }
+      }
+      await stage(() => { relayOwner.invalidate(channels.pairingSelector) })
+      await stage(async () => {
+        inboundAbort.abort()
+        const settled = await Promise.allSettled([drainDelivery(), drainInbound(), relayOwner.drain()])
+        for (const outcome of settled) {
+          if (outcome.status === 'rejected') stageErrors.push(outcome.reason)
+        }
+        if (transportErrors.length > 0) {
+          const first = transportErrors[0]
+          stageErrors.push(first instanceof Error
+            ? new Error(`memory-direct transport failed: ${first.message}`, { cause: first })
+            : new Error(`memory-direct transport failed: ${String(first)}`))
+        }
+      })
+      await stage(() => { mobileAttachmentOwner.dispose() })
+      await stage(() => { negotiatedChannel.mobile?.dispose() })
+      await stage(() => {
+        channels.attachmentKey.fill(0)
+        channels.mobileReconnectState.fill(0)
+        channels.desktopReconnectState.fill(0)
+      })
+      if (stageErrors.length === 1) throw stageErrors[0]
+      if (stageErrors.length > 1) throw new AggregateError(stageErrors, 'live lifecycle teardown stages failed')
+    })
+
     const drainTransport = async (): Promise<void> => {
       inboundAbort.abort()
       await Promise.all([drainDelivery(), drainInbound()])
@@ -308,48 +349,13 @@ describe('assembled Desktop Relay live Session projection on shipped dsh web', (
     const mobileNegotiation = mobileAttachmentOwner.finish(
       await ik2Frame, channels.desktopAttachmentId,
     )
-    const mobileChannel = mobileNegotiation.finish()
-    // One ordered lifecycle cleanup registered once every resource exists:
-    // retire the relay projection first, settle ALL transport and relay work
-    // (allSettled — one rejecting drain never skips the other or the relay
-    // drain), dispose the Mobile attachment owner, then zero the secrets last
-    // so nothing in flight observes wiped bytes. Each stage collects its own
-    // error and the remaining stages still run.
-    cleanups.push(async () => {
-      const stageErrors: unknown[] = []
-      const stage = async (run: () => void | Promise<void>): Promise<void> => {
-        try { await run() } catch (error) { stageErrors.push(error instanceof Error ? error : new Error(String(error))) }
-      }
-      await stage(() => { relayOwner.invalidate(channels.pairingSelector) })
-      await stage(async () => {
-        inboundAbort.abort()
-        const settled = await Promise.allSettled([drainDelivery(), drainInbound(), relayOwner.drain()])
-        for (const outcome of settled) {
-          if (outcome.status === 'rejected') stageErrors.push(outcome.reason)
-        }
-        if (transportErrors.length > 0) {
-          const first = transportErrors[0]
-          stageErrors.push(first instanceof Error
-            ? new Error(`memory-direct transport failed: ${first.message}`, { cause: first })
-            : new Error(`memory-direct transport failed: ${String(first)}`))
-        }
-      })
-      await stage(() => { mobileAttachmentOwner.dispose() })
-      await stage(() => { mobileChannel.dispose() })
-      await stage(() => {
-        channels.attachmentKey.fill(0)
-        channels.mobileReconnectState.fill(0)
-        channels.desktopReconnectState.fill(0)
-      })
-      if (stageErrors.length === 1) throw stageErrors[0]
-      if (stageErrors.length > 1) throw new AggregateError(stageErrors, 'live lifecycle teardown stages failed')
-    })
+    negotiatedChannel.mobile = mobileNegotiation.finish()
     connection.connect({
-      channel: mobileChannel, targetAttachmentId: channels.desktopAttachmentId,
+      channel: negotiatedChannel.mobile, targetAttachmentId: channels.desktopAttachmentId,
       pairingSelector: channels.pairingSelector, generation: channels.generation,
     })
     const receiver = new MobileNoiseCompanionReceiver(
-      mobileChannel, channels.generation, runtime,
+      negotiatedChannel.mobile, channels.generation, runtime,
       () => ({ acceptValidatedCompanionResult: (result) => {
         product.acceptResult(result)
         surface.bindValidatedCompanionResults()?.acceptValidatedCompanionResult(result)
