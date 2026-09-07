@@ -21,6 +21,8 @@ import {
 import type {
   WorkspaceArchiveSessionRequest,
   WorkspaceArchiveValue,
+  WorkspaceCloneGitRequest,
+  WorkspaceCloneGitValue,
   WorkspaceCreateRequest,
   WorkspaceCreateValue,
   WorkspaceDeleteRequest,
@@ -149,6 +151,13 @@ class ScriptedWorkspaceRemote implements WorkspaceRemote {
     throw new Error('unused')
   }
 
+  cloneGit(
+    _request: WorkspaceCloneGitRequest,
+    _signal?: AbortSignal,
+  ): Promise<RemoteResult<WorkspaceCloneGitValue>> {
+    throw new Error('unused')
+  }
+
   async *follow(signal = new AbortController().signal): AsyncIterable<WorkspaceFollowFrame> {
     const generation = this.generations[this.calls++]
     if (generation === undefined) throw new Error('no scripted Workspace generation')
@@ -190,6 +199,10 @@ class CommandWorkspaceRemote implements WorkspaceRemote {
   })))
 
   readonly gitRemote = vi.fn<WorkspaceRemote['gitRemote']>(() => Promise.resolve(remoteOk({})))
+
+  readonly cloneGit = vi.fn<WorkspaceRemote['cloneGit']>(request => Promise.resolve(remoteOk({
+    workspace: workspace('cloned', { path: `${request.parentPath}/${request.directoryName}` }),
+  })))
 
   async *follow(_signal?: AbortSignal): AsyncIterable<WorkspaceFollowFrame> {}
 }
