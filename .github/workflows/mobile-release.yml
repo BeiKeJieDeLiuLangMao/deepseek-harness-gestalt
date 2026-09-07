@@ -284,27 +284,44 @@ jobs:
           PLAN_PATH: ${{ inputs.plan_path }}
         run: |
           set -Eeuo pipefail
+          stage=locate-apk
+          trap 'status=$?; trap - ERR; printf "candidate identity record failed at %s (exit %d)\n" "$stage" "$status" >&2; exit "$status"' ERR
           apk=$(find apps/mobile/release -maxdepth 1 -name '*.apk' -type f -print -quit)
+          stage=verify-apk-path
           test -n "$apk"
+          stage=locate-apksigner
           apksigner=$(find "${ANDROID_SDK_ROOT:?}/build-tools" -mindepth 2 -maxdepth 2 -type f -name apksigner -print | sort -V | tail -1)
+          stage=verify-apksigner-executable
           test -x "$apksigner"
+          stage=read-signer-certificate
           signer=$($apksigner verify --print-certs "$apk" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')
+          stage=verify-signer-digest
           [[ "$signer" =~ ^[0-9a-fA-F]{64}$ ]]
           signer=$(printf '%s' "$signer" | tr '[:upper:]' '[:lower:]')
+          stage="digest-apk:$(basename "$apk")"
           artifact_digest=$(sha256sum "$apk" | cut -d ' ' -f 1)
           runtime_entry=assets/public/dsh-mobile-runtime-identity.json
+          stage=count-runtime-identity
           entry_count=$(unzip -Z1 "$apk" | grep -Fxc "$runtime_entry" || true)
+          stage="verify-runtime-identity-count:${entry_count}"
           test "$entry_count" = 1
           runtime_identity="$RUNNER_TEMP/dsh-mobile-runtime-identity.json"
+          stage=extract-runtime-identity
           unzip -p "$apk" "$runtime_entry" > "$runtime_identity"
+          stage=verify-runtime-identity-content
           test -s "$runtime_identity"
+          stage=read-baked-origin
           baked_origin=$(jq -er 'select(.version == 1) | .origin | strings' "$runtime_identity")
+          stage=verify-baked-origin
           test "$baked_origin" = "$VITE_PLATFORM_ORIGIN"
           runtime_identity_digest=$(sha256sum "$runtime_identity" | cut -d ' ' -f 1)
           packaging_digest=$(sha256sum apps/mobile/scripts/build-android-release.sh | cut -d ' ' -f 1)
           workflow_run="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          stage=create-candidate-directory
           mkdir acceptance-candidate
+          stage=copy-candidate-apk
           cp "$apk" acceptance-candidate/
+          stage=write-candidate-manifest
           jq -n --arg candidate "$CANDIDATE_SHA" --arg plan "$PLAN_PATH" \
             --arg version "$MOBILE_VERSION" --argjson build "$MOBILE_BUILD_NUMBER" \
             --arg repository "$GITHUB_REPOSITORY" --arg workflowRun "$workflow_run" \
@@ -313,6 +330,7 @@ jobs:
             --arg packaging "sha256:$packaging_digest" \
             '{version:1,mode:"acceptance-candidate",surface:"mobile",candidateCommit:$candidate,planPath:$plan,productVersion:$version,buildNumber:$build,repository:$repository,workflowRun:$workflowRun,artifactDigests:{($apk):$artifact},signerCertificateSha256:$signer,runtimeIdentitySha256:$runtimeIdentity,packagingScriptSha256:$packaging}' \
             > acceptance-candidate/acceptance-candidate.json
+          stage=verify-candidate-manifest
           CANDIDATE_SHA="$CANDIDATE_SHA" PLAN_PATH="$PLAN_PATH" MOBILE_VERSION="$MOBILE_VERSION" \
             MOBILE_BUILD_NUMBER="$MOBILE_BUILD_NUMBER" OPERATED_ORIGIN="$VITE_PLATFORM_ORIGIN" \
             EXPECTED_REPOSITORY="$GITHUB_REPOSITORY" EXPECTED_WORKFLOW_RUN="$workflow_run" \

@@ -42,7 +42,18 @@ describe('Android acceptance candidate manifest', () => {
         manifest[field] = mutation === 'workflow' ? `${workflowRun}-foreign` : `sha256:${'f'.repeat(64)}`
         writeFileSync(fixture.manifest, `${JSON.stringify(manifest)}\n`)
       }
-      expect(run(fixture).status, mutation).not.toBe(0)
+      const result = run(fixture)
+      expect(result.status, mutation).not.toBe(0)
+      const stage = {
+        artifact: 'verify-runtime-identity-count:0',
+        signer: 'verify-manifest',
+        'missing-identity': 'verify-runtime-identity-count:0',
+        'baked-origin': 'verify-baked-origin',
+        'duplicate-identity': 'verify-runtime-identity-count:2',
+        workflow: 'verify-manifest',
+        packaging: 'verify-manifest',
+      }[mutation]
+      expect(result.stderr, mutation).toContain(`android acceptance candidate verification failed at ${stage} (exit 1)`)
     }
   }, 30_000)
 })
