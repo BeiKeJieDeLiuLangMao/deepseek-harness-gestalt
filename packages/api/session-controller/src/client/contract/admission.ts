@@ -8,8 +8,20 @@
 
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
-import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
+import type { RemoteFailure, RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type { ModelSelection, PromptContentPart, QueueAction } from '../../types.ts'
+
+type AdmissionFailureFields<Failure extends RemoteFailure> = Failure extends RemoteFailure
+  ? Pick<Failure, 'code' | 'message' | 'details'>
+  : never
+
+/** Remote failure fields a Client feature may return to the Session admission owner. */
+export type SessionAdmissionFailure = AdmissionFailureFields<RemoteFailure>
+
+/** Feature callback result before Session Controller rebuilds its public Remote failure. */
+export type SessionAdmissionResult<T> =
+  | Extract<RemoteResult<T>, { readonly ok: true }>
+  | { readonly ok: false; readonly error: SessionAdmissionFailure }
 
 /** Model inspection and selection routed for one exact Session identity. */
 export interface SessionModelRoute {
@@ -31,10 +43,22 @@ export interface SessionModelRoute {
   ): Promise<RemoteResult<{ selected: ModelSelection }>>
 }
 
+type AdmissionModelMethod<Method> = Method extends (
+  ...args: infer Args
+) => Promise<RemoteResult<infer Value>>
+  ? (...args: Args) => Promise<SessionAdmissionResult<Value>>
+  : never
+
+/** Feature callback model route before Session Controller normalizes failures. */
+export type SessionAdmissionModelRoute = {
+  [Key in keyof SessionModelRoute]: AdmissionModelMethod<SessionModelRoute[Key]>
+}
+
 /**
  * Feature-owned admission route for one exact Session identity.
  * Intercepts prompt submission, active turn cancellation, queue mutation,
- * and slash commands on the Client.
+ * and slash commands on the Client. Callbacks return typed failure fields;
+ * Session Controller rebuilds the public RemoteError and classifies throws.
  */
 export interface SessionAdmissionRoute {
   /**
@@ -50,14 +74,14 @@ export interface SessionAdmissionRoute {
     content: readonly PromptContentPart[],
     mode: 'queue' | 'steer',
     signal?: AbortSignal,
-  ): Promise<RemoteResult<{ accepted: true }>>
+  ): Promise<SessionAdmissionResult<{ accepted: true }>>
 
   /**
    * Stop the active turn while preserving queued inbox items.
    * @param sessionId - target Session identity.
    * @returns accepted receipt, or Remote failure.
    */
-  cancel(sessionId: SessionId): Promise<RemoteResult<{ accepted: true }>>
+  cancel(sessionId: SessionId): Promise<SessionAdmissionResult<{ accepted: true }>>
 
   /**
    * Mutate one pending queue item through the feature's route.
@@ -71,7 +95,7 @@ export interface SessionAdmissionRoute {
     sessionId: SessionId,
     itemId: MessageId,
     action: QueueAction,
-  ): Promise<RemoteResult<{ accepted: true }>>
+  ): Promise<SessionAdmissionResult<{ accepted: true }>>
 
   /**
    * Execute one slash command through the feature's route.
@@ -84,7 +108,7 @@ export interface SessionAdmissionRoute {
   command?(
     sessionId: SessionId,
     line: string,
-  ): Promise<RemoteResult<{ matched: boolean }>>
+  ): Promise<SessionAdmissionResult<{ matched: boolean }>>
 
   /**
    * Resolve the identity whose ordinary command catalog may serve this Session.
@@ -112,7 +136,7 @@ export interface SessionAdmissionRoute {
    * @param sessionId - target Session identity.
    * @returns the feature route, or undefined when model selection stays hidden.
    */
-  modelRoute?(sessionId: SessionId): SessionModelRoute | undefined
+  modelRoute?(sessionId: SessionId): SessionAdmissionModelRoute | undefined
 
   /**
    * Hide inherited fork seed events from the rendered conversation window.

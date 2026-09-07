@@ -29,6 +29,7 @@ import { MutableSessionEventSource } from '../contract/events.ts'
 import type {
   SessionEventLikeEntry, SessionLiveEventEntry,
 } from '../contract/events.ts'
+import { runSessionAdmission } from './admission-result.ts'
 import { Notifier } from './notifier.ts'
 import { isRemoteFailure } from '@deepseek-ai/dsh-api-gateway/client'
 import { RemoteError, type RemoteFailure, type RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
@@ -38,12 +39,6 @@ import type { ProjectionsBaseline } from './projection-store.ts'
 import { resolvedClientTimeZone } from '../time-zone.ts'
 import { SessionQueueMirror } from './queue-mirror.ts'
 import { historyRecordFirstSeq, historyRecordLastSeq } from './history-records.ts'
-
-function toRemoteFailure(error: unknown): RemoteFailure {
-  if (isRemoteFailure(error)) return error
-  const message = error instanceof Error ? error.message : String(error)
-  return new RemoteError('gateway/internal', message, {})
-}
 
 function projectionsBaseline(value: SessionProjectionBaseline): ProjectionsBaseline {
   return {
@@ -255,14 +250,7 @@ export class Session implements SessionFace {
     let result: RemoteResult<{ accepted: true }>
     const admission = this.options.admission?.(this.sessionId)
     if (admission !== undefined) {
-      try {
-        result = await admission.prompt(this.sessionId, content, mode, signal)
-      } catch (error) {
-        result = {
-          ok: false,
-          error: toRemoteFailure(error),
-        }
-      }
+      result = await runSessionAdmission(() => admission.prompt(this.sessionId, content, mode, signal))
     } else if (this.address === undefined) {
       const clientTimeZone = resolvedClientTimeZone()
       result = await this.remote.session.prompt({
@@ -327,20 +315,14 @@ export class Session implements SessionFace {
   async updateQueue(itemId: MessageId, action: QueueAction): Promise<RemoteResult<{ accepted: true }>> {
     const admission = this.options.admission?.(this.sessionId)
     if (admission !== undefined) {
-      if (admission.updateQueue === undefined) {
+      const updateQueue = admission.updateQueue?.bind(admission)
+      if (updateQueue === undefined) {
         return {
           ok: false,
           error: new RemoteError('gateway/internal', 'the owning Session feature does not support queue mutation', {}),
         }
       }
-      try {
-        return await admission.updateQueue(this.sessionId, itemId, action)
-      } catch (error) {
-        return {
-          ok: false,
-          error: toRemoteFailure(error),
-        }
-      }
+      return runSessionAdmission(() => updateQueue(this.sessionId, itemId, action))
     }
     return this.remote.session.updateQueue({ sessionId: this.sessionId, itemId, action })
   }
@@ -356,14 +338,7 @@ export class Session implements SessionFace {
     const admission = this.options.admission?.(this.sessionId)
     let result: RemoteResult<{ accepted: true }>
     if (admission !== undefined) {
-      try {
-        result = await admission.cancel(this.sessionId)
-      } catch (error) {
-        result = {
-          ok: false,
-          error: toRemoteFailure(error),
-        }
-      }
+      result = await runSessionAdmission(() => admission.cancel(this.sessionId))
     } else {
       const address = this.address
       result = address !== undefined
@@ -408,20 +383,14 @@ export class Session implements SessionFace {
   async command(line: string): Promise<RemoteResult<{ matched: boolean }>> {
     const admission = this.options.admission?.(this.sessionId)
     if (admission !== undefined) {
-      if (admission.command === undefined) {
+      const command = admission.command?.bind(admission)
+      if (command === undefined) {
         return {
           ok: false,
           error: new RemoteError('gateway/internal', 'the owning Session feature does not support commands', {}),
         }
       }
-      try {
-        return await admission.command(this.sessionId, line)
-      } catch (error) {
-        return {
-          ok: false,
-          error: toRemoteFailure(error),
-        }
-      }
+      return runSessionAdmission(() => command(this.sessionId, line))
     }
     const result = await this.remote.commands.execute(this.sessionId, line, [])
     if (!result.ok) return result

@@ -49,7 +49,7 @@ export type RemoteResult<T> = { ok: true; value: T } | { ok: false; error: Remot
 
 业务代码通常连这两个函数都不需要：`RemoteResult` 的 `ok: false` 分支已经是类型化的 `RemoteFailure`，`if (result.error.code === 'session/not-found')` 就把 `details` 窄化到该码的形状，无需 cast。需要向上抛的站点直接 `throw result.error`——它是真 `Error`，栈与 `message` 都成立。
 
-client 面不构造 `RemoteError`：唯一例外是 Gateway 的 client face 本身，它在 `invoke()` 里按 wire 数据重建实例、在流边界把载体 throw 折进同一词汇。测试替身要构造失败值时从 `@deepseek-ai/dsh-client-test-runtime` 取 `RemoteError`，而不是让 client 包值引入 protocol。断言用 `toMatchObject` 判 code（必要时加 details 字段）：`RemoteError` 是 `Error`，own key 集合与旧字面量不同，`toEqual` 会失败。
+功能 Client 包不构造 `RemoteError`。Gateway 的 client face 在 `invoke()` 中重建 wire 失败，并在流边界归并载体 throw。Session Controller 是另一处重建 owner：功能 admission 回调返回按 code 分布的 `code`、`message` 与 `details` 字段，其私有 admission runner 为 Session prompt、cancel、queue、command 与功能 model 方法重建公共 `RemoteFailure`。它保留带结构标记的 `RemoteFailure`；其他回调 throw 一律成为 `gateway/internal`，因此只有貌似合法 `code`、却没有 marker 的对象不会获得 Remote 权威。功能 Client 不导入构造函数、不伪造 `isDSHRemoteError`，也不另建 details map。测试替身要构造失败值时从 `@deepseek-ai/dsh-client-test-runtime` 取 `RemoteError`，而不是让 client 包值引入 protocol。断言用 `toMatchObject` 判 code（必要时加 details 字段）：`RemoteError` 是 `Error`，own key 集合与旧字面量不同，`toEqual` 会失败。
 
 ## Fixed Host facts
 
@@ -84,5 +84,7 @@ envelope 不变：wire 上仍是 `{ code, message, details }` 数据，`RemoteEr
 `details` 的类型由码决定，因此码与 details 的搭配错误在编译期就被拒。反面是每个抛点都要给全 details 的必填字段：protocol 把 `gateway/bad-request` 的 `issues` 设为可选，正是为了让没有 codec issues 的业务校验点仍然只写 `{}`。
 
 `RemoteError` 是 `Error`，所以它进任何日志与 `errorChain()` 都保留 `message` 与 `cause`；但 `cause` 只在进程内成立，wire 上只有 `code`、`message`、`details` 三个字段。跨 realm 的判别永远读结构标记，任何新增的传输（worker、bundle 分片）都必须把标记或等价的 marker 帧带过去，否则失败值会退化为普通 `Error`。
+
+Session admission 的输入类型省略 marker 与 Error 身份，同时保留每个 code 对应的 details 字段。其对外 `ISession` 与 `SessionModelRoute` 方法仍只 resolve `RemoteResult`，因此新增 admission 操作时必须让回调结果走同一个 Session Controller runner。
 
 Remote 方法的消费端签名统一为 `Promise<RemoteResult<T>>`，与[方法调用面](2026-08-02-typert-remote-method-calls.zh.md)描述的生成投影一致；一元调用的迁移账本见[一元端点迁移](2026-08-10-unary-apiproxy-remote-migration.zh.md)。
