@@ -68,7 +68,8 @@ describe('member-question receiving keyless assembled snapshot', () => {
       })
       const sessionAfterArrival = scaffold.ctx.sessions.get(arrived.receivingSessionId as never)
       if (sessionAfterArrival === undefined) throw new Error('member-question snapshot: Host Session was not materialized on arrival')
-      const receivedOnArrival = sessionAfterArrival.events.find(event => event.type === 'member-question/received')
+      const arrivalEvents = sessionAfterArrival.snapshotEvents()
+      const receivedOnArrival = arrivalEvents.find(event => event.type === 'member-question/received')
       if (receivedOnArrival?.type !== 'member-question/received') {
         throw new Error('member-question snapshot: received event missing on arrival')
       }
@@ -78,8 +79,8 @@ describe('member-question receiving keyless assembled snapshot', () => {
       const localTwinPath = join(workspacePath, 'docs', 'receiver-decision.md')
       const arrival = {
         sessionCount: scaffold.ctx.sessions.list().length,
-        requestCount: sessionAfterArrival.events.filter(event => event.type === 'request/header').length,
-        receivedCount: sessionAfterArrival.events.filter(event => event.type === 'member-question/received').length,
+        requestCount: arrivalEvents.filter(event => event.type === 'request/header').length,
+        receivedCount: arrivalEvents.filter(event => event.type === 'member-question/received').length,
         attached: workspace.sessionIds.includes(arrived.receivingSessionId as never),
         treeParent: workspace.sessionIds.includes(arrived.receivingSessionId as never)
           ? workspace.title
@@ -102,7 +103,7 @@ describe('member-question receiving keyless assembled snapshot', () => {
         mode: 'queue',
       })
       await firstTurn
-      await expect.poll(() => scaffold.ctx.sessions.get(arrived.receivingSessionId as never)?.events
+      await expect.poll(() => scaffold.ctx.sessions.get(arrived.receivingSessionId as never)?.snapshotEvents()
         .filter(event => event.type === 'request/header').length).toBe(1)
       await receiver.settle(arrived.questionId, {
         kind: 'answered',
@@ -111,7 +112,7 @@ describe('member-question receiving keyless assembled snapshot', () => {
         settledByDeviceName: 'Receiver Desktop',
         settledAt: Date.parse('2030-01-01T00:00:00.000Z'),
       })
-      await expect.poll(() => scaffold.ctx.sessions.get(arrived.receivingSessionId as never)?.events.filter(event =>
+      await expect.poll(() => scaffold.ctx.sessions.get(arrived.receivingSessionId as never)?.snapshotEvents().filter(event =>
         event.type === 'member-question/settled' && event.data.outcome === 'answered').length).toBe(1)
       try {
         await scaffold.ctx.sessionController.prompt({
@@ -123,17 +124,18 @@ describe('member-question receiving keyless assembled snapshot', () => {
       } catch (error: unknown) {
         throw new Error(`member-question snapshot: post-answer prompt failed: ${error instanceof Error ? error.message : String(error)}`)
       }
-      await expect.poll(() => scaffold.ctx.sessions.get(arrived.receivingSessionId as never)?.events.filter(event =>
+      await expect.poll(() => scaffold.ctx.sessions.get(arrived.receivingSessionId as never)?.snapshotEvents().filter(event =>
         event.type === 'user/message' && event.data.content.some(block =>
           block.type === 'text' && block.text === 'Record the chosen channel in the rollout notes.')).length).toBe(1)
       const session = scaffold.ctx.sessions.get(arrived.receivingSessionId as never)
       if (session === undefined) throw new Error('member-question snapshot: Host Session was not materialized')
-      const received = session.events.find(event => event.type === 'member-question/received')
+      const events = session.snapshotEvents()
+      const received = events.find(event => event.type === 'member-question/received')
       if (received?.type !== 'member-question/received') throw new Error('member-question snapshot: received event missing')
       const snapshot = {
         arrival,
         conversation: {
-          eventTypes: session.events
+          eventTypes: events
             .filter(event => [
               'member-question/received',
               'agent/inbox/spliced',
@@ -162,8 +164,8 @@ describe('member-question receiving keyless assembled snapshot', () => {
               content: message.content,
               source: message.source,
             })),
-          requestCount: session.events.filter(event => event.type === 'request/header').length,
-          settledOutcome: session.events.find(event => event.type === 'member-question/settled')?.data.outcome,
+          requestCount: events.filter(event => event.type === 'request/header').length,
+          settledOutcome: events.find(event => event.type === 'member-question/settled')?.data.outcome,
         },
       }
       const output = `${JSON.stringify(snapshot, null, 2)}\n`
