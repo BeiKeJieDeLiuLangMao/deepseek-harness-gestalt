@@ -53,7 +53,7 @@ import { classifyNavigation } from './navigation-policy.ts'
 import { spawnWebHost, type RunningWebHost } from './spawn-web-host.ts'
 import {
   autoUpdaterFromModule, configurePackagedAutoUpdater, startAutoUpdater,
-  type AutoUpdaterLifecycle, type AutoUpdaterModule,
+  type AutoUpdaterLifecycle, type AutoUpdaterModule, type NativeStagePort,
 } from './updater.ts'
 import { windowChromeOptions } from './window-options.ts'
 import { desktopIconOptions } from './app-icon.ts'
@@ -88,7 +88,10 @@ import {
 import { createDesktopRemoteRelay } from './remote-relay.ts'
 import { DesktopCompanionProductOwner } from './companion-product.ts'
 import { startDesktopPairingWhenHostReady } from './companion-host-readiness.ts'
-import type { DesktopCompanionOperationOutput } from './companion-product.ts'
+import type {
+  DesktopCompanionOperationOutput,
+  DesktopCompanionPairingDependencies,
+} from './companion-product.ts'
 import {
   DesktopCompanionOperationLedger, FileDesktopCompanionOperationStore,
 } from './companion-operation-ledger.ts'
@@ -130,6 +133,22 @@ function smokeLog(line: string): void {
   const file = process.env.DSH_DESKTOP_SMOKE_FILE
   if (file === undefined || file.length === 0) return
   appendFileSync(file, line + '\n')
+}
+
+function electronNativeStagePort(): NativeStagePort {
+  const port: NativeStagePort = {
+    on(event, listener) {
+      if (event === 'update-downloaded') electronAutoUpdater.on('update-downloaded', listener)
+      else electronAutoUpdater.on('error', listener)
+      return port
+    },
+    removeListener(event, listener) {
+      if (event === 'update-downloaded') electronAutoUpdater.removeListener('update-downloaded', listener)
+      else electronAutoUpdater.removeListener('error', listener)
+      return port
+    },
+  }
+  return port
 }
 
 let host: RunningWebHost | undefined
@@ -298,7 +317,7 @@ async function boot(): Promise<void> {
     stopPairingEvents = pairing.subscribe(pushPairingSnapshot)
     stopAccountEvents = account.subscribe(handleAccountSnapshot)
     sub2api = await createDesktopSub2Api({
-      fetch: async (input, init) => await net.fetch(input, init),
+      fetch: async (input, init) => await net.fetch(input instanceof URL ? input.href : input, init),
       host: {
         restart: async startTimeoutMs => (await replaceWebHost(startTimeoutMs)).url,
         origin: () => host?.url,
@@ -353,7 +372,7 @@ async function boot(): Promise<void> {
       updater: autoUpdater,
       onStateChange: pushStatus,
       autoInstallOnAppQuit: process.platform === 'darwin',
-      ...process.platform === 'darwin' ? { nativeStage: electronAutoUpdater } : {},
+      ...process.platform === 'darwin' ? { nativeStage: electronNativeStagePort() } : {},
     })
   } catch (error) {
     pushStatus({
@@ -447,7 +466,7 @@ function createWindow(): BrowserWindow {
       packaged: app.isPackaged,
       appPath: app.getAppPath(),
       resourcesPath: process.resourcesPath,
-      setDockIcon: (path) => { app.dock.setIcon(path) },
+      setDockIcon: (path) => { app.dock?.setIcon(path) },
     }),
     width: 1280,
     height: 800,
@@ -762,12 +781,18 @@ async function finishSmoke(target: BrowserWindow, hostUrl: string): Promise<void
     operationId: parseCompanionOperationId('desktop-smoke-search-hit'),
     query: needle,
   }
-  const dependencies = {
+  const smokeAttachmentKey = new Uint8Array(32)
+  const dependencies: DesktopCompanionPairingDependencies = {
     pairingId: parsePersonalPairingId('desktop-smoke-pairing'),
-    attachmentKey: new Uint8Array(32),
+    attachmentKey: smokeAttachmentKey,
     now: Date.now,
     downloadAttachment: () => Promise.reject(new Error('Desktop smoke search must not download an attachment')),
     submitAttachment: () => Promise.reject(new Error('Desktop smoke search must not submit an attachment')),
+    generation: 1,
+    desktopRevision: 0,
+    desktopName: hostname(),
+    resolveInteraction: interactionId => companionProduct.resolveInteraction(interactionId, smokeAttachmentKey),
+    pendingInteractions: sessionId => companionProduct.pendingInteractions(sessionId, smokeAttachmentKey),
   }
   let hitEvidence = await companionProduct.handle(hitOperation, dependencies)
   const searchDeadline = Date.now() + 10_000

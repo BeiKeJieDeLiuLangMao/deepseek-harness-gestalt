@@ -2,6 +2,7 @@
 
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
+import { randomUUID } from 'node:crypto'
 import { RemoteRelayError } from '@deepseek-ai/dsh-remote-access'
 import type { SelectedPlatformEnvironment } from '@deepseek-ai/dsh-platform-account'
 import {
@@ -421,9 +422,9 @@ export class DesktopSnowRelayChannelOwner {
     active.livePump = pump
     this.tasks.add(pump)
     void pump.then(
-      () => { if (active.livePump === pump) active.livePump = undefined },
+      () => { if (active.livePump === pump) delete active.livePump },
       (error: unknown) => {
-        if (active.livePump === pump) active.livePump = undefined
+        if (active.livePump === pump) delete active.livePump
         this.failActive(active, error instanceof Error ? error : new Error('Companion live projection failed', { cause: error }))
       },
     ).finally(() => { this.tasks.delete(pump) })
@@ -769,7 +770,7 @@ export function createDesktopRemoteRelay(options: DesktopRemoteRelayOptions): De
     await lifecycle.sendCiphertext(...input)
   }, options.handleOperation, () => options.desktopName(), config.negotiationTimeoutMs, liveProjection)
   const lifecycle = new DesktopRelayEndpointLifecycle({
-    attachmentId: () => parseRelayAttachmentId(crypto.randomUUID()),
+    attachmentId: () => parseRelayAttachmentId(randomUUID()),
     connect: async (signal) => {
       if (options.connect !== undefined) return await options.connect(signal, config)
       const limits = { maxBytes: config.inboundMaxBytes, maxMessages: config.inboundMaxMessages }
@@ -780,7 +781,7 @@ export function createDesktopRemoteRelay(options: DesktopRemoteRelayOptions): De
         limits,
         resolveProxy: options.resolveProxy,
         resolveTimeoutMs: config.attachTimeoutMs,
-        connectWithProxy: options.connectWithProxy,
+        ...options.connectWithProxy === undefined ? {} : { connectWithProxy: options.connectWithProxy },
       })
     },
     attachTimeoutMs: config.attachTimeoutMs,
