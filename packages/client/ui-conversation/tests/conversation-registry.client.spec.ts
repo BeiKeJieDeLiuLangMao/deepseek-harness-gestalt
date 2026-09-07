@@ -2,13 +2,9 @@ import { Context } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SessionSeq } from '@deepseek-ai/dsh-session/types'
 import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session/types'
-import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
-import {
-  createScope, MutableSessionEventSource,
-} from '@deepseek-ai/dsh-api-session-controller/client'
-import type {
-  ISessions, SessionBinding, SessionFace, SessionListState, SessionSnapshot,
-} from '@deepseek-ai/dsh-api-session-controller/client'
+import { MutableSessionEventSource } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { SessionBinding } from '@deepseek-ai/dsh-api-session-controller/client'
+import { TestSessions } from '@deepseek-ai/dsh-client-test-runtime'
 import {
   ConversationEventRegistry, ConversationNodeAssembler, ConversationViewRegistry, UiConversation,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -19,86 +15,6 @@ import type {
 const SESSION_ID = 'resident' as SessionId
 
 afterEach(() => { vi.unstubAllGlobals() })
-
-function sessionSnapshot(): SessionSnapshot {
-  return {
-    sessionId: SESSION_ID,
-    queue: [],
-    pendingSubmissions: [],
-    running: false,
-    subagent: null,
-    removed: false,
-    openState: 'open',
-    openError: null,
-    hasMore: false,
-    loadingOlder: false,
-    promptError: null,
-    blank: true,
-    lastAgentError: null,
-    promptAttempted: false,
-    awaitingFirstTurn: false,
-  }
-}
-
-function fakeSession(): SessionFace {
-  const snapshot = createSnapshotStore(sessionSnapshot())
-  return {
-    sessionId: SESSION_ID,
-    projections: { faceOf: () => createSnapshotStore<unknown>(undefined) },
-    getSnapshot: () => snapshot.getSnapshot(),
-    subscribe: listener => snapshot.subscribe(listener),
-    beginSubmission: () => ({ requestId: 'test-req' as never, abandon: () => {} }),
-    prompt: () => Promise.reject(new Error('unused fake Session operation')),
-    readAttachment: () => Promise.reject(new Error('unused fake Session operation')),
-    updateQueue: () => Promise.reject(new Error('unused fake Session operation')),
-    cancel: () => Promise.reject(new Error('unused fake Session operation')),
-    rename: () => Promise.reject(new Error('unused fake Session operation')),
-    loadOlder: () => Promise.reject(new Error('unused fake Session operation')),
-    loadThrough: () => Promise.reject(new Error('unused fake Session operation')),
-    command: () => Promise.reject(new Error('unused fake Session operation')),
-  }
-}
-
-function fakeSessions(ctx: Context): { sessions: ISessions; binding: SessionBinding } {
-  const scope = createScope(ctx, SESSION_ID)
-  const binding: SessionBinding = {
-    sessionId: SESSION_ID,
-    session: fakeSession(),
-    eventSource: new MutableSessionEventSource(),
-    ctx: scope.ctx,
-  }
-  const list = createSnapshotStore<SessionListState>({
-    ids: [],
-    byId: {},
-    current: undefined,
-    phase: 'ready',
-    subagentsByParent: {},
-    jobsBySession: {},
-    currentAddress: undefined,
-  })
-  const sessions = {
-    list,
-    searchResultLimit: 50,
-    create: () => Promise.reject(new Error('unused fake Sessions operation')),
-    open: () => {},
-    openSubagent: () => {},
-    subagentAddress: () => undefined,
-    setSubagentCatalogOpen: () => {},
-    refreshSubagents: () => Promise.reject(new Error('unused fake Sessions operation')),
-    clear: () => {},
-    refresh: () => Promise.reject(new Error('unused fake Sessions operation')),
-    search: () => Promise.reject(new Error('unused fake Sessions operation')),
-    fork: () => Promise.reject(new Error('unused fake Sessions operation')),
-    scope: id => id === SESSION_ID ? binding.ctx : undefined,
-    scopeOf: candidate => candidate === binding.ctx ? SESSION_ID : undefined,
-    sessionOf: candidate => candidate === binding.ctx ? binding.session : undefined,
-    binding: id => id === SESSION_ID ? binding : undefined,
-    // ISessions compiler-face stubs: this fake never stages or opens Sessions.
-    stageProvisional: () => () => {},
-    openForRender: () => {},
-  } satisfies ISessions
-  return { sessions, binding }
-}
 
 function eventDefinition(kind: string): ConversationNodeDefinition<null> {
   return {
@@ -130,7 +46,10 @@ async function bootRegistries(): Promise<{
   views: ConversationViewRegistry
 }> {
   const ctx = new Context()
-  const { sessions, binding } = fakeSessions(ctx)
+  const sessions = new TestSessions(async (operation) => { await operation() }, ctx)
+  await sessions.add({ id: SESSION_ID })
+  const binding = sessions.binding(SESSION_ID)
+  if (binding === undefined) throw new Error('fixture Session binding was not created')
   const uiConversation = new UiConversation(ctx, sessions)
   return {
     ctx,

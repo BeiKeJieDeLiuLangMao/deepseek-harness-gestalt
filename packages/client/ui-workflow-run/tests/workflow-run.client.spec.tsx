@@ -17,8 +17,8 @@ import type {
 import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session/types'
 import { apply as applyLocale, inject as localeInject } from '@deepseek-ai/dsh-client-locale/client'
 import {
-  chatSnapshot as emptyChatSnapshot, conversationSnapshot, makeTranslate, sessionSnapshot,
-  stubSettingsScope, workspaceSnapshot,
+  chatSnapshot as emptyChatSnapshot, conversationSnapshot, inputActions, makeTranslate,
+  sessionSnapshot, stubSettingsScope, workspaceSnapshot,
 } from '@deepseek-ai/dsh-client-test-runtime'
 import {
   WorkflowRunPanel, type WorkflowRunInjected, type WorkflowRunPanelProps,
@@ -316,13 +316,7 @@ function panelProps(data: WorkflowRunChatData, sessions = listState(), openSessi
     useChat: selector => selector(panelChat),
     useTrajectory: selector => selector(panelTrajectory),
     useInput: () => { throw new Error('unused') },
-    inputActions: {
-      setDraft: () => {},
-      addImages: () => false,
-      removeImage: () => {},
-      pruneImages: () => {},
-      submit: () => {},
-    },
+    inputActions: inputActions(),
     useWorkspaces: selector => selector(panelWorkspace),
     useTurnData: () => undefined,
     openFile: () => {},

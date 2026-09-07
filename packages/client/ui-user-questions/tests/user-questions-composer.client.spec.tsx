@@ -10,6 +10,9 @@ import { QuestionPresentationSlot } from '../src/client/QuestionPresentationSlot
 import { en, zh } from '../src/client/locales.ts'
 import { en as commonEn } from '@deepseek-ai/dsh-client-locale/src/locales/en.ts'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
+import {
+  inputActions, inputState as createInputState,
+} from '@deepseek-ai/dsh-client-test-runtime'
 
 afterEach(cleanup)
 
@@ -22,7 +25,6 @@ type SessionState = Parameters<Parameters<QuestionComposerProps['useSession']>[0
 type ConversationState = Parameters<Parameters<QuestionComposerProps['useConversation']>[0]>[0]
 type ChatState = Parameters<Parameters<QuestionComposerProps['useChat']>[0]>[0]
 type TrajectoryState = Parameters<Parameters<QuestionComposerProps['useTrajectory']>[0]>[0]
-type InputState = Parameters<Parameters<QuestionComposerProps['useInput']>[0]>[0]
 type AttentionState = Parameters<Parameters<QuestionComposerProps['useSessionPendingInteraction']>[0]>[0]
 
 const sessionState: SessionState = {
@@ -92,14 +94,7 @@ const trajectoryState: TrajectoryState = {
   partial: null,
   runningCalls: [],
 }
-const inputState: InputState = {
-  draft: '',
-  imageIds: [],
-  draftRev: 0,
-  phase: 'plain',
-  occurrences: [],
-  queue: [],
-}
+const inputState = createInputState()
 
 /** Framework standard-kit stubs: the composer consumes the locale and draft-store seats;
  *  the composed props type mandates delivery of the rest (framework hooks are
@@ -117,13 +112,7 @@ const kitBase: Omit<QuestionComposerProps, 'matched' | 'useStore' | 'actions'> =
   useTrajectory: selector => selector(trajectoryState),
   useProjection: (() => undefined),
   useInput: selector => selector(inputState),
-  inputActions: {
-    setDraft: () => { throw new Error('unused') },
-    addImages: () => { throw new Error('unused') },
-    removeImage: () => { throw new Error('unused') },
-    pruneImages: () => { throw new Error('unused') },
-    submit: () => { throw new Error('unused') },
-  },
+  inputActions: inputActions(),
   // The seat's key domain is question ∪ common.
   t: seatOver(zh, commonZh),
 }

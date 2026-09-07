@@ -10,14 +10,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { createElement, type ComponentProps, type FC, type ReactNode } from 'react'
-import { bindSnapshotSelector, SlotTestRuntime, stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
+import {
+  bindSnapshotSelector, inputActions, inputState, SlotTestRuntime, stubSettingsScope,
+} from '@deepseek-ai/dsh-client-test-runtime'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
 import {
   EMPTY_CONVERSATION_SNAPSHOT, UiConversation,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {
   ConversationBinding, ConversationSnapshot, ConversationViewSnapshotMap, ConvViewProps,
-  InputActions, InputState, RequestView, ViewTab,
+  RequestView, ViewTab,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { EMPTY_CHAT_SNAPSHOT } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {
@@ -205,16 +207,7 @@ function standaloneProps(
   nodes: LegacyConversationSlice['nodes'],
 ): StandaloneBaseProps {
   const trajectory = historySnapshot(nodes)
-  const input = createSnapshotStore<InputState>({
-    draft: '', imageIds: [], draftRev: 0, phase: 'plain', occurrences: [], queue: [],
-  })
-  const inputActions: InputActions = {
-    setDraft: () => {},
-    addImages: () => false,
-    removeImage: () => {},
-    pruneImages: () => {},
-    submit: () => {},
-  }
+  const input = createSnapshotStore(inputState())
   return {
     sessionId: SID,
     useChat: bindSnapshotSelector(createSnapshotStore(EMPTY_CHAT_SNAPSHOT)),
@@ -225,7 +218,7 @@ function standaloneProps(
     useWorkspaces: emptyWorkspaces(),
     useConversation: bindSnapshotSelector(createSnapshotStore(conversationSnapshot(trajectory))),
     useInput: bindSnapshotSelector(input),
-    inputActions,
+    inputActions: inputActions(),
     useProjection,
     viewRequest: null,
     openView: () => {},
@@ -327,16 +320,7 @@ function mount(fixture: Awaited<ReturnType<typeof bench>>) {
   const useConversationViews = bindSnapshotSelector(
     createSnapshotStore<readonly ViewTab[]>(tabsOf(slots)),
   )
-  const useInput = bindSnapshotSelector(createSnapshotStore<InputState>({
-    draft: '', imageIds: [], draftRev: 0, phase: 'plain', occurrences: [], queue: [],
-  }))
-  const inputActions: InputActions = {
-    setDraft: vi.fn(),
-    addImages: vi.fn(() => false),
-    removeImage: vi.fn(),
-    pruneImages: vi.fn(),
-    submit: vi.fn(),
-  }
+  const useInput = bindSnapshotSelector(createSnapshotStore(inputState()))
   const standardProps = {
     sessionId: SID,
     useSession,
@@ -349,7 +333,7 @@ function mount(fixture: Awaited<ReturnType<typeof bench>>) {
     useWorkspaces,
     useProjection,
     useInput,
-    inputActions,
+    inputActions: inputActions(),
   }
   // Minimal outlet twin: resolve the ring entry by the `only` filter and
   // render it with the session standard kit (what SlotOutlet does for a

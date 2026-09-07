@@ -3,7 +3,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render } from '@testing-library/react'
 import {
-  bindSnapshotSelector, conversationSnapshot, sessionSnapshot, workspaceSnapshot,
+  bindSnapshotSelector, conversationSnapshot, inputActions, sessionSnapshot, workspaceSnapshot,
 } from '@deepseek-ai/dsh-client-test-runtime'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type {
@@ -525,7 +525,7 @@ describe('DetailsPanel Output section', () => {
         useChat={bindSnapshotSelector({ getSnapshot: () => snapshot, subscribe: () => () => {} })}
         useTrajectory={useEmptyTrajectory}
         useInput={(() => { throw new Error('unused') })}
-        inputActions={{ setDraft: () => {}, addImages: () => true, removeImage: () => {}, pruneImages: () => {}, submit: () => {} }}
+        inputActions={inputActions()}
         useProjection={(() => undefined)}
         useStore={bindSnapshotSelector(chat)}
         actions={chat.actions}
@@ -713,7 +713,7 @@ describe('DetailsPanel Output section', () => {
         useChat={bindSnapshotSelector({ getSnapshot: () => snap, subscribe: () => () => {} })}
         useTrajectory={useEmptyTrajectory}
         useInput={(() => { throw new Error('unused') })}
-        inputActions={{ setDraft: () => {}, addImages: () => true, removeImage: () => {}, pruneImages: () => {}, submit: () => {} }}
+        inputActions={inputActions()}
         useProjection={(() => undefined)}
         useStore={bindSnapshotSelector(chat)}
         actions={chat.actions}

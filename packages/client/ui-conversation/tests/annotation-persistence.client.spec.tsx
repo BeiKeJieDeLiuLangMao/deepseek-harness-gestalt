@@ -110,7 +110,7 @@ describe('annotation draft persistence', () => {
     const view = render(
       <AssistantMarkdown
         {...props}
-        annotations={shell.snapshot.annotations}
+        annotations={shell.snapshot.annotations.filter(annotation => annotation.kind === 'text')}
       />,
     )
     const mark = set.mock.lastCall?.[1] as FakeHighlight
@@ -122,7 +122,7 @@ describe('annotation draft persistence', () => {
     view.rerender(
       <AssistantMarkdown
         {...props}
-        annotations={shell.snapshot.annotations}
+        annotations={shell.snapshot.annotations.filter(annotation => annotation.kind === 'text')}
       />,
     )
     expect(deleteMark).toHaveBeenLastCalledWith('annotation-draft-mark')
