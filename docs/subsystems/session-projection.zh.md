@@ -2,7 +2,7 @@
 
 [English](session-projection.md) | 中文
 
-会话投影 seam 是一项[能力 seam](../capability-seams.zh.md)：领域 host 插件经由它向生成式 Remote 消费方供给按会话的日志派生状态当前全量值；三方分别是 Service Definition 与注册表（[dsh-session-projection](../../packages/session/session-projection)，`ctx.sessionProjections`）、领域贡献方（每个领域注册一个纯单元）与 [dsh-session-controller](../../packages/api/session-controller)，后者把投影值纳入会话历史和 follow 响应。Desktop Companion 投影再把这些 Host 值转换为经过认证的 Mobile 历史与实时更新。它是一项可选能力，不属于 agent loop（智能体循环）主干。框架负责驱动，领域负责计算：注册表只订阅一次 `session/event`，并把每个已提交事件折叠进每个单元；领域不持有任何订阅，客户端也从不折叠领域事件——它们收到的是成品值。设计权威：[session-projection RFC](../../.agents/notes/proposed/architecture/2026-07-27-session-projection-and-command-log.zh.md)；驱动、缓存与变更流约定：[包 README](../../packages/session/session-projection/README.zh.md)。
+会话投影 seam 是一项[能力 seam](../capability-seams.zh.md)：领域 host 插件经由它向生成式 Remote 消费方供给按会话的日志派生状态当前全量值；三方分别是 Service Definition 与注册表（[dsh-session-projection](../../packages/session/session-projection)，`ctx.sessionProjections`）、领域贡献方（每个领域注册一个纯单元）与 [dsh-session-controller](../../packages/api/session-controller)。控制器把每个 `onChanged` 值作为 `projection` 帧通过生成式流式 `control` Remote 广播，并用 `sessionProjections.snapshot` 为每条流建立基线；会话列表从实时注册表的 `cachedSnapshot` 或可选持久缓存的冷快照读取，历史与 follow 响应则携带各自的投影基线。生成式 Session Controller 客户端把这些基线和更新帧应用到逐会话投影存储，Desktop Companion 投影再把同一批 Host 值转换为经过认证的 Mobile 历史与实时更新。它是一项可选能力，不属于 agent loop（智能体循环）主干。框架负责驱动，领域负责计算：注册表只订阅一次 `session/event`，并把每个已提交事件折叠进每个单元；领域不持有任何订阅，客户端也从不折叠领域事件——它们收到的是成品值。设计权威：[session-projection RFC](../../.agents/notes/proposed/architecture/2026-07-27-session-projection-and-command-log.zh.md)；驱动、缓存与变更流约定：[包 README](../../packages/session/session-projection/README.zh.md)。
 
 源码：[`packages/session/session-projection/src/index.ts`](../../packages/session/session-projection/src/index.ts)
 
