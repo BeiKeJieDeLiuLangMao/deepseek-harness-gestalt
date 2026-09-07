@@ -218,6 +218,7 @@ describe('assembled Desktop Relay live Session projection on shipped dsh web', (
       channels.mobileReconnectState.fill(0)
       channels.desktopReconnectState.fill(0)
     })
+
     relayOwner.updatePeers({
       type: 'ready', transportVersion: 1, routeId: parseRelayRouteId('route-assembled-relay-live'),
       attachmentId: channels.desktopAttachmentId,
@@ -326,6 +327,7 @@ describe('assembled Desktop Relay live Session projection on shipped dsh web', (
       await ik2Frame, channels.desktopAttachmentId,
     )
     const mobileChannel = mobileNegotiation.finish()
+    cleanups.push(() => { mobileChannel.dispose() })
     connection.connect({
       channel: mobileChannel, targetAttachmentId: channels.desktopAttachmentId,
       pairingSelector: channels.pairingSelector, generation: channels.generation,
