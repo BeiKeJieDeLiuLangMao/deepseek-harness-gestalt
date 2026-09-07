@@ -32,6 +32,7 @@ import type { Context as CordisContext } from '@deepseek-ai/cordis'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 import type { SessionAdmissionAdapter } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
+import type SessionPersistence from '@deepseek-ai/dsh-session-persistence'
 import type { BetterSidebarService } from './client/service.ts'
 
 /** The request face route handlers see (structural subset of node's
@@ -303,17 +304,8 @@ export interface SidebarSessionTitleService {
   rename(session: unknown, title: string): { title: string; eventSeq: number }
 }
 
-/** The host session-persistence face (mirror of the sessionPersistence
- *  service): detached inspection of a persisted session, used to compose the
- *  recorded preset when a Side Chat thread cold-resumes. */
-export interface SidebarSessionPersistenceService {
-  /** List every durable Session header from the authoritative backend. */
-  list(): Promise<readonly { id: SessionId }[]>
-  inspect(sessionId: string): Promise<{
-    meta: { cwd?: string; agentPreset?: string }
-    events: readonly SidebarSessionEvent[]
-  }>
-}
+/** Formal persistence operations used by Side Chat cold reads and publication checks. */
+export type SidebarSessionPersistenceService = Pick<SessionPersistence, 'list' | 'open' | 'stat'>
 
 /** The client session list snapshot the sidebar subscribes to. */
 export interface SidebarSessionList {

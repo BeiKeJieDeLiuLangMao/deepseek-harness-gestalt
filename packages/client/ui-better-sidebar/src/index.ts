@@ -41,6 +41,7 @@ import { registerBundleRoute } from './bundle-route.ts'
 import { launchExternal } from './open-external.ts'
 import * as git from './git.ts'
 import { SettingsConflictError } from '@deepseek-ai/dsh-settings'
+import { SessionId } from '@deepseek-ai/dsh-session'
 import { defaultShell, ensureSpawnHelper, PtyManager, shellDisplayName } from './pty-manager.ts'
 import { AgentPtyRegistry, armPtyResizeGate, tryResizePty, type AgentTerminalHandle } from './agent-pty.ts'
 import {
@@ -55,6 +56,10 @@ import { parseLoopbackAllowlist } from './loopback-allowlist.ts'
 import { buildJobsApi, type SidebarJobsRoutes } from './jobs-routes.ts'
 import { buildSubagentLiveApi, type SidebarSubagentLiveRoutes } from './subagent-live-route.ts'
 import { buildSidechatApi, type SidechatRoutes } from './sidechat-routes.ts'
+import {
+  readPersistedSessionCwd,
+  tryReadPersistedSessionEvents,
+} from './session-persistence-read.ts'
 import { readJsonBody, requireString, SidebarError, writeError, writeJson, writeOk } from './wire.ts'
 
 export { Config }
@@ -127,8 +132,7 @@ async function sessionCwdOf(ctx: SidebarContext, sessionId: string, clientCwd?: 
   }
   const persistence = ctx.get('sessionPersistence')
   if (persistence !== undefined) {
-    const inspected = await persistence.inspect(sessionId)
-    const metaCwd = inspected.meta.cwd
+    const metaCwd = await readPersistedSessionCwd(persistence, SessionId(sessionId))
     if (metaCwd !== undefined && metaCwd !== '') {
       try {
         return requireAbsolute(metaCwd)
@@ -460,12 +464,7 @@ function buildApi(
       if (events === undefined) {
         const persistence = ctx.get('sessionPersistence')
         if (persistence !== undefined) {
-          try {
-            events = (await persistence.inspect(sessionId)).events
-          } catch {
-            // Cold read unavailable (session never persisted): an empty
-            // window is the honest answer, not a wire error.
-          }
+          events = await tryReadPersistedSessionEvents(persistence, SessionId(sessionId))
         }
       }
       if (events === undefined) return { events: [], lastSeq: Math.max(afterSeq, 0) }

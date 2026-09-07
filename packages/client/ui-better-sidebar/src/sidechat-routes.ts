@@ -30,7 +30,9 @@ import {
 } from '@deepseek-ai/dsh-agent'
 import { foldSubagentDescriptor, snapshotSubagentDescriptor } from '@deepseek-ai/dsh-subagent'
 import type { Context as CordisContext } from '@deepseek-ai/cordis'
-import { foldRequestHeader, SessionId, SessionLogOffset, type SessionEvent } from '@deepseek-ai/dsh-session'
+import {
+  foldRequestHeader, SessionId, SessionLogOffset, type SessionEvent,
+} from '@deepseek-ai/dsh-session'
 import type { SessionRequestId } from '@deepseek-ai/dsh-api-session-controller/types'
 import type {
   SidebarContext,
@@ -49,6 +51,7 @@ import {
   type SeedEvent,
   type SidechatLogEvent,
 } from './sidechat-core.ts'
+import { readPersistedSession } from './session-persistence-read.ts'
 import { requireString, SidebarError } from './wire.ts'
 
 /** Side Chat routes of the sidebar API (wire method names). */
@@ -268,9 +271,9 @@ async function composePersistedSetup(
   if (persistence === undefined) {
     return { setup: () => Promise.resolve(), selection: undefined }
   }
-  const inspected = await persistence.inspect(childId)
-  const selection = persistedModelSelection(inspected.events)
-  const presetId = resolvePresetId(inspected.meta, inspected.events)
+  const persisted = await readPersistedSession(persistence, childId)
+  const selection = persistedModelSelection(persisted.events)
+  const presetId = resolvePresetId(persisted.meta, persisted.events)
   const presets = ctx.get('agentPresets') as SidebarAgentPresetsService | undefined
   if (presets === undefined || presetId === undefined) {
     return { setup: () => Promise.resolve(), selection }
@@ -331,39 +334,6 @@ function admitFirstContact(
 function liveThreadAgent(ctx: SidebarContext, childId: SessionId): Agent | undefined {
   const agents = ctx.get('agents') as { get(id: string): Agent | undefined } | undefined
   return agents?.get(childId)
-}
-
-/**
- * The thread's event log (seed + its own events, already expanded): the live
- * agent's in-memory log while the thread is attached — the freshest read,
- * including events not yet flushed — else the persisted logical log. Both
- * DSH generations expose these seams with the same shape (the 0.1.2
- * persistence layer packs chunk rows on disk but expands them on inspect;
- * the live log is `Session.snapshotEvents()`, the 0.1.2-alpha.4 rename of
- * the `Session.events` property), which is why the transcript reads here
- * instead of the client's session-history RPC: that face
- * (`ctx.connection.api`) was removed in 0.1.2-alpha.1's Remote-gateway
- * migration.
- */
-async function threadLogEvents(ctx: SidebarContext, childId: SessionId): Promise<readonly SidechatLogEvent[]> {
-  const agent = liveThreadAgent(ctx, childId)
-  if (agent !== undefined) {
-    return agent.session.snapshotEvents() as unknown as readonly SidechatLogEvent[]
-  }
-  const persistence = ctx.get('sessionPersistence') as SidebarSessionPersistenceService | undefined
-  if (persistence === undefined) {
-    throw new SidebarError('sidechat-error', 'the session persistence service is unavailable', 503)
-  }
-  try {
-    const inspected = await persistence.inspect(childId)
-    return inspected.events as unknown as readonly SidechatLogEvent[]
-  } catch (error: unknown) {
-    throw new SidebarError(
-      'not-found',
-      `thread "${childId}" is not available: ${error instanceof Error ? error.message : String(error)}`,
-      404,
-    )
-  }
 }
 
 /** Build the Side Chat routes (all optional services degrade to a wire
@@ -560,8 +530,8 @@ export function buildSidechatApi(ctx: SidebarContext): SidechatApi {
       if (current === undefined && child === undefined && !provisional) {
         const persistence = ctx.get('sessionPersistence') as SidebarSessionPersistenceService | undefined
         if (persistence !== undefined) {
-          const inspected = await persistence.inspect(childId)
-          current = persistedModelSelection(inspected.events)
+          const persisted = await readPersistedSession(persistence, childId)
+          current = persistedModelSelection(persisted.events)
           if (current !== undefined) {
             threadSelections.set(childId, { current, assembled: undefined })
           }
@@ -598,7 +568,9 @@ export function buildSidechatApi(ctx: SidebarContext): SidechatApi {
           throw new SidebarError('sidechat-error', 'persisted Side Chat lookup is unavailable', 503)
         }
         try {
-          await persistence.inspect(childId)
+          if (await persistence.stat(childId) === undefined) {
+            throw new Error(`session "${childId}" was not found`)
+          }
         } catch (error) {
           throw new SidebarError(
             'sidechat-error',
@@ -681,7 +653,7 @@ export function buildSidechatApi(ctx: SidebarContext): SidechatApi {
         if (persistence === undefined) {
           throw new SidebarError('sidechat-error', 'persisted Side Chat lookup is unavailable', 503)
         }
-        published = (await persistence.list()).some(header => header.id === childId)
+        published = (await persistence.list()).some(snapshot => snapshot.header.id === childId)
       }
       const dispose = threadDisposers.get(childId)
       if (dispose !== undefined) {
