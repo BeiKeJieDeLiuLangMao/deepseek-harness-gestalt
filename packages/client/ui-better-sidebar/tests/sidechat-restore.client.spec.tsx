@@ -87,6 +87,8 @@ describe('restorableSideThreads', () => {
     expect(restorableSideThreads(sessionList({ child }, {
       parent: {
         parentAvailable: true,
+        state: 'ready',
+        error: null,
         entries: [{
           kind: 'child',
           id: 'child',

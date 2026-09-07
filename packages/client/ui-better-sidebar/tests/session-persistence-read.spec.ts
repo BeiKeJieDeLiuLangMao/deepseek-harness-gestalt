@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
-  SessionId, SessionLogOffset,
+  SessionId, SessionLogOffset, SessionSeq,
   type SessionEvent, type SessionHeader,
 } from '@deepseek-ai/dsh-session'
 import type {
@@ -52,10 +52,10 @@ describe('persisted sidebar Session reads', () => {
   it('returns formal header and event values after closing the read handle', async () => {
     const sessionId = SessionId('persisted-session')
     const events = [{
-      type: 'permission/preset',
-      seq: 0,
+      type: 'turn/start',
+      seq: SessionSeq(0),
       time: 1,
-      data: { preset: 'read-only' },
+      data: { turn: 1 },
     }] as const satisfies readonly SessionEvent[]
     const fixture = persistenceReader(events)
 
@@ -118,10 +118,10 @@ describe('persisted sidebar Session reads', () => {
 
   it('reads cold Changes events and closes its handle', async () => {
     const events = [{
-      type: 'permission/preset',
-      seq: 0,
+      type: 'turn/start',
+      seq: SessionSeq(0),
       time: 1,
-      data: { preset: 'read-only' },
+      data: { turn: 1 },
     }] as const satisfies readonly SessionEvent[]
     const fixture = persistenceReader(events)
 

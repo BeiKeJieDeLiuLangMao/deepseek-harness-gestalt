@@ -82,7 +82,10 @@ describe('sidechat route lifecycle', () => {
       options: { provider: 'deepseek', model: 'chat' },
       session: { id: 'parent', events: [], snapshotEvents: () => [], header: {} },
     } as unknown as Agent
-    const create = vi.fn(() => Promise.resolve({ agent: child, dispose: () => Promise.resolve() }))
+    const create = vi.fn<(options: CreateAgentOptions) => Promise<{
+      agent: Agent
+      dispose(): Promise<void>
+    }>>((_options) => Promise.resolve({ agent: child, dispose: () => Promise.resolve() }))
     const ctx = {
       get: (name: string) => name === 'agents'
         ? { get: (id: string) => id === 'parent' ? parent : undefined, create }
@@ -103,7 +106,7 @@ describe('sidechat route lifecycle', () => {
       meta: expect.objectContaining({ parentSession: 'parent', isSeeded: true, origin: 'subagent' }),
       agentOptions: expect.objectContaining({ provider: 'deepseek', model: 'chat' }),
     }))
-    const createOptions = create.mock.calls[0]![0] as CreateAgentOptions
+    const createOptions = create.mock.calls[0]![0]
     expect(createOptions.seed?.at(-1)).toMatchObject({
       type: 'subagent/descriptor',
       seq: createOptions.inheritedEventCount,

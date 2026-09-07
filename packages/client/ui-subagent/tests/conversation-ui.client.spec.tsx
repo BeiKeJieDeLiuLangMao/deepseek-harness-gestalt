@@ -140,7 +140,9 @@ describe('SubagentHeaderLineage', () => {
     expect(actionProps.openChild).not.toHaveBeenCalled()
     expect(actionProps.openSession).toHaveBeenCalledWith(child)
 
-    view.rerender(<SubagentHeaderAction {...actionProps} renderMode={undefined} />)
+    const ordinaryActionProps = { ...actionProps }
+    delete ordinaryActionProps.renderMode
+    view.rerender(<SubagentHeaderAction {...ordinaryActionProps} />)
     expect(screen.queryByRole('button', { name: '1 个子代理' })).toBeNull()
   })
 
