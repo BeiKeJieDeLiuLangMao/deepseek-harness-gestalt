@@ -12,6 +12,7 @@ import {
 import { DesktopCompanionOperationLedger } from '../src/companion-operation-ledger.ts'
 import type { DesktopCompanionLiveProjectionChange } from '../src/companion-live-projection.ts'
 import { DesktopCompanionProductOwner, handleCompanionProductOperation } from '../src/companion-product.ts'
+import type { DesktopCompanionPairingDependencies } from '../src/companion-product.ts'
 import {
   admitDesktopHostAttachment,
   archiveDesktopHostSession,
@@ -354,7 +355,7 @@ describe('Desktop Host RPC against shipped dsh web', () => {
       })
       const sessionId = parseCompanionSessionId('desktop-ask-user-session')
       const attachmentKey = new Uint8Array(32)
-      const pairing = {
+      const pairing: DesktopCompanionPairingDependencies = {
         pairingId: parsePersonalPairingId('pairing-ask-user'),
         attachmentKey,
         now: () => 1_000,
@@ -363,8 +364,8 @@ describe('Desktop Host RPC against shipped dsh web', () => {
         generation: 1,
         desktopRevision: 1,
         desktopName: 'Assembled Desktop',
-        resolveInteraction: () => undefined,
-        pendingInteractions: () => [],
+        resolveInteraction: interactionId => owner.resolveInteraction(interactionId, attachmentKey),
+        pendingInteractions: sessionId => owner.pendingInteractions(sessionId, attachmentKey),
       }
       try {
         await expect(createDesktopHostSession(rpc, sessionId)).resolves.toMatchObject({
@@ -799,7 +800,7 @@ async function runAssembledApproval(input: {
     })
     const sessionId = parseCompanionSessionId(input.sessionId)
     const attachmentKey = new Uint8Array(32)
-    const pairing = {
+    const pairing: DesktopCompanionPairingDependencies = {
       pairingId: parsePersonalPairingId('pairing-approval'),
       attachmentKey,
       now: () => 1_000,
@@ -808,8 +809,8 @@ async function runAssembledApproval(input: {
       generation: 1,
       desktopRevision: 1,
       desktopName: 'Assembled Desktop',
-      resolveInteraction: () => undefined,
-      pendingInteractions: () => [],
+      resolveInteraction: interactionId => owner.resolveInteraction(interactionId, attachmentKey),
+      pendingInteractions: sessionId => owner.pendingInteractions(sessionId, attachmentKey),
     }
     try {
       await expect(createDesktopHostSession(rpc, sessionId, { cwd: workspace })).resolves.toMatchObject({
