@@ -44,4 +44,4 @@ A listed `browser_*` card click opens details and focuses that tab without chang
 
 ## Testing
 
-`packages/client/ui-conversation/tests/browser-tab-focus.client.spec.ts` pins args vs result identity, the listed revision, tab-gone, and a rejected focus. `apply-inject.client.spec.tsx` pins inject-level focus. `packages/client/ui-tool/tests/toolview-slot.client.spec.tsx` clicks a real `browser_navigate` card through the conversation+tool stack and requires `focus(sessionId, target, listedRevision)`. The keyless fixture Session still has one tab, so the assembled snapshot cannot exercise two-tab chat selection.
+`packages/client/ui-chat/tests/browser-tab-focus.client.spec.ts` pins args vs result identity, the listed revision, tab-gone, and a rejected focus. `apply-inject.client.spec.tsx` pins inject-level focus. `packages/client/ui-tool/tests/toolview-slot.client.spec.tsx` clicks a real `browser_navigate` card through the conversation+tool stack and requires `focus(sessionId, target, listedRevision)`. The keyless fixture Session still has one tab, so the assembled snapshot cannot exercise two-tab chat selection.

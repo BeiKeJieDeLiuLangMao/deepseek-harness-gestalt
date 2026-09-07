@@ -36,6 +36,6 @@ Human and Agent share one Dock over the same Session-owned tab identities. Colla
 
 ## Verification
 
-- `pnpm exec vitest run packages/client/ui-workbench packages/client/ui-browser packages/browser/browser-workspace packages/client/ui-conversation/tests/preview-rail.client.spec.ts packages/client/ui-conversation/tests/chat-view.client.spec.tsx`
+- `pnpm exec vitest run packages/client/ui-workbench packages/client/ui-browser packages/browser/browser-workspace packages/client/ui-chat/tests/preview-rail.client.spec.ts packages/client/ui-chat/tests/chat-view.client.spec.tsx`
 - `pnpm exec vitest run packages/client/ui-browser --coverage --coverage.include='packages/client/ui-browser/src/**/*.ts'`
 - `pnpm run check:ci:static`

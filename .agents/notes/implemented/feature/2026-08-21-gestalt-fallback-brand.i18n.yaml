@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-21-gestalt-fallback-brand.md
-2026-08-21-gestalt-fallback-brand.md: a6e93b2f85beceaf9e9d1384d43a3f37bc545b9b
-2026-08-21-gestalt-fallback-brand.zh.md: 8df1543a9603b4aa845abe15bc0f9d0237e6a83f
+2026-08-21-gestalt-fallback-brand.md: 6fafb70348d3e5c8bddcee40f5b2cff93ce8e30a
+2026-08-21-gestalt-fallback-brand.zh.md: 4cf970a42967b083719f376350dab3134a36c9b8

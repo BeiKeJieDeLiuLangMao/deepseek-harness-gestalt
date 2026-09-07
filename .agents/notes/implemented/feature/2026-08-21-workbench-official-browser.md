@@ -36,7 +36,7 @@ One product browser. ChatView hides the preview when the right gutter cannot hos
 
 ## Verification
 
-- `pnpm exec vitest run packages/client/ui-workbench packages/client/ui-browser packages/browser/browser-runtime-electron packages/client/ui-conversation/tests/preview-rail.client.spec.ts packages/client/ui-conversation/tests/chat-view.client.spec.tsx packages/browser/browser-workspace/tests/workspace.spec.ts apps/desktop/tests/browser-present.spec.ts apps/desktop/tests/chrome-overlay.spec.ts packages/client/ui-desktop/tests/desktop-chrome-overlay.client.spec.tsx packages/client/ui-layout/tests/app-frame.client.spec.tsx packages/client/ui-sidebar/tests/sidebar-root.client.spec.tsx`
+- `pnpm exec vitest run packages/client/ui-workbench packages/client/ui-browser packages/browser/browser-runtime-electron packages/client/ui-chat/tests/preview-rail.client.spec.ts packages/client/ui-chat/tests/chat-view.client.spec.tsx packages/browser/browser-workspace/tests/workspace.spec.ts apps/desktop/tests/browser-present.spec.ts apps/desktop/tests/chrome-overlay.spec.ts packages/client/ui-desktop/tests/desktop-chrome-overlay.client.spec.tsx packages/client/ui-layout/tests/app-frame.client.spec.tsx packages/client/ui-sidebar/tests/sidebar-root.client.spec.tsx`
 - `pnpm run test:electron-runtime-e2e` proves hidden-page screenshots and Profile isolation in a real Electron process.
 - `DSH_COVERAGE_PARTITIONS=4 pnpm run check:ci:coverage` covers every changed Browser and workbench branch.
 - `apps/web/tests/browser-dock.snapshot.ts` pins the collapsed preview, workbench page chrome after open and Refresh, and replacement plus navigation after a simulated Runtime restart.
