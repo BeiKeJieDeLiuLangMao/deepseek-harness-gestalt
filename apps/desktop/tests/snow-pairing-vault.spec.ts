@@ -75,6 +75,8 @@ describe('DesktopSnowPairingVault', () => {
         revision: 1, pairingSelector: parseRelayPairingSelector(`pairing-${String(index)}`),
       },
     }))
+    const firstActive = active[0]
+    if (firstActive === undefined) throw new Error('expected one retained pairing fixture')
     const vault = await DesktopSnowPairingVault.load({
       load: async () => ({ active, challenges: [], pending: [], confirmations: [] }), save,
     })
@@ -82,7 +84,7 @@ describe('DesktopSnowPairingVault', () => {
     await expect(vault.createInvitation(Date.now() + 60_000)).rejects.toThrow('limit reached')
     expect(save).not.toHaveBeenCalled()
     await expect(DesktopSnowPairingVault.load({
-      load: async () => ({ active: [...active, active[0]], challenges: [], pending: [], confirmations: [] }),
+      load: async () => ({ active: [...active, firstActive], challenges: [], pending: [], confirmations: [] }),
       save,
     })).rejects.toThrow('retained state limit')
   })

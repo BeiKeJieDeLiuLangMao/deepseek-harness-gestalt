@@ -7,7 +7,7 @@ import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { parsePersonalPairingId } from '@deepseek-ai/dsh-remote-access'
 import { startMockLlmServer } from '@deepseek-ai/dsh-llm-mock-server'
 import {
-  parseCompanionOperationId, parseCompanionSessionId, REMOTE_PROTOCOL_LIMITS,
+  parseCompanionInteractionId, parseCompanionOperationId, parseCompanionSessionId, REMOTE_PROTOCOL_LIMITS,
 } from '@deepseek-ai/dsh-remote-protocol'
 import { DesktopCompanionOperationLedger } from '../src/companion-operation-ledger.ts'
 import type { DesktopCompanionLiveProjectionChange } from '../src/companion-live-projection.ts'
@@ -45,7 +45,7 @@ async function startShippedHost(
   env: NodeJS.ProcessEnv = {},
   home?: string,
 ): Promise<{ home: string; running: RunningWebHost }> {
-  return startShippedWebHost({ env, home, children, homes })
+  return startShippedWebHost({ env, ...(home === undefined ? {} : { home }), children, homes })
 }
 
 describe('Desktop Host RPC against shipped dsh web', () => {
@@ -382,12 +382,14 @@ describe('Desktop Host RPC against shipped dsh web', () => {
         })
         await expect.poll(() => owner.pendingInteractions(sessionId, attachmentKey).length > 0).toBe(true)
         const pending = owner.pendingInteractions(sessionId, attachmentKey)[0]
-        if (pending === undefined || pending.kind !== 'question') throw new Error('missing Ask User wait')
+        if (!isRecord(pending) || pending.kind !== 'question' || typeof pending.interactionId !== 'string') {
+          throw new Error('missing Ask User wait')
+        }
         await expect(owner.handle({
           type: 'settle-interaction',
           operationId: parseCompanionOperationId('desktop-ask-user-answer'),
           sessionId,
-          interactionId: pending.interactionId,
+          interactionId: parseCompanionInteractionId(pending.interactionId),
           settlement: { kind: 'question', answers: [{ id: 'q1', selected: ['Yes'] }] },
         }, pairing)).resolves.toMatchObject({ type: 'interaction-receipt', accepted: true })
         await expect.poll(async () => {
@@ -593,7 +595,7 @@ describe('Desktop Host RPC against shipped dsh web', () => {
       })
       const pairingId = parsePersonalPairingId('pairing-follow-consumer')
       const attachmentKey = new Uint8Array(32)
-      const pairing = {
+      const pairing: DesktopCompanionPairingDependencies = {
         pairingId,
         attachmentKey,
         now: () => 1_000,
@@ -602,6 +604,8 @@ describe('Desktop Host RPC against shipped dsh web', () => {
         generation: 1,
         desktopRevision: 1,
         desktopName: 'Assembled Desktop',
+        resolveInteraction: interactionId => owner.resolveInteraction(interactionId, attachmentKey),
+        pendingInteractions: sessionId => owner.pendingInteractions(sessionId, attachmentKey),
       }
       const sessionId = parseCompanionSessionId('desktop-follow-consumer-session')
       const needle = 'desktop follow consumer prompt'
@@ -826,15 +830,18 @@ async function runAssembledApproval(input: {
         type: 'confirmed', operationId: submit.operationId,
       })
       await expect.poll(() => {
-        return owner.pendingInteractions(sessionId, attachmentKey).some(item => item.kind === 'approval')
+        return owner.pendingInteractions(sessionId, attachmentKey)
+          .some(item => isRecord(item) && item.kind === 'approval')
       }).toBe(true)
-      const pending = owner.pendingInteractions(sessionId, attachmentKey).find(item => item.kind === 'approval')
-      if (pending === undefined) throw new Error('missing Approval wait')
+      const pending = owner.pendingInteractions(sessionId, attachmentKey)
+        .find(item => isRecord(item) && item.kind === 'approval')
+      if (!isRecord(pending) || typeof pending.interactionId !== 'string') throw new Error('missing Approval wait')
+      const interactionId = parseCompanionInteractionId(pending.interactionId)
       const settle = {
         type: 'settle-interaction' as const,
         operationId: parseCompanionOperationId(`desktop-approval-${input.outcome}-answer`),
         sessionId,
-        interactionId: pending.interactionId,
+        interactionId,
         settlement: { kind: 'approval' as const, outcome: input.outcome },
       }
       await expect(owner.handle(settle, pairing)).resolves.toMatchObject({
@@ -863,7 +870,7 @@ async function runAssembledApproval(input: {
         type: 'settle-interaction',
         operationId: parseCompanionOperationId(`desktop-approval-${input.outcome}-late`),
         sessionId,
-        interactionId: pending.interactionId,
+        interactionId,
         settlement: { kind: 'approval', outcome: 'rejected' },
       }, pairing)).resolves.toMatchObject({
         type: 'interaction-receipt', accepted: false, reason: 'not-pending',

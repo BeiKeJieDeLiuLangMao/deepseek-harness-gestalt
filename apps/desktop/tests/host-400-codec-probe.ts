@@ -36,9 +36,17 @@ export async function runHost400CodecProbe(): Promise<Uint8Array> {
       pairingId: parsePersonalPairingId('visible-host-400-pairing'),
       attachmentKey: new Uint8Array(32),
       now: Date.now,
+      generation: 1,
+      desktopRevision: 1,
+      desktopName: 'Codec Probe Desktop',
       downloadAttachment: () => Promise.reject(new Error('search must not download an attachment')),
       submitAttachment: () => Promise.reject(new Error('search must not submit an attachment')),
+      resolveInteraction: () => undefined,
+      pendingInteractions: () => [],
     })
+    if (!('type' in result) || result.type !== 'operation-failed') {
+      throw new Error('expected one Companion operation failure')
+    }
     const protocol = negotiateCompanionProtocol(
       createCompanionNegotiationChannel(),
       createCompanionVersionOffer('mobile'),

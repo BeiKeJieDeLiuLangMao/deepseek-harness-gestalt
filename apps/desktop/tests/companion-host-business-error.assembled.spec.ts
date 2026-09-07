@@ -61,6 +61,9 @@ describe('assembled Desktop Companion Host business error on shipped dsh web', (
         message: '[gateway/bad-request] session search query must not be empty',
       },
     })
+    if (!('type' in result) || result.type !== 'operation-failed') {
+      throw new Error('expected one Companion operation failure')
+    }
     const protocol = negotiateCompanionProtocol(
       createCompanionNegotiationChannel(),
       createCompanionVersionOffer('mobile'),

@@ -292,6 +292,7 @@ describe('DesktopPairingController', () => {
     const transport = transportFixture()
     const grant = {
       routeId: parseRelayRouteId('route-settings'),
+      endpoint: 'desktop' as const,
       credential: parseRelayCredential('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'),
       revision: 1,
     }
@@ -817,6 +818,7 @@ describe('DesktopPairingController', () => {
 
     const grant = {
       routeId: parseRelayRouteId('route-settings'),
+      endpoint: 'desktop' as const,
       credential: parseRelayCredential('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'),
       revision: 1,
     }

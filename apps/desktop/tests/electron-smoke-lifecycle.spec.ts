@@ -87,10 +87,11 @@ describe('Electron smoke lifecycle', () => {
       await expect.poll(() => observed.output()).toContain('host http://127.0.0.1:43123')
       const parsed = smokeHostIdentity(`${observed.output()}error later smoke failure\n`)
       if (parsed === undefined) throw new Error('early Host announcement missing')
-      identity = captureSmokeHostIdentity(parsed)
+      const captured = captureSmokeHostIdentity(parsed)
+      identity = captured
       await expect(observed.exited).resolves.toBeUndefined()
-      await expect(stopOwnedSmokeHost(identity, dshHome)).resolves.toBeUndefined()
-      expect(() => process.kill(identity.pid, 0)).toThrow()
+      await expect(stopOwnedSmokeHost(captured, dshHome)).resolves.toBeUndefined()
+      expect(() => process.kill(captured.pid, 0)).toThrow()
     } finally {
       if (identity !== undefined && processAlive(identity.pid)) await stopOwnedSmokeHost(identity, dshHome)
       await stopSmokeChild(parent, observed.exited)

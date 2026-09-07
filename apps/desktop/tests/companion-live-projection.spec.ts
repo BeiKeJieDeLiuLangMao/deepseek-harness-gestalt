@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import { parsePersonalPairingId } from '@deepseek-ai/dsh-remote-access'
 import { parseCompanionSessionId } from '@deepseek-ai/dsh-remote-protocol'
+import { SessionId } from '@deepseek-ai/dsh-session/types'
+import { WorkspaceId } from '@deepseek-ai/dsh-workspace'
 import {
   DesktopCompanionLiveProjectionSource,
 } from '../src/companion-live-projection.ts'
@@ -97,7 +99,7 @@ describe('Desktop Companion live projection', () => {
       followSession: async () => {},
       call: vi.fn(async (method: string) => {
         calls.push(method)
-        if (method === 'session/list') return { ok: true, value: { items: [
+        if (method === 'session/list') return { ok: true as const, value: { items: [
           { sessionId: 'session-hidden', updatedAt: 10, running: true, blank: false },
           { sessionId: opened, updatedAt: 20, running: true, blank: false },
         ] } }
@@ -138,15 +140,12 @@ describe('Desktop Companion live projection', () => {
   })
 })
 
-function liveDependencies(host: DesktopHostRpc, archivedSessionIds: readonly string[] = []) {
+function liveDependencies(
+  host: DesktopHostRpc,
+  archivedSessionIds: readonly string[] = [],
+): Parameters<typeof projectDesktopCompanionLiveSession>[2] {
   return {
-    host: {
-      followEvents: async () => {},
-      completeEvent: async () => ({ ok: true, value: undefined }),
-      followWorkspaces: async () => {},
-      followSession: async () => {},
-      ...host,
-    },
+    host,
     sessionHistory: {
       page: async () => ({
         ok: true as const,
@@ -163,15 +162,15 @@ function liveDependencies(host: DesktopHostRpc, archivedSessionIds: readonly str
           hasMore: false,
         },
       }),
-    },
+    } as never,
     workspaceSnapshot: () => Promise.resolve({
       items: [{
-        workspaceId: 'workspace-live', path: '/work', title: 'Work',
-        sessionIds: [parseCompanionSessionId('session-opened')],
+        workspaceId: WorkspaceId('workspace-live'), path: '/work', title: 'Work',
+        sessionIds: [SessionId('session-opened')],
         createdAt: '2026-08-24T00:00:00.000Z',
         updatedAt: '2026-08-24T00:00:00.000Z',
       }],
-      archivedSessionIds,
+      archivedSessionIds: archivedSessionIds.map(SessionId),
     }),
     pendingInteractions: () => [],
   }

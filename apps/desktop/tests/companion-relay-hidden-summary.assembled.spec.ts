@@ -17,8 +17,9 @@ import {
 import {
   initializeSnowChannel,
   SnowDesktopAttachmentOwner, SnowDesktopEndpointPairingOwner, SnowMobileAttachmentOwner, SnowMobileHandshakeClient,
+  type SnowCompanionProtocolChannel,
 } from '@deepseek-ai/dsh-noise-channel'
-import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { SessionId } from '@deepseek-ai/dsh-session/types'
 import {
   DesktopCompanionOperationLedger, FileDesktopCompanionOperationStore,
 } from '../src/companion-operation-ledger.ts'
@@ -259,18 +260,20 @@ describe('assembled Desktop Relay hidden Session summary on shipped dsh web', ()
     const relayOwner = new DesktopSnowRelayChannelOwner(
       desktopAttachmentOwner,
       relaySend,
-      async (operation, _selector, context) => await owner.handle(operation, {
-        ...pairingDependencies(channels),
-        generation: context.generation,
-        desktopRevision: context.desktopRevision,
-      }),
+      async (operation, selector, context) => operation.type === 'query-operation-status'
+        ? await owner.queryOperationStatus(parsePersonalPairingId(selector), operation.operationId)
+        : await owner.handle(operation, {
+          ...pairingDependencies(owner, channels),
+          generation: context.generation,
+          desktopRevision: context.desktopRevision,
+        }),
       () => 'Assembled Desktop',
       10_000,
       {
         connect: (selector, changed, disconnect) => owner.connectLiveProjection(
           parsePersonalPairingId(selector), changed, disconnect,
         ),
-        project: async (change, selector, signal) => await owner.projectLiveSession(
+        project: async (change, _selector, signal) => await owner.projectLiveSession(
           change, channels.attachmentKey.slice(), signal,
         ),
         retainsConversation: (change, selector) => owner.retainsLiveConversation(
@@ -381,7 +384,7 @@ describe('assembled Desktop Relay hidden Session summary on shipped dsh web', ()
     await scheduleInbound('handshake', mobileNegotiation.payload)
 
 
-    const observedId = sessionId as SessionId
+    const observedId = SessionId(sessionId)
     await expect.poll(() => surface.getSnapshot().sessions.ids.includes(observedId), { timeout: 90_000 }).toBe(true)
     await expect(promptDesktopHostSession(rpc, {
       requestId: 'desktop-observed-summary-baseline', sessionId, mode: 'queue',
@@ -395,6 +398,7 @@ describe('assembled Desktop Relay hidden Session summary on shipped dsh web', ()
     const observedNodes = observedConversationEvidence(surface, observedId)
 
     const hiddenId = parseCompanionSessionId('desktop-relay-hidden-summary-session')
+    const hiddenLocalId = SessionId(hiddenId)
     await expect(createDesktopHostSession(rpc, hiddenId)).resolves.toMatchObject({
       ok: true, value: { sessionId: hiddenId },
     })
@@ -403,15 +407,15 @@ describe('assembled Desktop Relay hidden Session summary on shipped dsh web', ()
       content: [{ type: 'text', text: 'complete an unobserved hidden summary' }],
     })).resolves.toMatchObject({ ok: true, value: { accepted: true } })
     await expect.poll(() => {
-      const row = surface.getSnapshot().sessions.byId[hiddenId as SessionId]
+      const row = surface.getSnapshot().sessions.byId[hiddenLocalId]
       return row !== undefined && row.running === true
     }, { timeout: 60_000 }).toBe(true)
     llm.release()
     await expect.poll(() => {
-      const row = surface.getSnapshot().sessions.byId[hiddenId as SessionId]
+      const row = surface.getSnapshot().sessions.byId[hiddenLocalId]
       return row !== undefined && row.running === false && row.blank === false
     }, { timeout: 60_000 }).toBe(true)
-    expect(surface.getSnapshot().conversations[hiddenId as SessionId]).toBeUndefined()
+    expect(surface.getSnapshot().conversations[hiddenLocalId]).toBeUndefined()
     expect(observedConversationEvidence(surface, observedId)).toEqual(observedNodes)
     expect(surface.getSnapshot().operationFailure).toBeUndefined()
 
@@ -560,25 +564,22 @@ function observedConversationEvidence(
   return evidence
 }
 
-function pairingDependencies(channels: Awaited<ReturnType<typeof snowProductChannels>>): {
-  pairingId: ReturnType<typeof parsePersonalPairingId>
-  attachmentKey: Uint8Array
-  now: () => number
-  generation: number
-  desktopRevision: number
-  desktopName: string
-  downloadAttachment: () => Promise<never>
-  submitAttachment: () => Promise<never>
-} {
+function pairingDependencies(
+  owner: InstanceType<typeof DesktopCompanionProductOwner>,
+  channels: Awaited<ReturnType<typeof snowProductChannels>>,
+): Parameters<InstanceType<typeof DesktopCompanionProductOwner>['handle']>[1] {
+  const attachmentKey = channels.attachmentKey.slice()
   return {
     pairingId: parsePersonalPairingId(channels.pairingSelector),
-    attachmentKey: channels.attachmentKey.slice(),
+    attachmentKey,
     now: Date.now,
     generation: channels.generation,
     desktopRevision: 0,
     desktopName: 'Assembled Desktop',
     downloadAttachment: () => Promise.reject(new Error('live must not download an attachment')),
     submitAttachment: () => Promise.reject(new Error('live must not submit an attachment')),
+    resolveInteraction: interactionId => owner.resolveInteraction(interactionId, attachmentKey),
+    pendingInteractions: sessionId => owner.pendingInteractions(sessionId, attachmentKey),
   }
 }
 

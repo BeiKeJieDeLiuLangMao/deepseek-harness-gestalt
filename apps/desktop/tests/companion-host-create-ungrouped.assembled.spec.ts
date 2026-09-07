@@ -128,7 +128,9 @@ describe('assembled Desktop Companion create on shipped dsh web', () => {
         const opened = channels.desktop.open(ciphertext)
         if (opened.type !== 'operation') throw new Error('assembled Desktop expected a Companion operation')
         if (opened.operation.type === 'create-session') createOperations.push(opened.operation)
-        const output = await owner.handle(opened.operation, pairingDependencies(owner, channels))
+        const output = opened.operation.type === 'query-operation-status'
+          ? await owner.queryOperationStatus(parsePersonalPairingId(channels.pairingSelector), opened.operation.operationId)
+          : await owner.handle(opened.operation, pairingDependencies(owner, channels))
         const receiver = receiverRef.current
         if (receiver === undefined) throw new Error('assembled Mobile receiver is not installed')
         for (const item of isResultList(output) ? output : [output]) {
@@ -359,6 +361,8 @@ function listedSessionIds(listed: Awaited<ReturnType<typeof listDesktopHostSessi
 function isProjection(value: CompanionProjection | CompanionResult): value is CompanionProjection {
   return value.type === 'foreground-sync' || value.type === 'transcript-page'
     || value.type === 'surface-snapshot' || value.type === 'conversation-snapshot'
+    || value.type === 'session-live' || value.type === 'member-question-state'
+    || value.type === 'document-transfer-state'
 }
 
 function isResultList(value: unknown): value is readonly CompanionResult[] {

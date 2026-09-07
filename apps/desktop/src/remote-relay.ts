@@ -71,7 +71,9 @@ export interface DesktopRemoteRelayOptions {
   liveProjection?: Omit<DesktopCompanionLiveProjectionAdapter, 'reconnect'>
 }
 
-type NodeRelayConnector = typeof NodeRelayEndpointSocket.connect
+type NodeRelayConnector = (
+  ...args: Parameters<typeof NodeRelayEndpointSocket.connect>
+) => Promise<RelayEndpointSocket>
 
 /** Desktop proxy candidate connector; an absent proxy URL means DIRECT. */
 export type DesktopRelayProxyConnector = (
