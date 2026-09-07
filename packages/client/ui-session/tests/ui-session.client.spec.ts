@@ -1,11 +1,12 @@
 import { Context } from '@deepseek-ai/cordis'
 import type {
+  AgentScopeHandle,
   ISessions,
   SessionBinding,
   SessionListState,
   SessionSnapshot,
 } from '@deepseek-ai/dsh-api-session-controller/client'
-import { MutableSessionEventSource } from '@deepseek-ai/dsh-api-session-controller/client'
+import { createScope, MutableSessionEventSource } from '@deepseek-ai/dsh-api-session-controller/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -28,12 +29,15 @@ interface SessionsBench {
   readonly openForRender: ReturnType<typeof vi.fn<(id: SessionId) => void>>
   binding(id: SessionId): SessionBinding
   select(id: SessionId | undefined): void
+  awaitScopeReadiness(): Promise<void>
   release(id: SessionId): Promise<void>
 }
 
 const sessionId = (value: string): SessionId => value as SessionId
+const contexts = new Set<Context>()
 
-function createSessionsBench(_ctx: Context): SessionsBench {
+function createSessionsBench(ctx: Context): SessionsBench {
+  contexts.add(ctx)
   const list = createSnapshotStore<SessionListState>({
     ids: [],
     byId: {},
@@ -44,7 +48,7 @@ function createSessionsBench(_ctx: Context): SessionsBench {
     currentAddress: undefined,
   })
   const bindings = new Map<SessionId, SessionBinding>()
-  const scopes = new Map<SessionId, Context>()
+  const scopes = new Map<SessionId, AgentScopeHandle>()
   const resolveBinding = vi.fn((id: SessionId) => bindings.get(id))
   const createSession = vi.fn<ISessions['create']>(async options =>
     options?.sessionId ?? sessionId(`created-${String(options?.workspaceId ?? 'none')}`))
@@ -73,7 +77,7 @@ function createSessionsBench(_ctx: Context): SessionsBench {
     clearSession,
     openForRender,
     binding(id) {
-      const scopeCtx = new Context()
+      const scope = createScope(ctx, id)
       const snapshot = createSnapshotStore<SessionSnapshot>({
         sessionId: id,
         queue: [],
@@ -111,10 +115,10 @@ function createSessionsBench(_ctx: Context): SessionsBench {
         sessionId: id,
         session,
         eventSource: new MutableSessionEventSource(),
-        ctx: scopeCtx,
+        ctx: scope.ctx,
       }
       bindings.set(id, binding)
-      scopes.set(id, scopeCtx)
+      scopes.set(id, scope)
       list.update((draft) => {
         if (!draft.ids.includes(id)) draft.ids.push(id)
         draft.byId[id] = {
@@ -130,11 +134,15 @@ function createSessionsBench(_ctx: Context): SessionsBench {
     select(id) {
       list.update((draft) => { draft.current = id })
     },
+    async awaitScopeReadiness() {
+      await Promise.all([...scopes.values()].map(async (scope) => { await scope.fiber.await() }))
+    },
     async release(id) {
       bindings.delete(id)
-      const scopeCtx = scopes.get(id)
+      const scope = scopes.get(id)
       scopes.delete(id)
-      await scopeCtx?.fiber.dispose()
+      await scope?.fiber.await()
+      await scope?.fiber.dispose()
     },
   }
 }
@@ -144,8 +152,10 @@ function createUiSession(ctx: Context, bench: SessionsBench): UiSession {
   return new UiSession(ctx, bench.sessions)
 }
 
-afterEach(() => {
+afterEach(async () => {
   vi.restoreAllMocks()
+  await Promise.all([...contexts].map(async (ctx) => { await ctx.fiber.dispose() }))
+  contexts.clear()
 })
 
 describe('UiSession bindings', () => {
@@ -176,7 +186,7 @@ describe('UiSession bindings', () => {
     const releaseSecond = service.adapter.acquireForRender?.(id)
     expect(bench.openForRender).toHaveBeenCalledTimes(1)
 
-    bench.list.update((draft) => { draft.byId[id]!.provisional = false })
+    bench.list.update((draft) => { delete draft.byId[id]!.provisional })
     expect(bench.openForRender).toHaveBeenCalledTimes(2)
     bench.list.update((draft) => { draft.byId[id]!.title = 'published' })
     expect(bench.openForRender).toHaveBeenCalledTimes(2)
@@ -332,6 +342,7 @@ describe('UiSession bindings', () => {
     bench.select(id)
     service.adapter.current.getSnapshot()
 
+    await bench.awaitScopeReadiness()
     await expect(ctx.fiber.dispose()).resolves.toBeUndefined()
     await bench.release(id)
   })

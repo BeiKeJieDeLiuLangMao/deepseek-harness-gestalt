@@ -79,8 +79,9 @@ function client(overrides: Partial<ProjectMembershipClient> = {}): ProjectMember
 
 describe('membershipGatewayOf', () => {
   it('uses the submitted GitHub login as inviteeName when create-invite returns no display name', async () => {
+    const invite = vi.fn(async () => invitationView(invitationId, 'admin'))
     const membership = client({
-      invite: vi.fn(async () => invitationView(invitationId, 'admin')),
+      invite,
     })
     const gateway = membershipGatewayOf(membership)
     await expect(gateway.invite({
@@ -89,7 +90,7 @@ describe('membershipGatewayOf', () => {
     expect(membership.invite).toHaveBeenCalledWith({
       projectId, githubLogin: 'mona', grantedRole: 'admin',
     })
-    const issued = await membership.invite.mock.results[0]?.value as InvitationView
+    const issued = await invite.mock.results[0]?.value
     expect(issued).not.toHaveProperty('inviteeName')
   })
 

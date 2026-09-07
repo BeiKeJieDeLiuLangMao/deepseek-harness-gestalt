@@ -5,7 +5,7 @@
  */
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
-import { SessionSeq, type SessionId } from '@deepseek-ai/dsh-session/types'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { ClientSessions } from '../../../api/session-controller/src/client/sessions/service.ts'
 import {
   FakeApiClient,
@@ -42,6 +42,10 @@ describe('ModelDirectory over ClientSessions.modelRoute', () => {
         updatedAt: 100,
         running: false,
         blank: false,
+        projections: {
+          asOfSeq: 1,
+          values: { modelSelection: { lastUsed: null, next: null } },
+        },
       }],
     }))
     await svc.refresh()
@@ -49,7 +53,6 @@ describe('ModelDirectory over ClientSessions.modelRoute', () => {
     expect(binding).toBeDefined()
     expect(svc.modelRoute(sessionId)?.selectModel).toBeTypeOf('function')
 
-    binding!.session.projections.apply('modelSelection', { lastUsed: null, next: null }, SessionSeq(1))
     const catalog = new ModelCatalogDirectory({ remote: { session: remotes.session } } as never)
     const directory = new ModelDirectory(
       () => svc.modelRoute(sessionId),
@@ -96,11 +99,19 @@ describe('ModelDirectory over ClientSessions.modelRoute', () => {
     const svc = new ClientSessions(ctx, remotes)
     const sessionId = sid('session-live-hide')
     api.onList = () => Promise.resolve(ok({
-      items: [{ sessionId, updatedAt: 100, running: false, blank: false }],
+      items: [{
+        sessionId,
+        updatedAt: 100,
+        running: false,
+        blank: false,
+        projections: {
+          asOfSeq: 1,
+          values: { modelSelection: { lastUsed: null, next: null } },
+        },
+      }],
     }))
     await svc.refresh()
     const binding = svc.binding(sessionId)!
-    binding.session.projections.apply('modelSelection', { lastUsed: null, next: null }, SessionSeq(1))
     const catalog = new ModelCatalogDirectory({ remote: { session: remotes.session } } as never)
     const directory = new ModelDirectory(
       () => svc.modelRoute(sessionId),

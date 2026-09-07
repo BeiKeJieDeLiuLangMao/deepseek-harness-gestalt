@@ -4,6 +4,7 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
+import { Context } from '@deepseek-ai/cordis'
 import type { SettingsPathOpView } from '@deepseek-ai/dsh-api-remotes/client'
 import { RemoteError, stubSettingsScope, type StubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
 import { CardForm, numberField, textField } from '../src/client/card-form.ts'
@@ -49,8 +50,10 @@ function acceptWrites<T>(host: StubSettingsScope<T>): void {
 }
 
 /** The card plugin's context, scripted down to the namespaces a card reaches. */
-function ctxWith(namespaces: object) {
-  return { remote: namespaces } as never
+function ctxWith(namespaces: object): Context {
+  const ctx = new Context()
+  ctx.reflect.provide('remote', namespaces)
+  return ctx
 }
 
 const WEB_SEARCH_COPY = {
@@ -1118,7 +1121,7 @@ describe('WebSearchShell', () => {
     const switching = face.selectProvider('kimi')
     const probing = face.testSearch()
     expect(testWebSearch).not.toHaveBeenCalled()
-    gate.resolve()
+    gate.resolve(undefined)
     await switching
     await expect(probing).resolves.toEqual({ status: 'ok', count: 1, title: 'Kimi' })
     expect(testWebSearch).toHaveBeenCalledTimes(1)

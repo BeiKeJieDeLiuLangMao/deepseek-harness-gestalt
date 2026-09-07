@@ -2,9 +2,11 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
+import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type {
   MemberQuestionReceiverSnapshot,
   MemberQuestionRemoteSettleRequest,
+  MemberQuestionRemoteSettleResponse,
 } from '@deepseek-ai/dsh-member-question-receiver/types'
 import { ReceivingQuestionBook } from '../src/client/sessions/receiving.ts'
 
@@ -80,24 +82,14 @@ function envelope<T>(value: T): { ok: true; value: T } {
 
 function bench(options: {
   currentInstallationId?: string
-  snapshotImpl?: () => Promise<{ ok: true; value: MemberQuestionReceiverSnapshot } | { ok: false; error: RemoteError }>
-  settleImpl?: (request: MemberQuestionRemoteSettleRequest) => Promise<
-    { ok: true; value: unknown } | { ok: false; error: RemoteError }
-  >
+  snapshotImpl?: () => Promise<RemoteResult<MemberQuestionReceiverSnapshot>>
+  settleImpl?: (request: MemberQuestionRemoteSettleRequest) => Promise<RemoteResult<MemberQuestionRemoteSettleResponse>>
 } = {}) {
   let current = hostSnapshot(1, 'pending')
   const listeners = new Map<string, Set<(...args: never[]) => void>>()
   const snapshotFn = options.snapshotImpl ?? (async () => envelope(current))
-  const settleFn = options.settleImpl ?? (async () => envelope({
-    type: 'member-question-settled',
-    operationId: operation.operationId,
-    questionId: operation.questionId,
-    outcome: 'answered',
-    settledAt: 500,
-    settledByInstallationId: 'installation-a',
-    settledByDeviceName: 'Desk A',
-    answers: [{ id: 'channel', selected: ['Canary'] }],
-  }))
+  const settled = hostSnapshot(2, 'answered').terminal[0]!.terminal
+  const settleFn = options.settleImpl ?? (async () => envelope(settled))
   const snapshotCall = vi.fn(snapshotFn)
   const settle = vi.fn(settleFn)
   const remote = {

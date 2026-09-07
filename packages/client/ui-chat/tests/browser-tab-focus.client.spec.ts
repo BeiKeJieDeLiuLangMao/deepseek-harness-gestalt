@@ -36,7 +36,6 @@ function navigateResult(overrides: Partial<ToolResultNode> = {}): ToolResultNode
       text: JSON.stringify({ status: 'open', target: TARGET, revision: 2 }, null, 2),
     }],
     isError: false,
-    resultView: null,
     subCalls: [],
     ...overrides,
   }

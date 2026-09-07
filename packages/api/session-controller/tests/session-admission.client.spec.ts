@@ -18,6 +18,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { ClientSessions } from '../src/client/sessions/service.ts'
 import type {
   SessionAdmissionAdapter,
+  SessionAdmissionFailure,
   SessionAdmissionModelRoute,
   SessionAdmissionRoute,
 } from '../src/client/contract/admission.ts'
@@ -279,7 +280,7 @@ describe('Session Client admission dispatch', () => {
             code: 'session/attachment-invalid',
             message: 'Images unsupported in Side Chat.',
             details: { reason: 'SUBAGENT_IMAGE_UNSUPPORTED' },
-          },
+          } satisfies SessionAdmissionFailure,
         })
       }),
       cancel: vi.fn(() => Promise.resolve(ok({ accepted: true as const }))),
@@ -385,7 +386,7 @@ describe('Session Client admission dispatch', () => {
         code: 'session/queue-item-not-found',
         message: 'queued item is gone',
         details: { itemId },
-      },
+      } satisfies SessionAdmissionFailure,
     }))
     const structuredQueue = await binding.session.updateQueue(mid('item-gone'), { kind: 'remove' })
     const structuredQueueFailure = failureOf(structuredQueue)
@@ -398,7 +399,11 @@ describe('Session Client admission dispatch', () => {
 
     route.command = vi.fn(() => Promise.resolve({
       ok: false as const,
-      error: { code: 'gateway/bad-request', message: 'bad command', details: {} },
+      error: {
+        code: 'gateway/bad-request',
+        message: 'bad command',
+        details: {},
+      } satisfies SessionAdmissionFailure,
     }))
     const structuredCommand = await binding.session.command('/bad')
     const structuredCommandFailure = failureOf(structuredCommand)
@@ -443,7 +448,11 @@ describe('Session Client admission dispatch', () => {
     // Failed cancel
     route.cancel = vi.fn(() => Promise.resolve({
       ok: false as const,
-      error: { code: 'gateway/internal', message: 'unable to stop', details: {} },
+      error: {
+        code: 'gateway/internal',
+        message: 'unable to stop',
+        details: {},
+      } satisfies SessionAdmissionFailure,
     }))
 
     const failedResult = await binding.session.cancel()
@@ -787,11 +796,11 @@ describe('Session Client admission dispatch', () => {
     }))
     api.onSelectModel = payload => Promise.resolve({
       ok: false,
-      error: {
-        code: 'session/model-unavailable',
-        message: `provider ${payload.provider} is not routable`,
-        details: { provider: payload.provider, model: payload.model },
-      },
+      error: new RemoteError(
+        'session/model-unavailable',
+        `provider ${payload.provider} is not routable`,
+        { provider: payload.provider, model: payload.model },
+      ),
     })
     await svc.refresh()
     await svc.refreshSubagents(parentId)
@@ -873,11 +882,11 @@ describe('Session Client admission dispatch', () => {
 
     api.onSelectModel = payload => Promise.resolve({
       ok: false,
-      error: {
-        code: 'session/model-unavailable',
-        message: `provider ${payload.provider} is not routable`,
-        details: { provider: payload.provider, model: payload.model },
-      },
+      error: new RemoteError(
+        'session/model-unavailable',
+        `provider ${payload.provider} is not routable`,
+        { provider: payload.provider, model: payload.model },
+      ),
     })
     const rejected = await svc.modelRoute(sessionId)!.selectModel!({ provider: 'missing', model: 'nope' })
     expect(failureOf(rejected).code).toBe('session/model-unavailable')

@@ -74,8 +74,7 @@ describe('DragStrip', () => {
     window.dshDesktop = bridge('darwin')
     render(
       <DragStrip
-        wide
-        t={t as never}
+        t={t}
         useSessions={(() => { throw new Error('unused') })}
         useSessionPendingInteraction={(() => { throw new Error('unused') })}
         useWorkspaces={(() => { throw new Error('unused') })}
@@ -90,8 +89,7 @@ describe('DragStrip', () => {
     window.dshDesktop = desktop
     render(
       <DragStrip
-        wide
-        t={t as never}
+        t={t}
         useSessions={(() => { throw new Error('unused') })}
         useSessionPendingInteraction={(() => { throw new Error('unused') })}
         useWorkspaces={(() => { throw new Error('unused') })}
@@ -109,8 +107,7 @@ describe('DragStrip', () => {
     window.dshDesktop = bridge('linux')
     const { container } = render(
       <DragStrip
-        wide
-        t={t as never}
+        t={t}
         useSessions={(() => { throw new Error('unused') })}
         useSessionPendingInteraction={(() => { throw new Error('unused') })}
         useWorkspaces={(() => { throw new Error('unused') })}

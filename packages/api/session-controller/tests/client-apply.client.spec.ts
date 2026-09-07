@@ -11,7 +11,11 @@ import {
   type RemoteStreamOptions,
 } from '@deepseek-ai/dsh-api-gateway/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { TypertRemoteContribution } from '@deepseek-ai/dsh-typert-protocol'
+import type {
+  TypertClientEventListener,
+  TypertRemoteContribution,
+  TypertRemoteEvent,
+} from '@deepseek-ai/dsh-typert-protocol'
 import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
@@ -186,17 +190,21 @@ describe('Session Controller Client apply', () => {
     ctx.reflect.provide('remote.subagents', remote.subagents)
     const gateway = ctx.plugin({ inject: ['typert', 'connection'], apply: applyGateway })
     await gateway
-    const changed = new Set<(...args: never[]) => void>()
+    const changed = new Set<unknown>()
     const originalOn = ctx.remote.$on.bind(ctx.remote)
-    vi.spyOn(ctx.remote, '$on').mockImplementation((event, listener) => {
-      if (event !== 'member-question-receiver/changed') return originalOn(event, listener)
-      changed.add(listener as (...args: never[]) => void)
+    const trackedOn = <Event extends TypertRemoteEvent>(
+      event: Event,
+      listener: TypertClientEventListener<Event>,
+    ): () => void => {
       const off = originalOn(event, listener)
+      if (event !== 'member-question-receiver/changed') return off
+      changed.add(listener)
       return () => {
-        changed.delete(listener as (...args: never[]) => void)
+        changed.delete(listener)
         off()
       }
-    })
+    }
+    vi.spyOn(ctx.remote, '$on').mockImplementation(trackedOn)
     const fiber = ctx.plugin(SessionClient)
     expect(fiber.state).toBe(FiberState.PENDING)
     expect(ctx.get('receivingQuestions')).toBeUndefined()
