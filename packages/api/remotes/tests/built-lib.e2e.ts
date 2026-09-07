@@ -236,11 +236,14 @@ describe.skipIf(!requiredArtifacts)('generated Remote built LIB chains', () => {
         navigated.revision,
       ))
       if (remotesFiber === undefined || remotesPlugin === undefined) throw new Error('missing api-remotes Client fiber')
+      const memberQuestionMounted = typeof client.remote.memberQuestion.snapshot === 'function'
       await remotesFiber.dispose()
       const browserUnmounted = client.get('remote.browserWorkspace') === undefined
+      const memberQuestionUnmounted = client.get('remote.memberQuestion') === undefined
       const remount = client.plugin({ inject: remotesPlugin.inject, apply: remotesPlugin.apply })
       await remount
       const remounted = remoteValue(await client.remote.browserWorkspace.observe(browserSession.id, browserPage.target))
+      const memberQuestionRemounted = typeof client.remote.memberQuestion.snapshot === 'function'
       const result = {
         invalidRejected,
         rootResult: rootResult.value,
@@ -250,6 +253,11 @@ describe.skipIf(!requiredArtifacts)('generated Remote built LIB chains', () => {
         scopedGoal: host.goals.get(scopedAgent)?.objective,
         rootEvents: rootAgent.session.snapshotEvents().length,
         scopedEvents: scopedAgent.session.snapshotEvents().length,
+        memberQuestion: {
+          mounted: memberQuestionMounted,
+          unmounted: memberQuestionUnmounted,
+          remounted: memberQuestionRemounted,
+        },
         browser: {
           navigateUrl: navigated.url,
           observeStatus: observed.status,
@@ -280,6 +288,11 @@ describe.skipIf(!requiredArtifacts)('generated Remote built LIB chains', () => {
       scopedGoal: string
       rootEvents: number
       scopedEvents: number
+      memberQuestion: {
+        mounted: boolean
+        unmounted: boolean
+        remounted: boolean
+      }
       browser: {
         navigateUrl: string
         observeStatus: string
@@ -298,6 +311,11 @@ describe.skipIf(!requiredArtifacts)('generated Remote built LIB chains', () => {
       scopedGoal: 'scoped goal',
       rootEvents: 2,
       scopedEvents: 1,
+      memberQuestion: {
+        mounted: true,
+        unmounted: true,
+        remounted: true,
+      },
       browser: {
         navigateUrl: 'https://alpha.test/',
         observeStatus: 'open',

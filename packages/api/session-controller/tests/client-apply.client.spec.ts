@@ -1,5 +1,3 @@
-import { access } from 'node:fs/promises'
-import { pathToFileURL } from 'node:url'
 import { Context, FiberState } from '@deepseek-ai/cordis'
 import type { Fiber } from '@deepseek-ai/cordis'
 import type {
@@ -16,24 +14,38 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { TypertRemoteContribution } from '@deepseek-ai/dsh-typert-protocol'
 import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { z } from 'zod'
 import * as SessionClient from '../src/client/index.ts'
 import { ClientSessions } from '../src/client/sessions/service.ts'
 import { ReceivingQuestionBook } from '../src/client/sessions/receiving.ts'
 import { FakeApiClient, fakeRemote } from './fake-api.client.ts'
 
 const GENERATION: ConnectionGeneration = { id: 1, host: { home: '/home/fixture' } }
-const remoteArtifact = new URL(
-  '../../../interaction/member-question-receiver/lib/typert.remote-client.js',
-  import.meta.url,
-)
-async function loadGeneratedMemberQuestionRemote(): Promise<TypertRemoteContribution> {
-  await access(remoteArtifact)
-  const remote = await import(pathToFileURL(remoteArtifact.pathname).href) as {
-    default: TypertRemoteContribution
-    TYPERT_REMOTE: TypertRemoteContribution
-  }
-  return remote.TYPERT_REMOTE ?? remote.default
-}
+/**
+ * Source-plane lifecycle fixture: one typed snapshot method is enough for the
+ * Session Client to consume the namespace. The generated contribution is
+ * exercised by the build-dependent api-remotes smoke.
+ */
+const memberQuestionSourceRemote = {
+  package: '@deepseek-ai/dsh-member-question-receiver',
+  descriptors: [{
+    id: '@deepseek-ai/dsh-member-question-receiver#memberQuestion/snapshot',
+    service: 'memberQuestionReceiver',
+    namespace: 'memberQuestion',
+    method: 'snapshot',
+    invocation: { kind: 'direct' },
+    parameters: [],
+    result: {
+      mode: 'strict',
+      typeSymbol: '@deepseek-ai/dsh-member-question-receiver/types#MemberQuestionReceiverSnapshot',
+      schema: z.strictObject({
+        revision: z.number().int().nonnegative(),
+        pending: z.array(z.unknown()),
+        terminal: z.array(z.unknown()),
+      }),
+    },
+  }],
+} satisfies TypertRemoteContribution
 
 const sid = (value: string): SessionId => value as SessionId
 
@@ -148,7 +160,7 @@ describe('Session Controller Client apply', () => {
     ])
   })
 
-  it('parks until generated memberQuestion is $mounted, then unloads and remounts without duplicate listeners', async () => {
+  it('parks until memberQuestion is $mounted, then unloads and remounts without duplicate listeners', async () => {
     const ctx = new Context()
     contexts.add(ctx)
     await ctx.plugin(TypertRegistry)
@@ -189,8 +201,7 @@ describe('Session Controller Client apply', () => {
     expect(fiber.state).toBe(FiberState.PENDING)
     expect(ctx.get('receivingQuestions')).toBeUndefined()
 
-    const memberQuestionRemote = await loadGeneratedMemberQuestionRemote()
-    const disposeMount = await ctx.remote.$mount(memberQuestionRemote)
+    const disposeMount = await ctx.remote.$mount(memberQuestionSourceRemote)
     await fiber
     expect(fiber.state).toBe(FiberState.ACTIVE)
     expect(ctx.receivingQuestions).toBeInstanceOf(ReceivingQuestionBook)
@@ -202,7 +213,7 @@ describe('Session Controller Client apply', () => {
     expect(ctx.get('receivingQuestions')).toBeUndefined()
     expect(changed.size).toBe(0)
 
-    const remount = await ctx.remote.$mount(await loadGeneratedMemberQuestionRemote())
+    const remount = await ctx.remote.$mount(memberQuestionSourceRemote)
     await fiber
     expect(fiber.state).toBe(FiberState.ACTIVE)
     expect(ctx.receivingQuestions).toBeInstanceOf(ReceivingQuestionBook)
