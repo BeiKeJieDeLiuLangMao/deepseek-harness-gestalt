@@ -92,17 +92,23 @@ async function harness(overrides?: {
   restart?: (startTimeoutMs?: number) => Promise<string>
   origin?: string | undefined
   installGate?: (input: Sub2ApiInstallInput) => Promise<void>
+  probeTimeoutMs?: number
 }): Promise<Harness> {
-  const paths = await fixture({ installed: overrides?.installed, disabled: overrides?.disabled, noPackage: overrides?.noPackage })
+  const paths = await fixture({
+    ...(overrides?.installed === undefined ? {} : { installed: overrides.installed }),
+    ...(overrides?.disabled === undefined ? {} : { disabled: overrides.disabled }),
+    ...(overrides?.noPackage === undefined ? {} : { noPackage: overrides.noPackage }),
+  })
   const events: DesktopSub2ApiSnapshot[] = []
   let currentOrigin: string | undefined = overrides && 'origin' in overrides
     ? overrides.origin
     : 'http://127.0.0.1:9/'
+  const restart = vi.fn<Sub2ApiHostControl['restart']>(overrides?.restart ?? (async () => {
+    currentOrigin = 'http://127.0.0.1:10/'
+    return currentOrigin
+  }))
   const host = {
-    restart: overrides?.restart ?? vi.fn(async () => {
-      currentOrigin = 'http://127.0.0.1:10/'
-      return currentOrigin
-    }),
+    restart,
     origin: () => currentOrigin,
   }
   const probeImpl: (origin: string) => Promise<boolean> = overrides?.probe ?? (async () => true)
@@ -129,7 +135,7 @@ async function harness(overrides?: {
     install,
     probe: (origin: string) => probe(origin),
     probeIntervalMs: 1,
-    probeTimeoutMs: 50,
+    probeTimeoutMs: overrides?.probeTimeoutMs ?? 50,
   })
   controller.subscribe((snapshot) => { events.push(snapshot) })
   await controller.start()

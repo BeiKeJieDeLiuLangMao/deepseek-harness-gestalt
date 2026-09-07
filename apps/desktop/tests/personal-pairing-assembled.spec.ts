@@ -16,6 +16,7 @@ import {
   parsePlatformAccountId,
   selectPlatformEnvironment,
   validatePlatformEnvironmentPair,
+  type AuthenticatedInstallationView,
 } from '@deepseek-ai/dsh-platform-account'
 import {
   DevelopmentKeylessPairingHandshakeProvider,
@@ -315,9 +316,13 @@ async function loadComposition(): Promise<{ port: number }> {
                 avatarUrl: `https://avatars.example/${accountId}`,
               },
               installation: kind === 'desktop'
-                ? { id: parseInstallationId(installationId), kind }
+                ? {
+                  id: parseInstallationId(installationId),
+                  kind,
+                  presentation: { name: 'Assembled Desktop', platform: 'macos' },
+                }
                 : { id: parseInstallationId(installationId), kind, presentation: MOBILE_PRESENTATION },
-            }
+            } satisfies AuthenticatedInstallationView
           },
         },
         handshake: new DevelopmentKeylessPairingHandshakeProvider(),

@@ -191,7 +191,10 @@ describe('DesktopPairingController', () => {
       failNextSave = false
       throw new Error('vault persistence failed after sealed delivery')
     })
-    const vault = new DesktopSnowPairingVault({ load: vi.fn(async () => []), save })
+    const vault = new DesktopSnowPairingVault({
+      load: vi.fn(async () => ({ active: [], challenges: [], pending: [], confirmations: [] })),
+      save,
+    })
     const challengeId = parsePairingChallengeId('challenge-endpoint-owner')
     const pendingPairingId = parsePendingPairingId('pending-endpoint-owner')
     const deliveredAuthorities: Uint8Array[] = []
@@ -253,7 +256,7 @@ describe('DesktopPairingController', () => {
         device: { name: 'Alice phone', platform: 'ios' }, pairedAt: 1, lastAccessAt: 1, online: false,
       },
       routeId: parseRelayRouteId('route-endpoint-owner'), relayRevision: 3,
-    }
+    } satisfies Awaited<ReturnType<RemoteAccessTransport['confirmEndpointPairing']>>
     const confirmationDigests: Uint8Array[] = []
     transport.confirmEndpointPairing.mockImplementation(async (input) => {
       confirmationDigests.push(input.mobileCredentialDigest.slice())
@@ -832,7 +835,7 @@ describe('DesktopPairingController', () => {
 
     const signedOut = new DesktopPairingController({
       account: {
-        getSnapshot: () => ({ status: 'signed-out', privacyAccepted: true }),
+        getSnapshot: () => ({ status: 'idle', privacyAccepted: true }),
         authorizeCurrentInstallation: vi.fn(),
       },
       transport: transportFixture(),
@@ -971,7 +974,9 @@ describe('DesktopPairingController', () => {
 function transportFixture() {
   return {
     getMobileAccessState: vi.fn().mockResolvedValueOnce({ enabled: false }).mockResolvedValue({ enabled: true }),
-    setMobileAccess: vi.fn(async (input: { enabled: boolean }) => ({ enabled: input.enabled })),
+    setMobileAccess: vi.fn<RemoteAccessTransport['setMobileAccess']>(
+      async input => ({ enabled: input.enabled }),
+    ),
     reissueDesktopRelayAuthority: vi.fn(async () => ({
       enabled: true,
       relay: {
@@ -1015,6 +1020,7 @@ function transportFixture() {
     confirmPairing: vi.fn().mockResolvedValue({}),
     rejectPairing: vi.fn(),
     revokePersonalPairing: vi.fn(),
+    revokeMobilePersonalPairing: vi.fn(),
     completeChallenge: vi.fn(),
     submitEndpointMessage1: vi.fn(),
     getEndpointPairingStatus: vi.fn(),
