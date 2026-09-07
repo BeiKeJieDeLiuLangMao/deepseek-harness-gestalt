@@ -96,7 +96,9 @@ export function createCompilerFaceConsumerProgram(
   return ts.createProgram({
     rootNames: rootNames.map(file => resolve(projectRoot, file)),
     options: semanticCompilerOptions(rootConfig.options),
-    projectReferences: rootConfig.projectReferences,
+    ...rootConfig.projectReferences === undefined
+      ? {}
+      : { projectReferences: rootConfig.projectReferences },
   })
 }
 

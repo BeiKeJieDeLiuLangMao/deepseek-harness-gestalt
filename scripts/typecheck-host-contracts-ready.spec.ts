@@ -28,6 +28,7 @@ function fixture(options: {
   readonly clientTest?: string
   readonly declaration?: string
   readonly exclude?: readonly string[]
+  readonly omitReferences?: boolean
 } = {}): string {
   const root = mkdtempSync(join(tmpdir(), 'dsh-host-contracts-ready-'))
   roots.push(root)
@@ -45,7 +46,7 @@ function fixture(options: {
     },
     include: ['packages/**/*.ts'],
     exclude: options.exclude ?? hostExcludes,
-    references: [],
+    ...options.omitReferences ? {} : { references: [] },
   }, null, 2))
   if (options.test !== undefined) {
     const path = join(root, generatedTest)
@@ -130,6 +131,15 @@ describe('Host generated-contract consumer typecheck', () => {
     const root = fixture({
       test: consumer,
       declaration: 'export interface Remote { value: string }\n',
+    })
+    expect(hostContractConsumerDiagnostics(root, hostContractConsumerTests(root))).toEqual([])
+  })
+
+  it('accepts a Host config without Project References', () => {
+    const root = fixture({
+      test: consumer,
+      declaration: 'export interface Remote { value: string }\n',
+      omitReferences: true,
     })
     expect(hostContractConsumerDiagnostics(root, hostContractConsumerTests(root))).toEqual([])
   })
