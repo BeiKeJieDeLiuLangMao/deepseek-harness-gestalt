@@ -201,16 +201,35 @@ describe('assembled Desktop Relay live Session projection on shipped dsh web', (
           : new Error(`memory-direct transport failed: ${String(first)}`)
       }
     }
-    // Order matters: abort and settle in-flight receives before disposing the
-    // owners and channels, then zero the key material last so no in-flight
-    // operation can observe wiped bytes.
-    cleanups.push(drainTransport)
-    cleanups.push(() => { mobileAttachmentOwner.dispose() })
-    cleanups.push(() => { relayOwner.invalidate(channels.pairingSelector) })
-    cleanups.push(() => {
-      channels.attachmentKey.fill(0)
-      channels.mobileReconnectState.fill(0)
-      channels.desktopReconnectState.fill(0)
+    // One ordered lifecycle cleanup: stop the live producers first, settle all
+    // transport and relay work, then dispose the channels and Mobile owner, and
+    // zero the secrets last so nothing in flight observes wiped bytes. A stage
+    // failure is collected and the remaining stages still run.
+    cleanups.push(async () => {
+      const stageErrors: unknown[] = []
+      const stage = async (name: string, run: () => void | Promise<void>): Promise<void> => {
+        try { await run() } catch (error) { stageErrors.push(error instanceof Error ? error : new Error(String(error))) }
+      }
+      await stage('retire relay projection', () => { relayOwner.invalidate(channels.pairingSelector) })
+      await stage('settle transports', async () => {
+        inboundAbort.abort()
+        await Promise.all([drainDelivery(), drainInbound()])
+        await relayOwner.drain()
+        if (transportErrors.length > 0) {
+          const first = transportErrors[0]
+          throw first instanceof Error
+            ? new Error(`memory-direct transport failed: ${first.message}`, { cause: first })
+            : new Error(`memory-direct transport failed: ${String(first)}`)
+        }
+      })
+      await stage('dispose mobile attachment owner', () => { mobileAttachmentOwner.dispose() })
+      await stage('zero key material', () => {
+        channels.attachmentKey.fill(0)
+        channels.mobileReconnectState.fill(0)
+        channels.desktopReconnectState.fill(0)
+      })
+      if (stageErrors.length === 1) throw stageErrors[0]
+      if (stageErrors.length > 1) throw new AggregateError(stageErrors, 'live lifecycle teardown stages failed')
     })
 
     relayOwner.updatePeers({
@@ -321,7 +340,6 @@ describe('assembled Desktop Relay live Session projection on shipped dsh web', (
       await ik2Frame, channels.desktopAttachmentId,
     )
     const mobileChannel = mobileNegotiation.finish()
-    cleanups.push(() => { mobileChannel.dispose() })
     connection.connect({
       channel: mobileChannel, targetAttachmentId: channels.desktopAttachmentId,
       pairingSelector: channels.pairingSelector, generation: channels.generation,
