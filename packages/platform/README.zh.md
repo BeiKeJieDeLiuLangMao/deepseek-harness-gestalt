@@ -4,6 +4,8 @@
 
 Platform 包拥有 DeepSeek Gestalt Desktop 与 Mobile 共用、且独立于具体安装的身份及会话行为。本组分别提供账号服务定义、服务提供方、公开 HTTP 消费方与安装客户端。
 
+[Platform Account](../../docs/subsystems/platform-account.zh.md)、[Project Membership](../../docs/subsystems/project-membership.zh.md)和 [Remote Protocol](../../docs/subsystems/remote-protocol.zh.md) 子系统参考负责跨包的服务、生命周期和 wire 约定。
+
 | 包 | npm 名称 | 角色 | `ctx` 键 |
 |---|---|---|---|
 | [`platform-account/`](platform-account/README.zh.md) | `@deepseek-ai/dsh-platform-account` | 账号服务定义和公共类型 | `ctx.platformAccount` |

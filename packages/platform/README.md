@@ -4,6 +4,8 @@ English | [中文](README.zh.md)
 
 Platform packages own installation-independent identity and session behavior used by DeepSeek Gestalt Desktop and Mobile. The group separates the Account Service Definition, its provider, public HTTP Consumer, and installation client.
 
+The [Platform Account](../../docs/subsystems/platform-account.md), [Project Membership](../../docs/subsystems/project-membership.md), and [Remote Protocol](../../docs/subsystems/remote-protocol.md) subsystem references own the cross-package service, lifecycle, and wire contracts.
+
 | Package | npm name | Role | `ctx` key |
 |---|---|---|---|
 | [`platform-account/`](platform-account/README.md) | `@deepseek-ai/dsh-platform-account` | Account Service Definition and public types | `ctx.platformAccount` |
