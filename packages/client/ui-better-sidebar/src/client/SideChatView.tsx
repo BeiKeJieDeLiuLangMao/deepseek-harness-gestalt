@@ -1,6 +1,6 @@
 /** Side Chat tab shell over the canonical explicit-Session conversation renderer. */
 import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from 'react'
-import { SessionId } from '@deepseek-ai/dsh-session'
+import { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SessionId as SessionIdType } from '@deepseek-ai/dsh-api-remotes/client'
 import type { Context } from '../context-types.ts'
 import {

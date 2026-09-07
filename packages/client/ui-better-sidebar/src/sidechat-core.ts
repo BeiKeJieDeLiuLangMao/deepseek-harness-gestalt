@@ -16,7 +16,7 @@
  * the open turn and carrying the partial content as a structured text
  * snapshot inside the boundary prompt.
  */
-import { SessionId } from '@deepseek-ai/dsh-session'
+import { SessionId } from '@deepseek-ai/dsh-session/types'
 /** The durable thread-label prefix used to identify Side Chat Sessions. */
 export const SIDE_LABEL_PREFIX = 'Side: '
 
