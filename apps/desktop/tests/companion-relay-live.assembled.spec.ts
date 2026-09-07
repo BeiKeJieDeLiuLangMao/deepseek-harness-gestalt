@@ -439,8 +439,28 @@ describe('assembled Desktop Relay live Session projection on shipped dsh web', (
       10_000,
       { connect: () => { throw new Error('no live projection in the rejection case') } },
     )
+    // Ownership registers the moment each resource exists — the staged release
+    // below runs even when the handshake rejection throws, and the Mobile
+    // owner slot is optional until its acquisition line.
+    const mobileOwnerSlot: { owner?: SnowMobileAttachmentOwner } = {}
+    cleanups.push(async () => {
+      const stageErrors: unknown[] = []
+      const stage = async (run: () => void | Promise<void>): Promise<void> => {
+        try { await run() } catch (error) { stageErrors.push(error instanceof Error ? error : new Error(String(error))) }
+      }
+      await stage(() => { relayOwner.invalidate(channels.pairingSelector) })
+      await stage(async () => { await relayOwner.drain() })
+      await stage(() => { mobileOwnerSlot.owner?.dispose() })
+      await stage(() => {
+        channels.attachmentKey.fill(0)
+        channels.mobileReconnectState.fill(0)
+        channels.desktopReconnectState.fill(0)
+      })
+      if (stageErrors.length === 1) throw stageErrors[0]
+      if (stageErrors.length > 1) throw new AggregateError(stageErrors, 'rejection lifecycle teardown stages failed')
+    })
     relayOwner.updatePeers({
-      type: 'ready', transportVersion: 1, routeId: wrongRoute,
+      type: 'ready', transportVersion: 1, routeId: parseRelayRouteId('route-assembled-relay-live'),
       attachmentId: channels.desktopAttachmentId,
       peers: [{
         attachmentId: channels.mobileAttachmentId,
@@ -450,14 +470,25 @@ describe('assembled Desktop Relay live Session projection on shipped dsh web', (
     // External route mismatch: the IK transcript is produced by a real Mobile
     // attachment owner for a different route, so the real Desktop attachment
     // owner rejects it — no internal state is mocked.
-    await expect(relayOwner.receive(
-      await forgedIkp(channels, wrongRoute, channels.mobileAttachmentId),
-      channels.mobileAttachmentId, channels.desktopAttachmentId, channels.pairingSelector, new AbortController().signal,
-    )).rejects.toThrow()
-    relayOwner.invalidate(channels.pairingSelector)
-    channels.attachmentKey.fill(0)
-    channels.mobileReconnectState.fill(0)
-    channels.desktopReconnectState.fill(0)
+    const mobileOwner = new SnowMobileAttachmentOwner(
+      channels.mobileReconnectState, channels.pairingSelector)
+    mobileOwnerSlot.owner = mobileOwner
+    try {
+      const payload = await mobileOwner.begin({
+        type: 'ready', transportVersion: 1, routeId: wrongRoute,
+        attachmentId: channels.mobileAttachmentId,
+        peers: [{
+          attachmentId: channels.desktopAttachmentId,
+          pairingSelector: channels.pairingSelector, generation: channels.generation,
+        }],
+      })
+      await expect(relayOwner.receive(
+        payload.payload,
+        channels.mobileAttachmentId, channels.desktopAttachmentId, channels.pairingSelector, new AbortController().signal,
+      )).rejects.toThrow('Desktop Snow reconnect request does not belong to its live Relay attachment')
+    } finally {
+      mobileOwner.dispose()
+    }
   }, 60_000)
 })
 
@@ -601,24 +632,6 @@ async function durableSessionLog(home: string, sessionId: string): Promise<strin
 async function countTurnEnds(home: string, sessionId: string): Promise<number> {
   const log = await durableSessionLog(home, sessionId)
   return (log.match(/"type":"turn\/end"/g) ?? []).length
-}
-
-async function forgedIkp(
-  channels: Awaited<ReturnType<typeof snowProductChannels>>,
-  routeId: ReturnType<typeof parseRelayRouteId>,
-  mobileAttachmentId: ReturnType<typeof parseRelayAttachmentId>,
-): Promise<Uint8Array> {
-  const mobile = new SnowMobileAttachmentOwner(channels.mobileReconnectState, channels.pairingSelector)
-  const begun = await mobile.begin({
-    type: 'ready', transportVersion: 1, routeId,
-    attachmentId: mobileAttachmentId,
-    peers: [{
-      attachmentId: channels.desktopAttachmentId,
-      pairingSelector: channels.pairingSelector, generation: channels.generation,
-    }],
-  })
-  mobile.dispose()
-  return begun.payload
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
