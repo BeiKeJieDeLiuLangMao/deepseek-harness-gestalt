@@ -2259,7 +2259,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: '@Remote(\'updateQueue\') updateQueue(request: SessionUpdateQueueRequest): SessionUpdateQueueValue',
-        description: 'Mutate one still-pending queue occurrence on a live Agent. Edit content uses the JSON-safe PromptContentPart vocabulary; non-text parts are refused as `session/attachment-invalid`.',
+        description: 'Mutate one still-pending queue occurrence on a live Agent. Edit content uses JSON-safe QueueEditContentPart; image ids must resolve to its authoritative references with unchanged occurrence counts.',
         parameters: [{ name: 'request', description: 'Session, queue item, and requested mutation.' }],
         returns: 'acknowledgement that the queue mutation was applied.',
       },

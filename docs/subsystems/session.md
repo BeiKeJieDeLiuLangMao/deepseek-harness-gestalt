@@ -767,8 +767,8 @@ inspect( sessionId: SessionId, signal?: AbortSignal, ): Promise<SessionInspectio
 
 /**
  * Mutate one still-pending queue occurrence on a live Agent.
- * Edit content uses the JSON-safe {@link PromptContentPart} vocabulary;
- * non-text parts are refused as `session/attachment-invalid`.
+ * Edit content uses JSON-safe {@link QueueEditContentPart}; image ids must
+ * resolve to its authoritative references with unchanged occurrence counts.
  * @param request - Session, queue item, and requested mutation.
  * @returns acknowledgement that the queue mutation was applied.
  */
