@@ -120,14 +120,7 @@ interface AskUserQuestionItem {
 
 ```ts type-equiv
 /** Request for a human answer. */
-interface AskUserQuestionRequest {
-  /** Questions to display. */
-  questions: AskUserQuestionItem[]
-  /** Exact live calling agent, when the request came from an agent tool call. */
-  agent?: Agent
-  /** Abort signal for the owning tool/step. */
-  signal?: AbortSignal
-}
+interface AskUserQuestionRequest extends AskUserQuestionRequestEvent {}
 ```
 
 ## Answer
@@ -151,17 +144,6 @@ interface AskUserQuestionAnswerItem {
 interface AskUserQuestionAnswer {
   /** Structured answers keyed by question id. */
   answers: AskUserQuestionAnswerItem[]
-}
-```
-
-## Provider
-
-Only one provider may be active in a context. Provider registration is effect-bound so HMR/disposal removes the active UI.
-
-```ts type-equiv
-/** UI-side provider for user questions. */
-interface UserQuestionProvider {
-  ask(request: AskUserQuestionRequest): Promise<AskUserQuestionAnswer>
 }
 ```
 
@@ -191,7 +173,7 @@ class UserQuestionError extends HarnessError {
  */
 interface MemberQuestionSendPayload {
   /** Account reference of the single addressee. */
-  readonly toProjectMember: string
+  readonly toProjectMember: PlatformAccountId
   /** Cloud project whose peer grant addresses that member. */
   readonly projectId: ProjectId
   /** Agent-authored background; already bounded by the asking tool. */

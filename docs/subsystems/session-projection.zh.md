@@ -28,10 +28,12 @@ interface ProjectionDefinition<
   /** Validates persisted state before it seeds a fold. */
   stateSchema: ZodType<S>
   /**
-   * State for the empty log.
+   * State for the empty log and its immutable Session metadata.
+   * @param header - immutable metadata for the Session being projected.
+   * @param inheritedEventCount - exact fork-inherited prefix length.
    * @returns the initial state.
    */
-  init(): NoInfer<S>
+  init(header: SessionHeader, inheritedEventCount: SessionLogOffset): NoInfer<S>
   /**
    * Pure transition: previous state + one committed event → next state. A
    * unit uninterested in an event MUST return the same state reference — an
@@ -46,18 +48,15 @@ interface ProjectionDefinition<
     /** Validates the wire payload before it leaves the host. */
     viewSchema: ZodType<SessionProjectionMap[K]>
     /**
-     * State → wire payload (the read-side projection).
+     * State → wire payload (the read-side projection). The live drive keeps
+     * the two latest raw results and compares them with `Object.is`; an
+     * object-valued view must reuse its reference to suppress publication
+     * across internal-only state changes.
      * @param state - the current state.
      * @returns the whole current value for this unit's key.
      */
     view(state: NoInfer<S>): SessionProjectionMap[K]
   } : never
-  /**
-   * Which portion of a forked Session log this domain owns. The default
-   * `full` folds inherited history; `owned-suffix` starts at the immutable
-   * `SessionHeader.seedLength` boundary.
-   */
-  eventScope?: 'full' | 'owned-suffix'
   /**
    * Persisted-cache invalidation version: bump whenever the serialized state fields or the
    * fold semantics change, so persisted `(sessionId, key, ver, seq, val)`
@@ -78,11 +77,11 @@ Fork 所有权同样属于单元声明。registry 与持久化 cache 会在 eage
 /**
  * One consistent read cut over every registered client-visible unit for one session.
  * `asOfSeq` is the shared watermark — the seq of the last event every value
- * reflects (`-1` for an empty log, mirroring `session/subscribed.lastSeq`).
+ * reflects (`-1` for an empty log).
  */
 interface ProjectionSnapshot {
   /** Seq of the last event the values reflect; -1 for an empty log. */
-  asOfSeq: number
+  asOfSeq: SessionSeqCursor
   /** Whole current client value per registered key. */
   values: Partial<SessionProjectionMap>
 }
@@ -90,15 +89,15 @@ interface ProjectionSnapshot {
 
 ```ts type-equiv
 /**
- * Change-feed listener: one unit's value changed for one session. `value` is
- * the schema-validated `view` output; `seq` is the unit's watermark at
- * emission (the seq of the event that caused the change).
+ * Change-feed listener: one unit's raw `view` result changed by `Object.is`
+ * for one session. `value` is the schema-validated output; `seq` is the
+ * unit's watermark at emission (the seq of the event that caused the change).
  */
 type ProjectionChangeListener = (
   session: Session,
   key: Extract<keyof SessionProjectionMap, string>,
   value: unknown,
-  seq: number,
+  seq: SessionSeq,
 ) => void
 ```
 
