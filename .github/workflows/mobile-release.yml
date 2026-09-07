@@ -293,13 +293,8 @@ jobs:
           apksigner=$(find "${ANDROID_SDK_ROOT:?}/build-tools" -mindepth 2 -maxdepth 2 -type f -name apksigner -print | sort -V | tail -1)
           stage=verify-apksigner-executable
           test -x "$apksigner"
-          stage=read-signer-certificate
-          signer=$($apksigner verify --print-certs "$apk" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')
           stage=verify-signer-digest
-          if [[ ! "$signer" =~ ^[0-9a-fA-F]{64}$ ]]; then
-            false
-          fi
-          signer=$(printf '%s' "$signer" | tr '[:upper:]' '[:lower:]')
+          signer=$(bash apps/mobile/scripts/read-android-signer-digest.sh "$apksigner" "$apk")
           stage="digest-apk:$(basename "$apk")"
           artifact_digest=$(sha256sum "$apk" | cut -d ' ' -f 1)
           runtime_entry=assets/public/dsh-mobile-runtime-identity.json
