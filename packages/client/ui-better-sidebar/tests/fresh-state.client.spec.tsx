@@ -16,6 +16,7 @@ const actions: WorkbenchActions = {
   moveTabToEdge: () => {},
   moveTabBefore: () => {},
   resizeSplit: () => {},
+  floatTab: () => {},
 }
 
 describe('fresh sidebar state', () => {

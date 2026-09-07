@@ -86,15 +86,15 @@ async function bench() {
     'conversation.approval.detail': { kind: 'single', scope: 'session' },
     'settings.general.item': { kind: 'list', scope: 'root' },
     'settings.section': { kind: 'list', scope: 'root' },
-  }, ({ renderSlot }: { renderSlot: (key: string, owner: object) => unknown }) => (
+  }, ({ renderSlot }) => (
     <>{renderSlot('conversation', {})}</>
-  ) as never)
+  ))
   await runtime.sessions.add({ id: ALPHA, summary: { title: 'Alpha', displayTitle: 'Alpha' } })
   await runtime.sessions.add({ id: BETA, summary: { title: 'Beta', displayTitle: 'Beta' } }, { current: false })
   const conversation = await runtime.mount({ inject: [...injectConversation], apply: applyConversation })
   const chat = await runtime.mount({ inject: [...injectChat], apply: applyChat })
   const browser = await runtime.mount({ inject: [...inject], apply })
-  runtime.sessions.binding(ALPHA)!.session.projections.set('browserWorkspace', listing())
+  runtime.sessions.behavior(ALPHA).projections.set('browserWorkspace', listing())
   const view = runtime.renderRoot()
   return { runtime, conversation, chat, browser, view }
 }

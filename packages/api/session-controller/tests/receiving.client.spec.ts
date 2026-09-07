@@ -101,7 +101,11 @@ function bench(options: {
   const snapshotCall = vi.fn(snapshotFn)
   const settle = vi.fn(settleFn)
   const remote = {
-    memberQuestion: { snapshot: snapshotCall, settle },
+    memberQuestion: {
+      snapshot: snapshotCall,
+      settle,
+      admitHumanTurn: vi.fn(() => Promise.reject(new Error('unused receiving test Remote'))),
+    },
     $on: (event: string, listener: (...args: never[]) => void) => {
       const set = listeners.get(event) ?? new Set()
       listeners.set(event, set)

@@ -195,6 +195,7 @@ function renderControl(
     <AccountControl
       t={t as never}
       useSessions={(() => { throw new Error('unused') })}
+      useSessionPendingInteraction={(() => { throw new Error('unused') })}
       useWorkspaces={(() => { throw new Error('unused') })}
       useAccount={selector => selector(snapshot)}
       usePairing={selector => selector(pairing)}

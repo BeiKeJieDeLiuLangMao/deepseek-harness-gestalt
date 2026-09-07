@@ -14,7 +14,7 @@ import { SessionManager } from '../src/client/sessions/manager.ts'
 import { FakeApiClient, fakeRemote } from './fake-api.client.ts'
 
 const SID = 'fk-q1' as SessionId
-const text = (value: string): ContentBlock[] => [{ type: 'text', text: value }]
+const text = (value: string): [{ type: 'text'; text: string }] => [{ type: 'text', text: value }]
 const rid = (id: string): RpcId => id as RpcId
 const iid = (id: string): MessageId => id as MessageId
 

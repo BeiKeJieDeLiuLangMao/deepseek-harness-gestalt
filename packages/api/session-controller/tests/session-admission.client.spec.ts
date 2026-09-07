@@ -11,8 +11,10 @@
 
 import { Context } from '@deepseek-ai/cordis'
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
+import type { RemoteFailure, RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import { describe, expect, it, vi } from 'vitest'
-import type { MessageId, SessionId } from '@deepseek-ai/dsh-session/types'
+import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { ClientSessions } from '../src/client/sessions/service.ts'
 import type {
   SessionAdmissionAdapter,
@@ -20,7 +22,6 @@ import type {
   SessionAdmissionRoute,
 } from '../src/client/contract/admission.ts'
 import type { SessionRemote } from '../src/client/transport.ts'
-import type { SessionSelectModelRequest } from '../src/types.ts'
 import {
   FakeApiClient,
   fakeRemote,
@@ -30,6 +31,11 @@ import {
 
 const sid = (s: string): SessionId => s as SessionId
 const mid = (m: string): MessageId => m as MessageId
+
+function failureOf<T>(result: RemoteResult<T>): RemoteFailure {
+  if (result.ok) throw new Error('expected a Remote failure')
+  return result.error
+}
 
 interface Bench {
   ctx: Context
@@ -268,7 +274,7 @@ describe('Session Client admission dispatch', () => {
       prompt: vi.fn((_id, content) => {
         promptCalls.push(content[0].type === 'text' ? content[0].text : '')
         return Promise.resolve({
-          ok: false,
+          ok: false as const,
           error: {
             code: 'session/attachment-invalid',
             message: 'Images unsupported in Side Chat.',
@@ -283,9 +289,9 @@ describe('Session Client admission dispatch', () => {
 
     // First attempt fails with error receipt
     const result1 = await binding.session.prompt([{ type: 'text', text: 'attempt 1' }], 'queue')
-    expect(result1.ok).toBe(false)
-    expect(result1.error).toBeInstanceOf(Error)
-    expect(result1.error).toMatchObject({
+    const failure1 = failureOf(result1)
+    expect(failure1).toBeInstanceOf(Error)
+    expect(failure1).toMatchObject({
       code: 'session/attachment-invalid',
       message: 'Images unsupported in Side Chat.',
       details: { reason: 'SUBAGENT_IMAGE_UNSUPPORTED' },
@@ -307,20 +313,18 @@ describe('Session Client admission dispatch', () => {
     // Second attempt throws an unexpected Error
     route.prompt = vi.fn(() => Promise.reject(new Error('Network drop in adapter')))
     const result2 = await binding.session.prompt([{ type: 'text', text: 'attempt 2' }], 'queue')
-    expect(result2.ok).toBe(false)
-    expect(result2.error.code).toBe('gateway/internal')
-    expect(result2.error.message).toBe('Network drop in adapter')
+    const failure2 = failureOf(result2)
+    expect(failure2.code).toBe('gateway/internal')
+    expect(failure2.message).toBe('Network drop in adapter')
 
     const existing = new RemoteError('gateway/bad-request', 'already remote', {})
-    route.prompt = vi.fn(() => Promise.resolve({ ok: false, error: existing }))
+    route.prompt = vi.fn(() => Promise.resolve({ ok: false as const, error: existing }))
     const returned = await binding.session.prompt([{ type: 'text', text: 'attempt 3' }], 'queue')
-    expect(returned.ok).toBe(false)
-    expect(returned.error).toBe(existing)
+    expect(failureOf(returned)).toBe(existing)
 
     route.prompt = vi.fn(() => Promise.reject(existing))
     const thrown = await binding.session.prompt([{ type: 'text', text: 'attempt 4' }], 'queue')
-    expect(thrown.ok).toBe(false)
-    expect(thrown.error).toBe(existing)
+    expect(failureOf(thrown)).toBe(existing)
 
     route.prompt = vi.fn(() => Promise.reject({
       code: 'session/attachment-invalid',
@@ -328,8 +332,7 @@ describe('Session Client admission dispatch', () => {
       details: { reason: 'SUBAGENT_IMAGE_UNSUPPORTED' },
     }))
     const markerFree = await binding.session.prompt([{ type: 'text', text: 'attempt 5' }], 'queue')
-    expect(markerFree.ok).toBe(false)
-    expect(markerFree.error).toMatchObject({
+    expect(failureOf(markerFree)).toMatchObject({
       code: 'gateway/internal',
       message: '[object Object]',
       details: {},
@@ -364,20 +367,20 @@ describe('Session Client admission dispatch', () => {
     svc.registerAdmission(sessionId, route)
 
     const queueResult = await binding.session.updateQueue(mid('item-throw'), { kind: 'steer' })
-    expect(queueResult.ok).toBe(false)
-    expect(queueResult.error.code).toBe('gateway/internal')
-    expect(queueResult.error.message).toBe('queue adapter drop')
+    const queueFailure = failureOf(queueResult)
+    expect(queueFailure.code).toBe('gateway/internal')
+    expect(queueFailure.message).toBe('queue adapter drop')
     expect(api.calls.filter(c => c.method === 'session.updateQueue')).toEqual([])
 
     const commandResult = await binding.session.command('/permission full')
-    expect(commandResult.ok).toBe(false)
-    expect(commandResult.error.code).toBe('gateway/internal')
-    expect(commandResult.error.message).toBe('command adapter drop')
+    const commandFailure = failureOf(commandResult)
+    expect(commandFailure.code).toBe('gateway/internal')
+    expect(commandFailure.message).toBe('command adapter drop')
     expect(executeSpy).not.toHaveBeenCalled()
     expect(route.prompt).not.toHaveBeenCalled()
 
     route.updateQueue = vi.fn((_sessionId, itemId) => Promise.resolve({
-      ok: false,
+      ok: false as const,
       error: {
         code: 'session/queue-item-not-found',
         message: 'queued item is gone',
@@ -385,22 +388,22 @@ describe('Session Client admission dispatch', () => {
       },
     }))
     const structuredQueue = await binding.session.updateQueue(mid('item-gone'), { kind: 'remove' })
-    expect(structuredQueue.ok).toBe(false)
-    expect(structuredQueue.error).toBeInstanceOf(Error)
-    expect(structuredQueue.error).toMatchObject({
+    const structuredQueueFailure = failureOf(structuredQueue)
+    expect(structuredQueueFailure).toBeInstanceOf(Error)
+    expect(structuredQueueFailure).toMatchObject({
       code: 'session/queue-item-not-found',
       message: 'queued item is gone',
       details: { itemId: mid('item-gone') },
     })
 
     route.command = vi.fn(() => Promise.resolve({
-      ok: false,
+      ok: false as const,
       error: { code: 'gateway/bad-request', message: 'bad command', details: {} },
     }))
     const structuredCommand = await binding.session.command('/bad')
-    expect(structuredCommand.ok).toBe(false)
-    expect(structuredCommand.error).toBeInstanceOf(Error)
-    expect(structuredCommand.error).toMatchObject({
+    const structuredCommandFailure = failureOf(structuredCommand)
+    expect(structuredCommandFailure).toBeInstanceOf(Error)
+    expect(structuredCommandFailure).toMatchObject({
       code: 'gateway/bad-request',
       message: 'bad command',
       details: {},
@@ -439,13 +442,12 @@ describe('Session Client admission dispatch', () => {
 
     // Failed cancel
     route.cancel = vi.fn(() => Promise.resolve({
-      ok: false,
+      ok: false as const,
       error: { code: 'gateway/internal', message: 'unable to stop', details: {} },
     }))
 
     const failedResult = await binding.session.cancel()
-    expect(failedResult.ok).toBe(false)
-    expect(failedResult.error).toBeInstanceOf(Error)
+    expect(failureOf(failedResult)).toBeInstanceOf(Error)
     expect(api.calls.filter(c => c.method === 'session.cancel')).toEqual([])
     expect(binding.session.getSnapshot().promptError).toMatchObject({
       op: 'stop',
@@ -490,10 +492,10 @@ describe('Session Client admission dispatch', () => {
 
     // If updateQueue omitted from admission, fails loud without calling Remote
     delete route.updateQueue
-    const res2 = await binding.session.updateQueue(mid('item-2'), { kind: 'up' })
-    expect(res2.ok).toBe(false)
-    expect(res2.error.code).toBe('gateway/internal')
-    expect(res2.error.message).toContain('does not support queue mutation')
+    const res2 = await binding.session.updateQueue(mid('item-2'), { kind: 'remove' })
+    const failure2 = failureOf(res2)
+    expect(failure2.code).toBe('gateway/internal')
+    expect(failure2.message).toContain('does not support queue mutation')
     expect(api.calls.filter(c => c.method === 'session.updateQueue')).toEqual([])
 
     drop()
@@ -538,9 +540,9 @@ describe('Session Client admission dispatch', () => {
     // When command handler is omitted, fails loud and never converts to prompt or remote
     delete route.command
     const unhandledRes = await binding.session.command('/help')
-    expect(unhandledRes.ok).toBe(false)
-    expect(unhandledRes.error.code).toBe('gateway/internal')
-    expect(unhandledRes.error.message).toContain('does not support commands')
+    const unhandledFailure = failureOf(unhandledRes)
+    expect(unhandledFailure.code).toBe('gateway/internal')
+    expect(unhandledFailure.message).toContain('does not support commands')
     expect(promptMock).not.toHaveBeenCalled()
     expect(executeSpy).not.toHaveBeenCalled()
 
@@ -786,9 +788,9 @@ describe('Session Client admission dispatch', () => {
     api.onSelectModel = payload => Promise.resolve({
       ok: false,
       error: {
-        code: 'session/model-unroutable',
+        code: 'session/model-unavailable',
         message: `provider ${payload.provider} is not routable`,
-        details: {},
+        details: { provider: payload.provider, model: payload.model },
       },
     })
     await svc.refresh()
@@ -872,14 +874,13 @@ describe('Session Client admission dispatch', () => {
     api.onSelectModel = payload => Promise.resolve({
       ok: false,
       error: {
-        code: 'session/model-unroutable',
+        code: 'session/model-unavailable',
         message: `provider ${payload.provider} is not routable`,
-        details: {},
+        details: { provider: payload.provider, model: payload.model },
       },
     })
     const rejected = await svc.modelRoute(sessionId)!.selectModel!({ provider: 'missing', model: 'nope' })
-    expect(rejected.ok).toBe(false)
-    expect(rejected.error.code).toBe('session/model-unroutable')
+    expect(failureOf(rejected).code).toBe('session/model-unavailable')
   })
 
   it('normalizes feature model failures while preserving receiver, signal, and hidden methods', async () => {
@@ -896,8 +897,12 @@ describe('Session Client admission dispatch', () => {
         expect(this).toBe(modelRoute)
         expect(signalArg).toBe(signal)
         return Promise.resolve({
-          ok: false,
-          error: { code: 'session/model-unroutable', message: 'catalog unavailable', details: {} },
+          ok: false as const,
+          error: {
+            code: 'session/model-unavailable',
+            message: 'catalog unavailable',
+            details: { provider: 'owned', model: 'catalog' },
+          },
         })
       },
       selectModel(_selection, signalArg) {
@@ -914,17 +919,16 @@ describe('Session Client admission dispatch', () => {
 
     const routed = svc.modelRoute(sessionId)!
     const models = await routed.models!(signal)
-    expect(models.ok).toBe(false)
-    expect(models.error).toBeInstanceOf(Error)
-    expect(models.error).toMatchObject({
-      code: 'session/model-unroutable',
+    const modelsFailure = failureOf(models)
+    expect(modelsFailure).toBeInstanceOf(Error)
+    expect(modelsFailure).toMatchObject({
+      code: 'session/model-unavailable',
       message: 'catalog unavailable',
-      details: {},
+      details: { provider: 'owned', model: 'catalog' },
     })
 
     const selection = await routed.selectModel!({ provider: 'owned', model: 'broken' }, signal)
-    expect(selection.ok).toBe(false)
-    expect(selection.error).toMatchObject({
+    expect(failureOf(selection)).toMatchObject({
       code: 'gateway/internal',
       message: 'selection adapter drop',
       details: {},
@@ -975,11 +979,8 @@ describe('Session Client admission dispatch', () => {
   })
 
   it('honors abort on stock selectModel without a second Remote argument', async () => {
-    type SelectModelExtra = SessionRemote['selectModel'] extends (
-      request: SessionSelectModelRequest,
-      extra: infer Extra,
-    ) => unknown ? Extra : never
-    const generatedSelectModelIsUnary: [SelectModelExtra] extends [never] ? true : false = true
+    const generatedSelectModelIsUnary:
+    Parameters<SessionRemote['selectModel']>['length'] extends 1 ? true : false = true
     expect(generatedSelectModelIsUnary).toBe(true)
     const { svc, api } = bench()
     const sessionId = sid('session-stock-abort')

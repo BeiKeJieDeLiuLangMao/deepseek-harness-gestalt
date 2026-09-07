@@ -33,3 +33,5 @@ Status: implemented
 ## Testing
 
 `packages/api/session-controller/tests/session-admission.client.spec.ts` 固定同一套分派用例、普通 Session 的库存 `modelRoute`、catalog child 在功能路由打开前隐藏、omit 与显式 undefined 的区别，以及不对 subagent 身份调用 `session.selectModel`。`packages/client/ui-better-sidebar/tests/sidechat-admission.client.spec.ts` 经实时 `ClientSessions` 与 `Session.prompt` 驱动 `installSidechatAdmission`。`packages/client/ui-model-selection/tests/model-directory.client.spec.ts` 经 `subscribeAdmission` 驱动 `ModelDirectory` 的 load、select 与 live hide。`packages/client/ui-model-selection/tests/model-select.client.spec.tsx` 在 directory store 发布 `available: false` 时隐藏 composer 控件。`queue-store.client.spec.ts` 固定经注入准入解析器的 queue 变更。
+
+共享 Client 测试运行时镜像准入优先级、替换、销毁、订阅、catalog lookup 与库存 model route 可用性。其完整的 `inputState` 和 `inputActions` 构造器让标准 owner props 与公开输入 face 保持一致；未覆盖 action 会在调用点失败，而不是通过不完整对象的类型断言。

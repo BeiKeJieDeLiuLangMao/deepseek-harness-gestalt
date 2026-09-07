@@ -62,6 +62,12 @@ remote.goals.create.mockResolvedValue({
 expect(view.getByRole('alert')).toHaveTextContent('goal/not-found')
 ```
 
+### Session admission and input fixtures
+
+`TestSessions` mirrors the public admission registry: exact routes replace by token, outrank ordered adapters, notify subscribers, and drive command, skill, and model lookups. An ordinary listed fixture Session exposes a stock-shaped model route; its methods reject when called because this test double has no Host. Unknown and subagent-owned identities have no stock model route. A registered `modelRoute` replaces stock only when the route owns that field, including a callback that returns `undefined` to hide model selection.
+
+`inputState(overrides)` returns a fresh complete `InputState`, including annotations. `inputActions(overrides)` returns every public action; override the actions the scenario uses, while every omitted action throws if called. Use these builders instead of casting partial owner props.
+
 ### When to use it
 
 Use the bench for feature suites that exercise slots, stores, rendering, and disposal under a real runtime — the production `SlotRegistry`, renderer, and provide-bundle materialization are mounted, never reimplemented. It is browser-side test infrastructure: it never reaches a model request, and feature packages depend on it in `devDependencies` only.
@@ -91,8 +97,9 @@ The bench copies no production logic: it mounts the production `SlotRegistry`, p
 | File | Role |
 |---|---|
 | [`src/index.ts`](src/index.ts) | `SlotTestRuntime` assembly, `TestRoot`, auto frame, `mount`/`dispose` |
-| [`src/sessions.ts`](src/sessions.ts) + [`src/workspaces.ts`](src/workspaces.ts) | `ISessions`/`IWorkspaces` test doubles and `FixtureSession` behavior stubs |
+| [`src/sessions.ts`](src/sessions.ts) + [`src/workspaces.ts`](src/workspaces.ts) | `ISessions`/`IWorkspaces` test doubles, Session admission lookups, and `FixtureSession` behavior stubs |
 | [`src/fixtures.ts`](src/fixtures.ts) | Plain fixture builders: conversation snapshots, workspace list state |
+| [`src/input.ts`](src/input.ts) | Complete input state and fail-loud action builders |
 | [`src/snapshot.ts`](src/snapshot.ts) | DOM snapshot serializer (class-hash folding, `<svg>` fingerprint) |
 | [`src/remote.ts`](src/remote.ts) | `TestRemote` double for host RPC, `RemoteError` value re-export |
 | [`src/translate.ts`](src/translate.ts) + [`src/locale-env.ts`](src/locale-env.ts) | Translation and pinned-browser-language test helpers |

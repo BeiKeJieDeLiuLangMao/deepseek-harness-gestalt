@@ -29,6 +29,7 @@ function mount(onNewTab = vi.fn(), windowChrome = false) {
         onNewTab={onNewTab}
         newTabOptions={OPTIONS}
         onDropTab={() => {}}
+        onFloatTab={() => {}}
       />,
     ),
   }

@@ -13,6 +13,7 @@ import { en, NS, zh } from '../src/client/locales.ts'
 import { apply as nodeApply } from '../src/index.ts'
 import { BROWSER_SETTINGS_NAMESPACE, DEFAULT_BROWSER_SETTINGS } from '../src/browser-settings.ts'
 import { SettingsProvider, type SettingsNamespace } from '@deepseek-ai/dsh-settings'
+import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 
 class MemorySettings extends SettingsProvider {
   readonly writable = true
@@ -235,8 +236,8 @@ describe('unwrapRemote', () => {
     await expect(unwrapRemote(Promise.resolve({ ok: true as const, value: 7 }))).resolves.toBe(7)
     await expect(unwrapRemote(Promise.resolve({
       ok: false as const,
-      error: { code: 'internal', message: 'stale revision', details: {} },
-    }))).rejects.toMatchObject({ message: 'stale revision', code: 'internal' })
+      error: new RemoteError('gateway/internal', 'stale revision', {}),
+    }))).rejects.toMatchObject({ message: 'stale revision', code: 'gateway/internal' })
   })
 })
 

@@ -6,6 +6,8 @@ import {
 } from '@deepseek-ai/dsh-api-session-controller/client'
 import type {
   AgentContext, ISessions, ProjectionsFace, SessionBinding, SessionFace, SessionListState,
+  SessionAdmissionAdapter, SessionAdmissionModelRoute, SessionAdmissionOptions,
+  SessionAdmissionResult, SessionAdmissionRoute, SessionModelRoute,
   SessionEventLikeEntry, SessionLiveEventEntry, SessionSearchResultItem,
   SessionSnapshot, SessionSummary, SubmissionHandle,
 } from '@deepseek-ai/dsh-api-session-controller/client'
@@ -13,11 +15,66 @@ import type { SessionRequestId } from '@deepseek-ai/dsh-api-session-controller/t
 import type { SubagentAddress } from '@deepseek-ai/dsh-subagent/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { ObservableSnapshot, SnapshotStore } from '@deepseek-ai/dsh-client-store'
+import { RemoteError, remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
+import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { sessionSnapshot } from './fixtures.ts'
 import type {
   SessionFixture, SessionFixtureSnapshot, Stabilizer,
 } from './fixtures.ts'
+
+async function testAdmissionResult<T>(
+  operation: () => Promise<SessionAdmissionResult<T>>,
+): Promise<RemoteResult<T>> {
+  try {
+    const result = await operation()
+    if (result.ok) return result
+    const failure = remoteErrorOf(result.error)
+      ?? new RemoteError('gateway/internal', result.error.message, {}, { cause: result.error })
+    return { ok: false, error: failure }
+  } catch (cause) {
+    const failure = remoteErrorOf(cause)
+      ?? new RemoteError(
+        'gateway/internal',
+        cause instanceof Error ? cause.message : String(cause),
+        {},
+        { cause },
+      )
+    return { ok: false, error: failure }
+  }
+}
+
+function testModelRoute(route: SessionAdmissionModelRoute): SessionModelRoute {
+  const models = route.models?.bind(route)
+  const selectModel = route.selectModel?.bind(route)
+  return {
+    ...(models === undefined
+      ? {}
+      : { models: (signal?: AbortSignal) => testAdmissionResult(() => models(signal)) }),
+    ...(selectModel === undefined
+      ? {}
+      : {
+        selectModel: (selection, signal) =>
+          testAdmissionResult(() => selectModel(selection, signal)),
+      }),
+  }
+}
+
+function testStockModelRoute(sessionId: SessionId): SessionModelRoute {
+  const unstubbed = (method: 'models' | 'selectModel'): Promise<never> => Promise.reject(
+    new Error(`test sessions: stock model route "${method}" is not stubbed for session "${sessionId}"`),
+  )
+  return {
+    models: (signal) => {
+      signal?.throwIfAborted()
+      return unstubbed('models')
+    },
+    selectModel: (_selection, signal) => {
+      signal?.throwIfAborted()
+      return unstubbed('selectModel')
+    },
+  }
+}
 
 /**
  * The fixture-backed session face: lifecycle reads delegate to the fixture's
@@ -179,6 +236,20 @@ interface SessionRecord {
   binding: SessionBinding | undefined
 }
 
+interface ExactAdmissionEntry {
+  readonly route: SessionAdmissionRoute
+  readonly token: symbol
+}
+
+interface AdapterAdmissionEntry {
+  readonly adapter: SessionAdmissionAdapter
+  readonly token: symbol
+}
+
+type SessionSummaryPatch =
+  Partial<Omit<SessionSummary, 'id' | 'provisional'>>
+  & { provisional?: true | undefined }
+
 /**
  * Sessions test double behind the renderer host and feature injects: owns the
  * list/current observable, scope minting through the production `createScope`,
@@ -194,6 +265,9 @@ export class TestSessions implements ISessions {
   /** The useSessions standard feed (list rows + current selection). */
   readonly list: SnapshotStore<SessionListState>
   private readonly records = new Map<SessionId, SessionRecord>()
+  private readonly exactAdmissions = new Map<SessionId, ExactAdmissionEntry>()
+  private readonly admissionAdapters: AdapterAdmissionEntry[] = []
+  private readonly admissionListeners = new Set<() => void>()
 
   /** Calls observed on the service-level face, newest last. */
   readonly calls: {
@@ -319,9 +393,18 @@ export class TestSessions implements ISessions {
    * @param id - session id.
    * @param patch - summary fields to merge over the row.
    */
-  async updateSummary(id: string, patch: Partial<Omit<SessionSummary, 'id'>>): Promise<void> {
+  async updateSummary(id: string, patch: SessionSummaryPatch): Promise<void> {
     const record = this.require(id)
-    record.summary = { ...record.summary, ...patch }
+    const { provisional, ...fields } = patch
+    const next = { ...record.summary, ...fields }
+    if ('provisional' in patch) {
+      if (provisional === undefined) {
+        delete next.provisional
+      } else {
+        next.provisional = provisional
+      }
+    }
+    record.summary = next
     await this.stabilize(() => {
       this.list.update((draft) => { draft.byId[id as SessionId] = record.summary })
     })
@@ -513,6 +596,80 @@ export class TestSessions implements ISessions {
     this.calls.push({ method: 'openForRender', args: [sessionId] })
   }
 
+  /** Register or replace one exact feature-owned Session admission route. */
+  registerAdmission(
+    sessionId: SessionId,
+    route: SessionAdmissionRoute,
+    options: SessionAdmissionOptions = {},
+  ): () => void {
+    if (options.conflict === 'reject' && this.exactAdmissions.has(sessionId)) {
+      throw new Error(`test sessions: session "${sessionId}" already has an admission route`)
+    }
+    const token = Symbol('test exact admission')
+    this.exactAdmissions.set(sessionId, { route, token })
+    this.notifyAdmission()
+    return () => {
+      if (this.exactAdmissions.get(sessionId)?.token !== token) return
+      this.exactAdmissions.delete(sessionId)
+      this.notifyAdmission()
+    }
+  }
+
+  /** Register one ordered feature-owned Session admission adapter. */
+  registerAdmissionAdapter(adapter: SessionAdmissionAdapter): () => void {
+    if (this.admissionAdapters.some(entry => entry.adapter.id === adapter.id)) {
+      throw new Error(`test sessions: duplicate admission adapter ${JSON.stringify(adapter.id)}`)
+    }
+    const token = Symbol('test adapter admission')
+    this.admissionAdapters.push({ adapter, token })
+    this.notifyAdmission()
+    return () => {
+      const index = this.admissionAdapters.findIndex(entry => entry.token === token)
+      if (index === -1) return
+      this.admissionAdapters.splice(index, 1)
+      this.notifyAdmission()
+    }
+  }
+
+  /** Subscribe to exact-route and adapter registration changes. */
+  subscribeAdmission(listener: () => void): () => void {
+    this.admissionListeners.add(listener)
+    return () => { this.admissionListeners.delete(listener) }
+  }
+
+  /** Resolve a feature model route or a fail-loud stock-shaped route for an ordinary fixture Session. */
+  modelRoute(sessionId: SessionId): SessionModelRoute | undefined {
+    const admission = this.resolveAdmission(sessionId)
+    if (admission !== undefined && 'modelRoute' in admission) {
+      const route = admission.modelRoute(sessionId)
+      return route === undefined ? undefined : testModelRoute(route)
+    }
+    if (
+      !this.records.has(sessionId)
+      || this.subagentAddress(sessionId) !== undefined
+      || this.list.getSnapshot().byId[sessionId]?.origin === 'subagent'
+    ) {
+      return undefined
+    }
+    return testStockModelRoute(sessionId)
+  }
+
+  /** Resolve the command catalog identity selected by the active admission route. */
+  commandCatalogSessionId(sessionId: SessionId): SessionId | undefined {
+    const admission = this.resolveAdmission(sessionId)
+    if (admission !== undefined) return admission.commandCatalogSessionId?.(sessionId)
+    if (this.subagentAddress(sessionId) !== undefined) return undefined
+    return sessionId
+  }
+
+  /** Resolve the skill catalog identity selected by the active admission route. */
+  skillCatalogSessionId(sessionId: SessionId): SessionId | undefined {
+    const admission = this.resolveAdmission(sessionId)
+    if (admission !== undefined) return admission.skillCatalogSessionId?.(sessionId)
+    if (this.subagentAddress(sessionId) !== undefined) return undefined
+    return sessionId
+  }
+
   /** Open an existing fixture through its catalog address. */
   openSubagent(address: SubagentAddress): void {
     this.calls.push({ method: 'openSubagent', args: [address] })
@@ -607,6 +764,9 @@ export class TestSessions implements ISessions {
         record.binding = undefined
       }
     }
+    this.exactAdmissions.clear()
+    this.admissionAdapters.length = 0
+    this.admissionListeners.clear()
   }
 
   private bindingOf(id: SessionId, record: SessionRecord): SessionBinding {
@@ -620,6 +780,19 @@ export class TestSessions implements ISessions {
       eventSource: record.session.eventSource,
       ctx,
     }
+  }
+
+  private resolveAdmission(sessionId: SessionId): SessionAdmissionRoute | undefined {
+    const exact = this.exactAdmissions.get(sessionId)
+    if (exact !== undefined) return exact.route
+    for (const entry of this.admissionAdapters) {
+      if (entry.adapter.handles(sessionId)) return entry.adapter
+    }
+    return undefined
+  }
+
+  private notifyAdmission(): void {
+    for (const listener of [...this.admissionListeners]) listener()
   }
 
   private require(id: string): SessionRecord {

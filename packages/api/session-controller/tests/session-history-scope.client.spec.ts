@@ -94,7 +94,8 @@ describe('Session owned-suffix history', () => {
     const svc = new ClientSessions(ctx, fakeRemote(api))
     await svc.refresh()
     const binding = svc.binding(SID)!
-    await binding.session.open()
+    svc.open(SID)
+    await vi.waitFor(() => { expect(binding.session.getSnapshot().openState).toBe('open') })
     const seqs = () => binding.eventSource.getSnapshot().entries.map(entry => entry.event.seq)
     expect(seqs()).toEqual([...parent, marker, ...own].map(event => event.seq))
 

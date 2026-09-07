@@ -77,6 +77,7 @@ describe('DragStrip', () => {
         wide
         t={t as never}
         useSessions={(() => { throw new Error('unused') })}
+        useSessionPendingInteraction={(() => { throw new Error('unused') })}
         useWorkspaces={(() => { throw new Error('unused') })}
       />,
     )
@@ -92,6 +93,7 @@ describe('DragStrip', () => {
         wide
         t={t as never}
         useSessions={(() => { throw new Error('unused') })}
+        useSessionPendingInteraction={(() => { throw new Error('unused') })}
         useWorkspaces={(() => { throw new Error('unused') })}
       />,
     )
@@ -110,6 +112,7 @@ describe('DragStrip', () => {
         wide
         t={t as never}
         useSessions={(() => { throw new Error('unused') })}
+        useSessionPendingInteraction={(() => { throw new Error('unused') })}
         useWorkspaces={(() => { throw new Error('unused') })}
       />,
     )

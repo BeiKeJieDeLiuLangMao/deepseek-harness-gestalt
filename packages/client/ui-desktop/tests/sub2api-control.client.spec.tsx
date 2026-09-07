@@ -233,6 +233,7 @@ function renderControl(snapshot: DesktopSub2ApiSnapshot): ReturnType<typeof rend
     <Sub2ApiControl
       t={t as never}
       useSessions={(() => { throw new Error('unused') })}
+      useSessionPendingInteraction={(() => { throw new Error('unused') })}
       useWorkspaces={(() => { throw new Error('unused') })}
       useSub2api={selector => selector(snapshot)}
       close={vi.fn()}

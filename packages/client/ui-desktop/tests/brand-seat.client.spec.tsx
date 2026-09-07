@@ -8,6 +8,7 @@ describe('BrandSeat', () => {
     const { container } = render(
       <BrandSeat
         useSessions={(() => { throw new Error('unused') })}
+        useSessionPendingInteraction={(() => { throw new Error('unused') })}
         useWorkspaces={(() => { throw new Error('unused') })}
       />,
     )

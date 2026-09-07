@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { SessionId } from '@deepseek-ai/dsh-session'
 import type { SidebarSessionList, SidebarSessionSummary } from '../src/context-types.ts'
 import {
   countSubagentDescendants,
@@ -12,11 +13,14 @@ function summary(
   id: string,
   overrides: Partial<SidebarSessionSummary> = {},
 ): SidebarSessionSummary {
-  return { id, displayTitle: id, running: false, blank: false, ...overrides }
+  return { id: SessionId(id), displayTitle: id, running: false, blank: false, ...overrides }
 }
 
 function list(...summaries: SidebarSessionSummary[]): SidebarSessionList {
-  return { current: 'parent', byId: Object.fromEntries(summaries.map(item => [item.id, item])) }
+  return {
+    current: SessionId('parent'),
+    byId: Object.fromEntries(summaries.map(item => [item.id, item])),
+  }
 }
 
 describe('Side Chat topology exclusion', () => {

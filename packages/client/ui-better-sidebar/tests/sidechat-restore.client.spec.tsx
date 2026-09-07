@@ -267,7 +267,10 @@ describe('subscribeSideThreadRestoration', () => {
       current: SessionId('session-a'),
       byId: { child: sideThread('child', 'session-a') },
     }
-    let workspaces = { phase: 'pending' as const, archivedSessionIds: [] }
+    let workspaces: {
+      phase: 'pending' | 'ready'
+      archivedSessionIds: readonly SessionId[]
+    } = { phase: 'pending', archivedSessionIds: [] }
     const ctx = {
       sessions: { list: {
         getSnapshot: () => sessions,

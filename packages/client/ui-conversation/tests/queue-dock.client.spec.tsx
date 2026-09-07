@@ -13,12 +13,11 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import {
-  bindSnapshotSelector, conversationSnapshot, makeTranslate,
+  bindSnapshotSelector, conversationSnapshot, inputActions, inputState, makeTranslate,
 } from '@deepseek-ai/dsh-client-test-runtime'
 import type { SessionPendingInteractionSnapshot } from '@deepseek-ai/dsh-client-ui-session/client'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import type { QueueItemId } from '../src/client/contract/queue.ts'
-import type { InputState } from '../src/client/contract/input.ts'
 import { zh } from '../src/client/locales.ts'
 import { QueueDock, queueDockEntry, type QueueDockInjected, type QueueDockProps } from '../src/client/queue/QueueDock.tsx'
 
@@ -65,7 +64,7 @@ function liveSession(initial: SessionSnapshot) {
   }
 }
 
-const INPUT_STATE: InputState = { draft: '', imageIds: [], draftRev: 0, phase: 'plain', occurrences: [], queue: [] }
+const INPUT_STATE = inputState()
 
 const t: QueueDockProps['t'] = makeTranslate(zh, commonZh)
 
@@ -83,7 +82,7 @@ function kitFor(snapshot: SessionSnapshot, injected: Partial<QueueDockInjected> 
     useChat: (() => { throw new Error('unused') }) as QueueDockProps['useChat'],
     useTrajectory: (() => { throw new Error('unused') }) as QueueDockProps['useTrajectory'],
     useInput: (() => { throw new Error('unused') }) as never,
-    inputActions: { setDraft: () => {}, submit: () => {} } as never,
+    inputActions: inputActions(),
     session: snapshot,
     input: INPUT_STATE,
     updateQueue: vi.fn(() => Promise.resolve()),
@@ -408,7 +407,7 @@ describe('QueueDock', () => {
     expect(rendered.getByLabelText('插话发送').getAttribute('title')).toBe('仅运行中可插话发送')
   })
 
-  it('renders a session-backed subagent Queue without unsupported actions', () => {
+  it('keeps edit, remove, and steer on a continuable subagent Queue', () => {
     const snap = {
       ...snapshotWith([row('i-subagent', 'pending child follow-up')]),
       subagent: {
@@ -426,6 +425,29 @@ describe('QueueDock', () => {
     )
 
     expect(view.getByText('pending child follow-up')).toBeTruthy()
+    expect(view.getByLabelText('编辑排队消息')).toBeTruthy()
+    expect(view.getByLabelText('删除排队消息')).toBeTruthy()
+    expect(view.getByLabelText('插话发送')).toBeTruthy()
+  })
+
+  it('hides queue actions on a one-shot subagent Queue', () => {
+    const snap = {
+      ...snapshotWith([row('i-one-shot', 'pending one-shot follow-up')]),
+      subagent: {
+        address: {
+          parentSessionId: 'parent' as SessionId,
+          childSessionId: SID,
+          mode: 'one-shot' as const,
+        },
+        parentAvailable: true,
+      },
+    }
+    const source = liveSession(snap)
+    const view = render(
+      <QueueDock {...kitFor(snap)} useSession={source.useSession} />,
+    )
+
+    expect(view.getByText('pending one-shot follow-up')).toBeTruthy()
     expect(view.queryByLabelText('编辑排队消息')).toBeNull()
     expect(view.queryByLabelText('删除排队消息')).toBeNull()
     expect(view.queryByLabelText('插话发送')).toBeNull()

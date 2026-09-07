@@ -248,7 +248,7 @@ describe('ModelSelect reasoning effort', () => {
 
   it('hides the control and refuses a later select when the live route disappears', async () => {
     const directory = createSnapshotStore<ModelDirectoryState>(state())
-    const select = vi.fn(async () => true)
+    const select = vi.fn<(selection: ModelSelection) => Promise<boolean>>(async () => true)
     const gated = (selection: ModelSelection) => directory.getSnapshot().available
       ? select(selection)
       : Promise.resolve(false)

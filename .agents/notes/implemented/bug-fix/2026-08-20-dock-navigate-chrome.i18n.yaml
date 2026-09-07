@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-20-dock-navigate-chrome.md
-2026-08-20-dock-navigate-chrome.md: 136ac6ffe6efd48efd7fc735dc39fbd656d4a3f0
-2026-08-20-dock-navigate-chrome.zh.md: dbe29c4522d400b051e4c55dbb81478f42e09d1f
+2026-08-20-dock-navigate-chrome.md: 116c30a17e364b070b75a78229cc20246797adf2
+2026-08-20-dock-navigate-chrome.zh.md: 8bd9e418c53b86e25d593f22eea9f0a333878e1e
