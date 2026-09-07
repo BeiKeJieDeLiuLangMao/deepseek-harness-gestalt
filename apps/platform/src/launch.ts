@@ -11,6 +11,9 @@ import * as PlatformAccountHttp from '@deepseek-ai/dsh-platform-account-http'
 import FileProjectMembership from '@deepseek-ai/dsh-project-membership-core'
 import * as ProjectMembershipHttp from '@deepseek-ai/dsh-project-membership-http'
 import {
+  PRESENCE_HEARTBEAT_INTERVAL_MS, PRESENCE_TTL_MS,
+} from '@deepseek-ai/dsh-project-membership-http'
+import {
   PersonalPairingProvider,
   parseRelayInstanceId,
   type PairingHandshakeProvider,
@@ -143,7 +146,11 @@ export async function launchOperatedPlatform(
       storagePath: config.membershipStoragePath,
       environment: environment.environment,
     })
-    await context.plugin(ProjectMembershipHttp, { origins: productOrigins })
+    await context.plugin(ProjectMembershipHttp, {
+      origins: productOrigins,
+      presenceHeartbeatIntervalMs: PRESENCE_HEARTBEAT_INTERVAL_MS,
+      presenceTtlMs: PRESENCE_TTL_MS,
+    })
     const relay = new RemoteRelayProvider(context, {
       instanceId: parseRelayInstanceId(config.relay.instanceId),
       routeStore: remoteAccess.routeStore,

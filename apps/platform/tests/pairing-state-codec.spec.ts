@@ -168,7 +168,9 @@ describe('pairing transaction codec', () => {
       cleanup,
     })
     state.accountChallengeAt.set('account-one', [10, 20])
-    state.blobs.set('blob-1', { accountId: 'account-one', bytes: 32, expiresAt: 1_787_027_200_000 })
+    state.blobs.set(parseAttachmentBlobReservationId('blob-1'), {
+      accountId: 'account-one', bytes: 32, expiresAt: 1_787_027_200_000,
+    })
     state.blobSequence.next = 4
     const decoded = decodePairingTransactionState(
       JSON.parse(JSON.stringify(encodePairingTransactionState(state))) as unknown,

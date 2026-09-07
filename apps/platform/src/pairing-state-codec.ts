@@ -17,6 +17,7 @@ import {
   type CompletionReplayRecord,
   type EndpointOwnedPairingMailboxState,
   type EndpointPairingPublication,
+  type EndpointStoredPersonalPairing,
   type EndpointPairingRevocation,
   type OrphanPendingCleanupRecord,
   type PendingOutcome,
@@ -179,7 +180,7 @@ function decodeEndpointPublication(value: unknown): EndpointPairingPublication {
     routeId: parseRelayRouteId(record.routeId),
     desktopCredentialDigest: decodeFixedBytes(record.desktopCredentialDigest, 'endpoint publication Desktop credential digest', 32),
     credentialDigest: decodeFixedBytes(record.credentialDigest, 'endpoint publication credential digest', 32),
-    pairing: decodeStoredPairing(record.pairing),
+    pairing: decodeEndpointStoredPairing(record.pairing),
     accessGeneration: positiveSafeInteger(record.accessGeneration, 'endpoint publication access generation'),
   }
   assertDistinctCredentialDigests(
@@ -547,6 +548,21 @@ function decodeStoredPairing(value: unknown): StoredPersonalPairing {
     )
   }
   return pairing
+}
+
+function decodeEndpointStoredPairing(value: unknown): EndpointStoredPersonalPairing {
+  const pairing = decodeStoredPairing(value)
+  if (pairing.endpointPendingPairingId === undefined || pairing.endpointRouteId === undefined
+    || pairing.endpointDesktopCredentialDigest === undefined || pairing.endpointCredentialDigest === undefined) {
+    throw new TypeError('endpoint publication pairing confirmation is incomplete')
+  }
+  return {
+    ...pairing,
+    endpointPendingPairingId: pairing.endpointPendingPairingId,
+    endpointRouteId: pairing.endpointRouteId,
+    endpointDesktopCredentialDigest: pairing.endpointDesktopCredentialDigest,
+    endpointCredentialDigest: pairing.endpointCredentialDigest,
+  }
 }
 
 function decodeConfirmedStoredPairing(value: unknown): StoredPersonalPairing {
