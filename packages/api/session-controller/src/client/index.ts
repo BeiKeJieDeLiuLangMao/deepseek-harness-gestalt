@@ -111,7 +111,7 @@ export const inject = [
 export function apply(ctx: Context): void {
   const remotes = ctx.remote as unknown as SessionRemotes
   const sessions = new ClientSessions(ctx, remotes)
-  const receiving = new ReceivingQuestionBook(ctx)
+  const receiving = new ReceivingQuestionBook(ctx.remote)
   ctx.effect(() => {
     ctx.reflect.provide('receivingQuestions', receiving, undefined)
     void receiving.start()

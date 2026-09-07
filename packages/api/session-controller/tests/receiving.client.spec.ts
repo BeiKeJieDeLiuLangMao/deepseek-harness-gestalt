@@ -100,18 +100,16 @@ function bench(options: {
   }))
   const snapshotCall = vi.fn(snapshotFn)
   const settle = vi.fn(settleFn)
-  const ctx = {
-    remote: {
-      memberQuestion: { snapshot: snapshotCall, settle },
-      $on: (event: string, listener: (...args: never[]) => void) => {
-        const set = listeners.get(event) ?? new Set()
-        listeners.set(event, set)
-        set.add(listener)
-        return () => { set.delete(listener) }
-      },
+  const remote = {
+    memberQuestion: { snapshot: snapshotCall, settle },
+    $on: (event: string, listener: (...args: never[]) => void) => {
+      const set = listeners.get(event) ?? new Set()
+      listeners.set(event, set)
+      set.add(listener)
+      return () => { set.delete(listener) }
     },
   }
-  const book = new ReceivingQuestionBook(ctx, {
+  const book = new ReceivingQuestionBook(remote, {
     ...(options.currentInstallationId === undefined
       ? {}
       : { currentInstallationId: options.currentInstallationId }),

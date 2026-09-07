@@ -3,7 +3,7 @@
  * Generated `memberQuestion` Remote is the only Host path. The book stores
  * Host pending views; UI owns PendingQuestion and drafts.
  */
-import type { Context } from '@deepseek-ai/cordis'
+import type { ClientRemote } from '@deepseek-ai/dsh-api-gateway/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { AskUserQuestionAnswer, AskUserQuestionItem } from '@deepseek-ai/dsh-user-questions/types'
 import type {
@@ -13,7 +13,7 @@ import type {
   PendingMemberQuestionView,
   TerminalMemberQuestionView,
 } from '@deepseek-ai/dsh-member-question-receiver/types'
-import type {} from '@deepseek-ai/dsh-api-remotes/client'
+import type {} from '@deepseek-ai/dsh-member-question-receiver/remote'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 
 /** Carried presentation intent for a routed member question. */
@@ -65,6 +65,8 @@ export type ReceivingQuestionSettleResponse =
 
 const EMPTY: readonly never[] = []
 
+type ReceivingQuestionRemote = Pick<ClientRemote, '$on' | 'memberQuestion'>
+
 /**
  * Build the receiving row title from the Host brief origin.
  * @param origin - carried project and source-Session identity.
@@ -76,7 +78,7 @@ export function briefSourceLine(origin: MemberQuestionIntent['origin']): string 
 
 /** Project one authoritative Host snapshot into identity-stable receiving rows. */
 export class ReceivingQuestionBook implements ObservableSnapshot<ReceivingQuestionBookView> {
-  readonly #ctx: Context
+  readonly #remote: ReceivingQuestionRemote
   readonly #onChange: () => void
   readonly #listeners = new Set<() => void>()
   #currentInstallationId: string | undefined
@@ -89,10 +91,10 @@ export class ReceivingQuestionBook implements ObservableSnapshot<ReceivingQuesti
   #dirty = false
 
   constructor(
-    ctx: Context,
+    remote: ReceivingQuestionRemote,
     options: ReceivingQuestionBookOptions & { onChange?: () => void } = {},
   ) {
-    this.#ctx = ctx
+    this.#remote = remote
     this.#onChange = options.onChange ?? (() => {})
     this.#currentInstallationId = options.currentInstallationId
   }
@@ -112,7 +114,7 @@ export class ReceivingQuestionBook implements ObservableSnapshot<ReceivingQuesti
    */
   start(): Promise<void> {
     if (this.#disposed) return Promise.reject(new Error('receiving question book is disposed'))
-    this.#offChanged ??= this.#ctx.remote.$on(
+    this.#offChanged ??= this.#remote.$on(
       'member-question-receiver/changed',
       (change: MemberQuestionReceiverChange) => { this.handleChanged(change) },
     )
@@ -201,7 +203,7 @@ export class ReceivingQuestionBook implements ObservableSnapshot<ReceivingQuesti
       questionId: pending.questionId,
       response,
     }
-    return this.#ctx.remote.memberQuestion.settle(request).then((carried) => {
+    return this.#remote.memberQuestion.settle(request).then((carried) => {
       if (!carried.ok) {
         if (carried.error.code === 'member-question/revision-stale') {
           return this.refresh().then(() => {
@@ -246,7 +248,7 @@ export class ReceivingQuestionBook implements ObservableSnapshot<ReceivingQuesti
   }
 
   private async load(): Promise<boolean> {
-    const carried = await this.#ctx.remote.memberQuestion.snapshot()
+    const carried = await this.#remote.memberQuestion.snapshot()
     if (this.#disposed) return false
     if (!carried.ok) return false
     this.applySnapshot(carried.value)
