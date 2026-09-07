@@ -12,7 +12,11 @@ export { displayName }
 const ID_PATTERN = /^sha256:([a-f0-9]{64})$/
 const durableHomes = new Set<string>()
 
-/** SHA-256 digest of exact stored bytes as lowercase hex. */
+/**
+ * Compute the content identity used by immutable attachment objects.
+ * @param data - exact bytes to hash.
+ * @returns the SHA-256 digest as 64 lowercase hexadecimal characters.
+ */
 export function digest(data: Uint8Array): string {
   return createHash('sha256').update(data).digest('hex')
 }

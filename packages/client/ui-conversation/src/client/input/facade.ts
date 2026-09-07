@@ -168,6 +168,7 @@ export class SessionInputShell implements SessionInput {
   private annotations: DraftAnnotation[] = []
   private annotationSeq = 1
   private annotationSubmitting = false
+  /** Active annotation admission token; settlement must return this exact object. */
   annotationReservation: { restoreText: string; ids: readonly TextAnnotationId[] } | undefined
   private annotationMirrorFn: ((value: PersistedAnnotationDraft | null) => void) | undefined
   private disposed = false
@@ -678,6 +679,12 @@ export class SessionInputShell implements SessionInput {
     this.publish()
   }
 
+  /**
+   * Add one unsent text annotation and publish the updated input state.
+   * @param anchor - resilient reference to the selected assistant text.
+   * @param note - user-authored note attached to the selection.
+   * @returns the Session-local annotation identity.
+   */
   addTextAnnotation(anchor: TextAnchor, note: string): TextAnnotationId {
     const id = brandAnnotationId(`annotation-${this.annotationSeq}`)
     this.annotationSeq += 1
@@ -686,6 +693,11 @@ export class SessionInputShell implements SessionInput {
     return id
   }
 
+  /**
+   * Replace an unsent text annotation's note; an active admission keeps its reserved value.
+   * @param id - annotation to update.
+   * @param note - replacement user-authored note.
+   */
   updateTextAnnotation(id: TextAnnotationId, note: string): void {
     if (this.annotationReservation?.ids.includes(id) === true) return
     this.annotations = this.annotations.map(item =>
@@ -693,17 +705,32 @@ export class SessionInputShell implements SessionInput {
     this.publish()
   }
 
+  /**
+   * Remove an unsent text annotation; an active admission keeps its reserved annotation.
+   * @param id - annotation to remove.
+   */
   removeTextAnnotation(id: TextAnnotationId): void {
     if (this.annotationReservation?.ids.includes(id) === true) return
     this.annotations = this.annotations.filter(item => item.id !== id)
     this.publish()
   }
 
+  /** Discard every unsent text annotation and image pin. */
   discardTextAnnotations(): void {
     this.annotations = []
     this.publish()
   }
 
+  /**
+   * Add one unsent pin to an image and publish the updated input state.
+   * @param imageId - browser attachment identity.
+   * @param imageName - display name included in submitted annotation prose.
+   * @param x - horizontal image position in `[0, 100]`.
+   * @param y - vertical image position in `[0, 100]`.
+   * @param note - user-authored note attached to the pin.
+   * @param source - whether the image comes from the Composer or Session history.
+   * @returns the Session-local annotation identity.
+   */
   addImagePin(
     imageId: string,
     imageName: string,
@@ -721,6 +748,11 @@ export class SessionInputShell implements SessionInput {
     return id
   }
 
+  /**
+   * Patch the supplied coordinates or note of one unsent image pin.
+   * @param id - image pin to update.
+   * @param patch - supplied positions in `[0, 100]` or note; omitted fields retain their current values.
+   */
   updateImagePin(id: TextAnnotationId, patch: { x?: number; y?: number; note?: string }): void {
     this.annotations = this.annotations.map((item) => {
       if (item.id !== id || item.kind !== 'image-pin') return item

@@ -9,9 +9,14 @@ import {
   type SubagentRoute,
 } from '@deepseek-ai/dsh-subagent-route-preauthorization'
 export { modelRouteKey }
+/** Exact provider/model route eligible for child delegation. */
 export type AllowedModelRoute = SubagentRoute
 
-/** Return a detached deterministic exact-route union. */
+/**
+ * Merge route lists into a detached deterministic exact-route union.
+ * @param sources - route lists to deduplicate by provider and model.
+ * @returns copied unique routes sorted by provider and model.
+ */
 export function unionModelRoutes(...sources: readonly (readonly AllowedModelRoute[])[]): AllowedModelRoute[] {
   const routes = new Map<string, AllowedModelRoute>()
   for (const source of sources) {

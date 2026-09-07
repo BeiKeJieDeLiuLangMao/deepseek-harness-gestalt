@@ -9,7 +9,11 @@ export interface SubagentRoute {
   readonly model: string
 }
 
-/** Stable identity for one exact route. */
+/**
+ * Build the stable identity for one exact child LLM route.
+ * @param route - provider and model pair to identify.
+ * @returns the NUL-delimited provider/model key.
+ */
 export function modelRouteKey(route: SubagentRoute): string {
   return `${route.provider}\0${route.model}`
 }
