@@ -22,7 +22,7 @@ preset persona 恰好是 `You are a helpful software engineer assistant.`，它�
 
 系统提示词与 persona 包测试证明了 complete 段最终约束与 runtime-context 抑制，包括 waterfall 修改与重复项拒绝。交付 preset 组合测试在默认原生呈现下断言精确的提示词、Bash 描述、要求绝对路径的编辑器 schema 和双工具目录。无密钥 Web 回放通过 `minimal` agent 发送一个真实请求，同时注册全局身份、Web 定位文本、动态策略上下文和一个测试段落；它断言不存在 runtime-context 快照、entry 本地文件系统是裸后端且压缩不存在，随后执行两次持久 Bash 调用，证明环境与 cwd 状态能够保留，并通过绝对路径执行编辑器。
 
-独立的 [`minimal.cordis.yml`](../../../../examples/jsonrpc-agent/minimal.cordis.yml) 是内置 JSON-RPC 运行时的完整双工具组合。[裸双工具运行时决策](../feature/2026-08-11-minimal-profiles-bare-two-tool-runtime.zh.md)说明其启动方式专属的环境配置、裸文件系统和无压缩选择。其无密钥 SDK 回放会断言组装后的系统提示词与双工具目录，跨调用执行持久 Bash，并使用编辑器；Python SDK 教程提供可运行的入口。
+独立的 [`sdk-minimal` bundle](../../../../packages/bundle/sdk-minimal/README.zh.md)是 `dsh --profile sdk-minimal` 的完整双工具组合。[裸双工具运行时决策](../feature/2026-08-11-minimal-profiles-bare-two-tool-runtime.zh.md)负责其启动方式专属的环境配置、裸文件系统与无压缩选择；[独立 profile 决策](../architecture/2026-08-24-standalone-sdk-minimal-profile.zh.md)负责其 launcher 与 bundle 位置。它的无密钥 SDK 进程测试断言组装后的系统提示词与双工具目录，installed-wheel 场景跨调用执行持久 Bash 并使用编辑器；Python SDK 教程提供可运行的入口。
 
 ## 考虑过的替代方案
 
@@ -36,4 +36,4 @@ preset persona 恰好是 `You are a helpful software engineer assistant.`，它�
 
 ## 后果
 
-Web RL 提示词固定不变，不能通过环境覆盖；独立 JSON-RPC 提示词由部署选择。Web preset 与独立 JSON-RPC 示例分别在各自的启动路径声明相同的双工具约定。模型只看到持久 `bash` 与 `str_replace_editor`；shell 状态按 agent 隔离，并随该 agent 一并消失。Web preset 为自身的 PTY 与裸文件系统服务实例承担开销，其他 preset 无需承担。持久 shell 的本地后端需要受支持的 POSIX 终端基础环境，因此该 preset 不支持 Windows agent。
+Web RL 提示词固定不变，不能通过环境覆盖；独立 JSON-RPC 提示词由部署选择。Web preset 与 `sdk-minimal` profile 在各自的启动路径共享持久 shell 加编辑器行为；`sdk-minimal` 在 Windows 上选择 PowerShell。shell 状态按 agent 隔离，并随该 agent 一并消失。Web preset 为自身的 PTY 与裸文件系统服务实例承担开销，其他 preset 无需承担。Web preset 的 Bash 后端需要受支持的 POSIX 终端基础环境，因此该 preset 不支持 Windows agent。

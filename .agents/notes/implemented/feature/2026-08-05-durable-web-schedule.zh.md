@@ -12,7 +12,7 @@ Status: implemented
 
 ## 决策
 
-[`examples/web-schedule`](../../../../examples/web-schedule/README.md) overlay 显式加载 `@deepseek-ai/dsh-time-context` 与 `@deepseek-ai/dsh-schedule`；纯浏览器 Web 的默认配置树保持不变。DeepSeek Gestalt Desktop overlay 默认加载同一插件对。Schedule 只观察插件加载后发布的根 Agent，并在该 Agent scope 中安装三个工具和一个可丢弃 owner。cold history 读取、已发布的根、child Agent 与没有其中一层 overlay 的 host 都不会激活它。
+[Schedule 指南](../../../../docs/user/guide/schedule.zh.md)使用一层显式加载 `@deepseek-ai/dsh-time-context` 与 `@deepseek-ai/dsh-schedule` 的 overlay；纯浏览器 Web 的默认配置树保持不变。DeepSeek Gestalt Desktop overlay 默认加载同一插件对。Schedule 只观察插件加载后发布的根 Agent，并在该 Agent scope 中安装三个工具和一个可丢弃 owner。cold history 读取、已发布的根、child Agent 与没有其中一层 overlay 的 host 都不会激活它。
 
 用户可见的投递边界是 `session-local`：原 Session 只有在 live 时才会准时运行提醒，cold 期间不发送任何外部通知；该 Session 再次 live 后才会处理 overdue 提醒。到期工作会等待 Agent 完全 idle，再通过 `followup()` 进入普通的下一轮队列；它绝不会中途引导当前轮次，也没有独立投递回执（[对话式交付](../simplification/2026-08-09-conversational-schedule-delivery.zh.md)）。Host fold 与工具接受持久 `create`／`pause`／`resume`／`delete`／`dispatch`；`schedule_list` 包含暂停行，`schedule_delete` 接受暂停 id。不存在面向模型的 pause 或 resume 工具。人工 pause/resume Remote 传输与 Desktop 任务板仍是保留的设计义务，尚未挂载；本 Host 包不安装 `ctx.schedules`。[Session Schedule 任务板](2026-08-17-session-schedule-board.zh.md) 决策仍拥有该目录。
 

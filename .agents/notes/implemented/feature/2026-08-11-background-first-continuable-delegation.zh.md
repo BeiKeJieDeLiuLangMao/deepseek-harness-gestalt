@@ -20,9 +20,9 @@ child 作用域的 `report` 提示词要求发送自包含的最终报告，而[
 - `run_in_background` 参数说明具体生命周期的默认值以及何时覆盖；
 - `tool:<toolName>` 系统提示词 section 会告诉模型同时启动相互独立的委派、在它们运行时继续有用工作，并且仅当下一步动作依赖结果时选择前台。只有当该工具在组装作用域中仍可见时才会渲染这个 section，因此子级工具限制会同时移除 schema 与对应指引。
 
-[可继续 child 上报义务](2026-08-06-continuable-child-report-obligation.zh.md)保持不变：child 提示词要求发送一份自包含的最终报告，并在发现会改变 parent 下一步动作的信息时提前报告。由管理器负责的结算仍然无条件执行，不检查报告是否已经到达。这两条消息可能重复最终内容，但作者和用途不同：`report` 是 child 的显式交接，结算则记录本次运行如何结束，并在 child 无法配合时保留终止输出。`reportDelivery` 仍是部署调度策略，默认值为 `next-step`，通过 parent inbox 保持报告先于结算的顺序。
+[相邻 Agent 消息决策](../architecture/2026-08-27-adjacent-agent-steer-messaging.zh.md)把直接 parent id、结束前发送一份自包含结果的指令，以及更早发送可操作发现的指令放进 child 的初始任务。由管理器负责的结算仍然无条件执行，不检查消息是否已经到达。这两条消息可能重复最终内容，但作者和用途不同：`send_message` 是 child 的显式交接，结算则记录本次运行如何结束，并在 child 无法配合时保留终止输出。两者都使用固定 Steer 投递，已接受的 child 消息先于后续结算通知。
 
-无密钥 headless `subagent-settlement` 场景省略 `run_in_background`，收到立即返回的 child id；尽管 fixture（测试前置数据）有意不调用 `report`，它仍通过管理器生成的结算通知到达 parent 最终答案。包测试另行固定了显式 `false` 的前台语义、parent 调度文本以及 child 的强制报告提示词。
+无密钥 headless `subagent-settlement` 场景省略 `run_in_background`，收到立即返回的 child id；尽管 fixture（测试前置数据）有意不发送 child 消息，它仍通过管理器生成的结算通知到达 parent 最终答案。包测试另行固定了显式 `false` 的前台语义、parent 调度文本以及 child 的返回消息指令。
 
 ## 考虑过的替代方案
 
