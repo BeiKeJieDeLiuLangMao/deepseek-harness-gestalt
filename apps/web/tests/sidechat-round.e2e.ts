@@ -164,11 +164,11 @@ describe.skipIf(MODE === 'record')('web e2e: Side Chat through the shipped workb
     await page.getByRole('menuitem', { name: 'Read Only', exact: true }).click()
     await panel.getByRole('button', { name: 'Access mode, current: Read Only' }).waitFor({ timeout: 10_000 })
     await expect.poll(() => [
-      latestPermissionPreset(parent?.session.events ?? []),
-      latestPermissionPreset(child?.session.events ?? []),
+      latestPermissionPreset(parent?.session.ownEvents() ?? []),
+      latestPermissionPreset(child?.session.ownEvents() ?? []),
     ], { timeout: 10_000 }).toEqual(['read-only', 'read-only'])
 
-    const injection = child?.session.events.find((event: SessionEvent) => {
+    const injection = child?.session.ownEvents().find((event: SessionEvent) => {
       if (event.type !== 'user/message') return false
       const first = event.data.content[0]
       return first?.type === 'text' && first.text.startsWith(SIDE_BOUNDARY_PREFIX)
@@ -205,7 +205,7 @@ describe.skipIf(MODE === 'record')('web e2e: Side Chat through the shipped workb
         hasText: `${failureMessage} (gateway/internal)`,
       })
       await failureAlert.waitFor({ timeout: 10_000 })
-      await expect(sideComposer).toHaveValue(FAILURE_PROMPT)
+      await expect.poll(() => sideComposer.inputValue()).toBe(FAILURE_PROMPT)
       expect(await exclusiveWriter.read()).toEqual(childEventsBeforeFailure)
       await compareOrRefreshGolden(
         FAILURE_EXPECTED,

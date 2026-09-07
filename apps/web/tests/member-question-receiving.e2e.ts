@@ -111,16 +111,16 @@ describe.skipIf(MODE === 'record')('web e2e: Host-owned member-question receivin
     onTestFailed(() => saveFailureShot(page, 'web-e2e-member-question-host-receiver'))
     forbiddenRequests.length = 0
     const initialSessionIds = scaffold.ctx.sessions.list().map(session => session.id)
-    const receiverWorkspace = scaffold.ctx.workspaceRegistry.list()
-      .find(candidate => candidate.path === join(scaffold.workspaceCwd, 'workspace'))
-    if (receiverWorkspace === undefined) throw new Error('member-question e2e: connected workspace unavailable')
+    const receiverWorkspacePath = join(harnessHome, 'receiver-workspace')
+    await mkdir(receiverWorkspacePath, { recursive: true })
+    const receiverWorkspace = await scaffold.ctx.workspaceRegistry.create(receiverWorkspacePath)
     await receiverWorkspace.setTitle('Atlas Bound Workspace')
     const projectId = 'project-atlas'
     await bindReceiverWorkspace(receiver, projectId, receiverWorkspace.id)
     const create = vi.spyOn(scaffold.ctx.sessionController, 'create')
     const prompt = vi.spyOn(scaffold.ctx.sessionController, 'prompt')
     const ingress = createAuthenticatedMemberQuestionIngress(receiver)
-    const workspaceRoot = join(scaffold.workspaceCwd, 'workspace')
+    const workspaceRoot = receiverWorkspacePath
     await mkdir(join(workspaceRoot, 'docs'), { recursive: true })
     await writeFile(join(workspaceRoot, 'docs', 'receiver-decision.md'), 'LOCAL WORKSPACE COPY\n')
     try {
@@ -149,7 +149,7 @@ describe.skipIf(MODE === 'record')('web e2e: Host-owned member-question receivin
       expect(receiverWorkspace.sessionIds).toContain(first.receivingSessionId)
       expect(create).not.toHaveBeenCalled()
       expect(prompt).not.toHaveBeenCalled()
-      expect(scaffold.ctx.sessions.get(first.receivingSessionId as never)?.events
+      expect(scaffold.ctx.sessions.get(first.receivingSessionId as never)?.snapshotEvents()
         .filter(event => event.type === 'request/header')).toHaveLength(0)
       const cachedPath = join(
         workspaceRoot, '.dsh', 'member-questions', 'mq-web-host-1', 'receiver-decision.md',
@@ -184,7 +184,7 @@ describe.skipIf(MODE === 'record')('web e2e: Host-owned member-question receivin
       const composer = agentComposer.locator('textarea:enabled')
       await composer.fill('Help me evaluate the rollout tradeoffs before I answer.')
       await agentComposer.getByRole('button', { name: 'Send message', exact: true }).click()
-      await expect.poll(() => scaffold.ctx.sessions.get(first.receivingSessionId as never)?.events
+      await expect.poll(() => scaffold.ctx.sessions.get(first.receivingSessionId as never)?.snapshotEvents()
         .filter(event => event.type === 'turn/start').length).toBe(1)
       await card.getByRole('radio', { name: 'Canary' }).click()
       await card.getByRole('button', { name: 'Submit' }).click()
@@ -192,7 +192,7 @@ describe.skipIf(MODE === 'record')('web e2e: Host-owned member-question receivin
       await expect.poll(async () => (await receiver.snapshot()).terminal[0]?.terminal.outcome)
         .toBe('answered')
       await expect.poll(() => page.locator('[data-record-state="answered"]').count()).toBe(0)
-      await expect.poll(() => scaffold.ctx.sessions.get(first.receivingSessionId as never)?.events.filter(event =>
+      await expect.poll(() => scaffold.ctx.sessions.get(first.receivingSessionId as never)?.snapshotEvents().filter(event =>
         event.type === 'member-question/settled'
         && event.data.questionId === 'mq-web-host-1'
         && event.data.outcome === 'answered').length).toBe(1)
@@ -207,7 +207,7 @@ describe.skipIf(MODE === 'record')('web e2e: Host-owned member-question receivin
       await expect.poll(async () => (await receiver.snapshot()).terminal.at(-1)?.terminal.outcome)
         .toBe('declined')
       await expect.poll(() => page.locator('[data-record-state="declined"]').count()).toBe(1)
-      await expect.poll(() => scaffold.ctx.sessions.get(first.receivingSessionId as never)?.events.filter(event =>
+      await expect.poll(() => scaffold.ctx.sessions.get(first.receivingSessionId as never)?.snapshotEvents().filter(event =>
         event.type === 'member-question/settled'
         && event.data.questionId === 'mq-web-host-2'
         && event.data.outcome === 'declined').length).toBe(1)
@@ -220,14 +220,14 @@ describe.skipIf(MODE === 'record')('web e2e: Host-owned member-question receivin
       await expect.poll(() => page.locator('[data-question-key]').filter({
         has: page.locator('[data-member-presentation]'),
       }).count()).toBe(1)
-      await expect.poll(() => scaffold.ctx.sessions.get(first.receivingSessionId as never)?.events.filter(event =>
+      await expect.poll(() => scaffold.ctx.sessions.get(first.receivingSessionId as never)?.snapshotEvents().filter(event =>
         event.type === 'member-question/received' && event.data.questionId === 'mq-web-host-3').length).toBe(1)
       const nextAgentComposer = page.locator('[data-composer-card]')
       await nextAgentComposer.locator('textarea:enabled').fill('Include the newly arrived rollback question too.')
       await nextAgentComposer.getByRole('button', { name: 'Send message', exact: true }).click()
-      await expect.poll(() => scaffold.ctx.sessions.get(first.receivingSessionId as never)?.events.filter(event =>
+      await expect.poll(() => scaffold.ctx.sessions.get(first.receivingSessionId as never)?.snapshotEvents().filter(event =>
         event.type === 'user/message' && event.data.id === 'member-question-brief:mq-web-host-3').length).toBe(1)
-      await expect.poll(() => scaffold.ctx.sessions.get(first.receivingSessionId as never)?.events.filter(event =>
+      await expect.poll(() => scaffold.ctx.sessions.get(first.receivingSessionId as never)?.snapshotEvents().filter(event =>
         event.type === 'turn/start').length).toBe(2)
       const beforeRestart = await receiver.snapshot()
       expect(beforeRestart.pending.map(row => row.questionId)).toEqual(['mq-web-host-3'])
@@ -293,10 +293,10 @@ describe.skipIf(MODE === 'record')('web e2e: Host-owned member-question receivin
       await expect.poll(() => page.locator('[data-record-state="answered"]').count()).toBe(0)
       await expect.poll(() => page.locator('[data-record-state="declined"]').count()).toBe(1)
       const persistedSessions = await scaffold.ctx.sessionPersistence.list()
-      expect(persistedSessions.map(session => session.id)).toContain(first.receivingSessionId)
+      expect(persistedSessions.map(session => session.header.id)).toContain(first.receivingSessionId)
       await expect.poll(() => scaffold.ctx.sessions.get(first.receivingSessionId as never)).toBeDefined()
       const restartedSession = scaffold.ctx.sessions.get(first.receivingSessionId as never)
-      expect(restartedSession?.events.filter(event => event.type === 'member-question/settled'))
+      expect(restartedSession?.snapshotEvents().filter(event => event.type === 'member-question/settled'))
         .toHaveLength(2)
       expect(restartedCreate).not.toHaveBeenCalled()
       expect(new Set(restartedFollow.mock.calls.map(([request]) => {
@@ -397,12 +397,13 @@ describe.skipIf(MODE === 'record')('web e2e: Host-owned member-question receivin
         receivingSessionId: arrived.receivingSessionId,
       })
       const session = restartScaffold.ctx.sessions.get(arrived.receivingSessionId as never)
-      expect(session?.events.filter(event => event.type === 'turn/start')).toHaveLength(1)
-      expect(session?.events.filter(event => event.type === 'user/message'
+      const events = session?.snapshotEvents()
+      expect(events?.filter(event => event.type === 'turn/start')).toHaveLength(1)
+      expect(events?.filter(event => event.type === 'user/message'
         ? event.data.id === `member-question-human:${rpcId}`
         : event.type === 'agent/inbox/spliced'
           && event.data.inserted.some(message => message.id === `member-question-human:${rpcId}`))).toHaveLength(1)
-      const humanContent = session?.events.flatMap((event) => {
+      const humanContent = events?.flatMap((event) => {
         if (event.type === 'user/message' && event.data.id === `member-question-human:${rpcId}`) {
           return [event.data.content]
         }
@@ -459,9 +460,9 @@ describe.skipIf(MODE === 'record')('web e2e: Host-owned member-question receivin
       await faultPage.getByRole('button', { name: 'Send message', exact: true }).click()
       await expect.poll(() => promptRpcIds.length).toBe(2)
       expect(promptRpcIds.length).toBeGreaterThan(0)
-      await expect.poll(() => faultScaffold.ctx.sessions.get(arrived.receivingSessionId as never)?.events
+      await expect.poll(() => faultScaffold.ctx.sessions.get(arrived.receivingSessionId as never)?.snapshotEvents()
         .filter(event => event.type === 'turn/start').length).toBeGreaterThan(0)
-      await expect.poll(() => faultScaffold.ctx.sessions.get(arrived.receivingSessionId as never)?.events.filter(event =>
+      await expect.poll(() => faultScaffold.ctx.sessions.get(arrived.receivingSessionId as never)?.snapshotEvents().filter(event =>
         event.type === 'user/message' && event.data.content.some(block =>
           block.type === 'text' && block.text === text)).length).toBeGreaterThan(0)
     } finally {
@@ -493,7 +494,7 @@ describe.skipIf(MODE === 'record')('web e2e: Host-owned member-question receivin
       const realFlush = faultScaffold.ctx.sessions.flush.bind(faultScaffold.ctx.sessions)
       let terminalAttempts = 0
       vi.spyOn(faultScaffold.ctx.sessions, 'flush').mockImplementation((session) => {
-        const terminal = session.events.some(event => event.type === 'member-question/settled'
+        const terminal = session.snapshotEvents().some(event => event.type === 'member-question/settled'
           && event.data.questionId === arrived.questionId)
         if (!terminal) return realFlush(session)
         terminalAttempts += 1
@@ -508,7 +509,7 @@ describe.skipIf(MODE === 'record')('web e2e: Host-owned member-question receivin
         settledAt: Date.now(),
       })
       await expect.poll(() => terminalAttempts, { timeout: 5_000 }).toBe(2)
-      expect(faultScaffold.ctx.sessions.get(arrived.receivingSessionId as never)?.events.filter(event =>
+      expect(faultScaffold.ctx.sessions.get(arrived.receivingSessionId as never)?.snapshotEvents().filter(event =>
         event.type === 'member-question/settled'
         && event.data.questionId === arrived.questionId)).toHaveLength(1)
 
@@ -570,9 +571,9 @@ describe.skipIf(MODE === 'record')('web e2e: Host-owned member-question receivin
       await expect(faultReceiver.admitHumanTurn(request)).rejects.toThrow(`injected ${stage} failure`)
       vi.restoreAllMocks()
       await expect(faultReceiver.admitHumanTurn(request)).resolves.toMatchObject({ accepted: true })
-      await expect.poll(() => faultScaffold.ctx.sessions.get(arrived.receivingSessionId as never)?.events
+      await expect.poll(() => faultScaffold.ctx.sessions.get(arrived.receivingSessionId as never)?.snapshotEvents()
         .filter(event => event.type === 'turn/start').length).toBe(1)
-      await expect.poll(() => faultScaffold.ctx.sessions.get(arrived.receivingSessionId as never)?.events
+      await expect.poll(() => faultScaffold.ctx.sessions.get(arrived.receivingSessionId as never)?.snapshotEvents()
         .filter(event => event.type === 'user/message'
           ? event.data.id === `member-question-human:rpc-${stage}`
           : event.type === 'agent/inbox/spliced'
@@ -583,9 +584,9 @@ describe.skipIf(MODE === 'record')('web e2e: Host-owned member-question receivin
       expect(materialized).toBeDefined()
       expect(faultScaffold.ctx.sessions.list()
         .filter(session => String(session.id) === String(arrived.receivingSessionId))).toHaveLength(1)
-      expect(materialized?.events.filter(event => event.type === 'member-question/received'
+      expect(materialized?.snapshotEvents().filter(event => event.type === 'member-question/received'
         && event.data.questionId === `mq-web-${stage}`)).toHaveLength(1)
-      expect(materialized?.events.filter(event => event.type === 'user/message'
+      expect(materialized?.snapshotEvents().filter(event => event.type === 'user/message'
         ? event.data.id === `member-question-human:rpc-${stage}`
         : event.type === 'agent/inbox/spliced'
           && event.data.inserted.some(message => message.id === `member-question-human:rpc-${stage}`)))
