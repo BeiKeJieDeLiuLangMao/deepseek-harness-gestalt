@@ -13,6 +13,7 @@
 import { randomUUID } from 'node:crypto'
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
+import type {} from '@deepseek-ai/dsh-agent'
 import type { SealedProjectPeerGrant } from '@deepseek-ai/dsh-remote-access'
 import {
   createCompanionNegotiationChannel,
