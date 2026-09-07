@@ -29,6 +29,11 @@ import { TrajectoryView, type TrajectoryViewInjected } from './TrajectoryView.ts
 
 export type { TrajectoryKey } from './locales.ts'
 export type {
+  TrajectoryToolbarUtilityOwnerProps,
+  TrajectoryToolbarUtilityProps,
+  TrajectoryViewRenderSlots,
+} from './slots.ts'
+export type {
   TrajectoryContribution,
   TrajectoryConversationViewNode,
   TrajectoryRequestHeaderState,

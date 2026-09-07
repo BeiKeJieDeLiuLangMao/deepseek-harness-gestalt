@@ -4,10 +4,7 @@ import { join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
-/**
- * Built-artifact smoke for the first generated Remote: plain Node boots the
- * Host and Browser bundle handoffs, then crosses the shared `/api` HTTP route.
- */
+/** Built-artifact smoke for generated Remotes over the shared `/api` HTTP route. */
 
 const packageDir = fileURLToPath(new URL('..', import.meta.url))
 const root = resolve(packageDir, '../../..')
@@ -18,6 +15,9 @@ const requiredArtifacts = [
   'packages/client/connection/lib/client.js',
   'packages/client/connection/lib/index.js',
   'packages/api/remotes/lib/client.js',
+  'packages/browser/browser-runtime-deterministic/lib/index.js',
+  'packages/browser/browser-workspace/lib/index.js',
+  'packages/browser/browser-workspace/lib/typert.host.js',
   'packages/core/agent/lib/index.js',
   'packages/core/session/lib/index.js',
   'packages/goal/goal/lib/index.js',
@@ -29,12 +29,15 @@ const requiredArtifacts = [
   'packages/session/session-projection/lib/index.js',
 ].every(path => existsSync(artifact(path)))
 
-describe.skipIf(!requiredArtifacts)('Goal Remote built LIB chain', () => {
-  it('runs root and Agent-scoped calls through generated bundles and real HTTP', async () => {
+describe.skipIf(!requiredArtifacts)('generated Remote built LIB chains', () => {
+  it('runs Goal and Browser Workspace calls through generated bundles and real HTTP', async () => {
     const urls = Object.fromEntries(Object.entries({
       agent: 'packages/core/agent/lib/index.js',
       apiGatewayClient: 'packages/api/gateway/lib/client.js',
       apiGatewayHost: 'packages/api/gateway/lib/index.js',
+      browserRuntimeDeterministic: 'packages/browser/browser-runtime-deterministic/lib/index.js',
+      browserWorkspace: 'packages/browser/browser-workspace/lib/index.js',
+      browserWorkspaceTypert: 'packages/browser/browser-workspace/lib/typert.host.js',
       connectionClient: 'packages/client/connection/lib/client.js',
       connectionHost: 'packages/client/connection/lib/index.js',
       goal: 'packages/goal/goal/lib/index.js',
@@ -52,13 +55,19 @@ describe.skipIf(!requiredArtifacts)('Goal Remote built LIB chain', () => {
       const urls = ${JSON.stringify(urls)}
       const { Context } = cordis
       const { default: AgentRegistry } = await import(urls.agent)
+      const { default: BrowserRuntimeDeterministic } = await import(urls.browserRuntimeDeterministic)
+      const { default: BrowserWorkspaceBinder } = await import(urls.browserWorkspace)
+      const { TYPERT: BROWSER_WORKSPACE_TYPERT } = await import(urls.browserWorkspaceTypert)
       const connectionHost = await import(urls.connectionHost)
       const { default: TypertRemoteService } = await import(urls.apiGatewayHost)
       const { default: GoalService } = await import(urls.goal)
       const { default: SessionProjectionRegistry } = await import(urls.sessionProjections)
-      const { TYPERT } = await import(urls.goalTypert)
+      const { TYPERT: GOAL_TYPERT } = await import(urls.goalTypert)
       const { default: TypertRegistry } = await import(urls.registryHost)
-      const { Session, SessionId } = await import(urls.session)
+      const { default: SessionStore, Session, SessionId } = await import(urls.session)
+
+      const PAGE_URL = 'https://alpha.test/'
+      const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
 
       const routes = []
       const credentialRecords = new Map()
@@ -81,12 +90,19 @@ describe.skipIf(!requiredArtifacts)('Goal Remote built LIB chain', () => {
         },
       })
       await host.plugin({ inject: connectionHost.inject, apply: connectionHost.apply })
+      await host.plugin(SessionStore)
+      await host.plugin(SessionProjectionRegistry)
+      await host.plugin(BrowserRuntimeDeterministic, {
+        idPrefix: 'built-browser',
+        pages: [{ url: PAGE_URL, title: 'Alpha', text: 'alpha', screenshotPngBase64: PNG }],
+      })
       await host.plugin(TypertRegistry)
       await host.plugin(AgentRegistry)
       await host.plugin(TypertRemoteService)
-      await host.plugin(SessionProjectionRegistry)
       await host.plugin(GoalService)
-      host.typert.register(TYPERT)
+      await host.plugin(BrowserWorkspaceBinder)
+      host.typert.register(GOAL_TYPERT)
+      host.typert.register(BROWSER_WORKSPACE_TYPERT)
 
       const makeAgent = rawId => {
         const session = new Session(SessionId(rawId))
@@ -109,6 +125,7 @@ describe.skipIf(!requiredArtifacts)('Goal Remote built LIB chain', () => {
       }
       const rootAgent = makeAgent('built-root-agent')
       const scopedAgent = makeAgent('built-scoped-agent')
+      const browserSession = host.sessions.create(SessionId('built-browser-session'))
       host.agents.register(rootAgent)
       host.agents.register(scopedAgent)
 
@@ -161,6 +178,8 @@ describe.skipIf(!requiredArtifacts)('Goal Remote built LIB chain', () => {
         })
       }
       const client = new Context()
+      let remotesPlugin
+      let remotesFiber
       for (const id of [
         '@deepseek-ai/dsh-typert-registry',
         '@deepseek-ai/dsh-client-connection',
@@ -168,7 +187,12 @@ describe.skipIf(!requiredArtifacts)('Goal Remote built LIB chain', () => {
         '@deepseek-ai/dsh-api-remotes',
       ]) {
         const plugin = instantiate(id)
-        await client.plugin({ inject: plugin.inject, apply: plugin.apply })
+        const fiber = client.plugin({ inject: plugin.inject, apply: plugin.apply })
+        await fiber
+        if (id === '@deepseek-ai/dsh-api-remotes') {
+          remotesPlugin = plugin
+          remotesFiber = fiber
+        }
       }
       client.typert.contexts.registerClient('agent', {
         identity: candidate => candidate.builtAgentId,
@@ -190,6 +214,36 @@ describe.skipIf(!requiredArtifacts)('Goal Remote built LIB chain', () => {
       )
       const agentContext = client.extend({ builtAgentId: scopedAgent.id })
       const scopedResult = await agentContext.remote.goals.create({ objective: 'scoped goal', maxGoalRounds: 3 })
+      const remoteValue = result => {
+        if (!result.ok) throw result.error
+        return result.value
+      }
+      const browserPage = remoteValue(await client.remote.browserWorkspace.create(
+        browserSession.id,
+        { profile: 'temporary' },
+      ))
+      const navigated = remoteValue(await client.remote.browserWorkspace.navigate(
+        browserSession.id,
+        browserPage.target,
+        browserPage.revision,
+        PAGE_URL,
+      ))
+      const observed = remoteValue(await client.remote.browserWorkspace.observe(browserSession.id, browserPage.target))
+      const screenshot = remoteValue(await client.remote.browserWorkspace.screenshot(browserSession.id, browserPage.target))
+      const focused = remoteValue(await client.remote.browserWorkspace.focus(
+        browserSession.id,
+        browserPage.target,
+        navigated.revision,
+      ))
+      if (remotesFiber === undefined || remotesPlugin === undefined) throw new Error('missing api-remotes Client fiber')
+      const memberQuestionMounted = typeof client.remote.memberQuestion.snapshot === 'function'
+      await remotesFiber.dispose()
+      const browserUnmounted = client.get('remote.browserWorkspace') === undefined
+      const memberQuestionUnmounted = client.get('remote.memberQuestion') === undefined
+      const remount = client.plugin({ inject: remotesPlugin.inject, apply: remotesPlugin.apply })
+      await remount
+      const remounted = remoteValue(await client.remote.browserWorkspace.observe(browserSession.id, browserPage.target))
+      const memberQuestionRemounted = typeof client.remote.memberQuestion.snapshot === 'function'
       const result = {
         invalidRejected,
         rootResult: rootResult.value,
@@ -199,6 +253,19 @@ describe.skipIf(!requiredArtifacts)('Goal Remote built LIB chain', () => {
         scopedGoal: host.goals.get(scopedAgent)?.objective,
         rootEvents: rootAgent.session.snapshotEvents().length,
         scopedEvents: scopedAgent.session.snapshotEvents().length,
+        memberQuestion: {
+          mounted: memberQuestionMounted,
+          unmounted: memberQuestionUnmounted,
+          remounted: memberQuestionRemounted,
+        },
+        browser: {
+          navigateUrl: navigated.url,
+          observeStatus: observed.status,
+          screenshotMediaType: screenshot.mediaType,
+          focusStatus: focused.status,
+          browserUnmounted,
+          remountedStatus: remounted.status,
+        },
       }
 
       await client.fiber.dispose()
@@ -221,6 +288,19 @@ describe.skipIf(!requiredArtifacts)('Goal Remote built LIB chain', () => {
       scopedGoal: string
       rootEvents: number
       scopedEvents: number
+      memberQuestion: {
+        mounted: boolean
+        unmounted: boolean
+        remounted: boolean
+      }
+      browser: {
+        navigateUrl: string
+        observeStatus: string
+        screenshotMediaType: string
+        focusStatus: string
+        browserUnmounted: boolean
+        remountedStatus: string
+      }
     }
     expect(output).toMatchObject({
       invalidRejected: true,
@@ -231,6 +311,19 @@ describe.skipIf(!requiredArtifacts)('Goal Remote built LIB chain', () => {
       scopedGoal: 'scoped goal',
       rootEvents: 2,
       scopedEvents: 1,
+      memberQuestion: {
+        mounted: true,
+        unmounted: true,
+        remounted: true,
+      },
+      browser: {
+        navigateUrl: 'https://alpha.test/',
+        observeStatus: 'open',
+        screenshotMediaType: 'image/png',
+        focusStatus: 'open',
+        browserUnmounted: true,
+        remountedStatus: 'open',
+      },
     })
     expect(output.rootResult.ref.id).toMatch(/^goal-/)
     expect(output.scopedResult.ref.id).toMatch(/^goal-/)

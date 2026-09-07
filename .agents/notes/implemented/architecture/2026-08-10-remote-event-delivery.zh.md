@@ -123,6 +123,8 @@ zod 侧 `args: z.array(z.unknown())`：帧本身来自 `JSON.parse`，元素必�
 
 所需的客户端符号在测试侧**镜像**了一份（`scaffold.ts` 导出镜像后的 welcome-notice 常量，两个 chat e2e 直接引 `dsh-client-runtime/client` 因为 `runtime` 工程本来就在 host 图里），从而让那 4 个消费者离开了 host 图；`apps/cli/tsconfig.json` 里 15 条 client 工程引用随之失去 owner-map 职责，已一并删除。镜像值与源逐字一致，漂移的表现是选择器失配或通知未被抑制，都是响亮失败。
 
+同时覆盖两个 face 的包测试使用构建后产物通道，不从 Client 命名测试导入 Host 源码。`packages/api/remotes/tests/built-lib.e2e.ts` 启动 plain Node 子进程，加载构建后的 Host 库与 Client bundle handoff，跨真实 `/api` HTTP 路由调用生成的 Goal 和 Browser Workspace Remote；Browser 路径使用 deterministic Runtime，并验证 namespace 卸载与重新挂载。
+
 ### 改动清单
 
 | 位置 | 改动 |
@@ -158,6 +160,7 @@ zod 侧 `args: z.array(z.unknown())`：帧本身来自 `JSON.parse`，元素必�
 钉住该行为的东西：
 
 - 一个真组合测试：host 每 emit 一次，真实 host 流就出一帧 `host/remote-event`，`event` 为 host 原名、`args` 与实参逐元素相等。
+- 构建后 Remote 测试从 Client bundle 经真实 HTTP 调用 Host 的 Goal 与 Browser Workspace 服务；Browser 的 navigate、observe、screenshot、focus、namespace 卸载及重新挂载全部跨生成的 contribution。
 - 类型层负例拒绝三类候选：不是事件的名字、绑 Scope 的事件（`goal/changed`）、返回值非 `void` 的事件。`$on('slots/changed', …)`（client 本地事件）与 `$on('skills/change', …)`（已声明但未选中）都编译失败——因此 `$on` 的键面恰好等于名单。
 - 消费端 `$on('settings/document-updated', …)` 把 `ns` 解析为 `SettingsNamespace`：brand 穿过 wire 存活。
 - `$on` 的 disposer 归属调用方 fiber；同一个函数对象订阅两次时两条注册各自独立退订——按 listener 身份做键的表会把它们合并，所以订阅按注册项寻址。
