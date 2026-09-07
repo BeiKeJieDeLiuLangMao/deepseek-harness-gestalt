@@ -36,6 +36,24 @@ function tree(options: {
 }
 
 describe('openAndroidSystemH264', () => {
+  it('registers exact-tree cleanup before returning an unread capture', async () => {
+    const stopped = Promise.withResolvers<undefined>()
+    const fake = tree({ stop: () => stopped.promise })
+    let stopOwned: (() => Promise<void>) | undefined
+    const body = openAndroidSystemH264({
+      deviceId: 'device-1',
+      environment: { ANDROID_SDK_ROOT: '/sdk' },
+      signal: new AbortController().signal,
+      ownTree: (stop) => { stopOwned = stop },
+    }, { platform: 'linux', isExecutable: () => true, launch: () => fake.value })
+    expect(stopOwned).toBeDefined()
+    const joining = stopOwned?.()
+    expect(joining).toBe(stopped.promise)
+    stopped.resolve(undefined)
+    await joining
+    await body.cancel()
+  })
+
   it('uses the selected SDK adb and streams stdout through clean exit', async () => {
     const fake = tree()
     const launch = vi.fn(() => fake.value)

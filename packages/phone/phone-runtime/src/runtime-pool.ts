@@ -149,18 +149,18 @@ export interface PhoneRuntimePool {
     signal?: AbortSignal
   }): Promise<void>
   /**
-   * Stop the external child without last-release. Occupancies stay live.
-   * Operations reject `PHONE_UNRESOLVED`. The next start bumps epoch and aborts
-   * those ids; callers must `acquireExternal` again. Does not autostart.
-   * A pre-aborted signal rejects without mutation. Start/stop ownership remains
-   * available to dispose, including an already-rejected stop result.
+   * Abort pending occupancies and stop the external child without last-release.
+   * Live occupancies remain unresolved. A new acquire is refused until pending
+   * start and exact late-child cleanup settle. Cleanup failure remains recorded
+   * and blocks restart. Does not autostart. A pre-aborted signal rejects without
+   * mutation. Start/stop ownership remains available to dispose.
    */
   stopExternal(signal?: AbortSignal): Promise<void>
   /**
    * Close admission, abort occupancies and bound cleanup by cleanupTimeoutMs.
    * Repeated and reentrant calls share one Promise; there is no caller signal.
-   * Failures of retained published-generation stop Promises collected within
-   * the budget reject (multiple failures use AggregateError). Budget expiry
+   * Failure of the retained published-generation stop Promise collected within
+   * the budget rejects. Budget expiry
    * resolves with cleanupPending; subsequent stop failures are recorded.
    * Late-start and late-child cleanup failures are recorded in
    * lifecycle().cleanupFailures whether or not dispose has settled.
@@ -191,7 +191,7 @@ export interface PhoneRuntimePoolOptions {
 }
 
 type OccupancyState = 'pending' | 'live' | 'released' | 'aborted'
-type CellPhase = 'empty' | 'starting' | 'ready' | 'replacing' | 'stopping' | 'cleanupPending'
+type CellPhase = 'empty' | 'starting' | 'ready' | 'replacing' | 'stopping' | 'cleanupPending' | 'cleanupFailed'
 
 interface OccupancyRecord {
   readonly id: PhoneRuntimeOccupancyId
@@ -213,9 +213,10 @@ interface Cell {
   startAbort: AbortController
   startWork: Promise<void> | undefined
   startError: unknown
+  cleanupError: Error | undefined
   cleanupWork: Promise<void> | undefined
   readonly starts: Set<Promise<void>>
-  readonly stops: Set<() => Promise<void>>
+  readonly stops: Set<(signal?: AbortSignal) => Promise<void>>
 }
 
 interface PoolState {
@@ -227,9 +228,6 @@ interface PoolState {
   external: Cell
   readonly isolated: Map<PhoneRuntimeSlot, Cell>
 }
-
-/** Bounded late-cleanup failure messages retained after admission is closed. */
-const CLEANUP_FAILURE_LIMIT = 8
 
 /**
  * Brand one private pool slot.
@@ -291,9 +289,9 @@ export function createPhoneRuntimePool(
     }
   }
 
+  /** Retain every observed cleanup failure, including late settlement after admission closes. */
   const recordCleanupFailure = (error: unknown): void => {
     state.cleanupFailures.push(asError(error).message)
-    if (state.cleanupFailures.length > CLEANUP_FAILURE_LIMIT) state.cleanupFailures.shift()
   }
 
   const lifecycle = (): {
@@ -380,6 +378,7 @@ export function createPhoneRuntimePool(
     cell.phase = 'starting'
     cell.unresolved = false
     cell.startError = undefined
+    cell.cleanupError = undefined
     cell.cleanupWork = undefined
     const work = Promise.resolve().then(async () => {
       let started: PhoneRuntimeStart
@@ -391,8 +390,11 @@ export function createPhoneRuntimePool(
           config: cell.config,
         })
       } catch (error) {
-        if (cell.epoch !== epoch || state.phase === 'closed' || cell.phase === 'cleanupPending') {
-          recordCleanupFailure(error)
+        if (cell.phase === 'stopping' || cell.phase === 'cleanupPending') {
+          const failure = asError(error)
+          recordCleanupFailure(failure)
+          cell.cleanupError = failure
+          if (cell.phase === 'stopping') cell.phase = 'cleanupFailed'
           return
         }
         cell.startError = error
@@ -403,16 +405,21 @@ export function createPhoneRuntimePool(
         || startAbort.signal.aborted
       const abandoned = liveOrPending(cell) === 0 && !retainWithoutOccupancy
       if (stale || abandoned) {
-        await containLate(started)
-        if (cell.epoch === epoch && cell.phase !== 'cleanupPending') {
+        const cleanupError = await containLate(started)
+        if (cleanupError !== undefined) {
+          recordCleanupFailure(cleanupError)
+          cell.cleanupError = cleanupError
+          if (cell.phase !== 'cleanupPending') cell.phase = 'cleanupFailed'
+        }
+        if (cell.phase !== 'cleanupPending') {
           cell.generation = undefined
           cell.stop = undefined
-          cell.phase = 'empty'
+          if (cleanupError === undefined) cell.phase = 'empty'
         }
         return
       }
       cell.generation = started.generation
-      cell.stop = memoizeStop(started)
+      cell.stop = ownedStop(started)
       cell.stops.add(cell.stop)
       cell.phase = 'ready'
       cell.unresolved = false
@@ -449,11 +456,12 @@ export function createPhoneRuntimePool(
     cell.unresolved = false
   }
 
-  const containLate = async (started: PhoneRuntimeStart): Promise<void> => {
+  const containLate = async (started: PhoneRuntimeStart): Promise<Error | undefined> => {
     try {
       await started.stop()
+      return undefined
     } catch (error) {
-      recordCleanupFailure(error)
+      return asError(error)
     }
   }
 
@@ -479,47 +487,53 @@ export function createPhoneRuntimePool(
     return 'pending'
   }
 
-  const cleanupCell = (cell: Cell): Promise<void> => {
-    if (cell.cleanupWork !== undefined) return cell.cleanupWork
-    const completion = Promise.withResolvers<void>()
-    cell.cleanupWork = completion.promise
-    const starts = [...cell.starts]
-    const stops = [...cell.stops]
-    cell.phase = 'stopping'
-    cell.generation = undefined
-    cell.startAbort.abort()
-    completion.resolve((async () => {
-      const failures: Error[] = []
-      const cleanup = Promise.allSettled([...starts, ...stops.map(stop => stop())]).then((results) => {
+  const cleanupCell = (cell: Cell, signal?: AbortSignal, bounded = true): Promise<void> => {
+    if (cell.cleanupWork === undefined) {
+      const starts = [...cell.starts]
+      const stops = [...cell.stops]
+      cell.phase = 'stopping'
+      cell.generation = undefined
+      cell.startAbort.abort()
+      const work = (async () => {
+        const failures: Error[] = []
+        const results = await Promise.allSettled([...starts, ...stops.map(stop => stop(signal))])
         for (const result of results) {
           if (result.status === 'rejected') failures.push(asError(result.reason))
         }
         for (const stop of stops) cell.stops.delete(stop)
-      })
-      const raced = await raceCleanup(cleanup)
-      if (raced === 'pending') {
+        const wasPending = cell.phase === 'cleanupPending'
+        cell.stop = undefined
+        cell.startWork = undefined
+        const failed = failures.length > 0 || cell.cleanupError !== undefined
+        cell.phase = failed ? 'cleanupFailed' : 'empty'
+        for (const failure of failures) recordCleanupFailure(failure)
+        if (wasPending) {
+          state.cleanupPending = Math.max(0, state.cleanupPending - 1)
+          finishDisposePhase()
+        }
+        if (cell.cleanupError !== undefined) throw cell.cleanupError
+        if (failures[0] !== undefined) throw failures[0]
+      })()
+      cell.cleanupWork = work
+      void work.catch(() => {})
+    }
+    const work = cell.cleanupWork
+    if (!bounded) return work
+    return (async () => {
+      const raced = await raceCleanup(work)
+      if (raced === 'settled') return
+      if (cell.phase !== 'cleanupPending') {
         cell.phase = 'cleanupPending'
         state.cleanupPending += 1
-        void cleanup.then(() => {
-          for (const failure of failures) recordCleanupFailure(failure)
-          settleCellCleanup(cell)
-        })
-        return
       }
-      cell.stop = undefined
-      cell.startWork = undefined
-      cell.phase = 'empty'
-      if (failures.length > 1) throw new AggregateError(failures, 'phone runtime cell cleanup failed')
-      if (failures[0] !== undefined) throw failures[0]
-    })())
-    return cell.cleanupWork
+    })()
   }
 
   const lastRelease = async (cell: Cell): Promise<void> => {
     try {
       await cleanupCell(cell)
-    } catch (error) {
-      recordCleanupFailure(error)
+    } catch {
+      // cleanupCell retains every Adapter cleanup failure on lifecycle().
     }
   }
 
@@ -535,7 +549,7 @@ export function createPhoneRuntimePool(
     if (signal?.aborted === true) {
       throw new PhoneDevicesError('PHONE_ABORTED', 'phone runtime acquire was cancelled')
     }
-    if (cell.phase === 'stopping' || cell.phase === 'cleanupPending') {
+    if (cell.phase === 'stopping' || cell.phase === 'cleanupPending' || cell.phase === 'cleanupFailed') {
       throw new PhoneDevicesError('PHONE_ABORTED', 'the phone runtime generation is stopping')
     }
     if (cell.unresolved) {
@@ -595,17 +609,19 @@ export function createPhoneRuntimePool(
     signal?: AbortSignal
   }): Promise<void> => {
     assertOpen()
-    if (request.signal?.aborted === true) {
+    if (signalAborted(request.signal)) {
       throw new PhoneDevicesError('PHONE_ABORTED', 'phone runtime replace was cancelled')
     }
     const cell = state.external
     abortEpoch(cell)
-    const previousStop = cell.stop
     const previousEpoch = cell.epoch
-    cell.phase = 'replacing'
-    cell.startAbort.abort()
-    if (previousStop !== undefined) await previousStop(request.signal)
+    cell.unresolved = true
+    await cleanupCell(cell, request.signal, false)
+    assertOpen()
     if (cell.epoch !== previousEpoch) return
+    if (signalAborted(request.signal)) {
+      throw new PhoneDevicesError('PHONE_ABORTED', 'phone runtime replacement was cancelled during cleanup')
+    }
     cell.generation = undefined
     cell.stop = undefined
     cell.config = slotConfig('host-external', request.executablePath, request.environment)
@@ -644,12 +660,16 @@ export function createPhoneRuntimePool(
       throw new PhoneDevicesError('PHONE_ABORTED', 'phone runtime stop was cancelled')
     }
     const cell = state.external
-    const stop = cell.stop
+    for (const occupancy of [...cell.occupancies.values()]) {
+      if (occupancy.state !== 'pending') continue
+      occupancy.state = 'aborted'
+      occupancy.waiter.reject(new PhoneDevicesError('PHONE_ABORTED', 'the phone runtime occupancy was aborted'))
+      void occupancy.waiter.promise.catch(() => {})
+      cell.occupancies.delete(occupancy.id)
+    }
     cell.startAbort.abort()
-    cell.generation = undefined
     cell.unresolved = true
-    cell.phase = 'empty'
-    if (stop !== undefined) await stop(signal)
+    await cleanupCell(cell, signal)
   }
 
   const dispose = (): Promise<void> => {
@@ -675,14 +695,6 @@ export function createPhoneRuntimePool(
       }
     })())
     return state.disposeWork
-  }
-
-  const settleCellCleanup = (cell: Cell): void => {
-    state.cleanupPending = Math.max(0, state.cleanupPending - 1)
-    cell.phase = 'empty'
-    cell.generation = undefined
-    cell.stop = undefined
-    finishDisposePhase()
   }
 
   const finishDisposePhase = (): void => {
@@ -725,6 +737,7 @@ function newCell(slot: PhoneRuntimeSlot, kind: PhoneRuntimeKind, config: PhoneRu
     startAbort: new AbortController(),
     startWork: undefined,
     startError: undefined,
+    cleanupError: undefined,
     cleanupWork: undefined,
     starts: new Set(),
     stops: new Set(),
@@ -739,18 +752,19 @@ function liveOrPending(cell: Cell): number {
   return count
 }
 
-function memoizeStop(started: PhoneRuntimeStart): (signal?: AbortSignal) => Promise<void> {
-  let work: Promise<void> | undefined
+function signalAborted(signal: AbortSignal | undefined): boolean {
+  return signal?.aborted === true
+}
+
+function ownedStop(started: PhoneRuntimeStart): (signal?: AbortSignal) => Promise<void> {
   return (signal) => {
-    if (work !== undefined) return work
     const completion = Promise.withResolvers<void>()
-    work = completion.promise
     try {
       completion.resolve(started.stop(signal))
     } catch (error) {
       completion.reject(error)
     }
-    return work
+    return completion.promise
   }
 }
 

@@ -16,6 +16,8 @@
 
 所有操作接受可选 `AbortSignal` 并执行经校验的时间上限；一切失败归一为 `PhoneDevicesError`（`PHONE_DISPOSED`、`PHONE_ABORTED`、`PHONE_TIMEOUT`、`PHONE_UNAVAILABLE`、`PHONE_UNRESOLVED`、`PHONE_PROTOCOL`、`PHONE_UPSTREAM`、`PHONE_DEVICE_NOT_FOUND`、`PHONE_AGENT_PROFILE_REQUIRED`、`PHONE_REAL_DEVICE`、`PHONE_REAL_DEVICE_ISSUE`）。iPhone 真机安装缺少必需的 `provisioningProfilePath` 时，runtime 会在调用 `mobilecli agent install` 前直接抛出 `PHONE_AGENT_PROFILE_REQUIRED`。`PHONE_REAL_DEVICE_ISSUE` 在 `issue` 上携带结构化错误臂——`device-locked`、`cert-untrusted`、`profile-expired`、`tunnel-failed`、`device-unplugged`——由 agent 命令输出与上游 JSON-RPC 错误消息共同分类得出；上游 `-32010` 仍保持 `PHONE_DEVICE_NOT_FOUND`，Host 的 404 语义不受影响。
 
+稳定 facade 保留一个 external pool occupancy。非 Service 的 `MobilecliPhoneRuntime` 为每代持有进程树、RPC client、清单、坐标观测与操作完成等待。校验回调在基线发布之前安装。替换先撤销发布权限再取消操作，普通操作不会获取或重启已停用的一代。代际清理保留命令、探针、Android 进程树与未读取采集流的完成状态，包括调用方清理等待超时后才到达的失败。
+
 ## 配置
 
 | 字段 | 默认 | 含义 |
@@ -28,7 +30,8 @@
 | `readyTimeoutMs` | `60000` | 就绪探测、首份设备清单与稳定期的总窗口；超时就绪失败将使插件响亮失败。 |
 | `requestTimeoutMs` | `30000` | boot 之外每次 JSON-RPC 往返的上限；对齐上游 RPC 超时。 |
 | `h264ProbeTimeoutMs` | `15000` | 从每条候选源识别一个 Android H264 key access unit 的上限。 |
-| `captureCleanupTimeoutMs` | `1000` | 放弃外部采集 reader 清理并交给受控晚到观察器前的最长等待时间。 |
+| `captureCleanupTimeoutMs` | `1000` | 调用方等待外部采集 reader 清理的最长时间；到期后仍由该代持有清理责任。 |
+| `cleanupTimeoutMs` | `10000` | Pool 销毁或最后一次 release 的等待预算。到期后保留待完成清理，不表示已静止。External stop 还会等待 pending start 及其确切子进程清理，之后 slot 才能重启；清理失败会让 slot 保持不可用。 |
 | `bootTimeoutMs` | `180000` | `device.boot` 的上限；对齐上游为慢启动授予的扩展写超时。 |
 | `agentTimeoutMs` | `120000` | 单次 `agent status` / `agent install` 子进程的上限。 |
 | `provisioningProfilePath` | — | 在真机上安装或重签 agent 时以 `--provisioning-profile` 传入的 `.mobileprovision`（上游要求真机 iOS 安装必须提供）；设置时该路径必须指向存在的文件。 |

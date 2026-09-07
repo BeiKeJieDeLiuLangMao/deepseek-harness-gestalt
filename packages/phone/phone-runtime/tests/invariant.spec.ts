@@ -54,6 +54,72 @@ function genuineChange(previous: PhoneDeviceList | undefined, next: PhoneDeviceL
 }
 
 describe('phone runtime invariant companion', () => {
+  it('revokes a published baseline before cancelled activation disconnects its generation', async () => {
+    const fake = await stageFake({ devices: [wireDevice('SIM-1', 'ios', 'simulator', 'online')] })
+    fakes.push(fake)
+    await fake.claim()
+    const context = new Context()
+    contexts.push(context)
+    await context.plugin(InvariantRegistry).await()
+    await context.plugin(PhoneDevices, {
+      ...FAST_CONFIG,
+      deferStart: true,
+      readyStabilityMs: 500,
+      serverPort: fake.port,
+    }).await()
+    await context.plugin(PhoneRuntimeInvariant).await()
+
+    const changes: PhoneDeviceChange[] = []
+    const readiness: boolean[] = []
+    const controller = new AbortController()
+    context.phoneDevices.onChanged((change) => {
+      changes.push(change)
+      if (change.added.includes(deviceId('SIM-1'))) controller.abort(new Error('cancel after baseline publication'))
+    })
+    context.phoneDevices.onReadinessChanged(ready => readiness.push(ready))
+
+    await expect(context.phoneDevices.activateExecutable(fake.executablePath, controller.signal))
+      .rejects.toMatchObject({ code: 'PHONE_ABORTED' })
+    expect(changes.map(change => ({ added: change.added, removed: change.removed }))).toEqual([
+      { added: [deviceId('SIM-1')], removed: [] },
+      { added: [], removed: [deviceId('SIM-1')] },
+    ])
+    expect(readiness).toEqual([])
+    await waitFor(async () => !(await fake.answersAt(fake.baseUrl)))
+
+    await context.phoneDevices.activateExecutable(fake.executablePath)
+    expect(context.phoneDevices.isReady()).toBe(true)
+    expect(changes.map(change => ({ added: change.added, removed: change.removed }))).toEqual([
+      { added: [deviceId('SIM-1')], removed: [] },
+      { added: [], removed: [deviceId('SIM-1')] },
+      { added: [deviceId('SIM-1')], removed: [] },
+    ])
+  })
+
+  it('rejects baseline validation before listing or readiness publication', async () => {
+    const fake = await stageFake({ devices: [wireDevice('SIM-1', 'ios', 'simulator', 'online')] })
+    fakes.push(fake)
+    await fake.claim()
+    const context = new Context()
+    contexts.push(context)
+    await context.plugin(PhoneDevices, { ...FAST_CONFIG, deferStart: true, serverPort: fake.port }).await()
+    const changes = vi.fn()
+    const readiness = vi.fn()
+    context.phoneDevices.onChanged(changes)
+    context.phoneDevices.onReadinessChanged(readiness)
+    const remove = registerPhoneRuntimeStateValidator(context.phoneDevices[PHONE_RUNTIME_STATE_OWNER], () => {
+      throw new Error('baseline refused')
+    })
+    try {
+      await expect(context.phoneDevices.activateExecutable(fake.executablePath)).rejects.toMatchObject({ code: 'PHONE_PROTOCOL' })
+      expect(changes).not.toHaveBeenCalled()
+      expect(readiness).not.toHaveBeenCalledWith(true)
+      expect(context.phoneDevices.isReady()).toBe(false)
+    } finally {
+      remove()
+    }
+  })
+
   it('refuses to load against a Service without its owner symbol', async () => {
     const context = new Context()
     contexts.push(context)

@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import PhoneDevices, { deviceId, PhoneDevicesError } from '../src/index.ts'
+import { Config, deviceId, PhoneDevicesError } from '../src/index.ts'
+import { MobilecliPhoneRuntime, resolveValidatedConfig } from '../src/mobilecli-phone-runtime.ts'
+import { phoneRuntimeSlot } from '../src/runtime-pool.ts'
 import {
   createPhoneRuntimePool,
   type PhoneRuntimeAdapter,
@@ -11,11 +13,8 @@ import {
 } from '../src/runtime-pool.ts'
 import { stageFake, wireDevice } from './helpers.ts'
 import type {
-  DeviceId,
   PhoneAgentInstallOptions,
-  PhoneCaptureRequest,
   PhoneDeviceList,
-  PhoneIoRequest,
 } from '../src/types.ts'
 
 vi.setConfig({ testTimeout: 20_000, hookTimeout: 20_000 })
@@ -87,20 +86,19 @@ function controlledStart(): ControlledStart {
 }
 
 describe('PhoneRuntimePool occupancy', () => {
-  it('reports independent prior and current stop failures in one cell', async () => {
-    const failures = [new Error('prior stop'), new Error('current stop')] as const
-    let starts = 0
+  it('retains a stop failure and blocks an unsafe restart', async () => {
+    const failure = new Error('stop failed')
     const pool = createPhoneRuntimePool({
       async start() {
-        const failure = starts++ === 0 ? failures[0] : failures[1]
         return { generation: stubGeneration('failures'), stop: () => Promise.reject(failure) }
       },
     }, { cleanupTimeoutMs: 20 })
     pools.push(pool)
     await pool.acquireExternal()
-    await expect(pool.stopExternal()).rejects.toBe(failures[0])
-    await pool.acquireExternal()
-    await expect(pool.dispose()).rejects.toMatchObject({ errors: failures })
+    await expect(pool.stopExternal()).rejects.toBe(failure)
+    expect(pool.lifecycle().cleanupFailures).toContain('stop failed')
+    await expect(pool.acquireExternal()).rejects.toMatchObject({ code: 'PHONE_ABORTED' })
+    await expect(pool.dispose()).rejects.toBe(failure)
   })
 
   it('retains the new pending start after a stopped prior epoch', async () => {
@@ -179,22 +177,94 @@ describe('PhoneRuntimePool occupancy', () => {
     expect(calls).toBe(1)
   })
 
-  it('retains pending start ownership through stopExternal and dispose', async () => {
-    const start = controlledStart()
-    const pool = createPhoneRuntimePool({ start: () => start.promise }, { cleanupTimeoutMs: 20 })
+  it('blocks a new external start until a stopped pending generation is contained', async () => {
+    const first = controlledStart()
+    const contained = Promise.withResolvers<undefined>()
+    const stopEntered = Promise.withResolvers<undefined>()
+    let starts = 0
+    const pool = createPhoneRuntimePool({
+      async start() {
+        starts += 1
+        if (starts === 1) {
+          const started = await first.promise
+          return {
+            generation: started.generation,
+            async stop() {
+              stopEntered.resolve(undefined)
+              await contained.promise
+            },
+          }
+        }
+        return { generation: stubGeneration('replacement'), async stop() {} }
+      },
+    }, { cleanupTimeoutMs: 200 })
     pools.push(pool)
     const waiting = pool.acquireExternal()
-    await pool.stopExternal()
-    const closed = pool.dispose()
-    await expect(waiting).rejects.toMatchObject({ code: 'PHONE_DISPOSED' })
-    await closed
-    expect(pool.lifecycle()).toMatchObject({ phase: 'closed', cleanupPending: 1 })
-    start.resolve()
-    await start.stopped
-    await vi.waitFor(() => {
-      expect(pool.lifecycle().cleanupPending).toBe(0)
+    const stopping = pool.stopExternal()
+    first.resolve()
+    await stopEntered.promise
+    try {
+      await expect(waiting).rejects.toMatchObject({ code: 'PHONE_ABORTED' })
+      await expect(pool.acquireExternal()).rejects.toMatchObject({ code: 'PHONE_ABORTED' })
+      expect(starts).toBe(1)
+    } finally {
+      contained.resolve(undefined)
+    }
+    await stopping
+    const replacement = await pool.acquireExternal()
+    expect(replacement.isReady()).toBe(true)
+    expect(starts).toBe(2)
+  })
+
+  it('keeps a failed pending-generation cleanup unavailable', async () => {
+    const first = Promise.withResolvers<PhoneRuntimeStart>()
+    let starts = 0
+    const pool = createPhoneRuntimePool({
+      start() {
+        starts += 1
+        return starts === 1
+          ? first.promise
+          : Promise.resolve({ generation: stubGeneration('unsafe-restart'), async stop() {} })
+      },
+    }, { cleanupTimeoutMs: 200 })
+    pools.push(pool)
+    const waiting = pool.acquireExternal()
+    const stopping = pool.stopExternal()
+    first.resolve({
+      generation: stubGeneration('late-failed-cleanup'),
+      async stop() {
+        throw new Error('late generation cleanup failed')
+      },
     })
-    expect(start.stopCount()).toBe(1)
+    await expect(waiting).rejects.toMatchObject({ code: 'PHONE_ABORTED' })
+    await expect(stopping).rejects.toThrow('late generation cleanup failed')
+    expect(pool.lifecycle().cleanupFailures).toContain('late generation cleanup failed')
+    await expect(pool.acquireExternal()).rejects.toMatchObject({ code: 'PHONE_ABORTED' })
+    expect(starts).toBe(1)
+  })
+
+  it('retains a rejected pending start during stop and blocks restart', async () => {
+    const first = Promise.withResolvers<PhoneRuntimeStart>()
+    const failure = new Error('stopped pending start failed')
+    let starts = 0
+    const pool = createPhoneRuntimePool({
+      start() {
+        starts += 1
+        return starts === 1
+          ? first.promise
+          : Promise.resolve({ generation: stubGeneration('unsafe-restart'), async stop() {} })
+      },
+    }, { cleanupTimeoutMs: 200 })
+    pools.push(pool)
+    const waiting = pool.acquireExternal()
+    const stopping = pool.stopExternal()
+    first.reject(failure)
+
+    await expect(waiting).rejects.toMatchObject({ code: 'PHONE_ABORTED' })
+    await expect(stopping).rejects.toBe(failure)
+    expect(pool.lifecycle().cleanupFailures).toContain(failure.message)
+    await expect(pool.acquireExternal()).rejects.toMatchObject({ code: 'PHONE_ABORTED' })
+    expect(starts).toBe(1)
   })
 
   it.each(['release', 'dispose'] as const)('observes the original non-memoized stop after %s timeout', async (operation) => {
@@ -653,27 +723,152 @@ describe('PhoneRuntimePool occupancy', () => {
     await releasing
   })
 
-  it('ignores a late start failure after replace bumped the epoch', async () => {
-    const first = controlledStart()
-    const second = controlledStart()
+  it('contains a pending start before entering its replacement generation', async () => {
+    const first = Promise.withResolvers<PhoneRuntimeStart>()
+    const contained = Promise.withResolvers<undefined>()
+    const stopEntered = Promise.withResolvers<undefined>()
     let calls = 0
     const adapter: PhoneRuntimeAdapter = {
-      start: () => {
+      async start() {
         calls += 1
-        return calls === 1 ? first.promise : second.promise
+        if (calls === 1) return await first.promise
+        return { generation: stubGeneration('replacement'), async stop() {} }
       },
     }
     const pool = createPhoneRuntimePool(adapter, { cleanupTimeoutMs: 200 })
     pools.push(pool)
     const waiting = pool.acquireExternal()
     const replacing = pool.replaceExternal({ executablePath: '/opt/x' })
-    first.reject(new Error('stale start failed'))
-    second.resolve()
-    await expect(waiting).rejects.toMatchObject({ code: 'PHONE_ABORTED' })
+    first.resolve({
+      generation: stubGeneration('late-old'),
+      async stop() {
+        stopEntered.resolve(undefined)
+        await contained.promise
+      },
+    })
+    await stopEntered.promise
+    expect(calls).toBe(1)
+    contained.resolve(undefined)
     await replacing
+    await expect(waiting).rejects.toMatchObject({ code: 'PHONE_ABORTED' })
+    expect(calls).toBe(2)
     const next = await pool.acquireExternal()
     expect(next.isReady()).toBe(true)
     await next.release()
+  })
+
+  it('blocks replacement after a pending generation cleanup fails', async () => {
+    const first = Promise.withResolvers<PhoneRuntimeStart>()
+    const failure = new Error('late replacement cleanup failed')
+    let calls = 0
+    const pool = createPhoneRuntimePool({
+      start() {
+        calls += 1
+        return calls === 1
+          ? first.promise
+          : Promise.resolve({ generation: stubGeneration('unsafe-replacement'), async stop() {} })
+      },
+    }, { cleanupTimeoutMs: 200 })
+    pools.push(pool)
+    const waiting = pool.acquireExternal()
+    const replacing = pool.replaceExternal({ executablePath: '/opt/x' })
+    first.resolve({
+      generation: stubGeneration('late-failed-replacement'),
+      async stop() { throw failure },
+    })
+
+    await expect(waiting).rejects.toMatchObject({ code: 'PHONE_ABORTED' })
+    await expect(replacing).rejects.toBe(failure)
+    expect(pool.lifecycle().cleanupFailures).toContain(failure.message)
+    await expect(pool.acquireExternal()).rejects.toMatchObject({ code: 'PHONE_ABORTED' })
+    expect(calls).toBe(1)
+  })
+
+  it('retains a rejected pending start during replacement and blocks restart', async () => {
+    const first = Promise.withResolvers<PhoneRuntimeStart>()
+    const failure = new Error('replaced pending start failed')
+    let starts = 0
+    const pool = createPhoneRuntimePool({
+      start() {
+        starts += 1
+        return starts === 1
+          ? first.promise
+          : Promise.resolve({ generation: stubGeneration('unsafe-replacement'), async stop() {} })
+      },
+    }, { cleanupTimeoutMs: 200 })
+    pools.push(pool)
+    const waiting = pool.acquireExternal()
+    const replacing = pool.replaceExternal({ executablePath: '/opt/x' })
+    first.reject(failure)
+
+    await expect(waiting).rejects.toMatchObject({ code: 'PHONE_ABORTED' })
+    await expect(replacing).rejects.toBe(failure)
+    expect(pool.lifecycle().cleanupFailures).toContain(failure.message)
+    await expect(pool.acquireExternal()).rejects.toMatchObject({ code: 'PHONE_ABORTED' })
+    expect(starts).toBe(1)
+  })
+
+  it('does not start a replacement after concurrent pool disposal closes admission', async () => {
+    const contained = Promise.withResolvers<undefined>()
+    const stopEntered = Promise.withResolvers<undefined>()
+    let starts = 0
+    const pool = createPhoneRuntimePool({
+      async start() {
+        starts += 1
+        return {
+          generation: stubGeneration(`generation-${String(starts)}`),
+          async stop() {
+            stopEntered.resolve(undefined)
+            await contained.promise
+          },
+        }
+      },
+    }, { cleanupTimeoutMs: 200 })
+    pools.push(pool)
+    await pool.acquireExternal()
+    const replacing = pool.replaceExternal({ executablePath: '/opt/x' })
+    await stopEntered.promise
+    const closing = pool.dispose()
+    contained.resolve(undefined)
+
+    await expect(replacing).rejects.toMatchObject({ code: 'PHONE_DISPOSED' })
+    await closing
+    expect(starts).toBe(1)
+    expect(pool.lifecycle().phase).toBe('closed')
+  })
+
+  it('joins actual cleanup before replacing after a bounded stop wait expires', async () => {
+    const first = Promise.withResolvers<PhoneRuntimeStart>()
+    const lateStopped = Promise.withResolvers<undefined>()
+    let starts = 0
+    const pool = createPhoneRuntimePool({
+      start() {
+        starts += 1
+        if (starts === 1) return first.promise
+        return Promise.resolve({ generation: stubGeneration('replacement'), async stop() {} })
+      },
+    }, { cleanupTimeoutMs: 1 })
+    pools.push(pool)
+    const waiting = pool.acquireExternal()
+    const waitingFailure = expect(waiting).rejects.toMatchObject({ code: 'PHONE_ABORTED' })
+    await pool.stopExternal()
+    expect(pool.lifecycle().cleanupPending).toBe(1)
+
+    const replacing = pool.replaceExternal({ executablePath: '/opt/x' })
+    await Promise.resolve()
+    await Promise.resolve()
+    const startsBeforeContainment = starts
+    first.resolve({
+      generation: stubGeneration('late-old'),
+      async stop() { lateStopped.resolve(undefined) },
+    })
+    await lateStopped.promise
+    await replacing
+
+    await waitingFailure
+    expect(startsBeforeContainment).toBe(1)
+    expect(starts).toBe(2)
+    expect(pool.lifecycle().cleanupPending).toBe(0)
   })
 
   it('aborts pending acquire on replace and wraps a non-Error Adapter throw', async () => {
@@ -689,12 +884,13 @@ describe('PhoneRuntimePool occupancy', () => {
     const pool = createPhoneRuntimePool(adapter, { cleanupTimeoutMs: 200 })
     pools.push(pool)
     const waiting = pool.acquireExternal()
-    await expect(pool.replaceExternal({ executablePath: '/opt/x' })).rejects.toMatchObject({
+    const replacing = pool.replaceExternal({ executablePath: '/opt/x' })
+    first.resolve()
+    await first.stopped
+    await expect(replacing).rejects.toMatchObject({
       code: 'PHONE_UNAVAILABLE',
     })
     await expect(waiting).rejects.toMatchObject({ code: 'PHONE_ABORTED' })
-    first.resolve()
-    await first.stopped
   })
 
   it('contains a throwing late stop and aggregates dispose stop failures', async () => {
@@ -947,30 +1143,6 @@ describe('PhoneRuntimePool occupancy', () => {
     })
   })
 
-  it('keeps a bounded cleanupFailures ring after admission is closed', async () => {
-    let stopIndex = 0
-    const pool = createPhoneRuntimePool({
-      async start() {
-        const label = stopIndex
-        return {
-          generation: stubGeneration('overflow'),
-          async stop() {
-            throw new Error(`overflow-${String(label)}`)
-          },
-        }
-      },
-    }, { cleanupTimeoutMs: 200 })
-    pools.push(pool)
-    for (; stopIndex < 9; stopIndex += 1) {
-      const handle = await pool.acquireExternal()
-      await handle.release()
-    }
-    expect(pool.lifecycle().cleanupFailures).not.toContain('overflow-0')
-    expect(pool.lifecycle().cleanupFailures).toContain('overflow-8')
-    expect(pool.lifecycle().cleanupFailures).toHaveLength(8)
-    expect(pool.lifecycle().phase).toBe('open')
-  })
-
   it('rejects a non-integer cleanup budget', () => {
     expect(() => createPhoneRuntimePool({
       async start() {
@@ -1071,32 +1243,25 @@ async function generationFromFake(devices: Array<Record<string, unknown>>): Prom
   await fake.claim()
   const context = new Context()
   contexts.push(context)
-  await context.plugin(PhoneDevices, {
-    executablePath: fake.executablePath,
+  const config = resolveValidatedConfig(Config({
     serverPort: fake.port,
     pollIntervalMs: 20,
     readyStabilityMs: 20,
     readyTimeoutMs: 6_000,
     requestTimeoutMs: 1_500,
     bootTimeoutMs: 2_000,
-  }).await()
-  const devicesService = context.phoneDevices
-  return {
-    generation: {
-      listDevices: signal => devicesService.listDevices(signal),
-      boot: (id, signal) => devicesService.boot(id, signal),
-      shutdown: (id, signal) => devicesService.shutdown(id, signal),
-      io: (request: PhoneIoRequest, signal) => devicesService.io(request, signal),
-      startCapture: (request: PhoneCaptureRequest) => devicesService.startCapture(request),
-      screenshot: (id: DeviceId, signal) => devicesService.screenshot(id, signal),
-      agentStatus: (id, signal) => devicesService.agentStatus(id, signal),
-      installAgent: (id, installOptions) => devicesService.installAgent(id, installOptions),
-      isReady: () => devicesService.isReady(),
-      onReadinessChanged: listener => devicesService.onReadinessChanged(listener),
-      onChanged: sub => devicesService.onChanged(sub),
-    },
-    stop: async () => { await context.fiber.dispose() },
-  }
+  }))
+  const adapter = new MobilecliPhoneRuntime(config, context.logger, () => ({
+    validate: () => undefined,
+    changed: () => {},
+    readiness: () => {},
+  }))
+  return await adapter.start({
+    slot: phoneRuntimeSlot('staged-external'),
+    kind: 'external',
+    signal: new AbortController().signal,
+    config: { provenance: 'host-external', executablePath: fake.executablePath },
+  })
 }
 
 function fakeAdapter(devices: Array<Record<string, unknown>>): PhoneRuntimeAdapter {
@@ -1108,6 +1273,60 @@ function fakeAdapter(devices: Array<Record<string, unknown>>): PhoneRuntimeAdapt
 }
 
 describe('PhoneRuntimePool isolation', () => {
+  it('refuses unsupported or unresolved starts at the production adapter seam', async () => {
+    const context = new Context()
+    contexts.push(context)
+    const adapter = new MobilecliPhoneRuntime(
+      resolveValidatedConfig(Config({})),
+      context.logger,
+      () => ({ validate: () => undefined, changed: () => {}, readiness: () => {} }),
+    )
+    const signal = new AbortController().signal
+
+    await expect(adapter.start({
+      slot: phoneRuntimeSlot('isolated'),
+      kind: 'isolated-ios',
+      signal,
+      config: { provenance: 'session-isolated' },
+    })).rejects.toMatchObject({ code: 'PHONE_UNAVAILABLE' })
+    await expect(adapter.start({
+      slot: phoneRuntimeSlot('external'),
+      kind: 'external',
+      signal,
+      config: { provenance: 'host-external' },
+    })).rejects.toMatchObject({ code: 'PHONE_UNRESOLVED' })
+  })
+
+  it('contains production generation subscriber failures and retires registrations', async () => {
+    const started = await generationFromFake([wireDevice('SIM-A', 'ios', 'simulator', 'offline')])
+    const generation = started.generation
+    const changed = vi.fn()
+    const ready = vi.fn()
+    const removeBadChange = generation.onChanged(() => { throw new Error('bad listing subscriber') })
+    const removeChange = generation.onChanged(changed)
+    const removeBadReady = generation.onReadinessChanged(() => { throw new Error('bad readiness subscriber') })
+    const removeReady = generation.onReadinessChanged(ready)
+    try {
+      await generation.boot(deviceId('SIM-A'))
+      await generation.listDevices()
+      expect(changed).toHaveBeenCalled()
+      const fake = fakes.at(-1)
+      if (fake === undefined) throw new Error('production generation lost its fixture')
+      await fake.setDevices([{ id: 'invalid-device' }])
+      await expect(generation.listDevices()).rejects.toMatchObject({ code: 'PHONE_PROTOCOL' })
+      await vi.waitFor(() => { expect(ready).toHaveBeenCalledWith(false) })
+      await started.stop()
+      removeChange()
+      removeChange()
+      removeReady()
+      removeBadChange()
+      removeBadReady()
+      expect(generation.isReady()).toBe(false)
+    } finally {
+      await started.stop()
+    }
+  })
+
   it('rejects isolated acquire until a private HOME/set/bind provider exists', async () => {
     const pool = createPhoneRuntimePool(fakeAdapter([wireDevice('emulator-AAAA', 'android', 'emulator', 'online')]), {
       cleanupTimeoutMs: 2_000,

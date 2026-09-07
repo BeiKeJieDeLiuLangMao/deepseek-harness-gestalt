@@ -16,6 +16,8 @@ The phone device fleet Service over one external [mobilecli](https://github.com/
 
 All operations accept an optional `AbortSignal` and enforce validated time ceilings; every failure normalizes onto `PhoneDevicesError` (`PHONE_DISPOSED`, `PHONE_ABORTED`, `PHONE_TIMEOUT`, `PHONE_UNAVAILABLE`, `PHONE_UNRESOLVED`, `PHONE_PROTOCOL`, `PHONE_UPSTREAM`, `PHONE_DEVICE_NOT_FOUND`, `PHONE_AGENT_PROFILE_REQUIRED`, `PHONE_REAL_DEVICE`, `PHONE_REAL_DEVICE_ISSUE`). `PHONE_AGENT_PROFILE_REQUIRED` is raised locally before a real-iPhone installation can invoke `mobilecli agent install` without the required `provisioningProfilePath`. A `PHONE_REAL_DEVICE_ISSUE` failure carries the structured arm on `issue` — `device-locked`, `cert-untrusted`, `profile-expired`, `tunnel-failed`, or `device-unplugged` — classified from the upstream output of both the agent commands and the JSON-RPC error messages; upstream `-32010` stays `PHONE_DEVICE_NOT_FOUND` so Host 404 semantics survive.
 
+The stable facade retains one external pool occupancy. A non-Service `MobilecliPhoneRuntime` owns each generation's process tree, RPC client, listing, coordinate observations, and operation joins. Validation callbacks are installed before baseline publication. Replacement revokes publication before cancellation, and ordinary operations never acquire or restart a disabled generation. Generation cleanup retains command, probe, Android tree, and unread capture completion, including failures that settle after a caller's cleanup wait expires.
+
 ## Config
 
 | Field | Default | Meaning |
@@ -28,7 +30,8 @@ All operations accept an optional `AbortSignal` and enforce validated time ceili
 | `readyTimeoutMs` | `60000` | Total window for readiness probes, the first device listing, and the stability interval; exceeded readiness fails the plugin loudly. |
 | `requestTimeoutMs` | `30000` | Ceiling per JSON-RPC round trip other than boot; mirrors the upstream RPC timeout. |
 | `h264ProbeTimeoutMs` | `15000` | Ceiling for recognizing one Android H264 key access unit from each candidate source. |
-| `captureCleanupTimeoutMs` | `1000` | Maximum wait before foreign capture-reader cleanup is abandoned under a contained late observer. |
+| `captureCleanupTimeoutMs` | `1000` | Maximum caller wait for foreign capture-reader cleanup; generation ownership continues after expiry. |
+| `cleanupTimeoutMs` | `10000` | Pool disposal/last-release wait budget. Expiry leaves retained pending cleanup; it does not establish quiescence. External stop also joins a pending start and its exact child cleanup before the slot can restart; cleanup failure keeps the slot unavailable. |
 | `bootTimeoutMs` | `180000` | Ceiling for `device.boot`; mirrors the upstream extended write deadline for slow boots. |
 | `agentTimeoutMs` | `120000` | Ceiling on one `agent status` / `agent install` child run. |
 | `provisioningProfilePath` | — | `.mobileprovision` passed as `--provisioning-profile` when installing or re-signing the agent on a real handset (required upstream for real iOS installs); when set, the path must name an existing file. |

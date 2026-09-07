@@ -102,6 +102,7 @@ function replyAgent(payload) {
 // CLI mode: `fakemobilecli screenshot --device <id> --format png --output <path>`
 // writes one still PNG, mirroring the upstream still-capture command.
 if (args[0] === 'screenshot') {
+  writeFileSync(join(selfDir, 'fakemobilecli.screenshot-pid'), String(process.pid))
   const screenshotKnobs = knobs.screenshot ?? {}
   if (screenshotKnobs.ignoreTerm === true) {
     process.on('SIGTERM', () => {

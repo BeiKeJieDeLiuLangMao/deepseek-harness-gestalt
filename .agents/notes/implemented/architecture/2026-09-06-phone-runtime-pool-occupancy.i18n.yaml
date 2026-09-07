@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-06-phone-runtime-pool-occupancy.md
-2026-09-06-phone-runtime-pool-occupancy.md: bdd02cb8538cd2d6922711c38c8e7b5591debd1d
-2026-09-06-phone-runtime-pool-occupancy.zh.md: 1081598f3535aa9e9b946e71e044ef3a32bf4084
+2026-09-06-phone-runtime-pool-occupancy.md: ab42e5c4fa65eec158e0af065e117613142d6fe4
+2026-09-06-phone-runtime-pool-occupancy.zh.md: 48c29d496b8252ab6e36a8848a320ea78e9091f8
