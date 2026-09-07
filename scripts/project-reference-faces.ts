@@ -6,9 +6,24 @@ import ts from 'typescript'
 
 export type ProjectFace = 'host' | 'client'
 
+/** A complete application project checked after Host-generated contracts exist. */
+export interface PostGenerationApplicationProject {
+  readonly config: string
+  readonly include: readonly string[]
+  readonly script: string
+}
+
+/** Application projects checked after generated contracts and both compiler aggregates exist. */
+export const POST_GENERATION_APPLICATION_PROJECTS: readonly PostGenerationApplicationProject[] = [
+  {
+    config: 'apps/desktop/tsconfig.json',
+    include: ['src', 'tests', 'scripts'],
+    script: 'typecheck:desktop-contracts-ready',
+  },
+]
+
 export const GESTALT_COMPILER_FACES: Readonly<Record<ProjectFace, readonly string[]>> = {
   host: [
-    'apps/desktop',
     'apps/platform',
     'packages/browser/browser-runtime',
     'packages/browser/browser-runtime-deterministic',
@@ -49,6 +64,7 @@ export const GESTALT_COMPILER_FACES: Readonly<Record<ProjectFace, readonly strin
 }
 
 interface ProjectReferenceConfig {
+  readonly compilerOptions?: Readonly<Record<string, unknown>>
   readonly extends?: unknown
   readonly include?: readonly unknown[]
   readonly exclude?: readonly unknown[]
@@ -70,6 +86,14 @@ const GESTALT_PROJECT_PATTERNS = [
   'packages/platform/*/tsconfig.json',
 ] as const
 
+const GENERATED_CONTRACT_BUILD_SCRIPTS: Readonly<Record<string, string>> = {
+  'build:lib': 'npm run build:lib:host && npm run build:lib:client',
+  'build:lib:client': 'npm run typecheck:contracts-ready && tsdown --env.DSH_BUILD_FACE client',
+  typecheck: 'npm run build:lib:host && npm run typecheck:contracts-ready',
+  'typecheck:contracts-ready': 'tsc -b tsconfig.client.json && npm run typecheck:desktop-contracts-ready',
+  'typecheck:desktop-contracts-ready': 'tsc -p apps/desktop/tsconfig.json',
+}
+
 /**
  * Find references that enter the wrong leaf of a split Host/Client project.
  *
@@ -84,9 +108,14 @@ export function collectProjectReferenceFaceViolations(root: string): string[] {
   const splitRoots = splitProjectRoots(root)
   const violations = [
     ...collectGestaltCompilerFaceViolations(root),
+    ...collectPostGenerationApplicationViolations(root),
     ...collectWebHostTestFaceViolations(root),
   ]
-  const pending = [resolve(root, 'tsconfig.host.json'), resolve(root, 'tsconfig.client.json')]
+  const pending = [
+    resolve(root, 'tsconfig.host.json'),
+    resolve(root, 'tsconfig.client.json'),
+    ...POST_GENERATION_APPLICATION_PROJECTS.map(project => resolve(root, project.config)),
+  ]
   const visited = new Set<string>()
   for (let configPath = pending.pop(); configPath !== undefined; configPath = pending.pop()) {
     if (visited.has(configPath) || !existsSync(configPath)) continue
@@ -115,6 +144,78 @@ export function collectProjectReferenceFaceViolations(root: string): string[] {
     }
   }
 
+  return violations.sort()
+}
+
+/**
+ * Find application checks that violate generated-contract ordering.
+ *
+ * @param root - Repository root containing compiler configs and package scripts.
+ * @param applications - Application projects checked after both aggregates.
+ * @returns Repo-relative diagnostics for misplaced or emitting application checks.
+ */
+export function collectPostGenerationApplicationViolations(
+  root: string,
+  applications: readonly PostGenerationApplicationProject[] = POST_GENERATION_APPLICATION_PROJECTS,
+): string[] {
+  const violations: string[] = []
+  const aggregateReferences = new Map<ProjectFace, Set<string>>()
+  for (const face of ['host', 'client'] as const) {
+    const aggregate = resolve(root, `tsconfig.${face}.json`)
+    if (!existsSync(aggregate)) continue
+    aggregateReferences.set(face, new Set(
+      projectReferences(projectConfig(root, aggregate)).map(reference => referenceConfigPath(aggregate, reference)),
+    ))
+  }
+
+  for (const application of applications) {
+    const configPath = resolve(root, application.config)
+    if (!existsSync(configPath)) {
+      violations.push(`${application.config}: required post-generation application config is missing`)
+      continue
+    }
+    for (const [face, references] of aggregateReferences) {
+      if (references.has(configPath)) {
+        violations.push(`${application.config}: post-generation application project must not be referenced by the root ${faceLabel(face)} aggregate`)
+      }
+    }
+
+    const config = projectConfig(root, configPath)
+    if (!sameStringArray(config.include, application.include)) {
+      violations.push(`${application.config}: include must be exactly ${JSON.stringify(application.include)} for the post-generation application check`)
+    }
+    for (const [option, expected] of Object.entries({
+      noEmit: true,
+      composite: false,
+      incremental: false,
+      rewriteRelativeImportExtensions: false,
+    })) {
+      if (config.compilerOptions?.[option] !== expected) {
+        violations.push(`${application.config}: compilerOptions.${option} must be ${String(expected)} for the post-generation application check`)
+      }
+    }
+    if (projectReferences(config).length === 0) {
+      violations.push(`${application.config}: post-generation application check must retain its Project References`)
+    }
+  }
+
+  const packagePath = resolve(root, 'package.json')
+  if (!existsSync(packagePath)) {
+    violations.push('package.json: required generated-contract build scripts are missing')
+    return violations.sort()
+  }
+  const manifest = JSON.parse(readFileSync(packagePath, 'utf8')) as unknown
+  const scripts = isRecord(manifest) && isRecord(manifest.scripts) ? manifest.scripts : {}
+  for (const [name, expected] of Object.entries(GENERATED_CONTRACT_BUILD_SCRIPTS)) {
+    if (scripts[name] !== expected) {
+      violations.push(`package.json: script ${JSON.stringify(name)} must be ${JSON.stringify(expected)}`)
+    }
+  }
+  for (const application of applications) {
+    if (!(application.script in GENERATED_CONTRACT_BUILD_SCRIPTS)) {
+      violations.push(`${application.config}: post-generation script ${JSON.stringify(application.script)} is absent from the generated-contract build order`)
+    }
+  }
   return violations.sort()
 }
 
@@ -245,6 +346,14 @@ function stringEntries(values: readonly unknown[] | undefined): Set<string> {
   return new Set((values ?? []).filter((value): value is string => typeof value === 'string').map(normalizePath))
 }
 
+function sameStringArray(actual: readonly unknown[] | undefined, expected: readonly string[]): boolean {
+  return actual?.length === expected.length && actual.every((value, index) => value === expected[index])
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
 function normalizePath(path: string): string {
   return path.replaceAll('\\', '/')
 }
@@ -253,6 +362,7 @@ function discoverGestaltCompilerFaces(root: string): Record<ProjectFace, Set<str
   const discovered: Record<ProjectFace, Set<string>> = { host: new Set(), client: new Set() }
   for (const config of globSync(GESTALT_PROJECT_PATTERNS, { cwd: root })) {
     const configPath = resolve(root, config)
+    if (POST_GENERATION_APPLICATION_PROJECTS.some(project => resolve(root, project.config) === configPath)) continue
     const face = projectFace(root, configPath, projectConfig(root, configPath))
     if (face === undefined) {
       throw new Error(`${repoPath(root, configPath)}: retained Gestalt project has no Host/Client face`)

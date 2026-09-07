@@ -12,22 +12,25 @@ Host 的 `@Remote` 方法需要先由 Typert 生成 `/remote` 声明和运行时
 
 ## 决策
 
-根构建先完成 Host tsc 和 Host tsdown，由 Host tsdown 运行 Typert 并生成 Remote Client 约定；随后完成 Client tsc、Client tsdown 和 Web 构建：
+根构建先完成 Host tsc 和 Host tsdown，由 Host tsdown 运行 Typert 并生成 Remote Client 约定；随后完成 Client tsc、Desktop 应用检查、Client tsdown 和 Web 构建：
 
 ~~~text
 tsc -b tsconfig.host.json
 tsdown --env.DSH_BUILD_FACE host
 typecheck:host-contracts-ready
 tsc -b tsconfig.client.json
+typecheck:desktop-contracts-ready
 tsdown --env.DSH_BUILD_FACE client
 Vite Web build
 ~~~
 
-`build:lib:host` 负责前三步，`build:lib:client` 负责后续两步，`build:web` 最后运行。`typecheck` 也必须先执行完整 Host lib 阶段，因为 Client tsc 需要 Host tsdown 生成的声明；它不需要运行 Client tsdown 或 Web build。
+`build:lib:host` 负责前三步，`build:lib:client` 负责后续三步，`build:web` 最后运行。`typecheck` 也必须先执行完整 Host lib 阶段，因为 Client tsc 与 Desktop 应用检查需要 Host tsdown 生成的声明；它不需要运行 Client tsdown 或 Web build。
 
-每个 composite tsc 阶段都向 `lib/types` 发射 JavaScript、声明和增量状态。tsdown 只读取这些 JavaScript 并生成发布 bundle，不读取源码，也不生成声明。Host contracts-ready 阶段是只检查指定测试且不发射产物的 TypeScript program。
+每个 aggregate tsc 阶段都向 `lib/types` 发射 JavaScript、声明和增量状态。tsdown 只读取这些 JavaScript 并生成发布 bundle，不读取源码，也不生成声明。Host contracts-ready 阶段是只检查指定测试且不发射产物的 TypeScript program。
 
 导入生成 `/remote` 声明的 Host 测试使用 `.generated.host.spec.ts` 后缀。首次 Host tsc 排除这个精确模式；Host tsdown 发射声明后，contracts-ready 阶段选择同一模式并复用 `tsconfig.host.json` 的 compiler options 与 Project References，不复制整张图。选中集合为空、生成 Remote 消费测试缺少该后缀、声明缺失或出现 TypeScript diagnostic，都会使 Host lib 构建失败。
+
+`apps/desktop/tsconfig.json` 在 Client tsc 之后检查完整的 Desktop `src`、`tests` 与 `scripts` 应用。Desktop 同时消费 Host 和 Client project，因此不属于任何根 aggregate，也不发射产物。workspace constraints 门禁维护生成后应用清单，要求不发射配置与完整输入，拒绝根 aggregate 引用，并固定公共脚本顺序。
 
 ## 唯一的 package 特例
 
@@ -76,8 +79,8 @@ Host 与 Client 两次 tsdown 都接收 `vendor/*`、`packages/*/*` 和 `apps/cl
 
 ## 后果
 
-干净构建成为顺序正确性的权威验证：没有任何既存 `/remote` 产物时，首次 Host tsc 必须在不读取生成约定消费测试的前提下成功，Host tsdown 必须生成约定，Host contracts-ready 阶段必须接受这些消费测试，随后 Client tsc、Client tsdown 与 Web build 必须成功。任何阶段都不得把产物写进 `src`。
+干净构建成为顺序正确性的权威验证：没有任何既存 `/remote` 产物时，首次 Host tsc 必须在不读取生成约定消费测试的前提下成功，Host tsdown 必须生成约定，Host contracts-ready 阶段必须接受这些消费测试，随后 Client tsc、Desktop 应用检查、Client tsdown 与 Web build 必须成功。任何阶段都不得把产物写进 `src`。
 
 [TypeScript 构建配置 Note](2026-06-17-ts-build-config.zh.md)确定的 tsc-first 职责保持不变，但其单次全图 tsc 后再打包的命令形态由本文的有序阶段取代。[双 aggregate solution Note](2026-07-22-tsconfig-solution-root-two-aggregates.zh.md)确定的普通 package 单 aggregate 规则保持不变，本文只为 `api/remotes` 建立一个显式例外。
 
-Client 的独立构建不再是干净工作树上的自足入口；仓库命令、CI 和发布流程必须先运行 Host lib 阶段。普通 package 的开发者无需理解或复制该例外，仍按所属运行环境选择一个 aggregate。
+Client 的独立构建不再是干净工作树上的自足入口；仓库命令、CI 和发布流程必须先运行 Host lib 阶段。此后，`build:lib:client` 会先检查 Client aggregate 与完整 Desktop 应用，再执行打包。普通 package 的开发者无需理解或复制该例外，仍按所属运行环境选择一个 aggregate。

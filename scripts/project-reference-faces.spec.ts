@@ -1,9 +1,12 @@
+import { spawnSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join, relative } from 'node:path'
+import ts from 'typescript'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   collectGestaltCompilerFaceViolations,
+  collectPostGenerationApplicationViolations,
   collectProjectReferenceFaceViolations,
   collectWebHostTestFaceViolations,
 } from './project-reference-faces.ts'
@@ -16,6 +19,51 @@ afterEach(() => {
 
 function writeJson(path: string, value: unknown): void {
   writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`)
+}
+
+function generatedContractBuildScripts(): Record<string, string> {
+  return {
+    'build:lib': 'npm run build:lib:host && npm run build:lib:client',
+    'build:lib:client': 'npm run typecheck:contracts-ready && tsdown --env.DSH_BUILD_FACE client',
+    typecheck: 'npm run build:lib:host && npm run typecheck:contracts-ready',
+    'typecheck:contracts-ready': 'tsc -b tsconfig.client.json && npm run typecheck:desktop-contracts-ready',
+    'typecheck:desktop-contracts-ready': 'tsc -p apps/desktop/tsconfig.json',
+  }
+}
+
+function writePostGenerationDesktop(
+  root: string,
+  overrides: Record<string, unknown> = {},
+): void {
+  mkdirSync(join(root, 'apps/desktop/src'), { recursive: true })
+  mkdirSync(join(root, 'apps/desktop/tests'), { recursive: true })
+  mkdirSync(join(root, 'apps/desktop/scripts'), { recursive: true })
+  writeFileSync(join(root, 'apps/desktop/src/main.ts'), 'export {}\n')
+  writeFileSync(join(root, 'apps/desktop/tests/main.spec.ts'), 'export {}\n')
+  writeFileSync(join(root, 'apps/desktop/scripts/build.mjs'), 'export {}\n')
+  writeJson(join(root, 'apps/desktop/tsconfig.json'), {
+    compilerOptions: {
+      noEmit: true,
+      composite: false,
+      incremental: false,
+      rewriteRelativeImportExtensions: false,
+    },
+    include: ['src', 'tests', 'scripts'],
+    references: [{ path: '../../packages/core/shared' }],
+    ...overrides,
+  })
+}
+
+function postGenerationApplicationFixture(): string {
+  const root = mkdtempSync(join(tmpdir(), 'dsh-project-reference-faces-'))
+  roots.push(root)
+  mkdirSync(join(root, 'packages/core/shared'), { recursive: true })
+  writeJson(join(root, 'packages/core/shared/tsconfig.json'), { compilerOptions: { composite: true } })
+  writeJson(join(root, 'tsconfig.host.json'), { references: [] })
+  writeJson(join(root, 'tsconfig.client.json'), { references: [] })
+  writeJson(join(root, 'package.json'), { scripts: generatedContractBuildScripts() })
+  writePostGenerationDesktop(root)
+  return root
 }
 
 function webHostTestFixture(options: {
@@ -75,12 +123,114 @@ function workspaceFixture(options: {
   writeJson(join(root, 'tsconfig.client.json'), {
     references: options.client.map(path => ({ path })),
   })
+  writeJson(join(root, 'package.json'), { scripts: generatedContractBuildScripts() })
+  writePostGenerationDesktop(root)
   return root
 }
 
 describe('Project Reference compiler faces', () => {
   it('accepts the production compiler-face configuration', () => {
     expect(collectProjectReferenceFaceViolations(join(import.meta.dirname, '..'))).toEqual([])
+  })
+
+  it('keeps representative Desktop inputs in the parsed no-emit application check', () => {
+    const root = join(import.meta.dirname, '..')
+    const configPath = join(root, 'apps/desktop/tsconfig.json')
+    const read = ts.readConfigFile(configPath, path => ts.sys.readFile(path))
+    const parsed = ts.parseJsonConfigFileContent(read.config, ts.sys, dirname(configPath), undefined, configPath)
+    const inputs = parsed.fileNames.map(path => relative(root, path).replaceAll('\\', '/'))
+
+    expect(inputs).toEqual(expect.arrayContaining([
+      'apps/desktop/src/app-icon.ts',
+      'apps/desktop/tests/app-icon.spec.ts',
+      'apps/desktop/scripts/build-main.mjs',
+    ]))
+    expect(parsed.options).toMatchObject({
+      noEmit: true,
+      composite: false,
+      incremental: false,
+      rewriteRelativeImportExtensions: false,
+    })
+  })
+
+  it('accepts a complete post-generation application contract', () => {
+    expect(collectPostGenerationApplicationViolations(postGenerationApplicationFixture())).toEqual([])
+  })
+
+  it('rejects a post-generation application in either root aggregate', () => {
+    const root = postGenerationApplicationFixture()
+    writeJson(join(root, 'tsconfig.host.json'), { references: [{ path: './apps/desktop' }] })
+    writeJson(join(root, 'tsconfig.client.json'), { references: [{ path: './apps/desktop' }] })
+
+    expect(collectPostGenerationApplicationViolations(root)).toEqual([
+      'apps/desktop/tsconfig.json: post-generation application project must not be referenced by the root Client aggregate',
+      'apps/desktop/tsconfig.json: post-generation application project must not be referenced by the root Host aggregate',
+    ])
+  })
+
+  it('rejects narrowed inputs and emitting post-generation application settings', () => {
+    const root = postGenerationApplicationFixture()
+    writePostGenerationDesktop(root, {
+      compilerOptions: {
+        noEmit: false,
+        composite: true,
+        incremental: true,
+        rewriteRelativeImportExtensions: true,
+      },
+      include: ['src', 'scripts'],
+      references: [],
+    })
+
+    expect(collectPostGenerationApplicationViolations(root)).toEqual([
+      'apps/desktop/tsconfig.json: compilerOptions.composite must be false for the post-generation application check',
+      'apps/desktop/tsconfig.json: compilerOptions.incremental must be false for the post-generation application check',
+      'apps/desktop/tsconfig.json: compilerOptions.noEmit must be true for the post-generation application check',
+      'apps/desktop/tsconfig.json: compilerOptions.rewriteRelativeImportExtensions must be false for the post-generation application check',
+      'apps/desktop/tsconfig.json: include must be exactly ["src","tests","scripts"] for the post-generation application check',
+      'apps/desktop/tsconfig.json: post-generation application check must retain its Project References',
+    ])
+  })
+
+  it('rejects scripts that check Desktop before generated contracts and the Client aggregate', () => {
+    const root = postGenerationApplicationFixture()
+    writeJson(join(root, 'package.json'), {
+      scripts: {
+        ...generatedContractBuildScripts(),
+        'build:lib': 'npm run build:lib:client && npm run build:lib:host',
+        'build:lib:client': 'tsc -b tsconfig.client.json && tsdown --env.DSH_BUILD_FACE client',
+        'typecheck:contracts-ready': 'npm run typecheck:desktop-contracts-ready && tsc -b tsconfig.client.json',
+      },
+    })
+
+    expect(collectPostGenerationApplicationViolations(root)).toEqual([
+      'package.json: script "build:lib" must be "npm run build:lib:host && npm run build:lib:client"',
+      'package.json: script "build:lib:client" must be "npm run typecheck:contracts-ready && tsdown --env.DSH_BUILD_FACE client"',
+      'package.json: script "typecheck:contracts-ready" must be "tsc -b tsconfig.client.json && npm run typecheck:desktop-contracts-ready"',
+    ])
+  })
+
+  it('returns nonzero for a deliberate Desktop test type error', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-desktop-typecheck-'))
+    roots.push(root)
+    mkdirSync(join(root, 'apps/desktop/src'), { recursive: true })
+    mkdirSync(join(root, 'apps/desktop/tests'), { recursive: true })
+    mkdirSync(join(root, 'apps/desktop/scripts'), { recursive: true })
+    writeFileSync(join(root, 'apps/desktop/src/main.ts'), 'export {}\n')
+    writeFileSync(join(root, 'apps/desktop/tests/invalid.spec.ts'), 'const value: string = 1\nvoid value\n')
+    writeFileSync(join(root, 'apps/desktop/scripts/build.mjs'), 'export {}\n')
+    writeJson(join(root, 'apps/desktop/tsconfig.json'), {
+      compilerOptions: { allowJs: true, noEmit: true, strict: true },
+      include: ['src', 'tests', 'scripts'],
+    })
+    const tsc = join(import.meta.dirname, '../node_modules/typescript/bin/tsc')
+
+    const result = spawnSync(process.execPath, [tsc, '-p', 'apps/desktop/tsconfig.json'], {
+      cwd: root,
+      encoding: 'utf8',
+    })
+
+    expect(result.status).not.toBe(0)
+    expect(`${result.stdout}${result.stderr}`.replaceAll('\\', '/')).toContain('apps/desktop/tests/invalid.spec.ts')
   })
 
   it('discovers a static direct scaffold import', () => {
@@ -188,21 +338,21 @@ describe('Project Reference compiler faces', () => {
     expect(collectProjectReferenceFaceViolations(root)).toEqual([])
   })
 
-  it('rejects a retained Gestalt project omitted from its compiler face', () => {
+  it('rejects a declared Gestalt project omitted from its compiler face', () => {
     const root = mkdtempSync(join(tmpdir(), 'dsh-project-reference-faces-'))
     roots.push(root)
-    mkdirSync(join(root, 'apps/desktop'), { recursive: true })
-    writeJson(join(root, 'apps/desktop/tsconfig.json'), { extends: '../../tsconfig.base.json' })
+    mkdirSync(join(root, 'apps/platform'), { recursive: true })
+    writeJson(join(root, 'apps/platform/tsconfig.json'), { extends: '../../tsconfig.base.json' })
     writeJson(join(root, 'tsconfig.base.json'), {})
     writeJson(join(root, 'tsconfig.base.client.json'), {})
     writeJson(join(root, 'tsconfig.host.json'), { references: [] })
     writeJson(join(root, 'tsconfig.client.json'), { references: [] })
 
     expect(collectGestaltCompilerFaceViolations(root, {
-      host: ['apps/desktop'],
+      host: ['apps/platform'],
       client: [],
     })).toEqual([
-      'apps/desktop/tsconfig.json: retained Gestalt project is omitted from the root Host aggregate',
+      'apps/platform/tsconfig.json: retained Gestalt project is omitted from the root Host aggregate',
     ])
   })
 

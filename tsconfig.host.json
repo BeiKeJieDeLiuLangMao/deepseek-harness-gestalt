@@ -1,7 +1,9 @@
 {
-  // Host aggregate (one of the two check units; see tsconfig.json). packages/client
-  // type-checks in tsconfig.client.json: the two sides merge cordis Context under
-  // the same keys, one program cannot see both.
+  // Host aggregate (one of the two aggregate check units; see tsconfig.json).
+  // packages/client type-checks in tsconfig.client.json, then the Desktop
+  // application checks its complete mixed graph after generated contracts
+  // exist. The two sides merge cordis Context under the same keys, so one
+  // aggregate program cannot see both.
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
     "noEmit": true,
@@ -375,7 +377,6 @@
     { "path": "./packages/lsp/lsp-stdio" },
     { "path": "./packages/lsp/tool-lsp" },
     { "path": "./apps/cli" },
-    { "path": "./apps/desktop" },
     { "path": "./apps/platform" }
   ]
 }
