@@ -131,7 +131,7 @@ describe('real Platform Account HTTP composition', () => {
       transport,
       store,
       systemBrowser: { open: opened },
-      crypto: webcrypto as Crypto,
+      crypto: webcrypto,
       now: () => now,
     })
 
@@ -223,7 +223,7 @@ describe('real Platform Account HTTP composition', () => {
       transport,
       store: desktopStore,
       systemBrowser: { open: () => {} },
-      crypto: webcrypto as Crypto,
+      crypto: webcrypto,
       now: () => now,
     })
     const mobile = new PlatformAccountInstallation({
@@ -234,7 +234,7 @@ describe('real Platform Account HTTP composition', () => {
       transport,
       store: new MemoryInstallationAccountStore(),
       systemBrowser: { open: () => {} },
-      crypto: webcrypto as Crypto,
+      crypto: webcrypto,
       now: () => now,
     })
 
@@ -334,7 +334,7 @@ describe('real Platform Account HTTP composition', () => {
       transport: developmentTransport,
       store: new MemoryInstallationAccountStore(),
       systemBrowser: { open: () => {} },
-      crypto: webcrypto as Crypto,
+      crypto: webcrypto,
       now: () => now,
     })
     installation.acceptPrivacy()
