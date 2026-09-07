@@ -103,7 +103,7 @@ Before pushing, use [dsh-pre-push-checks](.agents/skills/dsh-pre-push-checks/SKI
 
 Real-API tests/demos read `DEEPSEEK_API_KEY`, optional `DEEPSEEK_BASE_URL`, and root `.env`. cordis.yml allows `!!js` (never `!js`) under plugin `config` and entry `disabled`; metadata stays literal, so conditional composition uses overlays ([primer](docs/cordis-primer.md#loader-configuration)). Never commit credentials. CI e2e skips without a key; [testing.md](docs/testing.md) owns key policy.
 
-Only explicit user authorization permits real-model tests or demos to blind-copy required settings and credential files from the application's read-only normal `DSH_HOME` into a fresh gitignored scratch `DSH_HOME`; set its directory to `0700` and files to `0600`. Copy no session, workspace, browser, or application state. Never print or parse-display secrets; keep tracked files, PRs, logs, and artifacts secret-free, recording only provider/model reference names. Delete the scratch copy and verify removal. Without authorization, report the credential blocker.
+An explicit user request or approval to import required model settings and credentials into a specified instance authorizes its source, target, and scope without repeat confirmation; changes require authorization. Blind-copy only from the application's read-only normal `DSH_HOME` to a fresh gitignored scratch `DSH_HOME`, directory mode `0700`, files `0600`. Copy no session, workspace, browser, or application state. Never print or parse-display secrets; tracked files, PRs, logs, and artifacts contain only provider/model references. Delete the scratch and verify removal; without authorization, report the credential blocker.
 
 ## Conventions
 
