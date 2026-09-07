@@ -15,7 +15,7 @@ node --test --test-concurrency=1 apps/desktop/tests/e2e-electron/hidden-acceptan
 
 ## 完成与恢复
 
-启动器 owner 在就绪前记录直接创建的 WDIO 子进程，并独立于继承管道的 `close` 观察其 `exit`。只有校验器找到唯一就绪 Host、该 Host 的 `requestedStop=stop` 精确退出、唯一一条 `shutdown complete` 收据、零模型请求、未变化的输入 hash，并确认 Host、fake 和 CDP 监听器均已关闭时，零退出才会通过。随后运行器删除其精确私有 scratch；证据保留在 `.artifacts` 下。
+启动器 owner 在就绪前记录直接创建的 WDIO 子进程，并独立于继承管道的 `close` 观察其 `exit`。隐藏 capability 会保持 Electron detached；WDIO `after` hook 在 Desktop 仍存活时删除 WebDriver session、清除 runner 持有的 session id，再通过 Electron Service 的独立主进程 CDP bridge 请求 `app.quit()`。删除与退出请求任一失败都会让 teardown 失败。只有校验器找到唯一就绪 Host、该 Host 的 `code=0 signal=null requestedStop=abort` 正常退出、唯一一条 `shutdown complete` 收据、零模型请求、未变化的输入 hash，并确认 Host、fake 和 CDP 监听器均已关闭时，零退出才会通过。随后运行器删除其精确私有 scratch；证据保留在 `.artifacts` 下。
 
 超时和中断恢复只能向已捕获的 WDIO 子进程发送 TERM。恢复、非零或带 signal 的退出、缺失 shutdown 证据、输入变化或仍存活的监听器都会失败并保留 scratch。PID 发现、命令子串、父级 lineage、进程组成员关系、端口和 fixture observer 端点均不授予 signal 权限。
 
@@ -27,6 +27,6 @@ manifest 命名规范 approved roots，以及每个已消费文件的解析路�
 
 ## 范围
 
-该路线打开实际构建的 Desktop Session Surface，选择 fixture 分类的 iPhone，等待实际非均匀 H264 canvas 像素，观察已解码的 MJPEG fallback，刷新进入新的 waiting owner，重新绘制，并请求 `app.quit()`。生产 phone runtime 拥有并等待 fake mobilecli 子进程；[hidden-phone-fake-owner.mjs](../../scripts/hidden-phone-fake-owner.mjs)仍是独立的直接子进程 fixture 测试，不接入此路线。
+该路线打开实际构建的 Desktop Session Surface，选择 fixture 分类的 iPhone，等待实际非均匀 H264 canvas 像素，观察已解码的 MJPEG fallback，刷新进入新的 waiting owner并重新绘制。测试后的 teardown 会先删除 WebDriver，再请求产品正常退出。生产 phone runtime 拥有并等待 fake mobilecli 子进程；[hidden-phone-fake-owner.mjs](../../scripts/hidden-phone-fake-owner.mjs)仍是独立的直接子进程 fixture 测试，不接入此路线。
 
 此场景证明使用确定性 fixture 设备字节的已构建 Desktop 用户路线。它不证明物理设备行为、陈旧 decoder 拒绝、失败的 MJPEG、模型 `device_act`、原生 Host-SIGKILL 包含性，或同用户文件系统和网络隔离。源码树不存储完整的 build-owner manifest；在根会话为精确最终 revision 提供并审核一个 manifest 前，启动仍会被拒绝。

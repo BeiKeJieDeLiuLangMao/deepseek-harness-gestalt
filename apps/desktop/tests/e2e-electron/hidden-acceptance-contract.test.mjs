@@ -7,7 +7,7 @@ import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import {
   componentIdentity, rejectCredentialFallbacks, verifyAcceptanceInventory,
-  verifyAcceptanceManifest, verifyShutdownEvidence,
+  shutdownDetachedWdioSession, verifyAcceptanceManifest, verifyShutdownEvidence,
 } from '../../scripts/hidden-acceptance-contract.mjs'
 
 function fixture() {
@@ -92,11 +92,56 @@ test('inventory is strictly fresh at spawn and validates exclusion ids', () => {
 })
 
 test('shutdown evidence binds the ready Host exit and success receipt', () => {
-  const text = 'host http://127.0.0.1:1234 pid 5678\nweb host exit pid=5678 code=null signal=SIGTERM requestedStop=stop\nshutdown complete\n'
+  const text = 'host http://127.0.0.1:1234 pid 5678\nweb host exit pid=5678 code=0 signal=null requestedStop=abort\nshutdown complete\n'
   assert.deepEqual(verifyShutdownEvidence(text), { hostPid: 5678, hostPort: 1234 })
-  assert.throws(() => verifyShutdownEvidence(text.replace('pid=5678', 'pid=9')), /ready Host exact exit/)
+  assert.throws(() => verifyShutdownEvidence(text.replace('pid=5678', 'pid=9')), /normal-quit exit/)
+  assert.throws(() => verifyShutdownEvidence(text.replace('code=0', 'code=1')), /normal-quit exit/)
+  assert.throws(() => verifyShutdownEvidence(text.replace('requestedStop=abort', 'requestedStop=stop')), /normal-quit exit/)
   assert.throws(() => verifyShutdownEvidence(text.replace('shutdown complete\n', '')), /success-only receipt/)
   assert.throws(() => verifyShutdownEvidence(`shutdown complete\n${text.replace('shutdown complete\n', '')}`), /after the ready Host exit/)
+})
+
+test('detached WDIO shutdown deletes the browser session before normal Desktop quit', async () => {
+  const events = []
+  const browser = {
+    sessionId: 'wdio-session',
+    async deleteSession() { events.push('delete-session') },
+    electron: {
+      async execute(script) {
+        events.push('main-cdp')
+        script({ app: { quit() { events.push('app-quit') } } })
+      },
+    },
+  }
+  await shutdownDetachedWdioSession(browser)
+  assert.deepEqual(events, ['delete-session', 'main-cdp', 'app-quit'])
+  assert.equal(browser.sessionId, undefined)
+})
+
+test('detached WDIO shutdown still requests app quit and preserves both failures', async () => {
+  const deletion = new Error('delete failed')
+  const quitting = new Error('quit failed')
+  const events = []
+  const browser = {
+    sessionId: 'wdio-session',
+    async deleteSession() { events.push('delete-session'); throw deletion },
+    electron: { async execute() { events.push('main-cdp'); throw quitting } },
+  }
+  await assert.rejects(shutdownDetachedWdioSession(browser), error => (
+    error instanceof AggregateError && error.errors[0] === deletion && error.errors[1] === quitting
+  ))
+  assert.deepEqual(events, ['delete-session', 'main-cdp'])
+  assert.equal(browser.sessionId, undefined)
+})
+
+test('only the hidden acceptance runner enables detached WDIO teardown', () => {
+  const root = join(import.meta.dirname, '..', '..', '..', '..')
+  const runner = readFileSync(join(root, 'apps/desktop/scripts/run-hidden-phone-acceptance.mjs'), 'utf8')
+  const wdio = readFileSync(join(root, 'apps/desktop/tests/e2e-electron/wdio.conf.ts'), 'utf8')
+  assert.match(runner, /DSH_HIDDEN_PHONE_ACCEPTANCE: '1'/u)
+  assert.match(wdio, /const hiddenAcceptance = process\.env\.DSH_HIDDEN_PHONE_ACCEPTANCE === '1'/u)
+  assert.match(wdio, /\.\.\.\(hiddenAcceptance \? \{ detach: true \} : \{\}\)/u)
+  assert.match(wdio, /\.\.\.\(hiddenAcceptance \? \{\s+after: async \(\) => \{/u)
 })
 
 test('credential fallback check inspects existence without reading contents', () => {

@@ -39,45 +39,40 @@ async function painted(name: string): Promise<void> {
 
 describe('Prebuilt hidden #610 phone playback', () => {
   it('waits for actual H264 paint, falls back visibly, and refreshes into a waiting owner', async () => {
-    try {
-      const startup = await assertStartupEvidence()
-      await recordOwnedProcesses(startup.hostPid, true)
-      await openSession()
-      await openPhoneTabFromPlusMenu()
-      await clickSurfaceButton('iOS')
-      await browser.$('div*=Acceptance iPhone').waitForDisplayed()
-      await clickSurfaceButton('打开')
-      await waiting()
-      await saveWindowEvidence('610-waiting')
-      await control('paint')
-      await painted('610-h264-painted')
-      await control('fail')
-      await browser.$('[aria-label="当前画面编码 MJPEG"]').waitForExist({ timeout: 20_000 })
-      const image = await browser.execute(() => {
-        const image = document.querySelector<HTMLImageElement>('img[alt="Acceptance iPhone 实时画面"]')
-        if (!image || !image.complete || image.naturalWidth === 0) throw new Error('MJPEG has no decoded image')
-        const canvas = document.createElement('canvas')
-        canvas.width = image.naturalWidth
-        canvas.height = image.naturalHeight
-        const context = canvas.getContext('2d')!
-        context.drawImage(image, 0, 0)
-        const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data
-        const varied = pixels.some((value, index) => index % 4 !== 3 && value !== pixels[index % 4])
-        return { width: image.naturalWidth, height: image.naturalHeight, visibleWidth: image.getBoundingClientRect().width, varied }
-      })
-      expect(image.varied).toBe(true)
-      expect(image.visibleWidth).toBeGreaterThan(0)
-      await writeArtifact('610-mjpeg.json', image)
-      await saveWindowEvidence('610-mjpeg-painted')
-      await control('hold')
-      await clickSurfaceButton('刷新流')
-      await waiting()
-      await saveWindowEvidence('610-refresh-waiting')
-      await control('paint')
-      await painted('610-refresh-painted')
-    } finally {
-      // The external owner bounds this request and verifies process/listener absence.
-      await browser.electron.execute((electron) => { electron.app.quit() })
-    }
+    const startup = await assertStartupEvidence()
+    await recordOwnedProcesses(startup.hostPid, true)
+    await openSession()
+    await openPhoneTabFromPlusMenu()
+    await clickSurfaceButton('iOS')
+    await browser.$('div*=Acceptance iPhone').waitForDisplayed()
+    await clickSurfaceButton('打开')
+    await waiting()
+    await saveWindowEvidence('610-waiting')
+    await control('paint')
+    await painted('610-h264-painted')
+    await control('fail')
+    await browser.$('[aria-label="当前画面编码 MJPEG"]').waitForExist({ timeout: 20_000 })
+    const image = await browser.execute(() => {
+      const image = document.querySelector<HTMLImageElement>('img[alt="Acceptance iPhone 实时画面"]')
+      if (!image || !image.complete || image.naturalWidth === 0) throw new Error('MJPEG has no decoded image')
+      const canvas = document.createElement('canvas')
+      canvas.width = image.naturalWidth
+      canvas.height = image.naturalHeight
+      const context = canvas.getContext('2d')!
+      context.drawImage(image, 0, 0)
+      const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data
+      const varied = pixels.some((value, index) => index % 4 !== 3 && value !== pixels[index % 4])
+      return { width: image.naturalWidth, height: image.naturalHeight, visibleWidth: image.getBoundingClientRect().width, varied }
+    })
+    expect(image.varied).toBe(true)
+    expect(image.visibleWidth).toBeGreaterThan(0)
+    await writeArtifact('610-mjpeg.json', image)
+    await saveWindowEvidence('610-mjpeg-painted')
+    await control('hold')
+    await clickSurfaceButton('刷新流')
+    await waiting()
+    await saveWindowEvidence('610-refresh-waiting')
+    await control('paint')
+    await painted('610-refresh-painted')
   })
 })

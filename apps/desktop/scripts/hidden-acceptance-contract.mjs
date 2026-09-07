@@ -155,6 +155,38 @@ export function rejectCredentialFallbacks(paths) {
 }
 
 /**
+ * End a detached hidden-lane WebDriver session before requesting normal product shutdown.
+ * The Electron service's main-process CDP bridge remains independent of the deleted
+ * WebDriver session. Clearing `sessionId` prevents WDIO Runner from deleting the same
+ * session again after Electron exits. Both teardown failures remain observable.
+ * @param {{ sessionId?: string, deleteSession(): Promise<unknown>, electron: { execute(script: (electron: { app: { quit(): void } }) => void): Promise<unknown> } }} browser WDIO Electron browser.
+ * @returns {Promise<void>} Completion after both teardown requests settle.
+ */
+export async function shutdownDetachedWdioSession(browser) {
+  let deleteFailure
+  try {
+    await browser.deleteSession()
+  } catch (error) {
+    deleteFailure = error
+  } finally {
+    browser.sessionId = undefined
+  }
+
+  let quitFailure
+  try {
+    await browser.electron.execute((electron) => { electron.app.quit() })
+  } catch (error) {
+    quitFailure = error
+  }
+
+  if (deleteFailure !== undefined && quitFailure !== undefined) {
+    throw new AggregateError([deleteFailure, quitFailure], 'WebDriver deletion and Desktop shutdown both failed')
+  }
+  if (deleteFailure !== undefined) throw deleteFailure
+  if (quitFailure !== undefined) throw quitFailure
+}
+
+/**
  * Require one ready Host, its exact requested-stop exit, and the success-only shutdown receipt.
  * @param {string} text Desktop smoke file contents after launcher exit.
  * @returns {{ readonly hostPid: number, readonly hostPort: number }} Host identity and listener.
@@ -162,12 +194,12 @@ export function rejectCredentialFallbacks(paths) {
 export function verifyShutdownEvidence(text) {
   const hosts = [...text.matchAll(/^host http:\/\/127\.0\.0\.1:(\d+) pid (\d+)$/gmu)]
   if (hosts.length !== 1) throw new Error('shutdown evidence requires exactly one ready Web Host')
-  const exits = [...text.matchAll(/^web host exit pid=(\d+) code=(?:-?\d+|null) signal=(?:SIG[A-Z0-9]+|null) requestedStop=(none|stop|abort)$/gmu)]
+  const exits = [...text.matchAll(/^web host exit pid=(\d+) code=0 signal=null requestedStop=abort$/gmu)]
   const hostPid = Number(hosts[0][2])
   const hostPort = Number(hosts[0][1])
   if (!Number.isSafeInteger(hostPid) || !Number.isSafeInteger(hostPort)) throw new Error('shutdown evidence contains an invalid Host identity')
-  if (exits.length !== 1 || Number(exits[0][1]) !== hostPid || exits[0][2] !== 'stop') {
-    throw new Error('shutdown evidence requires the ready Host exact exit with requestedStop=stop')
+  if (exits.length !== 1 || Number(exits[0][1]) !== hostPid) {
+    throw new Error('shutdown evidence requires the ready Host exact normal-quit exit')
   }
   const receipts = [...text.matchAll(/^shutdown complete$/gmu)]
   if (receipts.length !== 1) {

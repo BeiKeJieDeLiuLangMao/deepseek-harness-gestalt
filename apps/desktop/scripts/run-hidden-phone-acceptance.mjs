@@ -115,6 +115,7 @@ const env = {
   DSH_ELECTRON_E2E_ARTIFACT_DIR: artifacts, DSH_ELECTRON_E2E_CDP_PORT: String(cdpPort),
   DSH_ELECTRON_E2E_FAKE_PORT: String(fakePort), DSH_ELECTRON_E2E_FAKE_OWNER: ownerToken,
   DSH_ELECTRON_E2E_USER_DATA: userData, DSH_ELECTRON_E2E_WORKSPACE: workspace,
+  DSH_HIDDEN_PHONE_ACCEPTANCE: '1',
 }
 writeFileSync(join(artifacts, 'inputs.json'), JSON.stringify({ publishedSha: head, manifest, inventory, scratch, ports, fake, profile }, null, 2))
 let modelRequests = 0

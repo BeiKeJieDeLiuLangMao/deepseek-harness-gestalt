@@ -4,10 +4,12 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { browser } from '@wdio/globals'
 import type {} from '@wdio/native-types'
+import { shutdownDetachedWdioSession } from '../../scripts/hidden-acceptance-contract.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const desktopRoot = join(here, '..', '..')
 const artifactDir = process.env.DSH_ELECTRON_E2E_ARTIFACT_DIR
+const hiddenAcceptance = process.env.DSH_HIDDEN_PHONE_ACCEPTANCE === '1'
 if (artifactDir === undefined || artifactDir.length === 0) {
   throw new TypeError('DSH_ELECTRON_E2E_ARTIFACT_DIR is required')
 }
@@ -56,6 +58,7 @@ export const config: WebdriverIO.Config = {
     },
     'goog:chromeOptions': {
       args: [`--remote-debugging-port=${process.env.DSH_ELECTRON_E2E_CDP_PORT ?? '0'}`],
+      ...(hiddenAcceptance ? { detach: true } : {}),
     },
   }],
   afterTest: async (test, _context, result) => {
@@ -68,4 +71,9 @@ export const config: WebdriverIO.Config = {
       process.stderr.write(`unable to capture Electron window evidence: ${String(error)}\n`)
     }
   },
+  ...(hiddenAcceptance ? {
+    after: async () => {
+      await shutdownDetachedWdioSession(browser)
+    },
+  } : {}),
 }
