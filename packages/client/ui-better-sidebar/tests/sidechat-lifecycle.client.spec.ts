@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
-  liveModelSelection, type Agent, type AgentOptions, type AgentSetup, type ModelSelection,
+  liveModelSelection, type Agent, type AgentOptions, type AgentSetup, type CreateAgentOptions,
+  type ModelSelection,
 } from '@deepseek-ai/dsh-agent'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { snapshotSubagentDescriptor } from '@deepseek-ai/dsh-subagent'
@@ -42,8 +43,14 @@ describe('sidechat route lifecycle', () => {
 
     expect(create).toHaveBeenCalledWith(expect.objectContaining({
       sessionId: 'draft-child',
+      meta: expect.objectContaining({ parentSession: 'parent', isSeeded: true, origin: 'subagent' }),
       agentOptions: expect.objectContaining({ provider: 'deepseek', model: 'chat' }),
     }))
+    const createOptions = create.mock.calls[0]![0] as CreateAgentOptions
+    expect(createOptions.seed?.at(-1)).toMatchObject({
+      type: 'subagent/descriptor',
+      seq: createOptions.inheritedEventCount,
+    })
     expect(inject).toHaveBeenCalledOnce()
     expect(followup).toHaveBeenCalledOnce()
     await sidechat.dispose()

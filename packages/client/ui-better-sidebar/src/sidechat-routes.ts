@@ -30,7 +30,7 @@ import {
 } from '@deepseek-ai/dsh-agent'
 import { foldSubagentDescriptor, snapshotSubagentDescriptor } from '@deepseek-ai/dsh-subagent'
 import type { Context as CordisContext } from '@deepseek-ai/cordis'
-import { foldRequestHeader, SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
+import { foldRequestHeader, SessionId, SessionLogOffset, type SessionEvent } from '@deepseek-ai/dsh-session'
 import type {
   SidebarContext,
   SidebarAgentPresetsService,
@@ -429,11 +429,13 @@ export function buildSidechatApi(ctx: SidebarContext): SidechatApi {
         meta: {
           ...(parentSession.header.cwd === undefined ? {} : { cwd: parentSession.header.cwd }),
           parentSession: parentSession.id,
+          isSeeded: true,
           origin: 'subagent',
           delegationDepth: (parentSession.header.delegationDepth ?? 0) + 1,
           ...(agentPreset === undefined ? {} : { agentPreset }),
         },
         seed: seed as unknown as readonly SessionEvent[],
+        inheritedEventCount: SessionLogOffset(inheritance.seed.length),
         agentOptions: { ...parent.options, provider: selected.provider, model: selected.model },
         setup: withModelSelection(setup, selectionRef),
         signal: AbortSignal.timeout(CREATE_TIMEOUT_MS),

@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-23-explicit-session-slot-mounts.md
-2026-08-23-explicit-session-slot-mounts.md: 49811e7f134b47b6da36dad0e5fbe11f5c748748
-2026-08-23-explicit-session-slot-mounts.zh.md: 81f76b785cdfa423c791b519fd6c868d156385d9
+2026-08-23-explicit-session-slot-mounts.md: e262358f2d31bfec4b8815605513ca052dee870a
+2026-08-23-explicit-session-slot-mounts.zh.md: 3eb172566e7c7c87f7a5a9afd519e26f44984968
