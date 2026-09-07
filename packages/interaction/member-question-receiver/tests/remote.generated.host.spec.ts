@@ -4,8 +4,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import { WorkspaceTypertGenerator } from '@deepseek-ai/dsh-typert-generator'
 import { Context } from '@deepseek-ai/cordis'
+import { brandString } from '@deepseek-ai/dsh-brand'
 import type { PlatformAccountId } from '@deepseek-ai/dsh-platform-account'
 import {
   parseCompanionOperationId,
@@ -16,6 +16,7 @@ import {
 import TypertGatewayService from '@deepseek-ai/dsh-api-gateway'
 import { apply as applyClientRemote, inject as clientRemoteInject } from '@deepseek-ai/dsh-api-gateway/client'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
+import { WorkspaceTypertGenerator } from '@deepseek-ai/dsh-typert-generator'
 import type { TypertContribution } from '@deepseek-ai/dsh-typert-registry/types'
 import type { TypertRemoteContribution } from '@deepseek-ai/dsh-typert-protocol'
 import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
@@ -24,6 +25,7 @@ import FileMemberQuestionReceiver, {
 } from '../src/index.ts'
 import type {
   MemberQuestionReceiverConfig,
+  MemberQuestionReceiverRpcId,
   MemberQuestionReceiverSnapshot,
   MemberQuestionTerminalAuthority,
   MemberQuestionTerminalClaim,
@@ -267,24 +269,20 @@ describe('generated member-question Remote codecs', () => {
     await client
     const dispose = await ctx.remote.$mount(TYPERT_REMOTE)
     const settleCodec = TYPERT_REMOTE.descriptors.find(descriptor => descriptor.method === 'settle')
-      ?.parameters[0]?.codec.schema
-    expect(settleCodec).toBeDefined()
-    expect(memberQuestionRemoteSettleRequestSchema.safeParse({
+      ?.parameters[0]?.codec
+    expect(settleCodec?.mode).toBe('strict')
+    if (settleCodec?.mode !== 'strict') throw new Error('expected strict settle request codec')
+    expect(settleCodec.schema).toBeDefined()
+    const forgedSettleRequest = {
       receivingSessionId: arrived.receivingSessionId,
       revision: arrived.revision,
       questionId: arrived.questionId,
       response: { kind: 'declined' },
       settledByInstallationId: 'forged-installation',
       settledAt: 9_999,
-    }).success).toBe(false)
-    await expect(ctx.remote.memberQuestion.settle({
-      receivingSessionId: arrived.receivingSessionId,
-      revision: arrived.revision,
-      questionId: arrived.questionId,
-      response: { kind: 'declined' },
-      settledByInstallationId: 'forged-installation',
-      settledAt: 9_999,
-    })).resolves.toMatchObject({
+    } as const
+    expect(memberQuestionRemoteSettleRequestSchema.safeParse(forgedSettleRequest).success).toBe(false)
+    await expect(ctx.remote.memberQuestion.settle(forgedSettleRequest)).resolves.toMatchObject({
       ok: true,
       value: { outcome: 'declined', settledByInstallationId: 'installation-host', settledAt: 1_000 },
     })
@@ -302,19 +300,21 @@ describe('generated member-question Remote codecs', () => {
       ...envelope,
       operation: { ...envelope.operation, questionId: parseMemberQuestionId('question-generated-admit') },
     })
-    await expect(ctx.remote.memberQuestion.admitHumanTurn({
+    const requestId = brandString<MemberQuestionReceiverRpcId>('rpc-generated-text')
+    const forgedAdmitRequest = {
       receivingSessionId: arrivedText.receivingSessionId,
       revision: arrivedText.revision,
-      requestId: 'rpc-generated-text',
+      requestId,
       content: [{ type: 'text', text: 'Help me decide.' }],
       mode: 'queue',
       attachment: { attachmentId: 'forged' },
-    })).resolves.toMatchObject({
+    } as const
+    await expect(ctx.remote.memberQuestion.admitHumanTurn(forgedAdmitRequest)).resolves.toMatchObject({
       ok: true,
       value: {
         accepted: true,
         receivingSessionId: arrivedText.receivingSessionId,
-        rpcId: 'rpc-generated-text',
+        rpcId: requestId,
       },
     })
     const admitCall = calls.find(call => (call as { endpoint: string }).endpoint === 'memberQuestion/admitHumanTurn') as {

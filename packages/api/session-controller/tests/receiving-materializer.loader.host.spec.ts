@@ -24,7 +24,7 @@ import {
   parseMemberQuestionId,
   parseMemberQuestionProjectId,
 } from '@deepseek-ai/dsh-remote-protocol'
-import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
+import SessionStore, { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import SqliteSessionQueryEngine from '@deepseek-ai/dsh-session-query-sqlite'
@@ -310,8 +310,10 @@ describe('receiving materializer through a real Loader composition', () => {
     expect(admitted).toMatchObject({ accepted: true, receivingSessionId: arrived.receivingSessionId, rpcId })
     await idle
     const events = ctx.sessions.get(sessionId)?.snapshotEvents() ?? []
-    const human = events.filter(event => event.type === 'user/message'
-      && event.data.id === `member-question-human:${rpcId}`)
+    const human = events.filter(
+      (event): event is SessionEvent<'user/message'> => event.type === 'user/message'
+        && event.data.id === `member-question-human:${rpcId}`,
+    )
     expect(human).toHaveLength(1)
     expect(human[0]?.data.source).toMatchObject({ kind: 'user', rpcId })
     expect(events.some(event => event.type === 'turn/start')).toBe(true)
@@ -375,8 +377,10 @@ describe('receiving materializer through a real Loader composition', () => {
         && event.data.content.some(block => block.type === 'image' && 'attachment' in block))
     }).toBe(true)
     const events = ctx.sessions.get(sessionId)?.snapshotEvents() ?? []
-    const human = events.find(event => event.type === 'user/message'
-      && event.data.id === `member-question-human:${rpcId}`)
+    const human = events.find(
+      (event): event is SessionEvent<'user/message'> => event.type === 'user/message'
+        && event.data.id === `member-question-human:${rpcId}`,
+    )
     expect(JSON.stringify(human?.data.content)).not.toContain(PNG_1X1)
     await idle
     expect(adapter.requests).toHaveLength(1)

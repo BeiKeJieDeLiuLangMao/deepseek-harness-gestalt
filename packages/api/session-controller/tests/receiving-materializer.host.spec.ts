@@ -20,12 +20,13 @@ import {
   parseMemberQuestionId,
   parseMemberQuestionProjectId,
 } from '@deepseek-ai/dsh-remote-protocol'
-import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
+import SessionStore, { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import { MockAdapter } from '../../../core/agent-loop/tests/mock-adapter.ts'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import Storage from '@deepseek-ai/dsh-storage'
 import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
+import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
 import WorkspaceRegistry from '@deepseek-ai/dsh-workspace'
 import { ApiSessionAgentController } from '../src/agent.ts'
 import { installReceivingSessionMaterializer } from '../src/receiving-materializer.ts'
@@ -182,8 +183,10 @@ describe('Session Controller receiving materializer', () => {
       ignorable: true,
       data: { questionId: envelope.operation.questionId },
     })
-    const brief = events.filter(event => event.type === 'agent/inbox/spliced'
-      && event.data.inserted.some(message => message.id === `member-question-brief:${envelope.operation.questionId}`))
+    const brief = events.filter(
+      (event): event is SessionEvent<'agent/inbox/spliced'> => event.type === 'agent/inbox/spliced'
+        && event.data.inserted.some(message => message.id === `member-question-brief:${envelope.operation.questionId}`),
+    )
     expect(brief).toHaveLength(1)
     expect(brief[0]?.data.inserted[0]?.content).toEqual([{
       type: 'text',
@@ -389,9 +392,8 @@ describe('Session Controller receiving materializer', () => {
       maxRecords: 8,
       terminalRetryMs: 10,
     })
-    const unregister = installReceivingSessionMaterializer(ctx, {
-      ensureSession: () => Promise.reject(new Error('unused')),
-    } as ApiSessionAgentController)
+    await ctx.plugin(TypertRegistry)
+    const unregister = installReceivingSessionMaterializer(ctx, new ApiSessionAgentController(ctx))
     expect(unregister).toEqual(expect.any(Function))
     expect(() => ctx.memberQuestionReceiver.registerSessionMaterializer(async () => ({ accepted: true as const })))
       .toThrow('already registered')
