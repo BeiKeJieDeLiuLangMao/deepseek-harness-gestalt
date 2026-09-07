@@ -571,6 +571,16 @@
       "projection": "public-api"
     },
     {
+      "doc": "docs/subsystems/session.md",
+      "symbol": "SessionAdmitAttachmentRequest",
+      "source": "packages/api/session-controller/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/session.md",
+      "symbol": "SessionAdmitAttachmentValue",
+      "source": "packages/api/session-controller/src/types.ts"
+    },
+    {
       "doc": "docs/subsystems/persistence.md",
       "symbol": "SessionHandle",
       "source": "packages/session/session-persistence/src/handle.ts"
@@ -1837,6 +1847,26 @@
       "source": "packages/workspace/workspace/src/types.ts"
     },
     {
+      "doc": "docs/subsystems/workspace.md",
+      "symbol": "WorkspaceGitRemoteRequest",
+      "source": "packages/api/workspace-controller/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/workspace.md",
+      "symbol": "WorkspaceGitRemoteValue",
+      "source": "packages/api/workspace-controller/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/workspace.md",
+      "symbol": "WorkspaceCloneGitRequest",
+      "source": "packages/api/workspace-controller/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/workspace.md",
+      "symbol": "WorkspaceCloneGitValue",
+      "source": "packages/api/workspace-controller/src/types.ts"
+    },
+    {
       "doc": "docs/subsystems/client-modules.md",
       "symbol": "WebBootEntry",
       "source": "packages/client/modules/src/client/manifest.ts"
@@ -2075,6 +2105,11 @@
       "doc": "docs/subsystems/feedback.md",
       "symbol": "MessageFeedbackDeleteResult",
       "source": "packages/feedback/message-feedback/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/platform-account.md",
+      "symbol": "InstallationId",
+      "source": "packages/platform/platform-account/src/types.ts"
     },
     {
       "doc": "packages/client/ui-conversation/README.md",

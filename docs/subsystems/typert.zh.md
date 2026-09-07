@@ -233,23 +233,6 @@ interface TypertClientRemote extends TypertRemoteNamespaceMap {
 
 Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — the language sides differ only in locale-specific paired document paths. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.zh.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
 
-<a id="ctxapiproxy--apiproxy"></a>
-
-### `ctx.apiProxy` — `ApiProxy`
-
-Root interface of the unified API. New client-request domain = one new file pair + one field here + one map row.
-
-```ts cordis-catalog
-/**
- * Response entry for server requests; not a domain method.
- * @param message - Client response carrying the server request's rpcId.
- * @returns Transport receipt for the response delivery.
- */
-respond(message: ClientResponse): Promise<RpcReceipt>
-```
-
-Source: [`packages/host/apiproxy/src/api/index.ts`](../../packages/host/apiproxy/src/api/index.ts)
-
 <a id="ctxtypert--typertregistry"></a>
 
 ### `ctx.typert` — `TypertRegistry`
@@ -324,12 +307,27 @@ Resolve strict generated definitions or conservative SRC markers against current
 
 ```ts cordis-catalog
 /**
+ * Register the sole application-selected forwarded-event source.
+ * @param source - stream factory installed by the Remote assembly.
+ * @param host - stable Host facts included in each Client generation's opening frame.
+ * @returns disposer removing this source and cancelling its active streams.
+ */
+registerRemoteEvents( source: TypertRemoteEventSource, host: RemoteEventHostInfo, ): () => Promise<void>
+
+/**
  * Invoke one live Remote method through strict generated reflection or SRC markers.
  * @param request - decoded endpoint and exact named wire arguments.
- * @returns the validated business result.
+ * @returns the business result without output decoding.
  * @throws {@link TypertGatewayError} for dispatch, provider, or boundary failures; lookup-policy and business errors retain identity.
  */
 async invoke(request: InvokeRemoteRequest): Promise<unknown>
+
+/**
+ * Open one live stream Remote method without assuming a physical carrier.
+ * @param request - decoded endpoint and named wire arguments.
+ * @returns a cancellation-aware iterable over the business results.
+ */
+async stream(request: InvokeRemoteRequest): Promise<AsyncIterable<unknown>>
 ```
 
 Source: [`packages/api/gateway/src/index.ts`](../../packages/api/gateway/src/index.ts)

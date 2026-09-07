@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { validateJsonSchemaValue, type ToolDefinition, type ToolRunContext } from '@deepseek-ai/dsh-tools'
 import { AgentOpenRegistry, registerOpenTool } from '../src/agent-opens.ts'
-import type { Context } from '../src/context-types.ts'
+import type { SidebarContext as Context } from '../src/context-types.ts'
 import { SIDEBAR_PREFS_DEFAULTS, type SidebarPrefs } from '../src/prefs-shared.ts'
 
 function exec(sessionId: string): ToolRunContext {

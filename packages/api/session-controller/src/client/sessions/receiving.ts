@@ -98,10 +98,10 @@ export class ReceivingQuestionBook implements ObservableSnapshot<ReceivingQuesti
   }
 
   /** Return the cached receiving rows. */
-  getSnapshot = (): ReceivingQuestionBookView => this.#view
+  getSnapshot: () => ReceivingQuestionBookView = () => this.#view
 
   /** Subscribe to row replacement. */
-  subscribe = (listener: () => void): (() => void) => {
+  subscribe: (listener: () => void) => () => void = (listener) => {
     this.#listeners.add(listener)
     return () => { this.#listeners.delete(listener) }
   }
@@ -302,7 +302,7 @@ export class ReceivingQuestionBook implements ObservableSnapshot<ReceivingQuesti
     const records = group.terminal.flatMap(view => this.recordOf(view))
     const pendingRow = group.pending
     const intent = pendingRow === undefined
-      ? intentOf(exemplar, accountId, pendingRow?.cachedReferences)
+      ? intentOf(exemplar, accountId, undefined)
       : intentOf(pendingRow.operation, pendingRow.receivingAccountId, pendingRow.cachedReferences)
     const updatedAt = Math.max(pendingRow?.arrivedAt ?? 0, ...records.map(record => record.terminalAt))
     const revision = Math.max(pendingRow?.revision ?? 0, ...group.terminal.map(record => record.revision))

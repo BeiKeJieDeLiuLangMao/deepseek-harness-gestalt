@@ -18,7 +18,7 @@ import { basename, dirname, extname, isAbsolute, join } from 'node:path'
 import type { IncomingMessage } from 'node:http'
 import type { Duplex } from 'node:stream'
 import { WebSocket, WebSocketServer } from 'ws'
-import type { Context, SidebarHttpRequest, SidebarSessionEvent } from './context-types.ts'
+import type { SidebarContext, SidebarHttpRequest, SidebarSessionEvent } from './context-types.ts'
 import {
   Config,
   PrefsSchema,
@@ -59,10 +59,10 @@ import { readJsonBody, requireString, SidebarError, writeError, writeJson, write
 
 export { Config }
 export type { SidebarConfig, ResolvedSidebarConfig }
-// Re-export the scoped Context face so consumers gain `ctx.betterSidebar`.
-// Also re-export the service descriptor types so consumers can type their
-// registerTab / registerFileViewer arguments without reaching into /client.
-export type { Context } from './context-types.ts'
+// Re-export the snapshot-specific context mirror used by the Host routes.
+export type { SidebarContext } from './context-types.ts'
+// Re-export the service descriptor types for callers that do not need the
+// Client-only Cordis augmentation published from the ./client entry.
 export type {
   BetterSidebarService,
   TabDescriptor,
@@ -114,7 +114,7 @@ export function mediaTypeForPath(path: string): string {
  * provides persistence, so the bug-fix path (header → client → persistence)
  * always resolves the real session cwd before reaching it.
  */
-async function sessionCwdOf(ctx: Context, sessionId: string, clientCwd?: string): Promise<string> {
+async function sessionCwdOf(ctx: SidebarContext, sessionId: string, clientCwd?: string): Promise<string> {
   const session = ctx.sessions.get(sessionId)
   const headerCwd = session?.header.cwd
   if (headerCwd !== undefined && headerCwd !== '') return headerCwd
@@ -271,7 +271,7 @@ function fenceEnabledOf(getSettings: () => SidebarSettingsFace | undefined): boo
 
 
 function buildApi(
-  ctx: Context,
+  ctx: SidebarContext,
   ptyManager: PtyManager | null,
   agentPtyRegistry: AgentPtyRegistry | null,
   resolved: ResolvedSidebarConfig,
@@ -656,7 +656,7 @@ function buildApi(
  * {@link Config} and fills defaults, direct callers get them from
  * {@link resolveSidebarConfig}.
  */
-export function apply(ctx: Context, config?: SidebarConfig): void {
+export function apply(ctx: SidebarContext, config?: SidebarConfig): void {
   // pnpm strips the executable bit from node-pty's prebuilt spawn-helper;
   // restore it before any terminal can spawn (idempotent).
   ensureSpawnHelper()
@@ -1156,7 +1156,7 @@ async function attachAgentList(
  *   the shell must survive until the user switches back or closes the tab.
  */
 async function attachTerminal(
-  ctx: Context,
+  ctx: SidebarContext,
   ptyManager: PtyManager | null,
   agentPtyRegistry: AgentPtyRegistry | null,
   ws: WebSocket,

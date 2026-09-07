@@ -27,7 +27,7 @@ import { isAbsolute, join, resolve } from 'node:path'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { ToolRunContext } from '@deepseek-ai/dsh-tools'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
-import type { Context } from './context-types.ts'
+import type { SidebarContext } from './context-types.ts'
 import type { SidebarPrefs } from './prefs-shared.ts'
 
 /** What the model asked to open. */
@@ -218,7 +218,7 @@ function isWindowsDrivePrefix(raw: string): boolean {
  * @returns a disposer that unregisters the tool.
  */
 export function registerOpenTool(
-  ctx: Context,
+  ctx: SidebarContext,
   registry: AgentOpenRegistry,
   resolveCwd: (sessionId: string) => Promise<string>,
   readPrefs: () => SidebarPrefs,

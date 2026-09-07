@@ -26,7 +26,7 @@ import {
   IconRefreshOutline14, StateDot,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
-  Context,
+  SidebarContext,
   SidebarSessionList,
   SidebarSessionSummary,
   SidebarSubagentAddress,
@@ -628,7 +628,7 @@ function JobsSection(props: {
 export function SubagentView(props: {
   sessionId: string
   active: boolean
-  ctx: Context
+  ctx: SidebarContext
   onOpenChild?: (address: SidebarSubagentAddress) => void
 }) {
   const { sessionId, active, ctx, onOpenChild } = props

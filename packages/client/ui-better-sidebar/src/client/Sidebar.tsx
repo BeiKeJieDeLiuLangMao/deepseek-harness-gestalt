@@ -32,7 +32,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent as Re
 import { useSyncExternalStore } from 'react'
 import clsx from 'clsx'
 import { IconCloseFill14, Tooltip } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { Context } from '../context-types.ts'
+import type { SidebarContext } from '../context-types.ts'
 import { appendToDraft, insertFileReference } from './conversation-draft.ts'
 import {
   BOTTOM_MIN, PANEL_MIN, agentUuidOf, firstLeaf, floatTab,
@@ -102,7 +102,7 @@ function injectUserCss(attr: string, id: string, cssText: string): HTMLStyleElem
   return tag
 }
 
-export function Sidebar(props: { ctx: Context; store: SidebarStore }) {
+export function Sidebar(props: { ctx: SidebarContext; store: SidebarStore }) {
   const { ctx, store } = props
 
   // Copy freshness: re-render the whole tree when the DSH locale switches.

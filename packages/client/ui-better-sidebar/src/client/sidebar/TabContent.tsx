@@ -5,7 +5,7 @@
  * from the same registry.
  */
 import { createElement, memo } from 'react'
-import type { Context } from '../../context-types.ts'
+import type { SidebarContext } from '../../context-types.ts'
 import type { SidebarState, SidebarStore, SidebarTab } from '../state.ts'
 import type { SessionScope } from '../api.ts'
 import { OrphanedTab } from '../OrphanedTab.tsx'
@@ -23,7 +23,7 @@ import css from '../sidebar.module.css'
 interface TabContentProps extends TabContentMemoKey {
   onToggleDir: (path: string) => void
   onReferenceFile: (path: string, isDir: boolean) => void
-  ctx: Context
+  ctx: SidebarContext
   store: SidebarStore
   /** Fired before a topology node jumps to its child session (see Sidebar). */
   onSubagentJump: (childSessionId: string) => void
@@ -59,7 +59,7 @@ export const TabContent = memo(function TabContent(props: TabContentProps) {
  * a disabled row (e.g. terminal at capacity) instead of hiding the option.
  * Tabs the user disabled in the side card settings are filtered out
  * entirely — re-enabling them is the settings page's job. */
-export function buildNewTabOptions(state: SidebarState, ctx: Context, scope: SessionScope): NewTabOption[] {
+export function buildNewTabOptions(state: SidebarState, ctx: SidebarContext, scope: SessionScope): NewTabOption[] {
   const service = ctx.get('betterSidebar')
   if (service === undefined) return []
   return service.getTabs()

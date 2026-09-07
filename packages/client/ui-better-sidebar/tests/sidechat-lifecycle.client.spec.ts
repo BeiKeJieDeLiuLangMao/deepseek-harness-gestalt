@@ -4,7 +4,7 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { snapshotSubagentDescriptor } from '@deepseek-ai/dsh-subagent'
 import { Context as CordisContext } from '@deepseek-ai/cordis'
 import { buildSidechatApi } from '../src/sidechat-routes.ts'
-import type { Context } from '../src/context-types.ts'
+import type { SidebarContext as Context } from '../src/context-types.ts'
 
 describe('sidechat route lifecycle', () => {
   it('creates the requested child only when the first prompt reaches the route', async () => {

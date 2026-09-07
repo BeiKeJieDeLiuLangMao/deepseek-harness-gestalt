@@ -18,7 +18,7 @@
  *   fenced by the owning session via the live agent caller. Absent registry
  *   → 503, mirroring the settings routes' optional-service downgrade.
  */
-import type { Context, SidebarSessionEvent } from './context-types.ts'
+import type { SidebarContext, SidebarSessionEvent } from './context-types.ts'
 import { requireString, SidebarError } from './wire.ts'
 
 /** The two background-job routes of the sidebar API. */
@@ -139,7 +139,7 @@ const MIRROR_MAX_ENTRIES = 200
  * reads the pane exists to show). Zero DSH writes: the api-proxy pushes the
  * same feed to browsers.
  */
-function createJobOutputMirror(ctx: Context): { entries(sessionId: string): readonly JobOutputTrace[] } {
+function createJobOutputMirror(ctx: SidebarContext): { entries(sessionId: string): readonly JobOutputTrace[] } {
   const perSession = new Map<string, JobOutputTrace[]>()
   // tool/call identities per session, so unrelated tool/result rows are
   // never cached (only job_output results pair with a cached call).
@@ -195,7 +195,7 @@ function createJobOutputMirror(ctx: Context): { entries(sessionId: string): read
  * @param outputLimit - response cap for one output replay in bytes; longer
  *   texts are sliced and flagged `truncated` (mirrors the fs.read cap).
  */
-export function buildJobsApi(ctx: Context, outputLimit: number): SidebarJobsRoutes {
+export function buildJobsApi(ctx: SidebarContext, outputLimit: number): SidebarJobsRoutes {
   const jobs = ctx.get('jobs')
   const agents = ctx.get('agents')
   const mirror = createJobOutputMirror(ctx)

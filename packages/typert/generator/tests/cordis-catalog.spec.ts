@@ -18,10 +18,13 @@ import {
 
 const workspaceRoot = resolve(import.meta.dirname, '../../../..')
 
-/** One workspace projection shared by both cases: analyzing it twice doubles a multi-minute run. */
-let cached: ReturnType<typeof projectCordisCatalog> | undefined
-const projection = (): ReturnType<typeof projectCordisCatalog> =>
-  (cached ??= projectCordisCatalog(workspaceRoot, CORDIS_CATALOG_POLICY))
+/** One workspace projection per compiler face shared by the real-workspace cases. */
+let cachedHost: ReturnType<typeof projectCordisCatalog> | undefined
+let cachedClient: ReturnType<typeof projectCordisCatalog> | undefined
+const projection = (face: 'host' | 'client' = 'host'): ReturnType<typeof projectCordisCatalog> => {
+  if (face === 'host') return (cachedHost ??= projectCordisCatalog(workspaceRoot, CORDIS_CATALOG_POLICY))
+  return (cachedClient ??= projectCordisCatalog(workspaceRoot, CORDIS_CATALOG_POLICY, 'client'))
+}
 
 const SOURCE_LINK_POLICY: CordisCatalogPolicy = {
   linkedTypePages: {},
@@ -100,5 +103,17 @@ describe('Typert-backed Cordis catalog', () => {
     expect(byKey.has('headlessIo')).toBe(false)
     expect(byKey.has('dshHomePath')).toBe(false)
     expect(byKey.has('launcherEnvironment')).toBe(false)
+  })
+
+  it('keeps the Better Sidebar registry in the Client face while Host discovery stays truthful', { timeout: 480_000 }, () => {
+    const host = projection('host').model.services
+    const client = projection('client').model.services
+
+    expect(host.filter(service => service.key === 'betterSidebar')).toEqual([])
+    expect(host.filter(service => service.key === 'browserRuntime')).toHaveLength(1)
+    const sidebar = client.filter(service => service.key === 'betterSidebar')
+    expect(sidebar).toHaveLength(1)
+    expect(sidebar[0]?.type).toBe('BetterSidebarService')
+    expect(sidebar[0]?.source).toContain('packages/client/ui-better-sidebar/src/client/service.ts')
   })
 })

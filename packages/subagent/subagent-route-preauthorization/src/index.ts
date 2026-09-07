@@ -27,7 +27,10 @@ export abstract class SubagentRoutePreauthorization extends Service {
     super(ctx, 'subagentRoutePreauthorization')
   }
 
-  /** Return detached immutable routes authorized for a new top-level Session. */
+  /**
+   * Return detached immutable routes authorized for a new top-level Session.
+   * @returns the deployment's exact provider/model routes.
+   */
   abstract snapshot(): readonly SubagentRoute[]
 }
 

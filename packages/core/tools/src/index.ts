@@ -1438,7 +1438,11 @@ export class ToolRuntime extends Service {
     )
   }
 
-  /** Resolve the sorted union of positive eligibility declarations, or undefined when unrestricted. */
+  /**
+   * Resolve the sorted union of positive eligibility declarations.
+   * @param scope - the viewing scope; omitted selects the current context chain.
+   * @returns allowed names, or undefined when no declaration restricts the scope.
+   */
   eligibilityAllow(scope?: ScopeKey): readonly string[] | undefined {
     const names = new Set<string>()
     let declared = false
@@ -1643,7 +1647,11 @@ export class ToolRuntime extends Service {
       .map(definition => this.schemaOf(definition, true))
   }
 
-  /** Project the current eligible end-tool catalog, including deferred definitions. */
+  /**
+   * Project the current eligible end-tool catalog, including deferred definitions.
+   * @param scope - the viewing scope; omitted selects the current context chain.
+   * @returns deep-cloned schemas excluding reserved code-dispatch and discovery tools.
+   */
   catalogSchemas(scope?: ScopeKey): ToolSchema[] {
     return [...this.view(scope).visible.values()]
       .filter(definition => definition.name !== RUN_CODE_NAME && definition.name !== TOOL_SEARCH_NAME)

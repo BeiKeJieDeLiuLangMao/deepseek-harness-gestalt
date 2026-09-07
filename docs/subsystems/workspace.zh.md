@@ -123,7 +123,41 @@ interface Workspace {
 
 ## 消费方
 
-[dsh-host-apiproxy](../../packages/host/apiproxy) 是产品消费方：它经 `ctx.workspaceRegistry` 向 GUI 客户端提供工作区的 CRUD，并执行上文「先建会话再 attach」的流程。[dsh-agent-instructions](../../packages/context/agent-instructions) 尽管名字如此，却**不是**消费方：它在 agent 自己的 cwd 下发现 AGENTS.md 风格的指令文件，从不触碰 `ctx.workspaceRegistry`——两者共用的这个词指的是用户的工作目录，而非本注册表的实体。
+[dsh-workspace-controller](../../packages/api/workspace-controller) 负责工作区 CRUD、排序、归档以及通过生成式 Remote 暴露的可重连工作区 feed。[dsh-session-controller](../../packages/api/session-controller) 解析请求中的 `workspaceId`，以工作区路径作为 cwd 创建会话，并将会话挂接到该工作区。[dsh-agent-instructions](../../packages/context/agent-instructions) 尽管名字如此，却**不是**消费方：它在 agent 自己的 cwd 下发现 AGENTS.md 风格的指令文件，从不触碰 `ctx.workspaceRegistry`——两者共用的这个词指的是用户的工作目录，而非本注册表的实体。
+
+## Git controller 数据
+
+Workspace controller 无需 shell 即可读取已注册 Workspace 的 `origin` URL，并通过以下请求和结果类型把一个 remote 克隆为已注册的子 Workspace。
+
+```ts type-equiv
+/** Workspace identity for a no-shell origin read. */
+interface WorkspaceGitRemoteRequest {
+  readonly workspaceId: WorkspaceId
+}
+```
+
+```ts type-equiv
+/** Configured `origin` URL when Git reports one. */
+interface WorkspaceGitRemoteValue {
+  readonly remoteUrl?: string
+}
+```
+
+```ts type-equiv
+/** Clone a Git remote into a new child directory under an existing parent. */
+interface WorkspaceCloneGitRequest {
+  readonly remoteUrl: string
+  readonly parentPath: string
+  readonly directoryName: string
+}
+```
+
+```ts type-equiv
+/** Registered Workspace after a successful clone. */
+interface WorkspaceCloneGitValue {
+  readonly workspace: WorkspaceView
+}
+```
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -148,6 +182,120 @@ abstract capability(): DirectoryPickerCapability
 ```
 
 Source: [`packages/host/directory-picker/src/index.ts`](../../packages/host/directory-picker/src/index.ts)
+
+<a id="ctxdirectorypickercontroller--directorypickercontroller"></a>
+
+### `ctx.directoryPickerController` — `DirectoryPickerController`
+
+Host service backing the generated `ctx.remote.directoryPicker` namespace. The seam it exports is abstract and therefore never a Loader entry of its own, so this controller carries the wire verbs: one composed backend serves either the native chooser or the browse primitives, and a verb the composition cannot serve is refused rather than approximated.
+
+```ts cordis-catalog
+/**
+ * Open the host's OS chooser for a Remote caller.
+ * @param signal - caller lifetime; abort terminates the chooser.
+ * @returns the chosen absolute path, or null when the operator cancels.
+ */
+@Remote('pick') async pick(signal: AbortSignal): Promise<string | null>
+
+/**
+ * List one directory level for a Remote caller's in-app browser.
+ * @param path - absolute directory to list; absent lists the home directory.
+ * @param signal - caller lifetime; abort stops the backend's scan instead of
+ *   letting it outlive a disconnected caller.
+ * @returns the level's listing with its ancestry.
+ */
+@Remote('list') async list(path: string | undefined, signal: AbortSignal): Promise<DirectoryListing>
+
+/**
+ * Create one child directory for a Remote caller's in-app browser.
+ * @param path - absolute existing parent directory.
+ * @param name - single non-blank path segment.
+ * @returns the created directory's absolute path.
+ */
+@Remote('createDirectory') async createDirectory(path: string, name: string): Promise<string>
+```
+
+Source: [`packages/api/workspace-controller/src/directory-picker.ts`](../../packages/api/workspace-controller/src/directory-picker.ts)
+
+<a id="ctxworkspacecontroller--workspacecontroller"></a>
+
+### `ctx.workspaceController` — `WorkspaceController`
+
+Host service backing the generated `ctx.remote.workspace` namespace.
+
+```ts cordis-catalog
+/**
+ * Create or idempotently resolve one Workspace over an existing directory.
+ * @param request - directory path to register.
+ * @returns the Workspace and whether this call created it.
+ */
+@Remote('create') create(request: WorkspaceCreateRequest): Promise<WorkspaceCreateValue>
+
+/**
+ * Rename one Workspace to a unique non-blank title.
+ * @param request - Workspace identity and proposed title.
+ * @returns the updated Workspace projection.
+ */
+@Remote('rename') rename(request: WorkspaceRenameRequest): Promise<WorkspaceValue>
+
+/**
+ * Remove one Workspace registration while retaining files and Sessions.
+ * @param request - Workspace identity to remove.
+ * @returns deletion confirmation.
+ */
+@Remote('delete') delete(request: WorkspaceDeleteRequest): Promise<WorkspaceDeleteValue>
+
+/**
+ * Move one Workspace within the registry display order.
+ * @param request - moved Workspace and optional anchor.
+ * @returns the complete resulting Workspace order.
+ */
+@Remote('insertBefore') insertBefore(request: WorkspaceInsertBeforeRequest): Promise<WorkspaceOrderValue>
+
+/**
+ * Move one accounted Session within a Workspace.
+ * @param request - Workspace, Session, and optional anchor identities.
+ * @returns the updated Workspace projection.
+ */
+@Remote('insertSessionBefore') insertSessionBefore(request: WorkspaceInsertSessionBeforeRequest): Promise<WorkspaceValue>
+
+/**
+ * Hide one known Session from Workspace grouping surfaces.
+ * @param request - Session identity to archive.
+ * @returns the complete resulting archive set.
+ */
+@Remote('archiveSession') archiveSession(request: WorkspaceArchiveSessionRequest): Promise<WorkspaceArchiveValue>
+
+/**
+ * Read the configured Git `origin` of one registered Workspace.
+ * @param request - Workspace identity.
+ * @param signal - caller lifetime; abort terminates the Git process tree.
+ * @returns `{ remoteUrl }` when origin is non-empty; `{}` when the checkout is not Git or has no origin.
+ *   Host deadline, missing Git, permission, corrupt config, signal death, and other execution
+ *   failures reject with `workspace/git-failed`.
+ */
+@Remote('gitRemote') gitRemote(request: WorkspaceGitRemoteRequest, signal: AbortSignal): Promise<WorkspaceGitRemoteValue>
+
+/**
+ * Clone a Git remote into a new child directory and register it as a Workspace.
+ * Exclusive `mkdir` refuses an existing file, directory, or link. Git or registry
+ * failure keeps the partial directory and reports its path. The Host never
+ * recursively deletes that published target.
+ * @param request - remote URL, existing parent, and one path segment.
+ * @param signal - caller lifetime; abort terminates Git and keeps a partial target.
+ * @returns the registered Workspace.
+ */
+@Remote('cloneGit') cloneGit(request: WorkspaceCloneGitRequest, signal: AbortSignal): Promise<WorkspaceCloneGitValue>
+
+/**
+ * Stream a complete Workspace baseline followed by ordered increments.
+ * @param signal - generation cancellation.
+ * @returns baseline followed by ordered Workspace increments.
+ */
+@Remote({ mode: 'stream' }) follow(signal: AbortSignal): AsyncIterable<WorkspaceFollowFrame>
+```
+
+Source: [`packages/api/workspace-controller/src/index.ts`](../../packages/api/workspace-controller/src/index.ts)
 
 <a id="ctxworkspaceregistry--workspaceregistry"></a>
 

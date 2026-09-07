@@ -26,7 +26,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { createElement } from 'react'
 import clsx from 'clsx'
 import { IconCheckOutline16, IconFolderOpen16, IconRefreshOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { Context } from '../context-types.ts'
+import type { SidebarContext } from '../context-types.ts'
 import { api, isOutsideWorkspaceMessage, mediaUrl, type SessionScope } from './api.ts'
 import { BinaryDownload } from './binary-download.tsx'
 import { FenceErrorNotice } from './FenceErrorNotice.tsx'
@@ -83,7 +83,7 @@ function treeWidthOf(tab: SidebarTab): number {
 }
 
 /** Merge a patch into the tab's persisted meta (rides the layout). */
-function patchMeta(ctx: Context, tab: SidebarTab, patch: Record<string, unknown>): void {
+function patchMeta(ctx: SidebarContext, tab: SidebarTab, patch: Record<string, unknown>): void {
   ctx.get('betterSidebar')?.updateTab(tab.id, { meta: { ...metaOf(tab), ...patch } })
 }
 
@@ -93,7 +93,7 @@ function clampTreeWidth(value: number): number {
 }
 
 export function EditorHost(props: {
-  ctx: Context
+  ctx: SidebarContext
   store: SidebarStore
   scope: SessionScope
   tab: SidebarTab

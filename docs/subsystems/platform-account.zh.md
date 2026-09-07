@@ -4,6 +4,13 @@
 
 [`@deepseek-ai/dsh-platform-account`](../../packages/platform/platform-account/README.zh.md)定义 Platform 身份，以及绑定到一个 Desktop 或 Mobile 安装的持有证明账号会话。GitHub 只提供不可变的数字主体和当前公开登录名／头像；身份验证后会丢弃其 OAuth 令牌。
 
+## Installation 身份
+
+```ts type-equiv
+/** Opaque identifier for one Desktop or Mobile app copy. */
+type InstallationId = Branded<'InstallationId'>
+```
+
 ## 登录与会话生命周期
 
 Installation 在创建五分钟 `LoginAttemptView` 前接受唯一规范的双语隐私说明。Mobile 将 Device adapter 返回的名称及 iOS 或 Android 平台绑定到该 attempt，Platform 再把该展示随 Account Session 持久化；`currentInstallation()` 的调用方只有证明 Mobile Installation 密钥后才能获得它。Mobile 会先准备 attempt，再允许点击授权按钮；按钮的用户激活会直接调用 Capacitor Browser adapter，Desktop 则委托 Electron `shell.openExternal`。系统浏览器使用带 S256 PKCE、随机 state、无 OAuth scope 的 Authorization Code，并返回唯一固定的 HTTPS Platform 回调。应用不会收到回调凭证或携带 token 的自定义 URL；只有 P-256 `AccountProof` 兑换单次使用的签名轮询 token 后，`LoginPollResult` 才会完成。

@@ -6,7 +6,7 @@
  * session; the sidebar shell only consumes the returned jump-back ref.
  */
 import { useEffect, useRef } from 'react'
-import type { Context, SidebarSessionList } from '../../context-types.ts'
+import type { SidebarContext, SidebarSessionList } from '../../context-types.ts'
 import { firstLeaf, reconcileAgentTerminals, togglePanel, type SidebarStore } from '../state.ts'
 import { isNarrowWidth } from '../breakpoints.ts'
 import { detectNewDirectSubagent } from '../subagent-detect.ts'
@@ -28,7 +28,7 @@ const FAILURE_LIMIT = 3
 const AUTO_OPEN_DEBOUNCE_MS = 500
 
 export function useHostFeeds(feeds: {
-  ctx: Context
+  ctx: SidebarContext
   store: SidebarStore
   sessionList: SidebarSessionList
   sessionId: string | undefined
