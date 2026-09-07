@@ -29,7 +29,7 @@ import {
   inspectApiSession,
 } from './agent.ts'
 import type {
-  PromptContentPart,
+  QueueEditContentPart,
   SessionAttachmentRequest,
   SessionAttachmentValue,
   SessionCancelRequest,
@@ -386,8 +386,9 @@ export class SessionCommandController {
 
   /**
    * Mutate one still-pending queue occurrence without resuming a cold Agent.
-   * Edit content is the JSON-safe prompt vocabulary; non-text parts fail as
-   * `session/attachment-invalid` and never admit attachments.
+   * Edit content is the JSON-safe {@link QueueEditContentPart} vocabulary.
+   * Image ids must already appear on that occurrence; the Host reuses its
+   * authoritative references and preserves each id's occurrence count.
    * @param request - Session, queue item, and requested mutation.
    * @returns acknowledgement that the queue mutation was applied.
    */
@@ -414,7 +415,7 @@ export class SessionCommandController {
     if (request.action.kind === 'edit') {
       agent.inbox.replace(request.itemId, freezeMessage<UserMessage>({
         ...message,
-        content: queueEditText(request.action.content),
+        content: queueEditContent(request.action.content, message.content),
       }))
     } else {
       agent.inbox.remove(request.itemId)
@@ -553,20 +554,53 @@ function routeServed(ctx: Context, provider: string): boolean {
 }
 
 /**
- * Keep queue-edit content on the JSON-safe prompt vocabulary and refuse
- * image parts. Queue mutation never admits attachments.
+ * Map JSON-safe queue-edit parts onto inbox content without admitting images.
  * @param content - wire edit parts from {@link QueueAction}.
- * @returns text-only inbox content for the pending occurrence.
+ * @param current - the pending occurrence's authoritative inbox content.
+ * @returns content that copies text and reuses every authorized image ref.
  */
-function queueEditText(content: readonly PromptContentPart[]): Array<{ type: 'text'; text: string }> {
-  return content.map((block) => {
-    if (block.type !== 'text') {
+function queueEditContent(
+  content: readonly QueueEditContentPart[],
+  current: UserMessage['content'],
+): UserMessage['content'] {
+  const authorized = new Map<string, ImageAttachmentRef[]>()
+  for (const block of current) {
+    if (block.type !== 'image') continue
+    const id = String(block.attachment.attachmentId)
+    const occurrences = authorized.get(id)
+    if (occurrences === undefined) authorized.set(id, [block.attachment])
+    else occurrences.push(block.attachment)
+  }
+  const retained = new Map<string, number>()
+  const next = content.map((block) => {
+    if (block.type === 'text') return { type: 'text' as const, text: block.text }
+    const id = String(block.attachment.attachmentId)
+    const occurrences = authorized.get(id)
+    if (occurrences === undefined) {
       throw new RemoteError(
         'session/attachment-invalid',
-        'queue edits accept text content only',
-        { reason: 'QUEUE_EDIT_NON_TEXT' },
+        'queue edit image is not referenced by the pending item',
+        { reason: 'QUEUE_EDIT_ATTACHMENT_NOT_REFERENCED' },
       )
     }
-    return { type: 'text', text: block.text }
+    const index = retained.get(id) ?? 0
+    const attachment = occurrences[index]
+    if (attachment === undefined) {
+      throw new RemoteError(
+        'session/attachment-invalid',
+        'queue edit repeats an image more times than the pending item',
+        { reason: 'QUEUE_EDIT_ATTACHMENT_MULTIPLICITY' },
+      )
+    }
+    retained.set(id, index + 1)
+    return { type: 'image' as const, attachment }
   })
+  if ([...authorized].some(([id, occurrences]) => retained.get(id) !== occurrences.length)) {
+    throw new RemoteError(
+      'session/attachment-invalid',
+      'queue edit must retain every image referenced by the pending item',
+      { reason: 'QUEUE_EDIT_ATTACHMENT_OMITTED' },
+    )
+  }
+  return next
 }

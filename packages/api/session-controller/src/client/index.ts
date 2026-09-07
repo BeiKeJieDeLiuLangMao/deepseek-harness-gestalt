@@ -51,7 +51,10 @@ export type {
 export type { ISessions } from './contract/sessions.ts'
 export type {
   SessionAdmissionAdapter,
+  SessionAdmissionFailure,
+  SessionAdmissionModelRoute,
   SessionAdmissionOptions,
+  SessionAdmissionResult,
   SessionAdmissionRoute,
   SessionModelRoute,
 } from './contract/admission.ts'

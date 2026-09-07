@@ -6,11 +6,13 @@ Status: implemented
 
 ## Problem
 
-`session.updateQueue` 位于 Typert Remote 上，因此每个请求字段都必须在进程边界上 JSON-safe。`QueueAction.edit.content` 先前复用可合并扩展的 `ContentBlock[]`。该联合包含 tool-call、tool-result 以及插件扩展成员，其 JSON Schema 对象携带 unconstrained `unknown`，于是 Host Typert 分析在 `SessionController.updateQueue` 失败，无法发出 `./remote` 产物。queue edit 仍必须拒绝 image 与其他附件准入，不能变成开放内容转储。
+`session.updateQueue` 位于 Typert Remote 上，因此每个请求字段都必须在进程边界上 JSON-safe。`QueueAction.edit.content` 先前复用可合并扩展的 `ContentBlock[]`。该联合包含 tool-call、tool-result 以及插件扩展成员，其 JSON Schema 对象携带 unconstrained `unknown`，于是 Host Typert 分析在 `SessionController.updateQueue` 失败，无法发出 `./remote` 产物。
+
+Web queue dock 只编辑纯文本行。pending inbox occurrence 仍可能同时包含文本与 Host 已授权的 `ImageAttachmentRef`。以 prompt 的 `PromptContentPart[]` 替换内容，要么会丢失这些引用，要么会通过第二条附件准入路径接受原始字节。queue edit 必须保留已授权图片，且不能信任调用方提供的引用元数据。
 
 ## Decision
 
-`QueueAction.edit.content` 使用与 `session.prompt` 相同的 JSON-safe `PromptContentPart[]`。Host 仍在替换 pending inbox occurrence 之前，把每个非 text 部件拒绝为 `session/attachment-invalid`（`QUEUE_EDIT_NON_TEXT`）。被接受的 edit 只把 `{ type: 'text', text }` 块映射进 inbox。Image、tool 与插件内容不进入此 Remote。Workspace `directoryPicker` Remote（`pick`、`list`、`createDirectory`）已使用 JSON-safe listing 类型，并与这份 Session 约定一起生成。
+`QueueAction.edit.content` 是封闭的 JSON-safe `QueueEditContentPart` 联合：`{ type: 'text'; text: string }` 与 `{ type: 'image'; attachment: ImageAttachmentRef }`。Host 按内容顺序将精确 pending occurrence 的图片引用按 id 分组，每个提交的图片逐次消费该 id 的下一个引用。调用方提供的媒体类型、字节数、尺寸和名称不会替换已存值。未知 id 以 `QUEUE_EDIT_ATTACHMENT_NOT_REFERENCED` 失败；消费次数超过该 id 的现有次数以 `QUEUE_EDIT_ATTACHMENT_MULTIPLICITY` 失败；任何 occurrence 未被消费则以 `QUEUE_EDIT_ATTACHMENT_OMITTED` 失败。所有失败都使用 `session/attachment-invalid`，并保持 occurrence 不变。原始 prompt 图片字节、tool block 与插件 block 不在生成的 Remote 类型中，会在操作前被 wire 校验拒绝。
 
 ## Alternatives considered
 
@@ -18,10 +20,12 @@ Status: implemented
 
 **手写 `lib/typert.remote-client.*`。** 否决：生成的 Remote 文件是 Client `ctx.remote` 类型的来源。手改会与 Host 方法漂移。
 
+**复用 `PromptContentPart[]`。** 否决：其图片成员携带供 `session.prompt` 准入的原始 base64，不能标识 pending item 中已授权的图片。
+
 **删除 edit，只保留 remove/steer。** 否决：Client 已通过 `updateQueue` 编辑 pending 文本；删除该动词会去掉一条现有控制平面操作。
 
-**经 `admitPromptContent` 在 queue edit 上准入 image。** 本切片否决：queue mutation 只对仍 pending 的 occurrence 做文本控制。附件准入仍属于 `session.prompt`。
+**经 `admitPromptContent` 在 queue edit 上准入新图片。** 否决：queue mutation 不是附件准入操作。新图片仍由 `session.prompt` 准入。
 
 ## Consequences
 
-Typert 可以分析并生成 Session 与 Workspace 的 Host-for-Client Remote，包括 `ctx.remote.directoryPicker`。queue-edit 调用方发送 prompt parts，而不是日志 `ContentBlock`。非文本 edit 仍以既有 attachment-invalid 码失败。Member Question snapshot/settle Remote 仍是后续 #590 切片；此处不删除 ApiProxy。
+Typert 可以分析并生成 Session 与 Workspace 的 Host-for-Client Remote，包括 `ctx.remote.directoryPicker`。queue-edit 调用方可以在保留精确图片 occurrence 多重集的同时改写文本，但不能修改已授权引用、增加重复的模型图片输入或准入新图片。生成的 Client 与 Gateway 覆盖合法混合 edit、重复次数拒绝和原始 prompt 图片拒绝。Web queue dock 仍只编辑纯文本行，并保持混合行不可编辑。

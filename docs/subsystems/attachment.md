@@ -203,6 +203,16 @@ async saveImages(inputs: readonly SaveImageAttachment[]): Promise<readonly Image
 abstract saveImage(input: SaveImageAttachment): Promise<ImageAttachmentRef>
 
 /**
+ * Persist exact opaque bytes before a Companion admission event is appended.
+ * Bytes are content-addressed and never decoded as an image or sent to a model.
+ * Providers that do not store opaque bytes refuse with
+ * {@link AttachmentErrorCode | ATTACHMENT_BYTES_UNSUPPORTED}.
+ * @param input - exact bytes, declared media type, and display name.
+ * @returns the durable content-addressed byte reference.
+ */
+saveBytes(input: SaveByteAttachment): Promise<ByteAttachmentRef>
+
+/**
  * Read one image and verify that bytes still match the recorded reference.
  * @param ref - durable reference from the session log.
  * @param signal - optional cancellation for backend read and verification work.
@@ -212,24 +222,28 @@ abstract saveImage(input: SaveImageAttachment): Promise<ImageAttachmentRef>
 abstract readImage(ref: ImageAttachmentRef, signal?: AbortSignal): Promise<StoredImageAttachment>
 
 /**
- * Validate and durably commit one immutable generic file.
- * @param input - exact bytes plus bounded display metadata.
- * @returns a content-addressed reference after durable publication.
+ * Read one opaque byte object and verify that bytes still match the recorded reference.
+ * Providers that do not store opaque bytes refuse with
+ * {@link AttachmentErrorCode | ATTACHMENT_BYTES_UNSUPPORTED}.
+ * @param ref - durable reference from the session log.
+ * @param signal - optional cancellation for backend read and verification work.
+ * @returns the verified bytes and recorded reference.
+ * @throws the signal reason when aborted, or a storage error when verification fails.
  */
-saveFile(input: SaveFileAttachment): Promise<FileAttachmentRef>
+readBytes(ref: ByteAttachmentRef, signal?: AbortSignal): Promise<StoredByteAttachment>
 
 /**
- * Read one generic file and verify its digest and metadata.
- * @param ref - durable reference from a Session event.
- * @param signal - optional cancellation for backend reads.
- * @returns verified exact bytes and canonical reference.
+ * Locate the provider-owned normalized object in the harness host filesystem.
+ * @param ref - durable normalized attachment reference.
+ * @returns an absolute host path, or undefined when this backend is not host-file-backed.
+ * @throws an AttachmentError when the durable reference is invalid.
  */
-readFile(ref: FileAttachmentRef, signal?: AbortSignal): Promise<StoredFileAttachment>
+imageHostPath(ref: ImageAttachmentRef): string | undefined
 
 /**
  * Generate or read one deterministic model-request version from the stored normalized image.
  * @param ref - durable provider-independent normalized attachment reference.
- * @param policy - exact route pixel and encoded-byte budget.
+ * @param policy - exact route pixel budget and encoded-byte target; a target no ladder quality meets yields the smallest ladder output.
  * @param signal - optional cancellation.
  * @returns request bytes and the cache/upload identity covering every transform input.
  */

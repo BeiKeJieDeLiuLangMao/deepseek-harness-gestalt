@@ -21,7 +21,7 @@
  *   then `exts`; `exts: []` is a catch-all that matches any path.
  */
 import type { ReactNode } from 'react'
-import type { Context } from '../context-types.ts'
+import type { SidebarContext } from '../context-types.ts'
 import {
   activateTab as activateTabReducer, allLeaves, closeTab as closeTabReducer, closeFloatByTab, firstLeaf, floatWithTab,
   leafWithTab, openTabInActivePane, patchTab, raiseFloat, tabOpenIn, togglePanel, treeOf,
@@ -142,7 +142,7 @@ export interface SidebarSettingsDeclaration {
 
 /** Props every tab component receives (builtins and external alike). */
 export interface TabComponentProps {
-  ctx: Context
+  ctx: SidebarContext
   store: SidebarStore
   scope: SessionScope
   tab: SidebarTab
@@ -173,7 +173,7 @@ export interface TabDescriptor {
    * + menu disabled predicate (e.g. terminal at capacity). Receives the
    * session scope and the live sidebar state (counts, expansions).
    */
-  available?: (ctx: Context, scope: SessionScope, state: SidebarState) => boolean
+  available?: (ctx: SidebarContext, scope: SessionScope, state: SidebarState) => boolean
   /**
    * Single-instance sugar: `true` is shorthand for `dedupeKey: () => id`
    * (opening the tab focuses an existing one of the same type instead of
@@ -230,7 +230,7 @@ export interface TabDescriptor {
    * as-is, null/undefined hides the badge. Called on every tab-bar render,
    * so keep it cheap; a throw is swallowed (no badge shown).
    */
-  badge?: (ctx: Context, scope: SessionScope, state: SidebarState) => string | number | null | undefined
+  badge?: (ctx: SidebarContext, scope: SessionScope, state: SidebarState) => string | number | null | undefined
   /**
    * Lifecycle callbacks (v0.12.0+). Fired by the SERVICE paths only:
    * `onOpen` when an open actually creates a tab (a dedupe/id-safety-net
@@ -260,7 +260,7 @@ export type FileFetchStrategy =
 
 /** Props every file viewer component receives. */
 export interface FileViewerProps {
-  ctx: Context
+  ctx: SidebarContext
   store: SidebarStore
   scope: SessionScope
   path: string
@@ -353,24 +353,54 @@ export interface OpenTabSeed {
  * The registry service published as `ctx.betterSidebar`.
  */
 export interface BetterSidebarService {
+  /**
+   * Register one tab type until its returned disposer runs.
+   * @param descriptor - tab definition keyed by its stable type.
+   * @returns a disposer that removes this exact registration.
+   */
   registerTab(descriptor: TabDescriptor): () => void
+  /**
+   * Register one file viewer until its returned disposer runs.
+   * @param descriptor - viewer definition with priority and matching rules.
+   * @returns a disposer that removes this exact registration.
+   */
   registerFileViewer(descriptor: FileViewerDescriptor): () => void
+  /**
+   * Read all registered tab definitions.
+   * @returns registered tab descriptors in registry order.
+   */
   getTabs(): readonly TabDescriptor[]
+  /**
+   * Read all registered file viewers.
+   * @returns registered file viewers in registry order.
+   */
   getFileViewers(): readonly FileViewerDescriptor[]
-  /** Find a tab descriptor by id (undefined if not registered). */
+  /**
+   * Find a tab descriptor by id.
+   * @param id - registered tab type.
+   * @returns the descriptor, or undefined when absent.
+   */
   getTab(id: string): TabDescriptor | undefined
   /**
-   * Whether a tab type is enabled in the side card prefs. An absent
-   * `tabsEnabled[id]` entry means enabled — only an explicit `false`
-   * disables the type (hidden from the + menu, `openTab` refuses, and
-   * derived flows gate on it).
+   * Test whether one tab type is enabled in side-card preferences. An absent
+   * entry means enabled; only explicit false hides it from the add menu,
+   * makes `openTab` a no-op, and disables derived flows.
+   * @param id - tab type to inspect.
+   * @returns false only for an explicit disabled preference.
    */
   isTabEnabled(id: string): boolean
-  /** Whether a file viewer is enabled (absent `viewersEnabled[id]` = enabled). */
+  /**
+   * Test whether one file viewer is enabled.
+   * @param id - viewer type to inspect.
+   * @returns false only for an explicit disabled preference.
+   */
   isViewerEnabled(id: string): boolean
   /**
-   * Find a file viewer for a path (priority desc; detect first, then exts).
-   * Disabled viewers are skipped, so files fall through to the next match.
+   * Find the highest-priority enabled viewer that accepts a file. Matching
+   * tests custom detection before extensions and skips disabled viewers.
+   * @param path - file path used for extension and custom detection.
+   * @param head - optional leading bytes supplied to custom detection.
+   * @returns the matching viewer, or undefined when none accepts the file.
    */
   matchFileViewer(path: string, head?: Uint8Array): FileViewerDescriptor | undefined
   /**
@@ -396,6 +426,8 @@ export interface BetterSidebarService {
    *
    * Note: `available` gates the + menu's disabled state only — it does NOT
    * refuse `openTab` (only the settings disable switch does).
+   * @param seed - tab type and optional initial content or identity.
+   * @param scope - target Session; omitted selects the active Session.
    */
   openTab(seed: OpenTabSeed, scope?: SessionScope): void
   /**
@@ -404,9 +436,15 @@ export interface BetterSidebarService {
    * keeps the tab open. `scope` (v0.12.0+) rides to the callback (its optional
    * cwd included); absent, the callback gets `{ sessionId }` of the active
    * session.
+   * @param tabId - open tab identity.
+   * @param scope - target Session; omitted selects the active Session.
    */
   closeTab(tabId: string, scope?: SessionScope): void
-  /** Subscribe to registry changes (register/dispose). */
+  /**
+   * Subscribe to tab and viewer registry changes.
+   * @param listener - callback invoked after a registration changes.
+   * @returns the subscription disposer.
+   */
   subscribe(listener: () => void): () => void
   /** The plugin version this service instance was built from ('0.12.0'). */
   readonly version: string
@@ -421,16 +459,27 @@ export interface BetterSidebarService {
    * The current sidebar snapshot: the active session id, its state (panel
    * geometry, open tabs, expansions), and the side card prefs (v0.12.0+).
    * `state`/`sessionId` are undefined until a session becomes active.
+   * @returns the reference-stable current snapshot.
    */
   getSnapshot(): SidebarSnapshot
-  /** Subscribe to snapshot changes (session switch, state changes, prefs changes). Returns the disposer. */
+  /**
+   * Subscribe to Session, sidebar state, and preference changes.
+   * @param listener - callback invoked after the snapshot changes.
+   * @returns the subscription disposer.
+   */
   subscribeState(listener: () => void): () => void
-  /** Update an open tab's display fields (title / path / meta); a missing tab id is a no-op. */
+  /**
+   * Update an open tab's display fields; a missing tab id is a no-op.
+   * @param tabId - open tab identity.
+   * @param patch - title, path, or JSON-compatible metadata replacements.
+   */
   updateTab(tabId: string, patch: { title?: string; path?: string; meta?: unknown }): void
   /**
    * Activate an open tab (the tab-bar activation path; fires
    * descriptor.onActivate). An unknown tab id is a strict no-op. `scope`
    * (v0.12.0+) rides to the callback like `closeTab`'s.
+   * @param tabId - open tab identity.
+   * @param scope - target Session; omitted selects the active Session.
    */
   activateTab(tabId: string, scope?: SessionScope): void
   /**
@@ -438,12 +487,16 @@ export interface BetterSidebarService {
    * Title defaults to the file name. A seed with a path or URL that would
    * otherwise land in the bottom workbench is retargeted to the right
    * workbench before minting.
+   * @param scope - target Session and optional cwd.
+   * @param path - file path to open.
+   * @param title - optional display title; omitted uses the file name.
    */
   openFile(scope: SessionScope, path: string, title?: string): void
   /**
    * Expand or collapse the right workbench panel. A no-op when the requested
    * state already matches. Official Browser reveal uses this so a type-only
    * `openTab` does not have to mint a dummy URL just to expand the panel.
+   * @param open - true to expand the right panel; false to collapse it.
    */
   setPanelOpen(open: boolean): void
 }

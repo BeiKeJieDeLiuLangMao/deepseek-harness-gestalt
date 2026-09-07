@@ -336,7 +336,6 @@
     { "path": "./packages/core/tools-eligibility" },
     { "path": "./packages/code-runtime/code-runtime-python" },
     { "path": "./packages/experimental/webworker-runtime" },
-    { "path": "./packages/host/apiproxy" },
     { "path": "./packages/interaction/member-question-receiver" },
     { "path": "./packages/interaction/member-question-sender" },
     { "path": "./packages/interaction/tool-project-members" },

@@ -6,9 +6,10 @@
  * session; the sidebar shell only consumes the returned jump-back ref.
  */
 import { useEffect, useRef } from 'react'
-import type { Context, SidebarSessionList } from '../../context-types.ts'
+import type { SidebarContext, SidebarSessionList } from '../../context-types.ts'
 import { firstLeaf, reconcileAgentTerminals, togglePanel, type SidebarStore } from '../state.ts'
 import { isNarrowWidth } from '../breakpoints.ts'
+import { SessionId } from '@deepseek-ai/dsh-session/types'
 import { detectNewDirectSubagent } from '../subagent-detect.ts'
 import { detectNewJob } from '../subagent-jobs.ts'
 import { t } from '../locales.ts'
@@ -28,7 +29,7 @@ const FAILURE_LIMIT = 3
 const AUTO_OPEN_DEBOUNCE_MS = 500
 
 export function useHostFeeds(feeds: {
-  ctx: Context
+  ctx: SidebarContext
   store: SidebarStore
   sessionList: SidebarSessionList
   sessionId: string | undefined
@@ -190,11 +191,11 @@ export function useHostFeeds(feeds: {
     listBaselineRef.current = sessionList
     if (sessionId === undefined || prev === undefined) return
     if (autoOpenPendingRef.current !== null) return
-    if (!detectNewDirectSubagent(prev, sessionList, sessionId)) return
+    if (!detectNewDirectSubagent(prev, sessionList, SessionId(sessionId))) return
     const baseline = prev
     const timer = window.setTimeout(() => {
       autoOpenPendingRef.current = null
-      if (!detectNewDirectSubagent(baseline, ctx.sessions.list.getSnapshot(), sessionId)) return
+      if (!detectNewDirectSubagent(baseline, ctx.sessions.list.getSnapshot(), SessionId(sessionId))) return
       if (!store.getPrefs().autoOpenSubagent) return
       if (ctx.get('betterSidebar')?.isTabEnabled('subagent') === false) return
       // Read the viewport when the delayed activation fires: a resize while

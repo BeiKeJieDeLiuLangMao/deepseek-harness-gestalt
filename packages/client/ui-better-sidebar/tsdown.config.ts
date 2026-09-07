@@ -14,7 +14,7 @@
  *
  * Both bundles replicate the official DSH client-bundle preset
  * (packages/client/tsdown.client.ts) and are compiled from the same
- * src/client/index.tsx source — only the registered id and the output file
+ * src/client/index.ts source — only the registered id and the output file
  * name differ, so they cannot drift:
  * - externals resolve through the loader module table at runtime (the
  *   PLATFORM_MODULES seed list from apps/web's platform.ts, plus the
@@ -85,7 +85,7 @@ const REACT_ICONS_ESM_ALIAS = {
  * to share. Everything else under @deepseek-ai/* is either a module-table
  * entry (external) or a leak the purity gate rejects.
  */
-const INLINE_SAFE = /^@deepseek-ai\/dsh-(host-apiproxy|session|llm|tools|brand)(\/|$)/
+const INLINE_SAFE = /^@deepseek-ai\/dsh-(session|llm|tools|brand)(\/|$)/
 
 /** Virtual-id wrapper keeping module CSS away from tsdown's own css pipeline. */
 const CSS_VIRTUAL_PREFIX = '\0dsh-css:'
@@ -143,7 +143,7 @@ function browserSourcePath(source: string, sourcemapPath: string): string {
 }
 
 /**
- * One client bundle build for a plugin id. The same src/client/index.tsx is
+ * One client bundle build for a plugin id. The same src/client/index.ts is
  * compiled twice with only the registered id and the output file name
  * differing: the official channel uses the package name (`dsh-better-sidebar`)
  * and the registry channel uses the manifest id
@@ -154,7 +154,7 @@ function browserSourcePath(source: string, sourcemapPath: string): string {
  */
 function clientBundle(pluginId: string, entryFile: string): UserConfig {
   return {
-    entry: { client: 'src/client/index.tsx' },
+    entry: { client: 'src/client/index.ts' },
     outDir: 'lib',
     format: 'cjs',
     platform: 'browser',

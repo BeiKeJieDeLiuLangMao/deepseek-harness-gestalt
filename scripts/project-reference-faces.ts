@@ -18,7 +18,6 @@ export const GESTALT_COMPILER_FACES: Readonly<Record<ProjectFace, readonly strin
     'packages/browser/tool-browser',
     'packages/core/agent-tool-eligibility',
     'packages/core/tools-eligibility',
-    'packages/host/apiproxy',
     'packages/interaction/member-question-receiver',
     'packages/interaction/member-question-sender',
     'packages/interaction/tool-project-members',
@@ -67,7 +66,6 @@ const GESTALT_PROJECT_PATTERNS = [
   'packages/browser/*/tsconfig.json',
   'packages/client/{ui-better-sidebar,ui-browser,ui-desktop,ui-member-questions,ui-workbench}/tsconfig.json',
   'packages/core/{agent-tool-eligibility,tools-eligibility}/tsconfig.json',
-  'packages/host/apiproxy/tsconfig.json',
   'packages/interaction/{member-question-receiver,member-question-sender,tool-project-members}/tsconfig.json',
   'packages/platform/*/tsconfig.json',
 ] as const

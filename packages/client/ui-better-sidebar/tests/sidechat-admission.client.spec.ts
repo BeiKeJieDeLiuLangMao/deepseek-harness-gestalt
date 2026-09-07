@@ -15,7 +15,7 @@ import {
 } from '../../../api/session-controller/tests/fake-api.client.ts'
 import { registerSidechatDraft } from '../src/client/api.ts'
 import { installSidechatAdmission } from '../src/client/sidechat-admission.ts'
-import type { Context as SidebarContext } from '../src/context-types.ts'
+import type { SidebarContext } from '../src/context-types.ts'
 import { SIDE_LABEL_PREFIX } from '../src/sidechat-core.ts'
 
 const sid = (value: string): SessionId => value as SessionId
@@ -130,6 +130,216 @@ describe('Side Chat Session admission', () => {
     expect(api.callsOf('session.prompt')).toEqual([])
     expect(api.callsOf('session.cancel')).toEqual([])
     expect(api.callsOf('session.updateQueue')).toEqual([])
+  })
+
+  it('rebuilds attachment and queue refusals without calling stock Remotes', async () => {
+    const { svc, api, ctx } = bench()
+    const parentId = sid('session-failure-parent')
+    const childId = sid('session-failure-child')
+    const fetches = stubSidebarFetch((call) => {
+      if (call.method !== 'sidechat.updateQueue') {
+        return { ok: true, value: { accepted: true, childId: call.body.childId } }
+      }
+      const itemId = String(call.body.itemId)
+      if (itemId === 'queue-missing') {
+        return { ok: false, error: { code: 'queue-item-not-found', message: 'queued item is no longer pending' } }
+      }
+      if (itemId === 'queue-running') {
+        return { ok: false, error: { code: 'steer-unavailable', message: 'current turn no longer accepts steering' } }
+      }
+      return { ok: false, error: { code: 'sidechat-error', message: 'unexpected queue failure' } }
+    })
+    installSidechatAdmission(ctx)
+    registerSidechatDraft(childId, parentId)
+    svc.stageProvisional({
+      sessionId: childId,
+      parentSessionId: parentId,
+      origin: 'subagent',
+      title: 'New thread',
+    })
+
+    const attachment = await svc.binding(childId)!.session.prompt([{
+      type: 'image',
+      mediaType: 'image/png',
+      data: 'AA==',
+    }], 'queue')
+    expect(attachment.ok).toBe(false)
+    expect(attachment.error).toBeInstanceOf(Error)
+    expect(attachment.error).toMatchObject({
+      code: 'session/attachment-invalid',
+      message: 'Image input is unavailable in Side Chat.',
+      details: { reason: 'SUBAGENT_IMAGE_UNSUPPORTED' },
+    })
+    expect(fetches).toEqual([])
+    await expect(svc.binding(childId)!.session.cancel()).resolves.toEqual({
+      ok: true,
+      value: { accepted: true },
+    })
+    expect(fetches).toEqual([])
+    expect(svc.skillCatalogSessionId(childId)).toBe(parentId)
+
+    await svc.binding(childId)!.session.prompt([{ type: 'text', text: 'publish' }], 'queue')
+    expect(svc.skillCatalogSessionId(childId)).toBe(childId)
+    const missing = await svc.binding(childId)!.session.updateQueue(mid('queue-missing'), { kind: 'remove' })
+    expect(missing.ok).toBe(false)
+    expect(missing.error).toBeInstanceOf(Error)
+    expect(missing.error).toMatchObject({
+      code: 'session/queue-item-not-found',
+      details: { itemId: mid('queue-missing') },
+    })
+
+    const unavailable = await svc.binding(childId)!.session.updateQueue(mid('queue-running'), { kind: 'steer' })
+    expect(unavailable.ok).toBe(false)
+    expect(unavailable.error).toMatchObject({
+      code: 'session/steer-unavailable',
+      details: { itemId: mid('queue-running') },
+    })
+    const unknown = await svc.binding(childId)!.session.updateQueue(mid('queue-unknown'), { kind: 'remove' })
+    expect(unknown.ok).toBe(false)
+    expect(unknown.error).toMatchObject({
+      code: 'gateway/internal',
+      message: 'unexpected queue failure',
+      details: {},
+    })
+    expect(api.callsOf('session.prompt')).toEqual([])
+    expect(api.callsOf('session.updateQueue')).toEqual([])
+  })
+
+  it('keeps a failed draft retryable and folds HTTP and network failures once', async () => {
+    const { svc, api, ctx } = bench()
+    const parentId = sid('session-retry-parent')
+    const childId = sid('session-retry-child')
+    let startFails = true
+    const fetches = stubSidebarFetch((call) => {
+      if (call.method === 'sidechat.start' && startFails) {
+        return { ok: false, error: { code: 'sidechat-error', message: 'parent is unavailable' } }
+      }
+      return { ok: true, value: { accepted: true, childId: call.body.childId } }
+    })
+    installSidechatAdmission(ctx)
+    registerSidechatDraft(childId, parentId)
+    svc.stageProvisional({
+      sessionId: childId,
+      parentSessionId: parentId,
+      origin: 'subagent',
+      title: 'New thread',
+    })
+
+    const failedStart = await svc.binding(childId)!.session.prompt([{ type: 'text', text: 'first' }], 'queue')
+    expect(failedStart.ok).toBe(false)
+    expect(failedStart.error).toMatchObject({
+      code: 'gateway/internal',
+      message: 'parent is unavailable',
+      details: {},
+    })
+    expect(svc.binding(childId)!.session.getSnapshot()).toMatchObject({
+      blank: true,
+      promptError: { op: 'send', error: { message: 'parent is unavailable' } },
+    })
+
+    startFails = false
+    await expect(svc.binding(childId)!.session.prompt([{ type: 'text', text: 'retry' }], 'queue'))
+      .resolves.toMatchObject({ ok: true })
+    expect(fetches.slice(0, 2).map(call => call.method)).toEqual(['sidechat.start', 'sidechat.start'])
+
+    vi.stubGlobal('fetch', async () => { throw new Error('connection lost') })
+    const network = await svc.binding(childId)!.session.prompt([{ type: 'text', text: 'continue' }], 'queue')
+    expect(network.ok).toBe(false)
+    expect(network.error).toMatchObject({
+      code: 'gateway/internal',
+      message: 'connection lost',
+      details: {},
+    })
+    const cancelled = await svc.binding(childId)!.session.cancel()
+    expect(cancelled.ok).toBe(false)
+    expect(cancelled.error).toMatchObject({
+      code: 'gateway/internal',
+      message: 'connection lost',
+      details: {},
+    })
+    const selection = await svc.modelRoute(childId)!.selectModel!({ provider: 'owned', model: 'broken' })
+    expect(selection.ok).toBe(false)
+    expect(selection.error).toMatchObject({
+      code: 'gateway/internal',
+      message: 'connection lost',
+      details: {},
+    })
+    expect(api.callsOf('session.prompt')).toEqual([])
+    expect(api.callsOf('session.cancel')).toEqual([])
+    expect(api.callsOf('session.selectModel')).toEqual([])
+  })
+
+  it('folds draft permission Remote failure and published routing errors through the owner', async () => {
+    const { svc, api, ctx } = bench()
+    const parentId = sid('session-command-parent')
+    const draftId = sid('session-command-draft')
+    const orphanId = sid('session-command-orphan')
+    stubSidebarFetch()
+    installSidechatAdmission(ctx)
+    registerSidechatDraft(draftId, parentId)
+    svc.stageProvisional({
+      sessionId: draftId,
+      parentSessionId: parentId,
+      origin: 'subagent',
+      title: 'New thread',
+    })
+    const execute = vi.spyOn(ctx.remote.commands, 'execute')
+      .mockResolvedValueOnce(ok(undefined))
+      .mockResolvedValueOnce({
+        ok: false,
+        error: { message: 'permission denied upstream' },
+      } as never)
+
+    await expect(svc.binding(draftId)!.session.command('/help')).resolves.toEqual({
+      ok: true,
+      value: { matched: false },
+    })
+    await expect(svc.binding(draftId)!.session.command('/permission read-only')).resolves.toEqual({
+      ok: true,
+      value: { matched: false },
+    })
+
+    const permission = await svc.binding(draftId)!.session.command('/permission read-only')
+    expect(permission.ok).toBe(false)
+    expect(permission.error).toBeInstanceOf(Error)
+    expect(permission.error).toMatchObject({
+      code: 'gateway/internal',
+      message: 'permission denied upstream',
+      details: {},
+    })
+
+    const publishedId = sid('session-command-published')
+    registerSidechatDraft(publishedId, parentId)
+    svc.stageProvisional({
+      sessionId: publishedId,
+      parentSessionId: parentId,
+      origin: 'subagent',
+      title: 'New thread',
+    })
+    await svc.binding(publishedId)!.session.prompt([{ type: 'text', text: 'publish' }], 'queue')
+    await expect(svc.binding(publishedId)!.session.command('/permission workspace-write'))
+      .resolves.toEqual({ ok: true, value: { matched: true } })
+
+    api.onList = () => Promise.resolve(ok({
+      items: [{
+        sessionId: orphanId,
+        updatedAt: 100,
+        running: false,
+        blank: false,
+        origin: 'subagent',
+      }],
+    }))
+    await svc.refresh()
+    // A known Side Chat id is the ownership credential; the missing parent remains a routing failure.
+    registerSidechatDraft(orphanId, parentId)()
+    const orphan = await svc.binding(orphanId)!.session.command('/permission read-only')
+    expect(orphan.ok).toBe(false)
+    expect(orphan.error).toMatchObject({
+      code: 'gateway/internal',
+      message: `Side Chat session "${orphanId}" has no parent`,
+      details: {},
+    })
+    expect(api.callsOf('session.prompt')).toEqual([])
   })
 
   it('does not claim a same-title ordinary or catalog subagent without a Side Chat id', async () => {

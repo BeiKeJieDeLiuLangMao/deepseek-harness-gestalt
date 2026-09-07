@@ -25,7 +25,7 @@
 - list:
   - listitem:
     - img "Queued message image"
-    - text: Compare with this screenshot
+    - text: Compare this edited caption with the screenshot
     - button "Edit queued message" [disabled]:
       - img
     - button "Remove queued message":

@@ -32,7 +32,7 @@ import { foldSubagentDescriptor, snapshotSubagentDescriptor } from '@deepseek-ai
 import type { Context as CordisContext } from '@deepseek-ai/cordis'
 import { foldRequestHeader, SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
 import type {
-  Context,
+  SidebarContext,
   SidebarAgentPresetsService,
   SidebarSessionEvent,
   SidebarSessionPersistenceService,
@@ -164,7 +164,7 @@ function modelSelectionOf(value: unknown): {
 
 /** Resolve one requested route through the mounted LLM registry. */
 async function resolveModelSelection(
-  ctx: Context,
+  ctx: SidebarContext,
   selection: { provider: string; model: string; reasoningEffort?: string },
 ): Promise<ModelSelection> {
   const llm = ctx.get('llm')
@@ -217,7 +217,7 @@ function withModelSelection(
 
 /** Resolve the parent's preset and build the child's composition setup. */
 async function composeChildSetup(
-  ctx: Context,
+  ctx: SidebarContext,
   presetId: string | undefined,
 ): Promise<{ agentPreset?: string; setup: AgentSetup }> {
   const presets = ctx.get('agentPresets') as SidebarAgentPresetsService | undefined
@@ -260,7 +260,7 @@ interface PersistedSidechatSetup {
 
 /** Build cold-resume state from the thread's persisted preset and model route. */
 async function composePersistedSetup(
-  ctx: Context,
+  ctx: SidebarContext,
   childId: SessionId,
 ): Promise<PersistedSidechatSetup> {
   const persistence = ctx.get('sessionPersistence') as SidebarSessionPersistenceService | undefined
@@ -314,7 +314,7 @@ function admitFirstContact(agent: Agent, injectionText: string, question: string
 }
 
 /** The live thread agent, or undefined (cold — the caller resumes). */
-function liveThreadAgent(ctx: Context, childId: SessionId): Agent | undefined {
+function liveThreadAgent(ctx: SidebarContext, childId: SessionId): Agent | undefined {
   const agents = ctx.get('agents') as { get(id: string): Agent | undefined } | undefined
   return agents?.get(childId)
 }
@@ -331,7 +331,7 @@ function liveThreadAgent(ctx: Context, childId: SessionId): Agent | undefined {
  * (`ctx.connection.api`) was removed in 0.1.2-alpha.1's Remote-gateway
  * migration.
  */
-async function threadLogEvents(ctx: Context, childId: string): Promise<readonly SidechatLogEvent[]> {
+async function threadLogEvents(ctx: SidebarContext, childId: SessionId): Promise<readonly SidechatLogEvent[]> {
   const agent = liveThreadAgent(ctx, childId)
   if (agent !== undefined) {
     return agent.session.snapshotEvents() as unknown as readonly SidechatLogEvent[]
@@ -355,7 +355,7 @@ async function threadLogEvents(ctx: Context, childId: string): Promise<readonly 
 /** Build the Side Chat routes (all optional services degrade to a wire
  *  error the tab surfaces inline). The record keys are the FULL wire method
  *  names the /sidebar/api dispatcher looks up (`api[method]`). */
-export function buildSidechatApi(ctx: Context): SidechatApi {
+export function buildSidechatApi(ctx: SidebarContext): SidechatApi {
   /** Disposers of thread agents created by this activation. */
   const threadDisposers = new Map<SessionId, () => Promise<void>>()
   /** Mutable selections installed into live Side Chat Agent scopes. */

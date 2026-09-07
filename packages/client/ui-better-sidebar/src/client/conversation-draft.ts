@@ -32,7 +32,7 @@
  * separating space on the left, so stacked inserts stay at their running
  * position (A|B + C + D → ACD|B).
  */
-import type { Context, SidebarConversation } from '../context-types.ts'
+import type { SidebarContext, SidebarConversation } from '../context-types.ts'
 
 /** A resolved composer caret/selection in draft coordinates. */
 export interface DraftCaret {
@@ -166,7 +166,7 @@ export function placeComposerCaretAfterInsert(expectedDraft: string, caretIndex:
  * end when the caret cannot be resolved. Returns false — and logs — when the
  * conversation service or the session scope is unavailable.
  */
-export function appendToDraft(ctx: Context, sessionId: string, text: string): boolean {
+export function appendToDraft(ctx: SidebarContext, sessionId: string, text: string): boolean {
   try {
     const actx = ctx.sessions.scope(sessionId)
     if (actx === undefined) {
@@ -220,7 +220,7 @@ export function fileMention(relativePath: string): { mention: string; label: str
  * slash as plain text (`@dir/`) so completion can descend, which
  * `appendToDraft` already covers.
  */
-export function insertFileReference(ctx: Context, sessionId: string, relativePath: string): boolean {
+export function insertFileReference(ctx: SidebarContext, sessionId: string, relativePath: string): boolean {
   const reference = fileMention(relativePath)
   if (reference === undefined) return false
   try {
@@ -231,7 +231,7 @@ export function insertFileReference(ctx: Context, sessionId: string, relativePat
     const input = conversation.input.for(actx)
     const before = input.state.getSnapshot()
     if (before.draftRev === undefined) return false
-    // The session-scope Context's typed `emit` is keyed to DSH's closed event
+    // The session-scope SidebarContext's typed `emit` is keyed to DSH's closed event
     // map; this internal composer event is deliberately string-loose at runtime.
     ;(actx as unknown as { emit(name: string, payload: unknown): void }).emit('slash/input-insert-reference', {
       reference: {

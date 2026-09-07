@@ -16,7 +16,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { ToolRunContext } from '@deepseek-ai/dsh-tools'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { Context } from './context-types.ts'
+import type { SidebarContext } from './context-types.ts'
 import {
   AgentPtyRegistry,
   ALLOWED_SIGNALS,
@@ -81,7 +81,7 @@ function sessionIdOf(exec: ToolRunContext): string {
  * registration on the side-card setting and calls this to turn them off).
  */
 export function registerTools(
-  ctx: Context,
+  ctx: SidebarContext,
   registry: AgentPtyRegistry,
   resolveCwd: (sessionId: string) => Promise<string>,
   readShellOverrides: () => { shell?: string; shellArgs?: string[] },

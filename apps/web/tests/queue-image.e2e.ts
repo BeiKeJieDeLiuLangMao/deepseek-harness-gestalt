@@ -1,9 +1,9 @@
 // Keyless browser coverage for image attachments submitted while a turn is
 // running, through the shipped Web composition and real HTTP/SSE wire. A
 // text-plus-image submission queues as one occurrence whose dock row renders
-// the durable thumbnail, survives a stop as parked work, and delivers as the
-// next turn's user message with its image intact — while the session log holds
-// only durable attachment references, never base64.
+// the durable thumbnail. The Host can rewrite its text while preserving the
+// exact image reference before parked work reaches the next model turn; the
+// session log holds only durable attachment references, never base64.
 import { existsSync } from 'node:fs'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -29,6 +29,7 @@ const MODE = webSnapshotMode()
 
 const ACTIVE_PROMPT = 'Reply with a one-sentence description of event sourcing, then stop.'
 const QUEUED_TEXT = 'Compare with this screenshot'
+const EDITED_TEXT = 'Compare this edited caption with the screenshot'
 
 /** Paste one real PNG into the composer through a genuine clipboard event. */
 async function pasteImage(page: Page, bytes: Uint8Array): Promise<void> {
@@ -100,12 +101,32 @@ describe('web e2e: queued image submission', () => {
     await input.fill(QUEUED_TEXT)
     await input.press('Enter')
 
-    // The queued row renders the durable thumbnail beside the text preview.
+    // The queued row renders the durable thumbnail beside the text preview and
+    // keeps mixed content non-editable in the dock.
     const dockThumb = page.locator('[data-queue-dock] img[alt="Queued message image"]')
     await dockThumb.waitFor({ timeout: 15_000 })
     await expect.poll(() => dockThumb.getAttribute('src')).toMatch(/^blob:/)
     await page.getByText(QUEUED_TEXT, { exact: true }).waitFor()
     await page.getByRole('button', { name: 'Remove queued message' }).waitFor({ timeout: 15_000 })
+
+    const agent = scaffold.ctx.agents.roots()[0]
+    const queued = agent?.inbox.nextTurn.find(message => message.content.some(block => block.type === 'image'))
+    const queuedImage = queued?.content.find(block => block.type === 'image')
+    if (agent === undefined || queued === undefined || queuedImage?.type !== 'image') {
+      throw new Error('assembled Web queue has no pending image occurrence')
+    }
+    expect(scaffold.ctx.sessionController.updateQueue({
+      sessionId: agent.id,
+      itemId: queued.id,
+      action: {
+        kind: 'edit',
+        content: [
+          { type: 'image', attachment: queuedImage.attachment },
+          { type: 'text', text: EDITED_TEXT },
+        ],
+      },
+    })).toEqual({ accepted: true })
+    await page.getByText(EDITED_TEXT, { exact: true }).waitFor({ timeout: 10_000 })
     const queuedSnapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(QUEUED_EXPECTED, queuedSnapshot, MODE)
 
@@ -143,11 +164,12 @@ describe('web e2e: queued image submission', () => {
     // reference (never base64), in the composer's canonical images-then-text order.
     const delivered = sessionEvents.find(event => event.type === 'user/message'
       && event.data.content.some(block => block.type === 'image'))
-    expect(delivered?.type === 'user/message' && delivered.data.content.map(block => block.type)).toEqual(['image', 'text'])
-    const imageBlock = delivered?.type === 'user/message'
-      ? delivered.data.content.find(block => block.type === 'image')
-      : undefined
-    expect(imageBlock?.type === 'image' && imageBlock.attachment.name).toBe('queued.png')
+    if (delivered?.type !== 'user/message') throw new Error('queued image never reached the model-visible log')
+    expect(delivered.data.content.map(block => block.type)).toEqual(['image', 'text'])
+    const imageBlock = delivered.data.content.find(block => block.type === 'image')
+    const textBlock = delivered.data.content.find(block => block.type === 'text')
+    expect(imageBlock?.type === 'image' && imageBlock.attachment).toEqual(queuedImage.attachment)
+    expect(textBlock?.type === 'text' && textBlock.text).toBe(EDITED_TEXT)
     expect(JSON.stringify(sessionEvents)).not.toContain('base64')
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])

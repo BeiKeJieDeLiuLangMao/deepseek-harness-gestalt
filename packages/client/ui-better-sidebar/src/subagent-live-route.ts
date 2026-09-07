@@ -16,7 +16,7 @@
  * - One child's events missing/corrupt → that child is skipped, the rest of
  *   the batch still returns.
  */
-import type { Context, SidebarSubagentsService } from './context-types.ts'
+import type { SidebarContext, SidebarSubagentsService } from './context-types.ts'
 import { SIDE_LABEL_PREFIX } from './sidechat-core.ts'
 import { lastActivity, type LastActivity } from './subagent-activity.ts'
 import { requireString, SidebarError } from './wire.ts'
@@ -44,7 +44,7 @@ export const LIVE_WINDOW_MESSAGES = 12
  * Build the live-preview routes bound to the plugin context.
  * @param ctx - host plugin context.
  */
-export function buildSubagentLiveApi(ctx: Context): SidebarSubagentLiveRoutes {
+export function buildSubagentLiveApi(ctx: SidebarContext): SidebarSubagentLiveRoutes {
   return {
     async live(payload) {
       const rootSessionId = requireString(payload, 'rootSessionId')

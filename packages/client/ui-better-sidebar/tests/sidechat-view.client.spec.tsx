@@ -7,7 +7,7 @@ import { builtinTabs } from '../src/client/builtins/tabs.tsx'
 import { api } from '../src/client/api.ts'
 import { createBetterSidebarService } from '../src/client/service.ts'
 import { allLeaves, SidebarStore } from '../src/client/state.ts'
-import type { Context, SidebarSessionList } from '../src/context-types.ts'
+import type { SidebarContext as Context, SidebarSessionList } from '../src/context-types.ts'
 import type { SidebarTab } from '../src/client/state.ts'
 
 afterEach(() => {

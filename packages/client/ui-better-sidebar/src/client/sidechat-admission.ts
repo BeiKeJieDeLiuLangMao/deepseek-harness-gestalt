@@ -6,28 +6,11 @@
  */
 import type { SessionAdmissionAdapter } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { ModelSelection, SessionId } from '@deepseek-ai/dsh-api-remotes/client'
-import { RemoteError, type RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
-import type { Context } from '../context-types.ts'
+import type { SidebarContext } from '../context-types.ts'
 import {
   api, isKnownSidechatSession, noteSidechatDraftSelection, settleSidechatDraft, SidebarApiError,
   sidechatDraftOf,
 } from './api.ts'
-
-/**
- * Fold a thrown Side Chat API failure into a Remote result.
- * @param cause - thrown value from the sidebar JSON route.
- * @returns a gateway-internal Remote failure.
- */
-function routeFailure<T>(cause: unknown): RemoteResult<T> {
-  return {
-    ok: false,
-    error: new RemoteError(
-      'gateway/internal',
-      cause instanceof Error ? cause.message : String(cause),
-      {},
-    ),
-  }
-}
 
 /**
  * Register the Side Chat admission adapter on ClientSessions.
@@ -35,11 +18,11 @@ function routeFailure<T>(cause: unknown): RemoteResult<T> {
  * @param ctx - sidebar Client context whose `sessions` is ClientSessions.
  * @returns token-checked disposer from `registerAdmissionAdapter`.
  */
-export function installSidechatAdmission(ctx: Context): () => void {
+export function installSidechatAdmission(ctx: SidebarContext): () => void {
   return ctx.sessions.registerAdmissionAdapter(createSidechatAdmission(ctx))
 }
 
-function createSidechatAdmission(ctx: Context): SessionAdmissionAdapter {
+function createSidechatAdmission(ctx: SidebarContext): SessionAdmissionAdapter {
   return {
     id: 'better-sidebar-sidechat',
     handles: sessionId => isKnownSidechatSession(sessionId),
@@ -49,41 +32,35 @@ function createSidechatAdmission(ctx: Context): SessionAdmissionAdapter {
       if (content.some(part => part.type !== 'text')) {
         return {
           ok: false,
-          error: new RemoteError(
-            'session/attachment-invalid',
-            'Image input is unavailable in Side Chat.',
-            { reason: 'SUBAGENT_IMAGE_UNSUPPORTED' },
-          ),
+          error: {
+            code: 'session/attachment-invalid',
+            message: 'Image input is unavailable in Side Chat.',
+            details: { reason: 'SUBAGENT_IMAGE_UNSUPPORTED' },
+          },
         }
       }
-      const text = content.map(part => part.type === 'text' ? part.text : '').join('\n\n')
+      const text = content
+        .map(part => (part as Extract<typeof part, { readonly type: 'text' }>).text)
+        .join('\n\n')
       const draft = sidechatDraftOf(sessionId)
-      try {
-        if (draft === undefined) {
-          await api.sidechatPrompt(sessionId, text, mode, signal)
-        } else {
-          await api.sidechatStart(
-            draft.parentSessionId,
-            sessionId,
-            text,
-            draft.selection,
-            signal,
-          )
-          settleSidechatDraft(sessionId)
-        }
-        return { ok: true, value: { accepted: true } }
-      } catch (cause) {
-        return routeFailure(cause)
+      if (draft === undefined) {
+        await api.sidechatPrompt(sessionId, text, mode, signal)
+      } else {
+        await api.sidechatStart(
+          draft.parentSessionId,
+          sessionId,
+          text,
+          draft.selection,
+          signal,
+        )
+        settleSidechatDraft(sessionId)
       }
+      return { ok: true, value: { accepted: true } }
     },
     cancel: async (sessionId) => {
       if (sidechatDraftOf(sessionId) !== undefined) return { ok: true, value: { accepted: true } }
-      try {
-        await api.sidechatCancel(sessionId)
-        return { ok: true, value: { accepted: true } }
-      } catch (cause) {
-        return routeFailure(cause)
-      }
+      await api.sidechatCancel(sessionId)
+      return { ok: true, value: { accepted: true } }
     },
     updateQueue: async (sessionId, itemId, action) => {
       try {
@@ -93,59 +70,50 @@ function createSidechatAdmission(ctx: Context): SessionAdmissionAdapter {
         if (cause instanceof SidebarApiError && cause.code === 'queue-item-not-found') {
           return {
             ok: false,
-            error: new RemoteError('session/queue-item-not-found', cause.message, { itemId }),
+            error: { code: 'session/queue-item-not-found', message: cause.message, details: { itemId } },
           }
         }
         if (cause instanceof SidebarApiError && cause.code === 'steer-unavailable') {
           return {
             ok: false,
-            error: new RemoteError('session/steer-unavailable', cause.message, { itemId }),
+            error: { code: 'session/steer-unavailable', message: cause.message, details: { itemId } },
           }
         }
-        return routeFailure(cause)
+        throw cause
       }
     },
     command: async (sessionId, line) => {
       const match = /^\/permission\s+(\S+)\s*$/u.exec(line)
       const preset = match?.[1]
       if (preset === undefined) return { ok: true, value: { matched: false } }
-      try {
-        const draft = sidechatDraftOf(sessionId)
-        const summary = ctx.sessions.list.getSnapshot().byId[sessionId]
-        const parentSessionId = draft?.parentSessionId ?? summary?.parentId
-        if (parentSessionId === undefined) throw new Error(`Side Chat session "${sessionId}" has no parent`)
-        if (draft !== undefined) {
-          const result = await ctx.remote.commands.execute(parentSessionId, line, [])
-          if (!result.ok) {
-            return {
-              ok: false,
-              error: new RemoteError(
-                'gateway/internal',
-                result.error.message,
-                {},
-              ),
-            }
+      const draft = sidechatDraftOf(sessionId)
+      const summary = ctx.sessions.list.getSnapshot().byId[sessionId]
+      const parentSessionId = draft?.parentSessionId ?? summary?.parentId
+      if (parentSessionId === undefined) throw new Error(`Side Chat session "${sessionId}" has no parent`)
+      if (draft !== undefined) {
+        const result = await ctx.remote.commands.execute(parentSessionId, line, [])
+        if (result.ok === false) {
+          return {
+            ok: false,
+            error: {
+              code: 'gateway/internal',
+              message: result.error.message,
+              details: {},
+            },
           }
-          return { ok: true, value: { matched: result.value !== undefined } }
         }
-        await api.sidechatPermission(sessionId, parentSessionId as SessionId, preset)
-        return { ok: true, value: { matched: true } }
-      } catch (cause) {
-        return routeFailure(cause)
+        return { ok: true, value: { matched: result.value !== undefined } }
       }
+      await api.sidechatPermission(sessionId, parentSessionId as SessionId, preset)
+      return { ok: true, value: { matched: true } }
     },
     modelRoute: (sessionId) => {
-      if (!isKnownSidechatSession(sessionId)) return undefined
       return {
         selectModel: async (selection: ModelSelection, signal) => {
-          try {
-            const provisional = sidechatDraftOf(sessionId) !== undefined
-            const result = await api.sidechatSelectModel(sessionId, selection, provisional, signal)
-            noteSidechatDraftSelection(sessionId, result.selected)
-            return { ok: true, value: result }
-          } catch (cause) {
-            return routeFailure(cause)
-          }
+          const provisional = sidechatDraftOf(sessionId) !== undefined
+          const result = await api.sidechatSelectModel(sessionId, selection, provisional, signal)
+          noteSidechatDraftSelection(sessionId, result.selected)
+          return { ok: true, value: result }
         },
       }
     },

@@ -7,7 +7,7 @@
  * and the original row renders unchanged.
  */
 import { IconCodeOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { Context } from '../context-types.ts'
+import type { SidebarContext } from '../context-types.ts'
 import { firstLeaf, revealPaths, togglePanel, type SidebarStore } from './state.ts'
 import { t } from './locales.ts'
 import { resolveSidebarPath, selectProducedFiles } from './produced-files.ts'
@@ -15,7 +15,7 @@ import { wrapOpenWorkspacePath, type OpenWorkspacePathService } from './openpath
 import css from './sidebar.module.css'
 
 /** Open a file in the sidebar's editor (used by the intercepted row and the explorer). */
-export function openSidebarFile(ctx: Context, store: SidebarStore, sessionId: string, path: string): void {
+export function openSidebarFile(ctx: SidebarContext, store: SidebarStore, sessionId: string, path: string): void {
   const summary = ctx.sessions.list.getSnapshot().byId[sessionId]
   const absolute = resolveSidebarPath(summary?.cwd, path)
   const at = Math.max(absolute.lastIndexOf('/'), absolute.lastIndexOf('\\'))
@@ -39,7 +39,7 @@ let lastProduced: readonly string[] = []
  * the workspace root itself.
  */
 export function revealInExplorer(
-  ctx: Context,
+  ctx: SidebarContext,
   store: SidebarStore,
   sessionId: string,
   files: readonly string[],
@@ -126,7 +126,7 @@ export function SidebarProducedFiles(props: {
  * disposes the entry and a later declaration re-registers it. This mirrors
  * @deepseek-ai/dsh-client-ui-deliverables' registration of the same slot.
  */
-export function registerTurnTailInterception(ctx: Context, store: SidebarStore): () => void {
+export function registerTurnTailInterception(ctx: SidebarContext, store: SidebarStore): () => void {
   return ctx.slots.inject('conversation.chat.turnTail', () => ctx.slots.register({
     name: 'conversation.chat.turnTail',
     // Decline the takeover while chat file-open interception is disabled, the
@@ -167,7 +167,7 @@ export function registerTurnTailInterception(ctx: Context, store: SidebarStore):
  * disposer (disposes the inject fiber, which restores the original method
  * descriptor — HMR-safe).
  */
-export function registerOpenPathInterception(ctx: Context, store: SidebarStore): () => void {
+export function registerOpenPathInterception(ctx: SidebarContext, store: SidebarStore): () => void {
   const fiber = ctx.inject(['remote.session'], (fctx) => {
     fctx.effect(() => {
       const service = fctx.get('remote.session') as OpenWorkspacePathService

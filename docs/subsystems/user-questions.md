@@ -314,6 +314,32 @@ abstract changes(listener: MemberQuestionReceiverListener): () => void
 abstract settle( questionId: MemberQuestionId, settlement: MemberQuestionReceiverSettlement, ): Promise<CompanionMemberQuestionSettledResult>
 
 /**
+ * Read the complete committed receiver projection for the Remote namespace.
+ * @returns the same authoritative snapshot as {@link snapshot}.
+ */
+@Remote('snapshot') async remoteSnapshot(): Promise<MemberQuestionReceiverSnapshot>
+
+/**
+ * Settle one pending question using Host Installation identity and time.
+ * Wire payloads supply only receiving-session, question, revision, and the
+ * human answer or decline. Installation id, device name, and settledAt come
+ * from this Host; a stale tuple or missing Host identity fails loud.
+ * @param request - observed receiving identity, revision, question, and response.
+ * @returns the canonical persisted terminal.
+ */
+@Remote('settle') async remoteSettle(request: MemberQuestionRemoteSettleRequest): Promise<MemberQuestionRemoteSettleResponse>
+
+/**
+ * Admit one explicit human turn after promoting encoded image uploads.
+ * Wire payloads supply receiving-session, revision, requestId, content, and
+ * mode. Host attachment admission replaces image bytes with durable refs
+ * before reservation; callers cannot cite an attachment they did not upload.
+ * @param request - observed receiving identity, revision, requestId, content, and mode.
+ * @returns the durable idempotent admission result.
+ */
+@Remote('admitHumanTurn') async remoteAdmitHumanTurn( request: MemberQuestionRemoteAdmitHumanTurnRequest, ): Promise<MemberQuestionRemoteAdmitHumanTurnResponse>
+
+/**
  * Reserve and admit one explicit human turn under one rpc id.
  * @param input - Host receiving identity, observed revision, rpc id, content, and mode.
  * @returns the durable idempotent admission result.
@@ -382,7 +408,7 @@ abstract bindIfCurrent( accountId: PlatformAccountId, projectId: ProjectId, expe
 abstract resolve( accountId: PlatformAccountId, projectId: ProjectId, ): Promise<Branded<'WorkspaceId'>>
 ```
 
-Types: [CompanionMemberQuestionSettledResult](remote-protocol.md) · [PlatformAccountId](platform-account.md) · [ProjectId](project-membership.md) · [WorkspaceId](workspace.md)
+Types: [Branded](core.md) · [PlatformAccountId](platform-account.md) · [ProjectId](project-membership.md) · [WorkspaceId](workspace.md)
 
 Source: [`packages/interaction/member-question-receiver/src/index.ts`](../../packages/interaction/member-question-receiver/src/index.ts)
 
@@ -442,8 +468,6 @@ abstract withdraw(questionId: MemberQuestionId): Promise<void>
 abstract queryTerminal(questionId: MemberQuestionId): Promise<CompanionMemberQuestionSettledResult | undefined>
 ```
 
-Types: [CompanionMemberQuestionSettledResult](remote-protocol.md)
-
 Source: [`packages/interaction/member-question-sender/src/index.ts`](../../packages/interaction/member-question-sender/src/index.ts)
 
 <a id="ctxmemberquestionworkspacebinding--memberquestionworkspacebinding"></a>
@@ -488,7 +512,7 @@ bindIfCurrent( accountId: PlatformAccountId, projectId: ProjectId, expectedWorks
 resolve(accountId: PlatformAccountId, projectId: ProjectId): Promise<Branded<'WorkspaceId'>>
 ```
 
-Types: [PlatformAccountId](platform-account.md) · [ProjectId](project-membership.md) · [WorkspaceId](workspace.md)
+Types: [Branded](core.md) · [PlatformAccountId](platform-account.md) · [ProjectId](project-membership.md) · [WorkspaceId](workspace.md)
 
 Source: [`packages/interaction/member-question-receiver/src/types.ts`](../../packages/interaction/member-question-receiver/src/types.ts)
 
@@ -496,19 +520,11 @@ Source: [`packages/interaction/member-question-receiver/src/types.ts`](../../pac
 
 ### `ctx.userQuestions` — `UserQuestionService`
 
-`ctx.userQuestions`: one active UI provider plus an `ask()` API.
+`ctx.userQuestions`: validation plus the scoped answerer waterfall.
 
 ```ts cordis-catalog
 /**
- * Register the UI provider. Only one provider may be active in a context.
- *
- * @param provider UI-side implementation that collects answers.
- * @returns Disposer that unregisters this provider.
- */
-registerProvider(provider: UserQuestionProvider): () => void
-
-/**
- * Ask the active UI provider and wait for the user's answer.
+ * Ask the scoped answerer waterfall and wait for the user's answer.
  *
  * When a caller supplies an agent, human interaction is valid only for the
  * exact live runtime root. Runtime ownership, not durable session lineage,
@@ -518,9 +534,10 @@ registerProvider(provider: UserQuestionProvider): () => void
  *
  * @param request Questions, owner agent, and abort signal.
  * @returns The answer chosen or typed by the human.
- * @throws {UserQuestionError} code `CALLER_NOT_LIVE` when a supplied
- *   agent is not the registry's exact live instance, or `DELEGATED_CALLER`
- *   when that live agent is owned by another agent.
+ * @throws {UserQuestionError} code `ASK_ABORTED` when the supplied signal
+ *   is already or becomes aborted, `CALLER_NOT_LIVE` when a supplied agent
+ *   is not the registry's exact live instance, or `DELEGATED_CALLER` when
+ *   that live agent is owned by another agent.
  */
 async ask(request: AskUserQuestionRequest): Promise<AskUserQuestionAnswer>
 ```
@@ -547,4 +564,29 @@ The receiver ledger committed one authoritative question-state change.
 ```
 
 Source: [`packages/interaction/member-question-receiver/src/types.ts`](../../packages/interaction/member-question-receiver/src/types.ts)
+
+<a id="user-questions-events"></a>
+
+### `user-questions/*` events
+
+<a id="user-questionsrequest--waterfall"></a>
+
+#### `user-questions/request` — waterfall
+
+Ask composed answerers for structured user input. Return an answer to claim the request or call `next()` to delegate. Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.
+
+```ts cordis-catalog
+/**
+ * Ask composed answerers for structured user input. Return an answer to
+ * claim the request or call `next()` to delegate. Scope-filtered dispatch
+ * (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.
+ * @param request - pending user-question request.
+ * @mode waterfall
+ */
+'user-questions/request'( this: Scoped<Agent>, request: AskUserQuestionRequestEvent, next: () => Promise<AskUserQuestionAnswer>, ): Promise<AskUserQuestionAnswer>
+```
+
+Types: [Agent](core.md) · [Scoped](scope.md)
+
+Source: [`packages/interaction/user-questions/src/types.ts`](../../packages/interaction/user-questions/src/types.ts)
 <!-- END GENERATED cordis-surface -->

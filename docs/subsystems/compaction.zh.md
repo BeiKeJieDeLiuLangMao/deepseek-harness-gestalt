@@ -187,10 +187,10 @@ abstract compactNow( agent: ManualCompactAgentContext, signal: AbortSignal, sour
  * @throws when compaction is active or the range is missing, reversed, or unbalanced.
  * @returns the appended event seqs, summary, replaced range, and token accounting.
  */
-abstract compactRegion( start: number, end: number, agent: CompactionAgentContext, signal?: AbortSignal, ): Promise<CompactionResult>
+abstract compactRegion( start: SessionSeq, end: SessionSeq, agent: CompactionAgentContext, signal?: AbortSignal, ): Promise<CompactionResult>
 ```
 
-Types: [CommandId](commands.zh.md)
+Types: [CommandId](commands.zh.md) · [SessionSeq](session.zh.md)
 
 Source: [`packages/compaction/compaction/src/index.ts`](../../packages/compaction/compaction/src/index.ts)
 

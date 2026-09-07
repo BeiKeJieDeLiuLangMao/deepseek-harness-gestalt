@@ -92,9 +92,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [],
       },
       {
-        signature: 'openDetails(): void',
-        description: 'Open the details panel (no-op when already open).',
-        parameters: [],
+        signature: 'openDetails(range?: DetailsWidthRange): void',
+        description: 'Open details for an occupant. Repeating the active range preserves an open dragged width; a different range adopts its default, and omission uses the ordinary 300/360/520 px geometry.',
+        parameters: [{ name: 'range', description: 'occupant-specific minimum, default, and maximum widths.' }],
       },
       {
         signature: 'closeDetails(): void',
@@ -168,7 +168,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
   {
     key: 'sessions',
     summary: 'The sessions-service face injected as `ctx.sessions`.',
-    description: 'The sessions-service face injected as `ctx.sessions`.',
+    description: 'The sessions-service face injected as `ctx.sessions`. Command methods throw `sessions.<op>: ClientSessions is disposed` after root disposal; in-flight `search`/`create`/`fork` reject with the same error. Observational lookups stay undefined; `openForRender` no-ops.',
     methods: [
       {
         signature: 'open(id: SessionId): void',
@@ -190,6 +190,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Refresh one direct-child catalog.',
         parameters: [{ name: 'parentSessionId', description: 'catalog owner.' }],
         returns: 'completion of the current or newly started refresh.',
+        throws: ['`sessions.refreshSubagents: ClientSessions is disposed` when called after root disposal.'],
       },
       {
         signature: 'search( query: string, signal: AbortSignal, ): Promise<RemoteResult<{ items: SessionSearchResultItem[]; hasMore: boolean }>>',
@@ -212,7 +213,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'binding(id: SessionId): SessionBinding | undefined',
-        description: 'Resolve the stable session binding (scope-addressed assembly feed).',
+        description: 'Resolve the stable session binding (scope-addressed assembly feed). Render-safe: no Host history or catalog request, and no change to `list.current`.',
         parameters: [{ name: 'id', description: 'session id.' }],
         returns: 'binding, or undefined for a session neither listed nor already scoped.',
       },
@@ -530,6 +531,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ConnectionStateSource {\n    getSnapshot(): ConnectionState | undefined;\n    subscribe(listener: () => void): () => void;\n}',
   },
   {
+    name: 'DetailsWidthRange',
+    declaration: 'export interface DetailsWidthRange {\n    readonly minimum: number;\n    readonly default: number;\n    readonly maximum: number;\n}',
+  },
+  {
     name: 'EntryKeyOf',
     declaration: 'export type EntryKeyOf<K extends keyof SlotMap & string> = SlotMap[K] extends {\n    kind: \'keyed\';\n    keyProps: infer P extends object;\n} ? keyof P & string : string;',
   },
@@ -707,7 +712,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SessionAreaProps',
-    declaration: 'export interface SessionAreaProps {\n    empty?: (() => ReactNode) | undefined;\n    children: ReactNode;\n}',
+    declaration: 'export interface SessionAreaProps {\n    sessionId?: SessionIdOf | undefined;\n    empty?: (() => ReactNode) | undefined;\n    children: ReactNode;\n}',
   },
   {
     name: 'SessionBinding',

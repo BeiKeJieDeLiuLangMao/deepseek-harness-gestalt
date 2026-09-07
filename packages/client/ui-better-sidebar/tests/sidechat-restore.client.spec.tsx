@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SessionId } from '@deepseek-ai/dsh-session'
-import type { Context, SidebarSessionSummary } from '../src/context-types.ts'
+import type { SidebarContext as Context, SidebarSessionSummary } from '../src/context-types.ts'
 import {
   allLeaves, closeFloatByTab, closeTab, makeDefaultState, reconcileSideThreads, sanitizeState,
   SidebarStore, tombstoneSideThread, type SidebarState, type SidebarTab,

@@ -761,6 +761,33 @@ declare abstract class LlmAdapter {
 
 Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — the language sides differ only in locale-specific paired document paths. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
 
+<a id="ctxdeepseekllmapiextensions--deepseekllmapiextensionregistry"></a>
+
+### `ctx.deepseekLlmApiExtensions` — `DeepSeekLlmApiExtensionRegistry`
+
+Registry of independently owned top-level fields for official DeepSeek requests.
+
+```ts cordis-catalog
+/**
+ * Register the sole provider of one top-level request field. Registration is effect-scoped.
+ * @param field - declaration-merged field owned by the provider.
+ * @param provider - request-time field preparation and optional acceptance behavior.
+ * @returns disposer that releases the field.
+ */
+register<K extends keyof DeepSeekLlmApiExtensionMap>( field: K, provider: DeepSeekLlmApiExtensionProvider<DeepSeekLlmApiExtensionMap[K]>, ): () => Promise<void>
+
+/**
+ * Prepare every currently registered field from one immutable base request.
+ * Preparation failures reject before HTTP dispatch. Field values are cloned and frozen;
+ * providers retain no mutable alias to the outgoing request.
+ * @param request - exact serialized request facts before extension fields.
+ * @returns detached fields and their idempotent joint acceptance transaction.
+ */
+async prepare(request: DeepSeekLlmApiExtensionRequest): Promise<PreparedDeepSeekLlmApiExtensions>
+```
+
+Source: [`packages/llm/deepseek-llm-api-extensions/src/index.ts`](../../packages/llm/deepseek-llm-api-extensions/src/index.ts)
+
 <a id="ctxllm--llmruntime"></a>
 
 ### `ctx.llm` — `LlmRuntime`
@@ -782,7 +809,7 @@ registerAdapter(providers: string[], adapter: LlmAdapter): AdapterRegistrationHa
  * Describe provider routes with a registered adapter.
  * @returns detached provider metadata in registration order.
  */
-listProviders(): LlmProviderInfo[]
+@Remote listProviders(): LlmProviderInfo[]
 
 /**
  * Declare provider routes an adapter plugin can activate through
@@ -798,7 +825,7 @@ registerConfigurableProviders(entries: readonly LlmConfigurableProvider[]): Dire
  * List every declared configurable provider, registered or dormant.
  * @returns detached directory entries in declaration order.
  */
-listConfigurableProviders(): LlmConfigurableProvider[]
+@Remote listConfigurableProviders(): LlmConfigurableProvider[]
 
 /**
  * Offer to interrogate provider endpoints on behalf of the settings
@@ -807,10 +834,10 @@ listConfigurableProviders(): LlmConfigurableProvider[]
  * directory, and because a provider being *added* has no route to name yet.
  * Disposed with the fiber.
  * @param settingsNs - the namespace whose profiles this discovery serves.
- * @param discover - interrogates one endpoint; must honor `request.signal`.
+ * @param discover - interrogates one endpoint and must honor the supplied signal.
  * @returns the disposer that withdraws the offer.
  */
-registerModelDiscovery( settingsNs: string, discover: (request: LlmModelDiscoveryRequest) => Promise<readonly LlmDiscoveredModel[]>, ): () => void
+registerModelDiscovery( settingsNs: string, discover: ( request: LlmModelDiscoveryRequest, signal?: AbortSignal, ) => Promise<readonly LlmDiscoveredModel[]>, ): () => void
 
 /**
  * Interrogate one provider endpoint for the models it advertises. The
@@ -819,9 +846,20 @@ registerModelDiscovery( settingsNs: string, discover: (request: LlmModelDiscover
  * candidate metadata a surface may offer for adoption.
  * @param settingsNs - namespace whose registered discovery serves this draft.
  * @param request - the endpoint, protocol, and one-shot credential to use.
+ * @param signal - caller cancellation.
  * @returns the advertised models, deduplicated in endpoint order.
  */
-async discoverModels( settingsNs: string, request: LlmModelDiscoveryRequest, ): Promise<LlmDiscoveredModel[]>
+async discoverModels( settingsNs: string, request: LlmModelDiscoveryRequest, signal?: AbortSignal, ): Promise<LlmDiscoveredModel[]>
+
+/**
+ * Remote adapter for one draft provider interrogation.
+ * @param settingsNs - namespace whose registered discovery serves this draft.
+ * @param request - endpoint, protocol, and one-shot credential to use.
+ * @param signal - caller cancellation supplied by the Remote carrier.
+ * @returns advertised models in endpoint order.
+ * @throws RemoteError with `llm/model-discovery-rejected` when discovery refuses or fails.
+ */
+@Remote('discoverModels') async remoteDiscoverModels( settingsNs: string, request: LlmModelDiscoveryRequest, signal: AbortSignal, ): Promise<LlmDiscoveredModel[]>
 
 /**
  * Resolve the retry policy captured when one provider route was registered.
@@ -829,6 +867,17 @@ async discoverModels( settingsNs: string, request: LlmModelDiscoveryRequest, ): 
  * @returns the provider-owned policy, with normal defaults already resolved.
  */
 providerRetryPolicy(provider: string): ResolvedRetryPolicy
+
+/**
+ * Resolve provider-side request-image pricing for one exact route, or
+ * `undefined` when the provider is unregistered or declares none. Unknown
+ * providers degrade to `undefined` rather than throwing because callers
+ * price durable history whose route may no longer be mounted.
+ * @param provider - provider route named by a request header.
+ * @param model - exact model id named by the same header.
+ * @returns the owning adapter's image pricing for the route, when declared.
+ */
+imageRequestPricing(provider: string, model: string): LlmImageRequestPricing | undefined
 
 /**
  * Discover models advertised by one registered provider. Catalog membership

@@ -156,9 +156,18 @@ export interface ModelCatalog {
   readonly failures: readonly ModelCatalogFailure[]
 }
 
+/**
+ * JSON-safe queue-edit content. Text may change; image ids authorize reuse of
+ * the exact {@link ImageAttachmentRef} occurrences already stored on the
+ * pending item, with the same count for each id.
+ */
+export type QueueEditContentPart =
+  | { readonly type: 'text'; readonly text: string }
+  | { readonly type: 'image'; readonly attachment: ImageAttachmentRef }
+
 /** One client-requested mutation of a still-pending queue item. */
 export type QueueAction =
-  | { readonly kind: 'edit'; readonly content: readonly PromptContentPart[] }
+  | { readonly kind: 'edit'; readonly content: readonly QueueEditContentPart[] }
   | { readonly kind: 'remove' }
   | { readonly kind: 'steer' }
 

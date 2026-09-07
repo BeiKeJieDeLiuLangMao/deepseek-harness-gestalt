@@ -99,6 +99,16 @@ graph(): WebBootGraph
 clientPath(id: string): string | undefined
 
 /**
+ * Filesystem baseline captured before an entry's current bytes were read.
+ * HMR compares it with the live files when installing a watch, so a write
+ * between startup composition and watch installation cannot disappear into
+ * the watcher's initial state.
+ * @param id - entry id (package name).
+ * @returns the path and baseline, or undefined for an unknown id.
+ */
+artifactBaseline(id: string): ClientArtifactBaseline | undefined
+
+/**
  * Re-hash one bundle (the HMR watch's registration hook — the only entry
  * point through which bundle content changes reach the graph).
  * @param id - entry id (package name).

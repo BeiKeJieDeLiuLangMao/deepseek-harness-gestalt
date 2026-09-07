@@ -10,7 +10,8 @@
  */
 import { createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import type { Context } from '../context-types.ts'
+import type { SidebarContext } from '../context-types.ts'
+import './context.ts'
 import { installSidechatAdmission } from './sidechat-admission.ts'
 import { allLeaves, createSidebarStore, isAgentTabId } from './state.ts'
 import { createBetterSidebarService, matchUrlTarget } from './service.ts'
@@ -29,6 +30,8 @@ import { api } from './api.ts'
 import { LOCALE_NS, attachLocale, attachBetterLocale, t, zh, en } from './locales.ts'
 import css from './sidebar.module.css'
 import './layout.css'
+
+export type { BetterSidebarService } from './context.ts'
 
 /** Services required before mounting (provided by the client runtime; the
  *  locale service backs the sidebar's copy — see locales.ts). `modules`
@@ -56,7 +59,7 @@ function isDesktopOverlayDocument(): boolean {
  * Client plugin body.
  * @param ctx - the client cordis context (slots, sessions).
  */
-export function apply(ctx: Context): void {
+export function apply(ctx: SidebarContext): void {
   ctx.effect(
     () => installSidechatAdmission(ctx),
     'dsh-better-sidebar: Side Chat Session admission',

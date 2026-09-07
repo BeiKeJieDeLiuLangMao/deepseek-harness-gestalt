@@ -4,7 +4,7 @@
  * render layer for the floating windows and its drop-zone hint overlay.
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import type { Context } from '../../context-types.ts'
+import type { SidebarContext } from '../../context-types.ts'
 import {
   dockFloat, floatTab, moveFloat, raiseFloat, resizeFloat,
   type FloatWindow, type SidebarStore, type SidebarTab,
@@ -129,7 +129,7 @@ export function FreeWindowLayer(props: {
   renderTab: (tab: SidebarTab, active: boolean, paneId: string, placement: 'top' | 'bottom' | 'float') => ReactNode
   getTabIcon: (tab: SidebarTab) => ReactNode
   store: SidebarStore
-  ctx: Context
+  ctx: SidebarContext
   sessionId: string
   cwd: string | undefined
 }) {

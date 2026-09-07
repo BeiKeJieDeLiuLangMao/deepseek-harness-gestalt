@@ -100,9 +100,9 @@ describe('generated tsconfig package aliases', () => {
     expect(imageMediaTypeForPath('shot.png')).toBe('image/png')
     const configPath = resolve(root, 'tsconfig.base.json')
     const host = ts.createCompilerHost({})
-    const read = ts.readConfigFile(configPath, ts.sys.readFile)
+    const read = ts.readConfigFile(configPath, path => ts.sys.readFile(path))
     if (read.error !== undefined) throw new Error(ts.flattenDiagnosticMessageText(read.error.messageText, '\n'))
-    const parsed = ts.parseJsonConfigFileContent(read.config, ts.sys, root, { baseUrl: root }, configPath)
+    const parsed = ts.parseJsonConfigFileContent(read.config, ts.sys, root, {}, configPath)
     const resolved = ts.resolveModuleName(
       '@deepseek-ai/dsh-tool-fs/read-policy',
       resolve(root, 'packages/subagent/tool-subagent/src/index.ts'),
@@ -122,9 +122,9 @@ describe('generated tsconfig package aliases', () => {
     )
     const configPath = resolve(root, 'tsconfig.base.json')
     const host = ts.createCompilerHost({})
-    const read = ts.readConfigFile(configPath, ts.sys.readFile)
+    const read = ts.readConfigFile(configPath, path => ts.sys.readFile(path))
     if (read.error !== undefined) throw new Error(ts.flattenDiagnosticMessageText(read.error.messageText, '\n'))
-    const parsed = ts.parseJsonConfigFileContent(read.config, ts.sys, root, { baseUrl: root }, configPath)
+    const parsed = ts.parseJsonConfigFileContent(read.config, ts.sys, root, {}, configPath)
     const resolved = ts.resolveModuleName(
       '@deepseek-ai/dsh-browser-workspace/client',
       resolve(root, 'packages/client/ui-workbench/src/client/OfficialBrowserTab.tsx'),
@@ -133,6 +133,54 @@ describe('generated tsconfig package aliases', () => {
     )
     expect(resolved.resolvedModule?.resolvedFileName.replaceAll('\\', '/'))
       .toBe(resolve(root, 'packages/browser/browser-workspace/src/client.ts').replaceAll('\\', '/'))
+  })
+
+  it('maps member-question-receiver/types to its public source declaration', () => {
+    const config = readFileSync(resolve(root, 'tsconfig.base.json'), 'utf8')
+    const begin = config.indexOf('      // BEGIN generated package aliases — pnpm run gen-tsconfig-paths')
+    const handwritten = config.slice(0, begin)
+    expect(handwritten).toContain(
+      '"@deepseek-ai/dsh-member-question-receiver/types": ["./packages/interaction/member-question-receiver/src/types.ts"]',
+    )
+    const configPath = resolve(root, 'tsconfig.base.json')
+    const host = ts.createCompilerHost({})
+    const read = ts.readConfigFile(configPath, path => ts.sys.readFile(path))
+    if (read.error !== undefined) throw new Error(ts.flattenDiagnosticMessageText(read.error.messageText, '\n'))
+    const parsed = ts.parseJsonConfigFileContent(read.config, ts.sys, root, {}, configPath)
+    const resolved = ts.resolveModuleName(
+      '@deepseek-ai/dsh-member-question-receiver/types',
+      resolve(root, 'packages/api/session-controller/src/client/sessions/receiving.ts'),
+      parsed.options,
+      host,
+    )
+    expect(resolved.resolvedModule?.resolvedFileName.replaceAll('\\', '/'))
+      .toBe(resolve(root, 'packages/interaction/member-question-receiver/src/types.ts').replaceAll('\\', '/'))
+  })
+
+  it.each([
+    ['desktop-relay-lifecycle', 'desktop-relay-lifecycle.ts'],
+    ['node-relay-socket', 'node-relay-socket.ts'],
+  ])('maps dsh-remote-access-client/%s to its source leaf outside the generated region', (subpath, source) => {
+    const config = readFileSync(resolve(root, 'tsconfig.base.json'), 'utf8')
+    const begin = config.indexOf('      // BEGIN generated package aliases — pnpm run gen-tsconfig-paths')
+    const handwritten = config.slice(0, begin)
+    const specifier = `@deepseek-ai/dsh-remote-access-client/${subpath}`
+    expect(handwritten).toContain(
+      `"${specifier}": ["./packages/platform/remote-access-client/src/${source}"]`,
+    )
+    const configPath = resolve(root, 'tsconfig.base.json')
+    const host = ts.createCompilerHost({})
+    const read = ts.readConfigFile(configPath, path => ts.sys.readFile(path))
+    if (read.error !== undefined) throw new Error(ts.flattenDiagnosticMessageText(read.error.messageText, '\n'))
+    const parsed = ts.parseJsonConfigFileContent(read.config, ts.sys, root, {}, configPath)
+    const resolved = ts.resolveModuleName(
+      specifier,
+      resolve(root, 'apps/desktop/src/remote-relay.ts'),
+      parsed.options,
+      host,
+    )
+    expect(resolved.resolvedModule?.resolvedFileName.replaceAll('\\', '/'))
+      .toBe(resolve(root, `packages/platform/remote-access-client/src/${source}`).replaceAll('\\', '/'))
   })
 
   it('maps dsh-platform-account/privacy to source outside the generated region', () => {
@@ -145,9 +193,9 @@ describe('generated tsconfig package aliases', () => {
     expect(config).not.toContain('dsh-platform-account/privacy": ["./packages/platform/platform-account/lib')
     const configPath = resolve(root, 'tsconfig.base.json')
     const host = ts.createCompilerHost({})
-    const read = ts.readConfigFile(configPath, ts.sys.readFile)
+    const read = ts.readConfigFile(configPath, path => ts.sys.readFile(path))
     if (read.error !== undefined) throw new Error(ts.flattenDiagnosticMessageText(read.error.messageText, '\n'))
-    const parsed = ts.parseJsonConfigFileContent(read.config, ts.sys, root, { baseUrl: root }, configPath)
+    const parsed = ts.parseJsonConfigFileContent(read.config, ts.sys, root, {}, configPath)
     const resolved = ts.resolveModuleName(
       '@deepseek-ai/dsh-platform-account/privacy',
       resolve(root, 'packages/client/ui-desktop/src/client/AccountControl.tsx'),

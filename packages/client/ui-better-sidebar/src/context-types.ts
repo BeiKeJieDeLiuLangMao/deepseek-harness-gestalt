@@ -1,6 +1,6 @@
 /**
- * Structural types for the cordis services this plugin consumes, plus the
- * Context face both halves share.
+ * Structural types for the Cordis services this plugin consumes, plus the
+ * SidebarContext face both halves share.
  *
  * The type base is the vendored `@deepseek-ai/cordis` Context (the runtime
  * DSH actually runs); the service members this plugin touches are restated
@@ -22,7 +22,7 @@
  *
  * This file must stay FREE of Node.js types (`node:http`, `node:stream`,
  * `Buffer`): it is part of the CLIENT-reachable declaration graph (the
- * `Context` in `TabComponentProps` and the `betterSidebar` augmentation),
+ * `SidebarContext` in `TabComponentProps`),
  * so a Node import here would leak into browser-only consumer builds. The
  * webServer faces below are therefore structural mirrors with plain
  * interfaces (the host casts to real Node types at the few boundaries that
@@ -194,7 +194,7 @@ export interface SidebarSessionEvent {
   type: string
   seq: number
   time: number
-  data: Record<string, unknown>
+  data: unknown
 }
 
 /** One history row: the durable event plus an optional tool presentation view. */
@@ -362,7 +362,7 @@ export interface SidebarSessionsService {
    * runtime ISessions.scope) — the ticket `ctx.conversation.input.for`
    * requires to reach that session's composer.
    */
-  scope(id: string): Context | undefined
+  scope(id: string): SidebarContext | undefined
   /**
    * Open a healthy catalog child through its exact direct-parent address
    * (mirror of the runtime ISessions.openSubagent).
@@ -382,8 +382,8 @@ export interface SidebarSessionsService {
   refreshSubagents?(parentSessionId: string): Promise<void>
   /** Project a renderer-only Side Chat identity until its first prompt publishes it. */
   stageProvisional(descriptor: {
-    sessionId: string
-    parentSessionId: string
+    sessionId: SessionId
+    parentSessionId: SessionId
     origin: 'subagent'
     title: string
   }): () => void
@@ -427,7 +427,7 @@ export interface SidebarSessionInput {
 /** The composer draft face the sidebar reaches through `ctx.get('conversation')`. */
 export interface SidebarConversation {
   input: {
-    for(actx: Context): SidebarSessionInput
+    for(actx: SidebarContext): SidebarSessionInput
   }
 }
 
@@ -467,7 +467,7 @@ export interface SidebarRemoteSessionService {
 
 /**
  * The invariant service face (mirror of @deepseek-ai/dsh-invariants'
- * InvariantRegistry). The upstream augmentation does not reach this Context
+ * InvariantRegistry). The upstream augmentation does not reach this SidebarContext
  * (dual-cordis-instance resolution), so the register signature is restated
  * structurally, exactly like the other service faces above.
  */
@@ -475,7 +475,7 @@ export interface SidebarInvariantsService {
   /** Reserve one package's checks and install them in the service's child fiber. */
   register(
     packageName: string,
-    installer: (ctx: Context, fail: (message: string) => never) => void | Promise<void>,
+    installer: (ctx: SidebarContext, fail: (message: string) => never) => void | Promise<void>,
   ): () => void
 }
 
@@ -535,7 +535,7 @@ export interface SidebarAgent {
 
 /**
  * The shape this plugin actually consumes, intersected with the vendored
- * cordis `Context` below (see the file header for why intersection is used
+ * Cordis `Context` below (see the file header for why intersection is used
  * instead of module augmentation).
  */
 export interface SidebarContextShape {
@@ -590,7 +590,7 @@ export interface SidebarContextShape {
   /**
    * The client-side sidebar registry: external plugins register tab types
    * and file previewers here. Provided by the client half (see
-   * {@link ./client/index.tsx}); undefined on the host side.
+   * {@link ./client/index.ts}); undefined on the host side.
    */
   betterSidebar: BetterSidebarService
   /**
@@ -603,20 +603,8 @@ export interface SidebarContextShape {
 }
 
 /**
- * The Context this plugin sees: the vendored cordis Context intersected with
- * the structural service faces above. Re-exported from the package root so a
- * consumer can `import type { Context } from 'dsh-better-sidebar'`.
+ * The context this snapshot sees: the vendored Cordis Context intersected with
+ * the structural service faces above. The snapshot-specific name prevents Host
+ * catalog declarations that mention Cordis Context from resolving to this mirror.
  */
-export type Context = CordisContext & SidebarContextShape
-
-/**
- * Consumer-facing augmentation (deliberately the only one kept): a plugin
- * that imports `Context` from `@deepseek-ai/cordis` and does
- * `import type {} from 'dsh-better-sidebar'` sees `ctx.betterSidebar`
- * without importing this package's own Context type.
- */
-declare module '@deepseek-ai/cordis' {
-  interface Context {
-    betterSidebar: BetterSidebarService
-  }
-}
+export type SidebarContext = CordisContext & SidebarContextShape

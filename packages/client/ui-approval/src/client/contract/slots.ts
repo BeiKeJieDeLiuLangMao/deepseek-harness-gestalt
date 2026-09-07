@@ -63,12 +63,14 @@ export interface ApprovalPresentationRequest {
 /** Decisions this interactive Client presentation can return. */
 export type ApprovalDecision = 'allowed-once' | 'rejected'
 
+type PendingApprovalKind = 'approval'
+
 let nextApprovalKey = 0
 
 /** One answerable Client presentation of a pending Host waterfall. */
 export class PendingApproval {
   /** Domain discriminator used by Session pending-interaction consumers. */
-  readonly kind = 'approval' as const
+  readonly kind: PendingApprovalKind = 'approval'
   /** Opaque render identity and one-shot remount axis. */
   readonly key: string
   /** Tool requesting the decision. */

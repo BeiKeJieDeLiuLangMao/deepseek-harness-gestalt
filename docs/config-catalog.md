@@ -1029,38 +1029,6 @@ export interface Config {
 
 Source: [`packages/hooks/hooks-codex/src/index.ts:44`](../packages/hooks/hooks-codex/src/index.ts)
 
-<a id="deepseek-aidsh-host-apiproxy"></a>
-
-## `@deepseek-ai/dsh-host-apiproxy`
-
-Requires: `agentDefaultModel` · `agents` · `attachments` · `directoryPicker` · `llm` · `sessions` · `subagents` · `sessionQuery` · `tools` · `userQuestions` · `workspaceRegistry` · `memberQuestionReceiver`
-
-```ts config-catalog
-/** Gateway plugin configuration. */
-export interface Config {
-  /**
-   * Whether this deployment can hand paths to a native desktop opener —
-   * the `hasDocument` capability the agent-preset roster reports. Absent,
-   * the platform is asked (macOS/Windows/WSL yes; Linux only with a display
-   * server); set it explicitly where detection misleads, e.g. `false` in a
-   * container whose DISPLAY points nowhere a user can see.
-   */
-  nativeOpen?: boolean
-  /**
-   * Maximum physical size of a cold Session artifact eligible for blankness
-   * verification. Zero disables probes.
-   * @default 1024
-   */
-  coldBlankProbeMaxBytes?: number
-  /** Development-only Host Installation id for keyless receiver settlement. */
-  memberQuestionInstallationId?: string
-  /** Development-only user-facing Host Installation name. */
-  memberQuestionDeviceName?: string
-}
-```
-
-Source: [`packages/host/apiproxy/src/index.ts:38`](../packages/host/apiproxy/src/index.ts)
-
 <a id="deepseek-aidsh-host-directory-picker-browse"></a>
 
 ## `@deepseek-ai/dsh-host-directory-picker-browse`

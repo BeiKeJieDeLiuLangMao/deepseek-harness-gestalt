@@ -43,6 +43,7 @@ import { SessionManager } from './manager.ts'
 import type { SessionRemotes } from './remotes.ts'
 import type { SessionListPhase, SessionSearchResultItem, SubagentCatalogSnapshot } from './manager.ts'
 import type { Session } from './session.ts'
+import { sessionAdmissionModelRoute } from './admission-result.ts'
 
 /** Session list row projected from the host list RPC plus live stream increments. */
 export interface SessionSummary {
@@ -712,7 +713,8 @@ export class ClientSessions implements ISessions {
   modelRoute(sessionId: SessionId): SessionModelRoute | undefined {
     const admission = this.resolveAdmission(sessionId)
     if (admission !== undefined && 'modelRoute' in admission) {
-      return admission.modelRoute?.(sessionId)
+      const route = admission.modelRoute(sessionId)
+      return route === undefined ? undefined : sessionAdmissionModelRoute(route)
     }
     if (
       !this.eligible(sessionId)
