@@ -1,19 +1,19 @@
 /** Typecheck Host tests that consume generated Remote declarations after Host tsdown. */
 
 import { globSync, readFileSync } from 'node:fs'
-import { resolve, sep } from 'node:path'
+import { relative, resolve, sep } from 'node:path'
 import ts from 'typescript'
-import { createCompilerFaceConsumerProgram } from './ts-project.ts'
+import { createCompilerFaceConsumerProgram, repositoryConfigHost } from './ts-project.ts'
 
 export const HOST_CONTRACT_CONSUMER_GLOB = 'packages/*/*/tests/**/*.generated.host.spec.ts'
-const HOST_TEST_GLOB = 'packages/*/*/tests/**/*.host.spec.{ts,tsx}'
+const HOST_PACKAGE_TEST = /^packages\/[^/]+\/[^/]+\/tests\//u
 const GENERATED_REMOTE_IMPORT = /from\s+['"]@deepseek-ai\/dsh-[^'"]+\/remote['"]/u
 
 function repositoryPath(path: string): string {
   return path.split(sep).join('/')
 }
 
-function requireHostAggregateExclusion(scanRoot: string): void {
+function hostAggregatePackageTests(scanRoot: string): string[] {
   const configPath = resolve(scanRoot, 'tsconfig.host.json')
   const read = ts.readConfigFile(configPath, file => readFileSync(file, 'utf8'))
   if (read.error !== undefined) {
@@ -23,22 +23,31 @@ function requireHostAggregateExclusion(scanRoot: string): void {
   if (!Array.isArray(exclude) || !exclude.includes(HOST_CONTRACT_CONSUMER_GLOB)) {
     throw new Error(`tsconfig.host.json must exclude ${JSON.stringify(HOST_CONTRACT_CONSUMER_GLOB)}`)
   }
+  const parsed = ts.getParsedCommandLineOfConfigFile(configPath, {}, repositoryConfigHost)
+  if (parsed === undefined) throw new Error(`cannot parse TypeScript config ${configPath}`)
+  if (parsed.errors.length > 0) {
+    throw new Error(parsed.errors.map(error => ts.flattenDiagnosticMessageText(error.messageText, '\n')).join('\n'))
+  }
+  return parsed.fileNames
+    .map(file => repositoryPath(relative(scanRoot, file)))
+    .filter(file => HOST_PACKAGE_TEST.test(file))
+    .sort()
 }
 
 /**
  * Select every Host test that consumes generated Remote declarations.
  * @param scanRoot - repository root containing Host package tests.
  * @returns sorted repository-relative test paths.
- * @throws if the Host aggregate exclusion is absent, no test is selected, or a Remote consumer lacks the generated-test suffix.
+ * @throws if the Host aggregate exclusion is absent, no test is selected, or a
+ * Host aggregate package-test input imports a Remote declaration without the generated-test suffix.
  */
 export function hostContractConsumerTests(scanRoot: string): string[] {
-  requireHostAggregateExclusion(scanRoot)
+  const hostTests = hostAggregatePackageTests(scanRoot)
   const selected = globSync(HOST_CONTRACT_CONSUMER_GLOB, { cwd: scanRoot })
     .map(repositoryPath)
     .sort()
   const selectedSet = new Set(selected)
-  const misplaced = globSync(HOST_TEST_GLOB, { cwd: scanRoot })
-    .map(repositoryPath)
+  const misplaced = hostTests
     .filter(file => !selectedSet.has(file)
       && GENERATED_REMOTE_IMPORT.test(readFileSync(resolve(scanRoot, file), 'utf8')))
     .sort()

@@ -12,9 +12,20 @@ import {
 
 const roots: string[] = []
 const generatedTest = 'packages/api/example/tests/remote.generated.host.spec.ts'
+const ordinaryTest = 'packages/api/example/tests/remote.spec.ts'
+const clientTest = 'packages/api/example/tests/remote.client.spec.ts'
+const hostExcludes = [
+  HOST_CONTRACT_CONSUMER_GLOB,
+  'packages/*/*/tests/**/*.client.ts',
+  'packages/*/*/tests/**/*.client.tsx',
+  'packages/*/*/tests/**/*.client.spec.ts',
+  'packages/*/*/tests/**/*.client.spec.tsx',
+]
 
 function fixture(options: {
   readonly test?: string
+  readonly ordinaryTest?: string
+  readonly clientTest?: string
   readonly declaration?: string
   readonly exclude?: readonly string[]
 } = {}): string {
@@ -33,13 +44,21 @@ function fixture(options: {
       },
     },
     include: ['packages/**/*.ts'],
-    exclude: options.exclude ?? [HOST_CONTRACT_CONSUMER_GLOB],
+    exclude: options.exclude ?? hostExcludes,
     references: [],
   }, null, 2))
   if (options.test !== undefined) {
     const path = join(root, generatedTest)
     mkdirSync(dirname(path), { recursive: true })
     writeFileSync(path, options.test)
+  }
+  const ordinaryPath = join(root, ordinaryTest)
+  mkdirSync(dirname(ordinaryPath), { recursive: true })
+  writeFileSync(ordinaryPath, options.ordinaryTest ?? 'export {}\n')
+  if (options.clientTest !== undefined) {
+    const path = join(root, clientTest)
+    mkdirSync(dirname(path), { recursive: true })
+    writeFileSync(path, options.clientTest)
   }
   if (options.declaration !== undefined) {
     const path = join(root, 'packages/api/example/lib/remote.d.ts')
@@ -70,6 +89,21 @@ describe('Host generated-contract consumer typecheck', () => {
     writeFileSync(path, consumer)
     expect(() => hostContractConsumerTests(root))
       .toThrow('must end in .generated.host.spec.ts')
+  })
+
+  it('rejects an ordinary Host spec that imports a generated Remote declaration', () => {
+    expect(() => hostContractConsumerTests(fixture({ ordinaryTest: consumer })))
+      .toThrow(ordinaryTest)
+  })
+
+  it('accepts an ordinary Host spec without a generated Remote import', () => {
+    const root = fixture({ test: consumer })
+    expect(hostContractConsumerTests(root)).toEqual([generatedTest])
+  })
+
+  it('ignores a generated Remote import excluded from the Host aggregate', () => {
+    const root = fixture({ test: consumer, clientTest: consumer })
+    expect(hostContractConsumerTests(root)).toEqual([generatedTest])
   })
 
   it('requires the matching Host aggregate exclusion', () => {
