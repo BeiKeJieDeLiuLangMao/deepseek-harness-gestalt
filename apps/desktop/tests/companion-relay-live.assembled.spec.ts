@@ -142,9 +142,7 @@ describe('assembled Desktop Relay live Session projection on shipped dsh web', (
               await new Promise<void>((resolve) => { setTimeout(resolve, 0) })
               continue
             }
-            console.log('DELIVER', frame.length)
             receiver.receive(frame)
-            console.log('DELIVER-END', frame.length)
           }
         })
         void deliveryPump.then(() => {
@@ -196,7 +194,9 @@ describe('assembled Desktop Relay live Session projection on shipped dsh web', (
         reconnect: () => {},
       },
     )
+    let teardownFailure: unknown
     const drainTransport = async (): Promise<void> => {
+      inboundAbort.abort()
       await Promise.all([drainDelivery(), drainInbound()])
       if (transportErrors.length > 0) {
         const first = transportErrors[0]
@@ -205,11 +205,19 @@ describe('assembled Desktop Relay live Session projection on shipped dsh web', (
           : new Error(`memory-direct transport failed: ${String(first)}`)
       }
     }
+    // Each teardown concern runs in its own try block: a transport drain
+    // failure is recorded for the test's error path but cannot block the
+    // LLM, Host, or channel disposals that follow.
     cleanups.push(async () => {
-      try { await drainTransport() } catch { /* collected errors already fail the test above */ }
+      try { await drainTransport() } catch (error) { teardownFailure = error }
     })
     cleanups.push(() => { mobileAttachmentOwner.dispose() })
     cleanups.push(() => { relayOwner.invalidate(channels.pairingSelector) })
+    cleanups.push(() => {
+      channels.attachmentKey.fill(0)
+      channels.mobileReconnectState.fill(0)
+      channels.desktopReconnectState.fill(0)
+    })
     relayOwner.updatePeers({
       type: 'ready', transportVersion: 1, routeId: parseRelayRouteId('route-assembled-relay-live'),
       attachmentId: channels.desktopAttachmentId,
@@ -234,20 +242,18 @@ describe('assembled Desktop Relay live Session projection on shipped dsh web', (
     }
     const inboundQueue: InboundEntry[] = []
     let inboundTask: Promise<void> | undefined
-    const inboundSignal = new AbortController().signal
+    const inboundAbort = new AbortController()
+    const inboundSignal = inboundAbort.signal
     let inboundSeq = 0
     const scheduleInbound = (kind: 'handshake' | 'application', frame: Uint8Array): Promise<void> => {
       const seq = ++inboundSeq
-      console.log('ENQUEUE', seq, kind, frame.length)
       const queued = new Promise<void>((resolve, reject) => {
         inboundQueue.push({
           frame: frame.slice(), kind, seq,
           settle: (outcome) => {
             if (outcome === 'ok') {
-              console.log('RECEIVE-END', seq, kind)
               resolve()
             } else {
-              console.log('RECEIVE-ERROR', seq, kind)
               reject(outcome.fail)
             }
           },
@@ -260,7 +266,6 @@ describe('assembled Desktop Relay live Session projection on shipped dsh web', (
             for (;;) {
               const entry = inboundQueue.shift()
               if (entry === undefined) return
-              console.log('RECEIVE-START', entry.seq, entry.kind)
               try {
                 await relayOwner.receive(
                   entry.frame, channels.mobileAttachmentId, channels.desktopAttachmentId,
@@ -393,6 +398,7 @@ describe('assembled Desktop Relay live Session projection on shipped dsh web', (
     }, pairingDependencies(channels))).resolves.toMatchObject({ type: 'confirmed' })
     await expect.poll(async () => await countTurnEnds(first.home, sessionId) > turnsBeforeDisconnect).toBe(true)
     expect(surface.getSnapshot().conversations[localSessionId]?.nodes.length).toBe(nodesBeforeDisconnect)
+    if (teardownFailure !== undefined) throw teardownFailure
   }, 180_000)
 })
 
