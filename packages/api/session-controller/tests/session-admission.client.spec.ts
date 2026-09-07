@@ -10,10 +10,15 @@
  */
 
 import { Context } from '@deepseek-ai/cordis'
+import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import { describe, expect, it, vi } from 'vitest'
 import type { MessageId, SessionId } from '@deepseek-ai/dsh-session/types'
 import { ClientSessions } from '../src/client/sessions/service.ts'
-import type { SessionAdmissionAdapter, SessionAdmissionRoute } from '../src/client/contract/admission.ts'
+import type {
+  SessionAdmissionAdapter,
+  SessionAdmissionModelRoute,
+  SessionAdmissionRoute,
+} from '../src/client/contract/admission.ts'
 import type { SessionRemote } from '../src/client/transport.ts'
 import type { SessionSelectModelRequest } from '../src/types.ts'
 import {
@@ -265,7 +270,7 @@ describe('Session Client admission dispatch', () => {
         return Promise.resolve({
           ok: false,
           error: {
-            code: 'attachment-error',
+            code: 'session/attachment-invalid',
             message: 'Images unsupported in Side Chat.',
             details: { reason: 'SUBAGENT_IMAGE_UNSUPPORTED' },
           },
@@ -279,14 +284,19 @@ describe('Session Client admission dispatch', () => {
     // First attempt fails with error receipt
     const result1 = await binding.session.prompt([{ type: 'text', text: 'attempt 1' }], 'queue')
     expect(result1.ok).toBe(false)
-    expect(result1.error.code).toBe('attachment-error')
+    expect(result1.error).toBeInstanceOf(Error)
+    expect(result1.error).toMatchObject({
+      code: 'session/attachment-invalid',
+      message: 'Images unsupported in Side Chat.',
+      details: { reason: 'SUBAGENT_IMAGE_UNSUPPORTED' },
+    })
 
     // Must NOT fall back to remote
     expect(api.calls.filter(c => c.method === 'session.prompt')).toEqual([])
-    expect(binding.session.getSnapshot().promptError).toEqual({
+    expect(binding.session.getSnapshot().promptError).toMatchObject({
       op: 'send',
       error: {
-        code: 'attachment-error',
+        code: 'session/attachment-invalid',
         message: 'Images unsupported in Side Chat.',
         details: { reason: 'SUBAGENT_IMAGE_UNSUPPORTED' },
       },
@@ -300,6 +310,30 @@ describe('Session Client admission dispatch', () => {
     expect(result2.ok).toBe(false)
     expect(result2.error.code).toBe('gateway/internal')
     expect(result2.error.message).toBe('Network drop in adapter')
+
+    const existing = new RemoteError('gateway/bad-request', 'already remote', {})
+    route.prompt = vi.fn(() => Promise.resolve({ ok: false, error: existing }))
+    const returned = await binding.session.prompt([{ type: 'text', text: 'attempt 3' }], 'queue')
+    expect(returned.ok).toBe(false)
+    expect(returned.error).toBe(existing)
+
+    route.prompt = vi.fn(() => Promise.reject(existing))
+    const thrown = await binding.session.prompt([{ type: 'text', text: 'attempt 4' }], 'queue')
+    expect(thrown.ok).toBe(false)
+    expect(thrown.error).toBe(existing)
+
+    route.prompt = vi.fn(() => Promise.reject({
+      code: 'session/attachment-invalid',
+      message: 'marker-free failure',
+      details: { reason: 'SUBAGENT_IMAGE_UNSUPPORTED' },
+    }))
+    const markerFree = await binding.session.prompt([{ type: 'text', text: 'attempt 5' }], 'queue')
+    expect(markerFree.ok).toBe(false)
+    expect(markerFree.error).toMatchObject({
+      code: 'gateway/internal',
+      message: '[object Object]',
+      details: {},
+    })
 
     // Still no remote call
     expect(api.calls.filter(c => c.method === 'session.prompt')).toEqual([])
@@ -341,6 +375,36 @@ describe('Session Client admission dispatch', () => {
     expect(commandResult.error.message).toBe('command adapter drop')
     expect(executeSpy).not.toHaveBeenCalled()
     expect(route.prompt).not.toHaveBeenCalled()
+
+    route.updateQueue = vi.fn((_sessionId, itemId) => Promise.resolve({
+      ok: false,
+      error: {
+        code: 'session/queue-item-not-found',
+        message: 'queued item is gone',
+        details: { itemId },
+      },
+    }))
+    const structuredQueue = await binding.session.updateQueue(mid('item-gone'), { kind: 'remove' })
+    expect(structuredQueue.ok).toBe(false)
+    expect(structuredQueue.error).toBeInstanceOf(Error)
+    expect(structuredQueue.error).toMatchObject({
+      code: 'session/queue-item-not-found',
+      message: 'queued item is gone',
+      details: { itemId: mid('item-gone') },
+    })
+
+    route.command = vi.fn(() => Promise.resolve({
+      ok: false,
+      error: { code: 'gateway/bad-request', message: 'bad command', details: {} },
+    }))
+    const structuredCommand = await binding.session.command('/bad')
+    expect(structuredCommand.ok).toBe(false)
+    expect(structuredCommand.error).toBeInstanceOf(Error)
+    expect(structuredCommand.error).toMatchObject({
+      code: 'gateway/bad-request',
+      message: 'bad command',
+      details: {},
+    })
   })
 
   it('routes cancel through admission and preserves failure promptError without falling back to Remote', async () => {
@@ -376,15 +440,16 @@ describe('Session Client admission dispatch', () => {
     // Failed cancel
     route.cancel = vi.fn(() => Promise.resolve({
       ok: false,
-      error: { code: 'cancel-failed', message: 'unable to stop' },
+      error: { code: 'gateway/internal', message: 'unable to stop', details: {} },
     }))
 
     const failedResult = await binding.session.cancel()
     expect(failedResult.ok).toBe(false)
+    expect(failedResult.error).toBeInstanceOf(Error)
     expect(api.calls.filter(c => c.method === 'session.cancel')).toEqual([])
-    expect(binding.session.getSnapshot().promptError).toEqual({
+    expect(binding.session.getSnapshot().promptError).toMatchObject({
       op: 'stop',
-      error: { code: 'cancel-failed', message: 'unable to stop' },
+      error: { code: 'gateway/internal', message: 'unable to stop', details: {} },
     })
 
     drop()
@@ -654,7 +719,7 @@ describe('Session Client admission dispatch', () => {
       .toThrowError('sessions.registerAdmissionAdapter: ClientSessions is disposed')
   })
 
-  it('keeps commandCatalogSessionId and skillCatalogSessionId as lookup-only helpers', () => {
+  it('keeps commandCatalogSessionId and skillCatalogSessionId as lookup-only helpers', async () => {
     const { svc } = bench()
     const sessionId = sid('session-catalogs-1')
     const parentId = sid('session-parent-0')
@@ -674,7 +739,11 @@ describe('Session Client admission dispatch', () => {
 
     const drop = svc.registerAdmission(sessionId, route)
 
-    expect(svc.modelRoute(sessionId)).toBe(customModelRoute)
+    const customRoute = svc.modelRoute(sessionId)
+    await expect(customRoute?.models?.()).resolves.toMatchObject({ ok: true })
+    await expect(customRoute?.selectModel?.({ provider: 'p', model: 'm' })).resolves.toMatchObject({
+      ok: true,
+    })
     expect(svc.commandCatalogSessionId(sessionId)).toBeUndefined()
     expect(svc.skillCatalogSessionId(sessionId)).toBe(parentId)
 
@@ -785,7 +854,7 @@ describe('Session Client admission dispatch', () => {
       cancel: vi.fn(() => Promise.resolve(ok({ accepted: true as const }))),
       modelRoute: () => ({ models: admissionModels, selectModel: admissionSelect }),
     })
-    expect(svc.modelRoute(sessionId)?.models).toBe(admissionModels)
+    await expect(svc.modelRoute(sessionId)?.models?.()).resolves.toMatchObject({ ok: true })
     await svc.modelRoute(sessionId)!.selectModel!({ provider: 'owned', model: 'm' })
     expect(admissionSelect).toHaveBeenCalledTimes(1)
     expect(api.callsOf('session.selectModel')).toHaveLength(1)
@@ -811,6 +880,66 @@ describe('Session Client admission dispatch', () => {
     const rejected = await svc.modelRoute(sessionId)!.selectModel!({ provider: 'missing', model: 'nope' })
     expect(rejected.ok).toBe(false)
     expect(rejected.error.code).toBe('session/model-unroutable')
+  })
+
+  it('normalizes feature model failures while preserving receiver, signal, and hidden methods', async () => {
+    const { svc, api } = bench()
+    const sessionId = sid('session-admission-model-failure')
+    api.onList = () => Promise.resolve(ok({
+      items: [{ sessionId, updatedAt: 100, running: false, blank: false }],
+    }))
+    await svc.refresh()
+
+    const signal = new AbortController().signal
+    const modelRoute: SessionAdmissionModelRoute = {
+      models(signalArg) {
+        expect(this).toBe(modelRoute)
+        expect(signalArg).toBe(signal)
+        return Promise.resolve({
+          ok: false,
+          error: { code: 'session/model-unroutable', message: 'catalog unavailable', details: {} },
+        })
+      },
+      selectModel(_selection, signalArg) {
+        expect(this).toBe(modelRoute)
+        expect(signalArg).toBe(signal)
+        throw new Error('selection adapter drop')
+      },
+    }
+    svc.registerAdmission(sessionId, {
+      prompt: vi.fn(() => Promise.resolve(ok({ accepted: true as const }))),
+      cancel: vi.fn(() => Promise.resolve(ok({ accepted: true as const }))),
+      modelRoute: () => modelRoute,
+    })
+
+    const routed = svc.modelRoute(sessionId)!
+    const models = await routed.models!(signal)
+    expect(models.ok).toBe(false)
+    expect(models.error).toBeInstanceOf(Error)
+    expect(models.error).toMatchObject({
+      code: 'session/model-unroutable',
+      message: 'catalog unavailable',
+      details: {},
+    })
+
+    const selection = await routed.selectModel!({ provider: 'owned', model: 'broken' }, signal)
+    expect(selection.ok).toBe(false)
+    expect(selection.error).toMatchObject({
+      code: 'gateway/internal',
+      message: 'selection adapter drop',
+      details: {},
+    })
+    expect(api.callsOf('session.selectModel')).toEqual([])
+
+    const selectOnly: SessionAdmissionModelRoute = {
+      selectModel: () => Promise.resolve(ok({ selected: { provider: 'owned', model: 'ok' } })),
+    }
+    svc.registerAdmission(sessionId, {
+      prompt: vi.fn(() => Promise.resolve(ok({ accepted: true as const }))),
+      cancel: vi.fn(() => Promise.resolve(ok({ accepted: true as const }))),
+      modelRoute: () => selectOnly,
+    })
+    expect(svc.modelRoute(sessionId)?.models).toBeUndefined()
   })
 
   it('omits modelRoute without hiding stock, unlike an explicit undefined hide', async () => {

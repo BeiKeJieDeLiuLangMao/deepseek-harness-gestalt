@@ -1,0 +1,1 @@
+- alert: Side Chat admission rejected by fixture (gateway/internal)
