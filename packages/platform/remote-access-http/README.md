@@ -28,11 +28,11 @@ The WSS Consumer requires an endpoint-owned challenge request and signed attach 
 <a id="model-experience"></a>
 ## Model Experience
 
-Indirectly, through Personal Pairing and Relay routes that deliver authenticated Companion operations to Host model-facing consumers.
+None, as the HTTP and WSS consumers carry pairing authority, routes, and ciphertext without creating model-bound content.
 
 #### KV Cache effect
 
-The HTTP and WSS layer adds no stable request prefix; accepted operations affect later context and results through Remote Access consumers.
+The HTTP and WSS layer adds no model request content, so it does not affect provider cache reuse.
 
 ## Known Limitations and Deferred Work
 <a id="known-limitations-and-deferred-work"></a>

@@ -94,11 +94,11 @@ The package does not encrypt Companion message traffic. Mobile and Desktop suppl
 <a id="model-experience"></a>
 ## Model Experience
 
-Indirectly, through decoded Companion operations whose origin, background, questions, answers, and references feed model-facing tools and receiving Sessions.
+None, as the codecs carry already-produced Companion operation content without creating model-bound content or choosing its presentation.
 
 #### KV Cache effect
 
-The codecs add no stable request prefix; decoded operation fields contribute tokens only through their member-question and Host Session consumers.
+The codecs add no model request content, so they do not affect provider cache reuse.
 
 ## Known Limitations and Deferred Work
 <a id="known-limitations-and-deferred-work"></a>

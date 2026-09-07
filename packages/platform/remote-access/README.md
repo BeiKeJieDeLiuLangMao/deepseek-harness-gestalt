@@ -36,11 +36,11 @@ Persistent deployment state is limited to route identity, credential digest, mon
 <a id="model-experience"></a>
 ## Model Experience
 
-Indirectly, through Personal Pairing and Relay authority that deliver authenticated Mobile operations into member-question and Session consumers.
+None, as the services carry pairing authority and delivery routes without creating model-bound content.
 
 #### KV Cache effect
 
-The services add no stable request prefix; grants, Device Principals, and Relay delivery determine which remote content reaches model-facing Host work.
+The services add no model request content, so they do not affect provider cache reuse.
 
 ## Known Limitations and Deferred Work
 <a id="known-limitations-and-deferred-work"></a>

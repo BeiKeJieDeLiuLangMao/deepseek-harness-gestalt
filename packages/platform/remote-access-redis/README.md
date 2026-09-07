@@ -26,11 +26,11 @@ This package never creates Redis Streams, Lists, or another offline queue. A pub
 <a id="model-experience"></a>
 ## Model Experience
 
-Indirectly, through Relay coordination and ciphertext delivery that carry authenticated Companion operations to model-facing consumers.
+None, as the Redis Provider carries Relay routes and ciphertext without creating model-bound content.
 
 #### KV Cache effect
 
-The Redis Provider adds no stable request prefix; routing and invalidation determine which paired operations reach downstream Host consumers.
+The Redis Provider adds no model request content, so it does not affect provider cache reuse.
 
 ## Known Limitations and Deferred Work
 <a id="known-limitations-and-deferred-work"></a>

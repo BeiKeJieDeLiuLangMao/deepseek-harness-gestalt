@@ -26,11 +26,11 @@ adapter 只存储会过期的 attachment 目录值：不透明 route 与 attachm
 <a id="model-experience"></a>
 ## 模型体验
 
-通过 Relay 协调与密文投递间接影响模型；它们会把经鉴权 Companion operation 传给面向模型的 Consumer。
+无，因为 Redis Provider 只携带 Relay 路由与密文，不创建发往模型的内容。
 
 #### KV Cache 影响
 
-Redis Provider 不增加稳定请求前缀；路由与失效状态决定哪些配对 operation 能抵达下游 Host Consumer。
+Redis Provider 不增加模型请求内容，因此不影响提供方缓存复用。
 
 ## 已知限制与暂缓事项
 <a id="known-limitations-and-deferred-work"></a>

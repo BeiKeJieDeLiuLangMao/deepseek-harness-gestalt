@@ -1,5 +1,5 @@
 ---
-description: "DeepSeek Harness 代码执行 seam 的 CPython 子进程实现。"
+description: "Host 与实验性 CPython 代码运行时共用的无版本 fd-3 协议词汇。"
 kind: "package-reference"
 ---
 
@@ -9,9 +9,9 @@ kind: "package-reference"
 
 ## 概述
 
-[`@deepseek-ai/dsh-code-runtime`](../code-runtime/README.zh.md) seam 的 CPython 子进程实现。与 [`@deepseek-ai/dsh-code-runtime-worker-thread`](../code-runtime-worker-thread/README.zh.md) 配套；以全新的 `python3` 子进程取代 Node worker 线程，让模型代码从 TypeScript 换成 Python。
+实验性 [`@deepseek-ai/dsh-code-runtime`](../code-runtime/README.zh.md) CPython Provider 使用的无版本 fd-3 协议词汇。本包校验并导出 host 侧帧 codec，并在 `py/protocol.py` 中镜像同一套消息词汇；可执行的 Service Provider 位于 [`@deepseek-ai/dsh-experimental-code-runtime-python`](../../experimental/code-runtime-python/README.zh.md)。
 
-本包持有该 seam 的 wire protocol：host 侧的帧编解码，以及 Python 侧对同一套消息词汇的镜像。
+本包不注册 code-runtime seam，也不启动 `python3`。
 
 ## 目录
 
@@ -35,11 +35,11 @@ host 与 CPython 子进程在子进程的 fd 3 上交换一个无版本号的 JS
 <a id="model-experience"></a>
 ## Model Experience
 
-经由 [`dsh-tools`](../../core/tools/README.zh.md) 里的 Code Mode 间接生效：Code Mode 把本后端的精确完成值（放得下时）或一个明确的 `invalid-output` / `output-limit` 失败，连同精确的 `[dsh-code-runtime-python] log capture truncated at <maxLogBytes> bytes` 日志标记，渲染进一个保留的 `run_code` 结果。
+无，因为这个仅含协议的包只校验并导出 fd-3 帧，不执行代码，也不渲染面向模型的结果。
 
 #### KV Cache effect
 
-无直接失效；具名消费者拥有任何请求前缀的变更。
+本包不增加模型请求内容，因此不影响提供方缓存复用。
 
 ## Known Limitations and Deferred Work
 <a id="known-limitations-and-deferred-work"></a>

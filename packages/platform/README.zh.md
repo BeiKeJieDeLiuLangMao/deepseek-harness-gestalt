@@ -31,7 +31,7 @@ Platform 包拥有 DeepSeek Gestalt Desktop 与 Mobile 共用、且独立于具�
 | [`platform-account-http/`](platform-account-http/README.zh.md) | `@deepseek-ai/dsh-platform-account-http` | 固定回调与安装会话 HTTP 路由 | Consumer |
 | [`platform-account-client/`](platform-account-client/README.zh.md) | `@deepseek-ai/dsh-platform-account-client` | Desktop/Mobile 证明、受保护存储与账号域命名空间客户端 | Consumer library |
 | [`project-membership/`](project-membership/README.zh.md) | `@deepseek-ai/dsh-project-membership` | Project Membership Service Definition 和公共类型 | `ctx.projectMembership` |
-| [`project-membership-core/`](project-membership-core/README.zh.md) | `@deepseek-ai/dsh-project-membership-core` | 成员关系、邀请、角色与在线状态的持久 Provider | 提供 `ctx.projectMembership` |
+| [`project-membership-core/`](project-membership-core/README.zh.md) | `@deepseek-ai/dsh-project-membership-core` | 持久化成员关系、邀请与角色的 Provider | 提供 `ctx.projectMembership` |
 | [`project-membership-http/`](project-membership-http/README.zh.md) | `@deepseek-ai/dsh-project-membership-http` | 项目注册表、名册、邀请与成员管理 HTTP 路由 | Consumer |
 | [`project-membership-client/`](project-membership-client/README.zh.md) | `@deepseek-ai/dsh-project-membership-client` | 项目成员关系与管理的浏览器 transport | Consumer library |
 | [`project-membership-desktop/`](project-membership-desktop/README.zh.md) | `@deepseek-ai/dsh-project-membership-desktop` | 面向 Agent preset 的 Desktop 已鉴权读取 Provider | `ctx.desktopProjectMembership` |

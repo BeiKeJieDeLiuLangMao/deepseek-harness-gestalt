@@ -1,5 +1,5 @@
 ---
-description: "CPython subprocess implementation of the DeepSeek Harness code-execution seam."
+description: "Versionless fd-3 protocol vocabulary shared by the host and the experimental CPython code runtime."
 kind: "package-reference"
 ---
 
@@ -9,9 +9,9 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-CPython-subprocess implementation of the [`@deepseek-ai/dsh-code-runtime`](../code-runtime/README.md) seam. Companion to [`@deepseek-ai/dsh-code-runtime-worker-thread`](../code-runtime-worker-thread/README.md); trades the Node worker thread for a fresh `python3` subprocess so model code is Python instead of TypeScript.
+Versionless fd-3 protocol vocabulary for the experimental [`@deepseek-ai/dsh-code-runtime`](../code-runtime/README.md) CPython Provider. This package validates and exports the host-side frame codec and mirrors the same message vocabulary in `py/protocol.py`; the executable Service Provider lives in [`@deepseek-ai/dsh-experimental-code-runtime-python`](../../experimental/code-runtime-python/README.md).
 
-The package owns the wire protocol for that seam: the host-side frame codec and the Python-side mirror of the same message vocabulary.
+It does not register the code-runtime seam or spawn `python3`.
 
 ## Table of Contents
 
@@ -35,11 +35,11 @@ The host and the CPython subprocess exchange a versionless, JSON-lines protocol 
 <a id="model-experience"></a>
 ## Model Experience
 
-Indirectly, through Code Mode in [`dsh-tools`](../../core/tools/README.md), which renders this backend's exact completion value when it fits (or an explicit `invalid-output` / `output-limit` failure), plus the exact `[dsh-code-runtime-python] log capture truncated at <maxLogBytes> bytes` log marker, into a retained `run_code` result.
+None, as this protocol-only package validates and exports fd-3 frames without executing code or rendering model-facing results.
 
 #### KV Cache effect
 
-No direct invalidation; the named consumer owns any request-prefix changes.
+This package adds no model request content, so it does not affect provider cache reuse.
 
 ## Known Limitations and Deferred Work
 <a id="known-limitations-and-deferred-work"></a>

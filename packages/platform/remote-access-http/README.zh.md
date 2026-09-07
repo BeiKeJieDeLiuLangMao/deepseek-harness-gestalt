@@ -28,11 +28,11 @@ WSS 消费方要求端点自有的 challenge request 与签名 attach proof 先�
 <a id="model-experience"></a>
 ## 模型体验
 
-通过 Personal Pairing 与 Relay 路由间接影响模型；这些路由把经鉴权 Companion operation 投递给 Host 的面向模型 Consumer。
+无，因为 HTTP 与 WSS Consumer 只携带配对 authority、路由和密文，不创建发往模型的内容。
 
 #### KV Cache 影响
 
-HTTP 与 WSS 层不增加稳定请求前缀；已接收 operation 经 Remote Access Consumer 影响后续上下文与结果。
+HTTP 与 WSS 层不增加模型请求内容，因此不影响提供方缓存复用。
 
 ## 已知限制与暂缓事项
 <a id="known-limitations-and-deferred-work"></a>

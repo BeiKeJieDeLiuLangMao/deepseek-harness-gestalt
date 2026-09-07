@@ -46,11 +46,11 @@ The authenticator captured by `createRemoteAttachmentsHttpPlugin()` maps one HTT
 <a id="model-experience"></a>
 ## Model Experience
 
-Indirectly, through decrypted reference files and images that the member-question receiver materializes for a receiving Session.
+None, as the store carries encrypted blobs and consume capabilities without creating model-bound content.
 
 #### KV Cache effect
 
-The blob store adds no stable request prefix; consumed capabilities add bounded reference content through the receiving Host materializer.
+The store adds no model request content, so it does not affect provider cache reuse.
 
 ## Known Limitations and Deferred Work
 <a id="known-limitations-and-deferred-work"></a>

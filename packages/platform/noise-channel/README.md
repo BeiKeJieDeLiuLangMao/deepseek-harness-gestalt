@@ -40,11 +40,11 @@ After IK, `SnowDesktopAttachmentOwner` places Desktop's encrypted Companion vers
 <a id="model-experience"></a>
 ## Model Experience
 
-Indirectly, through authenticated Companion operations that downstream Remote Access consumers decode into member questions, references, and other Session work.
+None, as the channel carries pairing capabilities and ciphertext without creating model-bound content.
 
 #### KV Cache effect
 
-The channel adds no stable request prefix; decoded operations affect model context and results through their downstream consumers.
+The channel adds no model request content, so it does not affect provider cache reuse.
 
 ## Known Limitations and Deferred Work
 <a id="known-limitations-and-deferred-work"></a>

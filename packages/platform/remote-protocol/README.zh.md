@@ -94,11 +94,11 @@ Major 4 还承载两个 Platform 账号的配对安装之间交换的成员提�
 <a id="model-experience"></a>
 ## 模型体验
 
-通过解码后的 Companion operation 间接影响模型；其中的 origin、background、question、answer 与 reference 会进入面向模型的工具和接收 Session。
+无，因为这些 codec 只携带已有的 Companion operation 内容，不创建发往模型的内容，也不决定其呈现方式。
 
 #### KV Cache 影响
 
-codec 不增加稳定请求前缀；解码后的 operation 字段只经成员提问与 Host Session Consumer 贡献 token。
+这些 codec 不增加模型请求内容，因此不影响提供方缓存复用。
 
 ## 已知限制与延后工作
 <a id="known-limitations-and-deferred-work"></a>

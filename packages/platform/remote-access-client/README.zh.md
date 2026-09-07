@@ -30,11 +30,11 @@ Desktop 设置所有者只在手机访问开启期间启动该生命周期。它
 <a id="model-experience"></a>
 ## 模型体验
 
-通过它在 Mobile 与 Desktop 之间传输的经鉴权 Companion operation 间接影响模型；这些 operation 承载成员提问、reference 与 Session 工作。
+无，因为该客户端只携带经鉴权的 Companion operation 与路由，不创建发往模型的内容。
 
 #### KV Cache 影响
 
-该 transport 不增加稳定请求前缀；已投递 operation 经 Host Consumer 影响模型上下文与结果。
+该客户端不增加模型请求内容，因此不影响提供方缓存复用。
 
 ## 已知限制与暂缓事项
 <a id="known-limitations-and-deferred-work"></a>

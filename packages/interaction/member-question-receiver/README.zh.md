@@ -54,7 +54,7 @@ Provider 通过随机同目录临时文件原子替换，把一个仅所有者�
 - `materializer` — 可选高层 Host Session adapter。缺失时 arrival 仍会记录提问，但 Host Session 创建会保持 reserved，直到注册并恢复 materializer。
 - `admitter` — 可选高层 human-turn adapter。缺失时 human-turn admission fail closed。
 - `clock`、`timer` 与 `stateWriter` — 确定性 composition 与存储边界测试注入的时间、调度与原子存储接口；生产使用系统 clock/timer 与仅所有者可读写的原子替换。
-- `memberQuestionInstallationId` 与 `memberQuestionDeviceName` — 可选的 Host settlement identity。两者必须同时配置且非空；在跨机器认证 publication 组成之前，生产组合不提供这些字段。Remote settlement 使用本 Host identity，从不使用线字段。
+- `memberQuestionInstallationId` 与 `memberQuestionDeviceName` — 可选的 Host settlement identity。两者必须同时配置且非空；在跨机器认证 publication 组成之前，生产组合不提供这些字段。Remote settlement 使用本 Host identity，不采信 wire payload 中的 Installation identity 与 `settledAt`。
 
 <a id="model-experience"></a>
 ## Model Experience

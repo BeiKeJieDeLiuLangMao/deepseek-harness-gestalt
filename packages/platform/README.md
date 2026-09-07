@@ -31,7 +31,7 @@ Sixteen packages cover account identity, cloud-project membership, encrypted pai
 | [`platform-account-http/`](platform-account-http/README.md) | `@deepseek-ai/dsh-platform-account-http` | Fixed callback and installation-session HTTP routes | Consumer |
 | [`platform-account-client/`](platform-account-client/README.md) | `@deepseek-ai/dsh-platform-account-client` | Desktop/Mobile proof, protected storage, and account-scoped namespace client | Consumer library |
 | [`project-membership/`](project-membership/README.md) | `@deepseek-ai/dsh-project-membership` | Project Membership Service Definition and public types | `ctx.projectMembership` |
-| [`project-membership-core/`](project-membership-core/README.md) | `@deepseek-ai/dsh-project-membership-core` | Durable membership, invitation, role, and presence provider | provides `ctx.projectMembership` |
+| [`project-membership-core/`](project-membership-core/README.md) | `@deepseek-ai/dsh-project-membership-core` | Durable membership, invitation, and role Provider | provides `ctx.projectMembership` |
 | [`project-membership-http/`](project-membership-http/README.md) | `@deepseek-ai/dsh-project-membership-http` | Project registry, roster, invitation, and member-administration HTTP routes | Consumer |
 | [`project-membership-client/`](project-membership-client/README.md) | `@deepseek-ai/dsh-project-membership-client` | Browser transport for project membership and administration | Consumer library |
 | [`project-membership-desktop/`](project-membership-desktop/README.md) | `@deepseek-ai/dsh-project-membership-desktop` | Desktop-authenticated read provider for agent presets | `ctx.desktopProjectMembership` |

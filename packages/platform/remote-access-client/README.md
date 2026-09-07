@@ -30,11 +30,11 @@ The Desktop Settings owner starts this lifecycle only while Mobile Access is ena
 <a id="model-experience"></a>
 ## Model Experience
 
-Indirectly, through authenticated Companion operations it transports between Mobile and Desktop for member questions, references, and Session work.
+None, as the client carries authenticated Companion operations and routes without creating model-bound content.
 
 #### KV Cache effect
 
-The transport adds no stable request prefix; delivered operations affect model context and results through Host consumers.
+The client adds no model request content, so it does not affect provider cache reuse.
 
 ## Known Limitations and Deferred Work
 <a id="known-limitations-and-deferred-work"></a>
