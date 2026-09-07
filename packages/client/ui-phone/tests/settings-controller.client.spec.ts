@@ -12,6 +12,7 @@ import { PhoneSettingsCardController } from '../src/client/phone-settings-contro
 import { MISSING_PHONE_ENVIRONMENT, type PhoneRuntimeSource } from '../src/client/phone-runtime-source.ts'
 import { createListingPhoneEnvironmentSource } from '../src/client/phone-environment-listing.ts'
 import { PHONE_LISTING_POLL_INTERVAL_MS } from '../src/client/phone-listing-poll.ts'
+import { PhoneStreamHttpError } from '../src/client/phone-stream-client.ts'
 import { FakeListingSource, flush, listingOf } from './phone-fakes.client.ts'
 import type { PhoneSettings } from '../src/phone-settings.ts'
 
@@ -314,6 +315,106 @@ describe('PhoneSettingsCardController', () => {
     expect(cancelIos).toHaveBeenCalledOnce()
     expect(refreshIos).toHaveBeenCalledOnce()
     expect(startIos).toHaveBeenCalledOnce()
+    controller.dispose()
+  })
+
+  it('re-pulls a stale mobilecli error when the managed runtime becomes ready', async () => {
+    const runtimeListeners = new Set<() => void>()
+    let runtimeSnapshot: ReturnType<PhoneRuntimeSource['getSnapshot']> = {
+      revision: 0,
+      enabled: true,
+      runtime: { kind: 'missing', targetVersion: '1.0.5' },
+      platforms: { android: { kind: 'deferred' }, ios: { kind: 'deferred' } },
+    }
+    const runtime: PhoneRuntimeSource = {
+      getSnapshot: () => runtimeSnapshot,
+      refresh: async () => {}, prepare: async () => {}, cancel: async () => {},
+      prepareAndroid: async () => {}, cancelAndroid: async () => {}, refreshAndroid: async () => {}, startAndroid: async () => {},
+      prepareIos: async () => {}, cancelIos: async () => {}, refreshIos: async () => {}, startIos: async () => {},
+      ensureDetected: () => {}, dispose: () => {},
+      subscribe: (listener) => {
+        runtimeListeners.add(listener)
+        return () => { runtimeListeners.delete(listener) }
+      },
+    }
+    const selectedSimulator = {
+      id: 'DFB02630-3444-4FB0-B746-0A3C4509CB72',
+      name: 'iPhone 17 Pro',
+      channel: 'emulator' as const,
+      state: 'online',
+      online: true,
+    }
+    const listing = new FakeListingSource()
+    listing.scriptNext(new PhoneStreamHttpError(502, 'PHONE_UNRESOLVED', 'mobilecli is unavailable'))
+    listing.scriptNext(listingOf([], [selectedSimulator]))
+    const environment = createListingPhoneEnvironmentSource(listing, {
+      runtimeReady: () => runtimeSnapshot.runtime.kind === 'ready',
+    })
+    const host = readyScope(true)
+    const controller = new PhoneSettingsCardController(host.scope, environment, undefined, runtime)
+    const face = controller.inject()
+    await vi.waitFor(() => {
+      expect(face.hooks.phoneSettingsCard.getSnapshot().view).toMatchObject({
+        kind: 'errors', errors: [{ kind: 'mobilecli-missing' }],
+      })
+    })
+    expect(listing.refreshCount).toBe(1)
+
+    runtimeSnapshot = {
+      revision: 1,
+      enabled: true,
+      runtime: { kind: 'ready', version: '1.0.5', source: 'managed' },
+      platforms: { android: { kind: 'deferred' }, ios: { kind: 'deferred' } },
+    }
+    for (const listener of runtimeListeners) listener()
+
+    await vi.waitFor(() => {
+      expect(face.hooks.phoneSettingsCard.getSnapshot()).toMatchObject({
+        runtime: { kind: 'ready', source: 'managed' },
+        view: {
+          kind: 'ready',
+          devices: [{ id: 'DFB02630-3444-4FB0-B746-0A3C4509CB72', online: true }],
+        },
+      })
+    })
+    expect(listing.refreshCount).toBe(2)
+
+    for (const listener of runtimeListeners) listener()
+    expect(listing.refreshCount).toBe(2)
+
+    runtimeSnapshot = {
+      revision: 2,
+      enabled: true,
+      runtime: { kind: 'missing', targetVersion: '1.0.5' },
+      platforms: { android: { kind: 'deferred' }, ios: { kind: 'deferred' } },
+    }
+    for (const listener of runtimeListeners) listener()
+    listing.scriptNext(new PhoneStreamHttpError(502, 'PHONE_UNRESOLVED', 'mobilecli is unavailable'))
+    face.redetect()
+    await vi.waitFor(() => {
+      expect(face.hooks.phoneSettingsCard.getSnapshot().view).toMatchObject({
+        kind: 'errors', errors: [{ kind: 'mobilecli-missing' }],
+      })
+    })
+    expect(listing.refreshCount).toBe(3)
+
+    host.publish({ value: { enabled: false } })
+    runtimeSnapshot = {
+      revision: 3,
+      enabled: true,
+      runtime: { kind: 'ready', version: '1.0.5', source: 'managed' },
+      platforms: { android: { kind: 'deferred' }, ios: { kind: 'deferred' } },
+    }
+    listing.scriptNext(listingOf([], [selectedSimulator]))
+    for (const listener of runtimeListeners) listener()
+    expect(face.hooks.phoneSettingsCard.getSnapshot().view).toEqual({ kind: 'off' })
+    expect(listing.refreshCount).toBe(3)
+
+    host.publish({ value: { enabled: true } })
+    await vi.waitFor(() => {
+      expect(face.hooks.phoneSettingsCard.getSnapshot().view).toMatchObject({ kind: 'ready' })
+    })
+    expect(listing.refreshCount).toBe(4)
     controller.dispose()
   })
 
