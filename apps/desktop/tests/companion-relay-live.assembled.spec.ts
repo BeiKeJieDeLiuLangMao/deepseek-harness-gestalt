@@ -335,6 +335,7 @@ describe('assembled Desktop Relay live Session projection on shipped dsh web', (
         }
       })
       await stage(() => { mobileAttachmentOwner.dispose() })
+      await stage(() => { mobileChannel.dispose() })
       await stage(() => {
         channels.attachmentKey.fill(0)
         channels.mobileReconnectState.fill(0)
