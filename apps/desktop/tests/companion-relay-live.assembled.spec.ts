@@ -33,6 +33,7 @@ import {
   startShippedWebHost,
   stopShippedWebHosts,
 } from './shipped-web-host.ts'
+import { runTeardown } from './teardown-collector.ts'
 import { CompanionForegroundRuntime } from '../../mobile/src/companion-lifecycle.ts'
 import {
   CompanionUncertainOperationSettlement,
@@ -56,18 +57,7 @@ beforeAll(async () => {
   ;({ DesktopCompanionProductOwner } = await import('../src/companion-product.ts'))
 }, 120_000)
 
-afterEach(async () => {
-  const teardownErrors: unknown[] = []
-  for (const cleanup of cleanups.splice(0).reverse()) {
-    try { await cleanup() } catch (error) { teardownErrors.push(error) }
-  }
-  for (const uninstall of uninstalls.splice(0).reverse()) {
-    try { uninstall() } catch (error) { teardownErrors.push(error) }
-  }
-  try { await stopShippedWebHosts(children, homes) } catch (error) { teardownErrors.push(error) }
-  if (teardownErrors.length === 1) throw teardownErrors[0]
-  if (teardownErrors.length > 1) throw new AggregateError(teardownErrors, 'multiple teardown failures')
-})
+afterEach(() => runTeardown([...cleanups, ...uninstalls], () => stopShippedWebHosts(children, homes)))
 
 describe('assembled Desktop Relay live Session projection on shipped dsh web', () => {
   it('delivers a real Host turn live without a manual history pull', async () => {
