@@ -4,13 +4,17 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { browser } from '@wdio/globals'
 import type {} from '@wdio/native-types'
-import { recordProcessEvidence } from './artifact-io.ts'
+import { captureOwnedProcessTree } from '../electron-runner-infrastructure.ts'
+import { readProcessEvidence, recordProcessEvidence } from './artifact-io.ts'
 import type { CriticalPathPhase } from './keyless-model.ts'
 
 const desktopRoot = join(import.meta.dirname, '..', '..')
 const artifactRoot = required('DSH_CRITICAL_PATH_ARTIFACT_DIR')
 const phase = criticalPathPhase()
 const phaseRoot = join(artifactRoot, phase)
+let processSample: Promise<void> = Promise.resolve()
+let processSampleFailure: unknown
+let processSampler: NodeJS.Timeout | undefined
 
 export const config: WebdriverIO.Config = {
   runner: 'local',
@@ -42,11 +46,18 @@ export const config: WebdriverIO.Config = {
     },
   }],
   before: async () => {
+    const electronPid = await browser.electron.execute(() => process.pid)
+    const ownedProcesses = captureOwnedProcessTree([electronPid])
+    const electron = ownedProcesses.find(identity => identity.pid === electronPid)
+    if (electron === undefined) throw new Error('Critical-path Electron identity was absent from its owned tree')
     await recordProcessEvidence(artifactRoot, phase, {
-      electronPid: await browser.electron.execute(() => process.pid),
+      electron,
+      ownedProcesses,
     })
+    processSampler = setInterval(() => { enqueueProcessSample() }, 1_000)
   },
   afterTest: async (test, _context, result) => {
+    await completeProcessSample()
     await mkdir(phaseRoot, { recursive: true })
     const slug = test.title.replaceAll(/[^a-z0-9]+/giu, '-').replaceAll(/^-|-$/gu, '').toLowerCase()
     const skipped = test.pending || result.skipped === true
@@ -63,6 +74,30 @@ export const config: WebdriverIO.Config = {
       throw new Error(`Critical-path ${phase} screenshot capture failed`, { cause: error })
     }
   },
+  after: async () => {
+    if (processSampler !== undefined) clearInterval(processSampler)
+    await completeProcessSample()
+  },
+}
+
+function enqueueProcessSample(): void {
+  processSample = processSample.then(async () => {
+    const evidence = (await readProcessEvidence(artifactRoot))[phase]
+    const roots = [evidence?.electron?.pid, evidence?.host?.pid]
+      .filter((pid): pid is number => pid !== undefined)
+    if (roots.length === 0) return
+    await recordProcessEvidence(artifactRoot, phase, {
+      ownedProcesses: captureOwnedProcessTree(roots),
+    })
+  }).catch((error: unknown) => {
+    processSampleFailure ??= error
+  })
+}
+
+async function completeProcessSample(): Promise<void> {
+  enqueueProcessSample()
+  await processSample
+  if (processSampleFailure !== undefined) throw processSampleFailure
 }
 
 function criticalPathPhase(): CriticalPathPhase {

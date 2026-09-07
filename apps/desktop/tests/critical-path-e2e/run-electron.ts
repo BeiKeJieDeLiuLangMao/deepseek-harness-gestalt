@@ -9,10 +9,17 @@ import { platform, release, tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
+import type { ProcessIdentity } from '@deepseek-ai/dsh-subprocess-local/src/process-inspector.ts'
 import {
-  assertProcessesExited, cleanEnvironment, runLogged, terminateProcesses,
+  assertOwnedProcessesExited, cleanEnvironment, runLogged, terminateOwnedProcesses,
 } from '../electron-runner-infrastructure.ts'
-import { readOptionalFile, readProcessEvidence, type PhaseProcessEvidence } from './artifact-io.ts'
+import {
+  readOptionalFile,
+  readProcessEvidence,
+  redactArtifactDiagnostic,
+  removeSecretBearingArtifacts,
+  type PhaseProcessEvidence,
+} from './artifact-io.ts'
 import {
   PARENT_MODEL, SIDE_MODEL, startKeylessModelProvider, TITLE_MODEL, type CriticalPathPhase,
 } from './keyless-model.ts'
@@ -24,9 +31,11 @@ const repoRoot = resolve(desktopRoot, '..', '..')
 const head = (await execute('git', ['rev-parse', 'HEAD'], { cwd: repoRoot })).stdout.trim()
 const shortHead = head.slice(0, 12)
 const stamp = new Date().toISOString().replaceAll(/[:.]/g, '-')
-const artifactRoot = process.env.DSH_CRITICAL_PATH_ELECTRON_ARTIFACTS
-  ?? join(repoRoot, '.artifacts', 'critical-path-electron', `${stamp}-${shortHead}`)
-await mkdir(artifactRoot, { recursive: true })
+const artifactBase = process.env.DSH_CRITICAL_PATH_ELECTRON_ARTIFACTS
+  ?? join(repoRoot, '.artifacts', 'critical-path-electron')
+await mkdir(artifactBase, { recursive: true, mode: 0o700 })
+const artifactRoot = await mkdtemp(join(artifactBase, `${stamp}-${shortHead}-`))
+const secretValues = ambientSecretValues(process.env)
 
 const phases: readonly CriticalPathPhase[] = ['create', 'restore', 'archive']
 const buildResults: Array<{
@@ -61,6 +70,7 @@ let runtimeRoot: string | undefined
 let model: Awaited<ReturnType<typeof startKeylessModelProvider>> | undefined
 let failure: unknown
 let versions: { electron: string; webdriverio: string } | undefined
+let artifactsShareable = true
 
 try {
   if (process.platform === 'linux' && process.env.DISPLAY === undefined) {
@@ -179,18 +189,29 @@ try {
     }
     try {
       const processEntry = (await readProcessEvidence(artifactRoot))[phase]
-      result.recordedPids = pidsOf(processEntry)
-      completeProcessEvidence = processEntry?.electronPid !== undefined
-        && processEntry.hostPid !== undefined
-      if (result.recordedPids.length > 0) {
+      const identities = identitiesOf(processEntry)
+      result.recordedPids = identities.map(identity => identity.pid)
+      completeProcessEvidence = processEntry?.electron !== undefined
+        && processEntry.host !== undefined
+        && identities.length >= 2
+      if (identities.length > 0) {
+        let exited = false
         try {
-          await assertProcessesExited(result.recordedPids)
+          await assertOwnedProcessesExited(identities)
+          exited = true
         } catch (processLeakFailure) {
           phaseFailures.push(processLeakFailure)
-          await terminateProcesses(result.recordedPids)
+          try {
+            await terminateOwnedProcesses(identities)
+            exited = true
+          } catch (processTerminationFailure) {
+            phaseFailures.push(processTerminationFailure)
+          }
         }
-        for (const pid of result.recordedPids) verifiedExitedProcesses.add(processKey(phase, pid))
-        result.processesExited = true
+        if (exited) {
+          for (const identity of identities) verifiedExitedProcesses.add(processKey(phase, identity))
+          result.processesExited = true
+        }
       }
     } catch (processEvidenceFailure) {
       phaseFailures.push(processEvidenceFailure)
@@ -237,15 +258,16 @@ try {
   }
   try {
     const recorded = await readProcessEvidence(artifactRoot)
-    const remaining = phases.flatMap(phase => pidsOf(recorded[phase])
-      .filter(pid => !verifiedExitedProcesses.has(processKey(phase, pid)))
-      .map(pid => ({ phase, pid })))
-    await terminateProcesses(remaining.map(entry => entry.pid))
-    for (const entry of remaining) verifiedExitedProcesses.add(processKey(entry.phase, entry.pid))
+    const remaining = phases.flatMap(phase => identitiesOf(recorded[phase])
+      .filter(identity => !verifiedExitedProcesses.has(processKey(phase, identity)))
+      .map(identity => ({ phase, identity })))
+    await terminateOwnedProcesses(remaining.map(entry => entry.identity))
+    for (const entry of remaining) verifiedExitedProcesses.add(processKey(entry.phase, entry.identity))
     for (const result of phaseResults) {
-      if (result.recordedPids.length === 0) result.recordedPids = pidsOf(recorded[result.phase])
-      if (result.recordedPids.every(pid => verifiedExitedProcesses.has(processKey(result.phase, pid)))) {
-        result.processesExited = result.recordedPids.length > 0
+      const identities = identitiesOf(recorded[result.phase])
+      if (result.recordedPids.length === 0) result.recordedPids = identities.map(identity => identity.pid)
+      if (identities.every(identity => verifiedExitedProcesses.has(processKey(result.phase, identity)))) {
+        result.processesExited = identities.length >= 2
       }
     }
   } catch (processCleanupFailure) {
@@ -267,8 +289,25 @@ try {
   } catch (sourceMovementFailure) {
     cleanupFailures.push(sourceMovementFailure)
   }
+  try {
+    const removed = await removeSecretBearingArtifacts(artifactRoot, secretValues)
+    if (removed > 0) {
+      cleanupFailures.push(new Error(`retained artifact secret scan removed ${String(removed)} file(s)`))
+    }
+  } catch (artifactScanFailure) {
+    cleanupFailures.push(new Error('retained artifact secret scan failed', { cause: artifactScanFailure }))
+    artifactsShareable = false
+    try {
+      await rm(artifactRoot, { recursive: true, force: true })
+      await mkdir(artifactRoot, { mode: 0o700 })
+      artifactsShareable = true
+    } catch (artifactPurgeFailure) {
+      cleanupFailures.push(new Error('unsafe artifact namespace purge failed', { cause: artifactPurgeFailure }))
+    }
+  }
   await retainResultManifest(currentFailures(failure, cleanupFailures), cleanupFailures)
-  process.stdout.write(`Critical-path Electron artifacts: ${artifactRoot}\n`)
+  if (artifactsShareable) process.stdout.write(`Critical-path Electron artifacts: ${artifactRoot}\n`)
+  else process.stderr.write('Critical-path Electron artifacts are unavailable because safe purge failed\n')
   if (failure !== undefined && cleanupFailures.length > 0) {
     throw new AggregateError([failure, ...cleanupFailures], 'Critical-path Electron run and cleanup failed')
   }
@@ -306,7 +345,7 @@ async function retainResultManifest(
         mainSession: join(artifactRoot, 'main-session-evidence.jsonl'),
         childSession: join(artifactRoot, 'child-session-evidence.jsonl'),
       },
-      failures: failures.map(failureSummary),
+      failures: failures.map(failure => failureSummary(failure, secretValues)),
     }, undefined, 2) + '\n')
   } catch (resultEvidenceFailure) {
     cleanupFailures.push(resultEvidenceFailure)
@@ -317,9 +356,14 @@ function currentFailures(failure: unknown, cleanupFailures: readonly unknown[]):
   return [...failure === undefined ? [] : [failure], ...cleanupFailures]
 }
 
-function failureSummary(error: unknown): { name: string; message: string } {
-  if (error instanceof Error) return { name: error.name, message: error.message }
-  return { name: 'Error', message: String(error) }
+function failureSummary(error: unknown, secrets: readonly string[]): { name: string; message: string } {
+  if (error instanceof Error) {
+    return {
+      name: redactArtifactDiagnostic(error.name, secrets),
+      message: redactArtifactDiagnostic(error.message, secrets),
+    }
+  }
+  return { name: 'Error', message: redactArtifactDiagnostic(String(error), secrets) }
 }
 
 function throwFailures(failures: readonly unknown[], message: string): void {
@@ -339,25 +383,45 @@ async function writeBuildSource(): Promise<void> {
 async function readPhaseTestResult(phase: CriticalPathPhase): Promise<TestResultEvidence | undefined> {
   const text = await readOptionalFile(join(artifactRoot, phase, 'test-result.json'))
   if (text === undefined) return undefined
-  const value = JSON.parse(text) as Partial<TestResultEvidence>
-  if (typeof value.title !== 'string' || value.title.length === 0) {
+  const parsed: unknown = JSON.parse(text)
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw new TypeError(`critical-path ${phase} test result must contain an object`)
+  }
+  const value = parsed as Record<string, unknown>
+  const expectedFields = ['failed', 'passed', 'skipped', 'tests', 'title']
+  const unknownField = Object.keys(value).find(field => !expectedFields.includes(field))
+  if (unknownField !== undefined) {
+    throw new TypeError(`critical-path ${phase} test result contains unknown field ${JSON.stringify(unknownField)}`)
+  }
+  if (typeof value['title'] !== 'string' || value['title'].length === 0) {
     throw new TypeError(`critical-path ${phase} test result has no title`)
   }
   for (const field of ['tests', 'passed', 'failed', 'skipped'] as const) {
-    if (!Number.isInteger(value[field]) || (value[field] as number) < 0) {
+    if (!Number.isSafeInteger(value[field]) || (value[field] as number) < 0) {
       throw new TypeError(`critical-path ${phase} test result ${field} must be a non-negative integer`)
     }
   }
-  return value as TestResultEvidence
+  return {
+    title: value['title'],
+    tests: value['tests'] as number,
+    passed: value['passed'] as number,
+    failed: value['failed'] as number,
+    skipped: value['skipped'] as number,
+  }
 }
 
-function pidsOf(evidence: PhaseProcessEvidence | undefined): number[] {
-  if (evidence === undefined) return []
-  return [...new Set([evidence.electronPid, evidence.hostPid].filter(pid => pid !== undefined))]
+function identitiesOf(evidence: PhaseProcessEvidence | undefined): ProcessIdentity[] {
+  return evidence === undefined ? [] : [...evidence.ownedProcesses ?? []]
 }
 
-function processKey(phase: CriticalPathPhase, pid: number): string {
-  return `${phase}:${String(pid)}`
+function processKey(phase: CriticalPathPhase, identity: ProcessIdentity): string {
+  return `${phase}:${String(identity.pid)}:${identity.started}`
+}
+
+function ambientSecretValues(source: NodeJS.ProcessEnv): string[] {
+  return [...new Set(Object.entries(source).flatMap(([name, value]) => (
+    /KEY|SECRET|TOKEN|PASSWORD/i.test(name) && value !== undefined && value.length > 0 ? [value] : []
+  )))]
 }
 
 async function assertSourceUnchanged(): Promise<void> {

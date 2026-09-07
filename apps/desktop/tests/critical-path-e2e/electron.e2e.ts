@@ -2,40 +2,30 @@
 
 import { readdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { SessionId } from '@deepseek-ai/dsh-session'
+import type { SessionId as SessionIdType } from '@deepseek-ai/dsh-session'
 import { browser, expect } from '@wdio/globals'
 import type {} from '@wdio/native-types'
+import { captureOwnedProcessTree } from '../electron-runner-infrastructure.ts'
 import {
   PARENT_MODEL, PARENT_RESPONSE, SIDE_MODEL, SIDE_RESPONSE, type CriticalPathPhase,
 } from './keyless-model.ts'
-import { readOptionalFile, recordProcessEvidence } from './artifact-io.ts'
+import {
+  hasExactCompletedOwnTurn,
+  parseArchivedSessionIds,
+  parseSessionState,
+  parseStoredSessionLog,
+  readOptionalFile,
+  readProcessEvidence,
+  recordProcessEvidence,
+  type SessionStateEvidence,
+  type StoredSessionLog,
+} from './artifact-io.ts'
 
 const PARENT_PROMPT = 'Answer with the parent route marker.'
 const SIDE_PROMPT = 'Check route B.'
 const RESTORE_PROMPT = 'Check route B after restart.'
 const SIDE_PROVIDER = 'side-gateway'
-
-interface SessionStateEvidence {
-  readonly mainSessionId: string
-  readonly childId: string
-  readonly mainLogEvidence: string
-  readonly childLogEvidence: string
-  readonly ownSideRequestCount: number
-  readonly permissionPreset: string
-  readonly closed?: true
-  readonly archived?: true
-}
-
-interface StoredSessionLog {
-  readonly path: string
-  readonly header: {
-    readonly type: 'session'
-    readonly id: string
-    readonly parentSession?: string
-    readonly origin?: string
-    readonly seedLength?: number
-  }
-  readonly events: Array<{ readonly seq?: number; readonly type?: string; readonly data?: unknown }>
-}
 
 interface UiSessionCounts {
   readonly mainSessionRows: number
@@ -114,8 +104,6 @@ async function createPhase(): Promise<void> {
   const state: SessionStateEvidence = {
     mainSessionId: main.header.id,
     childId: draft.threadId,
-    mainLogEvidence: mainEvidencePath(),
-    childLogEvidence: childEvidencePath(),
     ownSideRequestCount: ownRequestHeaders(persisted).length,
     permissionPreset: latestPermission(persisted) ?? '',
   }
@@ -140,15 +128,26 @@ async function restorePhase(): Promise<void> {
   await mainRow.click()
   await modelTrigger(panel, SIDE_MODEL)
 
+  const before = await childLog(state.childId)
+  expect(ownRequestHeaders(before)).toHaveLength(state.ownSideRequestCount)
+  const beforeOwnEventCount = ownEvents(before).length
+  const visibleResponsesBefore = await visibleTextOccurrences(SIDE_RESPONSE)
   await sendPrompt(await editableComposer(panel), RESTORE_PROMPT)
-  await waitForBodyText(SIDE_RESPONSE, 60_000)
   let child: StoredSessionLog | undefined
   await browser.waitUntil(async () => {
     const log = (await sessionLogs()).find(candidate => candidate.header.id === state.childId)
-    child = log !== undefined && ownRequestHeaders(log).length >= 2 ? log : undefined
+    child = log !== undefined
+      && hasExactCompletedOwnTurn(log, beforeOwnEventCount, RESTORE_PROMPT, SIDE_RESPONSE)
+      ? log
+      : undefined
     return child !== undefined
-  }, { timeout: 30_000, timeoutMsg: 'the restored Side Chat did not append a second request' })
+  }, { timeout: 60_000, timeoutMsg: 'the restored Side Chat did not durably complete its second turn' })
   if (child === undefined) throw new Error('the restored Side Chat JSONL was unavailable')
+  await browser.waitUntil(async () => await visibleTextOccurrences(SIDE_RESPONSE) === visibleResponsesBefore + 1, {
+    timeout: 30_000,
+    timeoutMsg: 'the restored Side Chat did not render exactly one new reply',
+  })
+  expect(await visibleTextOccurrences(SIDE_RESPONSE)).toBe(visibleResponsesBefore + 1)
   await assertChildLog(child, 2, [SIDE_PROMPT, RESTORE_PROMPT])
   expect((await sessionLogs()).filter(log => log.header.origin === 'subagent')).toHaveLength(1)
   await assertHeaderChildVisible()
@@ -158,7 +157,7 @@ async function restorePhase(): Promise<void> {
   await close.waitForClickable({ timeout: 10_000 })
   await close.click()
   await close.waitForExist({ reverse: true, timeout: 15_000 })
-  let archivedIds: string[] = []
+  let archivedIds: SessionIdType[] = []
   await browser.waitUntil(async () => {
     archivedIds = await archivedSessionIds()
     return archivedIds.includes(state.childId)
@@ -214,26 +213,37 @@ async function archivePhase(): Promise<void> {
 
 async function boot(): Promise<void> {
   const smokeFile = required('DSH_CRITICAL_PATH_SMOKE_FILE')
+  const artifactRoot = required('DSH_CRITICAL_PATH_ARTIFACT_DIR')
+  let recordedHost = false
   let smoke = ''
   await browser.waitUntil(async () => {
     smoke = await readOptionalFile(smokeFile) ?? ''
+    const host = smoke.match(/^host (http:\/\/127\.0\.0\.1:\d+) pid (\d+)$/mu)
+    if (!recordedHost && host?.[1] !== undefined && host[2] !== undefined) {
+      const pid = Number(host[2])
+      const roots = [pid, (await readProcessEvidence(artifactRoot))[phase]?.electron?.pid]
+        .filter((root): root is number => root !== undefined)
+      const ownedProcesses = captureOwnedProcessTree(roots)
+      const identity = ownedProcesses.find(candidate => candidate.pid === pid)
+      if (identity === undefined) throw new Error('Desktop Host identity was absent from its owned tree')
+      await recordProcessEvidence(artifactRoot, phase, {
+        host: identity,
+        hostOrigin: host[1],
+        ownedProcesses,
+      })
+      recordedHost = true
+    }
     if (/^error /mu.test(smoke)) throw new Error(`Desktop smoke failure:\n${smoke}`)
     return smoke.includes('boot screen shown')
       && smoke.includes('shell ready')
-      && /^host http:\/\/127\.0\.0\.1:\d+ pid \d+$/mu.test(smoke)
+      && recordedHost
   }, { timeout: 180_000, timeoutMsg: 'Desktop did not announce its ready Web Host' })
-  const host = smoke.match(/^host (http:\/\/127\.0\.0\.1:\d+) pid (\d+)$/mu)
-  if (host?.[1] === undefined || host[2] === undefined) throw new Error('Desktop Host evidence is malformed')
-  await recordProcessEvidence(required('DSH_CRITICAL_PATH_ARTIFACT_DIR'), phase, {
-    hostPid: Number(host[2]),
-    hostOrigin: host[1],
-  })
   await switchToSessionSurface()
   await browser.waitUntil(async () => await browser.execute(() => {
     const scope = window as typeof window & { __DSH_BOOT__?: unknown; __DSH_MODULES__?: unknown }
     return typeof scope.__DSH_BOOT__ === 'object' && scope.__DSH_MODULES__ === undefined
   }), { timeout: 180_000, timeoutMsg: 'Desktop renderer did not expose the production boot boundary' })
-  await recordProcessEvidence(required('DSH_CRITICAL_PATH_ARTIFACT_DIR'), phase, {
+  await recordProcessEvidence(artifactRoot, phase, {
     rendererUrl: await browser.getUrl(),
   })
   await browser.saveScreenshot(join(phaseArtifactRoot(), 'ready.png'))
@@ -357,7 +367,7 @@ async function visiblePanel(): Promise<WebdriverIO.Element> {
   throw new Error('Desktop exposed no visible Side panel')
 }
 
-async function provisionalSideChat(): Promise<{ parentSessionId: string; threadId: string }> {
+async function provisionalSideChat(): Promise<{ parentSessionId: SessionIdType; threadId: SessionIdType }> {
   const tabs = await persistedSideChats()
   const draft = tabs.find(tab => tab.provisional)
   if (draft === undefined) throw new Error(`no provisional Side Chat was persisted: ${JSON.stringify(tabs)}`)
@@ -376,7 +386,7 @@ async function uiSessionCounts(): Promise<UiSessionCounts> {
 }
 
 async function assertDraftRemainsUnpublished(
-  threadId: string,
+  threadId: SessionIdType,
   expectedRows: UiSessionCounts,
 ): Promise<void> {
   const deadline = Date.now() + 3_000
@@ -402,11 +412,11 @@ async function assertHeaderChildVisible(): Promise<void> {
 }
 
 async function persistedSideChats(): Promise<Array<{
-  parentSessionId: string
-  threadId: string
+  parentSessionId: SessionIdType
+  threadId: SessionIdType
   provisional: boolean
 }>> {
-  return await browser.execute(() => {
+  const entries = await browser.execute(() => {
     const results: Array<{ parentSessionId: string; threadId: string; provisional: boolean }> = []
     for (const key of Object.keys(localStorage)) {
       if (!key.startsWith('dsh-sidebar:v1:') || key === 'dsh-sidebar:v1:width') continue
@@ -435,21 +445,18 @@ async function persistedSideChats(): Promise<Array<{
       candidate.parentSessionId === entry.parentSessionId && candidate.threadId === entry.threadId
     )) === index)
   })
+  return entries.map(entry => ({
+    parentSessionId: SessionId(entry.parentSessionId),
+    threadId: SessionId(entry.threadId),
+    provisional: entry.provisional,
+  }))
 }
 
 async function sessionLogs(): Promise<StoredSessionLog[]> {
   const paths = await findNamedFiles(join(required('DSH_CRITICAL_PATH_DSH_HOME'), 'sessions'), 'session.jsonl')
   const logs: StoredSessionLog[] = []
   for (const path of paths) {
-    const lines = (await readFile(path, 'utf8')).trimEnd().split('\n')
-    if (lines.length === 0 || lines[0] === undefined) continue
-    const header = JSON.parse(lines[0]) as StoredSessionLog['header']
-    if (header.type !== 'session') continue
-    logs.push({
-      path,
-      header,
-      events: lines.slice(1).filter(line => line.length > 0).map(line => JSON.parse(line) as StoredSessionLog['events'][number]),
-    })
+    logs.push(parseStoredSessionLog(path, await readFile(path)))
   }
   return logs
 }
@@ -471,20 +478,20 @@ async function findNamedFiles(root: string, name: string): Promise<string[]> {
   return paths
 }
 
-async function childLog(childId: string): Promise<StoredSessionLog> {
+async function childLog(childId: SessionIdType): Promise<StoredSessionLog> {
   const log = (await sessionLogs()).find(candidate => candidate.header.id === childId)
   if (log === undefined) throw new Error(`no JSONL log exists for Side Chat ${childId}`)
   return log
 }
 
-async function mainLog(mainSessionId: string): Promise<StoredSessionLog> {
+async function mainLog(mainSessionId: SessionIdType): Promise<StoredSessionLog> {
   const log = (await sessionLogs()).find(candidate => candidate.header.id === mainSessionId)
   if (log === undefined) throw new Error(`no JSONL log exists for main Session ${mainSessionId}`)
   return log
 }
 
-function ownEvents(log: StoredSessionLog): StoredSessionLog['events'] {
-  return log.events.slice(log.header.seedLength ?? 0)
+function ownEvents(log: StoredSessionLog): readonly StoredSessionLog['events'][number][] {
+  return log.events.slice(log.inheritedEventCount)
 }
 
 function ownRequestHeaders(log: StoredSessionLog): StoredSessionLog['events'] {
@@ -566,7 +573,7 @@ async function assertChildLog(
 async function writeSessionEvidence(
   main: StoredSessionLog,
   child: StoredSessionLog,
-  archivedIds: readonly string[],
+  archivedIds: readonly SessionIdType[],
 ): Promise<void> {
   await Promise.all([
     writeFile(mainEvidencePath(), sanitizedSessionJsonl(main, 'main')),
@@ -577,7 +584,7 @@ async function writeSessionEvidence(
 function sanitizedSessionJsonl(
   log: StoredSessionLog,
   role: 'main' | 'side-chat',
-  archivedIds?: readonly string[],
+  archivedIds?: readonly SessionIdType[],
 ): string {
   const own = ownEvents(log)
   const lines: unknown[] = [{
@@ -586,7 +593,7 @@ function sanitizedSessionJsonl(
     id: log.header.id,
     ...log.header.parentSession === undefined ? {} : { parentSession: log.header.parentSession },
     ...log.header.origin === undefined ? {} : { origin: log.header.origin },
-    inheritedEventCount: log.header.seedLength ?? 0,
+    inheritedEventCount: log.inheritedEventCount,
     ownEventCount: own.length,
   }]
   for (const [ownIndex, event] of own.entries()) {
@@ -609,20 +616,13 @@ function sanitizedSessionJsonl(
   return lines.map(line => JSON.stringify(line)).join('\n') + '\n'
 }
 
-async function archivedSessionIds(): Promise<string[]> {
+async function archivedSessionIds(): Promise<SessionIdType[]> {
   const path = join(required('DSH_CRITICAL_PATH_DSH_HOME'), 'storages', 'workspace.json')
-  const document = JSON.parse(await readFile(path, 'utf8')) as {
-    global?: { archivedSessionIds?: unknown }
-  }
-  const ids = document.global?.archivedSessionIds
-  if (!Array.isArray(ids) || !ids.every(value => typeof value === 'string')) {
-    throw new Error('workspace durable state exposed no archivedSessionIds array')
-  }
-  return ids
+  return parseArchivedSessionIds(await readFile(path, 'utf8'))
 }
 
 async function readSessionState(): Promise<SessionStateEvidence> {
-  return JSON.parse(await readFile(sessionStatePath(), 'utf8')) as SessionStateEvidence
+  return parseSessionState(await readFile(sessionStatePath(), 'utf8'))
 }
 
 async function writeSessionState(state: SessionStateEvidence): Promise<void> {
@@ -653,6 +653,18 @@ async function waitForBodyText(text: string, timeout = 30_000): Promise<void> {
     const body = await element(browser, 'body')
     return (await body.getText()).includes(text)
   }, { timeout, timeoutMsg: `visible text did not contain ${JSON.stringify(text)}` })
+}
+
+async function visibleTextOccurrences(text: string): Promise<number> {
+  const value = await (await element(browser, 'body')).getText()
+  let count = 0
+  let from = 0
+  while (true) {
+    const index = value.indexOf(text, from)
+    if (index < 0) return count
+    count += 1
+    from = index + text.length
+  }
 }
 
 async function clickExact(root: WebdriverIO.Browser | WebdriverIO.Element, label: string): Promise<void> {

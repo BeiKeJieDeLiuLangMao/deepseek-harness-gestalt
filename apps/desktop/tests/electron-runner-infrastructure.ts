@@ -7,6 +7,11 @@ import { createServer as createHttpsServer } from 'node:https'
 import { networkInterfaces } from 'node:os'
 import { dirname, join } from 'node:path'
 import { promisify } from 'node:util'
+import {
+  createProcessInspector,
+  type ProcessIdentity,
+  type ProcessInspector,
+} from '@deepseek-ai/dsh-subprocess-local/src/process-inspector.ts'
 
 const execute = promisify(execFile)
 
@@ -157,6 +162,71 @@ export function cleanEnvironment(source: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 }
 
 /**
+ * Capture exact identities for owned roots and every currently live descendant.
+ * @param rootPids - Process roots proven to belong to this acceptance run.
+ * @param inspector - Platform process-table inspector.
+ * @returns Children-first identities, de-duplicated across nested roots.
+ */
+export function captureOwnedProcessTree(
+  rootPids: readonly number[],
+  inspector: ProcessInspector = createProcessInspector(),
+): ProcessIdentity[] {
+  const snapshot = inspector.snapshot()
+  const identities: ProcessIdentity[] = []
+  for (const rootPid of [...new Set(rootPids)]) {
+    const tree = snapshot.tree(rootPid)
+    if (!tree.some(identity => identity.pid === rootPid)) {
+      throw new Error(`Electron acceptance could not establish process identity for owned root ${String(rootPid)}`)
+    }
+    for (const identity of tree) mergeProcessIdentity(identities, identity)
+  }
+  return identities
+}
+
+/**
+ * Wait for exact owned process identities to stop, treating PID reuse as exit.
+ * @param identities - PID and start identities captured by this acceptance run.
+ * @param inspector - Platform process-table inspector.
+ */
+export async function assertOwnedProcessesExited(
+  identities: readonly ProcessIdentity[],
+  inspector: ProcessInspector = createProcessInspector(),
+): Promise<void> {
+  const unique = uniqueProcessIdentities(identities)
+  const deadline = Date.now() + 15_000
+  while (Date.now() < deadline && unique.some(identity => inspector.isAlive(identity))) {
+    await new Promise(resolve => setTimeout(resolve, 100))
+  }
+  const remaining = unique.filter(identity => inspector.isAlive(identity))
+  if (remaining.length > 0) {
+    throw new Error(`Electron acceptance left ${String(remaining.length)} owned process identities running`)
+  }
+}
+
+/**
+ * Stop only matching process identities, escalating after a bounded TERM wait.
+ * @param identities - PID and start identities captured by this acceptance run.
+ * @param inspector - Platform process-table inspector.
+ */
+export async function terminateOwnedProcesses(
+  identities: readonly ProcessIdentity[],
+  inspector: ProcessInspector = createProcessInspector(),
+): Promise<void> {
+  const unique = uniqueProcessIdentities(identities)
+  for (const identity of unique.filter(identity => inspector.isAlive(identity))) {
+    inspector.signalProcess(identity, 'SIGTERM')
+  }
+  const termDeadline = Date.now() + 5_000
+  while (Date.now() < termDeadline && unique.some(identity => inspector.isAlive(identity))) {
+    await new Promise(resolve => setTimeout(resolve, 100))
+  }
+  for (const identity of unique.filter(identity => inspector.isAlive(identity))) {
+    inspector.signalProcess(identity, 'SIGKILL')
+  }
+  await assertOwnedProcessesExited(unique, inspector)
+}
+
+/**
  * Wait for all owned Electron and Host processes to exit.
  * @param pids - Exact process ids recorded by the acceptance run.
  */
@@ -198,5 +268,22 @@ function signalProcess(pid: number, signal: NodeJS.Signals): void {
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ESRCH') return
     throw error
+  }
+}
+
+function uniqueProcessIdentities(identities: readonly ProcessIdentity[]): ProcessIdentity[] {
+  const result: ProcessIdentity[] = []
+  for (const identity of identities) mergeProcessIdentity(result, identity)
+  return result
+}
+
+function mergeProcessIdentity(target: ProcessIdentity[], identity: ProcessIdentity): void {
+  const existing = target.find(candidate => candidate.pid === identity.pid)
+  if (existing === undefined) {
+    target.push(identity)
+    return
+  }
+  if (existing.started !== identity.started) {
+    throw new Error(`Electron acceptance observed conflicting identities for PID ${String(identity.pid)}`)
   }
 }
