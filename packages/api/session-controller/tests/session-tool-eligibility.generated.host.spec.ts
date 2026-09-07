@@ -180,7 +180,7 @@ async function createGeneratedHost(options: {
         handle = await ctx.sessionPersistence.open(resume.resumeSessionId, 'write')
         const persisted = await handle.read()
         session = ctx.sessions.prepare(resume.resumeSessionId, {
-          seed: persisted,
+          seed: [...persisted],
           meta: structuredClone(handle.header),
           inheritedEventCount: handle.inheritedEventCount,
           seedSource: 'persistence',

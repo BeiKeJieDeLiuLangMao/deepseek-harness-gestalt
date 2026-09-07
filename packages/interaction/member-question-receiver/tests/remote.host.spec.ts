@@ -62,7 +62,10 @@ class MemoryTerminalAuthority implements MemberQuestionTerminalAuthority {
   }
 }
 
-async function createHost(overrides: Partial<MemberQuestionReceiverConfig> = {}): Promise<{
+async function createHost(
+  overrides: Partial<MemberQuestionReceiverConfig> = {},
+  settlementIdentity = true,
+): Promise<{
   readonly ctx: Context
   readonly receiver: FileMemberQuestionReceiver
   readonly authority: MemoryTerminalAuthority
@@ -83,8 +86,12 @@ async function createHost(overrides: Partial<MemberQuestionReceiverConfig> = {})
     terminalRetryMs: 10,
     clock: () => 1_000,
     terminalAuthority: authority,
-    memberQuestionInstallationId: 'installation-host',
-    memberQuestionDeviceName: 'Host Mac',
+    ...(settlementIdentity
+      ? {
+        memberQuestionInstallationId: 'installation-host',
+        memberQuestionDeviceName: 'Host Mac',
+      }
+      : {}),
     ...overrides,
   })
   return {
@@ -221,10 +228,7 @@ describe('member-question Remote snapshot and settle', () => {
   })
 
   it('fails closed when Host settlement identity is uncomposed', async () => {
-    const { ctx, receiver } = await createHost({
-      memberQuestionInstallationId: undefined,
-      memberQuestionDeviceName: undefined,
-    })
+    const { ctx, receiver } = await createHost({}, false)
     const arrived = await receiver.ingest(envelope)
     await expect(ctx.typertGateway.invoke({
       namespace: 'memberQuestion',

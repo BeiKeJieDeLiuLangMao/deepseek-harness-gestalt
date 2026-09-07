@@ -424,7 +424,7 @@ describe('sessions.fork', () => {
 
     const restoredChild = reader.sessions.prepare(liveChild.id, {
       seedSource: 'persistence',
-      seed: childInspection.events,
+      seed: [...childInspection.events],
       meta: childInspection.header,
       inheritedEventCount: childInspection.inheritedEventCount,
     })
