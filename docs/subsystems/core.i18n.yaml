@@ -3,4 +3,4 @@
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/subsystems/core.md
 core.md: 170268351454643544d5ab20e3d4b6a8fd8c6c69
-core.zh.md: 8b9209240499935535aeee72b29d09e875918a79
+core.zh.md: 85758c3ae323d08a0481b3585b3680958dba5f0f
