@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 stage=initialize
 trap 'status=$?; trap - ERR; printf "android acceptance candidate verification failed at %s (exit %d)\n" "$stage" "$status" >&2; exit "$status"' ERR
 
@@ -41,13 +42,8 @@ test -s "$runtime_identity"
 apk_name=$(basename "$apk")
 stage="digest-apk:${apk_name}"
 apk_digest=$(sha256_file "$apk")
-stage=read-signer-certificate
-signer=$($apksigner verify --print-certs "$apk" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')
 stage=verify-signer-digest
-if [[ ! "$signer" =~ ^[0-9a-fA-F]{64}$ ]]; then
-  false
-fi
-signer=$(printf '%s' "$signer" | tr '[:upper:]' '[:lower:]')
+signer=$(bash "${script_dir}/read-android-signer-digest.sh" "$apksigner" "$apk")
 stage=read-baked-origin
 baked_origin=$(jq -er 'select(.version == 1) | .origin | strings' "$runtime_identity")
 stage=verify-baked-origin

@@ -27,10 +27,23 @@ describe('Android acceptance candidate manifest', () => {
     expect(run(fixture).status).toBe(0)
   })
 
+  it('accepts legacy Android signer certificate labels', () => {
+    const fixture = createFixture(origin, false, false, 'legacy')
+    expect(run(fixture).status).toBe(0)
+  })
+
   it('rejects changed APK, signer, missing or wrong or duplicate runtime identity, workflow, and packaging provenance', () => {
-    for (const mutation of ['artifact', 'signer-output', 'signer', 'missing-identity', 'baked-origin', 'duplicate-identity', 'workflow', 'packaging'] as const) {
+    for (const mutation of ['artifact', 'signer-output', 'multiple-signers', 'rotated-signers', 'signer-command', 'signer', 'missing-identity', 'baked-origin', 'duplicate-identity', 'workflow', 'packaging'] as const) {
       const fixture = createFixture(mutation === 'baked-origin' ? 'https://wrong.example' : origin,
-        mutation === 'duplicate-identity', mutation === 'missing-identity', mutation === 'signer-output')
+        mutation === 'duplicate-identity', mutation === 'missing-identity', mutation === 'signer-output'
+          ? 'invalid'
+          : mutation === 'multiple-signers'
+            ? 'multiple'
+            : mutation === 'rotated-signers'
+              ? 'rotation'
+              : mutation === 'signer-command'
+                ? 'failure'
+                : 'v3')
       if (mutation === 'artifact') writeFileSync(fixture.apk, 'changed')
       else if (mutation === 'signer' || mutation === 'workflow' || mutation === 'packaging') {
         const manifest = JSON.parse(readFileSync(fixture.manifest, 'utf8')) as Record<string, unknown>
@@ -47,6 +60,9 @@ describe('Android acceptance candidate manifest', () => {
       const stage = {
         artifact: 'verify-runtime-identity-count:0',
         'signer-output': 'verify-signer-digest',
+        'multiple-signers': 'verify-signer-digest',
+        'rotated-signers': 'verify-signer-digest',
+        'signer-command': 'verify-signer-digest',
         signer: 'verify-manifest',
         'missing-identity': 'verify-runtime-identity-count:0',
         'baked-origin': 'verify-baked-origin',
@@ -54,12 +70,18 @@ describe('Android acceptance candidate manifest', () => {
         workflow: 'verify-manifest',
         packaging: 'verify-manifest',
       }[mutation]
-      expect(result.stderr, mutation).toContain(`android acceptance candidate verification failed at ${stage} (exit 1)`)
+      const exit = mutation === 'signer-command' ? 42 : 1
+      expect(result.stderr, mutation).toContain(`android acceptance candidate verification failed at ${stage} (exit ${exit})`)
     }
   }, 30_000)
 })
 
-function createFixture(bakedOrigin = origin, duplicateIdentity = false, missingIdentity = false, invalidSignerOutput = false) {
+function createFixture(
+  bakedOrigin = origin,
+  duplicateIdentity = false,
+  missingIdentity = false,
+  signerOutput: 'legacy' | 'v3' | 'invalid' | 'multiple' | 'rotation' | 'failure' = 'v3',
+) {
   const directory = mkdtempSync(join(tmpdir(), 'dsh-mobile-acceptance-candidate-'))
   temporary.push(directory)
   const apk = join(directory, 'Gestalt-0.1.3-8.apk')
@@ -89,8 +111,24 @@ function createFixture(bakedOrigin = origin, duplicateIdentity = false, missingI
     ].join('\n'), apk, runtimeIdentityBody])
   }
   const signer = 'b'.repeat(64)
-  const signerOutput = invalidSignerOutput ? 'unexpected signer output' : `Signer #1 certificate SHA-256 digest: ${signer}`
-  writeFileSync(apksigner, `#!/usr/bin/env bash\nprintf '${signerOutput}\\n'\n`)
+  const secondSigner = 'c'.repeat(64)
+  const output = {
+    legacy: `Signer #1 certificate SHA-256 digest: ${signer}`,
+    v3: `V3.0 Signer: certificate SHA-256 digest: ${signer}`,
+    invalid: 'unexpected signer output',
+    multiple: [
+      `V2 Signer #1: certificate SHA-256 digest: ${signer}`,
+      `V2 Signer #2: certificate SHA-256 digest: ${secondSigner}`,
+    ].join('\\n'),
+    rotation: [
+      `V3.1 Signer: (minSdkVersion=33, maxSdkVersion=2147483647) certificate SHA-256 digest: ${secondSigner}`,
+      `V3.0 Signer: (minSdkVersion=24, maxSdkVersion=32) certificate SHA-256 digest: ${signer}`,
+    ].join('\\n'),
+    failure: '',
+  }[signerOutput]
+  writeFileSync(apksigner, signerOutput === 'failure'
+    ? '#!/usr/bin/env bash\nexit 42\n'
+    : `#!/usr/bin/env bash\nprintf '${output}\\n'\n`)
   chmodSync(apksigner, 0o755)
   writeFileSync(manifest, `${JSON.stringify({
     version: 1,

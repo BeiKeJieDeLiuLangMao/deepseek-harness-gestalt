@@ -12,7 +12,7 @@ Mobile 签名要求已完成实际运行验收，但物理 Android 对正式签�
 
 `Mobile Release` 提供显式的 `candidate_build_only` 模式，默认值为 false。该模式只接受当前 `master` 上精确的 Product Release Plan 候选、源码拥有的版本与 build，以及候选范围的显式 transport-risk 接受。它会在签名前拒绝 acceptance run id、artifact recovery、TestFlight 上传与 GitHub 发布。
 
-受保护的 `mobile-release` Environment 通过现有打包脚本构建一个正式签名 Android APK。workflow 将 APK 与 manifest 上传为仓库读者可访问的 `mobile-acceptance-candidate-<candidate_sha>` Actions artifact。manifest 绑定候选 commit、plan、版本、build、仓库 workflow run、APK 摘要、签名证书摘要，以及已打包 runtime-identity 记录与打包脚本的摘要。runtime 记录由已校验的 `VITE_PLATFORM_*` 输入生成并复制到 APK assets，应用入口将其作为唯一 Platform identity authority 加载。workflow 会从签名 APK 中提取这份精确记录、将其 origin 与受保护 Environment 比较，并在上传前重新计算全部 manifest 字段。manifest 不包含凭据或 origin 值。Candidate-build-only 不生成 iOS artifact、tag、Release、TestFlight 上传、发布验收或发布证据。
+受保护的 `mobile-release` Environment 通过现有打包脚本构建一个正式签名 Android APK。workflow 将 APK 与 manifest 上传为仓库读者可访问的 `mobile-acceptance-candidate-<candidate_sha>` Actions artifact。manifest 绑定候选 commit、plan、版本、build、仓库 workflow run、APK 摘要、签名证书摘要，以及已打包 runtime-identity 记录与打包脚本的摘要。同一个 signer reader 接受 Android SDK `apksigner` 的旧标签和签名方案标签，同时要求验证成功并且只有一个 64 位十六进制签名证书 SHA-256 摘要；没有摘要、多个 signer 或轮换证书输出都会失败，因为 manifest 只记录一个证书身份。runtime 记录由已校验的 `VITE_PLATFORM_*` 输入生成并复制到 APK assets，应用入口将其作为唯一 Platform identity authority 加载。workflow 会从签名 APK 中提取这份精确记录、将其 origin 与受保护 Environment 比较，并在上传前重新计算全部 manifest 字段。manifest 不包含凭据或 origin 值。Candidate-build-only 不生成 iOS artifact、tag、Release、TestFlight 上传、发布验收或发布证据。
 
 普通 Mobile 签名、TestFlight、GitHub prerelease 发布与 artifact recovery 仍要求成功的候选绑定 Mobile Companion Acceptance run，以及 dispatch 范围的 transport-risk 接受。Recovery producer allowlist 不包含 acceptance-candidate artifact，因此 build-only run 不能成为发布输入。Product Release 显式保持 `candidate_build_only` 为 false。
 
@@ -23,6 +23,8 @@ Mobile 签名要求已完成实际运行验收，但物理 Android 对正式签�
 **使用 debug application id。** 不采用，因为这会测试不同的原生身份与受保护存储命名空间，不能证明正式应用的原地升级。
 
 **允许 candidate artifact 进入发布恢复。** 不采用，因为签名 artifact 在推广前必须先产生独立且不可变的物理验收 verdict。
+
+**只匹配一种签名方案标签。** 不采用，因为 Android SDK `apksigner` 会根据 APK 使用的 V1、V2、V3 或 V3.1 方案标注证书输出，而证书摘要才是稳定字段。
 
 ## Consequences
 
