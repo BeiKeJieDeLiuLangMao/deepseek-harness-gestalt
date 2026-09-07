@@ -3,10 +3,10 @@ import {
   SessionId, SessionLogOffset, SessionSeq,
   type SessionEvent, type SessionHeader,
 } from '@deepseek-ai/dsh-session'
+import type SessionPersistence from '@deepseek-ai/dsh-session-persistence'
 import type {
   SessionAccess, SessionHandle,
 } from '@deepseek-ai/dsh-session-persistence'
-import type { SidebarSessionPersistenceService } from '../src/context-types.ts'
 import {
   readPersistedSession,
   readPersistedSessionCwd,
@@ -42,9 +42,7 @@ function persistenceReader(
   }))
   const persistence = {
     open,
-    stat: () => Promise.resolve(undefined),
-    list: () => Promise.resolve([]),
-  } satisfies SidebarSessionPersistenceService
+  } satisfies Pick<SessionPersistence, 'open'>
   return { persistence, open, read, close }
 }
 

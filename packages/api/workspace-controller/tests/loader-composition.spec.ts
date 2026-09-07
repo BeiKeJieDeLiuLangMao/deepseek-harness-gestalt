@@ -24,19 +24,10 @@ describe('workspace-controller Loader composition', () => {
       archivedSessionIds: [],
     } as never)
     await ctx.plugin(Loader)
-    ctx.loader.internal = {
-      version: 'v2',
-      import: (specifier: string) => {
-        if (specifier !== '@deepseek-ai/dsh-api-workspace-controller') {
-          throw new Error(`unexpected Loader import: ${specifier}`)
-        }
-        return Promise.resolve(WorkspaceController)
-      },
-    } as NonNullable<typeof ctx.loader.internal>
+    ctx.loader.builtins['workspace-controller'] = WorkspaceController
 
     await ctx.loader.create({
-      id: 'workspace-controller',
-      name: '@deepseek-ai/dsh-api-workspace-controller',
+      name: 'cordis:workspace-controller',
     })
     await ctx.loader.await()
 

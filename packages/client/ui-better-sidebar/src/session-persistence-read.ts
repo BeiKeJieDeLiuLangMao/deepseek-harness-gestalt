@@ -1,8 +1,10 @@
 /** Short-lived persisted Session reads used by Host sidebar routes. */
 
 import type { SessionId } from '@deepseek-ai/dsh-session'
+import type SessionPersistence from '@deepseek-ai/dsh-session-persistence'
 import type { SessionInspection } from '@deepseek-ai/dsh-session-persistence'
-import type { SidebarSessionPersistenceService } from './context-types.ts'
+
+type SessionReader = Pick<SessionPersistence, 'open'>
 
 /** Header, inherited cut, and validated events obtained from one non-owning persistence read. */
 export type PersistedSessionRead = Pick<SessionInspection, 'meta' | 'inheritedEventCount' | 'events'>
@@ -14,7 +16,7 @@ export type PersistedSessionRead = Pick<SessionInspection, 'meta' | 'inheritedEv
  * @returns immutable header metadata and validated events.
  */
 export async function readPersistedSession(
-  persistence: SidebarSessionPersistenceService,
+  persistence: SessionReader,
   sessionId: SessionId,
 ): Promise<PersistedSessionRead> {
   const reader = await persistence.open(sessionId, 'read')
@@ -42,7 +44,7 @@ export async function readPersistedSession(
 
 /** Read the persisted working directory used by cold Host file and tool routes. */
 export async function readPersistedSessionCwd(
-  persistence: SidebarSessionPersistenceService,
+  persistence: SessionReader,
   sessionId: SessionId,
 ): Promise<string | undefined> {
   return (await readPersistedSession(persistence, sessionId)).meta.cwd
@@ -50,7 +52,7 @@ export async function readPersistedSessionCwd(
 
 /** Read cold events for the Changes panel, or report an unavailable persisted source. */
 export async function tryReadPersistedSessionEvents(
-  persistence: SidebarSessionPersistenceService,
+  persistence: SessionReader,
   sessionId: SessionId,
 ): Promise<PersistedSessionRead['events'] | undefined> {
   try {
