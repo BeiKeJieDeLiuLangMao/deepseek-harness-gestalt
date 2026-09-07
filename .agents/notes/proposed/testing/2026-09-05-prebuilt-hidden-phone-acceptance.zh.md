@@ -1,8 +1,8 @@
 # Agent Note: 预构建隐藏手机验收
 
-[English](2026-09-05-prebuilt-hidden-phone-acceptance.md) | 中文
-
 Status: proposed
+
+[English](2026-09-05-prebuilt-hidden-phone-acceptance.md) | 中文
 
 ## Problem
 

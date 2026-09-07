@@ -3,7 +3,12 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { resolveValidatedConfig, MobilecliPhoneRuntime, type MobilecliGeneration, type GenerationPublication } from './mobilecli-phone-runtime.ts'
 import { createPhoneRuntimePool, type PhoneRuntimePool, type PhoneRuntimeHandle } from './runtime-pool.ts'
-import { PHONE_RUNTIME_STATE_OWNER, registerPhoneRuntimeStateReader, phoneRuntimeStateValidator } from './runtime-state.ts'
+import {
+  PHONE_RUNTIME_STATE_OWNER,
+  registerPhoneRuntimeStateReader,
+  phoneRuntimeStateValidator,
+  type PhoneRuntimeStateOwner,
+} from './runtime-state.ts'
 import { resolveMobilecliExecutable } from './resolve-binary.ts'
 import { PhoneDevicesError, phoneFailureWithCleanup } from './errors.ts'
 import type {
@@ -73,7 +78,7 @@ declare module '@deepseek-ai/cordis' { interface Context { phoneDevices: PhoneDe
  */
 export class PhoneDevices extends Service {
   static readonly Config = Config
-  readonly [PHONE_RUNTIME_STATE_OWNER] = Object.freeze({})
+  readonly [PHONE_RUNTIME_STATE_OWNER]: PhoneRuntimeStateOwner = Object.freeze({})
   private readonly pool: PhoneRuntimePool
   private occupancy: PhoneRuntimeHandle | undefined
   private admitted: MobilecliGeneration | undefined

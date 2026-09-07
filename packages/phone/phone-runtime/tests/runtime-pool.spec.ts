@@ -1287,7 +1287,7 @@ describe('PhoneRuntimePool isolation', () => {
       slot: phoneRuntimeSlot('isolated'),
       kind: 'isolated-ios',
       signal,
-      config: { provenance: 'session-isolated' },
+      config: { provenance: 'host-isolated-ios' },
     })).rejects.toMatchObject({ code: 'PHONE_UNAVAILABLE' })
     await expect(adapter.start({
       slot: phoneRuntimeSlot('external'),

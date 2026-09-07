@@ -2103,50 +2103,38 @@ export interface Config {
 ## `@deepseek-ai/dsh-phone-runtime`
 
 ```ts config-catalog
-/**
- * Validated runtime configuration. Defaults carry the upstream facts they can:
- * `serverPort` mirrors mobilecli's documented default listen port and
- * `bootTimeoutMs` mirrors the extended upstream deadline granted to
- * `device.boot`; the polling cadence fields are deployment-varying choices.
- */
+/** Validated deployment settings for the external mobilecli generation. */
 export interface Config {
-  /**
-   * Absolute path to the `mobilecli` executable. When omitted, `PATH` is
-   * searched first, then npm-global, the npx cache, and `npm_config_prefix`.
-   * An Electron-minimal PATH also probes `/opt/homebrew/bin` and `/usr/local/bin`.
-   */
+  /** Executable override; otherwise discover mobilecli through PATH and npm locations. */
   executablePath?: string
-  /** Wait for the environment owner to select and activate an executable. */
+  /** Wait for environment-owned activation instead of starting at composition. */
   deferStart?: boolean
-  /** Loopback TCP port the spawned server listens on. */
+  /** Sole loopback listener port passed to mobilecli. */
   serverPort?: number
-  /** Interval between health probes and device-list polls, in milliseconds. */
+  /** Health probe and listing poll interval in milliseconds. */
   pollIntervalMs?: number
-  /** Stable-child interval required after the first valid device listing, in milliseconds. */
+  /** Stable-child interval after baseline listing in milliseconds. */
   readyStabilityMs?: number
-  /** Total window granted to readiness probing, baseline listing, and stability, in milliseconds. */
+  /** Complete readiness budget in milliseconds. */
   readyTimeoutMs?: number
-  /** Ceiling on each JSON-RPC round trip other than boot, in milliseconds. */
+  /** Ordinary RPC and screenshot budget in milliseconds. */
   requestTimeoutMs?: number
-  /** Ceiling for recognizing one H264 key access unit from each Android source. */
+  /** Android H264 syntax-recognition budget in milliseconds. */
   h264ProbeTimeoutMs?: number
-  /** Maximum milliseconds spent joining foreign capture reader cleanup. */
+  /** Pool disposal wait budget; expiry retains pending cleanup ownership. */
+  cleanupTimeoutMs?: number
+  /** Caller wait for foreign capture cleanup in milliseconds. */
   captureCleanupTimeoutMs?: number
-  /** Ceiling on a `device.boot` round trip, in milliseconds. */
+  /** Virtual-device boot budget in milliseconds. */
   bootTimeoutMs?: number
-  /** Ceiling on one `agent status` / `agent install` child run, in milliseconds. */
+  /** One-shot agent command budget in milliseconds. */
   agentTimeoutMs?: number
-  /**
-   * Absolute path to the `.mobileprovision` file passed as
-   * `--provisioning-profile` when installing or re-signing the on-device agent
-   * on a physical handset; the upstream command requires it for real iOS
-   * installs. When set, the path must name an existing file.
-   */
+  /** Existing provisioning profile required for real-iOS agent installation. */
   provisioningProfilePath?: string
 }
 ```
 
-来源：[`packages/phone/phone-runtime/src/index.ts:117`](../packages/phone/phone-runtime/src/index.ts)
+来源：[`packages/phone/phone-runtime/src/index.ts:21`](../packages/phone/phone-runtime/src/index.ts)
 
 <a id="deepseek-aidsh-phone-stream"></a>
 

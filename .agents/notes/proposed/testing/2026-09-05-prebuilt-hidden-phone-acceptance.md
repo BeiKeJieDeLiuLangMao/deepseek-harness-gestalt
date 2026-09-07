@@ -1,8 +1,8 @@
 # Agent Note: Prebuilt hidden phone acceptance
 
-English | [中文](2026-09-05-prebuilt-hidden-phone-acceptance.zh.md)
-
 Status: proposed
+
+English | [中文](2026-09-05-prebuilt-hidden-phone-acceptance.zh.md)
 
 ## Problem
 

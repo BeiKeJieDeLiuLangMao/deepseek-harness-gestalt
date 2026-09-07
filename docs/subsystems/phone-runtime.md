@@ -155,174 +155,99 @@ Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnp
 
 ### `ctx.phoneDevices` — `PhoneDevices`
 
-Phone fleet Service over one external mobilecli server child. All operations accept an optional cancellation signal and enforce validated time ceilings; every failure normalizes onto PhoneDevicesError. A device-set notification is published only after a poll observes a real difference from the previously committed listing. An unresolvable mobilecli still activates the Service; every operation then rejects with `PHONE_UNRESOLVED` and install guidance instead of failing composition.
-
-Operation failure codes:
-
-- `PHONE_DISPOSED` — the owning fiber began teardown.
-- `PHONE_ABORTED` — the caller's signal won before completion.
-- `PHONE_TIMEOUT` — the operation's configured ceiling elapsed.
-- `PHONE_UNAVAILABLE` — the child died or its socket refuses connections.
-- `PHONE_UNRESOLVED` — the mobilecli executable could not be resolved.
-- `PHONE_PROTOCOL` — the upstream answer breaks its documented contract.
-- `PHONE_UPSTREAM` — mobilecli returned a JSON-RPC error other than `-32010`.
-- `PHONE_DEVICE_NOT_FOUND` — the id answers nothing upstream (`-32010`).
-- `PHONE_REAL_DEVICE` — boot/shutdown targeted a physical handset.
-- `PHONE_REAL_DEVICE_ISSUE` — the upstream output named a structured real-device failure arm; PhoneDevicesError.issue carries which one (`device-locked`, `cert-untrusted`, `profile-expired`, `tunnel-failed`, `device-unplugged`).
-
-`io`, `startCapture`, and `screenshot` accept physical handsets; they only refuse ids absent from the latest published listing. `agentStatus` and `installAgent` drive the upstream `agent status` / `agent install` commands as one-shot child runs of the same executable, keep the on-device agent installed idempotently, re-sign real handsets through the configured provisioning profile, and attach the free-signing expiry reminder to every answer about a re-signed real handset.
+Stable fleet facade over one retained external pool occupancy. Subscribers survive replacement; operations remain pinned to their entry generation. Disabled calls reject PHONE_UNRESOLVED without acquiring or starting a child.
 
 ```ts cordis-catalog
 /**
- * Read whether the current child may accept fleet operations.
- * @returns current generation readiness.
+ * Read current generation readiness.
+ * @returns whether the admitted generation currently accepts operations.
  */
 isReady(): boolean
 
 /**
- * Subscribe to ready/not-ready transitions of the replaceable runtime generation.
- * @param listener - callback receiving the committed readiness value.
- * @returns the disposer.
+ * Subscribe across replacements; subscriber exceptions are contained.
+ * @param listener - Receives each committed listing delta synchronously.
+ * @returns idempotent unsubscribe.
+ */
+onChanged(listener: (change: PhoneDeviceChange) => void): () => void
+
+/**
+ * Subscribe to admitted generation readiness transitions across replacements.
+ * @param listener - Receives the committed readiness value.
+ * @returns idempotent unsubscribe.
  */
 onReadinessChanged(listener: (ready: boolean) => void): () => void
 
 /**
- * Replace the owned mobilecli child generation without replacing this Service.
- * In-flight work on the prior generation is aborted and its process is stopped
- * before the replacement begins readiness probing.
- * @param executablePath - absolute executable path selected by the environment owner.
- * @param signal - optional cancellation signal for replacement and readiness.
- * @param environment - non-sensitive SDK/AVD environment owned by the selected generation.
+ * Resolve the executable before retiring the old generation, then join cleanup
+ * before startup. Cancellation never admits a replacement occupancy.
+ * @param executablePath - Executable selected by the environment owner.
+ * @param signal - Optional cancellation of queued replacement and startup.
+ * @param environment - Non-sensitive SDK environment pinned to this generation.
  */
 async activateExecutable( executablePath: string, signal?: AbortSignal, environment: Readonly<Record<string, string>> = {}, ): Promise<void>
 
-/** Stop the current child generation while retaining this Service for later activation. */
+/** Retire and join the current generation; subsequent ordinary calls remain unresolved without restarting. */
 async deactivate(): Promise<void>
 
 /**
- * Fetch and publish one fresh grouped device listing. Online Android rows
- * may carry `logicalDisplay` from `dumpsys display` `logicalFrame`.
- * @param signal - Caller's optional cancellation signal.
- * @returns the current grouped listing.
- * @throws {@link PhoneDevicesError} per the class-documented failure modes.
+ * Acquire a fresh grouped listing from the entry generation.
+ * @param signal - Optional caller cancellation.
+ * @returns the committed Android/iOS device listing.
  */
 async listDevices(signal?: AbortSignal): Promise<PhoneDeviceList>
 
 /**
- * Boot one iOS simulator or Android emulator, then refresh the listing.
- * @param id - Branded id of the simulator/emulator to boot.
- * @param signal - Caller's optional cancellation signal.
- * @throws {@link PhoneDevicesError} with `PHONE_REAL_DEVICE` for physical handsets,
- *   `PHONE_DEVICE_NOT_FOUND` for ids absent from the latest published listing,
- *   and otherwise per the class-documented failure modes.
+ * Boot a listed virtual device and schedule a listing refresh.
+ * @param id - Device identifier; physical devices are refused.
+ * @param signal - Optional caller cancellation.
  */
 async boot(id: DeviceId, signal?: AbortSignal): Promise<void>
 
 /**
- * Shut down one iOS simulator or Android emulator, then refresh the listing.
- * Physical handsets are refused locally before any upstream call because the
- * upstream spec restricts both lifecycle verbs to simulators/emulators.
- * @param id - Branded id of the simulator/emulator to shut down.
- * @param signal - Caller's optional cancellation signal.
- * @throws {@link PhoneDevicesError} with `PHONE_REAL_DEVICE` for physical handsets,
- *   `PHONE_DEVICE_NOT_FOUND` for ids absent from the latest published listing,
- *   and otherwise per the class-documented failure modes.
+ * Shut down a listed virtual device and schedule a listing refresh.
+ * @param id - Device identifier; physical devices are refused.
+ * @param signal - Optional caller cancellation.
  */
 async shutdown(id: DeviceId, signal?: AbortSignal): Promise<void>
 
 /**
- * Execute one semantic tap, swipe, text, or button action. Capture-source
- * `x`/`y` and `captureWidth`/`captureHeight` remain the decoded plane.
- * Android capture-source taps and swipes scale both axes onto the current
- * incarnation `logicalDisplay`; missing logical bounds or a capture plane
- * that fails the uniform full-frame aspect assumption fail with
- * `PHONE_PROTOCOL` before RPC. A dumpsys miss does not replace the
- * incarnation. Android fresh-probe pixels
- * pass through. iOS obtains cached portrait `device.info` bounds and
- * projects every displayed endpoint through exact rotation; browser actions
- * bind current capture identity and model actions use a bounded fresh MJPEG
- * EXIF probe. Button and text stay independent of coordinate conversion.
- * Physical handsets are valid targets; only ids absent from the latest
- * published listing fail locally before any RPC.
- * @param request - Branded device id plus capture-pixel or non-coordinate input.
- * @param signal - Caller's optional cancellation signal.
- * @throws {@link PhoneDevicesError} with `PHONE_DEVICE_NOT_FOUND` for ids
- *   absent from the latest published listing, `PHONE_PROTOCOL` when an iOS
- *   `device.info` answer lacks a valid positive screen size or Android
- *   capture-source input lacks a current logical display that matches the
- *   uniform full-frame aspect assumption, and
- *   otherwise per the class-documented failure modes.
+ * Execute semantic input after live incarnation and capture authorization.
+ * @param request - Device identifier, action, and trusted coordinate source.
+ * @param signal - Optional caller cancellation.
  */
 async io(request: PhoneIoRequest, signal?: AbortSignal): Promise<void>
 
 /**
- * Open one `device.screencapture` stream. `h264` maps onto upstream `avc`;
- * Android pre-reads and replays at most one bounded key-access-unit probe,
- * then replaces an invalid, failed, timed-out, or landscape-logical-display
- * source with the system `screenrecord` H264 stream (`--size` from
- * `dumpsys display` `logicalFrame` when known). Other bodies remain unread.
- * A generation or incarnation change after headers joins foreign body
- * cancellation for at most `captureCleanupTimeoutMs`.
- * @param request - Branded device id, encoding, and optional cancellation.
- * @returns the live capture content type and body; the caller owns cancellation.
- * @throws {@link PhoneDevicesError} with `PHONE_DEVICE_NOT_FOUND` for ids
- *   absent from the latest published listing, and otherwise per the
- *   class-documented failure modes.
+ * Open generation-owned capture; retirement also cancels unread or locked bodies.
+ * @param request - Device, format, optional capture identity, and cancellation.
+ * @returns content type and caller-readable byte stream.
  */
 async startCapture(request: PhoneCaptureRequest): Promise<PhoneCaptureStream>
 
 /**
- * Capture one PNG still of a listed device through `mobilecli screenshot`.
- * Live MJPEG/H264 capture stays on `startCapture`.
- * @param id - Branded Android serial or iOS UDID whose screen to capture.
- * @param signal - Caller's optional cancellation signal.
- * @returns PNG media type and the absolute owner-only file path.
- * @throws {@link PhoneDevicesError} with `PHONE_DEVICE_NOT_FOUND` for ids
- *   absent from the latest published listing, and otherwise per the
- *   class-documented failure modes.
+ * Persist a PNG still only while its entry generation remains active.
+ * @param id - Listed device identifier.
+ * @param signal - Optional caller cancellation.
+ * @returns media type and owner-only absolute PNG path.
  */
 async screenshot(id: DeviceId, signal?: AbortSignal): Promise<PhoneScreenshot>
 
 /**
- * Report the on-device agent installation state for one listed device by
- * running the upstream `agent status` command as a one-shot child of the
- * same executable the loopback server was spawned from. Answers about a
- * re-signed real handset carry the free-signing expiry reminder.
- * @param id - Branded id of the device to inspect.
- * @param signal - Caller's optional cancellation signal.
- * @returns the parsed installation state.
- * @throws {@link PhoneDevicesError} with `PHONE_DEVICE_NOT_FOUND` for ids
- *   absent from the latest published listing, `PHONE_REAL_DEVICE_ISSUE` when
- *   the command output names a structured real-device arm, and otherwise per
- *   the class-documented failure modes.
+ * Query device-agent installation using an owned command tree.
+ * @param id - Listed device identifier.
+ * @param signal - Optional caller cancellation.
+ * @returns parsed agent installation status and provisioning guidance.
  */
 async agentStatus(id: DeviceId, signal?: AbortSignal): Promise<PhoneAgentStatus>
 
 /**
- * Keep the on-device agent installed for one listed device. Without `force`
- * the upstream `agent status` command runs first and an already-installed
- * agent answers without any install spawn, so repeated calls are idempotent;
- * `force` reinstalls and re-signs through the configured provisioning
- * profile, which real iOS installs require upstream.
- * @param id - Branded id of the device to install on.
- * @param options - Force reinstall switch and optional cancellation.
- * @returns the resulting installation state; `reinstalled` is true only when
- *   this call spawned an install.
- * @throws {@link PhoneDevicesError} with `PHONE_DEVICE_NOT_FOUND` for ids
- *   absent from the latest published listing, `PHONE_AGENT_PROFILE_REQUIRED`
- *   when a real-iOS install lacks `provisioningProfilePath`,
- *   `PHONE_REAL_DEVICE_ISSUE` when the command output names a structured
- *   real-device arm, and otherwise per the class-documented failure modes.
+ * Install or re-sign an agent without crossing generation replacement.
+ * @param id - Listed device identifier.
+ * @param options - Force reinstall and optional caller cancellation.
+ * @returns installation status and whether a forced reinstall occurred.
  */
-async installAgent(id: DeviceId, options: PhoneAgentInstallOptions = {}): Promise<PhoneAgentInstallResult>
-
-/**
- * Subscribe to committed device-set changes. Delivery happens synchronously
- * after each committing poll; a throwing subscriber is contained and logged.
- * @param sub - Observer receiving every committed {@link PhoneDeviceChange}.
- * @returns disposer removing exactly this subscription; subscriptions never outlive the Service.
- */
-onChanged(sub: (change: PhoneDeviceChange) => void): () => void
+async installAgent(id: DeviceId, options?: PhoneAgentInstallOptions): Promise<PhoneAgentInstallResult>
 ```
 
 Source: [`packages/phone/phone-runtime/src/index.ts`](../../packages/phone/phone-runtime/src/index.ts)

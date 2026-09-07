@@ -142,7 +142,7 @@ async function mountWith(fake: Awaited<ReturnType<typeof stageFake>>, overrides:
     console.error('child diagnostics:', MobilecliServerProcess.diagnostics)
     throw error
   } finally {
-    const generation = started.mock.contexts.at(-1)
+    const generation = started.mock.contexts.at(-1) as MobilecliGeneration | undefined
     if (generation !== undefined) mountedGenerations.set(context, generation)
     started.mockRestore()
   }
@@ -359,7 +359,7 @@ describe('phone runtime service lifecycle', () => {
       if (ready) controller.abort(new PhoneDevicesError('PHONE_ABORTED', 'cancel from readiness callback'))
     })
     const originalStop = Object.getOwnPropertyDescriptor(MobilecliGeneration.prototype, 'stop')?.value as MobilecliGeneration['stop']
-    const stop = vi.spyOn(MobilecliGeneration.prototype, 'stop').mockImplementation(async function () {
+    const stop = vi.spyOn(MobilecliGeneration.prototype, 'stop').mockImplementation(async function (this: MobilecliGeneration) {
       await originalStop.call(this)
       throw new Error('rollback cleanup refused')
     })
@@ -2573,7 +2573,9 @@ describe('phone runtime service lifecycle', () => {
     const context = await mountWith(fake)
     const stop = vi.fn(async () => {})
     vi.mocked(openAndroidSystemH264).mockImplementation((options) => {
-      options.ownTree(stop)
+      const ownTree = options.ownTree
+      if (ownTree === undefined) throw new Error('expected native H264 tree ownership')
+      ownTree(stop)
       return syntheticAndroidH264()
     })
 
