@@ -143,6 +143,9 @@ export interface SidebarSlotsService {
 export interface SidebarSessionSummary {
   id: SessionId
   cwd?: string
+  /** Latest durable log-backed title, absent until the Host projects one. */
+  title?: string
+  /** Human-facing title with Workspace basename and Session id fallbacks. */
   displayTitle: string
   /** Coarse durable origin for navigation filtering (subagent children). */
   origin?: 'subagent'

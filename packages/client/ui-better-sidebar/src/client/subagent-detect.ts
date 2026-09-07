@@ -89,9 +89,7 @@ export function restorableSideThreads(
   for (const summary of Object.values(sessions.byId)) {
     if (summary.origin !== 'subagent' || summary.parentId !== sessionId) continue
     if (summary.provisional === true || summary.blank !== false) continue
-    const label = summary.displayTitle.startsWith(SIDE_LABEL_PREFIX)
-      ? summary.displayTitle
-      : catalogLabels.get(summary.id)
+    const label = summary.title ?? catalogLabels.get(summary.id)
     if (label === undefined || !label.startsWith(SIDE_LABEL_PREFIX)) continue
     if (archived.has(summary.id)) continue
     threads.push({

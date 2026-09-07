@@ -22,7 +22,7 @@ function summary(id: string, overrides: Partial<SidebarSessionSummary> = {}): Si
 }
 
 function sideThread(id: string, parentId = 'parent', title = `Side: ${id}`): SidebarSessionSummary {
-  return summary(id, { origin: 'subagent', parentId: SessionId(parentId), displayTitle: title })
+  return summary(id, { origin: 'subagent', parentId: SessionId(parentId), title, displayTitle: title })
 }
 
 function sessionList(
@@ -82,7 +82,9 @@ describe('restorableSideThreads', () => {
   })
 
   it('uses the loaded parent catalog label when a cold child has no title projection', () => {
-    const child = sideThread('child', 'parent', 'child')
+    const child = summary('child', {
+      origin: 'subagent', parentId: SessionId('parent'), displayTitle: 'workspace',
+    })
 
     expect(restorableSideThreads(sessionList({ child }, {
       parent: {
@@ -101,6 +103,31 @@ describe('restorableSideThreads', () => {
     }), SessionId('parent'), {
       phase: 'ready', archivedSessionIds: [],
     })).toEqual([threadRef('child', '从目录恢复')])
+  })
+
+  it('does not restore an untitled ordinary child from a Side-prefixed Workspace basename', () => {
+    const child = summary('child', {
+      origin: 'subagent', parentId: SessionId('parent'),
+      cwd: '/workspace/Side: Project', displayTitle: 'Side: Project',
+    })
+
+    expect(restorableSideThreads(sessionList({ child }, {
+      parent: {
+        parentAvailable: true,
+        state: 'ready',
+        error: null,
+        entries: [{
+          kind: 'child',
+          id: 'child',
+          mode: 'continuable',
+          activity: 'inactive',
+          hasChildren: false,
+          label: 'worker',
+        }],
+      },
+    }), SessionId('parent'), {
+      phase: 'ready', archivedSessionIds: [],
+    })).toEqual([])
   })
 
   it('excludes archived side threads after browser-local state is lost', () => {
