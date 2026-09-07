@@ -25,9 +25,22 @@ export function QuestionPresentationSlot(props: QuestionPresentationSlotProps) {
     [props.answer, props.cancel, props.requestKey, props.sessionId],
   )
   const composerProps = {
-    ...props,
+    sessionId: props.sessionId,
     session: props.useSession(snapshot => snapshot),
     pendingInteraction: props.useSessionPendingInteraction(interactions => interactions.get(props.sessionId)),
+    useSession: props.useSession,
+    useSessions: props.useSessions,
+    useSessionPendingInteraction: props.useSessionPendingInteraction,
+    useWorkspaces: props.useWorkspaces,
+    useConversation: props.useConversation,
+    useChat: props.useChat,
+    useTrajectory: props.useTrajectory,
+    useProjection: props.useProjection,
+    useInput: props.useInput,
+    inputActions: props.inputActions,
+    useStore: props.useStore,
+    actions: props.actions,
+    t: props.t,
     matched: pending,
   } satisfies QuestionComposerProps
   return <QuestionComposer {...composerProps} />
