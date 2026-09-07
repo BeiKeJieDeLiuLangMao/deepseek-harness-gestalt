@@ -85,8 +85,51 @@ describe('pairing transaction codec', () => {
       accessGeneration: 1,
     })
 
-    expect(decodePairingTransactionState(encodePairingTransactionState(state)).endpointPublications)
-      .toEqual(state.endpointPublications)
+    const encoded = encodePairingTransactionState(state)
+    expect(decodePairingTransactionState(encoded).endpointPublications).toEqual(state.endpointPublications)
+
+    for (const field of [
+      'endpointPendingPairingId', 'endpointRouteId',
+      'endpointDesktopCredentialDigest', 'endpointCredentialDigest',
+    ]) {
+      const incomplete = structuredClone(encoded) as Record<string, unknown>
+      const publications = incomplete.endpointPublications
+      if (!Array.isArray(publications) || !Array.isArray(publications[0])) {
+        throw new Error('endpoint publication fixture is invalid')
+      }
+      const publication = publications[0][1]
+      if (typeof publication !== 'object' || publication === null || Array.isArray(publication)) {
+        throw new Error('endpoint publication fixture is invalid')
+      }
+      const pairing = Reflect.get(publication, 'pairing')
+      if (typeof pairing !== 'object' || pairing === null || Array.isArray(pairing)) {
+        throw new Error('endpoint publication pairing fixture is invalid')
+      }
+      Reflect.deleteProperty(pairing, field)
+      expect(() => decodePairingTransactionState(incomplete)).toThrow('endpoint confirmation is incomplete')
+    }
+  })
+
+  it('continues to decode a legacy stored pairing without endpoint confirmation', () => {
+    const state = emptyPairingTransactionState()
+    const pairingId = parsePersonalPairingId('legacy-pairing')
+    state.pairings.set(pairingId, {
+      id: pairingId,
+      devicePrincipal: {
+        id: parseDevicePrincipalId('legacy-principal'),
+        accountId: parsePlatformAccountId('legacy-account'),
+        installationId: parseInstallationId('legacy-mobile'),
+        authority: 'companion-surface',
+      },
+      device: { name: 'Legacy Phone', platform: 'ios' },
+      pairedAt: 2,
+      lastAccessAt: 3,
+      online: false,
+      desktopInstallationId: parseInstallationId('legacy-desktop'),
+    })
+
+    expect(decodePairingTransactionState(encodePairingTransactionState(state)).pairings.get(pairingId))
+      .toEqual(state.pairings.get(pairingId))
   })
 
   it('persists publication compensation progress without retaining plaintext authority', () => {
