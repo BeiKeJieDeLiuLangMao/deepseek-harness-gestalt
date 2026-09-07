@@ -315,9 +315,51 @@ describe('playPhoneH264Stream', () => {
     expect(canvas.width).toBe(390)
     expect(canvas.height).toBe(844)
     expect(decoder.frames.every(frame => frame.closeCount === 1)).toBe(true)
-    expect(errors).toEqual([])
+    await vi.waitFor(() => { expect(errors).toEqual([new Error('phone H264 stream ended')]) })
     await playback.close()
     expect(decoder.closeCount).toBe(1)
+  })
+
+  it('reports upstream EOF after a painted frame so the caller can fall back', async () => {
+    const payload = concat(
+      nal(0x67, 0x42, 0xc0, 0x1f, 0x80),
+      nal(0x68, 0x80),
+      nal(0x65, 0x80),
+      nal(0x09, 0xf0),
+      nal(0x65, 0x80),
+    )
+    let endStream = (): void => {}
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(payload)
+        endStream = () => { controller.close() }
+      },
+    })
+    vi.stubGlobal('EncodedVideoChunk', FakeEncodedVideoChunk)
+    vi.stubGlobal('VideoDecoder', FakeVideoDecoder)
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(body, {
+      status: 200,
+      headers: { 'content-type': 'video/h264' },
+    })))
+    const canvas = document.createElement('canvas')
+    const drawImage = vi.fn()
+    vi.spyOn(canvas, 'getContext').mockReturnValue({ drawImage } as never)
+    const errors: unknown[] = []
+    const playback = playPhoneH264Stream({
+      url: '/phone/stream/device/h264?token=test',
+      canvas,
+      onSurface: () => {},
+      onError: error => errors.push(error),
+    })
+
+    await vi.waitFor(() => { expect(FakeVideoDecoder.instances[0]?.chunks).toHaveLength(1) })
+    FakeVideoDecoder.instances[0]!.init.output(new FakeVideoFrame())
+    expect(drawImage).toHaveBeenCalledOnce()
+    endStream()
+
+    await vi.waitFor(() => { expect(errors).toHaveLength(1) })
+    expect(errors[0]).toEqual(new Error('phone H264 stream ended'))
+    await playback.close()
   })
 
   it('keeps every slice of one picture in the same access unit', async () => {
@@ -347,7 +389,7 @@ describe('playPhoneH264Stream', () => {
     expect(chunks.map(chunk => chunk.type)).toEqual(['delta', 'delta'])
     expect(Array.from(chunks[0]!.data)).toEqual(Array.from(concat(sps, pps, firstSlice, secondSlice)))
     expect(Array.from(chunks[1]!.data)).toEqual(Array.from(concat(nal(0x09, 0xf0), nextPicture)))
-    expect(errors).toEqual([])
+    await vi.waitFor(() => { expect(errors).toEqual([new Error('phone H264 stream ended')]) })
   })
 
   it('separates primary pictures without AUD from their slice-header identity', async () => {
@@ -678,7 +720,7 @@ describe('playPhoneH264Stream', () => {
       onError: error => errors.push(error),
     })
     await vi.waitFor(() => { expect(FakeVideoDecoder.instances[0]?.frames).toHaveLength(2) })
-    expect(errors).toEqual([])
+    await vi.waitFor(() => { expect(errors).toEqual([new Error('phone H264 stream ended')]) })
     await expect(playback.close()).resolves.toBeUndefined()
     expect(FakeVideoDecoder.instances[0]).toBeDefined()
   })
@@ -937,7 +979,7 @@ describe('playPhoneH264Stream', () => {
     })
 
     await vi.waitFor(() => { expect(context.drawImage).toHaveBeenCalledOnce() })
-    expect(errors).toEqual([])
+    await vi.waitFor(() => { expect(errors).toEqual([new Error('phone H264 stream ended')]) })
     expect(surfaces).toEqual([{ width: canvasWidth, height: canvasHeight }])
     expect({ width: canvas.width, height: canvas.height }).toEqual({ width: canvasWidth, height: canvasHeight })
     expect(context.drawImage.mock.calls[0]?.[0]).toBe(FakeVideoDecoder.instances[0]!.frames[0])

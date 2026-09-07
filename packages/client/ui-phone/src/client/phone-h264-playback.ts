@@ -8,7 +8,7 @@ export interface PhoneH264PlaybackOptions {
   readonly canvas: HTMLCanvasElement
   /** Called when post-rotation display dimensions first appear or change. */
   readonly onSurface: (width: number, height: number, rotation: 0 | 90 | 180 | 270) => void
-  /** Called once when fetch, parsing, decoding, or drawing fails. */
+  /** Called once when fetch, parsing, decoding, drawing, or the upstream response fails or ends. */
   readonly onError: (error: unknown) => void
 }
 
@@ -542,10 +542,13 @@ export function playPhoneH264Stream(options: PhoneH264PlaybackOptions): PhoneH26
     await decode(assembler.finish())
     if (codec.state === 'configured') await codec.flush()
     if (isStopped()) return
-    if (paintedFrames === 0) throw new Error('phone H264 stream ended before a frame was decoded')
+    const eof = new Error(paintedFrames === 0
+      ? 'phone H264 stream ended before a frame was decoded'
+      : 'phone H264 stream ended')
     reader = undefined
     streamReader.releaseLock()
     closeDecoder()
+    throw eof
   }
 
   const runPromise = run().catch((error: unknown) => {

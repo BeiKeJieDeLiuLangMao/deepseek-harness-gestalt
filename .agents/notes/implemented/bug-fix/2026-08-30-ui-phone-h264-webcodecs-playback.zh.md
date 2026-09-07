@@ -14,11 +14,11 @@ Status: implemented
 
 `playPhoneH264Stream` 在单个异步 `close()` 操作后拥有浏览器播放实现。它拉取签名同源 URL，要求成功的 `video/h264` 应答，增量识别三字节与四字节 Annex-B 起始码，根据 AUD 或 SPS、PPS 与 slice header 中的 AVC picture-identity 字段解析未使用 data partition 的 primary coded picture，从 SPS 推导完整 AVC codec 字符串，并把每幅 picture 作为一个 `EncodedVideoChunk` 送入 `VideoDecoder`。同一 identity 的多个 slice 保持在一幅 picture；缺失首个 macroblock 的 picture、首 slice 之后改变 identity 以及 2–4 型 data-partition NAL 都会显式失败。parser 接受 chroma format 0–2、POC type 0 或 2 的 progressive picture；interlaced picture、scaling matrix、bottom-field picture-order signaling、chroma format 3 与 POC type 1 会在进入 decoder 前失败。decoder 队列产生背压时等待 `dequeue` 事件；`flush()` 只用于有限流 EOF，之后不会再接收 delta chunk。每个输出 `VideoFrame` 都在同一回调中绘制到 canvas 并关闭；`VideoFrame.rotation`（顺时针 0/90/180/270，缺省视为 0）按旋转后尺寸设置 canvas 与 `onSurface`，90/270 经 translate+rotate 绘制。Android screenrecord 在 Host `logicalDisplay` 已是横屏时仍保持编码竖屏的情况，由 [H264 旋转笔记](2026-09-05-android-h264-videoframe-rotation.zh.md) 持有。
 
-句柄拥有 `AbortController`、应答 reader、decoder、输出帧和失败投递。设备切换、刷新、tab inactive、重连与卸载会先同步禁止后续发布；不会 reject 的 `close()` promise 在 reader 取消且解码 run 停止后完成，陈旧回调只关闭帧而不绘制。consumer callback 的异常会在 cleanup 武装后被收容。拉取、解析、支持性检查、decoder 与 canvas 失败只经 `noteCaptureFailure('h264')` 报告一次，并把当前 session 切换到 MJPEG；MJPEG 失败才进入有界重连策略。每次 controller teardown 都会清空已学习的触控面，因此下一条 live socket 会在新播放画出首帧前拒绝 tap。有限应答只要绘制过至少一帧，就会保留最后一幅 canvas 画面并释放 decoder；空应答属于播放失败。
+句柄拥有 `AbortController`、应答 reader、decoder、输出帧和失败投递。设备切换、刷新、tab inactive、重连与卸载会先同步禁止后续发布；不会 reject 的 `close()` promise 在 reader 取消且解码 run 停止后完成，陈旧回调只关闭帧而不绘制。consumer callback 的异常会在 cleanup 武装后被收容。拉取、解析、支持性检查、decoder、canvas 与非预期上游 EOF 失败只经 `noteCaptureFailure('h264')` 报告一次，并把当前 session 切换到 MJPEG；MJPEG 失败才进入有界重连策略。EOF 会 flush 最后一个完整 access unit，无论已绘制多少帧仍属于失败；调用方主动 `close()` 不报告失败。每次 controller teardown 都会清空已学习的触控面，因此下一条 live socket 会在新播放画出首帧前拒绝 tap。
 
 ## 验证
 
-包测试覆盖网络分片切点、三字节与四字节起始码、无 AUD 的 picture identity、AUD 与 parameter set 排序、多 slice access unit、拒绝中途改变 identity/data-partitioned 流、SPS 推导的 codec 输入、IDR-to-delta 队列背压、不支持与畸形输入、尺寸变化、精确 390×844 触控映射、静止态取消、跨非 live 阶段的三代设备 replacement、decoder 失败、consumer callback 收容、陈旧回调和帧关闭。loopback Electron 41.2.1 probe 把 fakemobilecli 的 1,534,614 字节 Annex-B fixture 解码为三幅 390×844 `VideoFrame`，并绘制到 390×844 canvas。
+包测试覆盖网络分片切点、三字节与四字节起始码、无 AUD 的 picture identity、AUD 与 parameter set 排序、多 slice access unit、拒绝中途改变 identity/data-partitioned 流、SPS 推导的 codec 输入、IDR-to-delta 队列背压、不支持与畸形输入、尺寸变化、精确 390×844 触控映射、已绘制流的 EOF、静止态取消、跨非 live 阶段的三代设备 replacement、decoder 失败、consumer callback 收容、陈旧回调和帧关闭。loopback Electron 41.2.1 probe 把 fakemobilecli 的 1,534,614 字节 Annex-B fixture 解码为三幅 390×844 `VideoFrame`，并绘制到 390×844 canvas。
 
 ## Alternatives considered
 
