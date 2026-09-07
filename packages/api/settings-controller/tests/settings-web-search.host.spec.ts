@@ -5,6 +5,7 @@ import { pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import TypertGatewayService from '@deepseek-ai/dsh-api-gateway'
+import type {} from '@deepseek-ai/dsh-api-settings-controller/remote'
 import { apply as applyClientRemote, inject as clientRemoteInject } from '../../gateway/src/client/index.ts'
 import { remoteErrorOf, remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
 import type { TypertContribution } from '@deepseek-ai/dsh-typert-registry/types'
@@ -41,16 +42,6 @@ class RecordingSearchProvider implements WebSearchProvider {
     if (this.error !== undefined) throw this.error
     return this.result
   }
-}
-
-interface SettingsProbeClient {
-  testWebSearch(
-    query?: string,
-    signal?: AbortSignal,
-  ): Promise<
-    | { readonly ok: true; readonly value: { readonly count: number; readonly title?: string; readonly url?: string } }
-    | { readonly ok: false; readonly error: { readonly code: string; readonly message: string } }
-  >
 }
 
 async function bootWeb(provider: RecordingSearchProvider): Promise<{
@@ -96,7 +87,7 @@ async function generateSettingsTypert(): Promise<{
 async function mountGeneratedSettingsClient(
   host: Context,
   remote: TypertRemoteContribution,
-): Promise<SettingsProbeClient> {
+): Promise<Context['remote']['settings']> {
   const client = new Context()
   contexts.push(client)
   await client.plugin(TypertRegistry)
@@ -139,7 +130,7 @@ async function mountGeneratedSettingsClient(
   } as never)
   await client.plugin({ inject: clientRemoteInject, apply: applyClientRemote })
   await client.remote.$mount(remote)
-  return client.remote.settings as SettingsProbeClient
+  return client.remote.settings
 }
 
 describe('settings.testWebSearch probe', () => {
