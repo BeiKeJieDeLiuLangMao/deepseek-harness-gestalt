@@ -26,6 +26,7 @@ import {
   type AmbientCredential,
   type PhaseProcessEvidence,
 } from './artifact-io.ts'
+import { writeHarnessHome } from './harness-home.ts'
 import {
   PARENT_MODEL, SIDE_MODEL, startKeylessModelProvider, TITLE_MODEL, type CriticalPathPhase,
 } from './keyless-model.ts'
@@ -465,33 +466,6 @@ function assertProviderAudit(audit: readonly {
 async function initializeWorkspace(workspace: string): Promise<void> {
   await execute('git', ['init'], { cwd: workspace })
   await writeFile(join(workspace, 'README.md'), '# Critical path Electron workspace\n')
-}
-
-async function writeHarnessHome(dshHome: string): Promise<void> {
-  await writeFile(join(dshHome, 'cordis.patch.yml'), [
-    '- id: session-persistence-jsonl',
-    '  config:',
-    "    root: !!js dshHomePath('sessions')",
-    '    packChunks: false',
-    '    compression: none',
-    '- id: session-title-llm',
-    '  config:',
-    '    provider: deepseek-official',
-    `    model: ${TITLE_MODEL}`,
-    '- id: directory-picker',
-    '  disabled: true',
-    '- insert:',
-    '    - id: directory-picker-browse',
-    "      name: '@deepseek-ai/dsh-host-directory-picker-browse'",
-    '    - id: ui-directory-picker-browse',
-    "      name: '@deepseek-ai/dsh-client-ui-directory-picker-browse'",
-    '',
-  ].join('\n'), { mode: 0o600 })
-  await writeFile(join(dshHome, 'settings.yaml'), [
-    'ui-onboarding:',
-    '  welcomeNoticeVersion: "2026-08-13.1"',
-    '',
-  ].join('\n'), { mode: 0o600 })
 }
 
 async function writeOperatedConfig(path: string): Promise<void> {

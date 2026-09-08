@@ -16,7 +16,7 @@ create 阶段通过已交付的浏览目录提供方连接 Workspace，经 rende
 
 restore 阶段复用完全相同的 home、Workspace 和 `userData`。它要求只恢复一个具有相同模型与权限的 Side Chat tab，记录此前 child-owned event cut 与可见回答数，再发送另一条提示词。该阶段要求新增且仅新增一条可见回答，并要求该 cut 之后按序出现一条 child-owned user message、model request、assistant message 与持久 turn end。它会证明主 Session 标题栏显示这个确切的持久 child，再经界面关闭该 tab。归档投影完成后，该阶段会等待 tab 与主标题栏 child row 一起消失。archive 阶段再次启动同一状态，确认 tab 保持关闭、child id 位于 Workspace domain 的持久归档集合中，并确认 child JSONL 仍携带两轮自有 turn、两条模型 B request header 与 Read Only event。
 
-环回 OpenAI-compatible HTTP listener 是唯一的外部服务替代。它按请求模型返回回答，只保留阶段、URL 路径与 model id。测试 profile 把自动标题生成路由到另一个已交付的 DeepSeek 模型，使 audit 无需保留提示词正文也能区分该请求。runner 不读取用户正常的 `DSH_HOME`；其测试 profile 只被仅限源码的 Desktop E2E gate 接受。WDIO 会记录每个实际观察到的测试结果，不会用计划阶段数替代执行。进程证据会在测试正文前记录 Electron，在首次观察到 Web Host 启动记录的 poll 内记录 Host，并在每个阶段持续采样二者的精确启动身份及其后代。teardown 只向仍匹配的身份发送信号，并把已复用 PID 当作原属主已退出。只有 model listener 与所有已捕获进程身份都停止后，runner 才会删除 scratch；否则会保留失败运行的 scratch，并隐藏产物分享路径。生产 Session JSONL 由 JSONL 持久化实现解码；runner 自有的跨阶段记录只解析已声明字段并重建 branded Session id。专用 build-mode typecheck 继承源码 paths，并引用 runner 使用的三个 Host-face workspace project，因此干净树会先构建并检查这些源码，再检查验收文件。
+环回 OpenAI-compatible HTTP listener 是唯一的外部服务替代。它按请求模型返回回答，只保留阶段、URL 路径与 model id。测试 profile 使用 Include 的 entry-list schema 与 patch 实现读取正式 base bundle，保留完整标题策略，仅覆盖 provider 和 model。它把自动标题生成路由到另一个已交付的 DeepSeek 模型，使 audit 无需保留提示词正文也能区分该请求。runner 不读取用户正常的 `DSH_HOME`；其测试 profile 只被仅限源码的 Desktop E2E gate 接受。WDIO 会记录每个实际观察到的测试结果，不会用计划阶段数替代执行。进程证据会在 `beforeTest` 中记录 Electron，此时 WDIO 已等待 Electron service 初始化完成，且测试正文尚未执行；在首次观察到 Web Host 启动记录的 poll 内记录 Host，并在每个阶段持续采样二者的精确启动身份及其后代。teardown 只向仍匹配的身份发送信号，并把已复用 PID 当作原属主已退出。只有 model listener 与所有已捕获进程身份都停止后，runner 才会删除 scratch；否则会保留失败运行的 scratch，并隐藏产物分享路径。生产 Session JSONL 由 JSONL 持久化实现解码；runner 自有的跨阶段记录只解析已声明字段并重建 branded Session id。专用 build-mode typecheck 继承源码 paths，并引用 runner 使用的 Host-face workspace project 和 Include 配置属主，因此干净树会先构建并检查这些源码，再检查验收文件。
 
 ## 考虑过的替代方案
 
@@ -35,5 +35,5 @@ restore 阶段复用完全相同的 home、Workspace 和 `userData`。它要求�
 ## 测试
 
 - `pnpm --dir apps/desktop run typecheck:e2e-critical-path`
-- `pnpm exec vitest run apps/desktop/tests/electron-runner-infrastructure.spec.ts apps/desktop/tests/critical-path-e2e/artifact-io.spec.ts`
+- `pnpm exec vitest run apps/desktop/tests/electron-runner-infrastructure.spec.ts apps/desktop/tests/critical-path-e2e/artifact-io.spec.ts apps/desktop/tests/critical-path-e2e/harness-home.spec.ts apps/desktop/tests/critical-path-e2e/wdio-lifecycle.spec.ts`
 - 在具有可见显示器的 host 上运行 `pnpm --dir apps/desktop test:e2e-critical-path-electron`

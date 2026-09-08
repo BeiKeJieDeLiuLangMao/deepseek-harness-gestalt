@@ -45,7 +45,8 @@ export const config: WebdriverIO.Config = {
       logDir: join(phaseRoot, 'electron-logs'),
     },
   }],
-  before: async () => {
+  // Runner before hooks run concurrently; Mocha starts only after the Electron service settles.
+  beforeTest: async () => {
     const electronPid = await browser.electron.execute(() => process.pid)
     const ownedProcesses = captureOwnedProcessTree([electronPid])
     const electron = ownedProcesses.find(identity => identity.pid === electronPid)
