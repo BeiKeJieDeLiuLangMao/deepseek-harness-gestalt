@@ -791,6 +791,7 @@
     "apps/mobile": {
       "entry": [
         "tests/**/*.spec.ts",
+        "tests/mobile-browse-artifact.e2e.ts",
         "tests/**/*.snapshot.ts"
       ],
       "project": [
