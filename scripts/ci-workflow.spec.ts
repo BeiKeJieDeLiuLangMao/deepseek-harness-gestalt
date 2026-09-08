@@ -65,7 +65,7 @@ describe('CI workflow', () => {
     } })
   })
 
-  it('sets up pnpm before candidate-only release validation uses it', () => {
+  it('keeps release identity setup independent of an uninstalled pnpm store', () => {
     const workflow = loadWorkflow('.github/workflows/mobile-release.yml')
     const releaseVersion = workflowJob(workflow, 'release-version')
     if (!Array.isArray(releaseVersion.steps)) {
@@ -80,7 +80,6 @@ describe('CI workflow', () => {
     expect(nodeSetup).toBeGreaterThan(pnpmSetup)
     expect(steps[nodeSetup]?.with).toEqual({
       'node-version': '${{ env.PRIMARY_NODE_VERSION }}',
-      cache: 'pnpm',
     })
     expect(validation).toBeGreaterThan(nodeSetup)
     expect(String(steps[validation]?.run)).toContain('pnpm install --frozen-lockfile --ignore-scripts')
