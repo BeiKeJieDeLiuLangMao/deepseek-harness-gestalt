@@ -4,7 +4,7 @@
  * `browser_create` read these defaults.
  */
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import {
@@ -65,6 +65,7 @@ export function BrowserSettingsSection({
   const namedProfiles = useSettings(s => s.namedProfiles)
   const [addOpen, setAddOpen] = useState(false)
   const [addDraft, setAddDraft] = useState('')
+  const addOpener = useRef<HTMLButtonElement | null>(null)
   const [renameFrom, setRenameFrom] = useState<string>()
   const [renameDraft, setRenameDraft] = useState('')
   const addName = addDraft.trim()
@@ -74,6 +75,8 @@ export function BrowserSettingsSection({
   const closeAdd = (): void => {
     setAddOpen(false)
     setAddDraft('')
+    addOpener.current?.focus()
+    addOpener.current = null
   }
   const closeRename = (): void => {
     setRenameFrom(undefined)
@@ -87,7 +90,15 @@ export function BrowserSettingsSection({
     closeRename()
   }
   return (
-    <section className={css.section} data-browser-settings>
+    <section
+      className={css.section}
+      data-browser-settings
+      onKeyDown={(event) => {
+        if (!addOpen || event.key !== 'Escape') return
+        event.stopPropagation()
+        closeAdd()
+      }}
+    >
       <h2 className={css.title}>{t('settings.title')}</h2>
       <p className={css.intro}>{t('settings.intro')}</p>
       <div className={css.identityCard}>
@@ -132,8 +143,9 @@ export function BrowserSettingsSection({
             variant="outline"
             size="sm"
             icon={<IconPlusOutline16 size={14} />}
-            onClick={() => {
+            onClick={(event) => {
               closeRename()
+              addOpener.current = event.currentTarget
               setAddOpen(true)
             }}
           >
