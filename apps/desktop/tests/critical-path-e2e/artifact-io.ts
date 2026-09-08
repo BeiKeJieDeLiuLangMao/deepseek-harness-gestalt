@@ -15,6 +15,9 @@ const phases: readonly CriticalPathPhase[] = ['create', 'restore', 'archive']
 const processFields = ['electron', 'host', 'hostOrigin', 'ownedProcesses', 'rendererUrl'] as const
 const processUpdates = new Map<string, Promise<void>>()
 
+const bareCredentialMinimumBytes = 8
+const ambientCredentialName = /(?:^|_)(?:KEY(?:_(?:ID|SECRET))?|SECRET|TOKEN|PASSWORD)(?:_VALUE)?$/iu
+
 /** Owned process facts captured as soon as each process becomes observable. */
 export interface PhaseProcessEvidence {
   readonly electron?: ProcessIdentity
@@ -51,6 +54,12 @@ export interface StoredSessionEvent {
   readonly seq: number
   readonly type: string
   readonly data: unknown
+}
+
+/** One ambient credential retained only for post-run artifact inspection. */
+export interface AmbientCredential {
+  readonly name: string
+  readonly value: string
 }
 
 /** Secret-scan outcome that never carries matched content or an unsafe path. */
@@ -232,20 +241,33 @@ export function hasExactCompletedOwnTurn(
 }
 
 /**
+ * Select high-confidence ambient credentials for destructive artifact inspection.
+ * @param source - Parent environment captured before child scrubbing.
+ * @returns Non-empty values whose names end in a credential field.
+ */
+export function collectAmbientCredentials(source: NodeJS.ProcessEnv): AmbientCredential[] {
+  return Object.entries(source).flatMap(([name, value]) => (
+    ambientCredentialName.test(name) && value !== undefined && value.length > 0
+      ? [{ name, value }]
+      : []
+  ))
+}
+
+/**
  * Scan retained artifacts and remove files containing credential material.
  * @param artifactRoot - Exclusive artifact namespace to scan.
- * @param secretValues - Credential values captured before child environments are scrubbed.
+ * @param credentials - Ambient credentials captured before child environments are scrubbed.
  * @returns A shareability decision and safe count; scan failures expose no path or content.
  */
 export async function scanRetainedArtifacts(
   artifactRoot: string,
-  secretValues: readonly string[],
+  credentials: readonly AmbientCredential[],
 ): Promise<RetainedArtifactScan> {
   try {
     let removedFiles = 0
     for (const path of await regularFiles(artifactRoot)) {
       const bytes = await readFile(path)
-      if (!containsSecret(bytes, secretValues)) continue
+      if (!containsCredential(bytes, credentials)) continue
       await rm(path)
       removedFiles += 1
     }
@@ -258,17 +280,21 @@ export async function scanRetainedArtifacts(
 /**
  * Redact credential values and generic credential assignments from one diagnostic.
  * @param text - Diagnostic text retained in result.json.
- * @param secretValues - Ambient credential values that must not be retained.
+ * @param credentials - Ambient credentials that must not be retained.
  * @returns Redacted diagnostic text.
  */
-export function redactArtifactDiagnostic(text: string, secretValues: readonly string[]): string {
+export function redactArtifactDiagnostic(text: string, credentials: readonly AmbientCredential[]): string {
   let redacted = text
-  for (const secret of secretValues) {
-    if (secret.length > 0) redacted = redacted.replaceAll(secret, '[REDACTED]')
+    .replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----/gu, '[REDACTED PRIVATE KEY]')
+    .replace(genericCredentialAssignmentPattern('gimu'), '$1[REDACTED]')
+  for (const credential of credentials) {
+    if (isBareCredentialValue(credential.value)) {
+      redacted = redacted.replaceAll(credential.value, '[REDACTED]')
+    } else {
+      redacted = redacted.replace(credentialAssignmentPattern(credential, 'gimu'), '$1[REDACTED]')
+    }
   }
   return redacted
-    .replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----/gu, '[REDACTED PRIVATE KEY]')
-    .replace(/((?:api[_-]?key|authorization|password|secret|token)\s*[:=]\s*(?:bearer\s+)?)[^\s"',;]{4,}/giu, '$1[REDACTED]')
 }
 
 function optionalProcessIdentity(
@@ -387,11 +413,36 @@ async function regularFiles(root: string): Promise<string[]> {
   return files
 }
 
-function containsSecret(bytes: Buffer, secretValues: readonly string[]): boolean {
-  for (const secret of secretValues) {
-    if (secret.length > 0 && bytes.includes(Buffer.from(secret))) return true
-  }
+function containsCredential(bytes: Buffer, credentials: readonly AmbientCredential[]): boolean {
   const text = bytes.toString('utf8')
+  for (const credential of credentials) {
+    if (isBareCredentialValue(credential.value) && bytes.includes(Buffer.from(credential.value))) return true
+    if (credentialAssignmentPattern(credential, 'imu').test(text)) return true
+  }
   return /-----BEGIN [A-Z ]*PRIVATE KEY-----/u.test(text)
-    || /(?:api[_-]?key|authorization|password|secret|token)\s*[:=]\s*(?:bearer\s+)?[^\s"',;]{4,}/iu.test(text)
+    || genericCredentialAssignmentPattern('imu').test(text)
+}
+
+function isBareCredentialValue(value: string): boolean {
+  return Buffer.byteLength(value, 'utf8') >= bareCredentialMinimumBytes
+}
+
+function credentialAssignmentPattern(credential: AmbientCredential, flags: string): RegExp {
+  const name = escapeRegExp(credential.name)
+  const value = escapeRegExp(credential.value)
+  return new RegExp(
+    `((?:^|[^A-Za-z0-9_])["']?${name}["']?\\s*[:=]\\s*["']?(?:bearer\\s+)?)${value}(?=$|[\\s"',;}\\]])`,
+    flags,
+  )
+}
+
+function genericCredentialAssignmentPattern(flags: string): RegExp {
+  return new RegExp(
+    String.raw`((?:^|[^A-Za-z0-9_])["']?(?:api[_-]?key|authorization|password|secret|token)["']?\s*[:=]\s*["']?(?:bearer\s+)?)[^\s"',;}\]]+`,
+    flags,
+  )
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')
 }

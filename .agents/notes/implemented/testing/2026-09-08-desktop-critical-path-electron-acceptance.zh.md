@@ -30,7 +30,7 @@ restore 阶段复用完全相同的 home、Workspace 和 `userData`。它要求�
 
 ## 结果
 
-一条命令会在 `.artifacts/critical-path-electron/<timestamp>-<sha>-<random>/` 下生成可评审的 screenshot、build log、phase log、进程身份证据、无提示词正文的提供方 audit、脱敏后的主与子 event-ledger JSONL、Session state 与 result manifest。manifest 聚合 WDIO 实际观察到的通过、失败与跳过计数；setup、build、任一阶段或 cleanup 失败时，它仍会保留固定提交与脱敏失败摘要。它会在删除 scratch 前先按失败写入，只有 cleanup 与保留产物 secret scan 完成后才能报告通过。匹配凭据材料的普通文件会被删除，manifest 只报告数量，绝不报告命中内容。link-shaped 或不可读条目会使该命名空间不可分享：runner 会保留该命名空间而不递归删除、不输出分享路径，并保留清理前写入的失败 manifest。脱敏 ledger 保留 Session id、lineage、owned event type、request 与 assistant route、permission 和 archive set，同时省略提示词正文、system text、tool schema 与 event payload。通过结果证明该提交上的普通单安装 create、restart 与 archive 链路。Member Questions、实际运行 Platform 流量、打包 Desktop 与真实提供方行为继续由各自验收负责。
+一条命令会在 `.artifacts/critical-path-electron/<timestamp>-<sha>-<random>/` 下生成可评审的 screenshot、build log、phase log、进程身份证据、无提示词正文的提供方 audit、脱敏后的主与子 event-ledger JSONL、Session state 与 result manifest。manifest 聚合 WDIO 实际观察到的通过、失败与跳过计数；setup、build、任一阶段或 cleanup 失败时，它仍会保留固定提交与脱敏失败摘要。它会在删除 scratch 前先按失败写入，只有 cleanup 与保留产物 secret scan 完成后才能报告通过。构建与 phase 子进程启动前仍按宽泛的凭据形态环境变量名规则清理环境；会删除文件的产物扫描只选择以凭据字段结尾的变量名，至少 8 个 UTF-8 字节的值可在任意位置命中，短值仅在带边界的原变量名或通用凭据赋值中命中。通用凭据赋值与 PEM 私钥始终命中。匹配凭据材料的普通文件会被删除，manifest 只报告数量，绝不报告命中内容。link-shaped 或不可读条目会使该命名空间不可分享：runner 会保留该命名空间而不递归删除、不输出分享路径，并保留清理前写入的失败 manifest。脱敏 ledger 保留 Session id、lineage、owned event type、request 与 assistant route、permission 和 archive set，同时省略提示词正文、system text、tool schema 与 event payload。通过结果证明该提交上的普通单安装 create、restart 与 archive 链路。Member Questions、实际运行 Platform 流量、打包 Desktop 与真实提供方行为继续由各自验收负责。
 
 ## 测试
 
