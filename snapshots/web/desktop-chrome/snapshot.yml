@@ -1,0 +1,8 @@
+version: 1
+scenario: desktop-chrome
+profile: web
+composition: web-desktop
+recording: live
+header:
+  class: web-desktop
+  pin: true

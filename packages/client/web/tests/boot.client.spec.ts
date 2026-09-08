@@ -6,6 +6,7 @@ import type {
   WebBootEntry,
 } from '@deepseek-ai/dsh-client-modules/client'
 import * as desktopClient from '@deepseek-ai/dsh-client-ui-desktop/client'
+import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
@@ -137,7 +138,7 @@ describe('plugin activation', () => {
                 ctx.effect(() => slots.register({
                   name: 'root',
                   children: { 'shell.overlay': { kind: 'list', scope: 'root' } },
-                }, () => null))
+                }, (props: PropsRenderSlots<'shell.overlay'>) => props.renderSlot('shell.overlay', {})))
                 ctx.reflect.provide('uiRenderer', {
                   mount: () => {
                     observe('mount')
