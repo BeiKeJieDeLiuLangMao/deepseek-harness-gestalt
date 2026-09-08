@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { Context } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -68,7 +69,7 @@ describe('Remote Access HTTP assembled flow', () => {
       handshake,
       authority: new MemoryPersonalPairingAuthorityStore(),
       randomBytes: size => new Uint8Array(size),
-      randomId: kind => `${kind}-${crypto.randomUUID()}`,
+      randomId: kind => `${kind}-${randomUUID()}`,
       pairingLinkOrigin: 'https://platform.example/pair',
     })
     const server = await start(remoteAccess)
@@ -168,7 +169,7 @@ describe('Remote Access HTTP assembled flow', () => {
       handshake,
       authority: new MemoryPersonalPairingAuthorityStore(),
       randomBytes: size => new Uint8Array(size),
-      randomId: kind => `${kind}-${crypto.randomUUID()}`,
+      randomId: kind => `${kind}-${randomUUID()}`,
       pairingLinkOrigin: 'https://platform.example/pair',
     })
     const server = await start(remoteAccess)
@@ -625,7 +626,7 @@ describe('Remote Access HTTP assembled flow', () => {
 function authentication(accessToken: string): PairingAccountAuthentication {
   return {
     accessToken,
-    proof: { jti: parseAccountProofJti(crypto.randomUUID()), issuedAt: 1, signature: 'signature' },
+    proof: { jti: parseAccountProofJti(randomUUID()), issuedAt: 1, signature: 'signature' },
   }
 }
 

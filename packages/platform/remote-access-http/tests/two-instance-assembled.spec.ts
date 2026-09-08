@@ -1,6 +1,6 @@
 /** REAL Loader composition: two Platform Instances share test adapters and one TLS endpoint. */
 
-import { randomBytes } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 import { once } from 'node:events'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import type { IncomingMessage } from 'node:http'
@@ -689,7 +689,7 @@ function instanceProvider(id: string, shared: SharedAdapters, entropy: number): 
         relay,
         authority: shared.authority,
         randomBytes: size => new Uint8Array(size).fill(41),
-        randomId: kind => `${kind}-${id}-${crypto.randomUUID()}`,
+        randomId: kind => `${kind}-${id}-${randomUUID()}`,
         pairingLinkOrigin: 'https://platform.example/pair',
       })
     },
@@ -973,10 +973,10 @@ class AssembledRedisBus {
         const key = options.keys[0]
         if (key === undefined) return 0
         if (script.includes("redis.call('SET', KEYS[1], ARGV[1]")) {
-          this.write(key, options.arguments[0] as string, Number(options.arguments[1]))
-          const routeKey = options.keys[1] as string
+          this.write(key, options.arguments[0], Number(options.arguments[1]))
+          const routeKey = options.keys[1]
           const members = this.sets.get(routeKey) ?? new Set()
-          members.add(options.arguments[2] as string)
+          members.add(options.arguments[2])
           this.sets.set(routeKey, members)
           return 1
         }
@@ -986,14 +986,14 @@ class AssembledRedisBus {
         if (record.connectionToken !== options.arguments[0]) return 0
         if (script.includes("redis.call('SREM'")) {
           this.values.delete(key)
-          this.sets.get(options.keys[1] as string)?.delete(options.arguments[1] as string)
+          this.sets.get(options.keys[1])?.delete(options.arguments[1])
         } else {
-          const replacement = options.arguments[1] as string
+          const replacement = options.arguments[1]
           const ttl = options.arguments[2]
           this.write(key, replacement, ttl === undefined ? undefined : Number(ttl))
-          const routeKey = options.keys[1] as string
+          const routeKey = options.keys[1]
           const members = this.sets.get(routeKey) ?? new Set()
-          members.add(options.arguments[3] as string)
+          members.add(options.arguments[3])
           this.sets.set(routeKey, members)
         }
         return 1
