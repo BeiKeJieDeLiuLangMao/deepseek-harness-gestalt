@@ -87,5 +87,5 @@ hoisted deploy 会纳入工作区包，但不带 pnpm 的链接式虚拟依赖�
 - **安装包里的 Node + dsh 快照由发布 workflow 组装** — `gestalt:dev` 跑的是工作区源码树。
 - **没有 Windows Authenticode** — SmartScreen 会警告；更新器仍会运行。
 - **Companion 发布证据由仓库门禁持有** — Node 22 与 24、iOS Simulator WKWebView 和 Android Emulator WebView 会执行仓库内确切的 Snow JS/WASM 包及其有界攻击用例。验收表面仍是组装后的 Desktop/Mobile 产品链路；本地 Vite、测试证书与 `prototype-companion` 不是产品验收。
-- **非 Member Questions 关键路径 Electron 验收仅限源码** — `pnpm run test:e2e-critical-path-electron` 只构建一次当前源码，三次启动同一个隔离 Desktop，并经界面走通 Workspace 连接、主 Session 提示词、Models 实时配置、Side Chat 模型与权限选择、进程恢复、关闭及持久归档核对。每次运行都拥有独占的产物命名空间，由正式持久化实现解析生产 JSONL，采样 Electron 与 Host 的精确进程身份及其后代，并在写入最终结果前删除匹配凭据材料的保留文件。其环回模型只记录阶段、请求路径和模型 id；该通道从不读取正常 `DSH_HOME`，并在 Linux 上要求可见 `DISPLAY`。
+- **非 Member Questions 关键路径 Electron 验收仅限源码** — `pnpm run test:e2e-critical-path-electron` 只构建一次当前源码，三次启动同一个隔离 Desktop，并经界面走通 Workspace 连接、主 Session 提示词、Models 实时配置、Side Chat 模型与权限选择、进程恢复、关闭及持久归档核对。每次运行都拥有独占的产物命名空间，由正式持久化实现解析生产 JSONL，采样 Electron 与 Host 的精确进程身份及其后代，并在写入最终结果前删除匹配凭据材料的保留文件。属主或 scan 未能停稳时，runner 会保留失败结果与 scratch 供诊断，并隐藏产物分享路径。其环回模型只记录阶段、请求路径和模型 id；该通道从不读取正常 `DSH_HOME`，并在 Linux 上要求可见 `DISPLAY`。
 - **Project Members 三安装 Electron 验收仅限源码** — `pnpm run test:e2e-project-members-electron` 会重建当前源码，对着一个本地无密钥 Platform 启动 A1/B1/B2，并在 Linux 上要求可见 `DISPLAY`。打包后的 Desktop 永不接受 `--dsh-e2e-profile`。

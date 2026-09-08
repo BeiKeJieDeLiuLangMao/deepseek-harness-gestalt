@@ -1,16 +1,20 @@
 {
   "extends": "../../../../tsconfig.base.json",
   "compilerOptions": {
-    "rootDir": "..",
+    "rootDir": "../../../..",
     "outDir": "../../lib/critical-path-e2e-types",
     "noEmit": true,
     "composite": false,
     "declaration": false,
     "declarationMap": false,
     "rewriteRelativeImportExtensions": false,
-    "paths": {},
     "lib": ["ES2023", "DOM"],
     "types": ["node", "@wdio/globals/types", "@wdio/mocha-framework", "@wdio/native-types"]
   },
-  "include": ["./**/*.ts", "../electron-runner-infrastructure.ts"]
+  "include": ["./**/*.ts", "../electron-runner-infrastructure.ts"],
+  "references": [
+    { "path": "../../../../packages/core/session" },
+    { "path": "../../../../packages/session/session-persistence-jsonl" },
+    { "path": "../../../../packages/subprocess/subprocess-local" }
+  ]
 }

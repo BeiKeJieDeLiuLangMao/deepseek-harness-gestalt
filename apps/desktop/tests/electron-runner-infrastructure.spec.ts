@@ -3,7 +3,7 @@ import type {
   ProcessIdentity, ProcessInspector, ProcessSnapshot,
 } from '@deepseek-ai/dsh-subprocess-local/src/process-inspector.ts'
 import {
-  captureOwnedProcessTree, terminateOwnedProcesses,
+  captureOwnedProcessTree, removeScratchIfOwnersQuiescent, terminateOwnedProcesses,
 } from './electron-runner-infrastructure.ts'
 
 describe('Electron runner owned-process handling', () => {
@@ -46,6 +46,14 @@ describe('Electron runner owned-process handling', () => {
     await terminateOwnedProcesses([identity], inspector)
 
     expect(signalProcess).toHaveBeenCalledExactlyOnceWith(identity, 'SIGTERM')
+  })
+
+  it('retains scratch when an acquired owner did not reach quiescence', async () => {
+    const removeTree = vi.fn<typeof import('node:fs/promises').rm>()
+
+    await expect(removeScratchIfOwnersQuiescent('/private/scratch', false, removeTree))
+      .resolves.toBe(false)
+    expect(removeTree).not.toHaveBeenCalled()
   })
 })
 

@@ -1,7 +1,7 @@
 /** Shared process, TLS, and loopback infrastructure for source Electron acceptance lanes. */
 
 import { execFile, spawn } from 'node:child_process'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { createServer as createHttpServer, request as httpRequest } from 'node:http'
 import { createServer as createHttpsServer } from 'node:https'
 import { networkInterfaces } from 'node:os'
@@ -224,6 +224,23 @@ export async function terminateOwnedProcesses(
     inspector.signalProcess(identity, 'SIGKILL')
   }
   await assertOwnedProcessesExited(unique, inspector)
+}
+
+/**
+ * Remove a runner scratch tree only after every acquired owner reaches quiescence.
+ * @param root - Private scratch root owned by one runner invocation.
+ * @param ownersQuiescent - Whether all acquired model and process owners stopped.
+ * @param removeTree - Filesystem removal operation.
+ * @returns Whether the scratch tree was removed; false means it remains for safe diagnosis.
+ */
+export async function removeScratchIfOwnersQuiescent(
+  root: string,
+  ownersQuiescent: boolean,
+  removeTree: typeof rm = rm,
+): Promise<boolean> {
+  if (!ownersQuiescent) return false
+  await removeTree(root, { recursive: true, force: true })
+  return true
 }
 
 /**

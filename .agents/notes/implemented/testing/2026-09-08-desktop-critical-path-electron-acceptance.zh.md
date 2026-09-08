@@ -16,7 +16,7 @@ create 阶段通过已交付的浏览目录提供方连接 Workspace，经 rende
 
 restore 阶段复用完全相同的 home、Workspace 和 `userData`。它要求只恢复一个具有相同模型与权限的 Side Chat tab，记录此前 child-owned event cut 与可见回答数，再发送另一条提示词。该阶段要求新增且仅新增一条可见回答，并要求该 cut 之后按序出现一条 child-owned user message、model request、assistant message 与持久 turn end。它会证明主 Session 标题栏显示这个确切的持久 child，再经界面关闭该 tab。归档投影完成后，该阶段会等待 tab 与主标题栏 child row 一起消失。archive 阶段再次启动同一状态，确认 tab 保持关闭、child id 位于 Workspace domain 的持久归档集合中，并确认 child JSONL 仍携带两轮自有 turn、两条模型 B request header 与 Read Only event。
 
-环回 OpenAI-compatible HTTP listener 是唯一的外部服务替代。它按请求模型返回回答，只保留阶段、URL 路径与 model id。测试 profile 把自动标题生成路由到另一个已交付的 DeepSeek 模型，使 audit 无需保留提示词正文也能区分该请求。runner 不读取用户正常的 `DSH_HOME`；其测试 profile 只被仅限源码的 Desktop E2E gate 接受。WDIO 会记录每个实际观察到的测试结果，不会用计划阶段数替代执行。进程证据会在测试正文前记录 Electron，在首次观察到 Web Host 启动记录的 poll 内记录 Host，并在每个阶段持续采样二者的精确启动身份及其后代。teardown 只向仍匹配的身份发送信号，把已复用 PID 当作原属主已退出，并要求所有已捕获身份都在清理 scratch 前停止。生产 Session JSONL 由 JSONL 持久化实现解码；runner 自有的跨阶段记录只解析已声明字段并重建 branded Session id。
+环回 OpenAI-compatible HTTP listener 是唯一的外部服务替代。它按请求模型返回回答，只保留阶段、URL 路径与 model id。测试 profile 把自动标题生成路由到另一个已交付的 DeepSeek 模型，使 audit 无需保留提示词正文也能区分该请求。runner 不读取用户正常的 `DSH_HOME`；其测试 profile 只被仅限源码的 Desktop E2E gate 接受。WDIO 会记录每个实际观察到的测试结果，不会用计划阶段数替代执行。进程证据会在测试正文前记录 Electron，在首次观察到 Web Host 启动记录的 poll 内记录 Host，并在每个阶段持续采样二者的精确启动身份及其后代。teardown 只向仍匹配的身份发送信号，并把已复用 PID 当作原属主已退出。只有 model listener 与所有已捕获进程身份都停止后，runner 才会删除 scratch；否则会保留失败运行的 scratch，并隐藏产物分享路径。生产 Session JSONL 由 JSONL 持久化实现解码；runner 自有的跨阶段记录只解析已声明字段并重建 branded Session id。专用 build-mode typecheck 继承源码 paths，并引用 runner 使用的三个 Host-face workspace project，因此干净树会先构建并检查这些源码，再检查验收文件。
 
 ## 考虑过的替代方案
 
@@ -30,7 +30,7 @@ restore 阶段复用完全相同的 home、Workspace 和 `userData`。它要求�
 
 ## 结果
 
-一条命令会在 `.artifacts/critical-path-electron/<timestamp>-<sha>-<random>/` 下生成可评审的 screenshot、build log、phase log、进程身份证据、无提示词正文的提供方 audit、脱敏后的主与子 event-ledger JSONL、Session state 与 result manifest。manifest 聚合 WDIO 实际观察到的通过、失败与跳过计数；setup、build、任一阶段或 cleanup 失败时，它仍会保留固定提交与脱敏失败摘要。它会在删除 scratch 前先按未完成写入，只有 cleanup 与保留产物 secret scan 完成后才能报告通过。命中文件会被删除，manifest 只报告数量，绝不报告命中内容；scan 未完整结束时，runner 会先清空该命名空间，再写入新的失败 manifest。脱敏 ledger 保留 Session id、lineage、owned event type、request 与 assistant route、permission 和 archive set，同时省略提示词正文、system text、tool schema 与 event payload。通过结果证明该提交上的普通单安装 create、restart 与 archive 链路。Member Questions、实际运行 Platform 流量、打包 Desktop 与真实提供方行为继续由各自验收负责。
+一条命令会在 `.artifacts/critical-path-electron/<timestamp>-<sha>-<random>/` 下生成可评审的 screenshot、build log、phase log、进程身份证据、无提示词正文的提供方 audit、脱敏后的主与子 event-ledger JSONL、Session state 与 result manifest。manifest 聚合 WDIO 实际观察到的通过、失败与跳过计数；setup、build、任一阶段或 cleanup 失败时，它仍会保留固定提交与脱敏失败摘要。它会在删除 scratch 前先按失败写入，只有 cleanup 与保留产物 secret scan 完成后才能报告通过。匹配凭据材料的普通文件会被删除，manifest 只报告数量，绝不报告命中内容。link-shaped 或不可读条目会使该命名空间不可分享：runner 会保留该命名空间而不递归删除、不输出分享路径，并保留清理前写入的失败 manifest。脱敏 ledger 保留 Session id、lineage、owned event type、request 与 assistant route、permission 和 archive set，同时省略提示词正文、system text、tool schema 与 event payload。通过结果证明该提交上的普通单安装 create、restart 与 archive 链路。Member Questions、实际运行 Platform 流量、打包 Desktop 与真实提供方行为继续由各自验收负责。
 
 ## 测试
 

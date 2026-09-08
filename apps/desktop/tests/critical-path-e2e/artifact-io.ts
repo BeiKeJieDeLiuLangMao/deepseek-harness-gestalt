@@ -53,6 +53,11 @@ export interface StoredSessionEvent {
   readonly data: unknown
 }
 
+/** Secret-scan outcome that never carries matched content or an unsafe path. */
+export type RetainedArtifactScan =
+  | { readonly shareable: true; readonly removedFiles: number }
+  | { readonly shareable: false }
+
 /**
  * Read a file that may not have been created yet; other failures remain fatal.
  * @param path - Artifact path to read.
@@ -227,23 +232,27 @@ export function hasExactCompletedOwnTurn(
 }
 
 /**
- * Remove retained files containing ambient credential values or credential records.
+ * Scan retained artifacts and remove files containing credential material.
  * @param artifactRoot - Exclusive artifact namespace to scan.
  * @param secretValues - Credential values captured before child environments are scrubbed.
- * @returns Count of removed files; no matching content is returned.
+ * @returns A shareability decision and safe count; scan failures expose no path or content.
  */
-export async function removeSecretBearingArtifacts(
+export async function scanRetainedArtifacts(
   artifactRoot: string,
   secretValues: readonly string[],
-): Promise<number> {
-  let removed = 0
-  for (const path of await regularFiles(artifactRoot)) {
-    const bytes = await readFile(path)
-    if (!containsSecret(bytes, secretValues)) continue
-    await rm(path)
-    removed += 1
+): Promise<RetainedArtifactScan> {
+  try {
+    let removedFiles = 0
+    for (const path of await regularFiles(artifactRoot)) {
+      const bytes = await readFile(path)
+      if (!containsSecret(bytes, secretValues)) continue
+      await rm(path)
+      removedFiles += 1
+    }
+    return { shareable: true, removedFiles }
+  } catch (_unsafeOrUnreadableArtifact) {
+    return { shareable: false }
   }
-  return removed
 }
 
 /**

@@ -3,7 +3,7 @@
 
 import { execFile } from 'node:child_process'
 import {
-  access, mkdir, mkdtemp, readFile, rm, writeFile,
+  access, mkdir, mkdtemp, readFile, writeFile,
 } from 'node:fs/promises'
 import { platform, release, tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -11,13 +11,17 @@ import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import type { ProcessIdentity } from '@deepseek-ai/dsh-subprocess-local/src/process-inspector.ts'
 import {
-  assertOwnedProcessesExited, cleanEnvironment, runLogged, terminateOwnedProcesses,
+  assertOwnedProcessesExited,
+  cleanEnvironment,
+  removeScratchIfOwnersQuiescent,
+  runLogged,
+  terminateOwnedProcesses,
 } from '../electron-runner-infrastructure.ts'
 import {
   readOptionalFile,
   readProcessEvidence,
   redactArtifactDiagnostic,
-  removeSecretBearingArtifacts,
+  scanRetainedArtifacts,
   type PhaseProcessEvidence,
 } from './artifact-io.ts'
 import {
@@ -244,9 +248,11 @@ try {
   failure = error
 } finally {
   const cleanupFailures: unknown[] = []
+  let modelQuiescent = model === undefined
   if (model !== undefined) {
     try {
       await model.close()
+      modelQuiescent = true
     } catch (modelCloseFailure) {
       cleanupFailures.push(modelCloseFailure)
     }
@@ -256,6 +262,7 @@ try {
       cleanupFailures.push(auditEvidenceFailure)
     }
   }
+  let processesQuiescent = false
   try {
     const recorded = await readProcessEvidence(artifactRoot)
     const remaining = phases.flatMap(phase => identitiesOf(recorded[phase])
@@ -270,16 +277,22 @@ try {
         result.processesExited = identities.length >= 2
       }
     }
+    processesQuiescent = true
   } catch (processCleanupFailure) {
     cleanupFailures.push(processCleanupFailure)
   }
+  const ownersQuiescent = modelQuiescent && processesQuiescent
   await retainResultManifest([
     ...currentFailures(failure, cleanupFailures),
     new Error('critical-path scratch cleanup has not completed'),
   ], cleanupFailures)
   if (runtimeRoot !== undefined) {
     try {
-      await rm(runtimeRoot, { recursive: true, force: true })
+      const removed = await removeScratchIfOwnersQuiescent(runtimeRoot, ownersQuiescent)
+      if (!removed) {
+        artifactsShareable = false
+        cleanupFailures.push(new Error('critical-path scratch retained because an owner did not reach quiescence'))
+      }
     } catch (runtimeCleanupFailure) {
       cleanupFailures.push(runtimeCleanupFailure)
     }
@@ -289,25 +302,26 @@ try {
   } catch (sourceMovementFailure) {
     cleanupFailures.push(sourceMovementFailure)
   }
-  try {
-    const removed = await removeSecretBearingArtifacts(artifactRoot, secretValues)
-    if (removed > 0) {
-      cleanupFailures.push(new Error(`retained artifact secret scan removed ${String(removed)} file(s)`))
-    }
-  } catch (artifactScanFailure) {
-    cleanupFailures.push(new Error('retained artifact secret scan failed', { cause: artifactScanFailure }))
-    artifactsShareable = false
-    try {
-      await rm(artifactRoot, { recursive: true, force: true })
-      await mkdir(artifactRoot, { mode: 0o700 })
-      artifactsShareable = true
-    } catch (artifactPurgeFailure) {
-      cleanupFailures.push(new Error('unsafe artifact namespace purge failed', { cause: artifactPurgeFailure }))
+  if (ownersQuiescent) {
+    const scan = await scanRetainedArtifacts(artifactRoot, secretValues)
+    if (scan.shareable) {
+      if (scan.removedFiles > 0) {
+        cleanupFailures.push(new Error(
+          `retained artifact secret scan removed ${String(scan.removedFiles)} file(s)`,
+        ))
+      }
+    } else {
+      cleanupFailures.push(new Error('retained artifact secret scan could not establish a shareable namespace'))
+      artifactsShareable = false
     }
   }
-  await retainResultManifest(currentFailures(failure, cleanupFailures), cleanupFailures)
+  if (artifactsShareable) {
+    await retainResultManifest(currentFailures(failure, cleanupFailures), cleanupFailures)
+  }
   if (artifactsShareable) process.stdout.write(`Critical-path Electron artifacts: ${artifactRoot}\n`)
-  else process.stderr.write('Critical-path Electron artifacts are unavailable because safe purge failed\n')
+  else process.stderr.write(
+    'Critical-path Electron artifacts are unavailable because ownership or artifact scan did not settle\n',
+  )
   if (failure !== undefined && cleanupFailures.length > 0) {
     throw new AggregateError([failure, ...cleanupFailures], 'Critical-path Electron run and cleanup failed')
   }

@@ -1,4 +1,6 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import {
+  mkdir, mkdtemp, readFile, rm, symlink, unlink, writeFile,
+} from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -9,7 +11,7 @@ import {
   readOptionalFile,
   readProcessEvidence,
   redactArtifactDiagnostic,
-  removeSecretBearingArtifacts,
+  scanRetainedArtifacts,
 } from './artifact-io.ts'
 
 describe('critical-path durable evidence', () => {
@@ -90,12 +92,33 @@ describe('critical-path durable evidence', () => {
         writeFile(safe, '{"passed":false}\n'),
       ])
 
-      await expect(removeSecretBearingArtifacts(root, [secret])).resolves.toBe(1)
+      await expect(scanRetainedArtifacts(root, [secret])).resolves.toEqual({
+        shareable: true,
+        removedFiles: 1,
+      })
       await expect(readOptionalFile(leaked)).resolves.toBeUndefined()
       await expect(readFile(safe, 'utf8')).resolves.toBe('{"passed":false}\n')
       expect(redactArtifactDiagnostic(`failed with token=${secret}`, [secret]))
         .toBe('failed with token=[REDACTED]')
     } finally {
+      await rm(root, { recursive: true })
+    }
+  })
+
+  it('marks a link-shaped artifact namespace unshareable without touching its target', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-critical-link-scan-'))
+    const artifacts = join(root, 'artifacts')
+    const outside = join(root, 'outside')
+    const link = join(artifacts, 'linked-output')
+    const sentinel = join(outside, 'sentinel.txt')
+    await Promise.all([mkdir(artifacts), mkdir(outside)])
+    await writeFile(sentinel, 'must remain\n')
+    await symlink(outside, link, process.platform === 'win32' ? 'junction' : 'dir')
+    try {
+      await expect(scanRetainedArtifacts(artifacts, [])).resolves.toEqual({ shareable: false })
+      await expect(readFile(sentinel, 'utf8')).resolves.toBe('must remain\n')
+    } finally {
+      await unlink(link)
       await rm(root, { recursive: true })
     }
   })
