@@ -266,8 +266,6 @@ export const longProbe = 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 +
     { directory: 'examples/member-presence-close/tests', files: ['member-presence-close.spec.ts', 'fixtures/driver.ts'], negative: 'loader' },
     { directory: 'examples/platform-account', files: ['start.ts'], negative: 'account' },
     { directory: 'examples/platform-account/tests', files: ['platform-account.spec.ts', 'fixtures/driver.ts'], negative: 'loader' },
-    { directory: 'examples/project-members', files: ['start.ts', 'memory-member-question.ts', 'memory-membership.ts', 'mock-llm.ts'], negative: 'account' },
-    { directory: 'examples/project-members/tests', files: ['project-members.snapshot.ts'], negative: 'loader' },
     { directory: 'examples/personal-pairing/tests', files: ['personal-pairing.spec.ts', 'fixtures/driver.ts'], negative: 'loader' },
     { directory: 'examples/two-instance-relay/tests', files: ['resource-owner.spec.ts', 'relay-loader.spec.ts', 'two-instance-relay.spec.ts', 'fixtures/driver.ts'], negative: 'loader' },
     { directory: 'packages/api/settings-controller/tests', files: ['settings-web-search.generated.host.spec.ts'], negative: 'context' },
