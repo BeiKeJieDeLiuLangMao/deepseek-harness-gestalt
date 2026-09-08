@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  type CompanionOperation,
   parseCompanionOperationId,
   parseCompanionSessionId,
   parseCompanionInteractionId,
@@ -153,6 +154,61 @@ describe('Mobile Snow Companion product channel', () => {
           'load-history', 'refresh-surface', 'load-history', 'refresh-surface',
         ])
     })
+  })
+
+  it('sends typed Question answers and cancellations', async () => {
+    const connection = new MobileSnowCompanionConnection()
+    const seal = vi.fn((_message: unknown) => Uint8Array.of(1))
+    connection.connect({
+      channel: { seal } as never,
+      targetAttachmentId: parseRelayAttachmentId('desktop-question-settlement'),
+      pairingSelector: parseRelayPairingSelector('pairing-question-settlement'),
+      generation: 1,
+    })
+    const product = new MobileSnowCompanionProductChannel({
+      runtime: synchronizedRuntime(),
+      connection,
+      operationSettlement: settlement(),
+      installation: { authorizeCurrentInstallation: vi.fn() },
+      attachmentKeys: { attachmentKeyMaterial: () => undefined },
+      platformOrigin: 'https://platform.example',
+      sendCiphertext: async () => {},
+    })
+
+    const answered = product.settle({
+      kind: 'question',
+      sessionId: sid('session-question-settlement'),
+      interactionId: parseCompanionInteractionId('interaction-question-answered'),
+      result: { ok: true, value: { answer: { answers: [{ id: 'diet', selected: ['vegan'] }] } } },
+    })
+    const cancelled = product.settle({
+      kind: 'question',
+      sessionId: sid('session-question-settlement'),
+      interactionId: parseCompanionInteractionId('interaction-question-cancelled'),
+      result: { ok: false, error: { code: 'cancelled' } },
+    })
+
+    await vi.waitFor(() => { expect(seal).toHaveBeenCalledTimes(2) })
+    const operations = seal.mock.calls.map(([message]) => {
+      const operation = (message as { operation: CompanionOperation }).operation
+      if (operation.type !== 'settle-interaction') throw new Error('Expected an interaction settlement')
+      return operation
+    })
+    expect(operations.map(operation => operation.settlement)).toEqual([
+      { kind: 'question', answers: [{ id: 'diet', selected: ['vegan'] }] },
+      { kind: 'question-cancelled' },
+    ])
+    const [answeredOperation, cancelledOperation] = operations
+    if (answeredOperation === undefined || cancelledOperation === undefined) {
+      throw new Error('Expected both interaction settlements')
+    }
+    product.acceptResult({
+      type: 'interaction-receipt', operationId: answeredOperation.operationId, accepted: true,
+    })
+    product.acceptResult({
+      type: 'interaction-receipt', operationId: cancelledOperation.operationId, accepted: true,
+    })
+    await expect(Promise.all([answered, cancelled])).resolves.toEqual([{ accepted: true }, { accepted: true }])
   })
 
   it('refreshes the authoritative history and surface after a confirmed prompt or cancel', async () => {
