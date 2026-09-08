@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
-import { join, relative } from 'node:path'
+import { join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { flattenDiagnosticMessageText, parseConfigFileTextToJson } from 'typescript'
 import { describe, expect, it } from 'vitest'
@@ -213,6 +213,8 @@ export const longProbe = 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 +
       throw new Error('package.json must contain scripts and devDependencies objects')
     }
 
+    expect(packageJson.scripts.lint).toBe('npm run build:lib:host && npm run build:lib:client && npm run lint:contracts-ready')
+    expect(packageJson.scripts['lint:fix']).toBe('npm run build:lib:host && npm run build:lib:client && npm run lint:fix:contracts-ready')
     expect(packageJson.scripts['lint:contracts-ready']).toBe('tsx scripts/run-oxlint.ts .')
     expect(packageJson.scripts['lint:fix:contracts-ready']).toBe(
       'tsx scripts/run-oxlint.ts --config .oxlintrc.staged.json packages/typert/generator/tests/fixtures/type-model --fix && tsx scripts/run-oxlint.ts . --fix',
@@ -226,6 +228,51 @@ export const longProbe = 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 +
     expect(lefthook).not.toContain('node_modules/.bin/eslint')
     expect(lefthook).not.toContain('eslint.format.config.mjs')
   })
+
+  it('checks the Remote Protocol example in its own typed project and rejects invalid input', async () => {
+    const exampleRoot = join(repositoryRoot, 'examples/remote-protocol')
+    const exampleConfig = parseConfigFileTextToJson(
+      'tsconfig.json', await readFile(join(exampleRoot, 'tsconfig.json'), 'utf8'),
+    ).config as unknown
+    if (!isRecord(exampleConfig) || !isUnknownArray(exampleConfig.references)) {
+      throw new Error('Remote Protocol example must declare its TypeScript project references')
+    }
+    expect(exampleConfig.files).toEqual(['start.ts'])
+    const references = exampleConfig.references.map((reference) => {
+      if (!isRecord(reference) || typeof reference.path !== 'string') {
+        throw new Error('example TypeScript project reference must contain a path')
+      }
+      return { path: resolve(exampleRoot, reference.path) }
+    })
+    const valid = runOxlint(['examples/remote-protocol/start.ts', '--format', 'unix'])
+    expect(valid.error).toBeUndefined()
+    expect(valid.status, normalizedOutput(valid)).toBe(0)
+
+    const suffix = randomUUID()
+    const probeRoot = join(exampleRoot, `.oxlint-contract-${suffix}`)
+    const configPath = await writeContractConfig(suffix)
+    try {
+      await mkdir(probeRoot)
+      await writeFile(join(probeRoot, 'tsconfig.json'), JSON.stringify({
+        extends: '../tsconfig.json', files: ['negative.ts'], references,
+      }))
+      await writeFile(join(probeRoot, 'negative.ts'),
+        "import { negotiateRelayTransportVersion } from '@deepseek-ai/dsh-remote-protocol'\n"
+        + "export const rejected = negotiateRelayTransportVersion('invalid', [1])\n")
+      const invalid = runOxlint([
+        '--config', relative(repositoryRoot, configPath), '--type-check', '--format', 'unix',
+        relative(repositoryRoot, join(probeRoot, 'negative.ts')),
+      ])
+      const output = normalizedOutput(invalid)
+      expect(invalid.error).toBeUndefined()
+      expect(invalid.status, output).toBe(1)
+      expect(output).toContain('TS2345')
+      expect(output).toContain("Argument of type 'string' is not assignable to parameter of type 'readonly number[]'")
+      expect(output).not.toContain('no-unsafe-')
+    } finally {
+      await Promise.all([rm(probeRoot, { recursive: true, force: true }), rm(configPath, { force: true })])
+    }
+  }, 30_000)
 
   it('reports an unused suppression', async () => {
     const suffix = randomUUID()
