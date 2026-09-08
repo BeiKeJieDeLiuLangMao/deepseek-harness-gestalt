@@ -22,6 +22,7 @@ import {
   type StoredSessionLog,
 } from './artifact-io.ts'
 import { EDIT_PATH_BUTTON_SELECTOR, TASKS_TAB_SELECTOR } from './ui-selectors.ts'
+import { replacePathInput } from './keyboard-input.ts'
 
 const PARENT_PROMPT = 'Answer with the parent route marker.'
 const SIDE_PROMPT = 'Check route B.'
@@ -262,7 +263,7 @@ async function connectWorkspace(): Promise<void> {
   await editPath.waitForClickable({ timeout: 10_000 })
   await editPath.click()
   const path = await element(dialog, 'input[aria-label="Edit path"]')
-  await path.setValue(required('DSH_CRITICAL_PATH_WORKSPACE'))
+  await replacePathInput(browser, path, required('DSH_CRITICAL_PATH_WORKSPACE'))
   await browser.keys(['Enter'])
   await clickExact(dialog, 'Open')
   await editableComposer(browser)
