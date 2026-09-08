@@ -19,6 +19,7 @@ import {
   DesktopCompanionSurfaceDiscovery,
   DesktopCompanionProductOwner,
   handleCompanionProductOperation,
+  projectDesktopCompanionLiveSession,
 } from '../src/companion-product.ts'
 import type { DesktopHostRpc, DesktopHostRpcResult } from '../src/host-rpc.ts'
 
@@ -307,6 +308,47 @@ describe('Desktop Companion product operations', () => {
         hasMore: false,
       },
     })
+  })
+
+  it('preserves durable assistant interruption in paged history and live replacements', async () => {
+    const dependencies = assistantHistoryDependencies(true)
+    const conversation = { nodes: [{
+      kind: 'assistant', messageId: 'message-partial', seq: 2, time: 20, turn: 1, step: 1,
+      blocks: [{ kind: 'text', text: 'Delivered prefix' }], interrupted: true,
+    }] }
+
+    await expect(handleCompanionProductOperation(
+      op({ type: 'load-history', sessionId, maxMessages: 20 }), dependencies,
+    )).resolves.toMatchObject({ type: 'conversation-snapshot', conversation })
+    await expect(projectDesktopCompanionLiveSession(
+      sessionId, true, dependencies, new AbortController().signal,
+    )).resolves.toMatchObject({ sessionId, conversation })
+  })
+
+  it.each([false, null, 1, 'true'])('rejects assistant interruption %j at the Host JSON boundary', async (interrupted) => {
+    const dependencies = assistantHistoryDependencies(interrupted)
+
+    await expect(handleCompanionProductOperation(
+      op({ type: 'load-history', sessionId, maxMessages: 20 }), dependencies,
+    )).resolves.toMatchObject({ type: 'operation-failed', failure: { code: 'HOST_WIRE_INVALID' } })
+    await expect(projectDesktopCompanionLiveSession(
+      sessionId, true, dependencies, new AbortController().signal,
+    )).rejects.toThrow('Desktop Host live conversation returned an invalid value')
+  })
+
+  it('keeps unmarked assistant messages unmarked even when the turn is aborted', async () => {
+    const dependencies = assistantHistoryDependencies()
+    const page = await handleCompanionProductOperation(
+      op({ type: 'load-history', sessionId, maxMessages: 20 }), dependencies,
+    )
+    const live = await projectDesktopCompanionLiveSession(
+      sessionId, true, dependencies, new AbortController().signal,
+    )
+
+    for (const projection of [page, live]) {
+      expect(projection).toMatchObject({ conversation: { nodes: [{ kind: 'assistant' }] } })
+      expect(projection).not.toHaveProperty('conversation.nodes.0.interrupted')
+    }
   })
 
   it('projects non-user messages with the shared context presentation metadata', async () => {
@@ -777,6 +819,29 @@ function search(query: string): CompanionSearchSessionsOperation {
 
 function hostRpc(call: DesktopHostRpc['call'], respond?: DesktopHostRpc['respond']): DesktopHostRpc {
   return { call, ...(respond === undefined ? {} : { respond }) }
+}
+
+function assistantHistoryDependencies(interrupted?: unknown) {
+  return baseDependencies(hostRpc(async (method) => {
+    if (method === 'session.list') return { ok: true, value: { items: [{
+      sessionId, updatedAt: 30, running: false, blank: false,
+    }] } }
+    if (method === 'workspace.list') return { ok: true, value: { items: [], archivedSessionIds: [] } }
+    expect(method).toBe('session.history')
+    return { ok: true, value: {
+      events: [
+        { event: { type: 'assistant/message', seq: 2, time: 20, data: {
+          turn: 1, step: 1,
+          ...(interrupted === undefined ? {} : { interrupted }),
+          message: { id: 'message-partial', content: [{ type: 'text', text: 'Delivered prefix' }] },
+        } } },
+        { event: { type: 'turn/end', seq: 3, time: 30, data: {
+          turn: 1, reason: { kind: 'aborted', reason: { kind: 'user' } },
+        } } },
+      ],
+      hasMore: false,
+    } }
+  }))
 }
 
 function baseDependencies(host: DesktopHostRpc) {

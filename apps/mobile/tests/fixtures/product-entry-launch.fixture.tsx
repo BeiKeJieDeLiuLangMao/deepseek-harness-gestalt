@@ -191,7 +191,7 @@ function conversation(mode: EvidenceMode): ValidatedDesktopSurfaceResync['conver
     sessionId: SESSION_ID,
     nodes: [
       {
-        kind: 'assistant', seq: 1, time: 1, turn: 1, step: 1,
+        kind: 'assistant', seq: 1, time: 1, turn: 1, step: 1, interrupted: true,
         blocks: [{ kind: 'text', text: '**Shared Markdown**\n\n```ts\nconst shared = true\n```' }],
       },
       {

@@ -13,7 +13,7 @@ import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import LocalAttachmentStore from '@deepseek-ai/dsh-attachment-local'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { createApiProxy, toFetchHandler } from '@deepseek-ai/dsh-host-apiproxy'
-import LlmRuntime, { createUserMessage } from '@deepseek-ai/dsh-llm'
+import LlmRuntime, { createAssistantMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import { WebSocketDownlinks } from '@deepseek-ai/dsh-client-connection/src/websocket-downlink.ts'
 import { parsePersonalPairingId } from '@deepseek-ai/dsh-remote-access'
 import {
@@ -279,8 +279,25 @@ describe('assembled Desktop Companion Host search', () => {
     await surface.submit(assembled.sessionId, 'submitted through Companion v3')
     await expect.poll(() => assembled.session.events.some(event => event.type === 'user/message'
       && JSON.stringify(event.data).includes('submitted through Companion v3'))).toBe(true)
+    assembled.session.append('turn/start', { turn: 1 })
+    assembled.session.append('step/start', { turn: 1, step: 1 })
     surface.cancel(assembled.sessionId)
     await expect.poll(() => assembled.cancelled.value).toBe(1)
+    assembled.session.append('assistant/message', {
+      turn: 1, step: 1, interrupted: true,
+      message: createAssistantMessage({
+        content: [{ type: 'text', text: 'Cancelled Companion prefix' }],
+        source: { provider: 'assembled-provider', model: 'assembled-model' },
+      }),
+    }, { surfaceOp: 'append' })
+    assembled.session.append('step/end', { turn: 1, step: 1 })
+    assembled.session.append('turn/end', { turn: 1, reason: { kind: 'aborted', reason: { kind: 'user' } } })
+    surface.trackHistoryRefresh(assembled.sessionId, product.loadOlder(assembled.sessionId))
+    await expect.poll(() => surface.getSnapshot().conversations[assembled.sessionId]?.nodes
+      .find(node => node.kind === 'assistant')).toMatchObject({
+      kind: 'assistant', interrupted: true,
+      blocks: [{ kind: 'text', text: 'Cancelled Companion prefix' }],
+    })
 
     const resultCount = received.length
     const image = surface.loadImage(assembled.sessionId, assembled.image)
@@ -471,6 +488,22 @@ describe('assembled Desktop Companion Host search', () => {
       .toBeGreaterThan(surfaceOperations)
     expect(surface.getSnapshot().conversations[assembled.sessionId]?.partial)
       .toMatchObject({ blocks: [{ kind: 'text', text: 'LIVE_PUSH_OK' }] })
+    assembled.session.append('assistant/message', {
+      turn: 1, step: 1, interrupted: true,
+      message: createAssistantMessage({
+        content: [{ type: 'text', text: 'LIVE_PUSH_OK' }],
+        source: { provider: 'assembled-provider', model: 'assembled-model' },
+      }),
+    }, { surfaceOp: 'append' })
+    assembled.session.append('step/end', { turn: 1, step: 1 })
+    assembled.session.append('turn/end', { turn: 1, reason: { kind: 'aborted', reason: { kind: 'user' } } })
+    await expect.poll(() => surface.getSnapshot().conversations[assembled.sessionId]?.nodes
+      .find(node => node.kind === 'assistant')).toMatchObject({
+      kind: 'assistant', interrupted: true,
+      blocks: [{ kind: 'text', text: 'LIVE_PUSH_OK' }],
+    })
+    expect(surface.getSnapshot().conversations[assembled.sessionId]?.partial).toBeNull()
+    expect(operationTypes.filter(type => type === 'load-history')).toHaveLength(historyOperations)
     const secondaryId = SessionId('desktop-secondary-workspace-session')
     assembled.ctx.sessions.create(secondaryId, {
       meta: {
