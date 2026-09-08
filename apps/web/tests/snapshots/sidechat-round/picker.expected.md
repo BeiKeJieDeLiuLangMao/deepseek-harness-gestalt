@@ -18,4 +18,4 @@
 - button "Browser":
   - img
   - text: Browser
-- button "手机"
+- button "Phone"
