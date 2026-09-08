@@ -371,7 +371,10 @@ export function createPhoneRuntimePool(
     }
     if (signal !== undefined) {
       signal.addEventListener('abort', onAbort, { once: true })
-      occupancy.cancelAbortWait = () => { signal.removeEventListener('abort', onAbort) }
+      occupancy.cancelAbortWait = () => {
+        signal.removeEventListener('abort', onAbort)
+        occupancy.cancelAbortWait = () => {}
+      }
     }
     occupancy.waiter.promise.catch(() => {})
     if (occupancy.state === 'live') {
