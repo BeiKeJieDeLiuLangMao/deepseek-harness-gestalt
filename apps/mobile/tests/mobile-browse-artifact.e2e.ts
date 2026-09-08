@@ -1,17 +1,17 @@
 import { createRequire } from 'node:module'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium, type Browser } from 'playwright'
-import { build, preview, type Plugin, type PreviewServer } from 'vite'
+import { build, normalizePath, preview, type Plugin, type PreviewServer } from 'vite'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 
-const MOBILE_ROOT = fileURLToPath(new URL('..', import.meta.url))
-const DESKTOP_MANIFEST = fileURLToPath(new URL('../../desktop/package.json', import.meta.url))
-const FIXTURE_ENTRY = fileURLToPath(new URL('./mobile-browse-artifact.fixture.tsx', import.meta.url))
-const MOBILE_JS = fileURLToPath(new URL('../lib/MobileBrowse.js', import.meta.url))
-const MOBILE_CSS = fileURLToPath(new URL('../lib/MobileBrowse.module.css', import.meta.url))
-const CLIENT_RUNTIME_SOURCE = fileURLToPath(new URL('../../../packages/client/runtime/lib/types/client/index.js', import.meta.url))
+const MOBILE_ROOT = normalizePath(resolve(fileURLToPath(new URL('..', import.meta.url))))
+const DESKTOP_MANIFEST = normalizePath(fileURLToPath(new URL('../../desktop/package.json', import.meta.url)))
+const FIXTURE_ENTRY = normalizePath(fileURLToPath(new URL('./mobile-browse-artifact.fixture.tsx', import.meta.url)))
+const MOBILE_JS = normalizePath(fileURLToPath(new URL('../lib/MobileBrowse.js', import.meta.url)))
+const MOBILE_CSS = normalizePath(fileURLToPath(new URL('../lib/MobileBrowse.module.css', import.meta.url)))
+const CLIENT_RUNTIME_SOURCE = normalizePath(fileURLToPath(new URL('../../../packages/client/runtime/lib/types/client/index.js', import.meta.url)))
 const desktopRequire = createRequire(DESKTOP_MANIFEST)
 const fixtureSource = `
 import React from 'react'
@@ -50,13 +50,13 @@ function artifactResolutionGuard(): Plugin {
       if (source === FIXTURE_ENTRY) return FIXTURE_ENTRY
       if (source === '@deepseek-ai/dsh-client-runtime/client') return CLIENT_RUNTIME_SOURCE
       if (source === '#testing/mobile/MobileBrowse') {
-        const resolved = desktopRequire.resolve(source)
+        const resolved = normalizePath(desktopRequire.resolve(source))
         if (resolved !== MOBILE_JS) throw new Error(`Desktop import map resolved MobileBrowse to ${resolved}, expected ${MOBILE_JS}`)
         return resolved
       }
       if (source !== './MobileBrowse.module.css' || importer !== MOBILE_JS) return null
       const resolved = await this.resolve(source, importer, { ...options, skipSelf: true })
-      if (resolved?.id !== MOBILE_CSS) {
+      if (resolved === null || normalizePath(resolved.id) !== MOBILE_CSS) {
         throw new Error(`MobileBrowse stylesheet resolved to ${resolved?.id ?? 'nothing'}, expected ${MOBILE_CSS}`)
       }
       return resolved
