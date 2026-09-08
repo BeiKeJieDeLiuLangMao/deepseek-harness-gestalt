@@ -7,16 +7,13 @@
     "rewriteRelativeImportExtensions": false
   },
   "files": [
-    "remote-protocol.snapshot.ts",
+    "platform-account.snapshot.ts",
     "fixtures/driver.ts"
   ],
   "include": [],
   "references": [
     {
       "path": "../../../packages/boot/app-boot"
-    },
-    {
-      "path": "../../../packages/platform/remote-protocol"
     },
     {
       "path": "../../../packages/test-support/loader-smoke"

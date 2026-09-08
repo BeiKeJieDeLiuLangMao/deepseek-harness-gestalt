@@ -1,6 +1,6 @@
 import type { Context } from '@deepseek-ai/cordis'
 import {
-  CallId,
+  ToolCallId,
   LlmAdapter,
   ReasoningEffortId,
   type GenerateOptions,
@@ -10,8 +10,8 @@ import {
 
 const HIGH = ReasoningEffortId('high')
 const OFF = ReasoningEffortId('off')
-const ROSTER_CALL_ID = CallId('project-members-demo-call')
-const QUESTION_CALL_ID = CallId('project-member-question-demo-call')
+const ROSTER_CALL_ID = ToolCallId('project-members-demo-call')
+const QUESTION_CALL_ID = ToolCallId('project-member-question-demo-call')
 
 /**
  * Keyless scripted adapter for the project-members demo: the first request
@@ -36,8 +36,8 @@ class ProjectMembersMockAdapter extends LlmAdapter {
   }
 
   async * stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
-    const toolResults = options.messages.flatMap(message => message.content.filter(block => block.type === 'tool-result'))
-    if (toolResults.length === 0) {
+    const [rosterResult, answerResult] = options.messages.flatMap(message => message.content.filter(block => block.type === 'tool-result'))
+    if (rosterResult === undefined) {
       yield { type: 'block-start', index: 0, blockType: 'tool-call' }
       yield { type: 'tool-call-delta', index: 0, id: ROSTER_CALL_ID, name: 'project_members', argumentsDelta: '{}' }
       yield { type: 'block-end', index: 0, block: { type: 'tool-call', id: ROSTER_CALL_ID, name: 'project_members', arguments: '{}' } }
@@ -46,8 +46,8 @@ class ProjectMembersMockAdapter extends LlmAdapter {
       return
     }
 
-    if (toolResults.length === 1) {
-      const rosterText = toolResults[0].content
+    if (answerResult === undefined) {
+      const rosterText = rosterResult.content
         .filter(block => block.type === 'text')
         .map(block => block.text)
         .join('')
@@ -71,7 +71,6 @@ class ProjectMembersMockAdapter extends LlmAdapter {
       return
     }
 
-    const [rosterResult, answerResult] = toolResults
     const roster = rosterResult.content
       .filter(block => block.type === 'text')
       .map(block => block.text)

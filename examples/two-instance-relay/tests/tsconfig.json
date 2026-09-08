@@ -7,7 +7,9 @@
     "rewriteRelativeImportExtensions": false
   },
   "files": [
-    "remote-protocol.snapshot.ts",
+    "resource-owner.spec.ts",
+    "relay-loader.spec.ts",
+    "two-instance-relay.snapshot.ts",
     "fixtures/driver.ts"
   ],
   "include": [],

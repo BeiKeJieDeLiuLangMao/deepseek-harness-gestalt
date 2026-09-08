@@ -1,0 +1,24 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "composite": false,
+    "incremental": false,
+    "rewriteRelativeImportExtensions": false
+  },
+  "files": [
+    "start.ts"
+  ],
+  "include": [],
+  "references": [
+    {
+      "path": "../../packages/platform/platform-account"
+    },
+    {
+      "path": "../../packages/platform/platform-account-core"
+    },
+    {
+      "path": "../../vendor/cordis"
+    }
+  ]
+}

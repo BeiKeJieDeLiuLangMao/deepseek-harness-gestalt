@@ -1,0 +1,40 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "composite": false,
+    "incremental": false,
+    "rewriteRelativeImportExtensions": false
+  },
+  "files": [
+    "start.ts",
+    "src/provider.ts"
+  ],
+  "include": [],
+  "references": [
+    {
+      "path": "../../packages/host/webserver"
+    },
+    {
+      "path": "../../packages/interaction/member-question-sender"
+    },
+    {
+      "path": "../../packages/platform/platform-account"
+    },
+    {
+      "path": "../../packages/platform/platform-account-core"
+    },
+    {
+      "path": "../../packages/platform/project-membership-client"
+    },
+    {
+      "path": "../../packages/platform/project-membership-core"
+    },
+    {
+      "path": "../../packages/platform/remote-protocol"
+    },
+    {
+      "path": "../../vendor/cordis"
+    }
+  ]
+}

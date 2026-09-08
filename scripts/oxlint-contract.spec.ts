@@ -45,6 +45,34 @@ async function writeContractConfig(suffix: string): Promise<string> {
   return path
 }
 
+const invalidPrograms = {
+  protocol: {
+    source: "import { negotiateRelayTransportVersion } from '@deepseek-ai/dsh-remote-protocol'\n"
+      + "export const rejected = negotiateRelayTransportVersion('invalid', [1])\n",
+    code: 'TS2345', message: "Argument of type 'string' is not assignable to parameter of type 'readonly number[]'",
+  },
+  transport: {
+    source: "import { RemoteAccessHttpTransport } from '@deepseek-ai/dsh-remote-access-client'\n"
+      + 'export const rejected = new RemoteAccessHttpTransport({})\n',
+    code: 'TS2741', message: "Property 'environment' is missing in type '{}'",
+  },
+  loader: {
+    source: "import { runLoaderSmoke } from '@deepseek-ai/dsh-loader-smoke'\n"
+      + 'export const rejected = runLoaderSmoke(42)\n',
+    code: 'TS2345', message: 'is not assignable to parameter of type',
+  },
+  account: {
+    source: "import type { PlatformAccountId } from '@deepseek-ai/dsh-platform-account'\n"
+      + "export const rejected: PlatformAccountId = 'unbranded'\n",
+    code: 'TS2322', message: "not assignable to type 'PlatformAccountId'",
+  },
+  context: {
+    source: "import type { Context } from '@deepseek-ai/cordis'\n"
+      + 'export const rejected: Context = 42\n',
+    code: 'TS2322', message: 'not assignable to type',
+  },
+}
+
 describe('Oxlint executable contract', () => {
   it('discovers the owning TypeScript project for every file class', async () => {
     const suffix = randomUUID()
@@ -230,58 +258,65 @@ export const longProbe = 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 +
   })
 
   it.each([
-    { directory: 'remote-protocol', files: ['start.ts'], transport: false },
-    { directory: 'remote-protocol/tests', files: ['remote-protocol.snapshot.ts'], transport: false },
-    { directory: 'two-instance-relay', files: ['start.ts'], transport: false },
-    { directory: 'personal-pairing', files: ['start.ts', 'src/provider.ts'], transport: true },
-  ])('checks $directory in its own typed project and rejects invalid input', async ({ directory, files, transport }) => {
-    const exampleRoot = join(repositoryRoot, 'examples', directory)
-    const exampleConfig = parseConfigFileTextToJson(
-      'tsconfig.json', await readFile(join(exampleRoot, 'tsconfig.json'), 'utf8'),
-    ).config as unknown
-    if (!isRecord(exampleConfig) || !isUnknownArray(exampleConfig.references)) {
-      throw new Error('example must declare its TypeScript project references')
-    }
-    expect(exampleConfig.files).toEqual(files)
-    const references = exampleConfig.references.map((reference) => {
-      if (!isRecord(reference) || typeof reference.path !== 'string') {
-        throw new Error('example TypeScript project reference must contain a path')
+    { directory: 'examples/remote-protocol', files: ['start.ts'], negative: 'protocol' },
+    { directory: 'examples/remote-protocol/tests', files: ['remote-protocol.snapshot.ts', 'fixtures/driver.ts'], negative: 'loader' },
+    { directory: 'examples/two-instance-relay', files: ['start.ts'], negative: 'protocol' },
+    { directory: 'examples/personal-pairing', files: ['start.ts', 'src/provider.ts'], negative: 'transport' },
+    { directory: 'examples/member-presence-close', files: ['start.ts', 'src/provider.ts'], negative: 'account' },
+    { directory: 'examples/member-presence-close/tests', files: ['member-presence-close.snapshot.ts', 'fixtures/driver.ts'], negative: 'loader' },
+    { directory: 'examples/platform-account', files: ['start.ts'], negative: 'account' },
+    { directory: 'examples/platform-account/tests', files: ['platform-account.snapshot.ts', 'fixtures/driver.ts'], negative: 'loader' },
+    { directory: 'examples/project-members', files: ['start.ts', 'memory-member-question.ts', 'memory-membership.ts', 'mock-llm.ts'], negative: 'account' },
+    { directory: 'examples/project-members/tests', files: ['project-members.snapshot.ts'], negative: 'loader' },
+    { directory: 'examples/personal-pairing/tests', files: ['personal-pairing.spec.ts', 'fixtures/driver.ts'], negative: 'loader' },
+    { directory: 'examples/two-instance-relay/tests', files: ['resource-owner.spec.ts', 'relay-loader.spec.ts', 'two-instance-relay.snapshot.ts', 'fixtures/driver.ts'], negative: 'loader' },
+    { directory: 'packages/api/settings-controller/tests', files: ['settings-web-search.generated.host.spec.ts'], negative: 'context' },
+    { directory: 'packages/interaction/member-question-receiver/tests', files: ['remote.generated.host.spec.ts'], negative: 'context' },
+    { directory: 'packages/api/session-controller/tests', files: ['session-admit-attachment.generated.host.spec.ts', 'session-tool-eligibility.generated.host.spec.ts'], negative: 'context' },
+  ] satisfies { directory: string; files: string[]; negative: keyof typeof invalidPrograms }[])(
+    'checks $directory in its own typed project and rejects invalid input', async ({ directory, files, negative }) => {
+      const exampleRoot = join(repositoryRoot, directory)
+      const invalidProgram = invalidPrograms[negative]
+      const exampleConfig = parseConfigFileTextToJson(
+        'tsconfig.json', await readFile(join(exampleRoot, 'tsconfig.json'), 'utf8'),
+      ).config as unknown
+      if (!isRecord(exampleConfig) || !isUnknownArray(exampleConfig.references)) {
+        throw new Error('example must declare its TypeScript project references')
       }
-      return { path: resolve(exampleRoot, reference.path) }
-    })
-    const valid = runOxlint([...files.map(file => relative(repositoryRoot, join(exampleRoot, file))), '--format', 'unix'])
-    expect(valid.error).toBeUndefined()
-    expect(valid.status, normalizedOutput(valid)).toBe(0)
+      expect(exampleConfig.files).toEqual(files)
+      const references = exampleConfig.references.map((reference) => {
+        if (!isRecord(reference) || typeof reference.path !== 'string') {
+          throw new Error('example TypeScript project reference must contain a path')
+        }
+        return { path: resolve(exampleRoot, reference.path) }
+      })
+      const valid = runOxlint([...files.map(file => relative(repositoryRoot, join(exampleRoot, file))), '--format', 'unix'])
+      expect(valid.error).toBeUndefined()
+      expect(valid.status, normalizedOutput(valid)).toBe(0)
 
-    const suffix = randomUUID()
-    const probeRoot = join(exampleRoot, `.oxlint-contract-${suffix}`)
-    const configPath = await writeContractConfig(suffix)
-    try {
-      await mkdir(probeRoot)
-      await writeFile(join(probeRoot, 'tsconfig.json'), JSON.stringify({
-        extends: '../tsconfig.json', files: ['negative.ts'], references,
-      }))
-      await writeFile(join(probeRoot, 'negative.ts'), transport
-        ? "import { RemoteAccessHttpTransport } from '@deepseek-ai/dsh-remote-access-client'\n"
-          + 'export const rejected = new RemoteAccessHttpTransport({})\n'
-        : "import { negotiateRelayTransportVersion } from '@deepseek-ai/dsh-remote-protocol'\n"
-          + "export const rejected = negotiateRelayTransportVersion('invalid', [1])\n")
-      const invalid = runOxlint([
-        '--config', relative(repositoryRoot, configPath), '--type-check', '--format', 'unix',
-        relative(repositoryRoot, join(probeRoot, 'negative.ts')),
-      ])
-      const output = normalizedOutput(invalid)
-      expect(invalid.error).toBeUndefined()
-      expect(invalid.status, output).toBe(1)
-      expect(output).toContain(transport ? 'TS2741' : 'TS2345')
-      expect(output).toContain(transport
-        ? "Property 'environment' is missing in type '{}'"
-        : "Argument of type 'string' is not assignable to parameter of type 'readonly number[]'")
-      expect(output).not.toContain('no-unsafe-')
-    } finally {
-      await Promise.all([rm(probeRoot, { recursive: true, force: true }), rm(configPath, { force: true })])
-    }
-  }, 30_000)
+      const suffix = randomUUID()
+      const probeRoot = join(exampleRoot, `.oxlint-contract-${suffix}`)
+      const configPath = await writeContractConfig(suffix)
+      try {
+        await mkdir(probeRoot)
+        await writeFile(join(probeRoot, 'tsconfig.json'), JSON.stringify({
+          extends: '../tsconfig.json', files: ['negative.ts'], references,
+        }))
+        await writeFile(join(probeRoot, 'negative.ts'), invalidProgram.source)
+        const invalid = runOxlint([
+          '--config', relative(repositoryRoot, configPath), '--type-check', '--format', 'unix',
+          relative(repositoryRoot, join(probeRoot, 'negative.ts')),
+        ])
+        const output = normalizedOutput(invalid)
+        expect(invalid.error).toBeUndefined()
+        expect(invalid.status, output).toBe(1)
+        expect(output).toContain(invalidProgram.code)
+        expect(output).toContain(invalidProgram.message)
+        expect(output).not.toContain('no-unsafe-')
+      } finally {
+        await Promise.all([rm(probeRoot, { recursive: true, force: true }), rm(configPath, { force: true })])
+      }
+    }, 30_000)
 
   it('reports an unused suppression', async () => {
     const suffix = randomUUID()
