@@ -101,6 +101,7 @@ describe('Desktop Electron runner ownership', () => {
     const desktopManifest = JSON.parse(await readFile(join(repoRoot, 'apps', 'desktop', 'package.json'), 'utf8')) as {
       scripts?: Record<string, string>
     }
+    const compilerWrapper = await readFile(join(repoRoot, 'scripts', 'check-desktop-compiler-faces.mjs'), 'utf8')
 
     expect(desktopManifest.scripts?.['typecheck:fake-policy'])
       .toBe('tsc -p tests/tsconfig.fake-policy.json')
@@ -111,6 +112,8 @@ describe('Desktop Electron runner ownership', () => {
     expect(desktopManifest.scripts?.['typecheck:e2e-electron']).not.toContain('tsc -p tsconfig.json')
     expect(rootManifest.scripts?.['typecheck:contracts-ready'])
       .toBe('node scripts/check-desktop-compiler-faces.mjs --contracts-ready')
+    expect(compilerWrapper)
+      .toContain("['--filter', '@deepseek-ai/dsh-desktop', 'run', 'typecheck:e2e-electron']")
     const sourceE2E = JSON.parse(await readFile(join(repoRoot, 'apps', 'desktop', 'tests', 'tsconfig.source-e2e.json'), 'utf8')) as {
       compilerOptions?: {
         noEmit?: boolean

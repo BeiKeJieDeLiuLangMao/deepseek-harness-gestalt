@@ -2,9 +2,9 @@ import { createRequire } from 'node:module'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { chromium } from 'playwright'
+import { chromium, type Browser } from 'playwright'
 import { build, preview, type Plugin, type PreviewServer } from 'vite'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 
 const MOBILE_ROOT = fileURLToPath(new URL('..', import.meta.url))
 const DESKTOP_MANIFEST = fileURLToPath(new URL('../../desktop/package.json', import.meta.url))
@@ -27,6 +27,7 @@ createRoot(document.getElementById('root')).render(React.createElement(MobileBro
 `
 let root = ''
 let server: PreviewServer | undefined
+let browser: Browser | undefined
 let origin = ''
 
 function artifactResolutionGuard(): Plugin {
@@ -78,6 +79,12 @@ beforeAll(async () => {
   origin = `http://127.0.0.1:${String(address.port)}`
 }, 120_000)
 
+afterEach(async () => {
+  const owned = browser
+  browser = undefined
+  await owned?.close()
+})
+
 afterAll(async () => {
   if (server !== undefined) {
     await new Promise<void>((resolve, reject) => {
@@ -93,7 +100,9 @@ afterAll(async () => {
 describe('MobileBrowse built artifact', () => {
   it('renders its emitted CSS Module through the Desktop import map', async () => {
     const executablePath = process.env.DSH_PLAYWRIGHT_EXECUTABLE_PATH
-    const browser = await chromium.launch(executablePath === undefined ? { headless: true } : { headless: true, executablePath })
+    browser = await chromium.launch(executablePath === undefined
+      ? { headless: true, timeout: 15_000 }
+      : { headless: true, executablePath, timeout: 15_000 })
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
     const errors: string[] = []
     page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()) })
@@ -115,6 +124,5 @@ describe('MobileBrowse built artifact', () => {
     expect(evidence.className).toMatch(/\S/u)
     expect(evidence).toMatchObject({ display: 'flex', flexDirection: 'column', maxWidth: '430px', boxSizing: 'border-box' })
     expect(errors).toEqual([])
-    await browser.close()
   }, 30_000)
 })
