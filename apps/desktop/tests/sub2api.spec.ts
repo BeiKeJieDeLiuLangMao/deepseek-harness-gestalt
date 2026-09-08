@@ -17,7 +17,6 @@ import {
   type Sub2ApiControllerOptions,
   type Sub2ApiHostControl,
 } from '../src/sub2api.ts'
-import { SUB2API_SOURCES_ENV } from '../src/sub2api-sources.ts'
 import type { DesktopSub2ApiSnapshot } from '@deepseek-ai/dsh-client-ui-desktop/protocol'
 import { manifestListsBundle, SUB2API_BUNDLE_NAME } from '../src/sub2api-profile.ts'
 import type { Sub2ApiInstall, Sub2ApiInstallInput, Sub2ApiInstallResult } from '../src/sub2api-install.ts'
@@ -568,6 +567,56 @@ describe('probe and IPC validation helpers', () => {
 })
 
 describe('createDesktopSub2Api', () => {
+  it('keeps a missing first-run web profile recoverable until the Web Host initializes it', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'sub2api-factory-first-run-'))
+    dirs.push(root)
+    const originalHome = process.env['DSH_HOME']
+    const originalSources = process.env.DSH_DESKTOP_SUB2API_SOURCES
+    try {
+      process.env['DSH_HOME'] = root
+      delete process.env.DSH_DESKTOP_SUB2API_SOURCES
+      const host: Sub2ApiHostControl = { restart: async () => 'http://127.0.0.1:12/', origin: () => undefined }
+      const actions = await createDesktopSub2Api({ fetch, host })
+      expect(actions).toBeInstanceOf(DesktopSub2ApiController)
+      expect(actions.getSnapshot()).toEqual({ state: 'missing', enabled: true })
+
+      const profileDir = join(root, 'profiles', 'web')
+      await mkdir(profileDir, { recursive: true })
+      await writeFile(join(profileDir, 'package.json'), JSON.stringify({
+        name: 'dsh-profile-web',
+        dsh: { profile: { bundles: ['@deepseek-ai/dsh-base'] } },
+      }))
+      await expect(actions.disable()).resolves.toEqual({ state: 'missing', enabled: true })
+      actions.dispose()
+    } finally {
+      if (originalHome === undefined) delete process.env['DSH_HOME']
+      else process.env['DSH_HOME'] = originalHome
+      if (originalSources === undefined) delete process.env.DSH_DESKTOP_SUB2API_SOURCES
+      else process.env.DSH_DESKTOP_SUB2API_SOURCES = originalSources
+    }
+  })
+
+  it('does not treat an invalid existing profile path as first-run absence', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'sub2api-factory-invalid-profile-'))
+    dirs.push(root)
+    await writeFile(join(root, 'profiles'), 'not a directory')
+    const originalHome = process.env['DSH_HOME']
+    const originalSources = process.env.DSH_DESKTOP_SUB2API_SOURCES
+    try {
+      process.env['DSH_HOME'] = root
+      delete process.env.DSH_DESKTOP_SUB2API_SOURCES
+      const host: Sub2ApiHostControl = { restart: async () => 'http://127.0.0.1:12/', origin: () => undefined }
+      const actions = await createDesktopSub2Api({ fetch, host })
+      expect(actions).toBeInstanceOf(UnavailableDesktopSub2ApiController)
+      expect(actions.getSnapshot().error).toMatch(/ENOTDIR|not a directory/iu)
+    } finally {
+      if (originalHome === undefined) delete process.env['DSH_HOME']
+      else process.env['DSH_HOME'] = originalHome
+      if (originalSources === undefined) delete process.env.DSH_DESKTOP_SUB2API_SOURCES
+      else process.env.DSH_DESKTOP_SUB2API_SOURCES = originalSources
+    }
+  })
+
   it('builds the real controller over the resolved home and degrades to unavailable on a broken sources file', async () => {
     const root = await mkdtemp(join(tmpdir(), 'sub2api-factory-'))
     dirs.push(root)
@@ -578,7 +627,7 @@ describe('createDesktopSub2Api', () => {
       dsh: { profile: { bundles: ['@deepseek-ai/dsh-base'] } },
     }))
     const originalHome = process.env['DSH_HOME']
-    const originalSources = process.env[SUB2API_SOURCES_ENV]
+    const originalSources = process.env.DSH_DESKTOP_SUB2API_SOURCES
     try {
       process.env['DSH_HOME'] = root
       delete process.env.DSH_DESKTOP_SUB2API_SOURCES
@@ -588,7 +637,7 @@ describe('createDesktopSub2Api', () => {
       expect(sub2ApiPathsFromHome(root).profileDir).toBe(join(root, 'profiles', 'web'))
       expect(sub2ApiPathsFromHome(root).dataDir).toBe(join(root, 'sub2api', 'data'))
 
-      process.env[SUB2API_SOURCES_ENV] = join(root, 'broken.json')
+      process.env.DSH_DESKTOP_SUB2API_SOURCES = join(root, 'broken.json')
       await writeFile(join(root, 'broken.json'), '{nope')
       const degraded = await createDesktopSub2Api({ fetch, host })
       expect(degraded.getSnapshot().error).toContain('not valid JSON')
@@ -596,7 +645,7 @@ describe('createDesktopSub2Api', () => {
       if (originalHome === undefined) delete process.env['DSH_HOME']
       else process.env['DSH_HOME'] = originalHome
       if (originalSources === undefined) delete process.env.DSH_DESKTOP_SUB2API_SOURCES
-      else process.env[SUB2API_SOURCES_ENV] = originalSources
+      else process.env.DSH_DESKTOP_SUB2API_SOURCES = originalSources
     }
   })
 })

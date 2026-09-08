@@ -12,6 +12,8 @@ Sub2API sidecar（#346，bundle 源码在 sidecar 仓）需要一条 Desktop-onl
 
 一切归于 Desktop Host 主进程；卡片只渲染。[`DesktopSub2ApiController`](../../../../apps/desktop/src/sub2api.ts) 运行 `missing → downloading → verifying → installed → starting → running / error` 相位机，经新增的 `sub2api:snapshot-changed` IPC 事件推送每次迁移（与 updater、pairing 快照同一姿态），五个生命周期动词全部走 preload 桥。Host 探测轮询 `GET <web-host>/plugins/dsh-sub2api/quota-snapshot`——2xx 即证明 bundle 已挂载且被监督链路健康，因为 sidecar 只在健康启动之后注册该路由；主进程发出的无 Origin 请求能通过 sidecar 的 loopback-peer + loopback-Host 准入。
 
+Desktop 在初始 Web Host 之前创建此控制器，以便已安装状态选择组件启动期限。缺少 `web` manifest 是正常的首次运行状态：factory 返回处于 `missing` 状态的真实控制器且不创建 profile，随后 `dsh web` 在 renderer 能调用启用之前初始化其内置 profile。已存在但无法读取或解析的 manifest 仍生成 unavailable 控制器，使配置损坏明确失败。
+
 [安装器](../../../../apps/desktop/src/sub2api-install.ts)绝不调用用户 PATH 上的 pnpm 或 `dsh` CLI：Electron session-aware 的流式 `net.fetch` 把两个归档写入 OS 临时 staging 目录并承担环回健康探针，每个归档对照各自的 `SHA256SUMS` 校验（runtime pack 解压后再验其内部 sums），bundle 包落到 `$DSH_HOME/profiles/web/node_modules/<name>`，profile manifest 恰好新增一行 `dsh.profile.bundles`——遵循 [profile 发布](../../../../docs/user/develop/basic/publish.zh.md)语义：其余条目逐字节保留，写入经 `withFileLock` 加锁、`writeFileAtomic` 原子落盘。Platform Account、pairing 与附件流量继续使用独立的禁跳转、HTTPS-only、有界 system-Node helper。runtime pack 剥掉顶层目录解压到 `$DSH_HOME/sub2api/runtime`，即 sidecar supervisor 的 `binaryDir` 默认值。
 
 有两个决定与票面文字不同，值得记录：

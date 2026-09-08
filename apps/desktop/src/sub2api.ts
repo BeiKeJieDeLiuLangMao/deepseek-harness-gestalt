@@ -11,7 +11,7 @@
  * @module @deepseek-ai/dsh-desktop/sub2api
  */
 
-import { rm } from 'node:fs/promises'
+import { access, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import type { DesktopSub2ApiSnapshot } from '@deepseek-ai/dsh-client-ui-desktop/protocol'
@@ -413,8 +413,8 @@ function errorMessage(error: unknown): string {
 
 /**
  * Controller used when the controller could not start (unreadable sources
- * file, missing profile manifest). Every verb reports the reason; the card
- * renders it as the actionable error.
+ * file, invalid existing profile manifest). Every verb reports the reason;
+ * the card renders it as the actionable error.
  */
 export class UnavailableDesktopSub2ApiController implements DesktopSub2ApiActions {
   private readonly snapshot: DesktopSub2ApiSnapshot
@@ -480,22 +480,35 @@ export interface Sub2ApiFactoryOptions {
   readonly host: Sub2ApiHostControl
 }
 
+async function profileManifestExists(profileDir: string): Promise<boolean> {
+  try {
+    await access(join(profileDir, 'package.json'))
+    return true
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false
+    throw error
+  }
+}
+
 /**
- * Build the Sub2API controller for this run. A broken sources file or an
- * unreadable profile manifest degrades to the unavailable controller carrying
- * the reason, so the card states the failure instead of crashing Desktop boot.
+ * Build the Sub2API controller for this run. The Web Host initializes a missing
+ * first-run profile after this factory returns, so that state remains a
+ * recoverable real controller. A broken sources file or invalid existing
+ * manifest degrades to the unavailable controller carrying the reason.
  * @param options - fetch client and Web Host control.
- * @returns the started controller.
+ * @returns the live controller, initialized from disk when the profile exists.
  */
 export async function createDesktopSub2Api(options: Sub2ApiFactoryOptions): Promise<DesktopSub2ApiActions> {
   try {
+    const paths = sub2ApiPathsFromHome(resolveDshHome())
     const controller = new DesktopSub2ApiController({
       sources: readDesktopSub2ApiSources(import.meta.url),
-      ...sub2ApiPathsFromHome(resolveDshHome()),
+      ...paths,
       host: options.host,
       fetchImpl: options.fetch,
     })
-    await controller.start()
+    // The Web Host starts after this factory and owns shipped-profile initialization.
+    if (await profileManifestExists(paths.profileDir)) await controller.start()
     return controller
   } catch (error) {
     return new UnavailableDesktopSub2ApiController(errorMessage(error))
