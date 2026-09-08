@@ -291,6 +291,7 @@ async function configureSideProvider(): Promise<void> {
   await (await element(browser, 'input[aria-label="Provider ID"]')).setValue(SIDE_PROVIDER)
   await (await element(browser, 'input[aria-label="Display name"]')).setValue('Side Provider B')
   await (await element(browser, 'input[aria-label="Base URL"]')).setValue(`${required('DEEPSEEK_BASE_URL')}/v1`)
+  await (await element(browser, 'input[aria-label="API key"]')).setValue(required('DEEPSEEK_API_KEY'))
   await (await element(browser, 'select[aria-label="API protocol"]'))
     .selectByAttribute('value', 'openai-completions')
   await clickExact(browser, 'Add model')
