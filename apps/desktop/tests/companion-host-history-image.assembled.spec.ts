@@ -186,7 +186,7 @@ describe('assembled Desktop Companion history image on shipped dsh web', () => {
       userText: true, assistantText: true,
       attachment: expect.objectContaining({
         attachmentId: persistedImage.attachmentId, mediaType: 'image/png',
-      }),
+      }) as unknown,
     })
     const history = historyEvidence(surface, localSessionId)
     if (history.attachment === undefined) throw new Error('Mobile history did not project its image attachment')
@@ -227,10 +227,10 @@ function imageAttachment(frames: readonly unknown[]): unknown {
       ? frame.records
       : [isRecord(frame) ? frame.event : undefined]
     for (const record of records) {
-      const event = isRecord(record) && isRecord(record.event) ? record.event : record
+      const event: unknown = isRecord(record) && isRecord(record.event) ? record.event : record
       if (!isRecord(event) || event.type !== 'user/message' || !isRecord(event.data)
         || !Array.isArray(event.data.content)) continue
-      const image = event.data.content.find(block => isRecord(block) && block.type === 'image')
+      const image: unknown = event.data.content.find(block => isRecord(block) && block.type === 'image')
       if (isRecord(image) && isRecord(image.attachment)) return image.attachment
     }
   }

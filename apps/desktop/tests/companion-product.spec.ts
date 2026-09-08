@@ -208,7 +208,7 @@ describe('Desktop Companion product operations', () => {
         if (sessionId === 'session-other') {
           await new Promise<void>((resolve) => {
             if (signal.aborted) resolve()
-            else signal.addEventListener('abort', () => resolve(), { once: true })
+            else signal.addEventListener('abort', () => { resolve() }, { once: true })
           })
           return
         }
@@ -228,7 +228,7 @@ describe('Desktop Companion product operations', () => {
         }))
         await new Promise<void>((resolve) => {
           if (signal.aborted) resolve()
-          else signal.addEventListener('abort', () => resolve(), { once: true })
+          else signal.addEventListener('abort', () => { resolve() }, { once: true })
         })
       },
     }
@@ -284,7 +284,7 @@ describe('Desktop Companion product operations', () => {
           accept({ type: 'snapshot', records: 'not-an-array' })
           await new Promise<void>((resolve) => {
             if (signal.aborted) resolve()
-            else signal.addEventListener('abort', () => resolve(), { once: true })
+            else signal.addEventListener('abort', () => { resolve() }, { once: true })
           })
           return
         }
@@ -315,7 +315,7 @@ describe('Desktop Companion product operations', () => {
         }))
         await new Promise<void>((resolve) => {
           if (signal.aborted) resolve()
-          else signal.addEventListener('abort', () => resolve(), { once: true })
+          else signal.addEventListener('abort', () => { resolve() }, { once: true })
         })
         void maxMessages
       },

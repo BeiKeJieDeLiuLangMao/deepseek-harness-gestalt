@@ -49,10 +49,14 @@ async function bench(served?: string[]) {
   const mutateSettings = vi.fn((ns: string, ops: readonly unknown[]) => Promise.resolve({
     ok: true as const,
     value: {
-      ns, schema: {}, value: Object.fromEntries(
+      ns, schema: {}, value: Object.fromEntries<unknown>(
         (ops as readonly { op: string; path: string[]; value?: unknown }[])
           .filter(op => op.op === 'set')
-          .map(op => [op.path[0], op.value]),
+          .map((op) => {
+            const field = op.path.at(0)
+            if (field === undefined) throw new Error('Expected a settings field path')
+            return [field, op.value] as const
+          }),
       ),
       applies: 'live', secrets: [], revision: 1, writable: true, hasDocument: true,
     },

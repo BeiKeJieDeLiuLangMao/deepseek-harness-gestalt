@@ -87,15 +87,22 @@ describe('membershipGatewayOf', () => {
     await expect(gateway.invite({
       projectId: 'project-1', githubLogin: 'mona', grantedRole: 'admin',
     })).resolves.toEqual({ invitationId: 'invitation-1', inviteeName: 'mona', grantedRole: 'admin' })
-    expect(membership.invite).toHaveBeenCalledWith({
+    expect(invite).toHaveBeenCalledWith({
       projectId, githubLogin: 'mona', grantedRole: 'admin',
     })
-    const issued = await invite.mock.results[0]?.value
+    const inviteResult = invite.mock.results[0]
+    if (inviteResult?.type !== 'return') throw new Error('Expected the invitation call to return')
+    const issued = await inviteResult.value
     expect(issued).not.toHaveProperty('inviteeName')
   })
 
   it('forwards roster, issued invitations, pending cards, and decline', async () => {
     const membership = client()
+    const decideInvitationSpy = vi.spyOn(membership, 'decideInvitation')
+    const retractInvitationSpy = vi.spyOn(membership, 'retractInvitation')
+    const changeRoleSpy = vi.spyOn(membership, 'changeRole')
+    const setMemberTagsSpy = vi.spyOn(membership, 'setMemberTags')
+    const removeMemberSpy = vi.spyOn(membership, 'removeMember')
     const gateway = membershipGatewayOf(membership)
     await expect(gateway.roster('project-1')).resolves.toEqual({
       project: { id: 'project-1', name: 'Assembled', boundRemoteUrl: 'https://github.com/o/repo' },
@@ -110,7 +117,7 @@ describe('membershipGatewayOf', () => {
       }],
     })
     await gateway.decideInvitation('invitation-3', { decision: 'decline' })
-    expect(membership.decideInvitation).toHaveBeenCalledWith(pendingInvitationId, { decision: 'decline' })
+    expect(decideInvitationSpy).toHaveBeenCalledWith(pendingInvitationId, { decision: 'decline' })
     await expect(gateway.pendingInvitations()).resolves.toEqual([{
       invitationId: 'invitation-3',
       receivingAccountId: 'account-2',
@@ -127,14 +134,15 @@ describe('membershipGatewayOf', () => {
     await gateway.changeRole('membership-1', 'admin')
     await gateway.setMemberTags('membership-1', ['platform'])
     await gateway.removeMember('membership-1')
-    expect(membership.retractInvitation).toHaveBeenCalledWith(issuedInvitationId)
-    expect(membership.changeRole).toHaveBeenCalledWith(membershipId, 'admin')
-    expect(membership.setMemberTags).toHaveBeenCalledWith(membershipId, [brandString<FunctionTag>('platform')])
-    expect(membership.removeMember).toHaveBeenCalledWith(membershipId)
+    expect(retractInvitationSpy).toHaveBeenCalledWith(issuedInvitationId)
+    expect(changeRoleSpy).toHaveBeenCalledWith(membershipId, 'admin')
+    expect(setMemberTagsSpy).toHaveBeenCalledWith(membershipId, [brandString<FunctionTag>('platform')])
+    expect(removeMemberSpy).toHaveBeenCalledWith(membershipId)
   })
 
   it('forwards accept-with-link as the membership-client link body', async () => {
     const membership = client()
+    const decideInvitationSpy = vi.spyOn(membership, 'decideInvitation')
     const gateway = membershipGatewayOf(membership)
     await gateway.decideInvitation('invitation-3', {
       decision: 'accept-with-link',
@@ -143,7 +151,7 @@ describe('membershipGatewayOf', () => {
       projectId: 'project-1',
       link: { workspaceName: 'deepseek-harness', normalizedRemoteUrl: 'https://github.com/o/repo' },
     })
-    expect(membership.decideInvitation).toHaveBeenCalledWith(pendingInvitationId, {
+    expect(decideInvitationSpy).toHaveBeenCalledWith(pendingInvitationId, {
       decision: 'accept-with-link',
       link: { workspaceName: 'deepseek-harness', normalizedRemoteUrl: 'https://github.com/o/repo' },
     })
@@ -159,9 +167,10 @@ describe('membershipGatewayOf', () => {
     const replacement = client({
       pendingInvitations: vi.fn(async () => []),
     })
+    const pendingInvitationsSpy = vi.spyOn(replacement, 'pendingInvitations')
     current = replacement
     await expect(gateway.pendingInvitations()).resolves.toEqual([])
-    expect(replacement.pendingInvitations).toHaveBeenCalledOnce()
+    expect(pendingInvitationsSpy).toHaveBeenCalledOnce()
   })
 
   it('rejects workspace-keyed Git methods that Host membership does not provide', async () => {

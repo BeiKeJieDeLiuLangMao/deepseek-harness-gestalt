@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
 import 'fake-indexeddb/auto'
@@ -286,7 +287,7 @@ describe('MobilePairingController', () => {
     initializeSnowChannel(readFileSync(new URL(
       '../../../packages/platform/noise-channel/pkg/dsh_noise_channel_bg.wasm', import.meta.url,
     )))
-    const store = new IndexedDbMobilePairingStateStore(`mobile-restart-${crypto.randomUUID()}`)
+    const store = new IndexedDbMobilePairingStateStore(`mobile-restart-${randomUUID()}`)
     const desktop = new SnowDesktopEndpointPairingOwner()
     const expiresAt = Date.now() + 60_000
     const invitation = await desktop.createInvitation(expiresAt)
@@ -944,7 +945,7 @@ describe('MobilePairingController', () => {
     const transport = transportFixture()
     const handshake = {
       begin: vi.fn(async () => ({
-        completionId: parsePairingCompletionId(crypto.randomUUID()),
+        completionId: parsePairingCompletionId(randomUUID()),
         mobileHandshake: Uint8Array.of(9),
       })),
       acceptDesktopHandshake: vi.fn(),
@@ -1083,7 +1084,7 @@ describe('MobilePairingController', () => {
     installation.authorizeCurrentInstallation.mockRejectedValueOnce(new Error('authorization unavailable'))
     const handshake = {
       begin: vi.fn(async () => ({
-        completionId: parsePairingCompletionId(crypto.randomUUID()),
+        completionId: parsePairingCompletionId(randomUUID()),
         mobileHandshake: Uint8Array.of(9),
       })),
       acceptDesktopHandshake: vi.fn(),
@@ -1148,7 +1149,7 @@ describe('MobilePairingController', () => {
       installation, transport,
       handshake: {
         begin: vi.fn(async () => ({
-          completionId: parsePairingCompletionId(crypto.randomUUID()),
+          completionId: parsePairingCompletionId(randomUUID()),
           mobileHandshake: Uint8Array.of(9),
         })),
         acceptDesktopHandshake: vi.fn(),

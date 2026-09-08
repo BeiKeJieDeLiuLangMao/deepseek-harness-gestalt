@@ -394,7 +394,7 @@ describe('assembled Desktop Relay live Session projection on shipped dsh web', (
       const conversation = surface.getSnapshot().conversations[localSessionId]
       if (conversation === undefined) return false
       const userNode = conversation.nodes.some(node => isRecord(node) && node.kind === 'user')
-      return conversation.running === true && userNode
+      return  conversation.running && userNode
     }, { timeout: 60_000 }).toBe(true)
     // Stage 2 — after the model finishes, the final assistant node and the
     // stopped turn arrive as further live replacements without any history pull.
@@ -406,7 +406,7 @@ describe('assembled Desktop Relay live Session projection on shipped dsh web', (
         && node.kind === 'assistant'
         && Array.isArray(node.blocks)
         && node.blocks.some(block => isRecord(block) && block.kind === 'text' && block.text === 'live-projected-answer'))
-      return conversation.running === false && assistantNode
+      return ! conversation.running && assistantNode
     }, { timeout: 60_000 }).toBe(true)
     expect(surface.getSnapshot().operationFailure).toBeUndefined()
     await drainTransport()
@@ -540,7 +540,7 @@ async function startControlledStreamingLlm(apiKey: string): Promise<{
   return {
     release,
     baseUrl: `http://127.0.0.1:${String(address.port)}`,
-    close: () => new Promise<void>((resolve) => { server.close(() => resolve()) }),
+    close: () => new Promise<void>((resolve) => { server.close(() => { resolve() }) }),
   }
 }
 

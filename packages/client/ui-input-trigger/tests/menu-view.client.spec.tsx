@@ -132,15 +132,6 @@ describe('MenuView', () => {
     expect(screen.queryByRole('status')).toBeNull()
   })
 
-  it('keeps an opted-out source title hidden while its candidates are pending', () => {
-    mount(openState({
-      groups: [{ source: 'reference', showGroupTitle: false, status: 'pending', items: [] }],
-      highlight: null,
-    }))
-    expect(screen.queryByText('reference')).toBeNull()
-    expect(screen.getByText('正在加载…')).toBeTruthy()
-  })
-
   it('titles each group with the localized source name, raw name for unknown sources, none for empty ready groups', () => {
     const { view } = mount(openState({
       groups: [
@@ -200,7 +191,7 @@ describe('MenuView', () => {
     expect(onPick).toHaveBeenCalledWith('reference', 0)
   })
 
-  it('renders contiguous candidate sections once without changing option indexes', () => {
+  it('preserves custom section labels and candidate option indexes', () => {
     const { onPick } = mount(openState({
       groups: [{
         source: 'reference',

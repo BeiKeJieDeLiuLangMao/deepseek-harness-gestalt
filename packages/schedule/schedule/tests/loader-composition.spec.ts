@@ -174,9 +174,9 @@ describe('Schedule real Loader composition through cordis.yml', () => {
         data: expect.objectContaining({
           version: 1,
           operation: 'create',
-          schedule: expect.objectContaining({ id: 'schedule-1', prompt: 'loader reminder' }),
-        }),
-      }),
+          schedule: expect.objectContaining({ id: 'schedule-1', prompt: 'loader reminder' }) as unknown,
+        }) as unknown,
+      }) as unknown,
     ])
 
     const listed = await execute(ctx, root.agent, 'schedule_list', {}, 'schedule-loader-list')

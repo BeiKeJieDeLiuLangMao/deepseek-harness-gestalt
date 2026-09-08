@@ -194,7 +194,7 @@ describe('assembled Desktop Companion submit and cancel on shipped dsh web', () 
     if (!listed.ok || !isRecord(listed.value) || !Array.isArray(listed.value.items)) {
       throw new Error('Desktop Host session/list returned an invalid value')
     }
-    const row = listed.value.items.find(item => isRecord(item) && item.sessionId === sessionId)
+    const row: unknown = listed.value.items.find(item => isRecord(item) && item.sessionId === sessionId)
     expect(isRecord(row) && row.running === false).toBe(true)
   }, 180_000)
 })

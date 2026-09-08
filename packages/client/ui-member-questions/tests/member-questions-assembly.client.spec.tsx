@@ -58,7 +58,7 @@ function hostPending(questionId = 'question-1', revision = 1): MemberQuestionRec
       origin: {
         projectName: '千帆平台',
         originSessionTitle: '整理迭代计划',
-        askerAccountId: 'account-alice' as never,
+        askerAccountId: 'account-alice',
         askerRole: 'admin',
         askerDisplayName: '王小明',
         askerAvatarUrl: '',
@@ -236,7 +236,7 @@ describe('three Client applies: session-controller, member-questions, user-quest
         prompt: async () => ({ ok: true, value: { messageId: 'm' } }),
         interruptByParent: async () => ({ ok: true, value: { accepted: true } }),
       },
-      $stream: (options: RemoteStreamOptions<unknown>) => new RemoteStream(connection as never, options),
+      $stream: (options: RemoteStreamOptions<unknown>) => new RemoteStream(connection, options),
       $host: { home: '/home/fixture', isLoopback: true },
       $on: (event: string, listener: (...args: never[]) => void) => {
         const set = listeners.get(event) ?? new Set()

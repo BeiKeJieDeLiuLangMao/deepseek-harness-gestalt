@@ -26,7 +26,7 @@ function endSeed(seq: SessionSeq): SessionEvent {
     seq,
     time: 1_700_000_000_000 + seq,
     data: {},
-  } as SessionEvent
+  }
 }
 
 function suffixRoute(): SessionAdmissionRoute {

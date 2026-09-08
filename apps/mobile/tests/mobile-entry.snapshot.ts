@@ -403,7 +403,7 @@ function guardedConversation(complete = false): ValidatedDesktopSurfaceResync['c
     runningCalls: [],
     pending: [{
       kind: 'approval', interactionId: 'guarded-approval', sessionId: 'guarded-session',
-      payload: { approvalId: 'guarded-approval-id' as never, toolName: 'write', reason: 'Allow write' },
+      payload: { approvalId: 'guarded-approval-id', toolName: 'write', reason: 'Allow write' },
     }],
     queue: [],
     running: true,

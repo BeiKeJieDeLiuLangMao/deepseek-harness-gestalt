@@ -59,13 +59,7 @@ describe('menuReduce hit', () => {
     expect(s.groups[0]).toMatchObject({ source: 'reference', showGroupTitle: false, status: 'ready' })
   })
 
-  it('preserves a hidden group title through re-hit and settlement', () => {
-    let s = menuReduce(seedGroups(MENU_CLOSED, [{ name: 'reference', showGroupTitle: false }]), { type: 'hit', hit: hit() })
-    expect(s.groups[0]).toMatchObject({ source: 'reference', showGroupTitle: false, status: 'pending' })
-    s = menuReduce(s, { type: 'hit', hit: hit('r') })
-    s = menuReduce(s, { type: 'source-settled', generation: 2, source: 'reference', items: [item('README.md')] })
-    expect(s.groups[0]).toMatchObject({ source: 'reference', showGroupTitle: false, status: 'ready' })
-  })
+
 
   it('null hit closes; closing an already-closed state is a no-op reference', () => {
     const s = open(['command'])

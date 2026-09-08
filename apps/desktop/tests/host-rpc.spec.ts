@@ -186,7 +186,7 @@ describe('Desktop Host RPC', () => {
               ? `${'a'.repeat(remaining - 2)}\u4f60`
               : body.payload.query === 'utf8-emoji-cross'
                 ? `${'a'.repeat(remaining - 3)}\u{1F600}`
-                : `${'a'.repeat(remaining - 3)}\uFFFD${'x'}`
+                : `${'a'.repeat(remaining - 3)}\uFFFDx`
             response.end(JSON.stringify({
               type: 'server-response',
               rpcId: body.rpcId,

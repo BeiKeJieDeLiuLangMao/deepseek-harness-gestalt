@@ -249,7 +249,7 @@ function bashToolResult(log: string, marker: string): { callId: string; isError:
     const event = JSON.parse(line) as { seq?: unknown; data?: { message?: { content?: unknown } } }
     const content = event.data?.message?.content
     if (!Array.isArray(content)) continue
-    const call = content.find(block => isRecord(block) && block.type === 'tool-call'
+    const call: unknown = content.find(block => isRecord(block) && block.type === 'tool-call'
       && block.name === 'bash' && JSON.stringify(block.arguments).includes(marker))
     if (isRecord(call) && typeof call.id === 'string') callId = call.id
   }
@@ -259,9 +259,9 @@ function bashToolResult(log: string, marker: string): { callId: string; isError:
     const event = JSON.parse(line) as { seq?: unknown; data?: { message?: { content?: unknown } } }
     const content = event.data?.message?.content
     if (!Array.isArray(content)) continue
-    const result = content.find(block => isRecord(block) && block.type === 'tool-result' && block.toolCallId === callId)
+    const result: unknown = content.find(block => isRecord(block) && block.type === 'tool-result' && block.toolCallId === callId)
     if (!isRecord(result) || !Array.isArray(result.content)) continue
-    const text = result.content.find(part => isRecord(part) && typeof part.text === 'string')
+    const text: unknown = result.content.find(part => isRecord(part) && typeof part.text === 'string')
     if (isRecord(text) && typeof text.text === 'string' && typeof event.seq === 'number') {
       return { callId, isError: result.isError === true, seq: event.seq, text: text.text }
     }

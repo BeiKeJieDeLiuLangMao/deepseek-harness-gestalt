@@ -80,7 +80,8 @@ describe('materializeProfilePatch dual-anchor linking', () => {
 
     const linked = profileLink(cwd, packageName)
     expect(await realpath(linked)).toBe(expected)
-    expect(JSON.parse(await readFile(join(linked, 'package.json'), 'utf8')).marker).toBe('patch')
+    const manifest: unknown = JSON.parse(await readFile(join(linked, 'package.json'), 'utf8'))
+    expect(manifest).toMatchObject({ marker: 'patch' })
   })
 
   it('leaves an unresolved bare name for installation heal instead of throwing', async () => {

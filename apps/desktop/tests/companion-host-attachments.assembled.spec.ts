@@ -119,7 +119,7 @@ describe('assembled Desktop Companion attachments on shipped dsh web', () => {
       },
     })
     const originalFetch = globalThis.fetch
-    globalThis.fetch = vi.fn(async (input, init) => {
+    globalThis.fetch = vi.fn<typeof fetch>(async (input, init) => {
       const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
       if (url === 'https://platform.example/v1/remote-attachments' && init?.method === 'POST') {
         ciphertext = new Uint8Array(await new Response(init?.body).arrayBuffer())
@@ -140,7 +140,7 @@ describe('assembled Desktop Companion attachments on shipped dsh web', () => {
         return searchHit?.type === 'session-search' && searchHit.items.some(item => item.sessionId === sessionId)
       }, { timeout: 15_000 }).toBe(true)
       expect(searchHit).toMatchObject({
-        type: 'session-search', items: expect.arrayContaining([expect.objectContaining({ sessionId })]),
+        type: 'session-search', items: expect.arrayContaining([expect.objectContaining({ sessionId })]) as unknown,
       })
 
       const expectedFiles = [

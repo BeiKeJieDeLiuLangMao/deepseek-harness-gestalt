@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import 'fake-indexeddb/auto'
 import { describe, expect, it, vi } from 'vitest'
 import { parsePlatformAccountId } from '@deepseek-ai/dsh-platform-account'
@@ -10,8 +11,8 @@ import type { MobileCompanionProjectionDto } from '../src/companion-projection.t
 
 describe('Mobile Companion projection cache runtime', () => {
   it('restores an authenticated projection after an application upgrade and clears it independently', async () => {
-    const pairingId = parsePersonalPairingId(`pairing-cache-${crypto.randomUUID()}`)
-    const accountId = parsePlatformAccountId(`account-cache-${crypto.randomUUID()}`)
+    const pairingId = parsePersonalPairingId(`pairing-cache-${randomUUID()}`)
+    const accountId = parsePlatformAccountId(`account-cache-${randomUUID()}`)
     const keys = new PairingCompanionKeyVault()
     keys.retain(pairingId, new Uint8Array(32).fill(41))
     const projection = emptyProjection('Cached Desktop')
@@ -30,8 +31,8 @@ describe('Mobile Companion projection cache runtime', () => {
   })
 
   it('commits one versioned projection snapshot and serializes clear after an admitted save', async () => {
-    const pairingId = parsePersonalPairingId(`pairing-cache-${crypto.randomUUID()}`)
-    const accountId = parsePlatformAccountId(`account-cache-${crypto.randomUUID()}`)
+    const pairingId = parsePersonalPairingId(`pairing-cache-${randomUUID()}`)
+    const accountId = parsePlatformAccountId(`account-cache-${randomUUID()}`)
     const keys = new PairingCompanionKeyVault()
     keys.retain(pairingId, new Uint8Array(32).fill(42))
     const cache = new MobileCompanionProjectionCacheRuntime({
@@ -47,8 +48,8 @@ describe('Mobile Companion projection cache runtime', () => {
   })
 
   it('retains the most recent opened transcript when accumulated conversations exceed the cache ceiling', async () => {
-    const pairingId = parsePersonalPairingId(`pairing-cache-${crypto.randomUUID()}`)
-    const accountId = parsePlatformAccountId(`account-cache-${crypto.randomUUID()}`)
+    const pairingId = parsePersonalPairingId(`pairing-cache-${randomUUID()}`)
+    const accountId = parsePlatformAccountId(`account-cache-${randomUUID()}`)
     const keys = new PairingCompanionKeyVault()
     keys.retain(pairingId, new Uint8Array(32).fill(44))
     const cache = new MobileCompanionProjectionCacheRuntime({
@@ -71,8 +72,8 @@ describe('Mobile Companion projection cache runtime', () => {
   })
 
   it('bounds complete metadata by UTF-8 bytes and replaces stale cache with a leading Session prefix', async () => {
-    const pairingId = parsePersonalPairingId(`pairing-cache-${crypto.randomUUID()}`)
-    const accountId = parsePlatformAccountId(`account-cache-${crypto.randomUUID()}`)
+    const pairingId = parsePersonalPairingId(`pairing-cache-${randomUUID()}`)
+    const accountId = parsePlatformAccountId(`account-cache-${randomUUID()}`)
     const keys = new PairingCompanionKeyVault()
     keys.retain(pairingId, new Uint8Array(32).fill(45))
     const cache = new MobileCompanionProjectionCacheRuntime({
@@ -106,8 +107,8 @@ describe('Mobile Companion projection cache runtime', () => {
   })
 
   it('retains an unknown operation receipt when presentation content is cleared', async () => {
-    const pairingId = parsePersonalPairingId(`pairing-receipt-${crypto.randomUUID()}`)
-    const accountId = parsePlatformAccountId(`account-receipt-${crypto.randomUUID()}`)
+    const pairingId = parsePersonalPairingId(`pairing-receipt-${randomUUID()}`)
+    const accountId = parsePlatformAccountId(`account-receipt-${randomUUID()}`)
     const keys = new PairingCompanionKeyVault()
     keys.retain(pairingId, new Uint8Array(32).fill(43))
     const cache = new MobileCompanionProjectionCacheRuntime({

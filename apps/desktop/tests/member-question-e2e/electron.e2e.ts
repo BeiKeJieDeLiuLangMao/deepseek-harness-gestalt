@@ -1,5 +1,6 @@
 /** Visible three-installation Electron acceptance for Project Members. */
 
+import { randomUUID } from 'node:crypto'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { browser, expect } from '@wdio/globals'
@@ -677,7 +678,7 @@ async function rpc<T = unknown>(origin: string, method: string, payload: unknown
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
       type: 'client-request',
-      rpcId: `electron-${crypto.randomUUID()}`,
+      rpcId: `electron-${randomUUID()}`,
       method,
       payload,
     }),

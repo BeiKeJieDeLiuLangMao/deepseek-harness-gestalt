@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
 import type { AccountProof } from '@deepseek-ai/dsh-platform-account'
@@ -418,7 +419,7 @@ function handshakeProvider(): PairingHandshakeProvider {
       pendingPairingKey: Uint8Array.of(3),
     })),
     activatePairing: vi.fn(async () => ({
-      keyReference: `key-${crypto.randomUUID()}` as never,
+      keyReference: `key-${randomUUID()}` as never,
       activePairingKey: Uint8Array.of(6),
     })),
     destroyChallenge: vi.fn(),
@@ -433,6 +434,6 @@ function authentication(installationId: string, accountId: string): {
 } {
   return {
     accessToken: `${accountId}:${installationId}`,
-    proof: { jti: parseAccountProofJti(crypto.randomUUID()), issuedAt: 1, signature: 'signature' },
+    proof: { jti: parseAccountProofJti(randomUUID()), issuedAt: 1, signature: 'signature' },
   }
 }

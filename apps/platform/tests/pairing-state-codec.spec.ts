@@ -97,11 +97,11 @@ describe('pairing transaction codec', () => {
       if (!Array.isArray(publications) || !Array.isArray(publications[0])) {
         throw new Error('endpoint publication fixture is invalid')
       }
-      const publication = publications[0][1]
+      const publication: unknown = publications[0][1]
       if (typeof publication !== 'object' || publication === null || Array.isArray(publication)) {
         throw new Error('endpoint publication fixture is invalid')
       }
-      const pairing = Reflect.get(publication, 'pairing')
+      const pairing: unknown = Reflect.get(publication, 'pairing')
       if (typeof pairing !== 'object' || pairing === null || Array.isArray(pairing)) {
         throw new Error('endpoint publication pairing fixture is invalid')
       }

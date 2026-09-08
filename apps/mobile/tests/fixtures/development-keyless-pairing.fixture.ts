@@ -1,5 +1,6 @@
 /** Keyless Mobile handshake fixture for controller-flow tests only. */
 
+import { randomUUID } from 'node:crypto'
 import {
   deriveKeylessMobileHandshake,
   deriveKeylessPairingKey,
@@ -22,7 +23,7 @@ export class KeylessMobileHandshakeFixture implements MobilePairingHandshakeClie
     try {
       this.invitationSecret = invitation.invitationSecret.slice()
       return {
-        completionId: parsePairingCompletionId(`fixture-${crypto.randomUUID()}`),
+        completionId: parsePairingCompletionId(`fixture-${randomUUID()}`),
         mobileHandshake: await deriveKeylessMobileHandshake(invitation.invitationSecret),
       }
     } finally {

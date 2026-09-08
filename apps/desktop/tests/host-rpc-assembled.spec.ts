@@ -77,7 +77,7 @@ describe('Desktop Host RPC against shipped dsh web', () => {
       cookieHeader: cookie,
     })
     const listed = await listDesktopHostSessions(authed)
-    expect(listed).toMatchObject({ ok: true, value: { items: expect.any(Array) } })
+    expect(listed).toMatchObject({ ok: true, value: { items: expect.any(Array) as unknown } })
 
     const firstLaunch = first.running.launchUrl
     await first.running.stop()
@@ -100,7 +100,7 @@ describe('Desktop Host RPC against shipped dsh web', () => {
       timeoutMs: 10_000,
       responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
       cookieHeader: nextCookie,
-    }))).resolves.toMatchObject({ ok: true, value: { items: expect.any(Array) } })
+    }))).resolves.toMatchObject({ ok: true, value: { items: expect.any(Array) as unknown } })
   }, 180_000)
 
   it('follows generated session/follow, stops after unsubscribe, and reauths after Host restart', async () => {
@@ -155,7 +155,7 @@ describe('Desktop Host RPC against shipped dsh web', () => {
     if (!isRecord(snapshot) || typeof snapshot.cursor !== 'number') throw new Error('missing follow snapshot')
     await expect(pageDesktopHostSession(next, {
       sessionId, throughSeq: snapshot.cursor, maxMessages: 20,
-    })).resolves.toMatchObject({ ok: true, value: { records: expect.any(Array), hasMore: expect.any(Boolean) } })
+    })).resolves.toMatchObject({ ok: true, value: { records: expect.any(Array) as unknown, hasMore: expect.any(Boolean) as unknown } })
     restartFollow.abort()
     await expect(restartWatch).resolves.toBeUndefined()
   }, 180_000)
@@ -299,7 +299,7 @@ describe('Desktop Host RPC against shipped dsh web', () => {
         await expect.poll(async () => {
           const listed = await listDesktopHostSessions(rpc)
           if (!listed.ok || !isRecord(listed.value) || !Array.isArray(listed.value.items)) return false
-          const row = listed.value.items.find(item => isRecord(item) && item.sessionId === sessionId)
+          const row: unknown = listed.value.items.find(item => isRecord(item) && item.sessionId === sessionId)
           return isRecord(row) && row.running === false
         }).toBe(true)
         expect(llm.requests.length).toBe(llmCallsBeforeCancel)
@@ -436,7 +436,7 @@ describe('Desktop Host RPC against shipped dsh web', () => {
     })
     await expect(listDesktopHostSessions(rpc)).resolves.toMatchObject({
       ok: true,
-      value: { items: expect.arrayContaining([expect.objectContaining({ sessionId })]) },
+      value: { items: expect.arrayContaining([expect.objectContaining({ sessionId })]) as unknown },
     })
     const needle = 'desktop-generated-search-needle'
     await expect(promptDesktopHostSession(rpc, {
@@ -487,10 +487,10 @@ describe('Desktop Host RPC against shipped dsh web', () => {
       const imageId = imageAttachmentIdFromFollow(frames)
       if (imageId === undefined) throw new Error('missing image attachment id')
       const image = await readDesktopHostAttachment(rpc, { sessionId, attachmentId: imageId })
-      if (!image.ok) throw new Error(`image read failed id=${String(imageId)} result=${JSON.stringify(image)}`)
+      if (!image.ok) throw new Error(`image read failed id=${imageId} result=${JSON.stringify(image)}`)
       expect(image).toMatchObject({
         ok: true,
-        value: { attachment: expect.objectContaining({ mediaType: 'image/png' }), data: png.toString('base64') },
+        value: { attachment: expect.objectContaining({ mediaType: 'image/png' }) as unknown, data: png.toString('base64') },
       })
 
       const fileBytes = Uint8Array.of(0, 255, 1, 2)
@@ -505,7 +505,7 @@ describe('Desktop Host RPC against shipped dsh web', () => {
         ok: true,
         value: { attachment: expect.objectContaining({
           name: 'payload.bin', mediaType: 'application/octet-stream', bytes: 4,
-        }) },
+        }) as unknown },
       })
       const fileId = admitted.ok && isRecord(admitted.value) && isRecord(admitted.value.attachment)
         ? admitted.value.attachment.attachmentId
@@ -551,7 +551,7 @@ describe('Desktop Host RPC against shipped dsh web', () => {
       }).toBe(true)
       await expect(listDesktopHostSessions(rpc)).resolves.toMatchObject({
         ok: true,
-        value: { items: expect.arrayContaining([expect.objectContaining({ sessionId })]) },
+        value: { items: expect.arrayContaining([expect.objectContaining({ sessionId })]) as unknown },
       })
       const surfaces = changes.filter(change => isRecord(change) && change.type === 'surface').length
       await expect(archiveDesktopHostSession(rpc, sessionId)).resolves.toMatchObject({ ok: true })
@@ -717,8 +717,8 @@ function conversationHasUserText(projected: unknown, text: string): boolean {
 
 function conversationHasAssistantText(projected: unknown, text: string): boolean {
   if (!isRecord(projected) || !isRecord(projected.conversation)) return false
-  const nodes = Array.isArray(projected.conversation.nodes) ? projected.conversation.nodes : []
-  const partial = isRecord(projected.conversation.partial) && Array.isArray(projected.conversation.partial.blocks)
+  const nodes: unknown[] = Array.isArray(projected.conversation.nodes) ? projected.conversation.nodes : []
+  const partial: unknown[] = isRecord(projected.conversation.partial) && Array.isArray(projected.conversation.partial.blocks)
     ? projected.conversation.partial.blocks
     : []
   return [...nodes, ...partial].some((item) => {
@@ -864,7 +864,7 @@ async function runAssembledApproval(input: {
           const log = await durableSessionLog(first.home, sessionId)
           return log.includes('the user rejected escalating this command')
         }).toBe(true)
-        expect(() => accessSync(scratch, fsConstants.F_OK)).toThrow()
+        expect(() => { accessSync(scratch, fsConstants.F_OK) }).toThrow()
       }
       await expect(owner.handle({
         type: 'settle-interaction',

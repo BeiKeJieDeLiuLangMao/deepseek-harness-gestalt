@@ -255,7 +255,7 @@ describe('Session Client admission dispatch', () => {
 
     expect(() => {
       svc.registerAdmission(sessionId, route, { conflict: 'reject' })
-    }).toThrowError(`sessions.registerAdmission: session "${sessionId}" already has an active admission route`)
+    }).toThrow(`sessions.registerAdmission: session "${sessionId}" already has an active admission route`)
   })
 
   it('does not fall back to Remote or double-dispatch when admission prompt fails or throws', async () => {
@@ -276,8 +276,9 @@ describe('Session Client admission dispatch', () => {
     const promptCalls: string[] = []
 
     const route: SessionAdmissionRoute = {
-      prompt: vi.fn((_id, content) => {
-        promptCalls.push(content[0].type === 'text' ? content[0].text : '')
+      prompt: vi.fn<SessionAdmissionRoute['prompt']>((_id, content) => {
+        const first = content.at(0)
+        promptCalls.push(first?.type === 'text' ? first.text : '')
         return Promise.resolve({
           ok: false as const,
           error: {
@@ -331,6 +332,7 @@ describe('Session Client admission dispatch', () => {
     const thrown = await binding.session.prompt([{ type: 'text', text: 'attempt 4' }], 'queue')
     expect(failureOf(thrown)).toBe(existing)
 
+    // oxlint-disable-next-line prefer-promise-reject-errors -- Exercise normalization of a marker-free non-Error rejection.
     route.prompt = vi.fn(() => Promise.reject({
       code: 'session/attachment-invalid',
       message: 'marker-free failure',
@@ -369,6 +371,7 @@ describe('Session Client admission dispatch', () => {
       updateQueue: vi.fn(() => Promise.reject(new Error('queue adapter drop'))),
       command: vi.fn(() => Promise.reject(new Error('command adapter drop'))),
     }
+    const promptSpy = vi.spyOn(route, 'prompt')
     svc.registerAdmission(sessionId, route)
 
     const queueResult = await binding.session.updateQueue(mid('item-throw'), { kind: 'steer' })
@@ -382,9 +385,9 @@ describe('Session Client admission dispatch', () => {
     expect(commandFailure.code).toBe('gateway/internal')
     expect(commandFailure.message).toBe('command adapter drop')
     expect(executeSpy).not.toHaveBeenCalled()
-    expect(route.prompt).not.toHaveBeenCalled()
+    expect(promptSpy).not.toHaveBeenCalled()
 
-    route.updateQueue = vi.fn((_sessionId, itemId) => Promise.resolve({
+    route.updateQueue = vi.fn<NonNullable<SessionAdmissionRoute['updateQueue']>>((_sessionId, itemId) => Promise.resolve({
       ok: false as const,
       error: {
         code: 'session/queue-item-not-found',
@@ -595,7 +598,7 @@ describe('Session Client admission dispatch', () => {
     const drop = svc.registerAdmissionAdapter(adapter)
     expect(() => {
       svc.registerAdmissionAdapter(adapter)
-    }).toThrowError('sessions.registerAdmissionAdapter: duplicate adapter "test-adapter"')
+    }).toThrow('sessions.registerAdmissionAdapter: duplicate adapter "test-adapter"')
 
     await expect(hit.session.prompt([{ type: 'text', text: 'via adapter' }], 'queue'))
       .resolves.toEqual({ ok: true, value: { accepted: true } })
@@ -732,15 +735,15 @@ describe('Session Client admission dispatch', () => {
     const adapter: SessionAdmissionAdapter = {
       id: 'disposed-adapter',
       handles: () => true,
-      prompt: route.prompt,
-      cancel: route.cancel,
+      prompt: (...args) => route.prompt(...args),
+      cancel: (...args) => route.cancel(...args),
     }
 
     await ctx.fiber.dispose()
     expect(() => { svc.registerAdmission(sessionId, route) })
-      .toThrowError('sessions.registerAdmission: ClientSessions is disposed')
+      .toThrow('sessions.registerAdmission: ClientSessions is disposed')
     expect(() => { svc.registerAdmissionAdapter(adapter) })
-      .toThrowError('sessions.registerAdmissionAdapter: ClientSessions is disposed')
+      .toThrow('sessions.registerAdmissionAdapter: ClientSessions is disposed')
   })
 
   it('keeps commandCatalogSessionId and skillCatalogSessionId as lookup-only helpers', async () => {
@@ -836,7 +839,7 @@ describe('Session Client admission dispatch', () => {
         ...(payload.reasoningEffort === undefined ? {} : { reasoningEffort: payload.reasoningEffort }),
       },
     }))
-    await expect(stock!.selectModel!({ provider: 'fixture', model: 'fixture' })).resolves.toEqual({
+    await expect(stock!.selectModel({ provider: 'fixture', model: 'fixture' })).resolves.toEqual({
       ok: true,
       value: { selected: { provider: 'fixture', model: 'fixture' } },
     })
@@ -865,7 +868,7 @@ describe('Session Client admission dispatch', () => {
         selectModel: childSelect,
       }),
     })
-    await svc.modelRoute(childId)!.selectModel!({ provider: 'owned', model: 'child' })
+    await svc.modelRoute(childId)!.selectModel({ provider: 'owned', model: 'child' })
     expect(childSelect).toHaveBeenCalledTimes(1)
     expect(api.callsOf('session.selectModel')).toHaveLength(1)
     dropChild()
@@ -884,7 +887,7 @@ describe('Session Client admission dispatch', () => {
       modelRoute: () => ({ inspect: admissionInspect, selectModel: admissionSelect }),
     })
     await expect(svc.modelRoute(sessionId)?.inspect?.()).resolves.toMatchObject({ ok: true })
-    await svc.modelRoute(sessionId)!.selectModel!({ provider: 'owned', model: 'm' })
+    await svc.modelRoute(sessionId)!.selectModel({ provider: 'owned', model: 'm' })
     expect(admissionSelect).toHaveBeenCalledTimes(1)
     expect(api.callsOf('session.selectModel')).toHaveLength(1)
 
@@ -906,7 +909,7 @@ describe('Session Client admission dispatch', () => {
         { provider: payload.provider, model: payload.model },
       ),
     })
-    const rejected = await svc.modelRoute(sessionId)!.selectModel!({ provider: 'missing', model: 'nope' })
+    const rejected = await svc.modelRoute(sessionId)!.selectModel({ provider: 'missing', model: 'nope' })
     expect(failureOf(rejected).code).toBe('session/model-unavailable')
   })
 
@@ -954,7 +957,7 @@ describe('Session Client admission dispatch', () => {
       details: { provider: 'owned', model: 'catalog' },
     })
 
-    const selection = await routed.selectModel!({ provider: 'owned', model: 'broken' }, signal)
+    const selection = await routed.selectModel({ provider: 'owned', model: 'broken' }, signal)
     expect(failureOf(selection)).toMatchObject({
       code: 'gateway/internal',
       message: 'selection adapter drop',
@@ -991,7 +994,7 @@ describe('Session Client admission dispatch', () => {
       cancel: vi.fn(() => Promise.resolve(ok({ accepted: true as const }))),
     })
     expect(svc.modelRoute(sessionId)?.selectModel).toBeTypeOf('function')
-    await svc.modelRoute(sessionId)!.selectModel!({ provider: 'fixture', model: 'omit' })
+    await svc.modelRoute(sessionId)!.selectModel({ provider: 'fixture', model: 'omit' })
     expect(api.callsOf('session.selectModel')).toEqual([{
       sessionId,
       provider: 'fixture',
@@ -1020,14 +1023,14 @@ describe('Session Client admission dispatch', () => {
     }))
     await svc.refresh()
     await expect(
-      svc.modelRoute(sessionId)!.selectModel!(
+      svc.modelRoute(sessionId)!.selectModel(
         { provider: 'fixture', model: 'fixture' },
         AbortSignal.abort(),
       ),
     ).rejects.toMatchObject({ name: 'AbortError' })
     expect(api.callsOf('session.selectModel')).toEqual([])
     await expect(
-      svc.modelRoute(sessionId)!.selectModel!({ provider: 'fixture', model: 'ok' }),
+      svc.modelRoute(sessionId)!.selectModel({ provider: 'fixture', model: 'ok' }),
     ).resolves.toMatchObject({ ok: true })
     expect(api.callsOf('session.selectModel')).toEqual([{
       sessionId,
@@ -1083,7 +1086,7 @@ describe('Session Client admission dispatch', () => {
       cancel: vi.fn(() => Promise.resolve(ok({ accepted: true as const }))),
       modelRoute: () => ({ inspect: childInspect, selectModel: childSelect }),
     })
-    await svc.modelRoute(childId)!.selectModel!({ provider: 'owned', model: 'child' })
+    await svc.modelRoute(childId)!.selectModel({ provider: 'owned', model: 'child' })
     expect(childSelect).toHaveBeenCalledTimes(1)
     expect(api.callsOf('session.selectModel')).toEqual([])
     drop()

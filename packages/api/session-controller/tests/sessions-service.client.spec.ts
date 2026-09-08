@@ -292,7 +292,7 @@ describe('provisional identity lifecycle', () => {
     b.svc.stageProvisional(draft)
     gate.resolve(ok({
       items: [{ sessionId: sid('parent'), updatedAt: 1, running: false, blank: false }],
-    }) as never)
+    }))
     await refresh
     await Promise.resolve()
     expect(b.svc.list.getSnapshot().ids).toContain(sid('draft'))
@@ -433,7 +433,7 @@ describe('provisional identity lifecycle', () => {
     release()
     gate.resolve(ok({
       items: [{ sessionId: sid('parent'), updatedAt: 1, running: false, blank: false }],
-    }) as never)
+    }))
     await refresh
     await Promise.resolve()
     expect(b.svc.list.getSnapshot().byId[sid('draft')]).toBeUndefined()

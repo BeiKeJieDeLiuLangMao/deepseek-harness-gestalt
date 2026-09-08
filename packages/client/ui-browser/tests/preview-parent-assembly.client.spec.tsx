@@ -113,9 +113,9 @@ describe('Chat-declared Browser preview occupancy', () => {
   it('hides when the current Session has no tabs and restores after switch', async () => {
     const b = await bench()
     expect(b.view.container.querySelector('[data-browser-preview]')).not.toBeNull()
-    await act(async () => { await b.runtime.sessions.open(BETA) })
+    await act(async () => { b.runtime.sessions.open(BETA) })
     expect(b.view.container.querySelector('[data-browser-preview]')).toBeNull()
-    await act(async () => { await b.runtime.sessions.open(ALPHA) })
+    await act(async () => { b.runtime.sessions.open(ALPHA) })
     expect(b.view.container.querySelector('[data-browser-preview]')).not.toBeNull()
     await b.runtime.dispose()
   })

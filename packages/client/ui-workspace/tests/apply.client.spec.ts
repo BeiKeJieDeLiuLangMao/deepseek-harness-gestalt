@@ -277,7 +277,7 @@ describe('ui-workspace apply', () => {
     const firstSource = browser.hooks.pendingInvitations
     const again = (b.slots.entries('sidebar.workspaces')[0]!.inject as () => WorkspaceBrowserInjected)()
     expect(again.hooks.pendingInvitations).toBe(firstSource)
-    await expect(browser.projectMembership!.localRemoteFor('ws' as never))
+    await expect(browser.projectMembership.localRemoteFor('ws' as never))
       .rejects.toThrow('#590')
     await fiber.dispose()
   })

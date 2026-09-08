@@ -306,7 +306,7 @@ describe('member-question Remote snapshot and settle', () => {
       },
     })).rejects.toMatchObject({
       code: 'member-question/human-turn-failed',
-      message: expect.stringContaining('admitter is required'),
+      message: expect.stringContaining('admitter is required') as unknown,
     })
     const unregister = receiver.registerHumanTurnAdmitter(async () => ({ accepted: true as const }))
     const admitted = await ctx.typertGateway.invoke({
@@ -341,7 +341,7 @@ describe('member-question Remote snapshot and settle', () => {
       },
     })).rejects.toMatchObject({
       code: 'member-question/human-turn-failed',
-      message: expect.stringContaining('unknown receiving Session'),
+      message: expect.stringContaining('unknown receiving Session') as unknown,
     })
     unregister()
   })

@@ -152,7 +152,7 @@ function AssembledBrowse({
     clock: fixedMobilePresentationClock(1),
     search: snapshot.search,
     onSubmit: (sessionId, text) => surface.submit(sessionId, text),
-    onCancel: (sessionId) => { void surface.cancel(sessionId) },
+    onCancel: (sessionId) => { surface.cancel(sessionId) },
     onLoadOlder: (sessionId) => { surface.loadOlder(sessionId) },
   })
 }
@@ -161,6 +161,7 @@ describe('Mobile Browse conversation assembly', () => {
   it('opens a Desktop JSON projection through Surface into Browse and settles Ask User custom plus skip', async () => {
     const runtime = connectedRuntime()
     const channel = connectionChannel()
+    const settleSpy = vi.spyOn(channel.mutations, 'settle')
     const surface = new MobileCompanionSurface(runtime)
     const receiver = surface.bindAuthenticatedConnection(channel)
     if (receiver === undefined) throw new Error('expected Desktop resync receiver')
@@ -175,8 +176,8 @@ describe('Mobile Browse conversation assembly', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Skip this question' }))
     fireEvent.change(screen.getByPlaceholderText('Type your answer'), { target: { value: 'later' } })
     fireEvent.click(screen.getByRole('button', { name: 'Submit' }))
-    await waitFor(() => { expect(channel.mutations.settle).toHaveBeenCalledOnce() })
-    expect(channel.mutations.settle).toHaveBeenCalledWith({
+    await waitFor(() => { expect(settleSpy).toHaveBeenCalledOnce() })
+    expect(settleSpy).toHaveBeenCalledWith({
       kind: 'question',
       sessionId: SessionId('session-one'),
       interactionId: 'question-rpc',
