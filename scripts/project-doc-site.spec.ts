@@ -69,7 +69,7 @@ describe('website source layout', () => {
     ).toEqual([])
   })
 
-  it('cleans the owned output before both site build modes', () => {
+  it('routes both site build modes through the output lifecycle owner', () => {
     const rootPackage = JSON.parse(readFileSync(join(repositoryRoot, 'package.json'), 'utf8')) as {
       scripts: Record<string, string>
     }
@@ -77,8 +77,8 @@ describe('website source layout', () => {
       scripts: Record<string, string>
     }
 
-    expect(websitePackage.scripts.build).toBe('pnpm run clean:dist && vitepress build .')
-    expect(websitePackage.scripts['build:mpa']).toBe('pnpm run clean:dist && vitepress build . --mpa')
+    expect(websitePackage.scripts.build).toBe('tsx build-cli.ts')
+    expect(websitePackage.scripts['build:mpa']).toBe('tsx build-cli.ts --mpa')
     expect(rootPackage.scripts['docs:build:mpa']).toMatch(/^pnpm --filter @deepseek-ai\/website run build:mpa(?: |$)/u)
   })
 })

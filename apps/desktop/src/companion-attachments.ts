@@ -122,8 +122,10 @@ export async function receiveCompanionAttachment(
   if (await hashCompanionCiphertext(ciphertext) !== offer.ciphertextSha256) {
     throw new CompanionAttachmentReceiveError('hash-mismatch', 'Companion attachment ciphertext hash does not match the offer')
   }
-  const key = await deriveCompanionAttachmentKey(input.attachmentKey)
-  const plaintext = await openCompanionAttachment(key, ciphertext).catch(() => {
+  const plaintext = await openCompanionAttachment(
+    await deriveCompanionAttachmentKey(input.attachmentKey),
+    ciphertext,
+  ).catch(() => {
     // AES-GCM authentication failure is the only remaining failure after the hash check.
     throw new CompanionAttachmentReceiveError('hash-mismatch', 'Companion attachment did not authenticate')
   })

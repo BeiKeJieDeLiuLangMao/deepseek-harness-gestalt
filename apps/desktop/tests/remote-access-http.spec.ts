@@ -2,7 +2,12 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { randomUUID } from 'node:crypto'
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
-import { parseAccountProofJti, parseInstallationId } from '@deepseek-ai/dsh-platform-account'
+import {
+  parseAccountProofJti,
+  parseDesktopInstallationPresentation,
+  parseInstallationId,
+  parsePlatformAccountId,
+} from '@deepseek-ai/dsh-platform-account'
 import {
   MemoryPersonalPairingAuthorityStore,
   PersonalPairingProvider,
@@ -33,10 +38,14 @@ describe('Desktop Settings Remote Access composition', () => {
       account: {
         currentInstallation: vi.fn(async () => ({
           account: {
-            id: 'account-one' as never, githubId: 1, githubLogin: 'account-one',
+            id: parsePlatformAccountId('account-one'), githubId: 1, githubLogin: 'account-one',
             avatarUrl: 'https://avatars.example/account',
           },
-          installation: { id: parseInstallationId('desktop-one'), kind: 'desktop' as const },
+          installation: {
+            id: parseInstallationId('desktop-one'),
+            kind: 'desktop' as const,
+            presentation: parseDesktopInstallationPresentation({ name: 'Settings Desktop', platform: 'macos' }),
+          },
         })),
       },
       handshake: handshakeFixture(),
@@ -68,7 +77,7 @@ describe('Desktop Settings Remote Access composition', () => {
             status: 'signed-in' as const,
             privacyAccepted: true,
             account: {
-              id: 'account-one' as never, githubId: 1, githubLogin: 'account-one',
+              id: parsePlatformAccountId('account-one'), githubId: 1, githubLogin: 'account-one',
               avatarUrl: 'https://avatars.example/account',
             },
           })),
@@ -144,7 +153,11 @@ class SettingsRelaySocket implements RelayEndpointSocket {
     this.sent.push(message)
     if (message.type === 'attach') {
       this.push(encodeRelayMessage({
-        type: 'ready', transportVersion: 1, attachmentId: message.attachmentId,
+        type: 'ready',
+        transportVersion: 1,
+        routeId: message.routeId,
+        attachmentId: message.attachmentId,
+        peers: [],
       }))
     }
   }

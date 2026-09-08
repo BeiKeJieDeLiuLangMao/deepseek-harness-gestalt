@@ -32,8 +32,8 @@ export function createDesktopPairingSource(
  * Bind Host reads and pushes without allowing a late initial read to win.
  * @param source - renderer snapshot source to update.
  * @param desktop - preload pairing read and subscription methods.
- * @param onError - reports failure of the initial Host read.
- * @returns disposer for the Host snapshot subscription.
+ * @param onError - reports failure of the initial Host read while the binding is active.
+ * @returns caller-owned disposer that blocks later writes and unsubscribes the Host snapshot subscription.
  */
 export function bindDesktopPairing(
   source: DesktopPairingSource,

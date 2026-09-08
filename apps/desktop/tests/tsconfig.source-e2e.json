@@ -1,0 +1,29 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "rewriteRelativeImportExtensions": false,
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "types": ["node", "electron", "vitest/globals"]
+  },
+  "include": [
+    "../src/e2e-profile.ts",
+    "../src/observe-web-host-exit.ts",
+    "../src/spawn-web-host.ts",
+    "../src/web-url.ts",
+    "./observe-web-host-exit.spec.ts",
+    "./spawn-web-host.spec.ts",
+    "./e2e-profile.spec.ts",
+    "../scripts/hidden-window-smoke.ts",
+    "./helpers/hidden-window-smoke-owner.ts",
+    "./helpers/hidden-window-smoke-result.ts",
+    "./helpers/hidden-window-smoke-run.ts",
+    "./helpers/hidden-window-smoke-launch.ts",
+    "./hidden-window-smoke.spec.ts"
+  ]
+}

@@ -4,15 +4,20 @@ import { parsePersonalPairingId } from '@deepseek-ai/dsh-remote-access'
 import {
   deriveCompanionAttachmentKey,
   encodeProtocolBase64Url,
+  parseAttachmentCapability,
   parseCompanionOperationId,
   parseCompanionInteractionId,
   parseCompanionSessionId,
+  parseCompanionWorkspaceId,
   parseDocumentTransferId,
   parseMemberQuestionId,
+  parseMemberQuestionProjectId,
   REMOTE_PROTOCOL_LIMITS,
   sealCompanionAttachment,
+  type CompanionMemberQuestionOperation,
   type CompanionOfferAttachmentOperation,
   type CompanionSearchSessionsOperation,
+  type CompanionSettleInteractionOperation,
   type CompanionOperation,
 } from '@deepseek-ai/dsh-remote-protocol'
 import {
@@ -20,6 +25,7 @@ import {
   DesktopCompanionProductOwner,
   handleCompanionProductOperation,
   projectDesktopCompanionLiveSession,
+  type CompanionProductOperationDependencies,
 } from '../src/companion-product.ts'
 import type { DesktopHostRpc, DesktopHostRpcResult } from '../src/host-rpc.ts'
 
@@ -34,6 +40,24 @@ afterEach(async () => {
 })
 
 describe('Desktop Companion product operations', () => {
+  it('rejects a mutation when the product owner has no operation ledger', async () => {
+    const owner = new DesktopCompanionProductOwner({
+      timeoutMs: 100, responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
+    })
+    const uninstall = owner.installHost('http://127.0.0.1:43123')
+    const operation = op({ type: 'create-session' })
+    await expect(owner.handle(operation, baseDependencies(hostRpc(async () => ({ ok: true, value: {} })))))
+      .resolves.toEqual({
+        type: 'operation-failed',
+        operationId: operation.operationId,
+        failure: {
+          kind: 'wire', code: 'HOST_WIRE_INVALID',
+          message: 'Desktop Companion operation ledger is unavailable',
+        },
+      })
+    uninstall()
+  })
+
   it('leases Host event streams only while authenticated live connections exist', async () => {
     const sockets: TestHostWebSocket[] = []
     class TestHostWebSocket extends EventTarget {
@@ -514,7 +538,7 @@ describe('Desktop Companion product operations', () => {
       calls.push([method, payload])
       return { ok: true, value: { sessionId: `session-created-${String(calls.length)}` } }
     }))
-    const workspace = op({ type: 'create-session', workspaceId: 'workspace-product' as never })
+    const workspace = op({ type: 'create-session', workspaceId: parseCompanionWorkspaceId('workspace-product') })
     const ungrouped = op({ type: 'create-session' })
 
     await expect(handleCompanionProductOperation(workspace, dependencies)).resolves.toMatchObject({
@@ -538,7 +562,7 @@ describe('Desktop Companion product operations', () => {
       rpcId: 'host-request-private', kind: 'approval', sessionId,
       approvalId: 'approval-product',
     })
-    const operation = op({
+    const operation: CompanionSettleInteractionOperation = op({
       type: 'settle-interaction', sessionId, interactionId,
       settlement: { kind: 'approval', outcome: 'allowed-once' },
     })
@@ -553,9 +577,12 @@ describe('Desktop Companion product operations', () => {
 
   it('refuses routed member questions with a stable typed business failure', async () => {
     const host = hostRpc(async () => { throw new Error('member questions must not reach the Host yet') })
-    const question = op({
+    const question: CompanionMemberQuestionOperation = op({
       type: 'member-question',
       questionId: parseMemberQuestionId('member-question-product'),
+      projectId: parseMemberQuestionProjectId('project-atlas'),
+      originSessionId: sessionId,
+      expiresAt: 2_000,
       origin: {
         projectName: 'Atlas', originSessionTitle: 'Refactor the ingest pipeline',
         askerAccountId: 'account-asker', askerRole: 'admin',
@@ -622,11 +649,11 @@ describe('Desktop Companion product operations', () => {
   ) => {
     const prepared = await offer(fileName, plaintext, `operation-${kind}`)
     const host = hostRpc(() => { throw new Error('attachment must not become a placeholder Host prompt') })
-    const submitAttachment = vi.fn(async () => ({ ok: true, value: { accepted: true } } as const))
+    const submitAttachment = vi.fn<CompanionProductOperationDependencies['submitAttachment']>(
+      async () => ({ ok: true, value: { accepted: true } }),
+    )
     const result = await handleCompanionProductOperation(prepared.operation, {
-      host,
-      pairingId,
-      attachmentKey,
+      ...baseDependencies(host),
       now: () => 1_000,
       downloadAttachment: async () => prepared.ciphertext,
       submitAttachment,
@@ -644,10 +671,9 @@ describe('Desktop Companion product operations', () => {
   it('returns explicit attachment rejection results for expiry and hash failure', async () => {
     const expired = await offer('expired.bin', Uint8Array.of(1), 'operation-expired')
     const hash = await offer('hash.bin', Uint8Array.of(2), 'operation-hash')
+    const host = hostRpc(() => { throw new Error('rejected attachment must not call Host') })
     const dependencies = {
-      host: hostRpc(() => { throw new Error('rejected attachment must not call Host') }),
-      pairingId,
-      attachmentKey,
+      ...baseDependencies(host),
       now: () => 2_000,
       downloadAttachment: async () => hash.ciphertext,
       submitAttachment: async () => { throw new Error('rejected attachment must not submit') },
@@ -737,16 +763,21 @@ describe('Desktop Companion product operations', () => {
       const chunks: Buffer[] = []
       request.on('data', chunk => chunks.push(chunk as Buffer))
       request.on('end', () => {
-        const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as { rpcId: string; method: string }
+        const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as {
+          rpcId: string
+          method: string
+          payload: { query?: string }
+        }
+        const value = body.method === 'workspace.list'
+          ? { items: [], archivedSessionIds: ['session-real-archived'] }
+          : { items: body.payload.query === 'absent' ? [] : [
+            { sessionId: 'session-real-entry', snippet: 'real Host result' },
+            { sessionId: 'session-real-archived', snippet: 'archived Host result' },
+          ], hasMore: false }
         response.end(JSON.stringify({
           type: 'server-response',
           rpcId: body.rpcId,
-          result: {
-            ok: true,
-            value: body.method === 'workspace.list'
-              ? { items: [], archivedSessionIds: [] }
-              : { items: [{ sessionId: 'session-real-entry', snippet: 'real Host result' }], hasMore: false },
-          },
+          result: { ok: true, value },
         }))
       })
     })
@@ -765,16 +796,36 @@ describe('Desktop Companion product operations', () => {
     const uninstallReplaced = owner.installHost(`http://127.0.0.1:${String(address.port)}`)
     const uninstall = owner.installHost(`http://127.0.0.1:${String(address.port)}`)
     uninstallReplaced()
+    const hit = {
+      type: 'session-search',
+      items: [{ sessionId: parseCompanionSessionId('session-real-entry'), snippet: 'real Host result' }],
+      hasMore: false,
+    }
 
     await expect(owner.handle(search('entry'), baseDependencies(hostRpc(() => {
       throw new Error('owner must use its installed Host RPC')
     })))).resolves.toEqual({
-      type: 'session-search',
+      ...hit,
       operationId: parseCompanionOperationId('search-entry'),
-      items: [{ sessionId: parseCompanionSessionId('session-real-entry'), snippet: 'real Host result' }],
+    })
+    await expect(owner.handle(search('one-argument'))).resolves.toEqual({
+      ...hit,
+      operationId: parseCompanionOperationId('search-one-argument'),
+    })
+    await expect(owner.handle(search('absent'))).resolves.toEqual({
+      type: 'session-search',
+      operationId: parseCompanionOperationId('search-absent'),
+      items: [],
       hasMore: false,
     })
     uninstall()
+    await expect(owner.handle(search('one-argument-after-exit'))).resolves.toEqual({
+      type: 'operation-failed',
+      operationId: parseCompanionOperationId('search-one-argument-after-exit'),
+      failure: {
+        kind: 'wire', code: 'HOST_WIRE_INVALID', message: 'Desktop Web Host is not available',
+      },
+    })
     await expect(owner.handle(search('after-exit'), baseDependencies(hostRpc(() => {
       throw new Error('uninstalled owner must not call an injected Host')
     })))).resolves.toEqual({
@@ -787,19 +838,29 @@ describe('Desktop Companion product operations', () => {
   })
 })
 
+function proveOwnerHandleRequiresPairingDependencies(owner: DesktopCompanionProductOwner): void {
+  const createSession = op({ type: 'create-session' })
+  // @ts-expect-error Non-search operations require authenticated pairing dependencies.
+  void owner.handle(createSession)
+  void owner.handle(createSession, baseDependencies(hostRpc(async () => ({ ok: true, value: {} }))))
+}
+void proveOwnerHandleRequiresPairingDependencies
+
 async function offer(fileName: string, plaintext: Uint8Array, id: string): Promise<{
   operation: CompanionOfferAttachmentOperation
   ciphertext: Uint8Array
 }> {
-  const key = await deriveCompanionAttachmentKey(attachmentKey)
-  const sealed = await sealCompanionAttachment(key, plaintext)
+  const sealed = await sealCompanionAttachment(
+    await deriveCompanionAttachmentKey(attachmentKey),
+    plaintext,
+  )
   return {
     ciphertext: sealed.ciphertext,
     operation: {
       type: 'offer-attachment',
       operationId: parseCompanionOperationId(id),
       sessionId,
-      capability: 'A'.repeat(43) as never,
+      capability: parseAttachmentCapability('A'.repeat(43)),
       ciphertextSha256: sealed.ciphertextSha256,
       byteLength: sealed.ciphertext.byteLength,
       expiresAt: 2_000,
@@ -844,7 +905,7 @@ function assistantHistoryDependencies(interrupted?: unknown) {
   }))
 }
 
-function baseDependencies(host: DesktopHostRpc) {
+function baseDependencies(host: DesktopHostRpc): CompanionProductOperationDependencies {
   return {
     host,
     pairingId,
