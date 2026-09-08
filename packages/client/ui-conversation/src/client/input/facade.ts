@@ -127,13 +127,13 @@ const textAnchorSchema = z.object({
 const draftAnnotationSchema = z.union([
   z.object({
     id: annotationIdSchema,
-    kind: z.const('text'),
+    kind: z.const('text').required(),
     anchor: textAnchorSchema,
     note: z.string().required(),
   }).required(),
   z.object({
     id: annotationIdSchema,
-    kind: z.const('image-pin'),
+    kind: z.const('image-pin').required(),
     imageId: z.string().min(1).required(),
     source: z.union(['composer', 'history'] as const).required(),
     imageName: z.string().required(),

@@ -179,6 +179,18 @@ describe('annotation draft persistence', () => {
     expect(shell.actions.addTextAnnotation(anchor, '')).toBe(TextAnnotationId('annotation-1'))
   })
 
+  it('rejects missing and null persisted annotation discriminants', () => {
+    const anchor = createTextAnchor('message-1:0', 'Exact quotation', 'Exact quotation', 0)
+    for (const annotation of [
+      { id: 'annotation-2', anchor, note: '' },
+      { id: 'annotation-2', kind: null, anchor, note: '' },
+    ]) {
+      const shell = makeShell()
+      shell.restoreAnnotationDraft({ annotations: [annotation], nextSeq: 3 })
+      expect(shell.snapshot.annotations).toEqual([])
+    }
+  })
+
   it('keeps independent same-key instances unsynchronized with deterministic last-writer-wins', () => {
     localStorage.clear()
     const handle = createChatStore()
