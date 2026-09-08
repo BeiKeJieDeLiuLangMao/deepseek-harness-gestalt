@@ -89,6 +89,12 @@ describe.skipIf(MODE === 'record')('web e2e: Side Chat through the shipped workb
   let browser: Browser
   let page: Page
   let tripwire: ReturnType<typeof watchConsole>
+  const requestObservations: {
+    sessionId: string
+    turn: number
+    step: number
+    precedingEvent: SessionEvent | undefined
+  }[] = []
 
   beforeAll(async () => {
     scaffold = await launchWebScaffold({
@@ -96,6 +102,15 @@ describe.skipIf(MODE === 'record')('web e2e: Side Chat through the shipped workb
       replayChildFixtures: sideChatRoundReplayConfig.childFiles ?? [],
       compareReplaySession: false,
       paceMs: 25,
+    })
+    scaffold.ctx.on('agent/request', ({ agent, turn, step }, next) => {
+      requestObservations.push({
+        sessionId: agent.id,
+        turn,
+        step,
+        precedingEvent: agent.session.ownEvents().at(-1),
+      })
+      return next()
     })
     await seedSideChatSkill(scaffold.workspaceCwd)
     browser = await chromium.launch()
@@ -314,6 +329,9 @@ describe.skipIf(MODE === 'record')('web e2e: Side Chat through the shipped workb
 
     const childAgent = scaffold.ctx.agents.get(childId)
     if (childAgent === undefined) throw new Error('Side Chat child Agent was not live')
+    const eventsBeforeDescendant = childAgent.session.ownEvents()
+    expect(requestObservations.filter(request => request.sessionId === childId)).toHaveLength(2)
+    const descendantEventCut = eventsBeforeDescendant.length
     const descendantSettled = scaffold.whenTurnSettled()
     const descendant = await scaffold.ctx.subagents.startContinuable({
       provider: 'spawn',
@@ -325,17 +343,71 @@ describe.skipIf(MODE === 'record')('web e2e: Side Chat through the shipped workb
       },
     })
     expect(await descendantSettled).toBe(descendant.childId)
-    await expect.poll(() => childAgent.session.ownEvents().find(event => (
+    await expect.poll(() => requestObservations
+      .filter(request => request.sessionId === childId).length, {
+      timeout: 15_000,
+    }).toBe(3)
+    await childAgent.whenIdle()
+
+    const childRequests = requestObservations.filter(request => request.sessionId === childId)
+    expect(childRequests).toHaveLength(3)
+    const thirdRequest = childRequests[2]
+    const wakeSuffix = childAgent.session.ownEvents().slice(descendantEventCut)
+    const stepStarts = wakeSuffix.filter(event => event.type === 'step/start')
+    const settledMessages = wakeSuffix.filter(event => (
       event.type === 'user/message' && event.data.source.kind === 'subagent-settled'
-    )), { timeout: 15_000 }).toMatchObject({
-      data: {
-        source: {
-          kind: 'subagent-settled',
-          senderSessionId: descendant.childId,
+    ))
+    const assistants = wakeSuffix.filter(event => event.type === 'assistant/message')
+    const stepEnds = wakeSuffix.filter(event => event.type === 'step/end')
+    const turnEnds = wakeSuffix.filter(event => event.type === 'turn/end')
+    expect(stepStarts).toHaveLength(1)
+    expect(settledMessages).toHaveLength(1)
+    expect(assistants).toHaveLength(1)
+    expect(stepEnds).toHaveLength(1)
+    expect(turnEnds).toHaveLength(1)
+    const stepStart = stepStarts[0]
+    const settledMessage = settledMessages[0]
+    const assistant = assistants[0]
+    const stepEnd = stepEnds[0]
+    const turnEnd = turnEnds[0]
+    if (thirdRequest === undefined || stepStart === undefined || settledMessage === undefined
+      || assistant === undefined || stepEnd === undefined || turnEnd === undefined) {
+      throw new Error('Nested Side Chat wake did not produce one complete parent turn')
+    }
+    expect(thirdRequest).toMatchObject({
+      turn: stepStart.data.turn,
+      step: stepStart.data.step,
+      precedingEvent: {
+        type: 'user/message',
+        seq: settledMessage.seq,
+        data: {
+          source: {
+            kind: 'subagent-settled',
+            senderSessionId: descendant.childId,
+          },
         },
       },
     })
-    await childAgent.whenIdle()
+    expect(assistant.data).toMatchObject({
+      turn: stepStart.data.turn,
+      step: stepStart.data.step,
+    })
+    expect(assistant.data.message.content).toContainEqual({
+      type: 'text',
+      text: SIDE_CHAT_DESCENDANT_SETTLED_RESPONSE,
+    })
+    expect(stepEnd.data).toEqual({
+      turn: stepStart.data.turn,
+      step: stepStart.data.step,
+    })
+    expect(turnEnd.data).toEqual({
+      turn: stepStart.data.turn,
+      reason: { kind: 'completed' },
+    })
+    expect(settledMessage.seq).toBeGreaterThan(stepStart.seq)
+    expect(assistant.seq).toBeGreaterThan(settledMessage.seq)
+    expect(stepEnd.seq).toBeGreaterThan(assistant.seq)
+    expect(turnEnd.seq).toBeGreaterThan(stepEnd.seq)
     await panel.getByText(SIDE_CHAT_DESCENDANT_SETTLED_RESPONSE, { exact: true })
       .waitFor({ timeout: 30_000 })
     const descendants = panel.getByRole('button', { name: '1 subagent', exact: true })
