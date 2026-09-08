@@ -1,5 +1,5 @@
 /** Ordered cleanup phases reported by an owned fixture lease. */
-export type FixtureCleanupPhase = 'graceful' | 'settle' | 'force' | 'final'
+type FixtureCleanupPhase = 'graceful' | 'settle' | 'force' | 'final'
 
 /** A typed cleanup failure whose code determines its reporting phase. */
 export type FixtureCleanupIssue =
@@ -32,7 +32,7 @@ export interface OwnedFixtureLease {
 }
 
 /** Participates in cleanup after the fixture's graceful-start barrier settles. */
-export interface HostCleanupParticipant {
+interface HostCleanupParticipant {
   /** Starts Host shutdown and must return promptly; same-thread blocking cannot be bounded. */
   stop(): void | Promise<void>
 }

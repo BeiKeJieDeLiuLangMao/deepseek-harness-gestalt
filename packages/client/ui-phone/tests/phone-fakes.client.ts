@@ -16,7 +16,7 @@ import type {
 import { vi } from 'vitest'
 
 /** Shared Android fixture identity. */
-export const EMULATOR_DEVICE_ID = phoneDeviceIdOf('emulator-5554')
+const EMULATOR_DEVICE_ID = phoneDeviceIdOf('emulator-5554')
 
 export const SESSION_A: PhoneStreamSessionView = {
   deviceId: EMULATOR_DEVICE_ID,

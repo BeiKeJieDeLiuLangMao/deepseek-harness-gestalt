@@ -91,8 +91,8 @@
   "files": [
     "lib/index.js",
     "lib/invariant.js",
-    "lib/client-node.js",
     "lib/client.cjs",
+    "lib/client-node.js",
     "lib/types/**/*.d.ts"
   ]
 }

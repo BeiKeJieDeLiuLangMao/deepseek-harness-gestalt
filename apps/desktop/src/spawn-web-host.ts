@@ -24,7 +24,7 @@ export interface WebHostCommand {
  * `none` is an unsolicited exit. `stop` is `RunningWebHost.stop`.
  * `abort` is the command AbortSignal after the URL was announced.
  */
-export type WebHostRequestedStop =
+type WebHostRequestedStop =
   | { readonly kind: 'none' }
   | { readonly kind: 'stop' }
   | { readonly kind: 'abort' }

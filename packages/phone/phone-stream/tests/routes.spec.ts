@@ -283,15 +283,16 @@ describe('phone stream Host routes', () => {
       wireDevice('ios-simulator', 'ios', 'simulator', 'online'),
       wireDevice('ios-real', 'ios', 'real', 'online'),
     ])
-    context.phoneDevices.agentStatus = vi.fn(async id => ({ deviceId: id, installed: true }))
+    const agentStatus = vi.fn<PhoneDevices['agentStatus']>(async id => ({ deviceId: id, installed: true }))
+    context.phoneDevices.agentStatus = agentStatus
     const installAgent = vi.fn()
     context.phoneDevices.installAgent = installAgent
 
     expect(await mint(origin, 'android-real')).toMatchObject({ preferredFormat: 'h264', agentManaged: true })
     expect((await mint(origin, 'ios-real')).preferredFormat).toBe('h264')
     expect((await mint(origin, 'ios-simulator')).preferredFormat).toBe('mjpeg')
-    expect(context.phoneDevices.agentStatus).toHaveBeenCalledTimes(2)
-    expect(vi.mocked(context.phoneDevices.agentStatus).mock.calls.map(([id]) => id)).toEqual([
+    expect(agentStatus).toHaveBeenCalledTimes(2)
+    expect(agentStatus.mock.calls.map(([id]) => id)).toEqual([
       deviceId('ios-real'),
       deviceId('ios-simulator'),
     ])

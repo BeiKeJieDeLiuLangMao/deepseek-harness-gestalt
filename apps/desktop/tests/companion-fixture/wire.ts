@@ -24,7 +24,7 @@ export type FixtureCommand =
   | { type: 'dispose' }
 
 /** Data returned by the fixture, never Host service objects or Client ambient types. */
-export interface FixtureReady {
+interface FixtureReady {
   url: string
   root: string
   sessionId: SessionId

@@ -747,7 +747,8 @@ describe('web e2e: the Desktop composition settings overlay document', () => {
     await assertFixtureInventory(SNAPSHOT_DIR, [
       'desktop-account-waiting.expected.md',
       'desktop-settings.expected.md', 'dialog-en.expected.md', 'dialog.expected.md',
-      'phone-devices.expected.md', 'plugins.expected.md', 'sub2api-error.expected.md',
+      'phone-devices-runtime-ready.expected.md', 'phone-devices.expected.md',
+      'plugins.expected.md', 'sub2api-error.expected.md',
     ])
   }, 60_000)
 })

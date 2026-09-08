@@ -167,7 +167,8 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   '@deepseek-ai/dsh-remote-attachments': ['lib/http.js'],
   // Desktop bridge types are shared by Electron and the browser overlay through
   // a runtime subpath, so the protocol is bundled separately from the UI client.
-  '@deepseek-ai/dsh-client-ui-desktop': ['lib/protocol.js'],
+  '@deepseek-ai/dsh-client-runtime': ['lib/client-node.js'],
+  '@deepseek-ai/dsh-client-ui-desktop': ['lib/protocol.js', 'lib/pairing-source.js'],
   // The CPython side ships as source .py files, published as-is rather than built.
   '@deepseek-ai/dsh-code-runtime-python': ['py/**/*.py'],
   // The Python runtime uses a distinct closed-resolution bin; the public CLI

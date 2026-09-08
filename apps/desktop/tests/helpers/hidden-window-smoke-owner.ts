@@ -5,7 +5,7 @@ import {
 } from './hidden-window-smoke-result.ts'
 
 /** Bounded, redacted diagnostic retained after a smoke child settles. */
-export interface HiddenWindowSmokeDiagnostic {
+interface HiddenWindowSmokeDiagnostic {
   readonly source: 'stdout' | 'stderr' | 'result' | 'exit'
   readonly message: string
 }
@@ -14,7 +14,7 @@ export interface HiddenWindowSmokeDiagnostic {
  * Direct-child settlement is process-only. `tree` is always `unverified`.
  * `userDataRemoved` is always `false`: this owner never deletes the isolated root.
  */
-export type HiddenWindowSmokeCleanup =
+type HiddenWindowSmokeCleanup =
   | {
     readonly process: 'direct-child-exited'
     readonly tree: 'unverified'
@@ -34,7 +34,7 @@ export type HiddenWindowSmokeCleanup =
     readonly reason: string
   }
 
-export type HiddenWindowSmokeAcceptance =
+type HiddenWindowSmokeAcceptance =
   | HiddenWindowSmokeParsedResult
   | { readonly status: 'missing'; readonly reason: string }
 

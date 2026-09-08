@@ -30,20 +30,20 @@ export type DesktopProtocolMessage =
   | { readonly version: 1; readonly type: 'stopped'; readonly request: HostRequestId; readonly lease: HostLeaseId; readonly report: BrokerCleanupReport }
 
 /** Typed protocol rejection with bounded diagnostic detail. */
-export interface ProtocolRejection {
+interface ProtocolRejection {
   readonly code: 'START_FAILED' | 'DUPLICATE_LEASE'
   readonly message: string
 }
 
 /** Phase-coupled terminal cleanup issue reported by a lease. */
-export type BrokerCleanupIssue =
+type BrokerCleanupIssue =
   | { readonly phase: 'graceful'; readonly code: 'graceful-failed'; readonly message: string }
   | { readonly phase: 'settle'; readonly code: 'settle-failed'; readonly message: string }
   | { readonly phase: 'force'; readonly code: 'force-failed'; readonly message: string }
   | { readonly phase: 'final'; readonly code: 'final-failed' | 'fixture-not-quiescent'; readonly message: string }
 
 /** Verified lease quiescence and ordered cleanup issues. */
-export interface BrokerCleanupReport {
+interface BrokerCleanupReport {
   readonly quiescent: boolean
   readonly issues: readonly BrokerCleanupIssue[]
 }
@@ -104,7 +104,7 @@ export interface HostGenerationDiagnostics {
 }
 
 /** Host cleanup participant invoked after generation closure is published. */
-export interface HostGenerationHost {
+interface HostGenerationHost {
   /** @returns Prompt-return Host cleanup settlement. */
   stop(): void | Promise<void>
 }
