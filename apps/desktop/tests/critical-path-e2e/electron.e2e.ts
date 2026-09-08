@@ -74,7 +74,7 @@ async function createPhase(): Promise<void> {
   const rowsBeforeDraft = await uiSessionCounts()
   await openSideChatFromTabMenu(panel)
   await editableComposer(panel)
-  const draft = await provisionalSideChat()
+  const draft = await provisionalSideChat(main.header.id)
   expect(draft.parentSessionId).toBe(main.header.id)
   await assertDraftRemainsUnpublished(draft.threadId, rowsBeforeDraft)
 
@@ -122,7 +122,7 @@ async function restorePhase(): Promise<void> {
   const panel = await visiblePanel()
   await element(panel, `[title="${SIDE_PROMPT}"]`)
     .then(tab => tab.waitForDisplayed({ timeout: 30_000 }))
-  const tabs = await persistedSideChats()
+  const tabs = await persistedSideChats(state.mainSessionId)
   expect(tabs.filter(tab => tab.threadId === state.childId)).toHaveLength(1)
   await modelTrigger(panel, SIDE_MODEL)
   await permissionTrigger(panel, 'Read Only')
@@ -373,10 +373,23 @@ async function visiblePanel(): Promise<WebdriverIO.Element> {
   throw new Error('Desktop exposed no visible Side panel')
 }
 
-async function provisionalSideChat(): Promise<{ parentSessionId: SessionIdType; threadId: SessionIdType }> {
-  const tabs = await persistedSideChats()
-  const draft = tabs.find(tab => tab.provisional)
-  if (draft === undefined) throw new Error(`no provisional Side Chat was persisted: ${JSON.stringify(tabs)}`)
+async function provisionalSideChat(
+  parentSessionId: SessionIdType,
+): Promise<{ parentSessionId: SessionIdType; threadId: SessionIdType }> {
+  let drafts: Awaited<ReturnType<typeof persistedSideChats>> = []
+  await browser.waitUntil(async () => {
+    drafts = (await persistedSideChats(parentSessionId)).filter(tab => tab.provisional)
+    return drafts.length > 0
+  }, {
+    timeout: 5_000,
+    interval: 50,
+    timeoutMsg: `no provisional Side Chat was persisted for ${parentSessionId}`,
+  })
+  if (drafts.length !== 1) {
+    throw new Error(`expected one provisional Side Chat for ${parentSessionId}: ${JSON.stringify(drafts)}`)
+  }
+  const draft = drafts[0]
+  if (draft === undefined) throw new Error(`the provisional Side Chat for ${parentSessionId} was unavailable`)
   return { parentSessionId: draft.parentSessionId, threadId: draft.threadId }
 }
 
@@ -417,40 +430,35 @@ async function assertHeaderChildVisible(): Promise<void> {
   await tree.waitForExist({ reverse: true, timeout: 10_000 })
 }
 
-async function persistedSideChats(): Promise<Array<{
+async function persistedSideChats(parentSessionId: SessionIdType): Promise<Array<{
   parentSessionId: SessionIdType
   threadId: SessionIdType
   provisional: boolean
 }>> {
-  const entries = await browser.execute(() => {
+  const entries = await browser.execute((expectedParentSessionId: string) => {
     const results: Array<{ parentSessionId: string; threadId: string; provisional: boolean }> = []
-    for (const key of Object.keys(localStorage)) {
-      if (!key.startsWith('dsh-sidebar:v1:') || key === 'dsh-sidebar:v1:width') continue
-      const raw = localStorage.getItem(key)
-      if (raw === null) continue
-      let value: unknown
-      try { value = JSON.parse(raw) } catch { continue }
-      const seen = new Set<object>()
-      const visit = (candidate: unknown): void => {
-        if (typeof candidate !== 'object' || candidate === null || seen.has(candidate)) return
-        seen.add(candidate)
-        const record = candidate as Record<string, unknown>
-        const meta = record['meta'] as Record<string, unknown> | undefined
-        if (record['type'] === 'sidechat' && typeof meta?.['threadId'] === 'string') {
-          results.push({
-            parentSessionId: key.slice('dsh-sidebar:v1:'.length),
-            threadId: meta['threadId'],
-            provisional: meta['provisional'] === true,
-          })
-        }
-        for (const child of Object.values(record)) visit(child)
+    const raw = localStorage.getItem(`dsh-sidebar:v1:${expectedParentSessionId}`)
+    if (raw === null) return results
+    let value: unknown
+    try { value = JSON.parse(raw) } catch { return results }
+    const seen = new Set<object>()
+    const visit = (candidate: unknown): void => {
+      if (typeof candidate !== 'object' || candidate === null || seen.has(candidate)) return
+      seen.add(candidate)
+      const record = candidate as Record<string, unknown>
+      const meta = record['meta'] as Record<string, unknown> | undefined
+      if (record['type'] === 'sidechat' && typeof meta?.['threadId'] === 'string') {
+        results.push({
+          parentSessionId: expectedParentSessionId,
+          threadId: meta['threadId'],
+          provisional: meta['provisional'] === true,
+        })
       }
-      visit(value)
+      for (const child of Object.values(record)) visit(child)
     }
-    return results.filter((entry, index) => results.findIndex(candidate => (
-      candidate.parentSessionId === entry.parentSessionId && candidate.threadId === entry.threadId
-    )) === index)
-  })
+    visit(value)
+    return results
+  }, parentSessionId)
   return entries.map(entry => ({
     parentSessionId: SessionId(entry.parentSessionId),
     threadId: SessionId(entry.threadId),
