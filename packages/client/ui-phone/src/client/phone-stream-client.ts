@@ -113,6 +113,46 @@ export type PhoneClientIoRequest =
   | { readonly method: 'text'; readonly text: string }
   | { readonly method: 'button'; readonly button: string }
 
+type PhoneClientIoRequestByMethod = {
+  readonly [Request in PhoneClientIoRequest as Request['method']]: Request
+}
+
+type PhoneIoFrameEncoderMap = {
+  readonly [Method in keyof PhoneClientIoRequestByMethod]: (
+    id: number,
+    deviceId: DeviceId,
+    request: PhoneClientIoRequestByMethod[Method],
+  ) => string
+}
+
+const PHONE_IO_FRAME_ENCODERS = {
+  tap: (id, deviceId, request) => JSON.stringify({
+    jsonrpc: '2.0',
+    id,
+    method: 'tap',
+    params: { deviceId, x: request.x, y: request.y, ...captureSizeParams(request) },
+  }),
+  swipe: (id, deviceId, request) => JSON.stringify({
+    jsonrpc: '2.0',
+    id,
+    method: 'swipe',
+    params: {
+      deviceId,
+      x1: request.x1,
+      y1: request.y1,
+      x2: request.x2,
+      y2: request.y2,
+      ...captureSizeParams(request),
+    },
+  }),
+  text: (id, deviceId, request) => JSON.stringify({
+    jsonrpc: '2.0', id, method: 'text', params: { deviceId, text: request.text },
+  }),
+  button: (id, deviceId, request) => JSON.stringify({
+    jsonrpc: '2.0', id, method: 'button', params: { deviceId, button: request.button },
+  }),
+} satisfies PhoneIoFrameEncoderMap
+
 /** One parsed io reply: ok results and errors alike. */
 export interface PhoneIoReply {
   /** Echoed JSON-RPC id of the request. */
@@ -133,38 +173,12 @@ export interface PhoneIoReply {
  * @returns the text frame to send over the io socket.
  */
 export function encodePhoneIoFrame(id: number, deviceId: DeviceId, request: PhoneClientIoRequest): string {
-  switch (request.method) {
-    case 'tap':
-      return JSON.stringify({
-        jsonrpc: '2.0',
-        id,
-        method: 'tap',
-        params: { deviceId, x: request.x, y: request.y, ...captureSizeParams(request) },
-      })
-    case 'swipe':
-      return JSON.stringify({
-        jsonrpc: '2.0',
-        id,
-        method: 'swipe',
-        params: {
-          deviceId,
-          x1: request.x1,
-          y1: request.y1,
-          x2: request.x2,
-          y2: request.y2,
-          ...captureSizeParams(request),
-        },
-      })
-    case 'text':
-      return JSON.stringify({ jsonrpc: '2.0', id, method: 'text', params: { deviceId, text: request.text } })
-    case 'button':
-      return JSON.stringify({ jsonrpc: '2.0', id, method: 'button', params: { deviceId, button: request.button } })
-    default:
-      return assertNever(request)
-  }
+  // The request discriminant selects the encoder whose mapped parameter carries that same discriminant.
+  const encode = PHONE_IO_FRAME_ENCODERS[request.method] as (
+    id: number, deviceId: DeviceId, request: PhoneClientIoRequest,
+  ) => string
+  return encode(id, deviceId, request)
 }
-
-function assertNever(value: never): never { throw new TypeError(`unexpected phone client io request: ${String(value)}`) }
 
 function captureSizeParams(
   request: Extract<PhoneClientIoRequest, { method: 'tap' | 'swipe' }>,

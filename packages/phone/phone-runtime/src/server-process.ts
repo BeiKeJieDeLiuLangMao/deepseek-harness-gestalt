@@ -64,9 +64,9 @@ export interface MobilecliTreeJoin {
 
 /**
  * Publish abort-driven `tree.stop()` immediately, join child exit, then halt if the budget aborted.
- * Callers keep halt classification and post-join error wrapping. This helper owns one memoized stop
- * publication (including already-aborted budgets), contains a synchronous `stop()` throw, and removes
- * the abort listener on every path. It does not invoke a second stop after exit.
+ * Callers keep halt classification and post-join error wrapping. This helper owns one abort-triggered
+ * stop publication (including already-aborted budgets), contains a synchronous `stop()`
+ * throw, and removes the abort listener on every path. It does not invoke a second stop after exit.
  * @param tree - Spawned process tree exposing `exit` and `stop`.
  * @param budget - Fused caller-plus-ceiling signal.
  * @param halt - Public failure for an aborted run.
@@ -78,23 +78,13 @@ export async function awaitMobilecliTreeExit(
   halt: () => PhoneDevicesError,
 ): Promise<ServerExit> {
   const stopped = Promise.withResolvers<void>()
-  let stopPublished: Promise<void> | undefined
-  const publishStop = (): Promise<void> => {
-    if (stopPublished === undefined) {
-      const publication = Promise.withResolvers<void>()
-      stopPublished = publication.promise
-      try {
-        const stopping = tree.stop()
-        void Promise.resolve(stopping).then(publication.resolve, publication.reject)
-      } catch (error) {
-        publication.reject(error)
-      }
-    }
-    void stopPublished.then(stopped.resolve, stopped.reject)
-    return stopPublished
-  }
   const onAbort = (): void => {
-    void publishStop()
+    try {
+      const stopping = tree.stop()
+      void Promise.resolve(stopping).then(stopped.resolve, stopped.reject)
+    } catch (error) {
+      stopped.reject(error)
+    }
   }
   budget.addEventListener('abort', onAbort, { once: true })
   try {
@@ -104,7 +94,7 @@ export async function awaitMobilecliTreeExit(
       stopped.promise.then(() => tree.exit),
     ])
     if (budget.aborted) {
-      await (stopPublished ?? publishStop())
+      await stopped.promise
       throw halt()
     }
     return exit

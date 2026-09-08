@@ -13,6 +13,7 @@ import { readAndroidLogicalDisplay } from '../../phone-runtime/src/android-displ
 
 const wsHarness = vi.hoisted(() => ({
   failNextUpgrade: false,
+  serverPeers: [] as import('ws').WebSocket[],
 }))
 
 vi.mock('../../phone-runtime/src/android-display.ts', async (importOriginal) => {
@@ -50,7 +51,10 @@ vi.mock('ws', async (importOriginal) => {
         wsHarness.failNextUpgrade = false
         throw new Error('upgrade boom')
       }
-      super.handleUpgrade(req, socket, head, callback)
+      super.handleUpgrade(req, socket, head, (peer, request) => {
+        wsHarness.serverPeers.push(peer)
+        callback(peer, request)
+      })
     }
   }
   return { ...actual, WebSocketServer: InstrumentedServer }
@@ -99,6 +103,7 @@ const fakes: Array<Awaited<ReturnType<typeof stageFake>>> = []
 
 afterEach(async () => {
   wsHarness.failNextUpgrade = false
+  wsHarness.serverPeers.length = 0
   vi.mocked(readAndroidLogicalDisplay).mockReturnValue(undefined)
   await Promise.all(contexts.splice(0).map(context => context.fiber.dispose()))
   await Promise.all(fakes.splice(0).map(fake => fake.dispose()))
@@ -1323,6 +1328,57 @@ describe('phone stream Host routes', () => {
     expect((await rawRequest({ origin, path: '/phone/session', host: new URL(origin).host, method: 'POST' })).status).toBe(404)
   })
 
+  it('rejects session mint after a successful listing recrosses disposal', async () => {
+    const { origin, context, phoneStreamFiber } = await mount()
+    const listing = await context.phoneDevices.listDevices()
+    const entered = Promise.withResolvers<undefined>(); const release = Promise.withResolvers<undefined>()
+    context.phoneDevices.listDevices = async () => { entered.resolve(undefined); await release.promise; return listing }
+    const request = fetch(`${origin}/phone/session`, {
+      method: 'POST', headers: { host: new URL(origin).host, 'content-type': 'application/json' },
+      body: JSON.stringify({ deviceId: 'emulator-5554' }),
+    })
+    await entered.promise; const disposal = phoneStreamFiber.dispose(); release.resolve(undefined)
+    expect((await request).status).toBe(503); await disposal
+  })
+
+  it('rejects agent status after a successful operation recrosses disposal', async () => {
+    const { origin, context, phoneStreamFiber } = await mount()
+    const entered = Promise.withResolvers<undefined>(); const release = Promise.withResolvers<undefined>()
+    context.phoneDevices.agentStatus = async (id) => {
+      entered.resolve(undefined); await release.promise; return { deviceId: id, installed: true }
+    }
+    const request = fetch(`${origin}/phone/agent/status`, {
+      method: 'POST', headers: { host: new URL(origin).host, 'content-type': 'application/json' },
+      body: JSON.stringify({ deviceId: 'emulator-5554' }),
+    })
+    await entered.promise; const disposal = phoneStreamFiber.dispose(); release.resolve(undefined)
+    expect((await request).status).toBe(503); await disposal
+  })
+
+  it('rejects agent install after a successful operation recrosses disposal', async () => {
+    const { origin, context, phoneStreamFiber } = await mount()
+    const entered = Promise.withResolvers<undefined>(); const release = Promise.withResolvers<undefined>()
+    context.phoneDevices.installAgent = async (id) => {
+      entered.resolve(undefined); await release.promise; return { deviceId: id, installed: true, reinstalled: false }
+    }
+    const request = fetch(`${origin}/phone/agent/install`, {
+      method: 'POST', headers: { host: new URL(origin).host, 'content-type': 'application/json' },
+      body: JSON.stringify({ deviceId: 'emulator-5554' }),
+    })
+    await entered.promise; const disposal = phoneStreamFiber.dispose(); release.resolve(undefined)
+    expect((await request).status).toBe(503); await disposal
+  })
+
+  it('rejects device listing after a successful operation recrosses disposal', async () => {
+    const { origin, context, phoneStreamFiber } = await mount()
+    const listing = await context.phoneDevices.listDevices()
+    const entered = Promise.withResolvers<undefined>(); const release = Promise.withResolvers<undefined>()
+    context.phoneDevices.listDevices = async () => { entered.resolve(undefined); await release.promise; return listing }
+    const request = fetch(`${origin}/phone/devices`, { headers: { host: new URL(origin).host } })
+    await entered.promise; const disposal = phoneStreamFiber.dispose(); release.resolve(undefined)
+    expect((await request).status).toBe(503); await disposal
+  })
+
   it('cancels the managed-agent listing through the HTTP transaction signal', async () => {
     const { origin, context, phoneStreamFiber } = await mount()
     let entered!: () => void
@@ -1620,9 +1676,10 @@ describe('phone stream Host routes', () => {
         jsonrpc: '2.0', id: 24, method: 'button', params: { deviceId: ANDROID, button: 'HOME' },
       }))
       await admission
-      socket.close()
-      await new Promise<undefined>((resolve) => { socket.once('close', () => { resolve(undefined) }) })
-      expect(socket.readyState).not.toBe(WebSocket.OPEN)
+      const serverPeer = wsHarness.serverPeers.at(-1)
+      if (serverPeer === undefined) throw new Error('server WebSocket peer was not captured')
+      Object.defineProperty(serverPeer, 'readyState', { configurable: true, value: WebSocket.CLOSING })
+      expect(serverPeer.readyState).not.toBe(WebSocket.OPEN)
       releaseHang()
       await new Promise(resolve => setTimeout(resolve, 50))
       expect(messages).toEqual([])

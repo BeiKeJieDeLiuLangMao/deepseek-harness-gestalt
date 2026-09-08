@@ -8,7 +8,7 @@ import { phoneCaptureIdOf } from '../src/client/phone-capture-id.ts'
 import { phoneDeviceIdOf } from '../src/client/phone-device-id.ts'
 import {
   createHttpPhoneGateway, encodePhoneIoFrame, installPhoneAgent, mintPhoneSession, openPhoneIoSocket,
-  parsePhoneIoReply, PHONE_AGENT_PATH, PHONE_SESSION_PATH, PhoneStreamHttpError, readPhoneAgentStatus,
+  isUnauthorizedMessage, parsePhoneIoReply, PHONE_AGENT_PATH, PHONE_SESSION_PATH, PhoneStreamHttpError, readPhoneAgentStatus,
 } from '../src/client/phone-stream-client.ts'
 import type { PhoneClientIoRequest } from '../src/client/phone-stream-client.ts'
 
@@ -28,6 +28,11 @@ const MINTED_IO_PATH = '/phone/ws/io'
 afterEach(() => { vi.unstubAllGlobals() })
 
 describe('io frame codec', () => {
+  it('recognizes only unauthorized device messages', () => {
+    expect(isUnauthorizedMessage('device unauthorized')).toBe(true)
+    expect(isUnauthorizedMessage('device offline')).toBe(false)
+  })
+
   it('encodes the four io methods onto the phoneStream JSON-RPC signature', () => {
     const tap = {
       method: 'tap', x: 99, y: 660,
@@ -66,7 +71,15 @@ describe('io frame codec', () => {
     expect(parsePhoneIoReply(JSON.stringify({
       jsonrpc: '2.0', id: 8, error: { code: -32010, message: 'PHONE_DEVICE_NOT_FOUND' },
     }))).toEqual({ id: 8, ok: false, code: -32010, message: 'PHONE_DEVICE_NOT_FOUND' })
+    expect(parsePhoneIoReply(JSON.stringify({ jsonrpc: '2.0', id: 10, error: { code: -32000 } })))
+      .toEqual({ id: 10, ok: false, code: -32000 })
+    expect(parsePhoneIoReply(JSON.stringify({ jsonrpc: '2.0', id: 11, error: { message: 'failed' } })))
+      .toEqual({ id: 11, ok: false, message: 'failed' })
     expect(parsePhoneIoReply(JSON.stringify({ jsonrpc: '2.0', id: 9, error: {} }))).toBeUndefined()
+    expect(parsePhoneIoReply(JSON.stringify({ jsonrpc: '2.0', id: 9, result: null }))).toBeUndefined()
+    expect(parsePhoneIoReply(JSON.stringify({ jsonrpc: '2.0', id: 9, error: null }))).toBeUndefined()
+    expect(parsePhoneIoReply(JSON.stringify({ jsonrpc: '2.0', id: 9, error: { code: 'bad' } }))).toBeUndefined()
+    expect(parsePhoneIoReply(JSON.stringify({ jsonrpc: '2.0', id: 9, error: { message: 42 } }))).toBeUndefined()
     expect(parsePhoneIoReply(JSON.stringify({ jsonrpc: '2.0', id: 0, result: { status: 'ok' } }))).toBeUndefined()
     expect(parsePhoneIoReply(JSON.stringify({ jsonrpc: '2.0', id: 9, result: {}, error: { code: 1 } }))).toBeUndefined()
     expect(parsePhoneIoReply(JSON.stringify({ jsonrpc: '2.0', id: 9, result: { status: 'nope' } }))).toBeUndefined()
@@ -114,6 +127,20 @@ describe('session minting', () => {
     await expect(mintPhoneSession(phoneDeviceIdOf('fallback-device'))).rejects.toBeInstanceOf(PhoneStreamHttpError)
   })
 
+  it.each([
+    ['a null stream arm', null],
+    ['invalid stream fields', { url: '/phone/stream/x/mjpeg?token=mjpeg-a', captureId: '', expiresAt: 1234 }],
+    ['an absolute stream URL', { url: 'https://evil.example/phone/stream/x/mjpeg?token=mjpeg-a', captureId: 'mjpeg-a', expiresAt: 1234 }],
+    ['a malformed protocol-relative URL', { url: '//[', captureId: 'mjpeg-a', expiresAt: 1234 }],
+  ])('rejects a session with %s', async (_label, mjpeg) => {
+    await stubFetch(200, {
+      deviceId: 'x', ioPath: '/phone/ws/io', agentManaged: false, preferredFormat: 'mjpeg',
+      mjpeg,
+      h264: { url: '/phone/stream/x/h264?token=h264-a', captureId: 'h264-a', expiresAt: 1234 },
+    })
+    await expect(mintPhoneSession(phoneDeviceIdOf('x'))).rejects.toBeInstanceOf(PhoneStreamHttpError)
+  })
+
   it('maps error payloads and malformed bodies onto the wire error', async () => {
     await stubFetch(404, { error: { code: 'not-found', message: 'absent from the listing' } })
     const missing = await rejectionOf(() => mintPhoneSession(phoneDeviceIdOf('gone')))
@@ -137,6 +164,7 @@ describe('session minting', () => {
     await expect(mintPhoneSession(phoneDeviceIdOf('x'))).rejects.toBeInstanceOf(PhoneStreamHttpError)
 
     await stubFetch(200, {
+      deviceId: 'x',
       ioPath: '/phone/ws/io',
       agentManaged: false,
       preferredFormat: 'av1',
@@ -232,15 +260,18 @@ describe('io socket wiring', () => {
   const instances: FakeWebSocket[] = []
 
   class FakeWebSocket {
+    static readonly OPEN = 1
     onopen: (() => void) | null = null
     onclose: (() => void) | null = null
     onerror: (() => void) | null = null
     onmessage: ((event: { data: unknown }) => void) | null = null
+    readyState = FakeWebSocket.OPEN
+    failSend = false
     constructor(url: string) {
       urls.push(url)
       instances.push(this)
     }
-    send(data: string): void { sent.push(data) }
+    send(data: string): void { if (this.failSend) throw new Error('send failed'); sent.push(data) }
     close(): void { urls.push('closed') }
   }
 
@@ -276,6 +307,21 @@ describe('io socket wiring', () => {
     expect(events).toEqual(['open', 'reply', '', 'error', 'close'])
     expect(sent).toEqual(['frame'])
     expect(urls).toContain('closed')
+  })
+
+  it('refuses sends outside OPEN and contains an OPEN-state send throw', () => {
+    stubSocket({ protocol: 'http:', host: '127.0.0.1:57641' })
+    const socket = openPhoneIoSocket(
+      { ioPath: MINTED_IO_PATH },
+      { onOpen: () => {}, onClose: () => {}, onError: () => {}, onMessage: () => {} },
+    )
+    const ws = instances[0]!
+    ws.readyState = 0
+    expect(socket.send('closed')).toBe(false)
+    ws.readyState = FakeWebSocket.OPEN
+    ws.failSend = true
+    expect(socket.send('throws')).toBe(false)
+    expect(sent).toEqual([])
   })
 
   it('wires the production gateway onto the wss upgrade arm', () => {

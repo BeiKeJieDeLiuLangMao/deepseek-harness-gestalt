@@ -53,7 +53,53 @@ function exifJpeg(orientation: number, little = true): Uint8Array {
   return Uint8Array.from([0xff, 0xd8, ...segment(0xe1, [0x45, 0x78, 0x69, 0x66, 0, 0, ...tiff]), 0xff, 0xd9])
 }
 
+function jpegWithExifTiff(tiff: readonly number[]): Uint8Array {
+  return Uint8Array.from([
+    0xff, 0xd8,
+    ...segment(0xe1, [0x45, 0x78, 0x69, 0x66, 0, 0, ...tiff]),
+    0xff, 0xd9,
+  ])
+}
+
+function orientedStructuralJpeg(orientation?: number, appPayload: readonly number[] = []): Uint8Array {
+  const exif = orientation === undefined ? [] : [...exifJpeg(orientation).subarray(2, -2)]
+  return Uint8Array.from([
+    0xff, 0xd8,
+    ...(appPayload.length === 0 ? [] : segment(0xe0, appPayload)),
+    ...exif,
+    ...segment(0xc0, VALID_SOF),
+    ...segment(0xda, VALID_SOS),
+    1,
+    0xff, 0xd9,
+  ])
+}
+
 describe('probeMjpegExifRotation', () => {
+  it('returns the first complete frame orientation and cancels its reader', async () => {
+    const cancelled = vi.fn(() => { throw new Error('cancel after result') })
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) { controller.enqueue(orientedStructuralJpeg(6)) },
+      cancel: cancelled,
+    })
+    const late = vi.fn()
+    await expect(probeMjpegExifRotation(body, new AbortController().signal, 1024, 20, late)).resolves.toBe(90)
+    expect(cancelled).toHaveBeenCalledOnce(); expect(late).not.toHaveBeenCalled()
+  })
+
+  it('continues past a complete frame without EXIF orientation', async () => {
+    await expect(probeMjpegExifRotation(streamOf(
+      orientedStructuralJpeg(),
+      orientedStructuralJpeg(6),
+    ), new AbortController().signal, 1024)).resolves.toBe(90)
+  })
+
+  it('rejects normal end-of-stream and a prefix beyond its byte ceiling', async () => {
+    await expect(probeMjpegExifRotation(streamOf(), new AbortController().signal, 1024))
+      .rejects.toThrow('ended before exact EXIF rotation')
+    await expect(probeMjpegExifRotation(streamOf(Uint8Array.of(1, 2, 3, 4, 5)), new AbortController().signal, 4))
+      .rejects.toThrow('exceeded 4 bytes')
+  })
+
   it('abandons a forever-hung reader cancellation within the configured cleanup ceiling', async () => {
     const abort = new AbortController()
     const body = new ReadableStream<Uint8Array>({
@@ -104,22 +150,48 @@ describe('jpegExifRotation', () => {
   it('rejects an oversized bounded prefix', () => {
     expect(() => jpegExifRotation(new Uint8Array(17), 16)).toThrow(/exceeded 16 bytes/u)
   })
+
+  it('rejects an invalid metadata ceiling before reading bytes', () => {
+    expect(() => jpegExifRotation(Uint8Array.from([0xff, 0xd8]), 3)).toThrow(TypeError)
+    expect(() => jpegExifRotation(Uint8Array.from([0xff, 0xd8]), 4.5)).toThrow(TypeError)
+  })
+
+  it('skips standalone markers and non-EXIF segments', () => {
+    expect(jpegExifRotation(Uint8Array.from([
+      0xff, 0xd8, 0xff, 0x00, 0xff, 0xd0, ...segment(0xe0, []),
+    ]))).toBeUndefined()
+  })
+
+  it.each([
+    ['a segment without its two-byte length', [0xff, 0xd8, 0xff, 0xe0]],
+    ['a segment shorter than its length field', [0xff, 0xd8, 0xff, 0xe0, 0, 1]],
+  ])('rejects %s', (_label, bytes) => {
+    expect(() => jpegExifRotation(Uint8Array.from(bytes))).toThrow()
+  })
+
+  it.each([
+    ['invalid byte order', [1, 2, 0, 42, 8, 0, 0, 0]],
+    ['invalid TIFF magic', [0x49, 0x49, 41, 0, 8, 0, 0, 0]],
+    ['an out-of-bounds IFD offset', [0x49, 0x49, 42, 0, 100, 0, 0, 0]],
+    ['an oversized IFD entry count', [0x49, 0x49, 42, 0, 8, 0, 0, 0, 1, 2]],
+    ['a truncated IFD entry', [0x49, 0x49, 42, 0, 8, 0, 0, 0, 1, 0]],
+    ['an invalid orientation field', [
+      0x49, 0x49, 42, 0, 8, 0, 0, 0, 1, 0,
+      0x12, 0x01, 4, 0, 1, 0, 0, 0, 1, 0, 0, 0,
+    ]],
+  ])('rejects EXIF with %s', (_label, tiff) => {
+    expect(() => jpegExifRotation(jpegWithExifTiff(tiff))).toThrow()
+  })
+
+  it('returns undefined when a valid IFD carries no orientation tag', () => {
+    expect(jpegExifRotation(jpegWithExifTiff([
+      0x49, 0x49, 42, 0, 8, 0, 0, 0, 1, 0,
+      0, 1, 3, 0, 1, 0, 0, 0, 1, 0, 0, 0,
+    ]))).toBeUndefined()
+  })
 })
 
 describe('JpegFrameOrientationObserver', () => {
-  const orientedStructuralJpeg = (orientation?: number, appPayload: readonly number[] = []): Uint8Array => {
-    const exif = orientation === undefined ? [] : [...exifJpeg(orientation).subarray(2, -2)]
-    return Uint8Array.from([
-      0xff, 0xd8,
-      ...(appPayload.length === 0 ? [] : segment(0xe0, appPayload)),
-      ...exif,
-      ...segment(0xc0, VALID_SOF),
-      ...segment(0xda, VALID_SOS),
-      1,
-      0xff, 0xd9,
-    ])
-  }
-
   it('observes every complete frame across byte chunking and clears absent orientation', () => {
     const seen: Array<number | undefined> = []
     const observer = new JpegFrameOrientationObserver(rotation => seen.push(rotation), 1024)
@@ -162,6 +234,63 @@ describe('JpegFrameOrientationObserver', () => {
       ...orientedStructuralJpeg(8, new Array(120).fill(1)), ...orientedStructuralJpeg(1),
     ]))
     expect(seen).toEqual([undefined, 0])
+  })
+
+  it('stops retaining an oversized APP1 payload while preserving frame recognition', () => {
+    const seen: Array<number | undefined> = []
+    const observer = new JpegFrameOrientationObserver(rotation => seen.push(rotation), 100)
+    observer.push(Uint8Array.from([
+      0xff, 0xd8,
+      ...segment(0xe1, new Array(120).fill(1)),
+      ...segment(0xc0, VALID_SOF),
+      ...segment(0xda, VALID_SOS),
+      1,
+      0xff, 0xd9,
+    ]))
+    expect(seen).toEqual([undefined])
+  })
+
+  it('rejects an invalid metadata ceiling at construction', () => {
+    expect(() => new JpegFrameOrientationObserver(() => {}, 3)).toThrow(TypeError)
+    expect(() => new JpegFrameOrientationObserver(() => {}, 4.5)).toThrow(TypeError)
+  })
+
+  it('recovers from marker fill, nested SOI, TEM, empty segments, and invalid lengths', () => {
+    const seen: Array<number | undefined> = []
+    const observer = new JpegFrameOrientationObserver((rotation) => { seen.push(rotation) }, 1024)
+    observer.push(Uint8Array.from([0xff, 0xd8, 0xff, 0xd9]))
+    observer.push(Uint8Array.from([0xff, 0xd8, 0xff, 0x01, 0xff, 0xd9]))
+    observer.push(Uint8Array.from([0xff, 0xd8, 0xff, 0xe0, 0, 1]))
+    observer.push(Uint8Array.from([0xff, 0xd8, 0xff, 0xe0, 0, 2, ...orientedStructuralJpeg(1).subarray(2)]))
+    observer.push(Uint8Array.from([0xff, 0xd8, 0xff, 0xff, 0xd8, ...orientedStructuralJpeg(6).subarray(2)]))
+    expect(seen).toEqual([0, 90])
+  })
+
+  it('handles filled and structural markers after entropy begins', () => {
+    const seen: Array<number | undefined> = []
+    const observer = new JpegFrameOrientationObserver((rotation) => { seen.push(rotation) }, 1024)
+    const jpeg = orientedStructuralJpeg(8)
+    observer.push(Uint8Array.from([...jpeg.subarray(0, -2), 0xff, 0xff, 0xd9]))
+    observer.push(Uint8Array.from([
+      ...jpeg.subarray(0, -2), 0xff, 0xe0, 0, 2, 0xff, 0xd9,
+    ]))
+    observer.push(Uint8Array.from([
+      ...jpeg.subarray(0, -2), 0xff, 0xd8, ...orientedStructuralJpeg(1).subarray(2),
+    ]))
+    expect(seen).toEqual([270, 270, 0])
+  })
+
+  it('treats absent and malformed APP1 EXIF as unknown while retaining complete frames', () => {
+    const seen: Array<number | undefined> = []
+    const observer = new JpegFrameOrientationObserver((rotation) => { seen.push(rotation) }, 1024)
+    const suffix = [
+      ...segment(0xc0, VALID_SOF), ...segment(0xda, VALID_SOS), 1, 0xff, 0xd9,
+    ]
+    observer.push(Uint8Array.from([0xff, 0xd8, ...segment(0xe1, [1, 2, 3, 4, 5, 6]), ...suffix]))
+    observer.push(Uint8Array.from([
+      0xff, 0xd8, ...segment(0xe1, [0x45, 0x78, 0x69, 0x66, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8]), ...suffix,
+    ]))
+    expect(seen).toEqual([undefined, undefined])
   })
 })
 

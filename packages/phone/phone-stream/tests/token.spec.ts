@@ -74,6 +74,7 @@ describe('phone stream capability tokens', () => {
     expect(verifyPhoneStreamToken(SECRET, 'id', 'h264', `${token}.extra`, expiresAt)).toBeUndefined()
     const [expiry, nonce, signature] = token.split('.')
     expect(verifyPhoneStreamToken(SECRET, 'id', 'h264', `${expiry}.${nonce}.${signature}=`, expiresAt)).toBeUndefined()
+    expect(verifyPhoneStreamToken(SECRET, 'id', 'h264', `${expiry}.${nonce}.A`, expiresAt)).toBeUndefined()
   })
 
   it('refuses malformed tokens and unknown encodings', () => {

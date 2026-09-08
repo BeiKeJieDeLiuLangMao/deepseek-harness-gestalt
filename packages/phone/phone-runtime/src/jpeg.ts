@@ -51,9 +51,96 @@ export function jpegExifRotation(
   return undefined
 }
 
+type JpegFrameObserverState =
+  | 'seek'
+  | 'marker'
+  | 'marker-code'
+  | 'length-high'
+  | 'length-low'
+  | 'payload'
+  | 'entropy'
+  | 'entropy-marker'
+
 /** Incremental bounded observer that reports metadata for each structurally complete JPEG frame. */
 export class JpegFrameOrientationObserver {
-  private state: 'seek' | 'marker' | 'marker-code' | 'length-high' | 'length-low' | 'payload' | 'entropy' | 'entropy-marker' = 'seek'
+  private static readonly BYTE_HANDLERS = {
+    seek(observer, byte) {
+      if (observer.seekFf && byte === 0xd8) observer.beginFrame()
+      else observer.seekFf = byte === 0xff
+    },
+    marker(observer, byte) {
+      if (byte !== 0xff) {
+        observer.discardFrame(byte === 0xff)
+        return
+      }
+      observer.state = 'marker-code'
+    },
+    'marker-code'(observer, byte) {
+      if (byte === 0xff) return
+      if (byte === 0xd8) {
+        observer.beginFrame()
+        return
+      }
+      if (byte === 0xd9) {
+        observer.finishFrame()
+        return
+      }
+      if (byte === 0x00 || byte >= 0xd0 && byte <= 0xd7) {
+        observer.discardFrame(byte === 0xff)
+        return
+      }
+      if (byte === 0x01) return
+      observer.marker = byte
+      observer.state = 'length-high'
+    },
+    'length-high'(observer, byte) {
+      observer.lengthHigh = byte
+      observer.state = 'length-low'
+    },
+    'length-low'(observer, byte) {
+      const length = observer.lengthHigh * 256 + byte
+      if (length < 2) {
+        observer.discardFrame(false)
+        return
+      }
+      observer.remaining = length - 2
+      observer.segment = []
+      observer.metadataBytes += length + 2
+      if (observer.metadataBytes > observer.maxBytes) observer.metadataOversized = true
+      if (observer.remaining === 0) observer.finishSegment()
+      else observer.state = 'payload'
+    },
+    payload(observer, byte) {
+      if (!observer.metadataOversized || observer.marker === 0xe1 || isStartOfFrame(observer.marker)) {
+        if (observer.segment.length < observer.maxBytes) observer.segment.push(byte)
+      }
+      observer.remaining -= 1
+      if (observer.remaining === 0) observer.finishSegment()
+    },
+    entropy(observer, byte) {
+      if (byte === 0xff) observer.state = 'entropy-marker'
+      else observer.entropyPayload = true
+    },
+    'entropy-marker'(observer, byte) {
+      if (byte === 0x00) {
+        observer.entropyPayload = true
+        observer.state = 'entropy'
+      } else if (byte === 0xff) {
+        return
+      } else if (byte >= 0xd0 && byte <= 0xd7) {
+        observer.state = 'entropy'
+      } else if (byte === 0xd9) {
+        observer.finishFrame()
+      } else if (byte === 0xd8) {
+        observer.beginFrame()
+      } else {
+        observer.state = 'marker-code'
+        observer.pushByte(byte)
+      }
+    },
+  } satisfies Record<JpegFrameObserverState, (observer: JpegFrameOrientationObserver, byte: number) => void>
+
+  private state: JpegFrameObserverState = 'seek'
   private seekFf = false
   private marker = 0
   private lengthHigh = 0
@@ -83,85 +170,7 @@ export class JpegFrameOrientationObserver {
   }
 
   private pushByte(byte: number): void {
-    switch (this.state) {
-      case 'seek':
-        if (this.seekFf && byte === 0xd8) this.beginFrame()
-        else this.seekFf = byte === 0xff
-        return
-      case 'marker':
-        if (byte !== 0xff) {
-          this.discardFrame(byte === 0xff)
-          return
-        }
-        this.state = 'marker-code'
-        return
-      case 'marker-code':
-        if (byte === 0xff) return
-        if (byte === 0xd8) {
-          this.beginFrame()
-          return
-        }
-        if (byte === 0xd9) {
-          this.finishFrame()
-          return
-        }
-        if (byte === 0x00 || byte >= 0xd0 && byte <= 0xd7) {
-          this.discardFrame(byte === 0xff)
-          return
-        }
-        if (byte === 0x01) return
-        this.marker = byte
-        this.state = 'length-high'
-        return
-      case 'length-high':
-        this.lengthHigh = byte
-        this.state = 'length-low'
-        return
-      case 'length-low': {
-        const length = this.lengthHigh * 256 + byte
-        if (length < 2) {
-          this.discardFrame(false)
-          return
-        }
-        this.remaining = length - 2
-        this.segment = []
-        this.metadataBytes += length + 2
-        if (this.metadataBytes > this.maxBytes) this.metadataOversized = true
-        if (this.remaining === 0) this.finishSegment()
-        else this.state = 'payload'
-        return
-      }
-      case 'payload':
-        if (!this.metadataOversized || this.marker === 0xe1 || isStartOfFrame(this.marker)) {
-          if (this.segment.length < this.maxBytes) this.segment.push(byte)
-        }
-        this.remaining -= 1
-        if (this.remaining === 0) this.finishSegment()
-        return
-      case 'entropy':
-        if (byte === 0xff) this.state = 'entropy-marker'
-        else this.entropyPayload = true
-        return
-      case 'entropy-marker':
-        if (byte === 0x00) {
-          this.entropyPayload = true
-          this.state = 'entropy'
-        } else if (byte === 0xff) {
-          return
-        } else if (byte >= 0xd0 && byte <= 0xd7) {
-          this.state = 'entropy'
-        } else if (byte === 0xd9) {
-          this.finishFrame()
-        } else if (byte === 0xd8) {
-          this.beginFrame()
-        } else {
-          this.state = 'marker-code'
-          this.pushByte(byte)
-        }
-        return
-      default:
-        return assertNever(this.state)
-    }
+    JpegFrameOrientationObserver.BYTE_HANDLERS[this.state](this, byte)
   }
 
   private beginFrame(): void {
@@ -329,7 +338,6 @@ function exifRotation(bytes: Uint8Array, tiff: number, end: number): PhoneRotati
       : (bytes[offset] as number) * 256 + (bytes[offset + 1] as number)
   }
   const u32 = (offset: number): number => {
-    if (offset + 4 > end) throw new Error('JPEG EXIF value is truncated')
     return little
       ? (bytes[offset] as number) + (bytes[offset + 1] as number) * 256
         + (bytes[offset + 2] as number) * 65_536 + (bytes[offset + 3] as number) * 16_777_216
@@ -533,8 +541,6 @@ function huffmanTableIds(bytes: Uint8Array, offset: number, end: number): Huffma
 function isStartOfFrame(marker: number): boolean {
   return marker >= 0xc0 && marker <= 0xcf && ![0xc4, 0xc8, 0xcc].includes(marker)
 }
-
-function assertNever(value: never): never { throw new TypeError(`unexpected JPEG observer state: ${String(value)}`) }
 
 function append(left: Uint8Array, right: Uint8Array): Uint8Array<ArrayBuffer> {
   const result = new Uint8Array(left.byteLength + right.byteLength)

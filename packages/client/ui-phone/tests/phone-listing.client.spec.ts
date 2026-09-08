@@ -135,6 +135,19 @@ describe('phone listing source', () => {
     expect(survivor).toHaveBeenCalledOnce()
   })
 
+  it('reports a throwing subscriber through the default console sink', async () => {
+    stubFetch(200, WIRE_LISTING)
+    const report = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    try {
+      const source = createHttpPhoneListingSource()
+      source.subscribe(() => { throw new Error('listing subscriber failed') })
+      await expect(source.refresh()).resolves.toBeUndefined()
+      expect(report).toHaveBeenCalledWith('phone listing subscriber failed', expect.any(Error))
+    } finally {
+      report.mockRestore()
+    }
+  })
+
   it('keeps the committed listing when the Host refuses or sends a malformed body', async () => {
     stubFetch(200, WIRE_LISTING)
     const source = createHttpPhoneListingSource()

@@ -137,10 +137,7 @@ export class CaptureRelays {
             result = 'abandoned'
             report('cleanup', error)
           }
-          let released = false
           const release = (): void => {
-            if (released) return
-            released = true
             try { reader?.releaseLock() } catch (releaseError) { report('cleanup', releaseError) }
           }
           if (result === 'settled') release()
@@ -167,12 +164,8 @@ export class CaptureRelays {
     this.closePromise = new Promise<void>((resolve, reject) => { resolveClose = resolve; rejectClose = reject })
     this.closed = true
     const relays = [...this.active]
-    try {
-      for (const relay of relays) relay.close(reason)
-      void Promise.all(relays.map(relay => relay.settled)).then(() => { resolveClose() }, rejectClose)
-    } catch (error) {
-      rejectClose(error)
-    }
+    for (const relay of relays) relay.close(reason)
+    void Promise.all(relays.map(relay => relay.settled)).then(() => { resolveClose() }, rejectClose)
     return this.closePromise
   }
 }

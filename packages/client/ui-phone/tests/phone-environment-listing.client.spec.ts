@@ -58,6 +58,27 @@ describe('createListingPhoneEnvironmentSource', () => {
     await pending
   })
 
+  it('starts detection once from idle when the view asks to ensure it', async () => {
+    const listing = new FakeListingSource()
+    const hold = deferred()
+    listing.scriptNext(hold.promise)
+    const source = createListingPhoneEnvironmentSource(listing)
+
+    source.ensureDetected?.()
+    source.ensureDetected?.()
+    expect(source.getView().kind).toBe('probing')
+    expect(listing.refreshCount).toBe(1)
+
+    hold.resolve()
+    await vi.waitFor(() => {
+      expect(source.getView()).toMatchObject({
+        kind: 'errors', errors: [{ kind: 'no-devices' }],
+      })
+    })
+    source.ensureDetected?.()
+    expect(listing.refreshCount).toBe(1)
+  })
+
   it('renders the ready inventory once the fleet lists devices', async () => {
     const listing = new FakeListingSource()
     listing.scriptNext(listingOf([ANDROID_EMULATOR, ANDROID_USB], [IOS_SIMULATOR, IOS_USB]))
@@ -163,6 +184,20 @@ describe('createListingPhoneEnvironmentSource', () => {
 
     expect(report).toHaveBeenCalledTimes(2)
     expect(survivor).toHaveBeenCalledTimes(2)
+  })
+
+  it('reports a throwing subscriber through the default console sink', async () => {
+    const listing = new FakeListingSource()
+    listing.scriptNext(listingOf([ANDROID_EMULATOR]))
+    const report = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    try {
+      const source = createListingPhoneEnvironmentSource(listing)
+      source.subscribe(() => { throw new Error('environment subscriber failed') })
+      await expect(source.redetect()).resolves.toBeUndefined()
+      expect(report).toHaveBeenCalledWith('phone environment subscriber failed', expect.any(Error))
+    } finally {
+      report.mockRestore()
+    }
   })
 
   it('shows 已停止 after a later listing commit without calling redetect', async () => {

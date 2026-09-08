@@ -1786,10 +1786,7 @@ async function pauseBeforeNextProbe(
   const signals = [window, lifetime, caller, exit]
   if (signals.some(signal => signal.aborted)) return
   await new Promise<void>((resolve) => {
-    let settled = false
     const settle = (): void => {
-      if (settled) return
-      settled = true
       clearTimeout(timer)
       for (const signal of signals) signal.removeEventListener('abort', settle)
       resolve()
@@ -1797,6 +1794,5 @@ async function pauseBeforeNextProbe(
     const timer = setTimeout(settle, ms)
     timer.unref()
     for (const signal of signals) signal.addEventListener('abort', settle, { once: true })
-    if (signals.some(signal => signal.aborted)) settle()
   })
 }

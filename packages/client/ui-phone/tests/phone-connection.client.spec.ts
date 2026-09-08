@@ -692,6 +692,21 @@ describe('PhoneConnectionController lifecycle', () => {
     expect(survivor).toHaveBeenCalledOnce()
   })
 
+  it('reports a throwing subscriber through the default console sink', () => {
+    const report = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    try {
+      const controller = new PhoneConnectionController({
+        gateway: new FakeGateway(),
+        deviceId: EMULATOR_DEVICE_ID,
+      })
+      controller.subscribe(() => { throw new Error('connection subscriber failed') })
+      expect(() => { controller.disconnect() }).not.toThrow()
+      expect(report).toHaveBeenCalledWith('phone connection subscriber failed', expect.any(Error))
+    } finally {
+      report.mockRestore()
+    }
+  })
+
   it('stops every timer and socket on dispose', async () => {
     const gateway = new FakeGateway()
     const scheduler = new ManualScheduler()
@@ -721,6 +736,7 @@ describe('PhoneConnectionController io', () => {
   it('drops swipes until a surface exists and drops an empty path afterward', async () => {
     const gateway = new FakeGateway()
     const controller = await connectToLive(gateway, new ManualScheduler())
+    expect(controller.coordinateUnavailableReason()).toBe('missing-surface')
     expect(controller.swipe([{ u: 0, v: 0 }])).toBe(false)
     controller.noteSurface('h264', SESSION_A.h264.captureId, 360, 720)
     expect(controller.swipe([])).toBe(false)
@@ -781,6 +797,7 @@ describe('PhoneConnectionController io', () => {
     expect(controller.surfaceSize()).toBeUndefined()
     controller.noteSurface('h264', next.h264.captureId, 844, 390, 90)
     expect(controller.surfaceSize()).toEqual({ width: 844, height: 390 })
+    expect(controller.surfaceOrientation()).toBe(90)
   })
 
   it('records an absent Host logicalDisplay without reminting later identical absences', async () => {
@@ -924,16 +941,24 @@ describe('PhoneConnectionController io', () => {
     expect(controller.tap(0.5, 0.5)).toBe(false)
     expect(controller.button('HOME')).toBe(true)
     expect(JSON.parse(gateway.lastSocket!.sent[0]!)).toMatchObject({ method: 'button' })
+    const listener = vi.fn()
+    controller.subscribe(listener)
     controller.notePlatform('ios')
+    controller.notePlatform('ios')
+    expect(listener).toHaveBeenCalledOnce()
     expect(controller.coordinateIoAvailable()).toBe(true)
     expect(controller.tap(0.5, 0.5)).toBe(true)
   })
 
   it('refuses coordinate IO when decoded H264 orientation disagrees with Host logicalDisplay', async () => {
     const gateway = new FakeGateway()
-    const controller = await connectToLive(gateway, new ManualScheduler())
+    const controller = controllerOn(gateway, new ManualScheduler())
     controller.noteLogicalDisplay({ width: 2248, height: 1080 })
+    controller.connect()
+    await flush()
+    gateway.lastSocket!.accept()
     controller.noteSurface('h264', SESSION_A.h264.captureId, 1080, 2248, 0)
+    expect(controller.coordinateUnavailableReason()).toBe('orientation-mismatch')
     expect(controller.coordinateIoAvailable()).toBe(false)
     expect(controller.tap(0.5, 0.5)).toBe(false)
     expect(controller.swipe([{ u: 0.2, v: 0.2 }, { u: 0.8, v: 0.8 }])).toBe(false)
@@ -1064,6 +1089,11 @@ describe('PhoneConnectionController io', () => {
         captureId: SESSION_A.h264.captureId, captureFormat: 'h264',
         x1: 0, y1: 0, x2: 360, y2: 720,
       },
+    })
+    controller.noteSurface('h264', SESSION_A.h264.captureId, 360, 720, 0)
+    expect(controller.swipe([{ u: 0.25, v: 0.25 }, { u: 0.75, v: 0.75 }])).toBe(true)
+    expect(JSON.parse(gateway.lastSocket!.sent[1]!)).toMatchObject({
+      method: 'swipe', params: { captureRotation: 0 },
     })
   })
 

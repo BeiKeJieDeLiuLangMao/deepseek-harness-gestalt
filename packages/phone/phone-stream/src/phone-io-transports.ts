@@ -66,10 +66,6 @@ export class PhoneIoTransports {
     let taskSequence = 0
     let peer: WebSocket | undefined
     let stopped: Promise<Outcome> | undefined
-    const connection: Connection = {
-      sequence, socket, abort, tasks, state: 'accepting',
-      stop: () => Promise.resolve({ ok: true }),
-    }
     const rawClosed = (): void => { void stop(new Error('phone io raw socket closed')) }
     const peerClosed = (): void => { void stop(new Error('phone io peer closed')) }
     const message = (raw: unknown): void => {
@@ -79,15 +75,15 @@ export class PhoneIoTransports {
       const outcome = new Promise<Outcome>((resolve) => { resolveTask = resolve })
       const task: TaskRecord = { sequence: ++taskSequence, outcome }
       tasks.set(task.sequence, task)
-      const openedPeer = peer
-      if (openedPeer === undefined) { resolveTask({ ok: false, error: new Error('phone io peer is not open') }); return }
+      const openedPeer = peer as WebSocket
       void observe(() => dispatch(openedPeer, raw, abort.signal)).then(resolveTask)
       void outcome.then((result) => {
         if (!result.ok && !isExpectedCancellation(result.error, abort.signal)) {
           this.report(scope, result.error)
           if (connection.state === 'accepting') void this.close(new Error('phone io dispatcher failed'))
+          return
         }
-        if (connection.state === 'accepting' && result.ok) tasks.delete(task.sequence)
+        if (connection.state === 'accepting') tasks.delete(task.sequence)
       })
     }
     const stop = (reason: unknown): Promise<Outcome> => {
@@ -104,7 +100,7 @@ export class PhoneIoTransports {
       try { socket.destroy() } catch (error) { stopFailures.push(error); this.report({ subsystem: 'connection', sequence }, error) }
       const scope: TransportScope = { subsystem: 'connection', sequence }
       const underlying = joinDynamic(tasks, stopFailures, abort.signal)
-      void boundedOutcome(underlying, this.deadline, scope, this.diagnostics, false).then((outcome) => {
+      void boundedOutcome(underlying, this.deadline, scope, this.diagnostics).then((outcome) => {
         if (connection.state !== 'closed') {
           connection.state = 'abandoned'
           void underlying.then(() => {
@@ -122,7 +118,7 @@ export class PhoneIoTransports {
       })
       return stopped
     }
-    connection.stop = stop
+    const connection: Connection = { sequence, socket, abort, tasks, state: 'accepting', stop }
     this.connections.set(sequence, connection)
     socket.once('close', rawClosed)
     try {
@@ -169,30 +165,28 @@ export class PhoneIoTransports {
     let resolvePublic!: () => void
     let rejectPublic!: (error: unknown) => void
     this.closePromise = new Promise<void>((resolve, reject) => { resolvePublic = resolve; rejectPublic = reject })
-    if (this.closeOutcome === undefined) {
-      this.state = 'closing'
-      let resolveClose!: (outcome: Outcome) => void
-      this.closeOutcome = new Promise<Outcome>((resolve) => { resolveClose = resolve })
-      const connections = [...this.connections.values()].sort((a, b) => a.sequence - b.sequence)
-      const serverScope: TransportScope = { subsystem: 'server' }
-      const serverSettled = observeCallback((done) =>{  this.server.close(done) })
-      this.serverTombstones.add(serverSettled)
-      const server = boundedOutcome(serverSettled, this.deadline, serverScope, this.diagnostics, false).then((outcome) => {
-        void serverSettled.then((late) => {
-          if (!late.ok) for (const error of outcomeErrors(late.error)) this.report(serverScope, error)
-          this.serverTombstones.delete(serverSettled)
-        })
-        return outcome
+    this.state = 'closing'
+    let resolveClose!: (outcome: Outcome) => void
+    this.closeOutcome = new Promise<Outcome>((resolve) => { resolveClose = resolve })
+    const connections = [...this.connections.values()].sort((a, b) => a.sequence - b.sequence)
+    const serverScope: TransportScope = { subsystem: 'server' }
+    const serverSettled = observeCallback((done) =>{  this.server.close(done) })
+    this.serverTombstones.add(serverSettled)
+    const server = boundedOutcome(serverSettled, this.deadline, serverScope, this.diagnostics).then((outcome) => {
+      void serverSettled.then((late) => {
+        if (!late.ok) for (const error of outcomeErrors(late.error)) this.report(serverScope, error)
+        this.serverTombstones.delete(serverSettled)
       })
-      const stops = connections.map(connection => connection.stop(reason))
-      void Promise.all([server, ...stops]).then((outcomes) => {
-        this.state = 'closed'
-        const failures = outcomes.flatMap(outcome => outcome.ok ? [] : outcomeErrors(outcome.error))
-        resolveClose(failures.length === 0
-          ? { ok: true }
-          : { ok: false, error: failures.length === 1 ? failures[0] : ownedAggregate(failures, 'phone io transport close failed') })
-      })
-    }
+      return outcome
+    })
+    const stops = connections.map(connection => connection.stop(reason))
+    void Promise.all([server, ...stops]).then((outcomes) => {
+      this.state = 'closed'
+      const failures = outcomes.flatMap(outcome => outcome.ok ? [] : outcomeErrors(outcome.error))
+      resolveClose(failures.length === 0
+        ? { ok: true }
+        : { ok: false, error: failures.length === 1 ? failures[0] : ownedAggregate(failures, 'phone io transport close failed') })
+    })
     void this.closeOutcome.then((outcome) => { if (outcome.ok) resolvePublic(); else rejectPublic(outcome.error) })
     return this.closePromise
   }
@@ -249,14 +243,8 @@ function isOwnedAggregate(error: unknown): error is OwnedAggregate {
   return error instanceof AggregateError && (error as Partial<OwnedAggregate>)[OWNED_AGGREGATE] === true
 }
 async function boundedOutcome(outcome: Promise<Outcome>, deadline: TransportDeadline, scope: TransportScope,
-  diagnostics: TransportDiagnostics, reportFailure = true): Promise<Outcome> {
-  const settled = outcome.then((result) => {
-    if (reportFailure && !result.ok) {
-      try { diagnostics.failure(scope, result.error) } catch (_diagnosticError) {
-        /* Only the injected diagnostic callback can fail; cleanup settlement remains authoritative. */
-      }
-    }
-  })
+  diagnostics: TransportDiagnostics): Promise<Outcome> {
+  const settled = outcome.then(() => {})
   try {
     if (await deadline(settled, scope) === 'timeout') {
       const error = new Error(`${scope.subsystem} transport cleanup timed out`)

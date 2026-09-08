@@ -17,7 +17,7 @@ const { spawnMock, spawnSyncMock } = vi.hoisted(() => ({
 
 vi.mock('node:child_process', () => ({ spawn: spawnMock, spawnSync: spawnSyncMock }))
 
-import { MobilecliServerProcess, TERM_ESCAPE_MS } from '../src/server-process.ts'
+import { MobilecliProcessTree, MobilecliServerProcess, TERM_ESCAPE_MS } from '../src/server-process.ts'
 
 afterEach(() => {
   vi.useRealTimers()
@@ -43,6 +43,23 @@ describe('MobilecliServerProcess stop policy', () => {
 
     expect(kill).not.toHaveBeenCalled()
     expect(runtimeProcess.alive).toBe(false)
+  })
+
+  it('captures stdout only when a command-specific adapter requests it', async () => {
+    const events = new EventEmitter()
+    const stderr = new PassThrough()
+    const child = Object.assign(events, { pid: 12_345, stderr, kill: vi.fn() }) as unknown as ChildProcess
+    spawnMock.mockReturnValue(child)
+
+    const runtimeProcess = new MobilecliProcessTree(
+      { executablePath: '/mobilecli', args: ['agent', 'status'], captureStdout: true },
+      { platform: 'darwin' },
+    )
+    events.emit('close', 0, null)
+    await expect(runtimeProcess.exit).resolves.toEqual({ code: 0 })
+    expect(spawnMock).toHaveBeenCalledWith('/mobilecli', ['agent', 'status'], expect.objectContaining({
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }))
   })
 
   it('escalates a child that remains alive after SIGTERM', async () => {

@@ -141,6 +141,26 @@ describe('PhoneIoTransports', () => {
     expect(dispatch).toHaveBeenCalledOnce()
   })
 
+  it('retires a successful dispatch while its connection remains accepting', async () => {
+    const h = harness(); const socket = new FakeSocket(); const peer = new FakePeer(); const dispatch = vi.fn(async () => {})
+    h.owner.accept(request, socket as never, head, dispatch); h.open(peer); peer.emit('message', 'x')
+    await new Promise<void>((resolve) => { setImmediate(resolve) })
+    expect(dispatch).toHaveBeenCalledOnce()
+    expect(h.owner.ownershipSnapshot().tasks).toBe(0)
+    const close = h.owner.close(new Error('stop')); h.closeServer(); await close
+  })
+
+  it('drops a message callback already captured when connection stop begins', async () => {
+    const h = harness(); const socket = new FakeSocket(); const peer = new FakePeer(); const dispatch = vi.fn(async () => {})
+    h.owner.accept(request, socket as never, head, dispatch); h.open(peer)
+    const delayed = peer.listeners('message')[0] as (raw: unknown) => void
+    const close = h.owner.close(new Error('stop'))
+    delayed('late')
+    h.closeServer(); await close
+    expect(dispatch).not.toHaveBeenCalled()
+    expect(h.owner.ownershipSnapshot().tasks).toBe(0)
+  })
+
   it('bounds stubborn dispatch and reports its connection scope', async () => {
     const h = harness(); const socket = new FakeSocket(); const peer = new FakePeer()
     h.owner.accept(request, socket as never, head, async () =>{  await new Promise(() => {}) }); h.open(peer); peer.emit('message', 'x')
@@ -163,6 +183,23 @@ describe('PhoneIoTransports', () => {
     h.owner.accept(request, socket as never, head, async () => {}); socket.emit('close'); h.open(peer)
     expect(peer.close).toHaveBeenCalledOnce(); expect(peer.listenerCount('message')).toBe(0)
     const close = h.owner.close(new Error('stop')); h.closeServer(); await close
+  })
+
+  it('reports a late peer close throw after raw ownership is gone', async () => {
+    const h = harness(); const socket = new FakeSocket(); const peer = new FakePeer(); const failure = new Error('late peer close failed')
+    peer.close.mockImplementationOnce(() => { throw failure })
+    h.owner.accept(request, socket as never, head, async () => {}); socket.emit('close'); h.open(peer)
+    expect(h.failures).toHaveBeenCalledWith({ subsystem: 'connection', sequence: 1 }, failure)
+    const close = h.owner.close(new Error('stop')); h.closeServer(); await close
+  })
+
+  it('keeps a raw socket destroy throw in the connection close outcome', async () => {
+    const h = harness(); const socket = new FakeSocket(); const peer = new FakePeer(); const failure = new Error('raw destroy failed')
+    socket.destroy.mockImplementationOnce(() => { throw failure })
+    h.owner.accept(request, socket as never, head, async () => {}); h.open(peer)
+    const close = h.owner.close(new Error('stop')); h.closeServer()
+    await expect(close).rejects.toBe(failure)
+    expect(h.failures).toHaveBeenCalledWith({ subsystem: 'connection', sequence: 1 }, failure)
   })
 
   it('closes the full transport after a fatal dispatch defect without retaining terminal ownership', async () => {
@@ -346,6 +383,17 @@ describe('PhoneIoTransports', () => {
     expect(second).toBe(first)
     await expect(second).rejects.toBe(failure)
     expect(h.closeMock).toHaveBeenCalledOnce()
+  })
+
+  it.each(['before-callback', 'after-success'] as const)('contains a server close throw %s', async (timing) => {
+    const h = harness(); const failure = new Error(`server close ${timing}`)
+    vi.mocked(h.closeMock).mockImplementationOnce((done) => {
+      if (timing === 'after-success') done()
+      throw failure
+    })
+    await expect(h.owner.close(new Error('stop'))).rejects.toBe(failure)
+    expect(h.failures).toHaveBeenCalledWith({ subsystem: 'server' }, failure)
+    expect(h.owner.ownershipSnapshot()).toEqual({ connections: 0, tasks: 0, serverTombstones: 0 })
   })
 
   it('contains upgrade and dispatcher defects and rejects post-close', async () => {

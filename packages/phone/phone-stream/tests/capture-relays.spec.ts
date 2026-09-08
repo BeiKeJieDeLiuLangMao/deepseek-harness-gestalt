@@ -7,6 +7,15 @@ function barrier(): { promise: Promise<void>; release(): void } {
   return { promise: new Promise((resolve) => { release = resolve }), release }
 }
 
+function settleBeforeAbort<T>(value: T, abort: () => void): Promise<T> {
+  return {
+    then(resolve: (value: T) => void) {
+      resolve(value)
+      queueMicrotask(abort)
+    },
+  } as unknown as Promise<T>
+}
+
 function harness() {
   const errors = { primary: vi.fn(), cleanup: vi.fn(), timeout: vi.fn() }
   let expire: (() => void) | undefined
@@ -69,6 +78,30 @@ describe('CaptureRelays', () => {
     await h.relays.close(new Error('again'))
   })
 
+  it('contains repeated close and a throwing abort sink after caller cancellation', async () => {
+    const h = harness(); const caller = new AbortController(); const abortFailure = new Error('abort sink failed')
+    const target = sink(); target.abort.mockImplementation(() => { throw abortFailure })
+    const body = new ReadableStream<Uint8Array>({ pull() { return new Promise(() => {}) }, cancel: async () => {} }, { highWaterMark: 0 })
+    const done = h.relays.run(async () => ({ contentType: 'video/h264', body }), target, caller.signal)
+    await vi.waitFor(() => { expect(target.expose).toHaveBeenCalledOnce() })
+    const reason = new Error('caller stopped'); caller.abort(reason)
+    const close = h.relays.close(new Error('owner stopped'))
+    await Promise.all([done, close])
+    expect(target.abort).toHaveBeenCalledOnce()
+    expect(h.errors.cleanup).toHaveBeenCalledWith(abortFailure)
+  })
+
+  it('contains a diagnostic subscriber failure without changing primary settlement', async () => {
+    const diagnosticsFailure = new Error('diagnostics failed')
+    const relays = new CaptureRelays(async (cleanup) => { await cleanup; return 'settled' }, {
+      primary: () => { throw diagnosticsFailure }, cleanup: vi.fn(), timeout: vi.fn(),
+    })
+    const target = sink()
+    await expect(relays.run(async () => { throw new Error('open failed') }, target)).resolves.toBeUndefined()
+    expect(target.fail).toHaveBeenCalledWith(expect.objectContaining({ message: 'open failed' }))
+    await relays.close(new Error('stop'))
+  })
+
   it.each([false, true])('does not read ahead while the sink is blocked (multipart=%s)', async (multipart) => {
     const drain = barrier()
     let reads = 0
@@ -118,6 +151,99 @@ describe('CaptureRelays', () => {
     opening.release()
     await Promise.all([done, close])
     expect(target.expose).not.toHaveBeenCalled()
+  })
+
+  it('stops after source cancellation is installed during body access', async () => {
+    const h = harness(); const caller = new AbortController(); const target = sink(); const cancel = vi.fn(async () => {})
+    const body = { cancel } as unknown as ReadableStream<Uint8Array>
+    const capture = {
+      contentType: 'video/h264',
+      get body() { caller.abort(new Error('stop during body access')); return body },
+    }
+    await h.relays.run(async () => capture, target, caller.signal)
+    expect(cancel).toHaveBeenCalledOnce(); expect(target.expose).not.toHaveBeenCalled()
+    await h.relays.close(new Error('stop'))
+  })
+
+  it('stops after opening settles immediately before caller cancellation', async () => {
+    const h = harness(); const caller = new AbortController(); const target = sink(); const cancel = vi.fn(async () => {})
+    const body = { cancel } as unknown as ReadableStream<Uint8Array>
+    await h.relays.run(
+      () => settleBeforeAbort({ contentType: 'video/h264', body }, () => { caller.abort(new Error('stop after open')) }),
+      target,
+      caller.signal,
+    )
+    expect(cancel).toHaveBeenCalledOnce(); expect(target.expose).not.toHaveBeenCalled()
+  })
+
+  it('stops after reader cancellation is installed during acquisition', async () => {
+    const h = harness(); const caller = new AbortController(); const target = sink(); const cancelBody = vi.fn(async () => {})
+    const reader = { read: vi.fn(), cancel: vi.fn(async () => {}), releaseLock: vi.fn() }
+    const body = {
+      cancel: cancelBody,
+      getReader: () => { caller.abort(new Error('stop during reader acquisition')); return reader },
+    } as unknown as ReadableStream<Uint8Array>
+    await h.relays.run(async () => ({ contentType: 'video/h264', body }), target, caller.signal)
+    expect(cancelBody).toHaveBeenCalledOnce(); expect(reader.cancel).not.toHaveBeenCalled(); expect(target.expose).not.toHaveBeenCalled()
+    await h.relays.close(new Error('stop'))
+  })
+
+  it('contains reader rejection and a throwing failure sink independently', async () => {
+    const h = harness(); const readFailure = new Error('read failed'); const failFailure = new Error('failure sink failed')
+    const reader = { read: async () => { throw readFailure }, cancel: async () => {}, releaseLock: vi.fn() }
+    const body = { getReader: () => reader, cancel: async () => {} } as unknown as ReadableStream<Uint8Array>
+    const target = sink(); target.fail = vi.fn(() => { throw failFailure })
+    await h.relays.run(async () => ({ contentType: 'video/h264', body }), target)
+    expect(h.errors.primary).toHaveBeenCalledWith(readFailure)
+    expect(h.errors.cleanup).toHaveBeenCalledWith(failFailure)
+  })
+
+  it('owns a read that settles immediately before caller cancellation', async () => {
+    const h = harness(); const caller = new AbortController(); const target = sink()
+    const reader = {
+      read: () => settleBeforeAbort({ done: false as const, value: Uint8Array.of(1) }, () => { caller.abort(new Error('stop after read')) }),
+      cancel: async () => {}, releaseLock: vi.fn(),
+    }
+    const body = { getReader: () => reader, cancel: async () => {} } as unknown as ReadableStream<Uint8Array>
+    await h.relays.run(async () => ({ contentType: 'video/h264', body }), target, caller.signal)
+    expect(target.write).not.toHaveBeenCalled(); expect(target.end).not.toHaveBeenCalled()
+  })
+
+  it('owns a write that settles immediately before caller cancellation', async () => {
+    const h = harness(); const caller = new AbortController(); const target = sink()
+    target.write.mockImplementation(() => settleBeforeAbort(undefined, () => { caller.abort(new Error('stop after write')) }))
+    const reader = {
+      read: vi.fn()
+        .mockResolvedValueOnce({ done: false as const, value: Uint8Array.of(1) })
+        .mockResolvedValue({ done: true as const, value: undefined }),
+      cancel: async () => {}, releaseLock: vi.fn(),
+    }
+    const body = { getReader: () => reader, cancel: async () => {} } as unknown as ReadableStream<Uint8Array>
+    await h.relays.run(async () => ({ contentType: 'video/h264', body }), target, caller.signal)
+    expect(target.write).toHaveBeenCalledOnce(); expect(reader.read).toHaveBeenCalledOnce(); expect(target.end).not.toHaveBeenCalled()
+  })
+
+  it('observes a pre-aborted read race without starting response work', async () => {
+    const h = harness(); const caller = new AbortController(); const target = sink()
+    const reader = {
+      read: () => { caller.abort(new Error('stop during read')); return Promise.resolve({ done: true as const, value: undefined }) },
+      cancel: async () => {}, releaseLock: vi.fn(),
+    }
+    const body = { getReader: () => reader, cancel: async () => {} } as unknown as ReadableStream<Uint8Array>
+    await h.relays.run(async () => ({ contentType: 'video/h264', body }), target, caller.signal)
+    expect(target.end).not.toHaveBeenCalled()
+  })
+
+  it('does not end when cancellation occurs while inspecting end-of-stream', async () => {
+    const h = harness(); const caller = new AbortController(); const target = sink()
+    const result = {
+      get done() { caller.abort(new Error('stop at end of stream')); return true },
+      value: undefined,
+    } as ReadableStreamReadResult<Uint8Array>
+    const reader = { read: async () => result, cancel: async () => {}, releaseLock: vi.fn() }
+    const body = { getReader: () => reader, cancel: async () => {} } as unknown as ReadableStream<Uint8Array>
+    await h.relays.run(async () => ({ contentType: 'video/h264', body }), target, caller.signal)
+    expect(target.end).not.toHaveBeenCalled()
   })
 
   it('bounds a never-settling foreign cancellation and removes the relay', async () => {

@@ -48,4 +48,19 @@ describe('PhoneHttpTransactions', () => {
     const work = vi.fn(async () => {}); await owner.run(work, reject); expect(reject).toHaveBeenCalledOnce()
     expect(work).not.toHaveBeenCalled()
   })
+
+  it('contains synchronous work failure and retires rejected ownership', async () => {
+    const owner = new PhoneHttpTransactions(async (task) => { await task; return 'settled' })
+    const failure = new Error('work failed before returning a promise')
+    await expect(owner.run(() => { throw failure }, vi.fn())).rejects.toBe(failure)
+    await vi.waitFor(() => { expect(owner.ownershipSnapshot()).toBe(0) })
+    await owner.close(new Error('stop'))
+  })
+
+  it('rejects close when the cleanup deadline throws synchronously', async () => {
+    const failure = new Error('deadline setup failed')
+    const owner = new PhoneHttpTransactions(() => { throw failure })
+    await expect(owner.close(new Error('stop'))).rejects.toBe(failure)
+    expect(owner.ownershipSnapshot()).toBe(0)
+  })
 })
