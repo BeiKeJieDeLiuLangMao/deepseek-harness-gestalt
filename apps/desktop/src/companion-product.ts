@@ -210,35 +210,38 @@ export class DesktopCompanionProductOwner {
 
   /**
    * Execute one operation decoded by the reviewed channel against the current Web Host.
-   * @param operation - validated Companion operation.
-   * @param dependencies - exact Personal Pairing identity, key, and attachment adapters.
+   * @param args - search alone, or an authenticated operation with its exact pairing dependencies.
    * @returns correlated product result; absent Web Host becomes a stable wire failure.
    */
   async handle(
-    operation: CompanionProductOperation,
-    dependencies: DesktopCompanionPairingDependencies,
+    ...args:
+      | [operation: CompanionSearchSessionsOperation]
+      | [operation: CompanionProductOperation, dependencies: DesktopCompanionPairingDependencies]
   ): Promise<DesktopCompanionOperationOutput> {
+    const operation = args[0]
     const host = this.installed?.rpc
     if (host === undefined) {
       return operationFailed(operation, {
         kind: 'wire', code: 'HOST_WIRE_INVALID', message: 'Desktop Web Host is not available',
       })
     }
-    if (operation.type === 'observe-session') {
-      this.liveProjection.observe(dependencies.pairingId, operation.sessionId)
+    if (args.length === 1) return await searchSessions(args[0], host)
+    const [authenticatedOperation, dependencies] = args
+    if (authenticatedOperation.type === 'observe-session') {
+      this.liveProjection.observe(dependencies.pairingId, authenticatedOperation.sessionId)
       return {
-        type: 'confirmed', operationId: operation.operationId,
+        type: 'confirmed', operationId: authenticatedOperation.operationId,
         committedAt: dependencies.now(), outcome: 'accepted',
       }
     }
-    const execute = async () => operation.type === 'refresh-surface'
-      ? await this.surfaceDiscovery.refresh(operation, { ...dependencies, host })
-      : await handleCompanionProductOperation(operation, { ...dependencies, host })
-    if (!isLedgerMutation(operation)) return await execute()
-    if (this.ledger === undefined) return operationFailed(operation, {
+    const execute = async () => authenticatedOperation.type === 'refresh-surface'
+      ? await this.surfaceDiscovery.refresh(authenticatedOperation, { ...dependencies, host })
+      : await handleCompanionProductOperation(authenticatedOperation, { ...dependencies, host })
+    if (!isLedgerMutation(authenticatedOperation)) return await execute()
+    if (this.ledger === undefined) return operationFailed(authenticatedOperation, {
       kind: 'wire', code: 'HOST_WIRE_INVALID', message: 'Desktop Companion operation ledger is unavailable',
     })
-    return await this.ledger.execute(dependencies.pairingId, operation, async () => {
+    return await this.ledger.execute(dependencies.pairingId, authenticatedOperation, async () => {
       const output = await execute()
       if (isCompanionResultList(output) || isCompanionProjectionOutput(output)) {
         throw new Error('Desktop Companion mutation produced a projection')
@@ -965,11 +968,13 @@ function parseConversationHistory(
     } else if (event.type === 'assistant/message') {
       const message = event.data.message
       if (!isRecord(message) || !Array.isArray(message.content)) return undefined
+      if (event.data.interrupted !== undefined && event.data.interrupted !== true) return undefined
       nodes.push({
         kind: 'assistant', seq: event.seq, time: event.time,
         messageId: typeof message.id === 'string' ? message.id : undefined,
         turn: numberOr(event.data.turn, 0), step: numberOr(event.data.step, 0),
         blocks: message.content.map(assistantBlock),
+        ...(event.data.interrupted === true ? { interrupted: true } : {}),
       })
       if (partial?.turn === numberOr(event.data.turn, 0) && partial.step === numberOr(event.data.step, 0)) {
         partial = undefined

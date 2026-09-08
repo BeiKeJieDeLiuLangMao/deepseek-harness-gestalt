@@ -1,5 +1,9 @@
 /** Map one workspace source alias target to its declaration-build target. */
 export function builtDeclarationPath(candidate: string): string {
+  const appFile = /^(\.\/apps\/[^/]+)\/((?:src|tests)\/.+)\.tsx?$/.exec(candidate)
+  if (appFile?.[1] && appFile[2]) {
+    return `${appFile[1]}/lib/types/${appFile[2]}.d.ts`
+  }
   // Two workspace path forms exist: whole-package entries end in /src, subpath
   // wildcards (apiproxy's browser-safe /api and /client channels) in /src/*.
   if (candidate.endsWith('/src')) {

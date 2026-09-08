@@ -58,6 +58,61 @@ describe('DesktopSnowPairingVault', () => {
     await expect(store.load()).rejects.toThrow('Pairing Challenge id')
     await persist({ ...document, pending: [{ pendingPairingId: 7, recovery }] })
     await expect(store.load()).rejects.toThrow('Pending Pairing id')
+    await persist({ ...document, active: [document.active[0], {
+      ...document.active[0], pairingId: 'pairing-other',
+    }] })
+    await expect(store.load()).rejects.toThrow('duplicate Relay pairing selector')
+    await persist({ ...document, active: [document.active[0], {
+      ...document.active[0], desktopGrant: {
+        ...document.active[0]?.desktopGrant, pairingSelector: 'selector-other',
+      },
+    }] })
+    await expect(store.load()).rejects.toThrow('duplicate active pairing id')
+  })
+
+  it('uses the persisted Relay selector as lookup authority across release and reload', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'dsh-snow-vault-selector-'))
+    directories.push(directory)
+    const path = join(directory, 'pairings.bin')
+    const protection = {
+      encrypt: (value: string) => new TextEncoder().encode(value),
+      decrypt: (value: Uint8Array) => new TextDecoder().decode(value),
+    }
+    const pairingId = parsePersonalPairingId('pairing-owner')
+    const selector = parseRelayPairingSelector('selector-owner')
+    const reconnectState = new Uint8Array(96).fill(11)
+    const attachmentKey = new Uint8Array(32).fill(12)
+    const store = new EncryptedDesktopSnowPairingStore(path, protection)
+    await store.save({
+      active: [{
+        pairingId, reconnectState, attachmentKey,
+        desktopGrant: {
+          routeId: parseRelayRouteId('route-owner'), endpoint: 'desktop',
+          credential: parseRelayCredential('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'),
+          revision: 1, pairingSelector: selector,
+        },
+      }],
+      challenges: [], pending: [], confirmations: [],
+    })
+
+    const vault = await DesktopSnowPairingVault.load(store)
+    const restoredReconnectState = vault.reconnectState(selector)
+    const restoredAttachmentKey = vault.attachmentKey(selector)
+    expect(restoredReconnectState).toEqual(reconnectState)
+    expect(restoredAttachmentKey).toEqual(attachmentKey)
+    restoredReconnectState?.fill(0)
+    restoredAttachmentKey?.fill(0)
+    expect(vault.reconnectState(selector)).toEqual(reconnectState)
+    expect(vault.attachmentKey(selector)).toEqual(attachmentKey)
+    const unrelatedSelector = parseRelayPairingSelector('selector-unrelated')
+    expect(vault.reconnectState(unrelatedSelector)).toBeUndefined()
+    expect(vault.attachmentKey(unrelatedSelector)).toBeUndefined()
+
+    vault.release(pairingId)
+    await vault.flush()
+    const released = await DesktopSnowPairingVault.load(store)
+    expect(released.reconnectState(selector)).toBeUndefined()
+    expect(released.attachmentKey(selector)).toBeUndefined()
   })
 
   it('rejects a seventeenth retained pairing before any external publication can begin', async () => {
@@ -81,8 +136,10 @@ describe('DesktopSnowPairingVault', () => {
 
     await expect(vault.createInvitation(Date.now() + 60_000)).rejects.toThrow('limit reached')
     expect(save).not.toHaveBeenCalled()
+    const firstActive = active[0]
+    if (firstActive === undefined) throw new Error('active fixture must contain one pairing')
     await expect(DesktopSnowPairingVault.load({
-      load: async () => ({ active: [...active, active[0]], challenges: [], pending: [], confirmations: [] }),
+      load: async () => ({ active: [...active, firstActive], challenges: [], pending: [], confirmations: [] }),
       save,
     })).rejects.toThrow('retained state limit')
   })

@@ -1,0 +1,36 @@
+{
+  "extends": "../../../../tsconfig.base.json",
+  "compilerOptions": {
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "rootDir": "../..",
+    "outDir": "../../lib/companion-host-types",
+    "resolvePackageJsonImports": false,
+    "types": ["node"]
+  },
+  "files": ["host.ts", "wire.ts", "host-400-codec-probe.ts"],
+  "references": [
+    { "path": "../../../../vendor/cordis" },
+    { "path": "../../../../packages/core/agent" },
+    { "path": "../../../../packages/core/agent-loop" },
+    { "path": "../../../../packages/core/session" },
+    { "path": "../../../../packages/core/system-prompt" },
+    { "path": "../../../../packages/core/tools" },
+    { "path": "../../../../packages/attachment/attachment" },
+    { "path": "../../../../packages/attachment/attachment-local" },
+    { "path": "../../../../packages/host/apiproxy" },
+    { "path": "../../../../packages/client/connection/tsconfig.host.json" },
+    { "path": "../../../../packages/llm/llm" },
+    { "path": "../../../../packages/platform/remote-access" },
+    { "path": "../../../../packages/platform/remote-protocol" },
+    { "path": "../../../../packages/session/session-persistence-sqlite" },
+    { "path": "../../../../packages/session-query/session-query-sqlite" },
+    { "path": "../../../../packages/storage/storage" },
+    { "path": "../../../../packages/storage/storage-sqlite" },
+    { "path": "../../../../packages/storage/storage-domain" },
+    { "path": "../../../../packages/workspace/workspace" },
+    { "path": "../../../../packages/interaction/user-approval" },
+    { "path": "../../../../packages/interaction/user-questions" }
+  ]
+}

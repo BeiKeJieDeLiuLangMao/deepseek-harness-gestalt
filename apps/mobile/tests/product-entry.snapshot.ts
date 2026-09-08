@@ -150,6 +150,7 @@ describe('bundled Mobile product entry', () => {
       pairingHeading: 'Paired Desktops', selected: 'Selected', select: 'Select this Desktop',
       searchTrigger: 'Search chat history', searchHeading: 'Search', searchField: 'Search Desktop Sessions',
       newUngrouped: 'New ungrouped Session', newHeading: 'New Session', backProjects: 'Back to projects',
+      stopped: 'Stopped',
     },
     {
       locale: 'zh-CN', colorScheme: 'light' as const, back: '返回', placeholder: '给智能体发消息',
@@ -157,10 +158,11 @@ describe('bundled Mobile product entry', () => {
       pairingHeading: '已配对的桌面端', selected: '当前选择', select: '选择此桌面端',
       searchTrigger: '搜索聊天记录', searchHeading: '搜索', searchField: '搜索桌面端会话',
       newUngrouped: '新建未分组会话', newHeading: '新会话', backProjects: '返回项目',
+      stopped: '已停止',
     },
   ])('renders authenticated shared conversation behavior in $locale/$colorScheme', async ({
     locale, colorScheme, back, placeholder, account, managePairing, pairingHeading, selected, select,
-    searchTrigger, searchHeading, searchField, newUngrouped, newHeading, backProjects,
+    searchTrigger, searchHeading, searchField, newUngrouped, newHeading, backProjects, stopped,
   }) => {
     const activeBrowser = browser
     if (activeBrowser === undefined) throw new Error('Mobile snapshot browser unavailable')
@@ -206,6 +208,7 @@ describe('bundled Mobile product entry', () => {
     await page.getByRole('treeitem', { name: /Shared Session/ }).click()
     await expect.poll(async () => await page.locator('[data-mobile-conversation="detail"]').count()).toBe(1)
     expect(await page.getByText('Shared Markdown').evaluate(node => node.tagName)).toBe('STRONG')
+    expect(await page.getByText(stopped, { exact: true }).isVisible()).toBe(true)
     expect(await page.locator('pre code').filter({ hasText: 'const shared = true' }).count()).toBe(1)
     expect(await page.getByAltText('shared.gif').count()).toBe(1)
     expect(await page.locator('[data-toolview="file-mutation"] [data-tool="edit"]').count()).toBe(1)

@@ -50,7 +50,10 @@ import { bootBackgroundColor } from './boot-session.ts'
 import { attachBootScreen, waitForShellReady } from './boot-screen.ts'
 import { planHostExit, shouldPreventQuit, startWithOneRetry } from './host-exit.ts'
 import { classifyNavigation } from './navigation-policy.ts'
+import { observeWebHostExit } from './observe-web-host-exit.ts'
 import { spawnWebHost, type RunningWebHost } from './spawn-web-host.ts'
+import { DesktopHostLifecycle } from './host-lifecycle.ts'
+import { bindCurrentOverlay, revealCurrentHost } from './reveal-current-host.ts'
 import {
   autoUpdaterFromModule, configurePackagedAutoUpdater, startAutoUpdater,
   type AutoUpdaterLifecycle, type AutoUpdaterModule,
@@ -72,7 +75,7 @@ import {
   type DesktopPairingActions,
 } from './personal-pairing.ts'
 import { DesktopSnowPairingVault, EncryptedDesktopSnowPairingStore } from './snow-pairing-vault.ts'
-import { disposeDesktopOwners } from './shutdown.ts'
+import { DesktopShutdown, disposeDesktopOwners, disposeDesktopPresence, settleDesktopCleanup } from './shutdown.ts'
 import {
   createDesktopSub2Api, sub2ApiBootHostStartTimeout, uninstallSub2ApiFromIpc,
   type DesktopSub2ApiActions,
@@ -115,10 +118,19 @@ import {
   startDesktopProjectMembershipAgentRuntime,
   type DesktopProjectMembershipAgentRuntime,
 } from './project-membership-agent-runtime.ts'
-import { applyDesktopE2EProfile, resolveDesktopNetworkProxy } from './e2e-profile.ts'
+import {
+  applyDesktopE2EProfile,
+  desktopWindowConstructorOptions,
+  handleDesktopWindowActivate,
+  resolveDesktopNetworkProxy,
+  type DesktopWindowPresentation,
+} from './e2e-profile.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
-applyDesktopE2EProfile({ packaged: app.isPackaged, argv: process.argv, environment: process.env })
+const desktopE2EProfile = applyDesktopE2EProfile({
+  packaged: app.isPackaged, argv: process.argv, environment: process.env,
+})
+const windowPresentation: DesktopWindowPresentation = desktopE2EProfile?.windowPresentation ?? 'visible'
 let systemFetch: typeof globalThis.fetch
 const PRELOAD = join(here, 'preload.cjs')
 const OPERATED_PLATFORM_CONFIG = join(here, 'operated-platform.json')
@@ -130,12 +142,22 @@ function smokeLog(line: string): void {
 }
 
 let host: RunningWebHost | undefined
-let browserRuntime: DesktopBrowserRuntime | undefined
-let projectMembershipAgentRuntime: DesktopProjectMembershipAgentRuntime | undefined
+const hostLifecycle = new DesktopHostLifecycle({
+  createBrowser: () => startDesktopBrowserRuntime(app.getPath('userData')),
+  createMembership: () => startDesktopProjectMembershipAgentRuntime({
+    userData: app.getPath('userData'),
+    account: () => account,
+    membership: (expectedAccountId, signal) => createDesktopProjectMembershipClient({
+      account: () => account, environment: accountEnvironment, fetch: systemFetch,
+      expectedAccountId, signal,
+    }),
+  }),
+  spawn: spawnDesktopHost,
+})
 let window: BrowserWindow | undefined
 let overlayView: WebContentsView | undefined
 let overlayOpen: ReturnType<typeof parseChromeOverlayShow>
-let overlayReady: Promise<WebContentsView> | undefined
+let overlayReady: Promise<WebContentsView | undefined> | undefined
 let updater: AutoUpdaterLifecycle | undefined
 let respawned = false
 let shuttingDown = false
@@ -150,8 +172,13 @@ let stopPairingEvents: (() => void) | undefined
 let sub2api: DesktopSub2ApiActions | undefined
 let stopSub2ApiEvents: (() => void) | undefined
 let accountSignedIn = false
-const hostStartController = new AbortController()
-let pendingHost: Promise<RunningWebHost> | undefined
+const desktopShutdown = new DesktopShutdown({
+  stopHost: () => hostLifecycle.shutdown(),
+  cleanup: cleanupDesktop,
+  successReceipt: () => { smokeLog('shutdown complete') },
+  exit: (code) => { app.exit(code) },
+  reportError: (error) => { console.error('dsh desktop: shutdown failed', error) },
+})
 const accountEnvironment = readDesktopPlatformEnvironment(OPERATED_PLATFORM_CONFIG)
 const companionProduct = new DesktopCompanionProductOwner({
   responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
@@ -295,7 +322,7 @@ async function boot(): Promise<void> {
     stopPairingEvents = pairing.subscribe(pushPairingSnapshot)
     stopAccountEvents = account.subscribe(handleAccountSnapshot)
     sub2api = await createDesktopSub2Api({
-      fetch: async (input, init) => await net.fetch(input, init),
+      fetch: async (input, init) => await net.fetch(input instanceof URL ? input.href : input, init),
       host: {
         restart: async startTimeoutMs => (await replaceWebHost(startTimeoutMs)).url,
         origin: () => host?.url,
@@ -311,14 +338,16 @@ async function boot(): Promise<void> {
       : await startWithOneRetry(
         startInitialHost,
         () => { respawned = true },
-        () => !hostStartController.signal.aborted,
+        () => !hostLifecycle.closed,
       )
+    if (shuttingDown || hostLifecycle.current !== started.value) return
     host = started.value
     installCompanionHost(host)
     observeHostExit(host)
     sub2api.onHostOriginChanged()
     smokeLog('host ' + host.url + ' pid ' + String(host.child.pid))
     await revealHost(target, host.url)
+    if (hostLifecycle.closed) return
     if (process.env.DSH_DESKTOP_SMOKE === '1') {
       await finishSmoke(window, host.url)
       return
@@ -350,7 +379,14 @@ async function boot(): Promise<void> {
       updater: autoUpdater,
       onStateChange: pushStatus,
       autoInstallOnAppQuit: process.platform === 'darwin',
-      ...process.platform === 'darwin' ? { nativeStage: electronAutoUpdater } : {},
+      ...process.platform === 'darwin' ? {
+        nativeStage: {
+          addDownloadedListener: (listener) => { electronAutoUpdater.on('update-downloaded', listener) },
+          removeDownloadedListener: (listener) => { electronAutoUpdater.removeListener('update-downloaded', listener) },
+          addErrorListener: (listener) => { electronAutoUpdater.on('error', listener) },
+          removeErrorListener: (listener) => { electronAutoUpdater.removeListener('error', listener) },
+        },
+      } : {},
     })
   } catch (error) {
     pushStatus({
@@ -413,24 +449,29 @@ async function handleDesktopCompanionOperation(
   }
 }
 
+/** Reopen against one current Host; shutdown or replacement during reveal prevents overlay installation. */
 async function focusOrReopen(): Promise<void> {
-  if (window !== undefined && !window.isDestroyed()) {
-    if (window.isMinimized()) window.restore()
-    window.focus()
-    return
-  }
-  if (host === undefined) {
+  if (handleDesktopWindowActivate(windowPresentation, window) === 'handled') return
+  const running = hostLifecycle.current
+  if (running === undefined) {
+    if (shuttingDown || hostLifecycle.closed) return
     await boot()
     return
   }
+  if (shuttingDown || hostLifecycle.closed) return
   const target = createWindow()
   window = target
   const bootScreen = attachBootScreen(target)
   try {
-    await revealHost(target, host.url)
-    void ensureChromeOverlay(window, host.url)
-  } catch (error) {
-    await showError(target, error)
+    await revealCurrentHost(target, running, {
+      current: () => hostLifecycle.current,
+      shuttingDown: () => shuttingDown,
+      closed: () => hostLifecycle.closed,
+      validWindow: exactTarget => !exactTarget.isDestroyed() && window === exactTarget,
+      reveal: revealHost,
+      installOverlay: ensureChromeOverlay,
+      showError,
+    })
   } finally {
     bootScreen.dispose()
   }
@@ -444,13 +485,13 @@ function createWindow(): BrowserWindow {
       packaged: app.isPackaged,
       appPath: app.getAppPath(),
       resourcesPath: process.resourcesPath,
-      setDockIcon: (path) => { app.dock.setIcon(path) },
+      setDockIcon: (path) => { app.dock?.setIcon(path) },
     }),
     width: 1280,
     height: 800,
     minWidth: 800,
     minHeight: 560,
-    show: true,
+    ...desktopWindowConstructorOptions(windowPresentation),
     backgroundColor: bootBackgroundColor(nativeTheme.shouldUseDarkColors),
     title: 'DeepSeek Gestalt',
     webPreferences: {
@@ -530,8 +571,16 @@ async function revealHost(target: BrowserWindow, url: string): Promise<void> {
   smokeLog('shell ready')
 }
 
-async function startHost(timeoutMs?: number): Promise<RunningWebHost> {
-  if (hostStartController.signal.aborted) throw new Error('dsh web startup aborted')
+function startHost(timeoutMs?: number): Promise<RunningWebHost> {
+  return hostLifecycle.start(timeoutMs)
+}
+
+function spawnDesktopHost(
+  browserRuntime: DesktopBrowserRuntime,
+  projectMembershipAgentRuntime: DesktopProjectMembershipAgentRuntime,
+  signal: AbortSignal,
+  timeoutMs?: number,
+): Promise<RunningWebHost> {
   const paths = resolveDesktopRuntime({
     packaged: app.isPackaged,
     resourcesPath: process.resourcesPath,
@@ -540,19 +589,7 @@ async function startHost(timeoutMs?: number): Promise<RunningWebHost> {
   if (!app.isPackaged && isElectronExecutable(paths.node)) {
     throw new Error('Desktop Host needs a real Node executable; set DSH_NODE or run via pnpm gestalt:dev')
   }
-  browserRuntime ??= await startDesktopBrowserRuntime(app.getPath('userData'))
-  projectMembershipAgentRuntime ??= await startDesktopProjectMembershipAgentRuntime({
-    userData: app.getPath('userData'),
-    account: () => account,
-    membership: (expectedAccountId, signal) => createDesktopProjectMembershipClient({
-      account: () => account,
-      environment: accountEnvironment,
-      fetch: systemFetch,
-      expectedAccountId,
-      signal,
-    }),
-  })
-  const pending = spawnWebHost({
+  return spawnWebHost({
     node: paths.node,
     args: paths.args,
     cwd: app.isPackaged ? ensureLaunchDirectory() : (paths.workspaceRoot ?? ensureLaunchDirectory()),
@@ -563,18 +600,12 @@ async function startHost(timeoutMs?: number): Promise<RunningWebHost> {
       DSH_DESKTOP_PROJECT_MEMBERSHIP_ORIGIN: projectMembershipAgentRuntime.origin,
       DSH_DESKTOP_PROJECT_MEMBERSHIP_TOKEN_FILE: projectMembershipAgentRuntime.tokenFile,
     },
-    signal: hostStartController.signal,
+    signal,
   }, timeoutMs)
-  pendingHost = pending
-  try {
-    return await pending
-  } finally {
-    if (pendingHost === pending) pendingHost = undefined
-  }
 }
 
 function observeHostExit(running: RunningWebHost): void {
-  void running.exited.then(() => { void onHostExit(running) })
+  observeWebHostExit(running, smokeLog, () => onHostExit(running))
 }
 
 /**
@@ -583,20 +614,17 @@ function observeHostExit(running: RunningWebHost): void {
  * stays alive across the swap; sessions survive on disk.
  */
 async function replaceWebHost(startTimeoutMs?: number): Promise<RunningWebHost> {
-  const starting = pendingHost
-  const previous = host
   host = undefined
   clearCompanionHost()
-  const startedEarly = await starting?.catch(() => undefined)
-  if (startedEarly !== undefined && startedEarly !== previous) await startedEarly.stop()
-  await previous?.stop()
-  const started = await startHost(startTimeoutMs)
+  const started = await hostLifecycle.replace(startTimeoutMs)
+  if (shuttingDown || hostLifecycle.current !== started) throw new Error('dsh web startup aborted')
   host = started
   installCompanionHost(started)
   observeHostExit(started)
   smokeLog('host replaced ' + started.url + ' pid ' + String(started.child.pid))
   if (window !== undefined && !window.isDestroyed()) {
     await revealHost(window, started.url)
+    if (hostLifecycle.closed || hostLifecycle.current !== started) throw new Error('dsh web startup aborted')
     void ensureChromeOverlay(window, started.url)
   }
   sub2api?.onHostOriginChanged()
@@ -743,14 +771,7 @@ async function finishSmoke(target: BrowserWindow, hostUrl: string): Promise<void
     operationId: parseCompanionOperationId('desktop-smoke-search-hit'),
     query: needle,
   }
-  const dependencies = {
-    pairingId: parsePersonalPairingId('desktop-smoke-pairing'),
-    attachmentKey: new Uint8Array(32),
-    now: Date.now,
-    downloadAttachment: () => Promise.reject(new Error('Desktop smoke search must not download an attachment')),
-    submitAttachment: () => Promise.reject(new Error('Desktop smoke search must not submit an attachment')),
-  }
-  let hitEvidence = await companionProduct.handle(hitOperation, dependencies)
+  let hitEvidence = await companionProduct.handle(hitOperation)
   const searchDeadline = Date.now() + 10_000
   while (
     Date.now() < searchDeadline
@@ -758,7 +779,7 @@ async function finishSmoke(target: BrowserWindow, hostUrl: string): Promise<void
       || hitEvidence.items.every(item => item.sessionId !== sessionId || !item.snippet.includes(needle)))
   ) {
     await new Promise(resolve => setTimeout(resolve, 50))
-    hitEvidence = await companionProduct.handle(hitOperation, dependencies)
+    hitEvidence = await companionProduct.handle(hitOperation)
   }
   smokeLog(`companion entry search hit ${JSON.stringify(hitEvidence)}`)
   if (!isSessionSearchResult(hitEvidence)
@@ -771,7 +792,7 @@ async function finishSmoke(target: BrowserWindow, hostUrl: string): Promise<void
     type: 'search-sessions',
     operationId: parseCompanionOperationId('desktop-smoke-search-no-hit'),
     query: 'desktop-companion-smoke-no-hit',
-  }, dependencies)
+  })
   smokeLog(`companion entry search no-hit ${JSON.stringify(noHitEvidence)}`)
   if (!isSessionSearchResult(noHitEvidence) || noHitEvidence.items.length !== 0) {
     console.error('dsh desktop smoke: Companion entry no-hit search failed', noHitEvidence)
@@ -796,52 +817,29 @@ function smokeHistoryHasTurnEnd(value: unknown): boolean {
 }
 
 function requestShutdown(exitCode: number, mode: 'exit' | 'allow-quit' = 'exit'): void {
-  if (shuttingDown) return
   shuttingDown = true
-  if (mode === 'exit') {
-    updater?.dispose()
-    updater = undefined
-  }
-  stopAccountEvents?.()
-  stopAccountEvents = undefined
-  stopPairingEvents?.()
-  stopPairingEvents = undefined
-  stopSub2ApiEvents?.()
-  stopSub2ApiEvents = undefined
-  sub2api?.dispose()
-  sub2api = undefined
+  void desktopShutdown.request(exitCode, mode)
+}
+
+async function cleanupDesktop(mode: 'exit' | 'allow-quit'): Promise<void> {
   const presence = projectMembershipPresence
   projectMembershipPresence = undefined
-  const presenceDisposal = presence === undefined
-    ? Promise.resolve()
-    : presence.closeWindow().then(async () => { await presence.dispose() })
-  const ownerDisposal = disposeDesktopOwners(account, pairing)
-  hostStartController.abort()
-  const starting = pendingHost
-  const running = host
-  clearCompanionHost()
   host = undefined
-  void (async () => {
-    try {
-      await Promise.all([ownerDisposal, presenceDisposal])
-      smokeLog(`relay quit ${JSON.stringify(pairing.getRelayState())}`)
-      const started = await starting?.catch(() => undefined)
-      if (started !== running) await started?.stop()
-      await running?.stop()
-      const runtime = browserRuntime
-      browserRuntime = undefined
-      const membershipRuntime = projectMembershipAgentRuntime
-      projectMembershipAgentRuntime = undefined
-      await Promise.all([runtime?.dispose(), membershipRuntime?.dispose()])
-      if (mode === 'exit') app.exit(exitCode)
-    } catch (error) {
-      console.error('dsh desktop: shutdown failed', error)
-      if (mode === 'exit') app.exit(1)
-    }
-  })()
+  await settleDesktopCleanup([
+    () => { if (mode === 'exit') { const current = updater; updater = undefined; current?.dispose() } },
+    () => { const stop = stopAccountEvents; stopAccountEvents = undefined; stop?.() },
+    () => { const stop = stopPairingEvents; stopPairingEvents = undefined; stop?.() },
+    () => { const stop = stopSub2ApiEvents; stopSub2ApiEvents = undefined; stop?.() },
+    () => { const current = sub2api; sub2api = undefined; current?.dispose() },
+    () => { clearCompanionHost() },
+    () => disposeDesktopPresence(presence),
+    () => disposeDesktopOwners(account, pairing),
+  ])
+  smokeLog(`relay quit ${JSON.stringify(pairing.getRelayState())}`)
 }
 
 function installCompanionHost(running: RunningWebHost): void {
+  if (shuttingDown || hostLifecycle.current !== running) return
   clearCompanionHost()
   uninstallCompanionHost = companionProduct.installHost(running.url)
   companionHostReady = true
@@ -859,9 +857,9 @@ async function startPairingForCurrentDesktop(): Promise<void> {
   const hostGeneration = companionHostGeneration
   await startDesktopPairingWhenHostReady({
     accountSignedIn,
-    hostReady: companionHostReady,
+    hostReady: companionHostReady && !shuttingDown,
     start: async authorityIsCurrent => await pairing.startForAuthority(authorityIsCurrent),
-    authorityIsCurrent: () => accountSignedIn
+    authorityIsCurrent: () => !shuttingDown && accountSignedIn
       && companionHostReady
       && companionHostGeneration === hostGeneration,
   }).catch((error: unknown) => {
@@ -949,16 +947,18 @@ function installIpc(): void {
   })
   ipcMain.handle(BROWSER_PRESENT, (_event, raw: unknown) => {
     const request = parseBrowserPresentRequest(raw)
-    if (request === undefined || window === undefined || browserRuntime === undefined) return
-    browserRuntime.present(request.target, request.bounds, window)
+    const browser = hostLifecycle.browser
+    if (request === undefined || window === undefined || browser === undefined) return
+    browser.present(request.target, request.bounds, window)
     if (overlayOpen !== undefined && overlayView !== undefined) {
       showChromeOverlayView(window, overlayView)
     }
   })
   ipcMain.handle(BROWSER_CONCEAL, (_event, raw: unknown) => {
     const target = parseBrowserPresentTarget(raw)
-    if (target === undefined || browserRuntime === undefined) return
-    browserRuntime.conceal(target)
+    const browser = hostLifecycle.browser
+    if (target === undefined || browser === undefined) return
+    browser.conceal(target)
   })
   ipcMain.handle(CHROME_OVERLAY_SHOW, (event, raw: unknown) => showNativeOverlay(event, raw))
   ipcMain.handle(CHROME_OVERLAY_HIDE, (event) => {
@@ -974,37 +974,59 @@ function installIpc(): void {
   })
 }
 
-async function ensureChromeOverlay(target: BrowserWindow, hostUrl: string): Promise<WebContentsView> {
+async function ensureChromeOverlay(target: BrowserWindow, hostUrl: string): Promise<WebContentsView | undefined> {
+  const running = hostLifecycle.current
+  const current = () => running !== undefined && running.url === hostUrl
+    && hostLifecycle.current === running && !hostLifecycle.closed && !shuttingDown
+    && window === target && !target.isDestroyed()
+  if (!current()) return
+  const bind = async (view: WebContentsView) => await bindCurrentOverlay(view, {
+    current: () => current() && !view.webContents.isDestroyed(),
+    bind: candidate => bindChromeOverlayHost(candidate, hostUrl),
+    publish: (candidate) => {
+      overlayView = candidate
+      if (overlayOpen !== undefined) {
+        candidate.webContents.send(CHROME_OVERLAY_STATE, overlayOpen)
+        showChromeOverlayView(target, candidate)
+      }
+    },
+    dispose: (candidate) => {
+      if (overlayView === candidate) overlayView = undefined
+      if (!target.isDestroyed()) target.contentView.removeChildView(candidate)
+      if (!candidate.webContents.isDestroyed()) candidate.webContents.close()
+    },
+  })
   if (overlayReady !== undefined) {
-    const view = await overlayReady
-    await bindChromeOverlayHost(view, hostUrl)
-    if (overlayOpen !== undefined) {
-      view.webContents.send(CHROME_OVERLAY_STATE, overlayOpen)
-      showChromeOverlayView(target, view)
+    const pending = overlayReady
+    const view = await pending
+    if (view === undefined) return
+    try {
+      const result = await bind(view)
+      if (result === undefined && overlayReady === pending) overlayReady = undefined
+      return result
+    } catch (error) {
+      if (overlayReady === pending) overlayReady = undefined
+      throw error
     }
-    return view
   }
-  overlayReady = (async () => {
+  const pending = (async () => {
     const view = new WebContentsView({
-      webPreferences: {
-        preload: PRELOAD,
-        contextIsolation: true,
-        nodeIntegration: false,
-        sandbox: true,
-      },
+      webPreferences: { preload: PRELOAD, contextIsolation: true, nodeIntegration: false, sandbox: true },
     })
     prepareChromeOverlayView(view)
     target.contentView.addChildView(view)
     syncChromeOverlayBounds(target, view)
-    await bindChromeOverlayHost(view, hostUrl)
-    overlayView = view
-    if (overlayOpen !== undefined) {
-      view.webContents.send(CHROME_OVERLAY_STATE, overlayOpen)
-      showChromeOverlayView(target, view)
-    }
-    return view
+    return await bind(view)
   })()
-  return await overlayReady
+  overlayReady = pending
+  try {
+    const result = await pending
+    if (result === undefined && overlayReady === pending) overlayReady = undefined
+    return result
+  } catch (error) {
+    if (overlayReady === pending) overlayReady = undefined
+    throw error
+  }
 }
 
 async function showNativeOverlay(event: IpcMainInvokeEvent, raw: unknown): Promise<void> {
@@ -1017,7 +1039,7 @@ async function showNativeOverlay(event: IpcMainInvokeEvent, raw: unknown): Promi
   ) return
   overlayOpen = request
   const view = await ensureChromeOverlay(window, host.url)
-  if (window.isDestroyed()) return
+  if (view === undefined || window.isDestroyed()) return
   view.webContents.send(CHROME_OVERLAY_STATE, request)
   showChromeOverlayView(window, view)
 }
@@ -1033,7 +1055,7 @@ function dismissNativeOverlay(result?: ReturnType<typeof parseChromeOverlayResul
   if (reply !== undefined && window !== undefined && !window.isDestroyed()) {
     window.webContents.send(CHROME_OVERLAY_RESULT, reply)
   }
-  browserRuntime?.raisePresented()
+  hostLifecycle.browser?.raisePresented()
 }
 
 function installMenu(): void {

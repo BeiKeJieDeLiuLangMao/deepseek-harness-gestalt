@@ -1,24 +1,17 @@
 import { createElement, useSyncExternalStore, type ReactNode } from 'react'
 import { readFileSync } from 'node:fs'
-import { mkdtemp, mkdir, rm } from 'node:fs/promises'
-import { createServer } from 'node:http'
-import { tmpdir } from 'node:os'
+import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { JSDOM } from 'jsdom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { Context } from '@deepseek-ai/cordis'
-import AgentRegistry from '@deepseek-ai/dsh-agent'
-import type { Agent } from '@deepseek-ai/dsh-agent'
-import AgentLoop from '@deepseek-ai/dsh-agent-loop'
-import LocalAttachmentStore from '@deepseek-ai/dsh-attachment-local'
-import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
-import { createApiProxy, toFetchHandler } from '@deepseek-ai/dsh-host-apiproxy'
-import LlmRuntime, { createUserMessage } from '@deepseek-ai/dsh-llm'
-import { WebSocketDownlinks } from '@deepseek-ai/dsh-client-connection/src/websocket-downlink.ts'
+import { ApprovalRequestId } from '@deepseek-ai/dsh-user-approval/types'
+import { SessionId } from '@deepseek-ai/dsh-session/types'
+import { FixtureTransportClosedError, launchCompanionFixture } from './companion-fixture/driver.ts'
 import { parsePersonalPairingId } from '@deepseek-ai/dsh-remote-access'
 import {
   generateRelayCredential,
   parseCompanionOperationId,
+  parseCompanionSessionId,
   parseRelayAttachmentId,
   parseRelayPairingSelector,
   parseRelayRouteId,
@@ -35,37 +28,25 @@ import {
   SnowDesktopEndpointPairingOwner, SnowMobileHandshakeClient,
   type SnowCompanionProtocolChannel,
 } from '@deepseek-ai/dsh-noise-channel'
-import SessionStore, { SESSION_FORMAT_VERSION, SessionId, type Session } from '@deepseek-ai/dsh-session'
-import SqliteSessionPersistence from '@deepseek-ai/dsh-session-persistence-sqlite'
-import SqliteSessionQueryEngine from '@deepseek-ai/dsh-session-query-sqlite'
-import Storage from '@deepseek-ai/dsh-storage'
-import * as SqliteStorage from '@deepseek-ai/dsh-storage-sqlite'
-import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
-import WorkspaceRegistry from '@deepseek-ai/dsh-workspace'
-import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
-import ApprovalService from '@deepseek-ai/dsh-user-approval'
-import UserQuestionService from '@deepseek-ai/dsh-user-questions'
-import ToolRuntime from '@deepseek-ai/dsh-tools'
-import { DesktopCompanionProductOwner } from '../src/companion-product.ts'
-import type { DesktopCompanionOperationOutput, DesktopCompanionPairingDependencies } from '../src/companion-product.ts'
+import { DesktopCompanionProductOwner } from '#testing/desktop/companion-product'
+import type { DesktopCompanionOperationOutput, DesktopCompanionPairingDependencies } from '#testing/desktop/companion-product'
 import {
   DesktopCompanionOperationLedger, FileDesktopCompanionOperationStore,
-} from '../src/companion-operation-ledger.ts'
-import { CompanionForegroundRuntime } from '../../mobile/src/companion-lifecycle.ts'
+} from '#testing/desktop/companion-operation-ledger'
+import { CompanionForegroundRuntime } from '#testing/mobile/companion-lifecycle'
 import {
   CompanionUncertainOperationSettlement,
   InMemoryCompanionCacheStore,
   parseCompanionDesktopId,
-} from '../../mobile/src/companion-cache.ts'
-import { MobileCompanionSurface } from '../../mobile/src/companion-surface.ts'
+} from '#testing/mobile/companion-cache'
+import { MobileCompanionSurface } from '#testing/mobile/companion-surface'
 import {
   MobileSnowCompanionConnection, MobileSnowCompanionProductChannel,
-} from '../../mobile/src/noise-companion-product.ts'
-import { MobileNoiseCompanionReceiver } from '../../mobile/src/noise-companion.ts'
-import { MobileBrowse } from '../../mobile/src/MobileBrowse.tsx'
-import { fixedMobilePresentationClock } from '../../mobile/src/mobile-clock.ts'
-import { runHost400CodecProbe } from './host-400-codec-probe.ts'
-import { DesktopSnowRelayChannelOwner } from '../src/remote-relay.ts'
+} from '#testing/mobile/noise-companion-product'
+import { MobileNoiseCompanionReceiver } from '#testing/mobile/noise-companion'
+import { MobileBrowse } from '#testing/mobile/MobileBrowse'
+import { fixedMobilePresentationClock } from '#testing/mobile/mobile-clock'
+import { DesktopSnowRelayChannelOwner } from '#testing/desktop/remote-relay'
 
 const cleanups: Array<() => Promise<void>> = []
 
@@ -74,13 +55,21 @@ afterEach(async () => {
 })
 
 describe('assembled Desktop Companion Host search', () => {
+  it('rejects pending fixture commands when the Host process exits before readiness', async () => {
+    const fixture = launchCompanionFixture(new URL('./companion-fixture/missing-host.ts', import.meta.url))
+    cleanups.push(fixture.dispose)
+    await expect(fixture.request({ type: 'start', scenario: 'indexed', message: 'unreachable', enableCreation: false }))
+      .rejects.toBeInstanceOf(FixtureTransportClosedError)
+    await expect(fixture.dispose()).resolves.toBeUndefined()
+  }, 10_000)
+
   it('creates Workspace-owned and Ungrouped Sessions from shipped Mobile buttons through Snow and the real Host', async () => {
     installMobileDom()
     const { cleanup, fireEvent, render, screen, waitFor, within } = await import('@testing-library/react')
     cleanups.push(async () => { cleanup() })
     const assembled = await startDesktopHost('indexed', 'assembled create baseline', true)
-    const workspace = await assembled.ctx.workspaceRegistry.create(assembled.root, 'Assembled Workspace')
-    await workspace.attachSession(assembled.sessionId)
+    const workspace = await assembled.request({ type: 'workspace-create', root: assembled.root, name: 'Assembled Workspace' })
+    await assembled.request({ type: 'workspace-attach', workspaceId: workspace.id, sessionId: assembled.sessionId })
     const owner = productOwner(assembled.url)
     const ledgerPath = join(assembled.root, 'companion-create-operations.json')
     owner.installLedger(await DesktopCompanionOperationLedger.load(
@@ -111,6 +100,7 @@ describe('assembled Desktop Companion Host search', () => {
         await Promise.resolve()
         const opened = channels.desktop.open(ciphertext)
         if (opened.type !== 'operation') throw new Error('assembled Desktop expected a Companion operation')
+        if (opened.operation.type === 'query-operation-status') throw new Error('assembled product transport expected a product operation')
         if (opened.operation.type === 'create-session') createOperations.push(opened.operation)
         const output = await owner.handle(opened.operation, pairingDependencies(owner, channels))
         const receiver = receiverRef.current
@@ -124,7 +114,7 @@ describe('assembled Desktop Companion Host search', () => {
     })
     const connectionChannel = {
       mutations: product,
-      content: { loadImage: async (sessionId: string, attachment: never) => await product.loadImage(sessionId, attachment) },
+      content: { loadImage: async (sessionId: SessionId, attachment: Parameters<MobileSnowCompanionProductChannel['loadImage']>[1]) => await product.loadImage(sessionId, attachment) },
     }
     const receiver = new MobileNoiseCompanionReceiver(
       channels.mobile, channels.generation, runtime,
@@ -153,21 +143,23 @@ describe('assembled Desktop Companion Host search', () => {
       .getByRole('button', { name: 'New Session in Assembled Workspace' }))
     await waitFor(() => { expect(createOperations).toHaveLength(1) })
     await waitFor(() => { expect(received).toHaveLength(1) })
-    expect(received[0]).toMatchObject({ type: 'session-created' })
+    const workspaceCreated = received[0]
+    if (workspaceCreated?.type !== 'session-created') throw new Error('Workspace Session creation returned no result')
     await waitFor(() => { expect(surface.getSnapshot().sessions.ids).toHaveLength(initialIds.size + 1) })
-    const workspaceSessionId = surface.getSnapshot().sessions.ids.find(id => !initialIds.has(id))
-    if (workspaceSessionId === undefined) throw new Error('Workspace-owned Session was not projected')
+    const workspaceSessionId = SessionId(workspaceCreated.sessionId)
+    expect(surface.getSnapshot().sessions.ids).toContain(workspaceSessionId)
     await screen.findByRole('heading', { name: workspaceSessionId })
     fireEvent.click(screen.getByRole('button', { name: 'Back' }))
     expect(within(screen.getByRole('region', { name: 'Assembled Workspace' }))
       .getByRole('treeitem', { name: 'New Session' }).getAttribute('data-session-row')).toBe(workspaceSessionId)
 
     fireEvent.click(screen.getByRole('button', { name: 'New ungrouped Session' }))
+    await waitFor(() => { expect(received).toHaveLength(2) })
+    const ungroupedCreated = received[1]
+    if (ungroupedCreated?.type !== 'session-created') throw new Error('Ungrouped Session creation returned no result')
     await waitFor(() => { expect(surface.getSnapshot().sessions.ids).toHaveLength(initialIds.size + 2) })
-    const ungroupedSessionId = surface.getSnapshot().sessions.ids.find(id => (
-      !initialIds.has(id) && id !== workspaceSessionId
-    ))
-    if (ungroupedSessionId === undefined) throw new Error('Ungrouped Session was not projected')
+    const ungroupedSessionId = SessionId(ungroupedCreated.sessionId)
+    expect(surface.getSnapshot().sessions.ids).toContain(ungroupedSessionId)
     await screen.findByRole('heading', { name: ungroupedSessionId })
     fireEvent.click(screen.getByRole('button', { name: 'Back' }))
     expect(within(screen.getByRole('region', { name: 'Ungrouped' }))
@@ -233,6 +225,7 @@ describe('assembled Desktop Companion Host search', () => {
         await Promise.resolve()
         const opened = channels.desktop.open(ciphertext)
         if (opened.type !== 'operation') throw new Error('assembled Desktop expected a Companion operation')
+        if (opened.operation.type === 'query-operation-status') throw new Error('assembled product transport expected a product operation')
         const output = await owner.handle(opened.operation, pairingDependencies(owner, channels))
         for (const item of isResultList(output) ? output : [output]) {
           const receiver = receiverRef.current
@@ -245,7 +238,7 @@ describe('assembled Desktop Companion Host search', () => {
     })
     const connectionChannel = {
       mutations: product,
-      content: { loadImage: async (sessionId: string, attachment: never) => await product.loadImage(sessionId, attachment) },
+      content: { loadImage: async (sessionId: SessionId, attachment: Parameters<MobileSnowCompanionProductChannel['loadImage']>[1]) => await product.loadImage(sessionId, attachment) },
     }
     const receiver = new MobileNoiseCompanionReceiver(
       channels.mobile, channels.generation, runtime,
@@ -277,22 +270,33 @@ describe('assembled Desktop Companion Host search', () => {
     })).toEqual({ ready: true, failures: [], transportFailures: [] })
 
     await surface.submit(assembled.sessionId, 'submitted through Companion v3')
-    await expect.poll(() => assembled.session.events.some(event => event.type === 'user/message'
+    await expect.poll(async () => (await assembled.request({ type: 'events', id: assembled.sessionId })).some(event => event.type === 'user/message'
       && JSON.stringify(event.data).includes('submitted through Companion v3'))).toBe(true)
+    await assembled.request({ type: 'append', id: assembled.sessionId, event: 'turn/start', data: { turn: 1 } })
+    await assembled.request({ type: 'append', id: assembled.sessionId, event: 'step/start', data: { turn: 1, step: 1 } })
     surface.cancel(assembled.sessionId)
-    await expect.poll(() => assembled.cancelled.value).toBe(1)
+    await expect.poll(() => assembled.request({ type: 'cancelled' })).toBe(1)
+    await assembled.request({
+      type: 'finish-cancelled-response', id: assembled.sessionId, turn: 1, step: 1,
+      text: 'Cancelled Companion prefix',
+    })
+    surface.trackHistoryRefresh(assembled.sessionId, product.loadOlder(assembled.sessionId))
+    await expect.poll(() => surface.getSnapshot().conversations[assembled.sessionId]?.nodes
+      .find(node => node.kind === 'assistant')).toMatchObject({
+      kind: 'assistant', interrupted: true,
+      blocks: [{ kind: 'text', text: 'Cancelled Companion prefix' }],
+    })
 
     const resultCount = received.length
     const image = surface.loadImage(assembled.sessionId, assembled.image)
     await expect.poll(() => received.slice(resultCount).some(result => result.type === 'image-chunk')).toBe(true)
     await expect(image).resolves.toMatch(/^data:image\/png;base64,/u)
 
-    const asked = assembled.ctx.userQuestions.ask({
-      agent: assembled.agent,
-      questions: [{ id: 'target', question: 'Choose target', options: [{ label: 'Code' }, { label: 'Docs' }] }],
-    })
-    await expect.poll(() => owner.pendingInteractions(assembled.sessionId as never, channels.attachmentKey)
-      .some(pending => pending.kind === 'question')).toBe(true)
+    const questionToken = await assembled.request({ type: 'question' })
+    const asked = assembled.request({ type: 'settlement', token: questionToken })
+    await expect.poll(() => owner.pendingInteractions(parseCompanionSessionId(assembled.sessionId), channels.attachmentKey)
+      .some(pending => typeof pending === 'object' && pending !== null && 'kind' in pending
+        && pending.kind === 'question')).toBe(true)
     surface.loadOlder(assembled.sessionId)
     await expect.poll(() => surface.getSnapshot().conversations[assembled.sessionId]?.pending
       .some(pending => pending.kind === 'question') ?? false).toBe(true)
@@ -305,23 +309,31 @@ describe('assembled Desktop Companion Host search', () => {
     })).resolves.toEqual({ accepted: true })
     await expect(asked).resolves.toEqual({ answers: [{ id: 'target', selected: ['Code'] }] })
 
-    assembled.session.append('turn/start', { turn: 1 })
-    const approval = assembled.ctx.approval.request({
-      agent: assembled.agent, toolName: 'bash', reason: 'assembled Companion approval',
-    })
-    await expect.poll(() => owner.pendingInteractions(assembled.sessionId as never, channels.attachmentKey)
-      .some(pending => pending.kind === 'approval')).toBe(true)
+    await assembled.request({ type: 'append', id: assembled.sessionId, event: 'turn/start', data: { turn: 1 } })
+    const approvalToken = await assembled.request({ type: 'approval' })
+    const approval = assembled.request({ type: 'settlement', token: approvalToken })
+    let hostApprovalId: ApprovalRequestId | undefined
+    await expect.poll(() => {
+      hostApprovalId = findPendingApprovalId(owner.pendingInteractions(
+        parseCompanionSessionId(assembled.sessionId), channels.attachmentKey,
+      ))
+      return hostApprovalId !== undefined
+    }).toBe(true)
     surface.loadOlder(assembled.sessionId)
     await expect.poll(() => surface.getSnapshot().conversations[assembled.sessionId]?.pending
       .some(pending => pending.kind === 'approval') ?? false).toBe(true)
     const approvalWait = surface.getSnapshot().conversations[assembled.sessionId]?.pending
       .find(pending => pending.kind === 'approval')
     if (approvalWait === undefined || approvalWait.kind !== 'approval') throw new Error('assembled Approval wait was not projected')
+    if (hostApprovalId === undefined) throw new Error('assembled Host Approval wait was not projected')
+    const mobileApprovalId = findPendingApprovalId([approvalWait])
+    if (mobileApprovalId === undefined) throw new Error('assembled Mobile Approval id was not projected')
+    expect(mobileApprovalId).toBe(hostApprovalId)
     await expect(approvalWait.respond({
       ok: true,
       value: {
         sessionId: assembled.sessionId,
-        approvalId: approvalWait.payload.approvalId,
+        approvalId: mobileApprovalId,
         outcome: 'allowed-once',
       },
     })).resolves.toEqual({ accepted: true })
@@ -333,12 +345,7 @@ describe('assembled Desktop Companion Host search', () => {
     const baselineSessionIds = [assembled.sessionId]
     for (let index = 0; index < REMOTE_PROTOCOL_LIMITS.surfaceSessionRows; index += 1) {
       const sessionId = SessionId(`desktop-paged-session-${String(index)}`)
-      assembled.ctx.sessions.create(sessionId, {
-        meta: {
-          version: SESSION_FORMAT_VERSION, id: sessionId,
-          createdAt: index + 2, cwd: assembled.root,
-        },
-      })
+      await assembled.request({ type: 'create-session', id: sessionId, createdAt: index + 2, cwd: assembled.root })
       baselineSessionIds.push(sessionId)
     }
     const owner = productOwner(assembled.url)
@@ -403,7 +410,7 @@ describe('assembled Desktop Companion Host search', () => {
     })
     const connectionChannel = {
       mutations: product,
-      content: { loadImage: async (sessionId: string, attachment: never) => await product.loadImage(sessionId, attachment) },
+      content: { loadImage: async (sessionId: SessionId, attachment: Parameters<MobileSnowCompanionProductChannel['loadImage']>[1]) => await product.loadImage(sessionId, attachment) },
     }
     const receiver = new MobileNoiseCompanionReceiver(
       channels.mobile, channels.generation, runtime,
@@ -439,57 +446,57 @@ describe('assembled Desktop Companion Host search', () => {
     await expect.poll(() => surface.getSnapshot().conversations[assembled.sessionId] !== undefined).toBe(true)
     const historyOperations = operationTypes.filter(type => type === 'load-history').length
 
-    assembled.session.append('turn/start', { turn: 1 })
-    assembled.session.append('step/start', { turn: 1, step: 1 })
-    assembled.session.append('assistant/chunk', {
+    await assembled.request({ type: 'append', id: assembled.sessionId, event: 'turn/start', data: { turn: 1 } })
+    await assembled.request({ type: 'append', id: assembled.sessionId, event: 'step/start', data: { turn: 1, step: 1 } })
+    await assembled.request({ type: 'append', id: assembled.sessionId, event: 'assistant/chunk', data: {
       turn: 1, step: 1, chunk: { type: 'block-start', index: 0, blockType: 'text' },
-    })
-    assembled.session.append('assistant/chunk', {
+    } })
+    await assembled.request({ type: 'append', id: assembled.sessionId, event: 'assistant/chunk', data: {
       turn: 1, step: 1, chunk: { type: 'text-delta', index: 0, text: 'LIVE_PUSH_OK' },
-    })
+    } })
     await expect.poll(() => surface.getSnapshot().conversations[assembled.sessionId]?.partial)
       .toMatchObject({ blocks: [{ kind: 'text', text: 'LIVE_PUSH_OK' }] })
     expect(operationTypes.filter(type => type === 'load-history')).toHaveLength(historyOperations)
 
     const hiddenId = SessionId('desktop-hidden-session')
-    const hidden = assembled.ctx.sessions.create(hiddenId, {
-      meta: {
-        version: SESSION_FORMAT_VERSION, id: hiddenId, createdAt: 2, cwd: assembled.root,
-      },
-    })
-    hidden.append('user/message', createUserMessage({
-      content: [{ type: 'text', text: 'hidden summary change' }], source: { kind: 'user' },
-    }), { surfaceOp: 'append' })
+    await assembled.request({ type: 'create-session', id: hiddenId, createdAt: 2, cwd: assembled.root })
+    await assembled.request({ type: 'message', id: hiddenId, text: 'hidden summary change' })
     await expect.poll(() => surface.getSnapshot().sessions.ids.includes(hiddenId)).toBe(true)
     expect(surface.getSnapshot().conversations[hiddenId]).toBeUndefined()
 
     const secondaryRoot = join(assembled.root, 'secondary')
     await mkdir(secondaryRoot)
     const surfaceOperations = operationTypes.filter(type => type === 'refresh-surface').length
-    const secondaryWorkspace = await assembled.ctx.workspaceRegistry.create(secondaryRoot, 'Secondary')
+    const secondaryWorkspace = await assembled.request({ type: 'workspace-create', root: secondaryRoot, name: 'Secondary' })
     await expect.poll(() => operationTypes.filter(type => type === 'refresh-surface').length)
       .toBeGreaterThan(surfaceOperations)
     expect(surface.getSnapshot().conversations[assembled.sessionId]?.partial)
       .toMatchObject({ blocks: [{ kind: 'text', text: 'LIVE_PUSH_OK' }] })
-    const secondaryId = SessionId('desktop-secondary-workspace-session')
-    assembled.ctx.sessions.create(secondaryId, {
-      meta: {
-        version: SESSION_FORMAT_VERSION, id: secondaryId,
-        createdAt: 100, cwd: secondaryRoot,
-      },
+    await assembled.request({
+      type: 'finish-cancelled-response', id: assembled.sessionId, turn: 1, step: 1,
+      text: 'LIVE_PUSH_OK',
     })
-    await secondaryWorkspace.attachSession(secondaryId)
-    const primaryWorkspace = await assembled.ctx.workspaceRegistry.create(assembled.root, 'Primary')
-    await primaryWorkspace.attachSession(assembled.sessionId)
+    await expect.poll(() => surface.getSnapshot().conversations[assembled.sessionId]?.nodes
+      .find(node => node.kind === 'assistant')).toMatchObject({
+      kind: 'assistant', interrupted: true,
+      blocks: [{ kind: 'text', text: 'LIVE_PUSH_OK' }],
+    })
+    expect(surface.getSnapshot().conversations[assembled.sessionId]?.partial).toBeNull()
+    expect(operationTypes.filter(type => type === 'load-history')).toHaveLength(historyOperations)
+    const secondaryId = SessionId('desktop-secondary-workspace-session')
+    await assembled.request({ type: 'create-session', id: secondaryId, createdAt: 100, cwd: secondaryRoot })
+    await assembled.request({ type: 'workspace-attach', workspaceId: secondaryWorkspace.id, sessionId: secondaryId })
+    const primaryWorkspace = await assembled.request({ type: 'workspace-create', root: assembled.root, name: 'Primary' })
+    await assembled.request({ type: 'workspace-attach', workspaceId: primaryWorkspace.id, sessionId: assembled.sessionId })
     await expect.poll(() => surface.getSnapshot().workspaces.map(workspace => workspace.workspaceId))
       .toEqual([primaryWorkspace.id, secondaryWorkspace.id])
-    await assembled.ctx.workspaceRegistry.insertBefore(primaryWorkspace.id)
+    await assembled.request({ type: 'workspace-reorder', workspaceId: primaryWorkspace.id })
     await expect.poll(() => surface.getSnapshot().workspaces.map(workspace => workspace.workspaceId))
       .toEqual([secondaryWorkspace.id, primaryWorkspace.id])
-    await assembled.ctx.workspaceRegistry.delete(secondaryWorkspace.id)
+    await assembled.request({ type: 'workspace-delete', workspaceId: secondaryWorkspace.id })
     await expect.poll(() => surface.getSnapshot().workspaces.map(workspace => workspace.workspaceId))
       .toEqual([primaryWorkspace.id])
-    await assembled.ctx.workspaceRegistry.archiveSession(assembled.sessionId)
+    await assembled.request({ type: 'archive', sessionId: assembled.sessionId })
     await expect.poll(() => surface.getSnapshot().sessions.ids.includes(assembled.sessionId)).toBe(false)
     expect(surface.getSnapshot().conversations[assembled.sessionId]).toBeUndefined()
     expect(reconnectFailures).toEqual([])
@@ -535,8 +542,9 @@ describe('assembled Desktop Companion Host search', () => {
       sendCiphertext: async (_target, ciphertext) => {
         const opened = channel.desktop.open(ciphertext)
         if (opened.type !== 'operation') throw new Error('assembled Desktop did not open a Companion operation')
-        const output = await owner.handle(opened.operation as never, {
-          pairingId: 'pairing-assembled-snow' as never,
+        if (opened.operation.type === 'query-operation-status') throw new Error('assembled product transport expected a product operation')
+        const output = await owner.handle(opened.operation, {
+          pairingId: parsePersonalPairingId('pairing-assembled-snow'),
           attachmentKey: channel.attachmentKey.slice(),
           now: Date.now,
           generation: channel.generation,
@@ -547,8 +555,8 @@ describe('assembled Desktop Companion Host search', () => {
           resolveInteraction: interactionId => owner.resolveInteraction(interactionId, channel.attachmentKey),
           pendingInteractions: sessionId => owner.pendingInteractions(sessionId, channel.attachmentKey),
         })
-        if (Array.isArray(output) || isProjection(output)) throw new Error('legacy assembled operation returned non-result output')
-        receiver.receive(channel.desktop.seal({ type: 'result', result: output as CompanionResult }))
+        if (isResultList(output) || isProjection(output)) throw new Error('legacy assembled operation returned non-result output')
+        receiver.receive(channel.desktop.seal({ type: 'result', result: output }))
       },
     })
     productRef.current = product
@@ -576,7 +584,7 @@ describe('assembled Desktop Companion Host search', () => {
       expect(results.map(result => typeof result === 'object' && result !== null && 'type' in result
         ? result.type
         : 'invalid')).toEqual(['session-search', 'confirmed', 'confirmed', 'confirmed'])
-      const admitted = assembled.session.events.filter(event => event.type === 'session/attachment-admitted')
+      const admitted = (await assembled.request({ type: 'events', id: assembled.sessionId })).filter(event => event.type === 'session/attachment-admitted')
       expect(admitted.map(event => event.type === 'session/attachment-admitted'
         ? [event.data.attachment.name, event.data.attachment.mediaType, event.data.attachment.bytes]
         : [])).toEqual([
@@ -644,7 +652,7 @@ describe('assembled Desktop Companion Host search', () => {
     await expect.poll(async () => {
       hit = await search(owner, 'desktop assembled SQLite needle', 'assembled-hit')
       return hit.type === 'session-search'
-        && hit.items.some(item => item.sessionId === assembled.sessionId && item.snippet.includes('SQLite needle'))
+        && hit.items.some(item => item.sessionId === parseCompanionSessionId(assembled.sessionId) && item.snippet.includes('SQLite needle'))
     }, { timeout: 15_000 }).toBe(true)
     expect(hit).toMatchObject({
       type: 'session-search',
@@ -741,170 +749,35 @@ function AssembledMobileBrowse({
     canMutate: surface.mayMutate(),
     clock: fixedMobilePresentationClock(10_000),
     onCreate: surface.create,
+    onOpenAccount: () => { throw new Error('assembled browse scenario does not open Account') },
     search: snapshot.search,
   })
 }
 
 async function startDesktopHost(
-  scenario: 'indexed' | 'disabled' | 'index-failure',
-  message: string,
-  enableCreation = false,
-): Promise<{
-  url: string
-  root: string
-  sessionId: Session['id']
-  session: Session
-  image: ImageAttachmentRef
-  cancelled: { value: number }
-  ctx: Context
-  agent: Agent
-}> {
-  const root = await mkdtemp(join(tmpdir(), 'desktop-companion-assembled-'))
-  cleanups.push(async () => { await rm(root, { recursive: true, force: true }) })
-  const ctx = new Context()
-  const sessions = await ctx.plugin(SessionStore)
-  cleanups.push(async () => { await sessions.dispose() })
-  const persistence = await ctx.plugin(SqliteSessionPersistence, { path: join(root, 'sessions.sqlite') })
-  cleanups.push(async () => { await persistence.dispose() })
-  const agents = await ctx.plugin(AgentRegistry)
-  cleanups.push(async () => { await agents.dispose() })
-  const questions = await ctx.plugin(UserQuestionService)
-  cleanups.push(async () => { await questions.dispose() })
-  const systemPrompt = await ctx.plugin(SystemPrompt, { persona: '' })
-  cleanups.push(async () => { await systemPrompt.dispose() })
-  if (enableCreation) {
-    const llm = await ctx.plugin(LlmRuntime)
-    cleanups.push(async () => { await llm.dispose() })
-    const tools = await ctx.plugin(ToolRuntime)
-    cleanups.push(async () => { await tools.dispose() })
-    const agentLoop = await ctx.plugin(AgentLoop, { agents: [] })
-    cleanups.push(async () => { await agentLoop.dispose() })
-  }
-  const approval = await ctx.plugin(ApprovalService)
-  cleanups.push(async () => { await approval.dispose() })
-  const attachments = await ctx.plugin(LocalAttachmentStore, { dshHome: root })
-  cleanups.push(async () => { await attachments.dispose() })
-  const storage = await ctx.plugin(Storage)
-  cleanups.push(async () => { await storage.dispose() })
-  const sqliteStorage = await ctx.plugin(SqliteStorage, { path: join(root, 'domain.sqlite') })
-  cleanups.push(async () => { await sqliteStorage.dispose() })
-  const storageDomain = new DomainFacility(ctx, { backend: 'sqlite', routes: {} })
-  ctx.storage.mount('domain', storageDomain)
-  ctx.provide('storageDomain', storageDomain)
-  const workspaces = await ctx.plugin(WorkspaceRegistry)
-  cleanups.push(async () => { await workspaces.dispose() })
-  const indexPath = scenario === 'index-failure'
-    ? join(root, 'index-directory')
-    : join(root, 'session-search.sqlite')
-  if (scenario === 'index-failure') await mkdir(indexPath)
-  const query = await ctx.plugin(SqliteSessionQueryEngine, {
-    path: indexPath,
-    openAt: scenario === 'disabled' ? 'never' : 'first-search',
-  })
-  cleanups.push(async () => { await query.dispose() })
-  const sessionId = SessionId(`desktop-${scenario}-session`)
-  const session = ctx.sessions.create(sessionId, {
-    meta: {
-      version: SESSION_FORMAT_VERSION,
-      id: sessionId,
-      createdAt: 1,
-      cwd: root,
-    },
-  })
-  const cancelled = { value: 0 }
-  const agent = {
-    id: session.id, session, status: 'running', ctx,
-    inbox: { nextTurn: [], nextStep: [] },
-    followup(messageValue: ReturnType<typeof createUserMessage>) {
-      session.append('user/message', messageValue, { surfaceOp: 'append' })
-    },
-    steer(messageValue: ReturnType<typeof createUserMessage>) {
-      session.append('user/message', messageValue, { surfaceOp: 'append' })
-    },
-    cancel() { cancelled.value += 1 },
-  } as unknown as Agent
-  ctx.agents.register(agent)
-  const image = (await ctx.attachments.saveImages([{
-    mediaType: 'image/png',
-    data: readFileSync(new URL('../build/icon.png', import.meta.url)),
-  }]))[0]
-  if (image === undefined) throw new Error('assembled image admission returned no reference')
-  session.append('user/message', createUserMessage({
-    content: [{ type: 'text', text: message }, { type: 'image', attachment: image }],
-    source: { kind: 'user' },
-  }), { surfaceOp: 'append' })
-  const api = createApiProxy(ctx, {
-    defaultModelSelection: () => ({ provider: 'assembled-provider', model: 'assembled-model' }),
-    cwd: root,
-  })
-  const url = await startHttpCarrier(toFetchHandler(api), new WebSocketDownlinks(api))
-  return { url, root, sessionId, session, image, cancelled, ctx, agent }
+  scenario: 'indexed' | 'disabled' | 'index-failure', message: string, enableCreation = false,
+) {
+  const fixture = launchCompanionFixture()
+  cleanups.push(fixture.dispose)
+  const ready = await fixture.request({ type: 'start', scenario, message, enableCreation })
+  return { ...ready, request: fixture.request }
 }
 
-async function startHttpCarrier(
-  handler: { fetch(request: Request): Promise<Response> },
-  downlinks: WebSocketDownlinks,
-): Promise<string> {
-  const server = createServer((request, response) => {
-    void (async () => {
-      const chunks: Buffer[] = []
-      for await (const chunk of request) chunks.push(chunk as Buffer)
-      const fetchResponse = await handler.fetch(new Request(
-        new URL(request.url ?? '/', 'http://desktop-companion.test'),
-        {
-          method: request.method ?? 'GET',
-          headers: Object.fromEntries(
-            Object.entries(request.headers).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
-          ),
-          ...(chunks.length === 0 ? {} : { body: Buffer.concat(chunks) }),
-        },
-      ))
-      response.writeHead(fetchResponse.status, Object.fromEntries(fetchResponse.headers.entries()))
-      if (fetchResponse.body === null) {
-        response.end()
-        return
-      }
-      const reader = fetchResponse.body.getReader()
-      while (true) {
-        const readResult: unknown = await reader.read()
-        if (!isRecord(readResult) || typeof readResult.done !== 'boolean') {
-          throw new Error('assembled Host stream returned an invalid read result')
-        }
-        if (readResult.done) break
-        if (!(readResult.value instanceof Uint8Array)) {
-          throw new Error('assembled Host stream returned an invalid byte chunk')
-        }
-        response.write(Buffer.from(readResult.value))
-      }
-      response.end()
-    })().catch((error: unknown) => {
-      response.writeHead(500)
-      response.end(error instanceof Error ? error.message : String(error))
-    })
-  })
-  server.on('upgrade', (request, socket, head) => {
-    const pathname = new URL(request.url ?? '/', 'http://desktop-companion.test').pathname
-    if (pathname === '/api/events.mux') downlinks.handleMux(request, socket, head)
-    else if (pathname === '/api/events.host') downlinks.handleHost(request, socket, head)
-    else socket.destroy()
-  })
-  await new Promise<void>((resolveListen, rejectListen) => {
-    server.once('error', rejectListen)
-    server.listen(0, '127.0.0.1', () => {
-      server.off('error', rejectListen)
-      resolveListen()
-    })
-  })
-  cleanups.push(async () => {
-    await downlinks.close()
-    server.closeAllConnections()
-    await new Promise<void>((resolveClose, rejectClose) => {
-      server.close((error) => { if (error === undefined) resolveClose(); else rejectClose(error) })
-    })
-  })
-  const address = server.address()
-  if (address === null || typeof address === 'string') throw new Error('expected assembled Host TCP address')
-  return `http://127.0.0.1:${String(address.port)}`
+async function runHost400CodecProbe(): Promise<Uint8Array> {
+  const fixture = launchCompanionFixture()
+  cleanups.push(fixture.dispose)
+  return await fixture.request({ type: 'codec' })
+}
+
+function findPendingApprovalId(pendingInteractions: readonly unknown[]): ApprovalRequestId | undefined {
+  for (const pending of pendingInteractions) {
+    if (typeof pending === 'object' && pending !== null && 'kind' in pending && pending.kind === 'approval'
+      && 'payload' in pending && typeof pending.payload === 'object' && pending.payload !== null
+      && 'approvalId' in pending.payload && typeof pending.payload.approvalId === 'string') {
+      return ApprovalRequestId(pending.payload.approvalId)
+    }
+  }
+  return undefined
 }
 
 function productOwner(baseUrl: string): DesktopCompanionProductOwner {
@@ -1053,8 +926,4 @@ async function search(
     throw new Error('assembled search returned an invalid output kind')
   }
   return output
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }

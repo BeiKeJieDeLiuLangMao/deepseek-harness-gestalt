@@ -30,7 +30,7 @@ export function attachBootScreen(target: BrowserWindow): BootScreen {
   })
   const layout = (): void => {
     if (target.isDestroyed()) return
-    const [width, height] = target.getContentSize()
+    const { width, height } = target.getContentBounds()
     view.setBounds({ x: 0, y: 0, width, height })
   }
   target.contentView.addChildView(view)

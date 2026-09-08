@@ -115,7 +115,7 @@ export async function downloadToFile(
   onBytes: (percent: number | undefined) => void,
   signal: AbortSignal | undefined,
 ): Promise<void> {
-  const response = await fetchImpl(url, { signal })
+  const response = await fetchImpl(url, signal === undefined ? {} : { signal })
   if (!response.ok || response.body === null) {
     throw new Error(`Sub2API installer: download failed for ${url} (status ${String(response.status)})`)
   }
@@ -123,7 +123,7 @@ export async function downloadToFile(
   const total = totalHeader === null ? undefined : Number(totalHeader)
   let received = 0
   let lastReported = -1
-  const source = Readable.fromWeb(response.body as import('node:stream/web').ReadableStream)
+  const source = Readable.fromWeb(response.body)
   source.on('data', (chunk: Buffer) => {
     received += chunk.length
     if (total !== undefined && Number.isFinite(total) && total > 0) {
