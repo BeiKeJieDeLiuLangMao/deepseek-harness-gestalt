@@ -285,7 +285,8 @@ async function detailsTrack(page: Page): Promise<number> {
 const UI_PLUGIN_DIRS = [
   'connection', 'ui-theme', 'locale', 'ui-layout', 'ui-renderer', 'ui-session', 'ui-sidebar',
   'ui-settings', 'ui-settings-general', 'ui-settings-models', 'ui-conversation', 'ui-approval', 'ui-chat',
-  'ui-model-selection', 'ui-user-questions', 'ui-trajectory', '../session-query/session-log-export',
+  'ui-model-selection', 'ui-user-questions', 'ui-member-questions', 'ui-trajectory',
+  '../session-query/session-log-export',
 ]
 const ROUND_DONE_MARKER = 'WEB_ROUND_DONE'
 const notReady = UI_PLUGIN_DIRS.filter((dir) => {
@@ -341,6 +342,11 @@ describe('dsh web keyless CLI smoke', () => {
       })
       await page.goto(readyUrl)
       await page.getByRole('button', { name: 'New session', exact: true }).first().waitFor({ timeout: 30_000 })
+      const bootEntries = await page.evaluate(() => {
+        const boot = Reflect.get(window, '__DSH_BOOT__') as { entries: Array<{ id: string }> } | undefined
+        return boot?.entries.map(entry => entry.id) ?? []
+      })
+      expect(bootEntries).toContain('@deepseek-ai/dsh-client-ui-member-questions')
       const batchPaths = [...new Set(pluginScripts)].sort()
       expect(batchPaths).toHaveLength(2)
       expect(batchPaths).toContainEqual(expect.stringMatching(

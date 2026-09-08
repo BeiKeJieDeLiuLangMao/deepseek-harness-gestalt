@@ -2190,6 +2190,9 @@ importers:
       '@deepseek-ai/dsh-client-ui-layout':
         specifier: workspace:^
         version: link:../../client/ui-layout
+      '@deepseek-ai/dsh-client-ui-member-questions':
+        specifier: workspace:^
+        version: link:../../client/ui-member-questions
       '@deepseek-ai/dsh-client-ui-message-feedback':
         specifier: workspace:^
         version: link:../../client/ui-message-feedback

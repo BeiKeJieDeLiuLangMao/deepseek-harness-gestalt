@@ -17,6 +17,7 @@ import type {} from '@deepseek-ai/dsh-user-approval'
 import type {} from '@deepseek-ai/dsh-permission-presets'
 import type {} from '@deepseek-ai/dsh-agent-presets'
 import type {} from '@deepseek-ai/dsh-commands'
+import type {} from '@deepseek-ai/dsh-client-modules'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import { launchWebScaffold, type WebScaffold } from './scaffold.ts'
 
@@ -53,6 +54,7 @@ const EXPECTED_TOOLS = [
   'subagent',
   'subagent_fork',
   'todo_write',
+  'tool_search',
   'update_goal',
   'web_fetch',
   'web_search',
@@ -78,6 +80,9 @@ afterEach(async () => {
 it('assembles the shipped Web transport, catalog, guidance, and defaults', async () => {
   scaffold = await launchWebScaffold({ deepSeekMissingCredential: true })
   const ctx = scaffold.ctx
+  expect(ctx.clientModules.graph().entries.map(entry => entry.id)).toContain(
+    '@deepseek-ai/dsh-client-ui-member-questions',
+  )
   const index = await fetch(`http://127.0.0.1:${String(ctx.webServer.port)}`, {
     headers: { 'accept-encoding': 'gzip' },
   })
@@ -146,7 +151,7 @@ it('assembles the shipped Web transport, catalog, guidance, and defaults', async
   // layer holds nothing and a caller must name the agent to see anything. This
   // composes from the deployment default — what a session that names no preset
   // gets — which is the shape this test has always been about.
-  expect(ctx.tools.schemas().map(schema => schema.name)).toEqual([])
+  expect(ctx.tools.schemas().map(schema => schema.name)).toEqual(['tool_search'])
   const handle = await ctx.agents.create({
     sessionId: SessionId('shipped-composition'),
     setup: agentCtx => ctx.agentPresets.mount(agentCtx).then(() => undefined),
