@@ -598,16 +598,10 @@ function interactionSettlement(
   settlement: MobilePendingSettlement,
 ): Extract<CompanionOperation, { type: 'settle-interaction' }>['settlement'] {
   if (settlement.kind === 'approval') {
-    const result = settlement.result
-    if (!result.ok || !isRecord(result.value)
-      || (result.value.outcome !== 'allowed-once' && result.value.outcome !== 'rejected')) {
-      throw new TypeError('Companion Approval settlement result is invalid')
-    }
-    return { kind: 'approval', outcome: result.value.outcome }
+    return { kind: 'approval', outcome: settlement.result.value.outcome }
   }
   const result = settlement.result
   if (!result.ok) {
-    if (result.error.code !== 'cancelled') throw new TypeError('Companion Ask User cancellation is invalid')
     return { kind: 'question-cancelled' }
   }
   if (!isRecord(result.value) || !isRecord(result.value.answer) || !Array.isArray(result.value.answer.answers)) {
@@ -623,7 +617,7 @@ function interactionSettlement(
       }
       return {
         id: value.id,
-        selected: value.selected as string[],
+        selected: value.selected,
         ...(value.custom === undefined ? {} : { custom: value.custom }),
       }
     }),
