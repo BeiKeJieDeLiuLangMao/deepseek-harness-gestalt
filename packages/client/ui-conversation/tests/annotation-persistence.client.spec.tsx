@@ -191,6 +191,18 @@ describe('annotation draft persistence', () => {
     }
   })
 
+  it('rejects missing and null persisted annotation identities', () => {
+    const anchor = createTextAnchor('message-1:0', 'Exact quotation', 'Exact quotation', 0)
+    for (const annotation of [
+      { kind: 'text', anchor, note: '' },
+      { id: null, kind: 'text', anchor, note: '' },
+    ]) {
+      const shell = makeShell()
+      shell.restoreAnnotationDraft({ annotations: [annotation], nextSeq: 3 })
+      expect(shell.snapshot.annotations).toEqual([])
+    }
+  })
+
   it('keeps independent same-key instances unsynchronized with deterministic last-writer-wins', () => {
     localStorage.clear()
     const handle = createChatStore()

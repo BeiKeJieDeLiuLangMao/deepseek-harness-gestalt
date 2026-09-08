@@ -117,7 +117,7 @@ const EMPTY_LEXICON: ReadonlyMap<'/' | '@', readonly string[]> = new Map()
  * literal one in text would forge chip positions.
  */
 const REFERENCE_PLACEHOLDER_RE = /[\uE100-\uE11D\uFFFC]/gu
-const annotationIdSchema = z.transform(z.string().min(1).required(), brandAnnotationId)
+const annotationIdSchema = z.transform(z.string().min(1).required(), brandAnnotationId).required()
 const textAnchorSchema = z.object({
   sourceId: z.string().required(),
   quote: z.string().required(),
