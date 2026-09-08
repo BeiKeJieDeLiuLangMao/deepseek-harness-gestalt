@@ -54,8 +54,8 @@ function htmlStaticUiText(text: string): string {
   const trimmed = text.trimStart()
   if (!/^<!doctype\s+html(?:\s|>)/i.test(trimmed)) return text
   const attributes = [...trimmed.matchAll(
-    /(?:^|\s)(?:alt|aria-description|aria-label|aria-valuetext|placeholder|title)\s*=\s*(["'])(.*?)\1/giu,
-  )].map(match => match[2] ?? '')
+    /(?:^|\s)(?:alt|aria-description|aria-label|aria-valuetext|placeholder|title)\s*=\s*(?:(["'])(.*?)\1|([^\s"'`=<>]+))/giu,
+  )].map(match => match[2] ?? match[3] ?? '')
   const bodyText = trimmed
     .replace(/<!doctype[^>]*>/giu, ' ')
     .replace(/<[^>]*>/gu, ' ')
@@ -123,17 +123,24 @@ function hasInvariantJsxAncestor(node: ts.JsxText): boolean {
   let current: ts.Node = node.parent
   while (!ts.isSourceFile(current)) {
     if (ts.isJsxElement(current)) {
-      const attribute = current.openingElement.attributes.properties.find(property => (
+      const translateNo = current.openingElement.attributes.properties.some(property => (
         ts.isJsxAttribute(property)
+        && property.name.getText() === 'translate'
         && property.initializer !== undefined
         && ts.isStringLiteral(property.initializer)
-        && (
-          (property.name.getText() === 'translate' && property.initializer.text === 'no')
-          || (property.name.getText() === 'data-ui-i18n'
-            && NON_UI_LITERAL_CATEGORIES.has(property.initializer.text))
-        )
+        && property.initializer.text === 'no'
       ))
-      if (attribute !== undefined) return true
+      if (translateNo) return true
+      const svgBrandText = current === node.parent
+        && current.openingElement.tagName.getText() === 'text'
+        && current.openingElement.attributes.properties.some(property => (
+          ts.isJsxAttribute(property)
+          && property.name.getText() === 'data-ui-i18n'
+          && property.initializer !== undefined
+          && ts.isStringLiteral(property.initializer)
+          && property.initializer.text === 'brand'
+        ))
+      if (svgBrandText) return true
     }
     current = current.parent
   }
