@@ -3,7 +3,7 @@
  * composition: one seeded project answers `project_members` reads, while every
  * mutation refuses — the example exercises the seam's read face only, and the
  * read-only `project_members` tool can never reach the refusing operations.
- * @module examples/project-members/memory-membership
+ * @module snapshots/session/member-question-routed-ask/memory-membership
  */
 
 import type { PlatformAccountId } from '@deepseek-ai/dsh-platform-account'

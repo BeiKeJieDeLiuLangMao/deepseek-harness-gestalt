@@ -98,6 +98,6 @@ Native 渲染器保持规范值的紧凑 JSON 形态。本工具不声明自定�
 <details>
 <summary>维护者工作上下文——点击展开</summary>
 
-暂无。
+[路由提问场景](../../../snapshots/session/member-question-routed-ask/snapshot.yml) 经 `dsh --profile headless` 回放名册读取与公开登录名提问流程。Presenter 测试独立保留离线状态展示，不依赖提问投递。
 
 </details>

@@ -98,6 +98,6 @@ No runtime invariant companion is published because this read-only tool adapter 
 <details>
 <summary>Working context for maintainers — click to expand</summary>
 
-None.
+The [routed-ask scenario](../../../snapshots/session/member-question-routed-ask/snapshot.yml) replays the roster and public-login question flow through `dsh --profile headless`. Presenter tests preserve offline display independently of question delivery.
 
 </details>

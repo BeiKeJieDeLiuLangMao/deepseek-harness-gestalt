@@ -18,7 +18,7 @@ The sender encodes aligned document bytes as Companion `document-chunk` frames t
 
 ## Alternatives considered
 
-**Treat the `examples/project-members` snapshot as sufficient.** Rejected: that composition seeds an in-memory roster and a memory sender, so it never executes Account sessions, Project Membership HTTP, presence heartbeats, or encrypted multi-installation delivery.
+**Treat the `snapshots/session/member-question-routed-ask` snapshot as sufficient.** Rejected: that composition seeds an in-memory roster and a memory sender, so it never executes Account sessions, Project Membership HTTP, presence heartbeats, or encrypted multi-installation delivery.
 
 **Wait for operated GitHub OAuth and reviewed production encryption.** That remains the production activation path, but it is not available as the repository's keyless regression. The local Platform and ciphertext broker are the substitute, not a claim that product cryptography shipped.
 
