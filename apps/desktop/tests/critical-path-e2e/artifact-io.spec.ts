@@ -111,14 +111,16 @@ describe('critical-path durable evidence', () => {
     const outside = join(root, 'outside')
     const link = join(artifacts, 'linked-output')
     const sentinel = join(outside, 'sentinel.txt')
-    await Promise.all([mkdir(artifacts), mkdir(outside)])
-    await writeFile(sentinel, 'must remain\n')
-    await symlink(outside, link, process.platform === 'win32' ? 'junction' : 'dir')
+    let linkCreated = false
     try {
+      await Promise.all([mkdir(artifacts), mkdir(outside)])
+      await writeFile(sentinel, 'must remain\n')
+      await symlink(outside, link, process.platform === 'win32' ? 'junction' : 'dir')
+      linkCreated = true
       await expect(scanRetainedArtifacts(artifacts, [])).resolves.toEqual({ shareable: false })
       await expect(readFile(sentinel, 'utf8')).resolves.toBe('must remain\n')
     } finally {
-      await unlink(link)
+      if (linkCreated) await unlink(link)
       await rm(root, { recursive: true })
     }
   })
