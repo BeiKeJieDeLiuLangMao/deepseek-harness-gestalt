@@ -21,6 +21,7 @@ import {
   type SessionStateEvidence,
   type StoredSessionLog,
 } from './artifact-io.ts'
+import { EDIT_PATH_BUTTON_SELECTOR, TASKS_TAB_SELECTOR } from './ui-selectors.ts'
 
 const PARENT_PROMPT = 'Answer with the parent route marker.'
 const SIDE_PROMPT = 'Check route B.'
@@ -60,7 +61,9 @@ async function createPhase(): Promise<void> {
 
   await expandSidePanel()
   const panel = await visiblePanel()
-  await clickExact(panel, 'Tasks')
+  const tasksTab = await element(panel, TASKS_TAB_SELECTOR)
+  await tasksTab.waitForClickable({ timeout: 10_000 })
+  await tasksTab.click()
   const taskTree = await element(panel, '[role="tree"][aria-label="Tasks"]')
   await taskTree.waitForDisplayed({ timeout: 20_000 })
   await browser.waitUntil(async () => await taskTree.getAttribute('aria-busy') !== 'true', {
@@ -255,7 +258,9 @@ async function connectWorkspace(): Promise<void> {
   await trigger.click()
   const dialog = await element(browser, '[role="dialog"][aria-label="Select Workspace Directory"]')
   await dialog.waitForDisplayed({ timeout: 10_000 })
-  await clickExact(dialog, 'Edit path')
+  const editPath = await element(dialog, EDIT_PATH_BUTTON_SELECTOR)
+  await editPath.waitForClickable({ timeout: 10_000 })
+  await editPath.click()
   const path = await element(dialog, 'input[aria-label="Edit path"]')
   await path.setValue(required('DSH_CRITICAL_PATH_WORKSPACE'))
   await browser.keys(['Enter'])
