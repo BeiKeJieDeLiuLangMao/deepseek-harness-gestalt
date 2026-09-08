@@ -189,9 +189,14 @@ describe('dependency policy diagnostics', () => {
       await finishFixture(undefined, async () => { throw cleanup })
       nextFixture()
     })
-    await expect(result).rejects.toMatchObject({
-      errors: [expect.objectContaining({ message: expect.stringContaining('stale run local: requested command ran') }), cleanup],
-    })
+    const failure: unknown = await result.catch((error: unknown) => error)
+    expect(failure).toBeInstanceOf(AggregateError)
+    if (!(failure instanceof AggregateError)) throw new Error('expected aggregated policy failure')
+    const violation: unknown = failure.errors[0]
+    expect(violation).toBeInstanceOf(Error)
+    if (!(violation instanceof Error)) throw new Error('expected collected policy violations')
+    expect(violation.message).toContain('stale run local: requested command ran')
+    expect(failure.errors[1]).toBe(cleanup)
     expect(nextFixture).not.toHaveBeenCalled()
   })
 })
