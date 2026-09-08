@@ -973,10 +973,10 @@ class AssembledRedisBus {
         const key = options.keys[0]
         if (key === undefined) return 0
         if (script.includes("redis.call('SET', KEYS[1], ARGV[1]")) {
-          this.write(key, options.arguments[0], Number(options.arguments[1]))
-          const routeKey = options.keys[1]
+          this.write(key, requiredRedisValue(options.arguments, 0), Number(options.arguments[1]))
+          const routeKey = requiredRedisValue(options.keys, 1)
           const members = this.sets.get(routeKey) ?? new Set()
-          members.add(options.arguments[2])
+          members.add(requiredRedisValue(options.arguments, 2))
           this.sets.set(routeKey, members)
           return 1
         }
@@ -986,14 +986,14 @@ class AssembledRedisBus {
         if (record.connectionToken !== options.arguments[0]) return 0
         if (script.includes("redis.call('SREM'")) {
           this.values.delete(key)
-          this.sets.get(options.keys[1])?.delete(options.arguments[1])
+          this.sets.get(requiredRedisValue(options.keys, 1))?.delete(requiredRedisValue(options.arguments, 1))
         } else {
-          const replacement = options.arguments[1]
+          const replacement = requiredRedisValue(options.arguments, 1)
           const ttl = options.arguments[2]
           this.write(key, replacement, ttl === undefined ? undefined : Number(ttl))
-          const routeKey = options.keys[1]
+          const routeKey = requiredRedisValue(options.keys, 1)
           const members = this.sets.get(routeKey) ?? new Set()
-          members.add(options.arguments[3])
+          members.add(requiredRedisValue(options.arguments, 3))
           this.sets.set(routeKey, members)
         }
         return 1
@@ -1060,4 +1060,10 @@ function assertNotCiphertextStoreValue(value: string): void {
   if (record.type === 'ciphertext' || typeof record.frame === 'string') {
     throw new Error('Relay Redis mock retained a ciphertext frame')
   }
+}
+
+function requiredRedisValue(values: readonly string[], index: number): string {
+  const value = values.at(index)
+  if (value === undefined) throw new TypeError(`Redis script parameter ${String(index)} is required`)
+  return value
 }
