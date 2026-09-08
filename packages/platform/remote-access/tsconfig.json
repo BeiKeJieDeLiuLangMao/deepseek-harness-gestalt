@@ -5,6 +5,7 @@
   "references": [
     { "path": "../../../vendor/cordis" },
     { "path": "../../util/brand" },
+    { "path": "../../util/crypto" },
     { "path": "../platform-account" },
     { "path": "../remote-protocol" }
   ]

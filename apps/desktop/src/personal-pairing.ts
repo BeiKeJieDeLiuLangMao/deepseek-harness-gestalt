@@ -1,5 +1,6 @@
 /** Desktop Host ownership for Settings-only Personal Pairing projection. */
 
+import { randomUUID } from 'node:crypto'
 import type { DesktopPairingSnapshot } from '@deepseek-ai/dsh-client-ui-desktop/protocol'
 import { parsePlatformAccountId, type PlatformAccountId } from '@deepseek-ai/dsh-platform-account'
 import {
@@ -94,7 +95,7 @@ export class DesktopPairingController implements DesktopPairingActions {
 
   /** @param options - signed-in Account authority, Remote Access transport, and id source. */
   constructor(private readonly options: DesktopPairingControllerOptions) {
-    this.randomId = options.randomId ?? (() => crypto.randomUUID())
+    this.randomId = options.randomId ?? randomUUID
     this.now = options.now ?? Date.now
     this.schedule = options.schedule ?? ((task, delayMs) => setTimeout(task, delayMs))
     this.pollIntervalMs = options.pollIntervalMs ?? 1_000
