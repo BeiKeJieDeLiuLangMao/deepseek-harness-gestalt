@@ -67,7 +67,7 @@ export function apply(ctx: Context): void {
     recoverListedMutation: browserUi.recoverListedMutation,
   })
   const face: WorkbenchBrowserFace = {
-    renderTab: props => createElement(OfficialBrowserTab, props),
+    renderTab: props => createElement(OfficialBrowserTab, { ...props, renderPageChrome: browserUi.renderPageChrome }),
     reveal: (sessionId) => { bridge.reveal(sessionId) },
     createRequest,
     ensureOfficial: (tabId) => {
@@ -80,6 +80,7 @@ export function apply(ctx: Context): void {
     },
   }
   ctx.provide('workbenchBrowser', face)
+  ctx.effect(() => () => bridge.dispose(), 'ui-workbench: in-flight browser operations')
 
   if (isDesktopOverlayDocument()) return
   const tick = (): void => { bridge.tick() }

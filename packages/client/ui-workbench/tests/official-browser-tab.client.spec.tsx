@@ -52,7 +52,8 @@ function bench({
 } = {}) {
   if (overlay) document.documentElement.setAttribute('data-dsh-desktop-overlay', '')
   const ctx = new Context()
-  ctx.provide('browserUi', { renderPageChrome: (props: BrowserPageChromeProps) => createElement(BrowserPageChrome, props) })
+  const renderPageChrome = (props: BrowserPageChromeProps) => createElement(BrowserPageChrome, props)
+  ctx.provide('browserUi', { renderPageChrome })
   const current = page(title)
   const updateTab = vi.fn()
   const ensureOfficial = vi.fn()
@@ -88,7 +89,7 @@ function bench({
       screenshot,
     })
   }
-  return { ctx, ensureOfficial, observe, recoverOfficial, screenshot, updateTab }
+  return { ctx, ensureOfficial, observe, recoverOfficial, renderPageChrome, screenshot, updateTab }
 }
 
 afterEach(() => {
@@ -97,11 +98,23 @@ afterEach(() => {
 })
 
 describe('OfficialBrowserTab', () => {
+  it('uses the captured renderer instead of the foreign component context provider', () => {
+    const b = bench()
+    const renderPageChrome = vi.fn(() => createElement('div', { role: 'status' }, 'Captured provider'))
+    const props = {
+      ctx: b.ctx, tab: { id: 'browser:1', meta: officialTabMeta(TARGET) },
+      scope: { sessionId: SESSION }, renderPageChrome,
+    }
+    render(createElement(OfficialBrowserTab, props))
+    expect(screen.getByRole('status').textContent).toBe('Captured provider')
+    expect(renderPageChrome).toHaveBeenCalledOnce()
+  })
+
   it('renders provider page chrome and commits observed title and Profile metadata', async () => {
     const b = bench()
     render(
       <OfficialBrowserTab
-        ctx={b.ctx}
+        ctx={b.ctx} renderPageChrome={b.renderPageChrome}
         tab={{ id: 'browser:1', meta: officialTabMeta(TARGET) }}
         scope={{ sessionId: SESSION }}
       />,
@@ -123,7 +136,7 @@ describe('OfficialBrowserTab', () => {
 
   it('delegates an empty tab to the workbench bridge without calling create directly', () => {
     const b = bench()
-    render(<OfficialBrowserTab ctx={b.ctx} tab={{ id: 'browser:2' }} scope={{ sessionId: SESSION }} />)
+    render(<OfficialBrowserTab ctx={b.ctx} renderPageChrome={b.renderPageChrome} tab={{ id: 'browser:2' }} scope={{ sessionId: SESSION }} />)
     expect(screen.getByText('dock.creating')).toBeTruthy()
     expect(b.ensureOfficial).toHaveBeenCalledWith('browser:2')
   })
@@ -132,7 +145,7 @@ describe('OfficialBrowserTab', () => {
     const b = bench()
     render(
       <OfficialBrowserTab
-        ctx={b.ctx}
+        ctx={b.ctx} renderPageChrome={b.renderPageChrome}
         tab={{ id: 'browser:2', meta: { createError: 'runtime gone' } }}
         scope={{ sessionId: SESSION }}
       />,
@@ -149,7 +162,7 @@ describe('OfficialBrowserTab', () => {
     }))
     render(
       <OfficialBrowserTab
-        ctx={b.ctx}
+        ctx={b.ctx} renderPageChrome={b.renderPageChrome}
         tab={{ id: 'browser:1', meta: officialTabMeta(TARGET, { kind: 'shared' }) }}
         scope={{ sessionId: SESSION }}
       />,
@@ -164,7 +177,7 @@ describe('OfficialBrowserTab', () => {
     const b = bench({ overlay: true })
     const view = render(
       <OfficialBrowserTab
-        ctx={b.ctx}
+        ctx={b.ctx} renderPageChrome={b.renderPageChrome}
         tab={{ id: 'browser:1', meta: officialTabMeta(TARGET) }}
         scope={{ sessionId: SESSION }}
       />,
@@ -178,7 +191,7 @@ describe('OfficialBrowserTab', () => {
     const b = bench({ noSessions: true, noLocale: true, noSidebar: true, title: '   ' })
     render(
       <OfficialBrowserTab
-        ctx={b.ctx}
+        ctx={b.ctx} renderPageChrome={b.renderPageChrome}
         tab={{ id: 'browser:1', meta: officialTabMeta(TARGET) }}
         scope={{ sessionId: SESSION }}
         visible={false}
@@ -192,7 +205,7 @@ describe('OfficialBrowserTab', () => {
     const b = bench({ noRemote: true })
     const view = render(
       <OfficialBrowserTab
-        ctx={b.ctx}
+        ctx={b.ctx} renderPageChrome={b.renderPageChrome}
         tab={{ id: 'browser:1', meta: officialTabMeta(TARGET) }}
         scope={{ sessionId: SESSION }}
       />,
@@ -204,7 +217,7 @@ describe('OfficialBrowserTab', () => {
     const b = bench({ title: '   ' })
     render(
       <OfficialBrowserTab
-        ctx={b.ctx}
+        ctx={b.ctx} renderPageChrome={b.renderPageChrome}
         tab={{ id: 'browser:1', meta: officialTabMeta(TARGET) }}
         scope={{ sessionId: SESSION }}
       />,
@@ -240,7 +253,7 @@ describe('OfficialBrowserTab', () => {
     const b = bench({ projection })
     render(
       <OfficialBrowserTab
-        ctx={b.ctx}
+        ctx={b.ctx} renderPageChrome={b.renderPageChrome}
         tab={{ id: 'browser:1', meta: officialTabMeta(TARGET) }}
         scope={{ sessionId: SESSION }}
       />,
