@@ -9,6 +9,7 @@
  * are refused and no stream session is ever minted.
  */
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+import type { DeviceId } from '@deepseek-ai/dsh-phone-runtime'
 import z from '@deepseek-ai/schemastery'
 import type { ReactNode } from 'react'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
@@ -80,7 +81,7 @@ export const Config: z<Config> = z.object({
  */
 function renderPhoneTabBody(props: PhoneTabBodyProps, env: PhoneTabEnvironment): ReactNode {
   const device = phoneDeviceTabMetaOf(props.tab.meta)
-  const onOpenDevice = (serial: string, name: string): void => {
+  const onOpenDevice = (serial: DeviceId, name: string): void => {
     env.switchDevice(props.tab.id, serial, name)
   }
   if (device === undefined) {
@@ -126,7 +127,7 @@ export function apply(ctx: ClientContext, config: Config): void {
     activeSelection?.abort()
     activeSelection = undefined
   }, 'ui-phone: Settings device-open lifetime')
-  const openListedDevice = async (deviceId: string): Promise<void> => {
+  const openListedDevice = async (deviceId: DeviceId): Promise<void> => {
     activeSelection?.abort()
     const selection = new AbortController()
     activeSelection = selection
@@ -150,10 +151,10 @@ export function apply(ctx: ClientContext, config: Config): void {
     (globalThis as { dshDesktop?: unknown }).dshDesktop,
   )
   const openFromSettings = isDesktopOverlayDocument() && overlayBridge !== undefined
-    ? (deviceId: string): void => {
+    ? (deviceId: DeviceId): void => {
       runSettingsDeviceOpen(selectPhoneDeviceFromOverlay(overlayBridge, deviceId))
     }
-    : (deviceId: string): void => { runSettingsDeviceOpen(openListedDevice(deviceId)) }
+    : (deviceId: DeviceId): void => { runSettingsDeviceOpen(openListedDevice(deviceId)) }
   if (!isDesktopOverlayDocument() && overlayBridge !== undefined) {
     ctx.effect(() => overlayBridge.onChromeOverlayResult((result) => {
       const deviceId = phoneDeviceIdFromSelection(result)

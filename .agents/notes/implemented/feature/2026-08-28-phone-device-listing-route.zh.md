@@ -10,15 +10,15 @@ Status: implemented
 
 ## Decision
 
-`phone-stream` 在与会话铸造相同的 `/api` 信任栅栏之后（仅 GET、精确路径）应答 `GET /phone/devices`：handler 调用 `ctx.phoneDevices.listDevices()`，把每个设备条目投影为文档化的 `id` / `name` / `kind` / `state` / `online` 响应字段——`state` 按 #421 wire 原样透传、`online` 为推导值，GUI 的未授权臂以 `state === 'unauthorized'` 判定，按 `android` / `ios.simulators` / `ios.reals` 分组。投影是显式的：runtime 分组条目物理上携带上游 `platform` 字段，而公开类型 `PhoneDeviceRef` 早已擦除它；原样转发等于把该内部字段烤进新的响应体。
+`phone-stream` 在与会话铸造相同的 `/api` 信任栅栏之后（仅 GET、精确路径）应答 `GET /phone/devices`：handler 调用 `ctx.phoneDevices.listDevices()`，把每个设备条目投影为文档化的 `id` / `name` / `kind` / `state` / `online` 响应字段——`state` 按 #421 wire 原样透传、`online` 为推导值，GUI 的未授权臂以 `state === 'unauthorized'` 判定，按 `android` / `ios.simulators` / `ios.reals` 分组。投影是显式的：runtime 的 `PhoneDeviceRef` 保留经过校验的 `platform` 字段，供直接检查单个条目，而响应通过分组成员关系表达平台；原样转发会重复该事实并扩大响应字段。Host 类型为投影后的每个 `id` 保留 `DeviceId`，JSON 会把它序列化为字符串。
 
-`ui-phone` 用 `PhoneListingSource`（`getBadge`、`snapshot`、`refresh`、`subscribe`）替换空 source，由 `createHttpPhoneListingSource` 消费该路由。每次刷新都校验响应字段，emulator 与 simulator 类型归入「模拟器」组、真机归入「USB 真机」组，且只在成功时提交——`snapshot()` 在两次提交之间保持同一个冻结引用，因此两块 tab 内容都能把它坐进 `useSyncExternalStore`（与每 tab 连接控制器相同的持有型 observable 先例；better-sidebar tab 宿主没有 slot hook 通道）。选择器仅在启用闸门打开时于挂载时拉取（关闭部署仍然不发现任何设备），并由现已启用的「重新检测环境」再次拉取；已连接 tab 挂载时同样拉取，布局恢复的下拉无需先访问选择器即可点亮。
+`ui-phone` 用 `PhoneListingSource`（`getBadge`、`snapshot`、`refresh`、`subscribe`）替换空 source，由 `createHttpPhoneListingSource` 消费该路由。每次刷新都校验响应字段，在发布清单 view 前为每个非空 id 加上品牌，并把 emulator 与 simulator 类型归入「模拟器」组、真机归入「USB 真机」组。持久化 tab metadata、Desktop overlay selection、环境 snapshot、stream session、agent status 与 gateway 调用在相应 JSON 解析器校验字符串后继续保留 `DeviceId`。source 只在成功时提交——`snapshot()` 在两次提交之间保持同一个冻结引用，因此两块 tab 内容都能把它坐进 `useSyncExternalStore`（与每 tab 连接控制器相同的持有型 observable 先例；better-sidebar tab 宿主没有 slot hook 通道）。选择器仅在启用闸门打开时于挂载时拉取（关闭部署仍然不发现任何设备），并由现已启用的「重新检测环境」再次拉取；已连接 tab 挂载时同样拉取，布局恢复的下拉无需先访问选择器即可点亮。
 
 ## Alternatives considered
 
 **像采集 URL 一样给清单签名。** 否决：token 防的是跨源帧加载，而清单喂给的是 `/api` 栅栏已覆盖的同源渲染代码；签名只会徒增铸造往返，防不了栅栏之外的任何威胁。
 
-**原样转发 `listDevices()`。** 否决：runtime 分组条目物理上包含上游 `platform` 字段；把它烤进响应体会让路由耦合到公开类型已丢弃的 provider 内部。
+**原样转发 `listDevices()`。** 否决：runtime 分组条目保留经过校验的 `platform` 字段，供直接检查单个条目；路由已通过分组表达该事实，重复它会在没有 Consumer 需求的情况下扩大响应字段。
 
 **保留同步 `listDevices(platform)` 接口并在 `PhoneTab` 里用本地刷新计数器。** 否决：异步设备队终究需要提交通知；计数器会让已连接下拉等到一次无关重渲染才更新，并把同一份清单拆到两条更新路径上。
 

@@ -6,16 +6,16 @@
  */
 
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
-import { phoneCaptureId } from '@deepseek-ai/dsh-phone-runtime'
-import type { PhoneCaptureFormat, PhoneCaptureId } from '@deepseek-ai/dsh-phone-runtime'
+import { deviceId as deviceIdOf, phoneCaptureId } from '@deepseek-ai/dsh-phone-runtime'
+import type { DeviceId, PhoneCaptureFormat, PhoneCaptureId } from '@deepseek-ai/dsh-phone-runtime'
 
 /** Canonical capture encodings a signed URL may name. */
 const FORMATS: readonly PhoneCaptureFormat[] = ['mjpeg', 'h264']
 
 /** One verified capture grant. */
 export interface PhoneStreamGrant {
-  /** Device id exactly as it was signed, still unbranded. */
-  readonly deviceId: string
+  /** Branded device id whose request path passed signature verification. */
+  readonly deviceId: DeviceId
   /** Capture encoding bound into the signature. */
   readonly format: PhoneCaptureFormat
   /** Unique opaque identity bound into the signature. */
@@ -76,7 +76,7 @@ export function verifyPhoneStreamToken(
   if (actual.toString('base64url') !== signatureText) return undefined
   const expected = createHmac('sha256', secret).update(payload(deviceId, format, expiresAt, nonce)).digest()
   if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) return undefined
-  return { deviceId, format, captureId: phoneCaptureId(token), expiresAt }
+  return { deviceId: deviceIdOf(deviceId), format, captureId: phoneCaptureId(token), expiresAt }
 }
 
 /**

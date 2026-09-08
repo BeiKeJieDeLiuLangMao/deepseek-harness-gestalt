@@ -115,8 +115,8 @@ export function phoneDeviceKind(type: string): PhoneDeviceKind {
 }
 
 /**
- * Group validated devices into the public Android/iOS answer. The public refs
- * drop the platform field; group membership already carries it.
+ * Group validated devices into the public Android/iOS answer. Each entry keeps
+ * its validated platform alongside the corresponding group membership.
  * @param devices - Validated device snapshots, upstream order preserved inside groups.
  * @returns the frozen grouped listing.
  */

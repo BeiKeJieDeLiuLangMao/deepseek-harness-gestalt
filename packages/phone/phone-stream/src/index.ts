@@ -403,7 +403,7 @@ export class PhoneStream extends Service {
       if (this.isClosing(signal)) { this.rejectClosing(res, true); return }
       await this.relays.run(
         async signal => await this.ctx.phoneDevices.startCapture({
-          deviceId: deviceId(grant.deviceId), format: grant.format, captureId: grant.captureId, signal,
+          deviceId: grant.deviceId, format: grant.format, captureId: grant.captureId, signal,
         }),
         sink,
         lifetime.signal,

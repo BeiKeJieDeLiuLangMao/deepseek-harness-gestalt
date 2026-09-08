@@ -5,6 +5,7 @@
  */
 import type { ReactNode } from 'react'
 import clsx from 'clsx'
+import type { DeviceId } from '@deepseek-ai/dsh-phone-runtime'
 import type {
   PhoneEnvironmentCheck, PhoneEnvironmentError, PhoneEnvironmentView, PhoneReadyDevice,
 } from './phone-environment.ts'
@@ -26,7 +27,7 @@ export interface PhoneSettingsCardProps {
   /** Fire the unified next-action verb for one error row. */
   readonly onNextAction: (kind: string) => void
   /** Open one online device in the singleton Phone tab. */
-  readonly onOpenDevice: (deviceId: string) => void
+  readonly onOpenDevice: (deviceId: DeviceId) => void
 }
 
 const DEVICE_GROUPS: readonly {
@@ -128,7 +129,7 @@ function bodyOf(
   actions: {
     onCopy: (command: string) => void
     onNextAction: (kind: string) => void
-    onOpenDevice: (deviceId: string) => void
+    onOpenDevice: (deviceId: DeviceId) => void
   },
 ): ReactNode {
   switch (view.kind) {
@@ -235,7 +236,7 @@ function IosWizardBody(): ReactNode {
 
 function ReadyBody(props: {
   devices: readonly PhoneReadyDevice[]
-  onOpenDevice: (deviceId: string) => void
+  onOpenDevice: (deviceId: DeviceId) => void
 }): ReactNode {
   return (
     <div className={css.body}>

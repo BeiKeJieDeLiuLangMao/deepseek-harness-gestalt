@@ -8,6 +8,7 @@
  * @module @deepseek-ai/dsh-client-ui-phone/client/phone-listing
  */
 import type { PhoneListingSnapshot, PhoneListingSource, PhoneDeviceSummary } from './registry.ts'
+import { phoneDeviceIdOf } from './phone-device-id.ts'
 import { PhoneStreamHttpError } from './phone-stream-client.ts'
 
 /** Fleet-listing endpoint on the same Host origin. */
@@ -57,7 +58,7 @@ function summaryOf(value: unknown, group: string, index: number): PhoneDeviceSum
   if (typeof state !== 'string' || state.length === 0) throw wireError(200, `phone device listing ${group}[${String(index)}] state is missing`)
   const display = logicalDisplayOf(logicalDisplay, group, index)
   return {
-    id,
+    id: phoneDeviceIdOf(id),
     name,
     channel: channelOf(kind as WireKind),
     online,

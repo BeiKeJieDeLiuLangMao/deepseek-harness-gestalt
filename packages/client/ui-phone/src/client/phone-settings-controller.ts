@@ -3,6 +3,7 @@
  * the injected environment source into one snapshot the slot renderer binds.
  */
 import { createSnapshotStore, type SettingsScope, type SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
+import type { DeviceId } from '@deepseek-ai/dsh-phone-runtime'
 import type { PhoneSettings } from '../phone-settings.ts'
 import {
   MISSING_PHONE_ENVIRONMENT_SOURCE, resolvePhoneCardView,
@@ -42,7 +43,7 @@ export interface PhoneSettingsCardFace {
   /** Fire the unified next-action verb for one error row. */
   nextAction: (kind: string) => void
   /** Open one online device in the singleton Phone tab. */
-  openDevice: (deviceId: string) => void
+  openDevice: (deviceId: DeviceId) => void
   /** Start trusted managed mobilecli preparation. */
   prepareRuntime: () => void
   /** Cancel the active preparation operation. */
@@ -95,7 +96,7 @@ export class PhoneSettingsCardController {
     source: PhoneEnvironmentSource = MISSING_PHONE_ENVIRONMENT_SOURCE,
     private readonly clipboard?: { writeText(text: string): Promise<void> },
     private readonly runtime?: PhoneRuntimeSource,
-    private readonly openDevice: (deviceId: string) => void = () => {},
+    private readonly openDevice: (deviceId: DeviceId) => void = () => {},
   ) {
     this.source = source
     this.unsubscribeScope = scope.subscribe(() => { this.publish() })

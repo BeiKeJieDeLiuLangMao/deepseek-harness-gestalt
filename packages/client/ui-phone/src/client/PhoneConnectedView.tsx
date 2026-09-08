@@ -8,7 +8,7 @@
  * `PhoneConnectionController`; the component only mirrors its snapshot.
  */
 import clsx from 'clsx'
-import type { PhoneCaptureId } from '@deepseek-ai/dsh-phone-runtime'
+import type { DeviceId, PhoneCaptureId } from '@deepseek-ai/dsh-phone-runtime'
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type {
   CSSProperties,
@@ -34,7 +34,7 @@ import shared from './PhoneShared.module.css'
 /** Props of one connected device tab body. */
 export interface PhoneConnectedViewProps {
   /** Device the tab streams (Android serial or iOS UDID). */
-  readonly serial: string
+  readonly serial: DeviceId
   /** Display name shown in the dropdown and the copy. */
   readonly name: string
   /** Whether this tab is active and the panel open; false suspends pulling. */
@@ -42,11 +42,11 @@ export interface PhoneConnectedViewProps {
   /** Listing source backing the device dropdown. */
   readonly source: PhoneListingSource
   /** Switch the single tab onto another listed device in place (U1). */
-  readonly onOpenDevice: (serial: string, name: string) => void
+  readonly onOpenDevice: (serial: DeviceId, name: string) => void
   /** Clear occupation so the picker with 重新检测环境 renders again. */
   readonly onShowPicker: () => void
   /** Controller factory; the tab owns the created instance for its lifetime. */
-  readonly createController: (serial: string) => PhoneConnectionController
+  readonly createController: (serial: DeviceId) => PhoneConnectionController
 }
 
 /** Error-card copy per failure kind, in the design's next-action semantics. */

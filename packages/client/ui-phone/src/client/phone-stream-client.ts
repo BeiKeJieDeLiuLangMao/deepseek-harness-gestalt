@@ -5,9 +5,10 @@
  * state machine in `phone-connection.ts` decides what the facts mean.
  * @module @deepseek-ai/dsh-client-ui-phone/client/phone-stream-client
  */
-import type { PhoneCaptureId } from '@deepseek-ai/dsh-phone-runtime'
+import type { DeviceId, PhoneCaptureId } from '@deepseek-ai/dsh-phone-runtime'
 import type { PhoneIoHandlers, PhoneIoSocket, PhoneStreamGateway } from './phone-connection.ts'
 import { phoneCaptureIdOf } from './phone-capture-id.ts'
+import { phoneDeviceIdOf } from './phone-device-id.ts'
 
 /** Minting endpoint for signed same-origin capture URLs. */
 export const PHONE_SESSION_PATH = '/phone/session'
@@ -48,7 +49,7 @@ export interface PhoneStreamUrlView {
 /** The minted session the browser plays and addresses io with. */
 export interface PhoneStreamSessionView {
   /** Device these URLs address. */
-  readonly deviceId: string
+  readonly deviceId: DeviceId
   /** Exact-path WebSocket upgrade path for io frames. */
   readonly ioPath: string
   /** Whether picture or socket failures for this session can enter product-managed device-agent recovery. */
@@ -131,7 +132,7 @@ export interface PhoneIoReply {
  * @param request - the io request payload.
  * @returns the text frame to send over the io socket.
  */
-export function encodePhoneIoFrame(id: number, deviceId: string, request: PhoneClientIoRequest): string {
+export function encodePhoneIoFrame(id: number, deviceId: DeviceId, request: PhoneClientIoRequest): string {
   switch (request.method) {
     case 'tap':
       return JSON.stringify({
@@ -257,7 +258,7 @@ function errorOf(response: Response, body: unknown, fallback: string): PhoneStre
  * @throws {@link PhoneStreamHttpError} when the Host refuses the mint.
  * @throws the network error when the Host is unreachable.
  */
-export async function mintPhoneSession(deviceId: string): Promise<PhoneStreamSessionView> {
+export async function mintPhoneSession(deviceId: DeviceId): Promise<PhoneStreamSessionView> {
   let response: Response
   try {
     response = await fetch(PHONE_SESSION_PATH, {
@@ -288,7 +289,7 @@ export async function mintPhoneSession(deviceId: string): Promise<PhoneStreamSes
 
 /** Browser projection of one on-device agent status or install answer. */
 export interface PhoneAgentStatusView {
-  readonly deviceId: string
+  readonly deviceId: DeviceId
   readonly installed: boolean
   readonly version?: string
   readonly bundleId?: string
@@ -298,7 +299,7 @@ export interface PhoneAgentStatusView {
 
 async function phoneAgentOperation(
   operation: 'status' | 'install',
-  deviceId: string,
+  deviceId: DeviceId,
   force?: boolean,
 ): Promise<PhoneAgentStatusView> {
   let response: Response
@@ -314,7 +315,7 @@ async function phoneAgentOperation(
   const body: unknown = await response.json().catch(() => null)
   if (!response.ok) throw errorOf(response, body, `phone agent ${operation} failed with HTTP ${response.status}`)
   const record = (typeof body === 'object' && body !== null ? body : {}) as Record<string, unknown>
-  if (typeof record.deviceId !== 'string' || typeof record.installed !== 'boolean'
+  if (typeof record.deviceId !== 'string' || record.deviceId.length === 0 || typeof record.installed !== 'boolean'
     || (record.reinstalled !== undefined && typeof record.reinstalled !== 'boolean')) {
     throw new PhoneStreamHttpError(200, 'protocol', `phone agent ${operation} answered an invalid status`)
   }
@@ -324,7 +325,7 @@ async function phoneAgentOperation(
   const bundleId = optionalString('bundleId')
   const profileReminder = optionalString('profileReminder')
   return {
-    deviceId: record.deviceId,
+    deviceId: phoneDeviceIdOf(record.deviceId),
     installed: record.installed,
     ...(version === undefined ? {} : { version }),
     ...(bundleId === undefined ? {} : { bundleId }),
@@ -338,7 +339,7 @@ async function phoneAgentOperation(
  * @param deviceId - Android or iOS real-device id from the current fleet listing.
  * @returns the current on-device agent status.
  */
-export function readPhoneAgentStatus(deviceId: string): Promise<PhoneAgentStatusView> {
+export function readPhoneAgentStatus(deviceId: DeviceId): Promise<PhoneAgentStatusView> {
   return phoneAgentOperation('status', deviceId)
 }
 
@@ -348,7 +349,7 @@ export function readPhoneAgentStatus(deviceId: string): Promise<PhoneAgentStatus
  * @param force - whether to replace an already installed agent and refresh its signing.
  * @returns the post-install on-device agent status.
  */
-export function installPhoneAgent(deviceId: string, force: boolean): Promise<PhoneAgentStatusView> {
+export function installPhoneAgent(deviceId: DeviceId, force: boolean): Promise<PhoneAgentStatusView> {
   return phoneAgentOperation('install', deviceId, force)
 }
 

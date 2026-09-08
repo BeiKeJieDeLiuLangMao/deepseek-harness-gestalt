@@ -10,6 +10,7 @@
  * or context.
  */
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
+import type { DeviceId } from '@deepseek-ai/dsh-phone-runtime'
 import type { ReactNode } from 'react'
 import { startPhoneListingPoll } from './phone-listing-poll.ts'
 import {
@@ -26,7 +27,7 @@ export interface PhoneTabProps {
   /** Listing source backing the rows (starts empty until a pull commits). */
   readonly source: PhoneListingSource
   /** Switch the single tab onto one listed online device in place (U1). */
-  readonly onOpenDevice: (serial: string, name: string) => void
+  readonly onOpenDevice: (serial: DeviceId, name: string) => void
 }
 
 /** Copy under each platform segment (the mockup fixes the Android→iOS one). */

@@ -9,7 +9,7 @@
  * without a browser.
  * @module @deepseek-ai/dsh-client-ui-phone/client/phone-connection
  */
-import type { PhoneCaptureId } from '@deepseek-ai/dsh-phone-runtime'
+import type { DeviceId, PhoneCaptureId } from '@deepseek-ai/dsh-phone-runtime'
 import {
   encodePhoneIoFrame, isUnauthorizedMessage, parsePhoneIoReply, PhoneStreamHttpError,
   type PhoneAgentStatusView, type PhoneClientIoRequest, type PhoneIoTarget, type PhoneStreamSessionView,
@@ -117,11 +117,11 @@ export interface PhoneIoSocket {
 /** Transport seam the controller runs against (faked in tests). */
 export interface PhoneStreamGateway {
   /** Mint one signed same-origin session for the device. */
-  mintSession(deviceId: string): Promise<PhoneStreamSessionView>
+  mintSession(deviceId: DeviceId): Promise<PhoneStreamSessionView>
   /** Detect the managed device control agent through the Host. */
-  agentStatus(deviceId: string): Promise<PhoneAgentStatusView>
+  agentStatus(deviceId: DeviceId): Promise<PhoneAgentStatusView>
   /** Install or force-reinstall the managed device control agent through the Host. */
-  installAgent(deviceId: string, force: boolean): Promise<PhoneAgentStatusView>
+  installAgent(deviceId: DeviceId, force: boolean): Promise<PhoneAgentStatusView>
   /** Open the io WebSocket on the session's minted path; events fire asynchronously. */
   connectIo(target: PhoneIoTarget, handlers: PhoneIoHandlers): PhoneIoSocket
 }
@@ -202,7 +202,7 @@ export interface PhoneConnectionOptions {
   /** Transport seam minting sessions and opening the io socket. */
   readonly gateway: PhoneStreamGateway
   /** Device the session addresses (Android serial or iOS UDID). */
-  readonly deviceId: string
+  readonly deviceId: DeviceId
   /** Occupying listing platform; Android capture IO requires current `logicalDisplay`. */
   readonly platform?: 'android' | 'ios'
   /** Retry scheduler; tests inject a manual clock. */
@@ -224,7 +224,7 @@ export interface PhoneConnectionOptions {
  */
 export class PhoneConnectionController {
   private readonly gateway: PhoneStreamGateway
-  private readonly deviceId: string
+  private readonly deviceId: DeviceId
   private platform: 'android' | 'ios' | undefined
   private readonly schedule: (delayMs: number, fn: () => void) => () => void
   private readonly retryLimit: number

@@ -10,8 +10,10 @@
  * as `PhoneTabView` parts at mount time.
  */
 import type { Context } from '@deepseek-ai/cordis'
+import type { DeviceId } from '@deepseek-ai/dsh-phone-runtime'
 import type { ReactNode } from 'react'
 import type { PhoneConnectionController } from './phone-connection.ts'
+import { phoneDeviceIdOf } from './phone-device-id.ts'
 
 /** The tab descriptor id; also the `SidebarTab.type` of opened phone tabs. */
 export const PHONE_TAB_ID = 'phone'
@@ -44,7 +46,7 @@ export interface PhoneBadgeSnapshot {
 /** One row of the device list the empty state renders per platform. */
 export interface PhoneDeviceSummary {
   /** Stable device identity (Android serial or iOS UDID). */
-  readonly id: string
+  readonly id: DeviceId
   /** Display name shown in the row (emulator AVD name, device model). */
   readonly name: string
   /** Which group header the row belongs under. */
@@ -157,7 +159,7 @@ export interface PhoneDeviceTabMeta {
   /** Closed discriminant separating device occupation from the picker. */
   readonly kind: 'device'
   /** Stable device identity the tab streams and addresses io with. */
-  readonly serial: string
+  readonly serial: DeviceId
   /** Display name shown in the tab title and the device dropdown. */
   readonly name: string
 }
@@ -175,7 +177,7 @@ export function phoneDeviceTabMetaOf(meta: unknown): PhoneDeviceTabMeta | undefi
   if (record.kind !== 'device') return undefined
   if (typeof record.serial !== 'string' || record.serial.length === 0) return undefined
   if (typeof record.name !== 'string' || record.name.length === 0) return undefined
-  return { kind: 'device', serial: record.serial, name: record.name }
+  return { kind: 'device', serial: phoneDeviceIdOf(record.serial), name: record.name }
 }
 
 /** Structural slice of the sidebar tab the descriptor callbacks receive. */
@@ -281,7 +283,7 @@ export function createPhoneTabSwitcher(
   sidebar: PhoneTabSwitchFace,
   isEnabled: () => boolean,
   occupiedTitle: (name: string) => string,
-): (tabId: string, serial: string, name: string) => void {
+): (tabId: string, serial: DeviceId, name: string) => void {
   return (tabId, serial, name) => {
     if (!isEnabled()) return
     sidebar.updateTab(tabId, {
@@ -319,7 +321,7 @@ export function showPhonePicker(
 export function openPhoneDevicePanel(
   sidebar: PhoneTabOpenFace,
   isEnabled: () => boolean,
-  serial: string,
+  serial: DeviceId,
   name: string,
   occupiedTitle: (name: string) => string,
 ): void {
@@ -341,11 +343,11 @@ export interface PhoneTabEnvironment {
   /** Listing source backing the picker list and the device dropdown. */
   readonly source: PhoneListingSource
   /** Switch the single tab onto one device in place (U1). */
-  readonly switchDevice: (tabId: string, serial: string, name: string) => void
+  readonly switchDevice: (tabId: string, serial: DeviceId, name: string) => void
   /** Clear device occupation so the picker body with 重新检测环境 renders. */
   readonly showPicker: (tabId: string) => void
   /** Create the live connection controller for the occupying device. */
-  readonly createController: (serial: string) => PhoneConnectionController
+  readonly createController: (serial: DeviceId) => PhoneConnectionController
 }
 
 /** Chrome that only the browser half can supply (JSX icon + styled bodies).
@@ -393,7 +395,7 @@ interface SidebarRegistry {
 /** What {@link buildPhoneTabDescriptor} needs beyond the install options. */
 export interface PhoneTabDescriptorOptions extends PhoneTabOptions {
   /** The switcher {@link installPhoneTab} wired against the resolved sidebar. */
-  readonly switchDevice: (tabId: string, serial: string, name: string) => void
+  readonly switchDevice: (tabId: string, serial: DeviceId, name: string) => void
   /** Return the occupying tab to the picker body. */
   readonly showPicker: (tabId: string) => void
 }
@@ -409,7 +411,7 @@ export interface PhoneTabOptions {
   /** Reactive gate the picker body follows. */
   readonly gate: PhoneGateSource
   /** Live connection controller factory for one device tab. */
-  readonly createController: (serial: string) => PhoneConnectionController
+  readonly createController: (serial: DeviceId) => PhoneConnectionController
   /** + menu and picker tab title, resolved at render time. */
   readonly title: () => string
   /** Occupied tab title for one device display name. */

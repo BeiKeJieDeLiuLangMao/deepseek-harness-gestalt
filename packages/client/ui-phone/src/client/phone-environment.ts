@@ -4,6 +4,7 @@
  * JSON-compatible face so the card can still render when that service is
  * absent (the missing-service arm is the probe-failed state).
  */
+import type { DeviceId } from '@deepseek-ai/dsh-phone-runtime'
 import { PhoneStreamHttpError } from './phone-stream-client.ts'
 
 /** One checklist row the probing / ready states display. */
@@ -23,7 +24,7 @@ export interface PhoneEnvironmentCheck {
 /** One device row in the ready-state inventory. */
 export interface PhoneReadyDevice {
   /** Stable device identity (Android serial or iOS UDID). */
-  readonly id: string
+  readonly id: DeviceId
   /** Display name shown in the row. */
   readonly name: string
   /** Inventory group matching the locked mockup. */

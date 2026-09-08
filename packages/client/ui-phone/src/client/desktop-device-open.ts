@@ -4,7 +4,9 @@ import type {
   ChromeOverlayResult, ChromeOverlayShowRequest, DesktopBridge,
 } from '@deepseek-ai/dsh-client-ui-desktop/protocol'
 import type { SettingsScope } from '@deepseek-ai/dsh-client-runtime/client'
+import type { DeviceId } from '@deepseek-ai/dsh-phone-runtime'
 import type { PhoneSettings } from '../phone-settings.ts'
+import { phoneDeviceIdOf } from './phone-device-id.ts'
 
 const PHONE_DEVICE_SELECTION_PREFIX = 'phone-device:'
 /** Desktop overlay id limit mirrored from the typed Host protocol. */
@@ -74,7 +76,7 @@ export function waitForPhoneGate(
  * @param deviceId - Android serial or iOS UDID.
  * @returns encoded overlay selection id.
  */
-export function phoneDeviceSelectionId(deviceId: string): string {
+export function phoneDeviceSelectionId(deviceId: DeviceId): string {
   const id = `${PHONE_DEVICE_SELECTION_PREFIX}${encodeURIComponent(deviceId)}`
   if (deviceId.length === 0 || id.length > PHONE_DESKTOP_OVERLAY_ID_MAX_LENGTH) {
     throw new RangeError('Phone device id cannot fit the Desktop overlay selection protocol')
@@ -93,7 +95,7 @@ function boundedIdentity(value: unknown): value is string {
  * @param value - Candidate overlay result.
  * @returns decoded device identity, or undefined for another result.
  */
-export function phoneDeviceIdFromSelection(value: unknown): string | undefined {
+export function phoneDeviceIdFromSelection(value: unknown): DeviceId | undefined {
   if (typeof value !== 'object' || value === null) return undefined
   const record = value as Record<string, unknown>
   if (record.type !== 'select'
@@ -102,7 +104,7 @@ export function phoneDeviceIdFromSelection(value: unknown): string | undefined {
     || !record.id.startsWith(PHONE_DEVICE_SELECTION_PREFIX)) return undefined
   try {
     const deviceId = decodeURIComponent(record.id.slice(PHONE_DEVICE_SELECTION_PREFIX.length))
-    return deviceId.length > 0 ? deviceId : undefined
+    return deviceId.length > 0 ? phoneDeviceIdOf(deviceId) : undefined
   } catch {
     return undefined
   }
@@ -116,7 +118,7 @@ export function phoneDeviceIdFromSelection(value: unknown): string | undefined {
  */
 export async function selectPhoneDeviceFromOverlay(
   bridge: PhoneDesktopOverlayBridge,
-  deviceId: string,
+  deviceId: DeviceId,
 ): Promise<void> {
   const state: ChromeOverlayShowRequest | null = await bridge.chromeOverlayGetState()
   if (state?.kind !== 'settings') return

@@ -1,4 +1,6 @@
 /** Browser projection of the Host-owned phone environment full snapshot. */
+import type { DeviceId } from '@deepseek-ai/dsh-phone-runtime'
+import { phoneDeviceIdOf } from './phone-device-id.ts'
 
 /** Shared mobilecli runtime state rendered above Android and iOS sections. */
 export type PhoneManagedRuntimeView =
@@ -32,7 +34,7 @@ export type PhoneIosView =
   | { readonly kind: 'manual-required'; readonly code: 'first-launch' | 'xcode-update'; readonly message: string; readonly developerDir?: string }
   | { readonly kind: 'runtime-missing' | 'no-simulator'; readonly plan: IosPreparationPlanView }
   | { readonly kind: 'preparing'; readonly plan: IosPreparationPlanView; readonly step: 'downloading-runtime' | 'creating-simulator' | 'booting' }
-  | { readonly kind: 'ready'; readonly plan: IosPreparationPlanView; readonly deviceId: string; readonly running: boolean }
+  | { readonly kind: 'ready'; readonly plan: IosPreparationPlanView; readonly deviceId: DeviceId; readonly running: boolean }
   | { readonly kind: 'failed'; readonly plan?: IosPreparationPlanView; readonly code: string; readonly message: string; readonly retryable: boolean }
 
 interface AndroidComponentView {
@@ -85,7 +87,7 @@ export type PhoneAndroidView =
   | {
     readonly kind: 'ready'
     readonly plan: AndroidPreparationPlanView
-    readonly deviceId?: string
+    readonly deviceId?: DeviceId
     readonly running: boolean
   }
   | {
@@ -375,8 +377,8 @@ function parseIos(value: unknown): PhoneIosView {
   if (value.kind === 'preparing' && ['downloading-runtime', 'creating-simulator', 'booting'].includes(String(value.step))) {
     return Object.freeze({ kind: value.kind, plan, step: value.step as 'downloading-runtime' | 'creating-simulator' | 'booting' })
   }
-  if (value.kind === 'ready' && string(value.deviceId) && typeof value.running === 'boolean') {
-    return Object.freeze({ kind: value.kind, plan, deviceId: value.deviceId, running: value.running })
+  if (value.kind === 'ready' && string(value.deviceId) && value.deviceId.length > 0 && typeof value.running === 'boolean') {
+    return Object.freeze({ kind: value.kind, plan, deviceId: phoneDeviceIdOf(value.deviceId), running: value.running })
   }
   throw new Error('phone environment snapshot carried an invalid iOS state')
 }
@@ -432,10 +434,10 @@ function parseAndroid(value: unknown): PhoneAndroidView {
     return Object.freeze({ kind: value.kind, plan, code: value.code, message: value.message })
   }
   if (value.kind === 'ready' && typeof value.running === 'boolean'
-    && (value.deviceId === undefined || string(value.deviceId))) {
+    && (value.deviceId === undefined || (string(value.deviceId) && value.deviceId.length > 0))) {
     return Object.freeze({
       kind: value.kind, plan, running: value.running,
-      ...(value.deviceId === undefined ? {} : { deviceId: value.deviceId }),
+      ...(value.deviceId === undefined ? {} : { deviceId: phoneDeviceIdOf(value.deviceId) }),
     })
   }
   throw new Error('phone environment snapshot carried an invalid Android state')

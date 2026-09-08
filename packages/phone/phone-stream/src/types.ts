@@ -37,7 +37,7 @@ export interface PhoneStreamSession {
 /** One device entry of the `GET /phone/devices` listing body. */
 export interface PhoneDeviceRefWire {
   /** Branded Android serial or iOS UDID as a JSON string. */
-  readonly id: string
+  readonly id: DeviceId
   /** Human-readable device name from the upstream listing. */
   readonly name: string
   /** Emulator, iOS simulator, or physical handset class. */
