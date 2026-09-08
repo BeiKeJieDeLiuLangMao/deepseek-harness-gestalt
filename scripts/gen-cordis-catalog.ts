@@ -187,6 +187,7 @@ export const SERVICE_WALK_EXEMPTIONS: Record<string, string> = {
   slots: 'client-side interface-typed browser service — packages/client/ui-renderer/README.md owns the API',
   theme: 'client-side interface-typed browser service — packages/client/ui-theme/README.md owns the API',
   workspaces: 'client-side interface-typed browser service — packages/api/workspace-controller/README.md owns the API',
+  browserUi: 'client-side Browser UI behavior for the snapshot renderer adapter — packages/client/ui-browser/README.md owns the API',
   workbenchBrowser: 'client-side official Browser tab face — packages/client/ui-workbench/README.md owns the API',
   projectMembershipClient: 'client-side Project Membership HTTP service — packages/platform/project-membership-client/README.md owns the API',
   betterSidebar: 'client-side snapshot workbench registry — packages/client/ui-better-sidebar/README.md owns the API',

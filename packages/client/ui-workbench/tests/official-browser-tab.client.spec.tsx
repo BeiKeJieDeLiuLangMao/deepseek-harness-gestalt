@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { createElement } from 'react'
+import { BrowserPageChrome, type BrowserPageChromeProps } from '@deepseek-ai/dsh-client-ui-browser/client'
 import { Context } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {
@@ -50,6 +52,7 @@ function bench({
 } = {}) {
   if (overlay) document.documentElement.setAttribute('data-dsh-desktop-overlay', '')
   const ctx = new Context()
+  ctx.provide('browserUi', { renderPageChrome: (props: BrowserPageChromeProps) => createElement(BrowserPageChrome, props) })
   const current = page(title)
   const updateTab = vi.fn()
   const ensureOfficial = vi.fn()
@@ -94,7 +97,7 @@ afterEach(() => {
 })
 
 describe('OfficialBrowserTab', () => {
-  it('renders imported page chrome and commits observed title and Profile metadata', async () => {
+  it('renders provider page chrome and commits observed title and Profile metadata', async () => {
     const b = bench()
     render(
       <OfficialBrowserTab

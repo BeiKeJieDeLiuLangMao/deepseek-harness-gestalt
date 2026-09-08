@@ -31,12 +31,7 @@
         "@deepseek-ai/dsh-client-ui-better-sidebar",
         "@deepseek-ai/dsh-api-remotes",
         "@deepseek-ai/dsh-api-session-controller",
-        "@deepseek-ai/dsh-client-ui-browser",
-        "@deepseek-ai/dsh-client-ui-settings"
-      ],
-      "external": [
-        "@deepseek-ai/dsh-api-remotes/client",
-        "@deepseek-ai/dsh-client-ui-browser/client"
+        "@deepseek-ai/dsh-client-ui-browser"
       ],
       "platform": "web"
     }
@@ -50,15 +45,15 @@
     "@deepseek-ai/cordis": "workspace:^"
   },
   "devDependencies": {
+    "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/dsh-api-remotes": "workspace:^",
     "@deepseek-ai/dsh-api-session-controller": "workspace:^",
     "@deepseek-ai/dsh-browser-workspace": "workspace:^",
     "@deepseek-ai/dsh-client-ui-better-sidebar": "workspace:^",
     "@deepseek-ai/dsh-client-ui-browser": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-settings": "workspace:^",
     "@deepseek-ai/dsh-session": "workspace:^",
+    "@deepseek-ai/dsh-settings": "workspace:^",
     "@deepseek-ai/dsh-typert-protocol": "workspace:^",
-    "@deepseek-ai/cordis": "workspace:^",
     "@testing-library/react": "^16.1.0",
     "@types/react": "~18.3.1",
     "react": "^18.2.0",
@@ -68,8 +63,5 @@
     "lib/index.js",
     "lib/client.js",
     "lib/types/**/*.d.ts"
-  ],
-  "dependencies": {
-    "@deepseek-ai/dsh-settings": "workspace:^"
-  }
+  ]
 }

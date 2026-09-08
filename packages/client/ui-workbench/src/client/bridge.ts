@@ -8,7 +8,7 @@ import type {
   BrowserWorkspaceProjection,
 } from '@deepseek-ai/dsh-browser-workspace/client'
 import { listBrowserWorkspacePages } from '@deepseek-ai/dsh-browser-workspace/client'
-import { recoverListedMutation } from '@deepseek-ai/dsh-client-ui-browser/client'
+import type { BrowserUiFace } from '@deepseek-ai/dsh-client-ui-browser/client'
 import {
   officialCreateErrorOf, officialProfileFromChrome, officialProfileOf, officialTabMeta,
   officialTargetKey, officialTargetOf,
@@ -38,6 +38,8 @@ export interface OfficialBrowserBridgeDeps {
   projectionOf: (sessionId: string) => BrowserWorkspaceProjection | undefined
   /** Settings-derived create identity. */
   createRequest: () => BrowserWorkspaceCreateRemoteRequest
+  /** Browser UI owner recovers a single stale listing revision. */
+  recoverListedMutation: BrowserUiFace['recoverListedMutation']
 }
 
 /** Resolve persisted Profile metadata to the Browser Workspace create vocabulary. */
@@ -205,7 +207,7 @@ export class OfficialBrowserBridge {
         if (action.kind === 'closeOfficial') {
           this.closing.add(officialTargetKey(action.target))
           try {
-            await recoverListedMutation(
+            await this.deps.recoverListedMutation(
               remote.close,
               remote.observe,
               action.target,

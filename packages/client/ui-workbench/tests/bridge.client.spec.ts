@@ -1,3 +1,4 @@
+import { recoverListedMutation } from '@deepseek-ai/dsh-client-ui-browser/client'
 import { describe, expect, it, vi } from 'vitest'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {
@@ -86,6 +87,7 @@ function bench(input: {
   }
   const bridge = new OfficialBrowserBridge({
     sidebar,
+    recoverListedMutation,
     bindRemote: () => remote,
     projectionOf: () => currentProjection,
     createRequest: () => ({ profile: 'persistent', name: 'test' }),

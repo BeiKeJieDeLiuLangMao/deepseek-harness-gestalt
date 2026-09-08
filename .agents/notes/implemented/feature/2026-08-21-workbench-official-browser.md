@@ -18,6 +18,8 @@ The collapsed preview stays on `conversation.browser.preview`. ChatView paints i
 
 Host `browserWorkspace.create` is now `@Remote('create')`. Browser Workspace's client outlet owns Remote-result unwrapping, so UI packages do not evaluate the complete Remote assembly to consume that pure adapter. The settings page still does not create tabs. Snapshot `BrowserView` stays on disk: when `ctx.workbenchBrowser` is published it renders official chrome; otherwise the iframe remains the standalone fallback. `betterSidebar.setPanelOpen` expands the panel without minting a dummy URL.
 
+The workbench consumes the required `browserUi` face for shared settings, official chrome, and stale-close recovery. The [browser UI injection decision](../architecture/2026-09-08-workbench-browser-ui-injection.md) owns this Client dependency and provider lifecycle.
+
 ## Alternatives considered
 
 **Keep official chrome in `details` and the workbench beside it.** Rejected because both paint on the right and the user asked to leave Dock.

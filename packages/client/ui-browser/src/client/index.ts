@@ -4,6 +4,10 @@
  * collapsed preview, Profile settings, and Remote unwrap helpers.
  * Live Workspace facts arrive through `useProjection('browserWorkspace')`.
  */
+import { createElement, type ReactElement } from 'react'
+import type { BrowserWorkspaceCreateRemoteRequest } from '@deepseek-ai/dsh-browser-workspace/client'
+import { BrowserPageChrome, type BrowserPageChromeProps } from './BrowserPageChrome.tsx'
+import { recoverListedMutation } from './listed-mutation.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
@@ -23,6 +27,7 @@ import {
   BROWSER_SETTINGS_NAMESPACE,
   DEFAULT_BROWSER_SETTINGS,
   isBrowserProfileName,
+  browserCreateRequestFromSettings,
   type BrowserSettings,
 } from '../browser-settings.ts'
 
@@ -44,6 +49,22 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
     /** Browser chrome and collapsed preview copy. */
     browser: BrowserKey
+  }
+}
+
+/** Browser UI behavior for the snapshot workbench renderer adapter. */
+export interface BrowserUiFace {
+  /** Read the current Profile settings and resolve a page create identity. */
+  createRequest: () => BrowserWorkspaceCreateRemoteRequest
+  /** Render the official page chrome with its normal React hook lifecycle. */
+  renderPageChrome: (props: BrowserPageChromeProps) => ReactElement
+  /** Run a listed mutation, observing and retrying at most one revision conflict. */
+  recoverListedMutation: typeof recoverListedMutation
+}
+
+declare module '@deepseek-ai/cordis' {
+  interface Context {
+    browserUi: BrowserUiFace
   }
 }
 
@@ -74,6 +95,11 @@ export function apply(ctx: Context): void {
   }
   sync()
   ctx.effect(() => scope.subscribe(sync), 'ui-browser: settings sync')
+  ctx.provide('browserUi', {
+    createRequest: () => browserCreateRequestFromSettings(preferences.getSnapshot()),
+    renderPageChrome: props => createElement(BrowserPageChrome, props),
+    recoverListedMutation,
+  } satisfies BrowserUiFace)
   ctx.slots.inject('settings.section', () => ctx.slots.register({
     name: 'settings.section',
     id: 'browser',

@@ -7,6 +7,8 @@ import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import type { BrowserTarget } from '@deepseek-ai/dsh-browser-workspace/client'
 import type { BrowserPreviewActions } from '../src/client/slots.ts'
 import { stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
+import { BrowserPageChrome } from '../src/client/BrowserPageChrome.tsx'
+import { recoverListedMutation } from '../src/client/listed-mutation.ts'
 import { apply, inject } from '../src/client/index.ts'
 import { unwrapRemote } from '../src/client/slots.ts'
 import { en, NS, zh } from '../src/client/locales.ts'
@@ -89,6 +91,9 @@ describe('ui-browser browser plugin', () => {
     expect(inject).toEqual([
       'slots', 'sessions', 'remote', 'remote.browserWorkspace', 'locale', 'settingsScope',
     ])
+    expect(b.ctx.browserUi.createRequest()).toEqual({ profile: 'shared' })
+    expect(b.ctx.browserUi.recoverListedMutation).toBe(recoverListedMutation)
+    expect(b.ctx.browserUi.renderPageChrome({} as never).type).toBe(BrowserPageChrome)
     expect(b.ctx.slots.entries('details')).toEqual([])
     expect(b.preview()?.locale).toBe(NS)
     const section = b.ctx.slots.entries('settings.section')[0]
@@ -96,6 +101,7 @@ describe('ui-browser browser plugin', () => {
     const label = section?.options.label
     expect(typeof label === 'function' ? label() : label).toBe(en['settings.nav'])
     await b.fiber.dispose()
+    expect(b.ctx.get('browserUi')).toBeUndefined()
     expect(b.preview()).toBeUndefined()
     expect(b.ctx.slots.entries('settings.section')).toHaveLength(0)
   })

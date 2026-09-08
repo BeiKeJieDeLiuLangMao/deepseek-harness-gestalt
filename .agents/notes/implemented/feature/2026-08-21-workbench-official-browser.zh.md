@@ -18,6 +18,8 @@ Status: implemented
 
 宿主 `browserWorkspace.create` 现为 `@Remote('create')`。Browser Workspace 的 client 出口持有 Remote 结果解包，因此 UI 包使用这个纯适配器时不会求值整套 Remote assembly。设置页仍然不建标签。快照 `BrowserView` 留在树上：发布了 `ctx.workbenchBrowser` 时渲染官方 chrome，否则 iframe 仍是独立安装的回退。`betterSidebar.setPanelOpen` 用来展开面板，不必为此伪造 URL。
 
+工作台通过必需的 `browserUi` face 消费共享设置、官方 chrome 和过期关闭恢复。[浏览器 UI 注入决定](../architecture/2026-09-08-workbench-browser-ui-injection.zh.md) 规定此 Client 依赖及 provider 生命周期。
+
 ## 考虑过的替代方案
 
 **官方 chrome 继续留在 `details`，工作台并排。** 否决，因为两者都画在右侧，且用户要求离开 Dock。

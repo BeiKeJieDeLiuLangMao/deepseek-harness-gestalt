@@ -9,7 +9,7 @@ import type {
   BrowserPageState, BrowserTarget, BrowserWorkspaceProjection,
 } from '@deepseek-ai/dsh-browser-workspace/client'
 import { listBrowserWorkspacePages } from '@deepseek-ai/dsh-browser-workspace/client'
-import { BrowserPageChrome } from '@deepseek-ai/dsh-client-ui-browser/client'
+import type { BrowserUiFace } from '@deepseek-ai/dsh-client-ui-browser/client'
 import { isDesktopOverlayDocument } from '../desktop-overlay-document.ts'
 import {
   officialCreateErrorOf, officialProfileFromChrome, officialTabMeta, officialTargetKey,
@@ -105,20 +105,19 @@ export function OfficialBrowserTab({ ctx, tab, scope, visible }: OfficialBrowser
   if (isDesktopOverlayDocument() || actions === undefined) return null
 
   const createError = bound === undefined ? officialCreateErrorOf(tab.meta) : undefined
-  return (
-    <BrowserPageChrome
-      target={bound}
-      {...(listedRevision === undefined ? {} : { listedRevision })}
-      refresh={actions.refresh}
-      observe={actions.observe}
-      screenshot={actions.screenshot}
-      t={t}
-      {...(visible === undefined ? {} : { visible })}
-      onCommittedPage={onCommittedPage}
-      onMissingTarget={onMissingTarget}
-      {...(createError === undefined ? {} : { createError, onRetry: onRetryCreate })}
-    />
-  )
+  const browserUi = ctx.get('browserUi') as BrowserUiFace
+  return browserUi.renderPageChrome({
+    target: bound,
+    ...(listedRevision === undefined ? {} : { listedRevision }),
+    refresh: actions.refresh,
+    observe: actions.observe,
+    screenshot: actions.screenshot,
+    t,
+    ...(visible === undefined ? {} : { visible }),
+    onCommittedPage,
+    onMissingTarget,
+    ...(createError === undefined ? {} : { createError, onRetry: onRetryCreate }),
+  })
 }
 
 function emptySubscribe(): () => void {
