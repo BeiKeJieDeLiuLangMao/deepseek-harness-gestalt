@@ -99,6 +99,7 @@
     "apps/web/tests/pwsh-terminal.e2e.ts",
     "apps/web/tests/workflow-run.e2e.ts",
     "apps/web/tests/desktop-chrome.e2e.ts",
+    "apps/web/tests/browser-dock.e2e.ts",
     "apps/web/tests/desktop-schedule.snapshot.ts",
     "apps/web/tests/schedule-board.e2e.ts",
     "apps/web/tests/text-annotation.e2e.ts",

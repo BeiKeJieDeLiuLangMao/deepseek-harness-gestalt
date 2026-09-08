@@ -109,6 +109,7 @@
     "tests/pwsh-terminal.e2e.ts",
     "tests/workflow-run.e2e.ts",
     "tests/desktop-chrome.e2e.ts",
+    "tests/browser-dock.e2e.ts",
     "tests/desktop-schedule.snapshot.ts",
     "tests/schedule-board.e2e.ts",
     "tests/text-annotation.e2e.ts",

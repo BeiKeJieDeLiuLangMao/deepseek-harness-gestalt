@@ -27,9 +27,6 @@
       "path": "../ui-browser"
     },
     {
-      "path": "../ui-settings"
-    },
-    {
       "path": "../../settings/settings"
     },
     {
