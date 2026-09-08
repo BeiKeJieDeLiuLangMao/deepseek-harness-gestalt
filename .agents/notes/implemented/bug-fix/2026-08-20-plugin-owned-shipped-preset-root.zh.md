@@ -1,4 +1,4 @@
-# Agent Note: The shipped preset root is the plugin's own
+# Agent Note: 内置 preset 根目录归插件自有
 
 Status: implemented
 
