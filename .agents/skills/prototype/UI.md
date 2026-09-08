@@ -94,7 +94,7 @@ Put the switcher in a single shared component. Locate it wherever shared UI live
 
 Follow [dsh-desktop-test-instance](../dsh-desktop-test-instance/SKILL.md):
 
-1. For a native Desktop prototype, use a Codex computer-use session against one isolated Electron, preferring background control, then a proven headless route, then a recorded headed fallback. A Web-only prototype may use an isolated headless browser. Mock data for the new function remains acceptable.
+1. For a native Desktop prototype, use a Codex computer-use session against one isolated Electron through the verified macOS background path. A Web-only prototype may use an isolated headless browser. Mock data for the new function remains acceptable.
 2. Walk every `?variant=` key through user-level input. Confirm the host chrome is the real page, the new region uses existing components, and no caption or switcher sits inside the draft.
 3. Only after that check passes, ask the user to review the verified instance. Surface the URL and the `?variant=` keys.
 
