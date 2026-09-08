@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi } from 'vitest'
-import { fireEvent, render } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { cleanup, fireEvent, render } from '@testing-library/react'
 import { BrowserSettingsSection, type BrowserSettingsSectionProps } from '../src/client/BrowserSettingsSection.tsx'
 import { DEFAULT_BROWSER_SETTINGS, type BrowserSettings } from '../src/browser-settings.ts'
 
@@ -20,8 +20,10 @@ function renderSection(
   )
 }
 
+afterEach(cleanup)
+
 describe('BrowserSettingsSection', () => {
-  it('writes the default identity and adds a valid roster name', () => {
+  it('writes the default identity and adds a valid roster name from a focused dialog', () => {
     const setDefaultKind = vi.fn()
     const setDefaultPersistentName = vi.fn()
     const addNamedProfile = vi.fn()
@@ -32,13 +34,19 @@ describe('BrowserSettingsSection', () => {
     })
     fireEvent.click(view.getByLabelText('settings.kind.temporary'))
     expect(setDefaultKind).toHaveBeenCalledWith('temporary')
+    expect(view.queryByRole('dialog')).toBeNull()
+    fireEvent.click(view.getByRole('button', { name: 'settings.roster.openAdd' }))
+    expect(view.getByRole('dialog', { name: 'settings.roster.addTitle' })).toBeTruthy()
+    const name = view.getByLabelText('settings.roster.add') as HTMLInputElement
+    expect(document.activeElement).toBe(name)
     fireEvent.change(view.getByLabelText('settings.roster.add'), { target: { value: 'work' } })
-    fireEvent.click(view.getByText('settings.roster.submit'))
+    fireEvent.click(view.getByRole('button', { name: 'settings.roster.submit' }))
     expect(addNamedProfile).toHaveBeenCalledWith('work')
+    expect(view.queryByRole('dialog')).toBeNull()
     view.unmount()
   })
 
-  it('shows the persistent name picker and rejects an invalid draft', () => {
+  it('validates and cancels the add dialog without retaining its draft', () => {
     const setDefaultKind = vi.fn()
     const setDefaultPersistentName = vi.fn()
     const addNamedProfile = vi.fn()
@@ -51,15 +59,20 @@ describe('BrowserSettingsSection', () => {
     }, { setDefaultKind, setDefaultPersistentName, addNamedProfile, removeNamedProfile, renameNamedProfile })
     fireEvent.change(view.getByLabelText('settings.defaultPersistentName'), { target: { value: '' } })
     expect(setDefaultPersistentName).toHaveBeenCalledWith('')
-    fireEvent.click(view.getByText('settings.roster.remove'))
-    expect(removeNamedProfile).toHaveBeenCalledWith('work')
+    fireEvent.click(view.getByRole('button', { name: 'settings.roster.openAdd' }))
     fireEvent.change(view.getByLabelText('settings.roster.add'), { target: { value: 'tmp' } })
     expect(view.getByRole('alert').textContent).toBe('settings.roster.invalid')
-    expect((view.getByText('settings.roster.submit') as HTMLButtonElement).disabled).toBe(true)
+    expect((view.getByRole('button', { name: 'settings.roster.submit' }) as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.change(view.getByLabelText('settings.roster.add'), { target: { value: 'work' } })
+    expect(view.getByRole('alert').textContent).toBe('settings.roster.duplicate')
+    fireEvent.click(view.getByRole('button', { name: 'settings.cancel' }))
+    expect(view.queryByRole('dialog')).toBeNull()
+    fireEvent.click(view.getByRole('button', { name: 'settings.roster.openAdd' }))
+    expect((view.getByLabelText('settings.roster.add') as HTMLInputElement).value).toBe('')
     view.unmount()
   })
 
-  it('renames a roster entry through the named input', () => {
+  it('keeps roster rows compact until an explicit rename', () => {
     const setDefaultKind = vi.fn()
     const setDefaultPersistentName = vi.fn()
     const addNamedProfile = vi.fn()
@@ -70,23 +83,22 @@ describe('BrowserSettingsSection', () => {
       defaultPersistentName: 'work',
       namedProfiles: ['work'],
     }, { setDefaultKind, setDefaultPersistentName, addNamedProfile, removeNamedProfile, renameNamedProfile })
-    const name = view.getByLabelText('settings.roster.name') as HTMLInputElement
-    fireEvent.blur(name)
-    expect(renameNamedProfile).not.toHaveBeenCalled()
+    expect(view.getByText('work', { selector: 'span' })).toBeTruthy()
+    expect(view.queryByLabelText('settings.roster.name: work')).toBeNull()
+    fireEvent.click(view.getByRole('button', { name: 'settings.roster.rename: work' }))
+    const name = view.getByLabelText('settings.roster.name: work') as HTMLInputElement
+    expect(document.activeElement).toBe(name)
     fireEvent.change(name, { target: { value: 'lab' } })
-    fireEvent.blur(name)
-    expect(renameNamedProfile).toHaveBeenCalledWith('work', 'lab')
-    fireEvent.change(name, { target: { value: 'tmp' } })
-    fireEvent.blur(name)
-    expect(renameNamedProfile).toHaveBeenCalledTimes(1)
-    fireEvent.blur(name)
-    expect(renameNamedProfile).toHaveBeenCalledTimes(1)
-    fireEvent.change(name, { target: { value: 'desk' } })
     fireEvent.keyDown(name, { key: 'Escape' })
-    fireEvent.keyDown(name, { key: 'Enter' })
+    expect(view.queryByLabelText('settings.roster.name: work')).toBeNull()
+    expect(renameNamedProfile).not.toHaveBeenCalled()
+    fireEvent.click(view.getByRole('button', { name: 'settings.roster.rename: work' }))
+    const reopened = view.getByLabelText('settings.roster.name: work')
+    fireEvent.change(reopened, { target: { value: 'desk' } })
+    fireEvent.keyDown(reopened, { key: 'Enter' })
     expect(renameNamedProfile).toHaveBeenCalledWith('work', 'desk')
-    fireEvent.click(view.getByText('settings.roster.rename'))
-    expect(renameNamedProfile).toHaveBeenCalledTimes(3)
+    fireEvent.click(view.getByRole('button', { name: 'settings.roster.remove: work' }))
+    expect(removeNamedProfile).toHaveBeenCalledWith('work')
     view.unmount()
   })
 })
