@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { LOADER_SMOKE_TEST_TIMEOUT_MS, runLoaderSmoke } from '@deepseek-ai/dsh-loader-smoke'
@@ -77,8 +78,8 @@ describe('Remote Protocol keyless assembled path', () => {
       type: 'ciphertext',
       transportVersion: 1,
       routeId: parseRelayRouteId('route-near-limit'),
-      sourceAttachmentId: parseRelayAttachmentId(`mobile-${crypto.randomUUID()}`),
-      targetAttachmentId: parseRelayAttachmentId(`desktop-${crypto.randomUUID()}`),
+      sourceAttachmentId: parseRelayAttachmentId(`mobile-${randomUUID()}`),
+      targetAttachmentId: parseRelayAttachmentId(`desktop-${randomUUID()}`),
       ciphertext,
     })
     expect(relayFrame.byteLength).toBeLessThanOrEqual(REMOTE_PROTOCOL_LIMITS.relayMessageBytes)

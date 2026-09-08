@@ -10,13 +10,13 @@ Type-aware lint can report cascades of unsafe operations when an imported declar
 
 ## Decision
 
-The public lint and fix commands build Host libraries and then Client libraries before invoking their internal lint command. The internal commands consume these prepared declarations. The Remote Protocol example owns a no-emit TypeScript project with its entry as the sole root and direct references to Cordis and the protocol package. The program-less root solution and separate aggregate programs retain their existing responsibilities.
+The public lint and fix commands build Host libraries and then Client libraries before invoking their internal lint command. The internal commands consume these prepared declarations. The Remote Protocol, Two Instance Relay, and Personal Pairing examples own no-emit TypeScript projects with explicit entry/provider roots and references to their imported workspace packages. Remote Protocol snapshot tests have a separate nearby project. The program-less root solution and separate aggregate programs retain their existing responsibilities.
 
 The [Oxlint discovery decision](../process/2026-07-29-oxlint-linter.md) remains authoritative: a nearest TypeScript project governs type-aware discovery; the CLI tsconfig override only changes import resolution. The [compiler-face decision](../process/2026-09-04-merged-workspace-compiler-faces.md) continues to own cross-face test placement and declaration consumption.
 
 ## Verification
 
-The executable lint tests require both public commands to prepare both library phases, lint the real example without unsafe-type diagnostics, and reject a string argument to the protocol's numeric-version-list parameter with TS2345. A separate negative fixture uses the example's configuration and references without changing its runnable source.
+The executable lint tests require both public commands to prepare both library phases, lint the real example without unsafe-type diagnostics, and reject a string argument to the protocol's numeric-version-list parameter with TS2345 or missing HTTP transport options with TS2741. A separate negative fixture uses the example's configuration and references without changing its runnable source.
 
 ## Alternatives considered
 
