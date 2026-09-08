@@ -179,13 +179,7 @@ async function restorePhase(): Promise<void> {
     timeout: 15_000,
     timeoutMsg: 'closing the Side Chat did not durably archive its Session id',
   })
-  await browser.waitUntil(async () => {
-    const trigger = await element(browser, 'button[aria-label^="1 subagent"]')
-    return !(await trigger.isExisting())
-  }, {
-    timeout: 15_000,
-    timeoutMsg: 'closing the Side Chat did not remove its child row from the main Session header',
-  })
+  await assertHeaderChildVisible()
   const main = await mainLog(state.mainSessionId)
   assertMainLog(main)
   await writeSessionEvidence(main, child, archivedIds)

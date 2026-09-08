@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/testing/2026-09-08-desktop-critical-path-electron-acceptance.md
-2026-09-08-desktop-critical-path-electron-acceptance.md: 3a3aee16d47022ebcc005c94f5481f520a12c148
-2026-09-08-desktop-critical-path-electron-acceptance.zh.md: 276cfd1c91963de61cc57ab15e213dacaad5c4fd
+2026-09-08-desktop-critical-path-electron-acceptance.md: 1ea1b0135db165a1f70e412a60a425458a6aec5a
+2026-09-08-desktop-critical-path-electron-acceptance.zh.md: f7069a7d14de57b5bc5668693c524510b8e34dc7
