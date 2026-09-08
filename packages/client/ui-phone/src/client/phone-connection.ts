@@ -168,6 +168,21 @@ export function devicePointOf(point: PhoneScreenPoint, surface: PhoneSurfaceSize
   }
 }
 
+function captureSource(
+  phase: Extract<PhoneConnectionPhase, { kind: 'live' }>,
+  surface: PhoneSurfaceSize,
+  rotation: 0 | 90 | 180 | 270 | undefined,
+): Extract<PhoneClientIoRequest, { method: 'tap' }>['source'] {
+  return {
+    kind: 'capture',
+    captureWidth: surface.width,
+    captureHeight: surface.height,
+    captureId: phase.captureId,
+    captureFormat: phase.format,
+    ...(rotation === undefined ? {} : { captureRotation: rotation }),
+  }
+}
+
 /**
  * Classify one mint failure onto the failure vocabulary. Terminal arms
  * (offline, unauthorized, refused) stop the auto-retry loop; everything
@@ -501,17 +516,14 @@ export class PhoneConnectionController {
    */
   tap(u: number, v: number): boolean {
     const painted = this.surface
-    if (painted === undefined || this.phase.kind !== 'live' || this.coordinateUnavailableReason() !== undefined) return false
+    const phase = this.phase
+    if (painted === undefined || phase.kind !== 'live' || this.coordinateUnavailableReason() !== undefined) return false
     const { x, y } = devicePointOf({ u, v }, painted)
     return this.send({
       method: 'tap',
       x,
       y,
-      source: {
-        kind: 'capture', captureWidth: painted.width, captureHeight: painted.height,
-        captureId: this.phase.captureId, captureFormat: this.phase.format,
-        ...(this.surfaceRotation === undefined ? {} : { captureRotation: this.surfaceRotation }),
-      },
+      source: captureSource(phase, painted, this.surfaceRotation),
     })
   }
 
@@ -523,9 +535,10 @@ export class PhoneConnectionController {
    */
   swipe(points: readonly PhoneScreenPoint[]): boolean {
     const painted = this.surface
+    const phase = this.phase
     const origin = points[0]
     const release = points[points.length - 1]
-    if (painted === undefined || this.phase.kind !== 'live' || origin === undefined || release === undefined
+    if (painted === undefined || phase.kind !== 'live' || origin === undefined || release === undefined
       || this.coordinateUnavailableReason() !== undefined) return false
     const start = devicePointOf(origin, painted)
     const end = devicePointOf(release, painted)
@@ -535,11 +548,7 @@ export class PhoneConnectionController {
       y1: start.y,
       x2: end.x,
       y2: end.y,
-      source: {
-        kind: 'capture', captureWidth: painted.width, captureHeight: painted.height,
-        captureId: this.phase.captureId, captureFormat: this.phase.format,
-        ...(this.surfaceRotation === undefined ? {} : { captureRotation: this.surfaceRotation }),
-      },
+      source: captureSource(phase, painted, this.surfaceRotation),
     })
   }
 

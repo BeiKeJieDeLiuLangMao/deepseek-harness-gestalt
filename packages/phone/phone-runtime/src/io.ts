@@ -22,6 +22,26 @@ export interface AndroidLogicalDisplay {
   readonly height: number
 }
 
+interface ProjectedPoint {
+  readonly x: number
+  readonly y: number
+}
+
+function upstreamTap(deviceId: PhoneIoRequest['deviceId'], point: ProjectedPoint): PhoneUpstreamIo {
+  return { method: 'device.io.tap', params: { deviceId, x: point.x, y: point.y } }
+}
+
+function upstreamSwipe(
+  deviceId: PhoneIoRequest['deviceId'],
+  start: ProjectedPoint,
+  end: ProjectedPoint,
+): PhoneUpstreamIo {
+  return {
+    method: 'device.io.swipe',
+    params: { deviceId, x1: start.x, y1: start.y, x2: end.x, y2: end.y },
+  }
+}
+
 /**
  * Parse mobilecli's positive portrait screen size.
  * @param result - Upstream JSON-RPC result value.
@@ -144,15 +164,12 @@ function androidUpstreamIo(
   switch (request.method) {
     case 'tap': {
       const target = point(request.x, request.y)
-      return { method: 'device.io.tap', params: { deviceId: request.deviceId, x: target.x, y: target.y } }
+      return upstreamTap(request.deviceId, target)
     }
     case 'swipe': {
       const start = point(request.x1, request.y1)
       const end = point(request.x2, request.y2)
-      return {
-        method: 'device.io.swipe',
-        params: { deviceId: request.deviceId, x1: start.x, y1: start.y, x2: end.x, y2: end.y },
-      }
+      return upstreamSwipe(request.deviceId, start, end)
     }
     /* v8 ignore next -- Android coordinate methods are the closed tap|swipe union. */
     default:
@@ -237,21 +254,14 @@ function iosPortraitGesture(
   switch (request.method) {
     case 'tap': {
       const target = point(request.x, request.y)
-      if (rotation === 0) {
-        return { method: 'device.io.tap', params: { deviceId: request.deviceId, x: target.x, y: target.y } }
-      }
-      return {
-        method: 'device.io.swipe',
-        params: { deviceId: request.deviceId, x1: target.x, y1: target.y, x2: target.x, y2: target.y },
-      }
+      return rotation === 0
+        ? upstreamTap(request.deviceId, target)
+        : upstreamSwipe(request.deviceId, target, target)
     }
     case 'swipe': {
       const start = point(request.x1, request.y1)
       const end = point(request.x2, request.y2)
-      return {
-        method: 'device.io.swipe',
-        params: { deviceId: request.deviceId, x1: start.x, y1: start.y, x2: end.x, y2: end.y },
-      }
+      return upstreamSwipe(request.deviceId, start, end)
     }
     /* v8 ignore next -- iOS coordinate methods are the closed tap|swipe union. */
     default:

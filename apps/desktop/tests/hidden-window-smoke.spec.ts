@@ -720,9 +720,9 @@ describe('hidden-window smoke ownership', () => {
   })
 
   it('declares a bundled Electron entry rather than a TypeScript Electron main', () => {
-    expect(HIDDEN_WINDOW_SMOKE_SOURCE.endsWith('scripts/hidden-window-smoke.ts')).toBe(true)
-    expect(HIDDEN_WINDOW_SMOKE_ENTRY.endsWith('out/hidden-window-smoke.mjs')).toBe(true)
-    expect(HIDDEN_WINDOW_SMOKE_BUNDLE.endsWith('scripts/build-hidden-window-smoke.mjs')).toBe(true)
+    expect(HIDDEN_WINDOW_SMOKE_SOURCE.endsWith(join('scripts', 'hidden-window-smoke.ts'))).toBe(true)
+    expect(HIDDEN_WINDOW_SMOKE_ENTRY.endsWith(join('out', 'hidden-window-smoke.mjs'))).toBe(true)
+    expect(HIDDEN_WINDOW_SMOKE_BUNDLE.endsWith(join('scripts', 'build-hidden-window-smoke.mjs'))).toBe(true)
     expect(desktopWindowConstructorOptions('hidden')).toEqual({ show: false })
     expect(handleDesktopWindowActivate('hidden', {
       isDestroyed: () => false,

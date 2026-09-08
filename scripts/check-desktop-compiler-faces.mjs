@@ -18,8 +18,11 @@ if (process.argv.includes('--contracts-ready')) {
     if (result.status !== 0) failed = true
   }
 }
-for (const face of ['tsconfig.json', 'tsconfig.companion-host.json', 'tsconfig.companion-client.json']) {
-  const project = `apps/desktop/${face}`
+for (const project of [
+  'apps/desktop/tsconfig.json',
+  'apps/desktop/tests/companion-fixture/tsconfig.json',
+  'apps/desktop/tests/tsconfig.json',
+]) {
   console.log(`\n=== ${project} ===`)
   const result = spawnSync(process.execPath, [compiler, '-p', project, '--noEmit', '--pretty', 'false'], {
     cwd: root, stdio: 'inherit',
