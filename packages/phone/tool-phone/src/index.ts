@@ -149,13 +149,17 @@ const ACTION_SCHEMA_LIST = [
   ACTION_SCHEMAS.type,
   ACTION_SCHEMAS.button,
 ] as const
+type ListedActionKind = (typeof ACTION_SCHEMA_LIST)[number]['properties']['kind']['const']
+type CompleteActionSchemaList = Exclude<DeviceAction['kind'], ListedActionKind> extends never
+  ? typeof ACTION_SCHEMA_LIST
+  : never
 
 const ACT_SCHEMA = {
   type: 'object' as const,
   additionalProperties: false,
   properties: {
     deviceId: { type: 'string' as const, required: true as const },
-    action: { oneOf: ACTION_SCHEMA_LIST, required: true as const },
+    action: { oneOf: ACTION_SCHEMA_LIST satisfies CompleteActionSchemaList, required: true as const },
     status: { type: 'string' as const, required: true as const, const: 'ok' },
   },
 } as const
