@@ -165,7 +165,12 @@ async function restorePhase(): Promise<void> {
   const close = await element(tab, 'button[aria-label="Close"]')
   await close.waitForClickable({ timeout: 10_000 })
   await close.click()
-  await close.waitForExist({ reverse: true, timeout: 15_000 })
+  await browser.waitUntil(async () => (await elements(
+    browser, `[data-dsh-panel] [title="${SIDE_PROMPT}"] button[aria-label="Close"]`,
+  )).length === 0, {
+    timeout: 15_000,
+    timeoutMsg: 'the closed Side Chat tab remained in the document',
+  })
   let archivedIds: SessionIdType[] = []
   await browser.waitUntil(async () => {
     archivedIds = await archivedSessionIds()
