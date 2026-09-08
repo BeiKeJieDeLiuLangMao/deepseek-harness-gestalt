@@ -16,7 +16,7 @@ A newly composed top-level Session snapshots the route list in `subagent/model-s
 
 The fixed `list_subagent_models` schema does not enumerate the policy. At call time, provider and model listings are the intersection of the Session route list and the adapter's live advertised directory. An exact provider/model lookup first requires authorization, then resolves the adapter-owned model metadata and all advertised reasoning efforts. The delegation executor independently rejects any explicit provider, model, or effort selection whose effective provider/model route is outside the Session list before `resolveCallConfig()` validates adapter availability and effort support. A call that supplies no selection field retains configured or inherited routing because the model made no route choice.
 
-Model selection has no unrestricted static mode. The default-off Host setting is the user-authorization input rather than the sole authorization source: a Consumer may independently union a deployment snapshot into the same Session event, and neither source writes the other. An empty recorded union disables selection; a non-empty recorded list is the exact allowlist for that Session. The primary spawn tool samples this setting when `modelSelectionSettings` is enabled; the shipped fork tool still exposes no route selection so inherited conversation prefixes remain eligible for provider-side KV Cache reuse.
+Model selection has no unrestricted static mode. The default-off Host setting is the user-authorization input rather than the sole authorization source: a Consumer may independently union a deployment snapshot into the same Session event, and neither source writes the other. An empty recorded union disables selection; a non-empty recorded list is the exact allowlist for that Session. The shipped spawn and fork tools read the same recorded policy when `modelSelectionSettings` is enabled. An omitted fork route preserves parent-route inheritance; an explicitly authorized route preserves the completed history while potentially losing prefix cache reuse.
 
 ## Alternatives considered
 
@@ -40,4 +40,4 @@ Model selection has no unrestricted static mode. The default-off Host setting is
 
 ## Related decisions
 
-The route arguments, adapter preflight, discovery tool, and fork cache restriction remain owned by [model-selected subagent routes](2026-08-18-model-selected-subagent-routes.md).
+The route arguments, adapter preflight, discovery tool, and fork cache costs remain owned by [model-selected subagent routes](2026-08-18-model-selected-subagent-routes.md).

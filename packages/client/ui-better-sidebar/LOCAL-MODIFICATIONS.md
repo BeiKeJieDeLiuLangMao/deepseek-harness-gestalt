@@ -60,3 +60,9 @@ Allowed import paths only: `dsh.plugin.json`, `src`, `tsdown.config.ts`. Upstrea
 | 22 `contain: style` on docked panels | **retained** |
 | 23 bottom-tree `openTab` seed lands right | **retained** |
 | 24 last docked tab collapses panel | **retained** |
+
+## 0.18.1 main refresh dispositions (`f59ffd07` → `d88dcfc3`)
+
+All existing rows remain retained. The source delta adopts file-tree rename/delete, changes-preview reading and redaction, diff expansion, submenu positioning, quoted terminal settings, and regex terminal waits. The repository-owned manifest, tests, and build faces remain authoritative.
+
+The upstream Side Chat seed marker is already represented by canonical admission. `isSeeded` remains true and `inheritedEventCount` ends at `inheritance.seed.length`: the appended child descriptor is child-owned. Its model selection, renderer admission, persistence handles, and close lifecycle remain intact. Desktop overlay menus, window drag space, phone tab badges, and the request-trust adapter are retained. Regional locale exports and `saveShortcutTitle` remain repository-owned. The new `src/client/tree-mutations.ts` uses the existing `SidebarContext` mirror instead of the upstream `Context` name.

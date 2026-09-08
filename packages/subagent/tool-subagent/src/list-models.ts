@@ -1,5 +1,6 @@
 /** Model-facing discovery of LLM routes available to child Agents. */
 
+import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { Context } from '@deepseek-ai/cordis'
 import type LlmRuntime from '@deepseek-ai/dsh-llm'
 import type { LlmProviderInfo } from '@deepseek-ai/dsh-llm'
@@ -78,13 +79,63 @@ async function listSubagentModels(
   return `${modelLine(provider.id, model)}\nReasoning efforts:\n${efforts}`
 }
 
+const DISCOVERY = Symbol('subagent-model-discovery')
+
+interface SharedDiscovery {
+  readonly policyKey: string
+  users: number
+  dispose: () => void
+}
+
+type DiscoveryAgent = Agent & { [DISCOVERY]?: SharedDiscovery | undefined }
+
 /**
- * Register `list_subagent_models` for one owning delegation-tool instance.
- * @param ctx - Context whose tool registry owns the fixed discovery definition.
- * @param policy - Route policy captured for this Session.
+ * Share one discovery definition among selectable tools on the same Agent.
+ * @param ctx - the delegation-tool consumer's effect owner.
+ * @param policy - exact route policy captured for this Session.
  */
 export function registerListSubagentModels(ctx: Context, policy: ModelSelectionPolicy): void {
-  ctx.tools.register(defineTool({
+  const agent: DiscoveryAgent | undefined = ctx.agent
+  if (agent === undefined) {
+    registerDiscovery(ctx, policy)
+    return
+  }
+  const policyKey = JSON.stringify(policy.routes)
+  ctx.effect(() => {
+    let shared = agent[DISCOVERY]
+    if (shared !== undefined && shared.policyKey !== policyKey) {
+      throw new Error('subagent model discovery consumers must share one Session route policy')
+    }
+    if (shared === undefined) {
+      // Tools/change can compose the sibling consumer before registration returns.
+      shared = { policyKey, users: 0, dispose: () => {} }
+      agent[DISCOVERY] = shared
+      try {
+        shared.dispose = registerDiscovery(agent.ctx, policy)
+      } catch (error) {
+        agent[DISCOVERY] = undefined
+        throw error
+      }
+    }
+    shared.users += 1
+    const held = shared
+    return () => {
+      held.users -= 1
+      if (held.users !== 0) return
+      agent[DISCOVERY] = undefined
+      held.dispose()
+    }
+  }, 'subagent model discovery consumer')
+}
+
+/**
+ * Register the discovery definition in its lifetime-owning tool scope.
+ * @param ctx - Context whose tool registry owns the fixed discovery definition.
+ * @param policy - Route policy captured for this Session.
+ * @returns the exact tool registration disposer.
+ */
+function registerDiscovery(ctx: Context, policy: ModelSelectionPolicy): () => void {
+  return ctx.tools.register(defineTool({
     name: 'list_subagent_models',
     description:
       'Discover LLM routes for subagents without changing the current Agent. Call with no arguments to list '

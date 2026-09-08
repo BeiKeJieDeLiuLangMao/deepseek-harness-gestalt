@@ -100,6 +100,8 @@ interface SdkAssertions {
   }
   /** Assembled model-facing tool names and required argument keys. */
   expectedTools?: Readonly<Record<string, readonly string[]>>
+  /** Argument names that must reach the model in selected assembled definitions. */
+  expectedToolArguments?: Readonly<Record<string, readonly string[]>>
   /** Exact assembled system prompt for the root request. */
   expectedSystem?: string
   /** Exact model-facing descriptions for selected tools. */
@@ -123,6 +125,7 @@ const SDK_ASSERTIONS: Readonly<Record<string, SdkAssertions>> = {
     },
   },
   'subagent-dsh-sdk-dynamic-route': {
+    expectedToolArguments: { subagent_fork: ['provider', 'model', 'reasoning_effort'] },
     environment: { DSH_TEST_PARENT_PROVIDER: 'deepseek-official' },
     dshSdkChild: {
       config: dshSdkChildConfig,
@@ -238,7 +241,7 @@ interface LoggedRequestHeader {
 interface LoggedTool {
   readonly name: string
   readonly description?: unknown
-  readonly parameters: { readonly required?: string[] }
+  readonly parameters: { readonly required?: string[]; readonly properties?: Readonly<Record<string, unknown>> }
 }
 
 function assembledTools(log: PersistedLog): LoggedTool[] {
@@ -825,6 +828,16 @@ describe('TypeScript SDK snapshots over the jsonrpc runtime', () => {
         const parent = ordered[0]
         if (parent === undefined) throw new Error(`${scenario.name} has no parent session log`)
         expect(assembledToolRequirements(parent)).toEqual(assertions.expectedTools)
+      }
+      if (assertions.expectedToolArguments !== undefined) {
+        const parent = ordered[0]
+        if (parent === undefined) throw new Error(`${scenario.name} has no parent session log`)
+        const schemas = assembledTools(parent)
+        for (const [name, arguments_] of Object.entries(assertions.expectedToolArguments)) {
+          const schema = schemas.find(candidate => candidate.name === name)
+          expect(Object.keys(schema?.parameters.properties ?? {}), `${name}: model-visible arguments`)
+            .toEqual(expect.arrayContaining(arguments_))
+        }
       }
       if (assertions.expectedSystem !== undefined) {
         const parent = ordered[0]

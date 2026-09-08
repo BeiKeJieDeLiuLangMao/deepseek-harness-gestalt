@@ -6,15 +6,15 @@
 
 - 仓库：`https://github.com/omdsh-dev/DSH-better-sidebar.git`
 - 分支：`main`
-- 提交：`f59ffd07417036baf3953310d42c7b40b280db78`
-- 上游版本标签：`0.18.0`（`dsh.plugin.json`）
+- 提交：`d88dcfc3a50b43d4fc8baef961a8cc75809f41a6`
+- 上游版本标签：`0.18.1`（`dsh.plugin.json`）
 - 前缀：`packages/client/ui-better-sidebar/`
 
 更新：
 
 ```sh
 git fetch https://github.com/omdsh-dev/DSH-better-sidebar.git main
-git diff --binary f59ffd07417036baf3953310d42c7b40b280db78..FETCH_HEAD \
+git diff --binary d88dcfc3a50b43d4fc8baef961a8cc75809f41a6..FETCH_HEAD \
   -- dsh.plugin.json src tsdown.config.ts \
   | git apply --3way --index --directory=packages/client/ui-better-sidebar
 ```

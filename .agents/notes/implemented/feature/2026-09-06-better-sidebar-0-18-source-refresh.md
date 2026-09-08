@@ -1,4 +1,4 @@
-# Agent Note: Better Sidebar 0.18.0 source refresh without parallel Side Chat
+# Agent Note: Better Sidebar source refresh and canonical Side Chat
 
 Status: implemented
 
@@ -6,26 +6,24 @@ English | [中文](2026-09-06-better-sidebar-0-18-source-refresh.zh.md)
 
 ## Problem
 
-The snapshot was still pinned at Better Sidebar 0.16.1 (`f9153dfc`). 0.18.0 (`f59ffd07`) ships split-sidebar modules, a locale chunk, changes/diff work, and `remote.session.openWorkspacePath`, but it also restores an in-tab transcript/polling Side Chat that this repository retired in favor of the canonical `conversation` mount.
+Better Sidebar main supplies file-tree, editor, diff, and terminal behavior, while Gestalt owns the canonical Conversation renderer and Desktop chrome. Replacing the subtree wholesale would restore the upstream Side Chat renderer and discard those product obligations.
 
 ## Decision
 
-Import only `dsh.plugin.json`, `src`, and `tsdown.config.ts` from `f9153dfc` to `f59ffd07`. Do not import `src/client/sidechat-transcript.ts`. Keep the canonical Side Chat tab: provisional identity, `uiRenderer.mountSession(..., 'conversation', ...)`, first-prompt Host publication, restore/close, and the existing admission adapter object. Adopt `src/client/chunks/locale.tsx` and add `locale` to `CHUNKS` / `CHUNK_NAMES` so Host serves `lib/client-locale.js`. Replay every LOCAL-MODIFICATIONS row; record each as retained, relocated, adopted, or retired in that file.
+Pin main at `d88dcfc3a50b43d4fc8baef961a8cc75809f41a6` (version label `0.18.1`). Import only `dsh.plugin.json`, `src`, and `tsdown.config.ts`; repository manifests, tests, and documentation remain locally owned. Replay every row in [LOCAL-MODIFICATIONS.md](../../../../packages/client/ui-better-sidebar/LOCAL-MODIFICATIONS.md).
 
-`SessionAdmissionAdapter` still type-imports `@deepseek-ai/dsh-client-runtime/client`. ClientSessions does not yet register or dispatch the full adapter (handles, owned-suffix history, prompt start vs published prompt, cancel, queue, permission, modelRoute). Leave that routing incomplete rather than invent an empty interface or compatibility barrel. Source import may land; assembled Side Chat is not accepted until that owner exists.
+Keep Side Chat provisional identity, the canonical `conversation` mount, first-prompt publication, model and permission admission, persistent restoration, and serialized close. The inherited count covers only the captured parent prefix; the appended child descriptor remains the first owned event. Upstream seed-marker changes cannot replace this count with the entire seed length. Desktop overlay menus, window drag space, and phone tab badges remain product adaptations.
 
 ## Alternatives considered
 
-**Take the entire 0.18 Side Chat view, including transcript polling and history menu.** Rejected because that would restore a parallel renderer and drop the approved Conversation mount.
+**Replace the whole subtree.** Rejected because it would restore a parallel transcript and composer and discard the admission and chrome owners.
 
-**Declare a local empty `SessionAdmissionAdapter` so Typert and the snapshot compile.** Rejected because optional chaining already silently skips registration; an empty type would hide the missing ClientSessions dispatch.
-
-**Wait for GitHub merge of #589/#591 before importing source.** Rejected for this isolated worktree: the allowed source pin can land while those contracts stay listed as incomplete.
+**Skip all files with local changes.** Rejected because it would also omit independent file-tree, preview, terminal, and menu fixes. Resolve compatible changes per hunk and keep a pinned source record.
 
 ## Consequences
 
-The snapshot pin is 0.18.0 / `f59ffd07`. Split-sidebar, locale chunk, and LOCAL chrome remain. Parallel Side Chat transcript stays absent. Admission routing remains a documented incomplete dependency.
+The snapshot adopts upstream file-tree rename/delete, preview reading and redaction, expanded diffs, quoted terminal configuration, and regex terminal waits. The local test suite owns regression evidence for source updates and preserved product adaptations. Package checks do not establish assembled Web or Electron acceptance.
 
 ## Verification
 
-Focused checks: no `sidechat-transcript` path; `CHUNKS` includes `locale`; `SideChatView` still calls `mountSession` on `conversation`; LOCAL-MODIFICATIONS lists all 24 rows with dispositions; `dsh.plugin.json` version is `0.18.0`. This slice does not claim package tests, Typert catalog, or assembled Web/Electron evidence.
+Check the exact pin and allowed import paths, run the Sidebar suite and bundle, and verify canonical Side Chat and Desktop behavior through their existing tests. New source regressions exercise root and overwrite refusal, symlink deletion, terminal argument grouping, a real PTY regex wait, and preview redaction.

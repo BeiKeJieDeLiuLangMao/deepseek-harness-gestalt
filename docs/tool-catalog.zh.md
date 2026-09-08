@@ -2022,7 +2022,7 @@ Source: [`packages/subagent/tool-subagent/src/list-models.ts`](../packages/subag
 
 来源：[`packages/subagent/tool-subagent/src/index.ts`](../packages/subagent/tool-subagent/src/index.ts)
 
-注册的委派名称是加载时 `toolName` 配置（默认为 `subagent`）；上述默认 schema 关闭模型选择，而发现 schema 作为启用 Session 中的固定伴随工具展示。可选的 `images` 参数仅在绑定提供方公布 `capabilities.images` 时出现；本次 harvest 使用确实公布该能力的进程内目录 fixture，因此公布 `images: false` 的 ACP 及其他进程外后端会省略该字段。Web 预设为每个新的顶层 Session 采样 Plugins 偏好，并在其子 Session 中保留该决定；`subagent_fork` 保持固定路由。每个实例通过 `modelSelectionSettings`、`backgroundMode` 和 `enableRunInBackground` 独立控制是否读取模型选择设置及其后台行为。
+注册的委派名称是加载时 `toolName` 配置（默认为 `subagent`）；上述默认 schema 关闭模型选择，而发现 schema 作为启用 Session 中的固定伴随工具展示。可选的 `images` 参数仅在绑定提供方公布 `capabilities.images` 时出现；本次 harvest 使用确实公布该能力的进程内目录 fixture，因此公布 `images: false` 的 ACP 及其他进程外后端会省略该字段。Web 预设为每个新的顶层 Session 采样 Plugins 偏好，并在其子 Session 中保留该决定；`subagent_fork` 接受同样的已授权路由选择，并保留父级已完成轮次；省略路由时保持继承。同一 Agent 上可选择模型的工具共享发现定义。每个实例通过 `modelSelectionSettings`、`backgroundMode` 和 `enableRunInBackground` 独立控制是否读取模型选择设置及其后台行为。
 
 <a id="deepseek-aidsh-tool-subagent-control"></a>
 

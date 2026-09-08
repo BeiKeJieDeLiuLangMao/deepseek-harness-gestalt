@@ -31,7 +31,7 @@ import {
 } from './config.ts'
 import { parentOf, requireAbsolute, listDirectory, rootLabel } from './fs-tree.ts'
 import { resolveSessionPath } from './session-path.ts'
-import { writeWorkspaceUpload } from './fs-operations.ts'
+import { renameWorkspaceEntry, removeWorkspaceEntry, writeWorkspaceUpload } from './fs-operations.ts'
 import { ensureWorkspacePath, ensureWorkspaceWritePath, resolveReadablePath } from './path-security.ts'
 import { searchFiles } from './fs-search.ts'
 import { decodeHtmlUrl } from './html-route.ts'
@@ -42,7 +42,7 @@ import { launchExternal } from './open-external.ts'
 import * as git from './git.ts'
 import { SettingsConflictError } from '@deepseek-ai/dsh-settings'
 import { SessionId } from '@deepseek-ai/dsh-session'
-import { defaultShell, ensureSpawnHelper, PtyManager, shellDisplayName } from './pty-manager.ts'
+import { defaultShell, ensureSpawnHelper, PtyManager, shellDisplayName, splitShellArgs, unquotePath } from './pty-manager.ts'
 import { AgentPtyRegistry, armPtyResizeGate, tryResizePty, type AgentTerminalHandle } from './agent-pty.ts'
 import {
   DSH_NODE_PTY_RANGE,
@@ -252,11 +252,11 @@ function shellOverridesOf(getSettings: () => SidebarSettingsFace | undefined): {
   const value = settings?.get().value
   if (value === null || typeof value !== 'object') return {}
   const record = value as Record<string, unknown>
-  const shell = typeof record.terminalShell === 'string' ? record.terminalShell.trim() : ''
+  const shell = typeof record.terminalShell === 'string' ? unquotePath(record.terminalShell.trim()) : ''
   const args = typeof record.terminalShellArgs === 'string' ? record.terminalShellArgs.trim() : ''
   return {
     shell: shell === '' ? undefined : shell,
-    shellArgs: args === '' ? undefined : args.split(/\s+/).filter(Boolean),
+    shellArgs: args === '' ? undefined : splitShellArgs(args),
   }
 }
 
@@ -355,6 +355,28 @@ function buildApi(
       }
       return { ok: true }
     },
+    // The tree row's rename: single-segment name, destination-existence and
+    // workspace-root refusals, link-aware (renames the row, not its target).
+    // fs-operations.ts owns the containment and shape rules.
+    'fs.rename': async (payload) => {
+      const { cwd } = await cwdOf(payload)
+      return renameWorkspaceEntry({
+        cwd,
+        path: requireString(payload, 'path'),
+        name: requireString(payload, 'name'),
+        fence: fenceEnabledOf(getSettings),
+      })
+    },
+    // The tree row's delete (permanent — the host has no trash): recursive
+    // for directories, unlinks a symlink row without touching its target.
+    'fs.remove': async (payload) => {
+      const { cwd } = await cwdOf(payload)
+      return removeWorkspaceEntry({
+        cwd,
+        path: requireString(payload, 'path'),
+        fence: fenceEnabledOf(getSettings),
+      })
+    },
     'git.worktrees': async (payload) => {
       const { cwd } = await gitCwdOf(payload)
       const selected = selectedRepoOf(payload)
@@ -438,7 +460,13 @@ function buildApi(
     'git.show': async (payload) => {
       const { cwd } = await gitCwdOf(payload)
       const repoRoot = selectedRepoOf(payload)
-      const path = await resolveGitPath(cwd, requireString(payload, 'path'), repoRoot)
+      // `git show <rev>:<path>` addresses the path inside the revision TREE:
+      // repository-relative, exactly the unified diff's own path form (after
+      // the a// b/ prefix). The absolute filesystem paths resolveGitPath
+      // produces would break the rev:path syntax and fail every read, so the
+      // path passes through as-is — it can only address blobs of this repo's
+      // own revisions, the same surface git.diff/git.log already expose.
+      const path = requireString(payload, 'path')
       const rev = requireString(payload, 'rev')
       return { content: await git.show(cwd, rev, path, repoRoot) }
     },
@@ -512,11 +540,14 @@ function buildApi(
     // Subagent live previews: one batch request per refresh; the route folds
     // the newest text/tool activity of every running child in the tree.
     'subagents.live': (payload) => subagentLiveApi.live(payload),
-    // The effective terminal shell and its display name. The client uses
-    // this to title terminal tabs with the shell name instead of a numbered
-    // "Terminal N" label; the shell itself is configured through
-    // `cordis.patch.yml` (`config.shell`) or resolved by the host default.
-    'shell.get': () => ({ shell: terminalShell, name: shellDisplayName(terminalShell) }),
+    // The effective terminal shell and its display name: the settings-page
+    // override when set (quotes stripped), else the boot-time resolution.
+    // The client titles terminal tabs with the name, so a changed setting is
+    // visible on the next opened tab without a plugin restart.
+    'shell.get': () => {
+      const effective = shellOverridesOf(getSettings).shell ?? terminalShell
+      return { shell: effective, name: shellDisplayName(effective) }
+    },
     // The side card preferences. The settings service is optional in the
     // composition; while absent the routes report undefined and the client
     // keeps the schema defaults. Writes are revision-guarded: a stale editor
@@ -1140,6 +1171,38 @@ async function attachAgentList(
 }
 
 /**
+ * The WS close reason for a failed terminal attach. A missing configured
+ * shell gets a SHORT machine-readable marker (`shell-not-found:<name>`,
+ * capped by BYTES — a WS close reason allows at most 123 bytes, which `ws`
+ * validates with `Buffer.byteLength`) that the client maps to a localized,
+ * actionable banner; every other failure keeps the raw message (the
+ * model-side tool errors read it verbatim).
+ */
+export function wsCloseReasonOf(error: unknown): string {
+  if (error instanceof SidebarError && error.code === 'shell-not-found') {
+    const name = truncateUtf8Bytes(shellDisplayName(String(error.meta?.shell ?? '')), 100)
+    return `shell-not-found:${name}`
+  }
+  return error instanceof Error ? error.message : String(error)
+}
+
+/**
+ * Truncate to at most `maxBytes` UTF-8 bytes without splitting a code point.
+ * A character-count `slice` does not bound the WS close reason: `ws` measures
+ * `Buffer.byteLength` against its 123-byte cap, and the resulting throw would
+ * replace the very error the reason describes.
+ */
+function truncateUtf8Bytes(value: string, maxBytes: number): string {
+  if (Buffer.byteLength(value) <= maxBytes) return value
+  let truncated = ''
+  for (const character of value) {
+    if (Buffer.byteLength(truncated + character) > maxBytes) break
+    truncated += character
+  }
+  return truncated
+}
+
+/**
  * Wire one terminal socket to its pty: replay transcript, pump both ways.
  * Two attach modes share the wire protocol:
  * - `?uuid=...` attaches to an agent-owned terminal (created by the
@@ -1267,7 +1330,7 @@ async function attachTerminal(
       }
     })
   } catch (error) {
-    ws.close(1011, error instanceof Error ? error.message : String(error))
+    ws.close(1011, wsCloseReasonOf(error))
   }
 }
 

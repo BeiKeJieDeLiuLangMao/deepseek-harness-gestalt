@@ -84,6 +84,7 @@
     "@deepseek-ai/dsh-subagent-route-preauthorization-static": "workspace:^",
     "@deepseek-ai/dsh-attachment": "workspace:^",
     "@deepseek-ai/dsh-fs": "workspace:^",
-    "@deepseek-ai/dsh-tool-fs": "workspace:^"
+    "@deepseek-ai/dsh-tool-fs": "workspace:^",
+    "@deepseek-ai/dsh-subagent-fork-in-process": "workspace:^"
   }
 }

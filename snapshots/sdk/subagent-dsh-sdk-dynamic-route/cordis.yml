@@ -62,6 +62,15 @@
           maxTokens: 777
         maxDepth: 'provider-managed'
 
+    - id: tool-subagent-fork-selectable
+      name: '../../../packages/subagent/subagent-dsh-sdk/tests/fixtures/loader/scoped-tool-subagent.ts'
+      config:
+        provider: fork
+        toolName: subagent_fork
+        modelSelectionSettings: true
+        deploymentRoutePreauthorization: true
+        enableRunInBackground: false
+
     - id: sdk-jsonrpc-server-dynamic-live
       name: '@deepseek-ai/dsh-sdk-jsonrpc-server'
       inject: [sdkAppStartup, loader]

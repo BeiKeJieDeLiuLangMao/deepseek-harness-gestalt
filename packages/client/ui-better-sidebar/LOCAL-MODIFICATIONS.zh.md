@@ -60,3 +60,9 @@
 | 22 停靠面板 `contain: style` | **保留** |
 | 23 底部树 `openTab` seed 落到右侧 | **保留** |
 | 24 最后一个停靠标签收起面板 | **保留** |
+
+## 0.18.1 main 更新处置（`f59ffd07` → `d88dcfc3`）
+
+现有各行改动全部保留。源码差量采纳文件树重命名/删除、变更预览阅读与脱敏、差异展开、子菜单定位、带引号的终端设置与正则终端等待。本仓清单、测试与构建编译面继续由本仓持有。
+
+上游 Side Chat seed 标记已由正式准入实现：`isSeeded` 保持 true，`inheritedEventCount` 截止于 `inheritance.seed.length`，追加的 child descriptor 属于子会话。选模、渲染准入、持久化句柄与关闭生命周期保持完整。Desktop 弹层菜单、窗口拖拽区域、手机 tab 状态标记和 request-trust 适配器全部保留。区域语言导出与 `saveShortcutTitle` 继续由本仓持有。新增 `src/client/tree-mutations.ts` 使用已有 `SidebarContext` 镜像，替代上游的 `Context` 名称。
