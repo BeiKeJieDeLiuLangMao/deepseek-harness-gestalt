@@ -7,7 +7,7 @@
     "rewriteRelativeImportExtensions": false
   },
   "files": [
-    "member-presence-close.snapshot.ts",
+    "member-presence-close.spec.ts",
     "fixtures/driver.ts"
   ],
   "include": [],

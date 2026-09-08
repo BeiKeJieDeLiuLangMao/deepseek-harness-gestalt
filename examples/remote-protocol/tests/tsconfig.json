@@ -7,7 +7,7 @@
     "rewriteRelativeImportExtensions": false
   },
   "files": [
-    "remote-protocol.snapshot.ts",
+    "remote-protocol.spec.ts",
     "fixtures/driver.ts"
   ],
   "include": [],
