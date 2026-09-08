@@ -50,6 +50,8 @@ agent preset 用来声明基础工具资格的 allow-only 配置行。
 
 - 该行只接受精确工具 id；不提供别名、模式、分类或 deny 列表。
 
+本包不发布运行时不变式配套插件，因为本包贡献的作用域 eligibility 并集与释放关系由 `dsh-tools` 拥有。
+
 <a id="dev-note"></a>
 ### 开发备注
 

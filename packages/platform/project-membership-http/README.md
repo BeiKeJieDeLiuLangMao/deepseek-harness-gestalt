@@ -41,6 +41,8 @@ The HTTP layer adds no stable request prefix; successful mutations change later 
 - The Consumer assumes the Platform composition mounted one authoritative membership provider beside the Account service.
 - Presence entries are process-local; a multi-instance deployment needs a shared TTL store (for example Redis) implementing `PresenceStore` before presence is consistent across Platform instances.
 
+No runtime invariant companion is published because this HTTP adapter owns only routes and a private presence view; the Project Membership Core companion owns the durable roster-version relationship.
+
 <a id="dev-note"></a>
 ### Dev Note
 

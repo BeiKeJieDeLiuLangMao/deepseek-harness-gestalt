@@ -58,6 +58,8 @@ store 插件（`name: '@deepseek-ai/dsh-remote-attachments'`）把这些边界�
 - `RemoteAttachmentStoreProvider` 仅保留为包测试 fixture。实际运行的 Platform 会先把 PostgreSQL 原子 consume bridge 部署到全部主机，再在每个 predecessor 都报告 bridge mode 后通过单独部署启用私有 OSS 字节。bridge 与 OSS store 共享 claim token；主动 sweep 会删除过期和明确 inactive 的 pairing candidate，并释放 quota reservation。
 - Desktop 把 consume 的 HTTP 403/404/410/413 映射为协议原生拒绝原因，只在哈希校验后解密，并通过 Session 范围的 Host 文件 RPC 准入确切字节。
 
+本包不发布运行时不变式配套插件，因为 `observe()` 投影的正是 store 操作修改的同一份私有 entries map，配套插件只能重复同源检查。
+
 <a id="dev-note"></a>
 ### 开发备注
 

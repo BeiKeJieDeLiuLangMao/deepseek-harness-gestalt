@@ -460,20 +460,6 @@ export interface SidebarRemoteSessionService {
   >
 }
 
-/**
- * The invariant service face (mirror of @deepseek-ai/dsh-invariants'
- * InvariantRegistry). The upstream augmentation does not reach this SidebarContext
- * (dual-cordis-instance resolution), so the register signature is restated
- * structurally, exactly like the other service faces above.
- */
-export interface SidebarInvariantsService {
-  /** Reserve one package's checks and install them in the service's child fiber. */
-  register(
-    packageName: string,
-    installer: (ctx: SidebarContext, fail: (message: string) => never) => void | Promise<void>,
-  ): () => void
-}
-
 /** The settings service face (mirror of @deepseek-ai/dsh-settings' SettingsProvider). */
 export interface SidebarSettingsService {
   /**
@@ -558,8 +544,6 @@ export interface SidebarContextShape {
   slots: SidebarSlotsService
   /** The settings service face (prefs persistence + namespace reads). */
   settings: SidebarSettingsService
-  /** The invariant registry face. */
-  invariants: SidebarInvariantsService
   /** The tool registry face. */
   tools: SidebarToolsService
   /** The client locale service face. */

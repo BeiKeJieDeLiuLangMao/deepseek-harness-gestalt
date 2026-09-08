@@ -28,7 +28,7 @@ Status: implemented
 
 ### 审计结果
 
-全仓库审计删除了 209 个带说明的空伴生入口和合成的 `dsh-host-webserver` 伴生入口，留下 39 项比较独立观察的检查。保留项包括 session、command、approval、workflow 与 hook 生命周期等跨事件协议；settings、storage-domain、Workspace、client modules 与 slots 等事件到状态检查；system prompt 与 time context 等多生产方组装检查；以及 todo、plan mode 与 sandbox mode 等由 projection 或 policy state 消费的持久数据。
+仓库发布 47 个比较独立观察的配套插件。保留项包括 session、command、approval、workflow 与 hook 生命周期等跨事件协议；settings、storage-domain、Workspace、client modules 与 slots 等事件到状态检查；system prompt 与 time context 等多生产方组装检查；以及 todo、plan mode 与 sandbox mode 等由 projection 或 policy state 消费的持久数据。
 
 被省略关系继续由现有包行为测试负责，包括 webserver 路由注册与 HMR 释放。产品行为与包根入口不变；被省略的 `./invariant` 子路径按照仓库的预发布兼容策略移除。
 

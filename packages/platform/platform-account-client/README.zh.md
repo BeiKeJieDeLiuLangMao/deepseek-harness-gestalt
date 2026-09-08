@@ -36,6 +36,8 @@ Account 状态本身不增加稳定请求前缀；授权会改变哪些成员关
 - 本库向个人配对提供当前安装账号鉴权，但不授予 Desktop 或 Companion 权限。
 - Mobile 原生打包必须提供稳定的 WebView 存储 origin；Mobile composition 自己拥有 Capacitor Browser 适配器。
 
+本包不发布运行时不变式配套插件，因为请求、socket 与快照状态由 controller 私有持有，没有独立事件流。
+
 <a id="dev-note"></a>
 ### 开发备注
 

@@ -48,6 +48,8 @@ kind: "package-reference"
 - 本包只定义词汇与门;不拥有存储。文件持久化的开发 Provider 位于 [`dsh-project-membership-core`](../project-membership-core/README.zh.md),运营部署需自行提供后端。
 - 成员提问路由与在线推导消费本能力但不属于本能力;路由提问的生产激活仍受[放置决策 Agent Note](../../../.agents/notes/implemented/feature/2026-08-27-project-membership-core.zh.md) 所记录的现行加密评审门约束。
 
+本包不发布运行时不变式配套插件，因为此 Service Definition 不拥有 Provider 状态，持久 roster version 事件流由 Project Membership Core 配套插件检查。
+
 <a id="dev-note"></a>
 ### 开发备注
 

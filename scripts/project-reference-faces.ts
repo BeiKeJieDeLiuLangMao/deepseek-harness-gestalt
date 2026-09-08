@@ -27,7 +27,6 @@ export const POST_GENERATION_CROSS_FACE_TESTS = [
   'packages/platform/platform-account-http/tests/assembled.spec.ts',
   'packages/platform/remote-access-http/tests/assembled.spec.ts',
   'packages/platform/remote-access-http/tests/two-instance-assembled.spec.ts',
-  'packages/platform/remote-access/tests/invariant-companions.spec.ts',
   'packages/platform/remote-attachments/tests/http-assembled.built.e2e.ts',
 ] as const
 

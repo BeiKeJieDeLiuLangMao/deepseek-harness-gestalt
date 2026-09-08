@@ -38,6 +38,8 @@ The chrome adds no stable request prefix; paired mobile work enters model contex
 - **Assembled Desktop Web E2E installs `installDesktopBridgeFixture`** — a required preload member missing from that fixture fails typecheck instead of a browser timeout ([typed DesktopBridge fixture](../../../.agents/notes/implemented/testing/2026-08-21-typed-desktop-bridge-e2e-fixture.md)).
 - **Product pairing is endpoint-owned** — the Host mounts the opaque mailbox, endpoint Snow owners, durable key vault, sealed Mobile authority delivery, and the real Relay lifecycle. Independent review and physical WebView runs remain release evidence.
 
+No runtime invariant companion is published because the Host contributes no state and the Client bridge subscriptions and slots remain owned by their source services.
+
 <a id="dev-note"></a>
 ### Dev Note
 

@@ -36,6 +36,8 @@ HTTP 层不增加稳定请求前缀；成功授权会改变 Agent 工作可用�
 - TLS 终止、原始 IP 日志保留、限流和部署可观测性归 Platform edge 所有。
 - 本消费方假定 Platform composition 已挂载唯一权威账号提供方。
 
+本包不发布运行时不变式配套插件，因为此 HTTP Consumer 除 WebServer 与 Account 服务拥有的路由 effect 外，不保留 Account 状态。
+
 <a id="dev-note"></a>
 ### 开发备注
 

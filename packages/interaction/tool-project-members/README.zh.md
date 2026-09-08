@@ -90,6 +90,8 @@ Native 渲染器保持规范值的紧凑 JSON 形态。本工具不声明自定�
 - **设计上只读** — 本工具不暴露任何成员关系变更；邀请、角色调整与标签编辑留在 project-membership HTTP 面之后，不进入模型工具集。
 - **工作区绑定由组合定义** — 工具自身无法解析绑定的项目；未注入 `boundProjectResolver` 时，所有省略 `projectId` 的调用都返回 `PROJECT_UNBOUND`。
 
+本包不发布运行时不变式配套插件，因为这个只读工具 adapter 除注入的 membership resolver 外，不创建持久状态或生命周期状态。
+
 <a id="dev-note"></a>
 ### 开发备注
 

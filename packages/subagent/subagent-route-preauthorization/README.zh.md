@@ -41,6 +41,8 @@ kind: "package-reference"
 
 - **每个服务作用域一个 Provider** — 在 Provider 配置中合并部署路由；用户授权仍是 Consumer 所有的独立并集输入。
 
+本包不发布运行时不变式配套插件，因为此 Service Definition 只拥有不可变的部署快照，没有可独立观察的事件或可变数据关系。
+
 <a id="dev-note"></a>
 ### 开发备注
 

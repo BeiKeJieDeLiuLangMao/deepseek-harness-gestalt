@@ -48,7 +48,6 @@ describe('remote-access-client build faces', () => {
     expect(configs.map(outputPath).sort()).toEqual(publishedJavaScript)
     expect(Object.fromEntries(configs.map(config => [basename(soleEntry(config)), config.platform]))).toEqual({
       'index.js': 'browser',
-      'invariant.js': 'browser',
       'desktop-relay-lifecycle.js': 'browser',
       'node-relay-socket.js': 'node',
     })

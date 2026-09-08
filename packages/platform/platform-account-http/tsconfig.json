@@ -6,7 +6,6 @@
     { "path": "../../../vendor/cordis" },
     { "path": "../../../vendor/schemastery" },
     { "path": "../platform-account" },
-    { "path": "../../host/webserver" },
-    { "path": "../../runtime-diagnostics/invariants" }
+    { "path": "../../host/webserver" }
   ]
 }

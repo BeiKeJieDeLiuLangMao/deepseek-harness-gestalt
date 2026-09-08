@@ -42,6 +42,8 @@ The client adds no model request content, so it does not affect provider cache r
 - Product composition supplies the validated WSS URL, retry and heartbeat intervals, and live-queue limits; this package owns the Node and browser adapters, lifecycle, and encoded Relay frames.
 - Production use still requires a reviewed handshake provider in the Platform deployment.
 
+No runtime invariant companion is published because its controllers retain sockets and callbacks privately and expose no Context event or second state reader.
+
 <a id="dev-note"></a>
 ### Dev Note
 

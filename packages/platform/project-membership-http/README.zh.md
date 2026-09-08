@@ -41,6 +41,8 @@ HTTP 层不增加稳定请求前缀；成功变更会改变后续 `project_membe
 - 本消费方假设 Platform 组合在账号服务旁挂载了唯一的权威成员服务提供方。
 - presence 条目是进程内的；多实例部署需要实现 `PresenceStore` 的共享 TTL 存储（例如 Redis）后，presence 才能跨 Platform 实例保持一致。
 
+本包不发布运行时不变式配套插件，因为此 HTTP adapter 只拥有路由与私有 presence view；持久 roster version 关系由 Project Membership Core 配套插件拥有。
+
 <a id="dev-note"></a>
 ### 开发备注
 

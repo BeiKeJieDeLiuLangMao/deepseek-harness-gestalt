@@ -50,6 +50,8 @@ The services add no model request content, so they do not affect provider cache 
 - Product Desktop and Mobile use the endpoint-owned Snow mailbox and Companion channel; Platform mounts no pairing cryptography. Physical WebView evidence and independent review of the exact implementation remain release blockers.
 - Project peer grant delivery stops at the sealed envelope and durable record: opening the envelope on the peer's installation and the cross-machine registry transport that carries it are deferred until that transport exists, and production sealing stays behind the independent encryption review.
 
+No runtime invariant companion is published because its route store and coordinator are constructor-private adapters, and the Provider checks revision and compensation relationships at each operation without exposing an independent Context observation.
+
 <a id="dev-note"></a>
 ### Dev Note
 

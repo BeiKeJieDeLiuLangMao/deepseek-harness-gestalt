@@ -81,6 +81,8 @@ There is no effect while `agentTerminalTools` is off. Enabling it invalidates a 
 - **Host fs/git/pty routes are the snapshot's own stack** — they do not yet consume the repository `fs` or `terminal` capability seams.
 - **Right overlay plus official details Dock can both paint** — layout unification is deferred.
 
+No runtime invariant companion is published because its Host effects and Client registries are observed only through their owning services, with no independently published second observation.
+
 <a id="dev-note"></a>
 ### Dev Note
 

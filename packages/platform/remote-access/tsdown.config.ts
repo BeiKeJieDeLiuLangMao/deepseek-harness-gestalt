@@ -5,7 +5,7 @@ import { defineConfig } from 'tsdown'
  *  entry so Consumers that map that class share one constructor. */
 export default defineConfig([
   {
-    entry: ['lib/types/index.js', 'lib/types/invariant.js'],
+    entry: ['lib/types/index.js'],
     outDir: 'lib', format: ['esm'], platform: 'browser', target: 'es2024',
     fixedExtension: false, dts: false, clean: false,
   },

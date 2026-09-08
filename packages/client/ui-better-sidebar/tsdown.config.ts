@@ -1,6 +1,6 @@
 /**
- * tsdown build for dsh-better-sidebar: the host-half lib (lib/index.js and
- * the lib/invariant.js companion, ESM node) plus the two browser client
+ * tsdown build for dsh-better-sidebar: the host-half lib (lib/index.js,
+ * ESM node) plus the two browser client
  * bundles (lib/client.js and lib/client-registry.js, CJS closure factory) —
  * one per install channel:
  *
@@ -353,14 +353,13 @@ function makeCssPlugin(pluginId: string): BuildPlugin {
 const CHUNKS = ['terminal', 'editor', 'mermaid', 'locale']
 
 const nodeLibrary: UserConfig = {
-  entry: { index: 'src/index.ts', invariant: 'src/invariant.ts' },
+  entry: { index: 'src/index.ts' },
   outDir: 'lib',
   format: ['esm'],
   platform: 'node',
   target: 'es2024',
   fixedExtension: false,
   dts: false,
-  // package-invariants: lib/types/invariant.js
   clean: false,
   plugins: [emitSnapshotDts()],
 }

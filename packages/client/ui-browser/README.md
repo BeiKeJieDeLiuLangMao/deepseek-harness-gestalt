@@ -41,6 +41,8 @@ This package adds no stable request prefix; later browser tool results reflect p
 - **Keyless web and headless Runtimes stay deterministic** — browser `dsh web` and headless keep `dsh-browser-runtime-deterministic`. Desktop Host owns in-process Electron `webContents` and points the overlay HTTP client at that loopback origin.
 - **Profile settings do not create tabs** — the Browser section writes the roster and default identity only.
 
+No runtime invariant companion is published because Settings, slots, and Browser Workspace own the mutable relationships this adapter consumes.
+
 <a id="dev-note"></a>
 ### Dev Note
 

@@ -81,6 +81,8 @@ Side Chat 标签页可在 Host 重启后恢复。线程是持久化子 Session�
 - **宿主 fs/git/pty 路由是快照自有栈** — 尚未消费本仓的 `fs` 或 `terminal` 能力缝。
 - **右侧 overlay 与官方 details Dock 可能同时绘制** — 布局合一延期。
 
+本包不发布运行时不变式配套插件，因为 Host effect 与 Client 注册表只能通过各自的所属服务观察，没有独立发布的第二份观察。
+
 <a id="dev-note"></a>
 ### 开发备注
 

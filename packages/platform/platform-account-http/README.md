@@ -36,6 +36,8 @@ The HTTP layer adds no stable request prefix; successful authorization changes t
 - TLS termination, raw-IP log retention, rate limiting, and deployment observability belong to the Platform edge.
 - The Consumer assumes the Platform composition mounted one authoritative Account provider.
 
+No runtime invariant companion is published because this HTTP Consumer retains no Account state beyond WebServer route effects owned by the WebServer and Account services.
+
 <a id="dev-note"></a>
 ### Dev Note
 

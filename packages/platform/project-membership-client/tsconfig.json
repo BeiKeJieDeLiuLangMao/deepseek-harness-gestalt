@@ -4,7 +4,6 @@
   "include": ["src"],
   "references": [
     { "path": "../platform-account" },
-    { "path": "../project-membership" },
-    { "path": "../../runtime-diagnostics/invariants" }
+    { "path": "../project-membership" }
   ]
 }

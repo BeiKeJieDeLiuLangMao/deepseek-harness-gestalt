@@ -57,9 +57,6 @@
       "path": "../../browser/browser-workspace"
     },
     {
-      "path": "../../runtime-diagnostics/invariants"
-    },
-    {
       "path": "../../typert/protocol"
     }
   ]

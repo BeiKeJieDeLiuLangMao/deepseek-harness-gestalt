@@ -38,6 +38,8 @@ The Service Definition adds no stable request prefix; downstream consumers rende
 - Account deletion, session lists, remote sign-out, sign-out-all, recovery, and identity linking are not part of this service.
 - Personal Pairings are a separate capability and are never deleted by `signOut`.
 
+No runtime invariant companion is published because this Service Definition and its parsers, quotas, and types own no Provider state or event stream.
+
 <a id="dev-note"></a>
 ### Dev Note
 

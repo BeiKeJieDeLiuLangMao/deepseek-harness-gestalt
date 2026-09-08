@@ -43,6 +43,8 @@ Provider 在 `browser/runtime-state` 上发布已提交状态。该通知不可�
 
 - Dock chrome 见 [`dsh-client-ui-browser`](../../client/ui-browser/README.zh.md)。Session 本地 Workspace 所有权见 [`dsh-browser-workspace`](../browser-workspace/README.zh.md)。
 
+本包不发布运行时不变式配套插件，因为每个 Browser Runtime Provider 都拥有其实现的权威状态读取器和提交前事件流。
+
 <a id="dev-note"></a>
 ### 开发备注
 

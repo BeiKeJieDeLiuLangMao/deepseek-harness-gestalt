@@ -123,7 +123,6 @@
     "packages/platform/platform-account-http/tests/assembled.spec.ts",
     "packages/platform/remote-access-http/tests/assembled.spec.ts",
     "packages/platform/remote-access-http/tests/two-instance-assembled.spec.ts",
-    "packages/platform/remote-access/tests/invariant-companions.spec.ts",
     "packages/platform/remote-attachments/tests/http-assembled.built.e2e.ts",
     "packages/client/*/src/**",
     "packages/*/*/tests/**/*.client.ts",

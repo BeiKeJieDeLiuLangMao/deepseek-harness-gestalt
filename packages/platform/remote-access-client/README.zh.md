@@ -42,6 +42,8 @@ Desktop 设置所有者只在手机访问开启期间启动该生命周期。它
 - 产品组合提供已校验的 WSS URL、重试与 heartbeat 间隔和在线 queue 限制；本包拥有 Node 与浏览器 adapter、生命周期和编码后的 Relay frame。
 - 生产使用仍要求 Platform 部署组装经过评审的握手提供方。
 
+本包不发布运行时不变式配套插件，因为 controller 私有持有 socket 与 callback，不公开 Context 事件或第二状态读取器。
+
 <a id="dev-note"></a>
 ### 开发备注
 

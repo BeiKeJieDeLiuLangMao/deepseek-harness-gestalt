@@ -38,6 +38,8 @@ The Redis Provider adds no model request content, so it does not affect provider
 - Redis service provisioning, TLS, authentication, monitoring, and availability are deployment responsibilities.
 - Durable route credential digests and revisions belong to the deployment's `RelayRouteStore`, not Redis coordination.
 
+No runtime invariant companion is published because each Redis coordinator operation validates its external values directly and exposes no independent event and state-reader pair.
+
 <a id="dev-note"></a>
 ### Dev Note
 

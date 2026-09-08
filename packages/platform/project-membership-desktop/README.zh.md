@@ -45,6 +45,8 @@ kind: "package-reference"
 - **依赖 Desktop Host** — 纯浏览器 `dsh web` 没有 Account proof owner 或 loopback 投影，因此标准 preset 会在那里省略 `project_members` 与成员定向资格。
 - **bridge 只读** — Project 创建、邀请、角色、标签与移除仍由 renderer 经 Desktop 执行，不向 agent preset 暴露。
 
+本包不发布运行时不变式配套插件，因为私有 roster presentation map 由同一服务实现读写，没有独立观察者。
+
 <a id="dev-note"></a>
 ### 开发备注
 

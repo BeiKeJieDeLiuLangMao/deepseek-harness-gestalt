@@ -36,6 +36,8 @@ web-app 组合先插入快照行，再插入本适配层，并保留 `id: ui-bro
 - **快照 fs/git/pty 仍走 `/sidebar`** — 本期不把它们迁到官方 `fs` 或 `terminal` 能力缝。
 - **客户端 `apply` 用 Cordis 标注根上下文，用 `@deepseek-ai/dsh-session/types` 标注 Session 身份。** 在线 Session 列表来自 Session Controller 的 `sessions` 服务，而不是 `@deepseek-ai/dsh-client-runtime`。
 
+本包不发布运行时不变式配套插件，因为此 adapter 协调的快照由 Sessions 与 Better Sidebar 拥有，adapter 本身不保留独立权威状态。
+
 <a id="dev-note"></a>
 ### 开发备注
 

@@ -46,6 +46,8 @@ kind: "package-reference"
 - 本包不提供生产数据库、分布式失效、密钥管理、限流器或审计接收器；这些适配器归 Platform 部署 composition root 所有。
 - GitHub 适配器只支持 OAuth Apps，并以无提供方 scope 的方式接收公开身份。
 
+本包不发布运行时不变式配套插件，因为 backend 与 invalidation bus 是 constructor 私有 adapter，没有 Context 可见的观察；Provider 在持久变更后发布，并报告后续发布失败。
+
 <a id="dev-note"></a>
 ### 开发备注
 
