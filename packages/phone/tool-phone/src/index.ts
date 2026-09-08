@@ -137,12 +137,25 @@ const BUTTON_ACTION = {
   },
 } as const
 
+const ACTION_SCHEMAS = {
+  tap: TAP_ACTION,
+  swipe: SWIPE_ACTION,
+  type: TYPE_ACTION,
+  button: BUTTON_ACTION,
+} as const satisfies Record<DeviceAction['kind'], unknown>
+const ACTION_SCHEMA_LIST = [
+  ACTION_SCHEMAS.tap,
+  ACTION_SCHEMAS.swipe,
+  ACTION_SCHEMAS.type,
+  ACTION_SCHEMAS.button,
+] as const
+
 const ACT_SCHEMA = {
   type: 'object' as const,
   additionalProperties: false,
   properties: {
     deviceId: { type: 'string' as const, required: true as const },
-    action: { oneOf: [TAP_ACTION, SWIPE_ACTION, TYPE_ACTION, BUTTON_ACTION], required: true as const },
+    action: { oneOf: ACTION_SCHEMA_LIST, required: true as const },
     status: { type: 'string' as const, required: true as const, const: 'ok' },
   },
 } as const
@@ -185,6 +198,10 @@ interface DeviceActionButton {
 }
 
 type DeviceAction = DeviceActionTap | DeviceActionSwipe | DeviceActionType | DeviceActionButton
+
+type DeviceActionByKind = {
+  readonly [Kind in DeviceAction['kind']]: Extract<DeviceAction, { readonly kind: Kind }>
+}
 
 interface PhoneFleet {
   listDevices(signal?: AbortSignal): Promise<PhoneDeviceList>
@@ -265,26 +282,34 @@ function wrapFleetError(error: unknown): never {
   throw error
 }
 
+type ParseActionHandlers = {
+  readonly [Kind in DeviceAction['kind']]: (
+    raw: DeviceActionByKind[Kind],
+  ) => DeviceActionByKind[Kind]
+}
+
+const PARSE_ACTION_HANDLERS = {
+  tap: raw => ({ kind: 'tap', x: raw.x, y: raw.y }),
+  swipe: raw => ({ kind: 'swipe', x1: raw.x1, y1: raw.y1, x2: raw.x2, y2: raw.y2 }),
+  type: (raw) => {
+    const text = raw.text.trim()
+    if (text.length === 0) throw new HarnessError('device_act type text must be non-empty', 'PHONE_UNSUPPORTED')
+    return { kind: 'type', text }
+  },
+  button: raw => ({ kind: 'button', name: raw.name }),
+} satisfies ParseActionHandlers
+
 /**
  * Narrow a schema-validated act payload onto the closed action union.
  * @param raw - Model-supplied action after JSON-schema validation.
  * @returns the closed action forwarded to the fleet.
  */
-function parseAction(raw: DeviceAction): DeviceAction {
-  switch (raw.kind) {
-    case 'tap': return { kind: 'tap', x: raw.x, y: raw.y }
-    case 'swipe': return { kind: 'swipe', x1: raw.x1, y1: raw.y1, x2: raw.x2, y2: raw.y2 }
-    case 'type': {
-      const text = raw.text.trim()
-      if (text.length === 0) throw new HarnessError('device_act type text must be non-empty', 'PHONE_UNSUPPORTED')
-      return { kind: 'type', text }
-    }
-    case 'button': return { kind: 'button', name: raw.name }
-    default: return assertNever(raw)
-  }
+function parseAction<Kind extends DeviceAction['kind']>(
+  raw: DeviceActionByKind[Kind],
+): DeviceActionByKind[Kind] {
+  const parse: ParseActionHandlers[Kind] = PARSE_ACTION_HANDLERS[raw.kind]
+  return parse(raw)
 }
-
-function assertNever(value: never): never { throw new TypeError(`unexpected phone action: ${String(value)}`) }
 
 const IO_BUTTONS: Record<(typeof BUTTON_NAMES)[number], string> = {
   home: 'HOME',
@@ -295,33 +320,49 @@ const IO_BUTTONS: Record<(typeof BUTTON_NAMES)[number], string> = {
   volume_down: 'VOLUME_DOWN',
 }
 
+type PhoneIoRequestByActionKind = {
+  readonly tap: Extract<PhoneIoRequest, { readonly method: 'tap' }>
+  readonly swipe: Extract<PhoneIoRequest, { readonly method: 'swipe' }>
+  readonly type: Extract<PhoneIoRequest, { readonly method: 'text' }>
+  readonly button: Extract<PhoneIoRequest, { readonly method: 'button' }>
+}
+
+type IoRequestHandlers = {
+  readonly [Kind in DeviceAction['kind']]: (
+    id: DeviceId,
+    action: DeviceActionByKind[Kind],
+  ) => PhoneIoRequestByActionKind[Kind]
+}
+
+const IO_REQUEST_HANDLERS = {
+  tap: (id, action) => (
+    { deviceId: id, method: 'tap', source: { kind: 'fresh-probe' }, x: action.x, y: action.y }
+  ),
+  swipe: (id, action) => ({
+    deviceId: id,
+    method: 'swipe',
+    source: { kind: 'fresh-probe' },
+    x1: action.x1,
+    y1: action.y1,
+    x2: action.x2,
+    y2: action.y2,
+  }),
+  type: (id, action) => ({ deviceId: id, method: 'text', text: action.text }),
+  button: (id, action) => ({ deviceId: id, method: 'button', button: IO_BUTTONS[action.name] }),
+} satisfies IoRequestHandlers
+
 /**
  * Map one closed model action onto a branded `device.io.*` request.
  * @param id - Branded device id.
  * @param action - Closed tap, swipe, type, or button action.
  * @returns the Service IO request.
  */
-function ioRequestFrom(id: DeviceId, action: DeviceAction): PhoneIoRequest {
-  switch (action.kind) {
-    case 'tap':
-      return { deviceId: id, method: 'tap', source: { kind: 'fresh-probe' }, x: action.x, y: action.y }
-    case 'swipe':
-      return {
-        deviceId: id,
-        method: 'swipe',
-        source: { kind: 'fresh-probe' },
-        x1: action.x1,
-        y1: action.y1,
-        x2: action.x2,
-        y2: action.y2,
-      }
-    case 'type':
-      return { deviceId: id, method: 'text', text: action.text }
-    case 'button':
-      return { deviceId: id, method: 'button', button: IO_BUTTONS[action.name] }
-    default:
-      return assertNever(action)
-  }
+function ioRequestFrom<Kind extends DeviceAction['kind']>(
+  id: DeviceId,
+  action: DeviceActionByKind[Kind],
+): PhoneIoRequestByActionKind[Kind] {
+  const build: IoRequestHandlers[Kind] = IO_REQUEST_HANDLERS[action.kind]
+  return build(id, action)
 }
 
 /**
@@ -459,7 +500,7 @@ function registerPhoneTools(ctx: Context, fleet: PhoneFleet, timeoutMs: number):
         deviceId: DEVICE_ID_PARAMETER,
         action: {
           required: true as const,
-          oneOf: [TAP_ACTION, SWIPE_ACTION, TYPE_ACTION, BUTTON_ACTION],
+          oneOf: ACTION_SCHEMA_LIST,
           description: 'Exactly one closed semantic action or hardware-button action.',
         },
       },
