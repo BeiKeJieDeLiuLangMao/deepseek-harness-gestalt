@@ -1,0 +1,31 @@
+- heading "手机设备" [level=2]
+- paragraph: 把 Android / iOS 模拟器与 USB 真机接入会话，供 Agent 操作、你在侧栏观看并接管。这与「移动伴侣」不同：伴侣是人用手机连桌面，这里是设备被控调试。
+- article:
+  - strong: 设备运行时 · mobilecli
+  - text: 已就绪 · v1.0.5 · managed 来源：mobile-next/mobilecli 官方 1.0.5 · 安装到 $DSH_HOME/phone
+  - button "重新检测"
+- article:
+  - heading "Android" [level=3]
+  - paragraph: 模拟器与 USB 真机
+  - strong: platform-tools
+  - text: 正在检测
+  - strong: Android Emulator
+  - text: 正在检测
+  - strong: Pixel 6 · API 35
+  - text: 正在检测
+  - paragraph: 等待 Android 环境 Provider…
+- article:
+  - heading "iOS" [level=3]
+  - paragraph: 模拟器与 USB 真机
+  - strong: iOS 设备控制需要 macOS + Xcode
+  - paragraph: iOS Simulator 和 iPhone 真机控制均需要安装完整 Xcode 的 macOS。Windows 与 Linux 不支持这些功能。
+- article:
+  - heading "手机设备" [level=3]
+  - paragraph: 环境就绪。点击任一设备的「打开面板」在右侧查看实时画面，Agent 的 device_* 工具同时生效。
+  - text: 环境正常 · 1 台可用
+  - button "重新检测"
+  - switch "启用手机设备" [checked]
+  - region "模拟器 · IOS":
+    - text: 模拟器 · IOS iPhone 17 Pro 运行中 · {{uuid}}
+    - button "打开面板"
+  - paragraph: 停止的设备先用「启动」拉起再打开面板；清单变化会实时刷新，无需重启会话。

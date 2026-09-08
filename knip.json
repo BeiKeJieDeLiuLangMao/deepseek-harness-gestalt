@@ -13,12 +13,14 @@
     "jar",
     "javac",
     "keytool",
+    "lsof",
     "musl-gcc",
+    "mkfifo",
     "openssl",
     "ps",
+    "powershell.exe",
     "postgres",
     "python3",
-    "postgres",
     "redis-server",
     "sandbox-exec",
     "tar",
@@ -97,6 +99,8 @@
         "two-instance-relay/start.ts",
         "personal-pairing/start.ts",
         "personal-pairing/src/provider.ts",
+        "phone-capture-wire/start.ts",
+        "phone-capture-wire/tests/fixtures/phone-runtime-staged.ts",
         "project-members/start.ts",
         "project-members/memory-membership.ts",
         "project-members/memory-member-question.ts",
@@ -609,6 +613,11 @@
         "src/**/*.ts"
       ]
     },
+    "packages/examples/phone-capture-wire-demo": {
+      "project": [
+        "src/**/*.ts"
+      ]
+    },
     "packages/subagent/subagent-spawn-in-process": {
       "entry": [
         "tests/**/*.spec.ts",
@@ -680,6 +689,11 @@
         "@deepseek-ai/dsh-client-ui-better-sidebar"
       ]
     },
+    "packages/client/ui-phone": {
+      "ignoreDependencies": [
+        "@deepseek-ai/dsh-client-ui-better-sidebar"
+      ]
+    },
     "packages/client/web": {
       "project": [
         "src/**/*.ts",
@@ -742,7 +756,8 @@
         "tests/member-question-e2e/electron.e2e.ts",
         "tests/member-question-e2e/host-plugin.ts",
         "tests/member-question-e2e/*.snapshot.ts",
-        "tests/e2e-sub2api/**/*.ts"
+        "tests/e2e-sub2api/**/*.ts",
+        "tests/e2e-electron/**/*.ts"
       ],
       "project": [
         "src/**/*.ts",
@@ -750,6 +765,12 @@
         "tests/**/*.ts"
       ],
       "ignoreDependencies": [
+        "@deepseek-ai/dsh-client-ui-phone",
+        "@deepseek-ai/dsh-mobile",
+        "@deepseek-ai/dsh-phone-environment",
+        "@deepseek-ai/dsh-phone-runtime",
+        "@deepseek-ai/dsh-phone-stream",
+        "@deepseek-ai/dsh-tool-phone",
         "@wdio/cli",
         "@wdio/electron-service",
         "@wdio/local-runner",
@@ -771,6 +792,7 @@
     "apps/mobile": {
       "entry": [
         "tests/**/*.spec.ts",
+        "tests/mobile-browse-artifact.e2e.ts",
         "tests/**/*.snapshot.ts"
       ],
       "project": [

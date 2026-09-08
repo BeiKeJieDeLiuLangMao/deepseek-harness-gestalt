@@ -1,0 +1,1745 @@
+// @vitest-environment jsdom
+/**
+ * The connected phone tab body on the real connection controller driven by
+ * a fake gateway: BrowserView-rhythm devbar with the device dropdown and
+ * format chips, the centered live frame whose aspect follows the measured
+ * surface (1:2 placeholder until then), the circular toolbar, touch →
+ * tap/gesture, keyboard → text, and the error/suspend arms with their
+ * next-action copy.
+ */
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import type { DeviceId } from '@deepseek-ai/dsh-phone-runtime'
+import { PhoneConnectedView } from '../src/client/PhoneConnectedView.tsx'
+import { PHONE_LISTING_POLL_INTERVAL_MS } from '../src/client/phone-listing-poll.ts'
+import { PhoneConnectionController } from '../src/client/phone-connection.ts'
+import { PhoneStreamHttpError } from '../src/client/phone-stream-client.ts'
+import { phoneDeviceIdOf } from '../src/client/phone-device-id.ts'
+import type { PhoneDeviceSummary } from '../src/client/registry.ts'
+import {
+  FakeGateway, FakeListingSource, flush, installFakeH264Playback, listingOf, ManualScheduler,
+  SESSION_A, SESSION_B, SESSION_C,
+} from './phone-fakes.client.ts'
+
+const EMULATOR_DEVICE_ID = phoneDeviceIdOf('emulator-5554')
+const USB_DEVICE_ID = phoneDeviceIdOf('R3CN30')
+const OFFLINE_DEVICE_ID = phoneDeviceIdOf('offline-1')
+const UNAUTHORIZED_DEVICE_ID = phoneDeviceIdOf('unauth-1')
+const IOS_DEVICE_ID = phoneDeviceIdOf('UDID-9')
+const PHYSICAL_IOS_DEVICE_ID = phoneDeviceIdOf('00008150-0008545C2608401C')
+const REAL_IOS_DEVICE_ID = phoneDeviceIdOf('fbcd1d21')
+const DEVICE_A_ID = phoneDeviceIdOf('device-a')
+const DEVICE_B_ID = phoneDeviceIdOf('device-b')
+
+let h264Runtime: ReturnType<typeof installFakeH264Playback>
+
+beforeEach(() => {
+  h264Runtime = installFakeH264Playback()
+  Object.defineProperties(HTMLElement.prototype, {
+    hasPointerCapture: { configurable: true, value: vi.fn(() => true) },
+    setPointerCapture: { configurable: true, value: vi.fn() },
+    releasePointerCapture: { configurable: true, value: vi.fn() },
+  })
+})
+afterEach(() => {
+  cleanup()
+  vi.useRealTimers()
+  vi.unstubAllGlobals()
+  vi.restoreAllMocks()
+})
+
+const DEVICES: readonly PhoneDeviceSummary[] = [
+  { id: EMULATOR_DEVICE_ID, name: 'Pixel_6_API_35', channel: 'emulator', state: 'online', online: true, logicalDisplay: { width: 1080, height: 2248 } },
+  { id: USB_DEVICE_ID, name: 'SM-S9310', channel: 'usb', state: 'online', online: true, logicalDisplay: { width: 1080, height: 2248 } },
+  { id: OFFLINE_DEVICE_ID, name: 'Galaxy_A54_API_34', channel: 'emulator', state: 'offline', online: false },
+  { id: UNAUTHORIZED_DEVICE_ID, name: 'Pixel_8', channel: 'usb', state: 'unauthorized', online: false },
+]
+
+interface Harness {
+  readonly gateway: FakeGateway
+  readonly scheduler: ManualScheduler
+  readonly source: FakeListingSource
+  readonly onOpenDevice: ReturnType<typeof vi.fn>
+  readonly onShowPicker: ReturnType<typeof vi.fn>
+}
+
+function renderView(visible = true, mintError?: unknown, source = new FakeListingSource().seed(listingOf(DEVICES))): Harness {
+  const gateway = new FakeGateway()
+  const scheduler = new ManualScheduler()
+  const onOpenDevice = vi.fn()
+  const onShowPicker = vi.fn()
+  // The gateway consumes its script synchronously at connect time, so the
+  // outcome must be queued before the mount effect runs.
+  if (mintError !== undefined) gateway.queueMint({ error: mintError })
+  render(
+    <PhoneConnectedView
+      serial={EMULATOR_DEVICE_ID}
+      name="Pixel_6_API_35"
+      visible={visible}
+      source={source}
+      onOpenDevice={onOpenDevice}
+      onShowPicker={onShowPicker}
+      createController={serial => new PhoneConnectionController({
+        gateway,
+        deviceId: serial,
+        schedule: scheduler.schedule,
+      })}
+    />,
+  )
+  return { gateway, scheduler, source, onOpenDevice, onShowPicker }
+}
+
+/** Drive one async step inside act so controller transitions reach the DOM. */
+async function step(body: () => void): Promise<void> {
+  await act(async () => {
+    body()
+    await flush()
+  })
+}
+
+/** Stub the live frame's geometry for coordinate mapping assertions. */
+function stubRect(el: Element, width: number, height: number): void {
+  vi.spyOn(el, 'getBoundingClientRect').mockReturnValue({
+    left: 0, top: 0, right: width, bottom: height, width, height, x: 0, y: 0, toJSON: () => ({}),
+  })
+}
+
+/**
+ * Chromium freezes MJPEG `naturalWidth` at the first JPEG; tests drive the
+ * current-frame API independently of those sticky properties.
+ */
+function stubCurrentMjpegFrame(width: number, height: number): {
+  set(nextWidth: number, nextHeight: number): void
+} {
+  let current = { width, height }
+  vi.stubGlobal('createImageBitmap', vi.fn(async () => ({
+    width: current.width,
+    height: current.height,
+    close: vi.fn(),
+  })))
+  return {
+    set(nextWidth: number, nextHeight: number): void {
+      current = { width: nextWidth, height: nextHeight }
+    },
+  }
+}
+
+async function renderLive(): Promise<Harness> {
+  const harness = renderView()
+  await flush()
+  await step(() => { harness.gateway.lastSocket!.accept() })
+  return harness
+}
+
+function frame(): HTMLElement {
+  return screen.getByRole('application', { name: /Pixel_6_API_35 画面/ })
+}
+
+function parseSentFrame(value: string): unknown {
+  return JSON.parse(value)
+}
+
+function fetchInputUrl(input: unknown): string {
+  if (typeof input === 'string') return input
+  if (input instanceof URL) return input.href
+  if (typeof Request !== 'undefined' && input instanceof Request) return input.url
+  throw new TypeError('unexpected fetch input')
+}
+
+function sessionForDevice(
+  deviceId: DeviceId,
+  session: typeof SESSION_A,
+): typeof SESSION_A {
+  return {
+    ...session,
+    deviceId,
+    mjpeg: { ...session.mjpeg, url: session.mjpeg.url.replace(session.deviceId, deviceId) },
+    h264: { ...session.h264, url: session.h264.url.replace(session.deviceId, deviceId) },
+  }
+}
+
+describe('PhoneConnectedView chrome', () => {
+  it('renders the devbar rhythm: device dropdown, format chips, and the live frame', async () => {
+    await renderLive()
+    expect(screen.getByRole('button', { name: '切换设备：Pixel_6_API_35' })).toBeTruthy()
+    const h264 = screen.getByLabelText('当前画面编码 H264')
+    expect(h264.textContent).toContain('H264')
+    expect(h264.textContent).not.toContain('30 fps')
+    expect(screen.queryByText('30 fps')).toBeNull()
+    expect(screen.queryByText('MJPEG')).toBeNull()
+    expect(screen.queryByRole('button', { name: /H264/ })).toBeNull()
+    expect(screen.getByRole('img', { name: 'Pixel_6_API_35 实时画面' })).toBeTruthy()
+    expect(screen.getByText('代理中')).toBeTruthy()
+    expect(screen.getByText(/点击画面即向设备发送触控/)).toBeTruthy()
+  })
+
+  it('keeps connecting chrome until the IO socket opens and never claims H264 30 fps', async () => {
+    renderView()
+    await flush()
+    expect(screen.getByText('正在连接画面…')).toBeTruthy()
+    expect(screen.getByLabelText('画面状态 正在连接').textContent).toContain('连接中')
+    expect(screen.queryByText('30 fps')).toBeNull()
+    expect(screen.queryByText('代理中')).toBeNull()
+    expect(screen.queryByLabelText('当前画面编码 H264')).toBeNull()
+  })
+
+  it('waits for a decoded first frame before claiming H264 is playing', async () => {
+    h264Runtime = installFakeH264Playback({ holdFirstFrame: true })
+    await renderLive()
+    await flush()
+    expect(h264Runtime.drawImage).not.toHaveBeenCalled()
+    expect(screen.getByLabelText('画面状态 等待 H264 首帧').textContent).toContain('等待首帧')
+    expect(screen.getAllByText('等待首帧').length).toBeGreaterThan(0)
+    expect(screen.queryByText('代理中')).toBeNull()
+    expect(screen.queryByText('30 fps')).toBeNull()
+    expect(screen.queryByLabelText('当前画面编码 H264')).toBeNull()
+
+    await act(async () => { h264Runtime.emitFrame(390, 844); await flush() })
+    expect(h264Runtime.drawImage).toHaveBeenCalled()
+    const h264 = screen.getByLabelText('当前画面编码 H264')
+    expect(h264.textContent).toContain('H264')
+    expect(h264.textContent).not.toContain('等待首帧')
+    expect(screen.getByText('代理中')).toBeTruthy()
+    expect(screen.queryByText('30 fps')).toBeNull()
+  })
+
+  it('falls back after an empty H264 body without a playing 30 fps claim', async () => {
+    h264Runtime = installFakeH264Playback({ emptyBody: true })
+    await renderLive()
+    await flush()
+    expect(h264Runtime.drawImage).not.toHaveBeenCalled()
+    expect(screen.queryByText('30 fps')).toBeNull()
+    expect(screen.queryByLabelText('当前画面编码 H264')).toBeNull()
+    expect(screen.getByLabelText('画面状态 等待 MJPEG 首帧').textContent).toContain('MJPEG')
+    const surface = screen.getByRole('img', { name: 'Pixel_6_API_35 实时画面' })
+    expect(surface).toBeInstanceOf(HTMLImageElement)
+    expect(surface.getAttribute('src')).toBe(SESSION_A.mjpeg.url)
+    expect(screen.queryByText('代理中')).toBeNull()
+  })
+
+  it('does not treat IO-open transport as a painted H264 picture', async () => {
+    h264Runtime = installFakeH264Playback({ holdFirstFrame: true })
+    const harness = await renderLive()
+    expect(harness.gateway.lastSocket!.opened).toBe(true)
+    expect(h264Runtime.drawImage).not.toHaveBeenCalled()
+    expect(screen.getByLabelText('画面状态 等待 H264 首帧')).toBeTruthy()
+    expect(screen.queryByLabelText('当前画面编码 H264')).toBeNull()
+    expect(screen.queryByText('代理中')).toBeNull()
+    expect(screen.queryByText('30 fps')).toBeNull()
+  })
+
+  it('ignores a painted frame from a disposed H264 owner after refresh', async () => {
+    h264Runtime = installFakeH264Playback({ holdFirstFrame: true })
+    const harness = await renderLive()
+    await vi.waitFor(() => { expect(h264Runtime.abortSignals).toHaveLength(1) })
+    harness.gateway.queueMint({ session: SESSION_B })
+    fireEvent.click(screen.getByRole('button', { name: '刷新流' }))
+    await flush()
+    await step(() => { harness.gateway.lastSocket!.accept() })
+    await vi.waitFor(() => { expect(h264Runtime.abortSignals).toHaveLength(2) })
+    expect(h264Runtime.abortSignals[0]!.aborted).toBe(true)
+    await act(async () => { h264Runtime.emitFrameAt(0, 390, 844); await flush() })
+    expect(screen.getByLabelText('画面状态 等待 H264 首帧')).toBeTruthy()
+    expect(screen.queryByLabelText('当前画面编码 H264')).toBeNull()
+    expect(screen.queryByText('代理中')).toBeNull()
+    await act(async () => { h264Runtime.emitFrameAt(1, 390, 844); await flush() })
+    expect(h264Runtime.drawImage).toHaveBeenCalled()
+    expect(screen.getByLabelText('当前画面编码 H264')).toBeTruthy()
+    expect(screen.getByText('代理中')).toBeTruthy()
+  })
+
+  it('names the current MJPEG surface after H264 fallback, not preferred H264 playing', async () => {
+    const harness = await renderLive()
+    await act(async () => { h264Runtime.failLastDecoder(); await flush() })
+    expect(screen.queryByLabelText('当前画面编码 H264')).toBeNull()
+    expect(screen.getByLabelText('画面状态 等待 MJPEG 首帧').textContent).toContain('MJPEG')
+    expect(screen.queryByText('代理中')).toBeNull()
+    const surface = screen.getByRole('img', { name: 'Pixel_6_API_35 实时画面' })
+    expect(surface).toBeInstanceOf(HTMLImageElement)
+    expect(surface.getAttribute('src')).toBe(SESSION_A.mjpeg.url)
+    stubCurrentMjpegFrame(1080, 2400)
+    Object.defineProperties(surface, {
+      naturalWidth: { configurable: true, value: 1080 },
+      naturalHeight: { configurable: true, value: 2400 },
+    })
+    await act(async () => { fireEvent.load(surface) })
+    expect(screen.getByLabelText('当前画面编码 MJPEG').textContent).toContain('MJPEG')
+    expect(screen.getByText('代理中')).toBeTruthy()
+    await act(async () => { fireEvent.error(surface); await flush() })
+    expect(screen.getByText(/画面重连中（第 1 次尝试）/)).toBeTruthy()
+    expect(screen.getByLabelText('画面状态 正在重连')).toBeTruthy()
+    expect(screen.queryByLabelText('当前画面编码 H264')).toBeNull()
+    expect(screen.queryByLabelText('当前画面编码 MJPEG')).toBeNull()
+    expect(harness.scheduler.scheduledCount).toBe(1)
+  })
+
+  it('does not delegate the raw H264 elementary stream to an image element', async () => {
+    await renderLive()
+    const surface = screen.getByRole('img', { name: 'Pixel_6_API_35 实时画面' })
+    expect(surface).not.toBeInstanceOf(HTMLImageElement)
+  })
+
+  it('switches the actual-format badge and touch surface to MJPEG after H264 playback fails', async () => {
+    const harness = await renderLive()
+    await act(async () => { h264Runtime.failLastDecoder(); await flush() })
+
+    expect(screen.queryByLabelText('当前画面编码 H264')).toBeNull()
+    expect(screen.getByLabelText('画面状态 等待 MJPEG 首帧').textContent).toContain('MJPEG')
+    expect(screen.queryByText(/decode failed/)).toBeNull()
+    const surface = screen.getByRole('img', { name: 'Pixel_6_API_35 实时画面' })
+    expect(surface).toBeInstanceOf(HTMLImageElement)
+    expect(surface.getAttribute('src')).toBe(SESSION_A.mjpeg.url)
+    Object.defineProperties(surface, {
+      naturalWidth: { configurable: true, value: 1080 },
+      naturalHeight: { configurable: true, value: 2400 },
+    })
+    stubCurrentMjpegFrame(1080, 2400)
+    await act(async () => { fireEvent.load(surface) })
+    expect(screen.getByLabelText('当前画面编码 MJPEG').textContent).toContain('MJPEG')
+    stubRect(frame(), 270, 600)
+    fireEvent.pointerDown(frame(), { clientX: 135, clientY: 300 })
+    fireEvent.pointerUp(frame(), { clientX: 135, clientY: 300 })
+    expect(parseSentFrame(harness.gateway.lastSocket!.sent[0]!)).toMatchObject({
+      method: 'tap', params: { x: 540, y: 1200 },
+    })
+  })
+
+  it('enters the existing retry arm only after the MJPEG fallback element fails', async () => {
+    const harness = await renderLive()
+    await act(async () => { h264Runtime.failLastDecoder(); await flush() })
+    const surface = screen.getByRole('img', { name: 'Pixel_6_API_35 实时画面' })
+    await act(async () => { fireEvent.error(surface); await flush() })
+    expect(screen.getByText(/画面重连中（第 1 次尝试）/)).toBeTruthy()
+    expect(harness.scheduler.scheduledCount).toBe(1)
+  })
+
+  it('hides the live frame and shows the suspend note while the tab is hidden', async () => {
+    renderView(false)
+    await flush()
+    expect(screen.queryByRole('img')).toBeNull()
+    expect(screen.getByText(/已暂停——回到此标签页时恢复画面/)).toBeTruthy()
+    expect(screen.getByLabelText('画面状态 已暂停')).toBeTruthy()
+  })
+
+  it('renders the design unauthorized arm from the listing instead of a dead stream', async () => {
+    const gateway = new FakeGateway()
+    const scheduler = new ManualScheduler()
+    gateway.queueMint({ error: new PhoneStreamHttpError(502, 'upstream', 'device unauthorized: allow USB debugging') })
+    render(
+      <PhoneConnectedView
+        serial={USB_DEVICE_ID}
+        name="SM-S9310"
+        visible={true}
+        source={new FakeListingSource().seed(listingOf([
+          { id: USB_DEVICE_ID, name: 'SM-S9310', channel: 'usb', state: 'unauthorized', online: false },
+        ]))}
+        onOpenDevice={() => {}}
+        onShowPicker={() => {}}
+        createController={() => new PhoneConnectionController({
+          gateway,
+          deviceId: USB_DEVICE_ID,
+          schedule: scheduler.schedule,
+        })}
+      />,
+    )
+    await act(async () => { await flush() })
+    // The arm replaces the stream area until the device is authorized; the
+    // copy is the design's, and the next action reconnects after authorizing.
+    expect(screen.getByRole('alert')).toBeTruthy()
+    expect(screen.getByText('真机未授权调试')).toBeTruthy()
+    expect(screen.getByText(/已通过 USB 连接；请在手机上允许「USB 调试」后重新连接/)).toBeTruthy()
+    expect(screen.queryByRole('img')).toBeNull()
+    // The devpick dot reads the warn state, not offline.
+    expect(document.querySelector('._dotOffline_')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '重新连接' }))
+    expect(gateway.mintedDevices).toHaveLength(2)
+    await flush()
+    await step(() => { gateway.lastSocket!.accept() })
+    expect(screen.getByRole('img', { name: 'SM-S9310 实时画面' })).toBeTruthy()
+  })
+
+  it('keeps the live stream up when the stale listing still flags unauthorized', async () => {
+    const gateway = new FakeGateway()
+    const scheduler = new ManualScheduler()
+    render(
+      <PhoneConnectedView
+        serial={USB_DEVICE_ID}
+        name="SM-S9310"
+        visible={true}
+        source={new FakeListingSource().seed(listingOf([
+          { id: USB_DEVICE_ID, name: 'SM-S9310', channel: 'usb', state: 'unauthorized', online: false },
+        ]))}
+        onOpenDevice={() => {}}
+        onShowPicker={() => {}}
+        createController={() => new PhoneConnectionController({
+          gateway,
+          deviceId: USB_DEVICE_ID,
+          schedule: scheduler.schedule,
+        })}
+      />,
+    )
+    await act(async () => { await flush() })
+    gateway.lastSocket!.accept()
+    await act(async () => {})
+    expect(screen.getByRole('img', { name: 'SM-S9310 实时画面' })).toBeTruthy()
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('dials the minted io path from the session', async () => {
+    const harness = await renderLive()
+    expect(harness.gateway.dialedPaths).toEqual(['/phone/ws/io'])
+  })
+
+  it('opens the device dropdown and asks the opener to focus another device', async () => {
+    const harness = await renderLive()
+    fireEvent.click(screen.getByRole('button', { name: '切换设备：Pixel_6_API_35' }))
+    const menu = screen.getByRole('menu', { name: '切换设备' })
+    expect(menu.textContent).toContain('当前')
+    fireEvent.click(screen.getByRole('menuitem', { name: /Pixel_6_API_35/ }))
+    expect(harness.onOpenDevice).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: '切换设备：Pixel_6_API_35' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /SM-S9310/ }))
+    expect(harness.onOpenDevice).toHaveBeenCalledWith(USB_DEVICE_ID, 'SM-S9310')
+  })
+
+  it('keeps the switcher open for unrelated keys and closes it on Escape', async () => {
+    await renderLive()
+    const trigger = screen.getByRole('button', { name: '切换设备：Pixel_6_API_35' })
+    fireEvent.click(trigger)
+    fireEvent.keyDown(trigger, { key: 'ArrowDown' })
+    expect(screen.getByRole('menu', { name: '切换设备' })).toBeTruthy()
+    fireEvent.keyDown(trigger, { key: 'Escape' })
+    expect(screen.queryByRole('menu', { name: '切换设备' })).toBeNull()
+  })
+
+  it('lists only online devices in the switcher and keeps unauthorized off the menu', async () => {
+    await renderLive()
+    fireEvent.click(screen.getByRole('button', { name: '切换设备：Pixel_6_API_35' }))
+    const items = screen.getAllByRole('menuitem').map(item => item.textContent)
+    expect(items.some(text => text?.includes('Pixel_6_API_35'))).toBe(true)
+    expect(items.some(text => text?.includes('SM-S9310'))).toBe(true)
+    expect(screen.queryByRole('menuitem', { name: /Galaxy_A54_API_34/ })).toBeNull()
+    expect(screen.queryByRole('menuitem', { name: /Pixel_8/ })).toBeNull()
+  })
+
+  it('rebuilds the live session for the new serial when the same tab switches devices', async () => {
+    const gateway = new FakeGateway()
+    const scheduler = new ManualScheduler()
+    const source = new FakeListingSource().seed(listingOf(DEVICES))
+    const { rerender } = render(
+      <PhoneConnectedView
+        serial={EMULATOR_DEVICE_ID}
+        name="Pixel_6_API_35"
+        visible={true}
+        source={source}
+        onOpenDevice={() => {}}
+        onShowPicker={() => {}}
+        createController={serial => new PhoneConnectionController({
+          gateway,
+          deviceId: serial,
+          schedule: scheduler.schedule,
+        })}
+      />,
+    )
+    await flush()
+    await step(() => { gateway.lastSocket!.accept() })
+    await vi.waitFor(() => { expect(h264Runtime.abortSignals).toHaveLength(1) })
+    const firstPlayback = h264Runtime.abortSignals[0]!
+    expect(gateway.mintedDevices).toEqual([EMULATOR_DEVICE_ID])
+    rerender(
+      <PhoneConnectedView
+        serial={USB_DEVICE_ID}
+        name="SM-S9310"
+        visible={true}
+        source={source}
+        onOpenDevice={() => {}}
+        onShowPicker={() => {}}
+        createController={serial => new PhoneConnectionController({
+          gateway,
+          deviceId: serial,
+          schedule: scheduler.schedule,
+        })}
+      />,
+    )
+    await flush()
+    expect(firstPlayback.aborted).toBe(true)
+    await step(() => { gateway.lastSocket!.accept() })
+    await vi.waitFor(() => { expect(h264Runtime.abortSignals).toHaveLength(2) })
+    expect(gateway.mintedDevices).toEqual([EMULATOR_DEVICE_ID, USB_DEVICE_ID])
+    expect(screen.getByRole('button', { name: '切换设备：SM-S9310' })).toBeTruthy()
+    expect(screen.getByRole('img', { name: 'SM-S9310 实时画面' })).toBeTruthy()
+  })
+
+  it('cancels playback while inactive and starts a fresh decoder after resume', async () => {
+    const gateway = new FakeGateway()
+    const scheduler = new ManualScheduler()
+    const source = new FakeListingSource().seed(listingOf(DEVICES))
+    const props = {
+      serial: EMULATOR_DEVICE_ID,
+      name: 'Pixel_6_API_35',
+      source,
+      onOpenDevice: () => {},
+      onShowPicker: () => {},
+      createController: (serial: DeviceId) => new PhoneConnectionController({
+        gateway, deviceId: serial, schedule: scheduler.schedule,
+      }),
+    }
+    const { rerender } = render(<PhoneConnectedView {...props} visible={true} />)
+    await flush()
+    await step(() => { gateway.lastSocket!.accept() })
+    await vi.waitFor(() => { expect(h264Runtime.abortSignals).toHaveLength(1) })
+
+    rerender(<PhoneConnectedView {...props} visible={false} />)
+    await act(async () => {})
+    expect(h264Runtime.abortSignals[0]!.aborted).toBe(true)
+    expect(h264Runtime.decoderCloseCounts[0]).toBe(1)
+    expect(screen.queryByRole('img')).toBeNull()
+
+    rerender(<PhoneConnectedView {...props} visible={true} />)
+    await flush()
+    await step(() => { gateway.lastSocket!.accept() })
+    await vi.waitFor(() => { expect(h264Runtime.abortSignals).toHaveLength(2) })
+    expect(h264Runtime.abortSignals[1]!.aborted).toBe(false)
+    expect(screen.getByRole('img', { name: 'Pixel_6_API_35 实时画面' })).toBeTruthy()
+  })
+
+  it('lights the dropdown from the mount pull when the tab restores empty', async () => {
+    const source = new FakeListingSource()
+    source.scriptNext(listingOf(DEVICES))
+    renderView(true, undefined, source)
+    await act(async () => { await flush() })
+    expect(source.refreshCount).toBe(1)
+    fireEvent.click(screen.getByRole('button', { name: '切换设备：Pixel_6_API_35' }))
+    expect(screen.getByRole('menuitem', { name: /SM-S9310/ })).toBeTruthy()
+  })
+
+  it('keeps the chrome rendered when the mount pull fails', async () => {
+    const source = new FakeListingSource()
+    source.scriptNext(Promise.reject(new Error('host down')))
+    renderView(true, undefined, source)
+    await act(async () => { await flush() })
+    expect(screen.getByRole('button', { name: '切换设备：Pixel_6_API_35' })).toBeTruthy()
+  })
+
+  it('lists a later online USB real in the dropdown without 重新检测环境', async () => {
+    vi.useFakeTimers()
+    try {
+      const source = new FakeListingSource().seed(listingOf(DEVICES))
+      const harness = renderView(true, undefined, source)
+      await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+      harness.gateway.lastSocket!.accept()
+      await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+      fireEvent.click(screen.getByRole('button', { name: '切换设备：Pixel_6_API_35' }))
+      expect(screen.queryByRole('menuitem', { name: /贝贝猫的iPhone/ })).toBeNull()
+      source.scriptNext(listingOf([
+        ...DEVICES,
+        {
+          id: PHYSICAL_IOS_DEVICE_ID,
+          name: '贝贝猫的iPhone',
+          channel: 'usb',
+          state: 'online',
+          online: true,
+        },
+      ]))
+      await act(async () => { await vi.advanceTimersByTimeAsync(PHONE_LISTING_POLL_INTERVAL_MS) })
+      expect(screen.getByRole('menuitem', { name: /贝贝猫的iPhone/ })).toBeTruthy()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('returns occupation to the picker from the connected view', async () => {
+    const harness = await renderLive()
+    fireEvent.click(screen.getByRole('button', { name: '选择设备' }))
+    expect(harness.onShowPicker).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('PhoneConnectedView screen frame aspect', () => {
+  /** Render a live MJPEG session (the iOS-simulator encoding). */
+  async function renderLiveMjpeg(): Promise<Harness> {
+    const gateway = new FakeGateway()
+    const scheduler = new ManualScheduler()
+    const onOpenDevice = vi.fn()
+    const source = new FakeListingSource().seed(listingOf(DEVICES))
+    gateway.queueMint({ session: { ...SESSION_A, preferredFormat: 'mjpeg' } })
+    render(
+      <PhoneConnectedView
+        serial={EMULATOR_DEVICE_ID}
+        name="Pixel_6_API_35"
+        visible={true}
+        source={source}
+        onOpenDevice={onOpenDevice}
+        onShowPicker={() => {}}
+        createController={serial => new PhoneConnectionController({
+          gateway,
+          deviceId: serial,
+          schedule: scheduler.schedule,
+        })}
+      />,
+    )
+    await flush()
+    await step(() => { gateway.lastSocket!.accept() })
+    return { gateway, scheduler, source, onOpenDevice, onShowPicker: vi.fn() }
+  }
+
+  /** The inline surface ratio the frame box follows. */
+  function frameRatio(): string {
+    return frame().style.getPropertyValue('--phone-surface-ratio')
+  }
+
+  it('follows the decoded H264 surface and flips the box live on rotation', async () => {
+    await renderLive()
+    // The fake decoder paints 390×844, so the box takes the portrait ratio.
+    expect(frameRatio()).toBe(String(390 / 844))
+
+    await act(async () => { h264Runtime.emitFrame(844, 390) })
+    const canvas = screen.getByRole('img', { name: 'Pixel_6_API_35 实时画面' }) as HTMLCanvasElement
+    expect({ width: canvas.width, height: canvas.height }).toEqual({ width: 844, height: 390 })
+    expect(frameRatio()).toBe(String(844 / 390))
+  })
+
+  it('keeps a still-portrait H264 decode unstretched when Host listing is already landscape', async () => {
+    const source = new FakeListingSource().seed(listingOf([{
+      id: EMULATOR_DEVICE_ID,
+      name: 'Pixel_6_API_35',
+      channel: 'emulator',
+      state: 'online',
+      online: true,
+      logicalDisplay: { width: 2248, height: 1080 },
+    }]))
+    const harness = renderView(true, undefined, source)
+    await flush()
+    await step(() => { harness.gateway.lastSocket!.accept() })
+    await act(async () => { h264Runtime.emitFrame(1080, 2248, 0) })
+    const canvas = screen.getByRole('img', { name: 'Pixel_6_API_35 实时画面' }) as HTMLCanvasElement
+    expect({ width: canvas.width, height: canvas.height }).toEqual({ width: 1080, height: 2248 })
+    expect(frameRatio()).toBe(String(1080 / 2248))
+    stubRect(frame(), 200, 400)
+    fireEvent.pointerDown(frame(), { clientX: 100, clientY: 200 })
+    fireEvent.pointerUp(frame(), { clientX: 100, clientY: 200 })
+    expect(harness.gateway.lastSocket!.sent).toEqual([])
+    expect(screen.getByRole('status').textContent).toContain('触控不可用')
+  })
+
+  it('blocks Android taps when listing logicalDisplay is missing after a dumpsys miss', async () => {
+    const source = new FakeListingSource().seed(listingOf([{
+      id: EMULATOR_DEVICE_ID,
+      name: 'Pixel_6_API_35',
+      channel: 'emulator',
+      state: 'online',
+      online: true,
+      logicalDisplay: { width: 1080, height: 2248 },
+    }]))
+    const harness = renderView(true, undefined, source)
+    await flush()
+    await step(() => { harness.gateway.lastSocket!.accept() })
+    await act(async () => { h264Runtime.emitFrame(1080, 2248, 0) })
+    source.scriptNext(listingOf([{
+      id: EMULATOR_DEVICE_ID,
+      name: 'Pixel_6_API_35',
+      channel: 'emulator',
+      state: 'online',
+      online: true,
+    }]))
+    await act(async () => { await source.refresh() })
+    await flush()
+    stubRect(frame(), 200, 400)
+    fireEvent.pointerDown(frame(), { clientX: 100, clientY: 200 })
+    fireEvent.pointerUp(frame(), { clientX: 100, clientY: 200 })
+    expect(harness.gateway.lastSocket!.sent).toEqual([])
+    expect(screen.getByRole('status').textContent).toContain('当前设备逻辑尺寸未知')
+  })
+
+  it('blocks Android taps until listing classifies the occupying platform', async () => {
+    const source = new FakeListingSource().seed(listingOf([]))
+    const harness = renderView(true, undefined, source)
+    await flush()
+    await step(() => { harness.gateway.lastSocket!.accept() })
+    await act(async () => { h264Runtime.emitFrame(1080, 2248, 0) })
+    stubRect(frame(), 200, 400)
+    fireEvent.pointerDown(frame(), { clientX: 100, clientY: 200 })
+    fireEvent.pointerUp(frame(), { clientX: 100, clientY: 200 })
+    expect(harness.gateway.lastSocket!.sent).toEqual([])
+    expect(screen.getByRole('status').textContent).toContain('设备平台未确认')
+    fireEvent.click(screen.getByRole('button', { name: '主屏幕' }))
+    expect(JSON.parse(harness.gateway.lastSocket!.sent[0]!)).toMatchObject({ method: 'button' })
+  })
+
+  it('replaces an already-painted H264 capture when Host listing later reports landscape', async () => {
+    const source = new FakeListingSource().seed(listingOf([{
+      id: EMULATOR_DEVICE_ID,
+      name: 'Pixel_6_API_35',
+      channel: 'emulator',
+      state: 'online',
+      online: true,
+      logicalDisplay: { width: 1080, height: 2248 },
+    }]))
+    const harness = renderView(true, undefined, source)
+    await flush()
+    await step(() => { harness.gateway.lastSocket!.accept() })
+    expect(frameRatio()).toBe(String(390 / 844))
+    harness.gateway.queueMint({ session: SESSION_B })
+    source.scriptNext(listingOf([{
+      id: EMULATOR_DEVICE_ID,
+      name: 'Pixel_6_API_35',
+      channel: 'emulator',
+      state: 'online',
+      online: true,
+      logicalDisplay: { width: 2248, height: 1080 },
+    }]))
+    await act(async () => { await source.refresh() })
+    await flush()
+    expect(harness.gateway.mintedDevices).toHaveLength(2)
+    await step(() => { harness.gateway.lastSocket!.accept() })
+    await vi.waitFor(() => { expect(h264Runtime.abortSignals).toHaveLength(2) })
+    await act(async () => { h264Runtime.emitFrame(2248, 1080) })
+    const canvas = screen.getByRole('img', { name: 'Pixel_6_API_35 实时画面' }) as HTMLCanvasElement
+    expect({ width: canvas.width, height: canvas.height }).toEqual({ width: 2248, height: 1080 })
+    expect(frameRatio()).toBe(String(2248 / 1080))
+    stubRect(frame(), 400, 200)
+    fireEvent.pointerDown(frame(), { clientX: 200, clientY: 100 })
+    fireEvent.pointerUp(frame(), { clientX: 200, clientY: 100 })
+    expect(parseSentFrame(harness.gateway.lastSocket!.sent[0]!)).toMatchObject({
+      method: 'tap',
+      params: { captureWidth: 2248, captureHeight: 1080, x: 1124, y: 540 },
+    })
+  })
+
+  it('replaces the live capture session when Host listing later reports landscape', async () => {
+    // PhoneH264Surface restarts only when the signed URL changes.
+    const androidMi8 = {
+      id: REAL_IOS_DEVICE_ID,
+      name: 'AndroidMI8',
+      channel: 'usb' as const,
+      state: 'online' as const,
+      online: true,
+      logicalDisplay: { width: 1080, height: 2248 },
+    }
+    const portraitSession = sessionForDevice(androidMi8.id, SESSION_A)
+    const landscapeSession = sessionForDevice(androidMi8.id, SESSION_B)
+    const portraitAgain = sessionForDevice(androidMi8.id, SESSION_C)
+    const h264Fetches = (): string[] => vi.mocked(fetch).mock.calls.map(([input]) => fetchInputUrl(input))
+    const gateway = new FakeGateway()
+    const scheduler = new ManualScheduler()
+    const source = new FakeListingSource().seed(listingOf([androidMi8]))
+    gateway.queueMint({ session: portraitSession })
+    gateway.queueMint({ session: landscapeSession })
+    gateway.queueMint({ session: portraitAgain })
+    render(
+      <PhoneConnectedView
+        serial={androidMi8.id}
+        name={androidMi8.name}
+        visible={true}
+        source={source}
+        onOpenDevice={() => {}}
+        onShowPicker={() => {}}
+        createController={serial => new PhoneConnectionController({
+          gateway,
+          deviceId: serial,
+          schedule: scheduler.schedule,
+        })}
+      />,
+    )
+    await flush()
+    await step(() => { gateway.lastSocket!.accept() })
+    await vi.waitFor(() => { expect(h264Fetches()).toEqual([portraitSession.h264.url]) })
+    const portraitSocket = gateway.lastSocket!
+    const portraitPlayback = h264Runtime.abortSignals[0]!
+    expect(screen.getByRole('img', { name: 'AndroidMI8 实时画面' })).toBeTruthy()
+
+    source.scriptNext(listingOf([{
+      ...androidMi8,
+      logicalDisplay: { width: 2248, height: 1080 },
+    }]))
+    await act(async () => { await source.refresh() })
+    await flush()
+    await step(() => { gateway.lastSocket!.accept() })
+    await vi.waitFor(() => {
+      expect(h264Fetches()).toEqual([portraitSession.h264.url, landscapeSession.h264.url])
+    })
+    expect(portraitPlayback.aborted).toBe(true)
+    const landscapeSocket = gateway.lastSocket!
+    expect(landscapeSocket).not.toBe(portraitSocket)
+    expect(portraitSocket.opened).toBe(false)
+    expect(h264Runtime.abortSignals[1]!.aborted).toBe(false)
+    await act(async () => { h264Runtime.emitFrame(2248, 1080) })
+    const mi8Frame = screen.getByRole('application', { name: /AndroidMI8 画面/ })
+    expect(mi8Frame.style.getPropertyValue('--phone-surface-ratio')).toBe(String(2248 / 1080))
+    const canvas = screen.getByRole('img', { name: 'AndroidMI8 实时画面' }) as HTMLCanvasElement
+    expect({ width: canvas.width, height: canvas.height }).toEqual({ width: 2248, height: 1080 })
+    stubRect(mi8Frame, 400, 200)
+    fireEvent.pointerDown(mi8Frame, { clientX: 100, clientY: 100 })
+    fireEvent.pointerUp(mi8Frame, { clientX: 100, clientY: 100 })
+    expect(portraitSocket.sent).toEqual([])
+    expect(parseSentFrame(landscapeSocket.sent[0]!)).toMatchObject({
+      method: 'tap',
+      params: {
+        captureId: landscapeSession.h264.captureId, captureFormat: 'h264',
+        captureWidth: 2248, captureHeight: 1080,
+      },
+    })
+
+    source.scriptNext(listingOf([{ ...androidMi8 }]))
+    await act(async () => { await source.refresh() })
+    await flush()
+    await step(() => { gateway.lastSocket!.accept() })
+    await vi.waitFor(() => {
+      expect(h264Fetches()).toEqual([
+        portraitSession.h264.url, landscapeSession.h264.url, portraitAgain.h264.url,
+      ])
+    })
+    await act(async () => { h264Runtime.emitFrame(1080, 2248) })
+    expect(screen.getByRole('application', { name: /AndroidMI8 画面/ }).style.getPropertyValue('--phone-surface-ratio'))
+      .toBe(String(1080 / 2248))
+  })
+
+  it('does not remint when Host logicalDisplay polls the same numeric size', async () => {
+    const source = new FakeListingSource().seed(listingOf([{
+      id: EMULATOR_DEVICE_ID,
+      name: 'Pixel_6_API_35',
+      channel: 'emulator',
+      state: 'online',
+      online: true,
+      logicalDisplay: { width: 1080, height: 2248 },
+    }]))
+    const harness = renderView(true, undefined, source)
+    await flush()
+    await step(() => { harness.gateway.lastSocket!.accept() })
+    expect(harness.gateway.mintedDevices).toHaveLength(1)
+    source.scriptNext(listingOf([{
+      id: EMULATOR_DEVICE_ID,
+      name: 'Pixel_6_API_35',
+      channel: 'emulator',
+      state: 'online',
+      online: true,
+      logicalDisplay: { width: 1080, height: 2248 },
+    }]))
+    await act(async () => { await source.refresh() })
+    await flush()
+    expect(harness.gateway.mintedDevices).toHaveLength(1)
+  })
+
+  it('remints once live H264 after Host logicalDisplay changes while connecting', async () => {
+    const source = new FakeListingSource().seed(listingOf([{
+      id: EMULATOR_DEVICE_ID,
+      name: 'Pixel_6_API_35',
+      channel: 'emulator',
+      state: 'online',
+      online: true,
+      logicalDisplay: { width: 1080, height: 2248 },
+    }]))
+    const gateway = new FakeGateway()
+    const scheduler = new ManualScheduler()
+    gateway.queueMint({ session: SESSION_A })
+    gateway.queueMint({ session: SESSION_B })
+    render(
+      <PhoneConnectedView
+        serial={EMULATOR_DEVICE_ID}
+        name="Pixel_6_API_35"
+        visible={true}
+        source={source}
+        onOpenDevice={() => {}}
+        onShowPicker={() => {}}
+        createController={serial => new PhoneConnectionController({
+          gateway, deviceId: serial, schedule: scheduler.schedule,
+        })}
+      />,
+    )
+    await flush()
+    expect(gateway.mintedDevices).toHaveLength(1)
+    source.scriptNext(listingOf([{
+      id: EMULATOR_DEVICE_ID,
+      name: 'Pixel_6_API_35',
+      channel: 'emulator',
+      state: 'online',
+      online: true,
+      logicalDisplay: { width: 2248, height: 1080 },
+    }]))
+    await act(async () => { await source.refresh() })
+    expect(gateway.mintedDevices).toHaveLength(1)
+    await step(() => { gateway.lastSocket!.accept() })
+    await flush()
+    expect(gateway.mintedDevices).toHaveLength(2)
+    await step(() => { gateway.lastSocket!.accept() })
+    await vi.waitFor(() => {
+      const urls = vi.mocked(fetch).mock.calls.map(([input]) => fetchInputUrl(input))
+      expect(urls).toContain(SESSION_B.h264.url)
+    })
+    await act(async () => { h264Runtime.emitFrame(2248, 1080) })
+    const canvas = screen.getByRole('img', { name: 'Pixel_6_API_35 实时画面' }) as HTMLCanvasElement
+    expect({ width: canvas.width, height: canvas.height }).toEqual({ width: 2248, height: 1080 })
+    expect(frameRatio()).toBe(String(2248 / 1080))
+  })
+
+  it('does not settle a stale landscape mint after Host listing returns to portrait', async () => {
+    const source = new FakeListingSource().seed(listingOf([{
+      id: EMULATOR_DEVICE_ID,
+      name: 'Pixel_6_API_35',
+      channel: 'emulator',
+      state: 'online',
+      online: true,
+      logicalDisplay: { width: 1080, height: 2248 },
+    }]))
+    const gateway = new FakeGateway()
+    const scheduler = new ManualScheduler()
+    gateway.queueMint({ session: SESSION_A })
+    const resolveLandscape = gateway.queueDeferredMint(SESSION_B)
+    gateway.queueMint({ session: SESSION_C })
+    render(
+      <PhoneConnectedView
+        serial={EMULATOR_DEVICE_ID}
+        name="Pixel_6_API_35"
+        visible={true}
+        source={source}
+        onOpenDevice={() => {}}
+        onShowPicker={() => {}}
+        createController={serial => new PhoneConnectionController({
+          gateway, deviceId: serial, schedule: scheduler.schedule,
+        })}
+      />,
+    )
+    await flush()
+    await step(() => { gateway.lastSocket!.accept() })
+    await vi.waitFor(() => {
+      expect(vi.mocked(fetch).mock.calls.map(([input]) => fetchInputUrl(input))).toEqual([SESSION_A.h264.url])
+    })
+    source.scriptNext(listingOf([{
+      id: EMULATOR_DEVICE_ID,
+      name: 'Pixel_6_API_35',
+      channel: 'emulator',
+      state: 'online',
+      online: true,
+      logicalDisplay: { width: 2248, height: 1080 },
+    }]))
+    await act(async () => { await source.refresh() })
+    await flush()
+    expect(gateway.mintedDevices).toHaveLength(2)
+    source.scriptNext(listingOf([{
+      id: EMULATOR_DEVICE_ID,
+      name: 'Pixel_6_API_35',
+      channel: 'emulator',
+      state: 'online',
+      online: true,
+      logicalDisplay: { width: 1080, height: 2248 },
+    }]))
+    await act(async () => { await source.refresh() })
+    await act(async () => { resolveLandscape() })
+    await flush()
+    const landscapeSocket = gateway.sockets[1]
+    landscapeSocket?.accept()
+    await flush()
+    expect(gateway.mintedDevices).toHaveLength(3)
+    await step(() => { gateway.lastSocket!.accept() })
+    await vi.waitFor(() => {
+      const urls = vi.mocked(fetch).mock.calls.map(([input]) => fetchInputUrl(input))
+      expect(urls.at(-1)).toBe(SESSION_C.h264.url)
+      expect(urls).not.toContain(SESSION_B.h264.url)
+    })
+    await act(async () => { h264Runtime.emitFrame(1080, 2248) })
+    const canvas = screen.getByRole('img', { name: 'Pixel_6_API_35 实时画面' }) as HTMLCanvasElement
+    expect({ width: canvas.width, height: canvas.height }).toEqual({ width: 1080, height: 2248 })
+    expect(frameRatio()).toBe(String(1080 / 2248))
+  })
+
+  it('does not remint a hidden tab when Host listing reports landscape', async () => {
+    const source = new FakeListingSource().seed(listingOf([{
+      id: EMULATOR_DEVICE_ID,
+      name: 'Pixel_6_API_35',
+      channel: 'emulator',
+      state: 'online',
+      online: true,
+      logicalDisplay: { width: 1080, height: 2248 },
+    }]))
+    const gateway = new FakeGateway()
+    const scheduler = new ManualScheduler()
+    const props = {
+      serial: EMULATOR_DEVICE_ID,
+      name: 'Pixel_6_API_35',
+      source,
+      onOpenDevice: () => {},
+      onShowPicker: () => {},
+      createController: (serial: DeviceId) => new PhoneConnectionController({
+        gateway, deviceId: serial, schedule: scheduler.schedule,
+      }),
+    }
+    const { rerender } = render(<PhoneConnectedView {...props} visible={true} />)
+    await flush()
+    await step(() => { gateway.lastSocket!.accept() })
+    expect(gateway.mintedDevices).toHaveLength(1)
+    rerender(<PhoneConnectedView {...props} visible={false} />)
+    await act(async () => {})
+    source.scriptNext(listingOf([{
+      id: EMULATOR_DEVICE_ID,
+      name: 'Pixel_6_API_35',
+      channel: 'emulator',
+      state: 'online',
+      online: true,
+      logicalDisplay: { width: 2248, height: 1080 },
+    }]))
+    await act(async () => { await source.refresh() })
+    expect(gateway.mintedDevices).toHaveLength(1)
+    expect(screen.queryByRole('img')).toBeNull()
+    gateway.queueMint({ session: SESSION_B })
+    rerender(<PhoneConnectedView {...props} visible={true} />)
+    await flush()
+    await step(() => { gateway.lastSocket!.accept() })
+    expect(gateway.mintedDevices).toHaveLength(2)
+  })
+
+  it('drops an in-flight MJPEG current-frame measure after fallback leaves live', async () => {
+    let resolveBitmap!: (value: { width: number; height: number; close: () => void }) => void
+    const pending = new Promise<{ width: number; height: number; close: () => void }>((resolve) => {
+      resolveBitmap = resolve
+    })
+    vi.stubGlobal('createImageBitmap', vi.fn(() => pending))
+    const source = new FakeListingSource().seed(listingOf([{
+      id: EMULATOR_DEVICE_ID,
+      name: 'Pixel_6_API_35',
+      channel: 'emulator',
+      state: 'online',
+      online: true,
+      logicalDisplay: { width: 1080, height: 2248 },
+    }]))
+    const harness = renderView(true, undefined, source)
+    await flush()
+    await step(() => { harness.gateway.lastSocket!.accept() })
+    await act(async () => { h264Runtime.failLastDecoder(); await flush() })
+    expect(screen.getByLabelText('画面状态 等待 MJPEG 首帧')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '刷新流' }))
+    await act(async () => {
+      resolveBitmap?.({ width: 1080, height: 2400, close: vi.fn() })
+      await flush()
+    })
+    expect(harness.gateway.lastSocket!.sent).toEqual([])
+  })
+
+  it('does not remint after H264 falls back to MJPEG when Host listing reports landscape', async () => {
+    const source = new FakeListingSource().seed(listingOf([{
+      id: EMULATOR_DEVICE_ID,
+      name: 'Pixel_6_API_35',
+      channel: 'emulator',
+      state: 'online',
+      online: true,
+      logicalDisplay: { width: 1080, height: 2248 },
+    }]))
+    const harness = renderView(true, undefined, source)
+    await flush()
+    await step(() => { harness.gateway.lastSocket!.accept() })
+    await act(async () => { h264Runtime.failLastDecoder(); await flush() })
+    expect(screen.getByLabelText('画面状态 等待 MJPEG 首帧')).toBeTruthy()
+    expect(harness.gateway.mintedDevices).toHaveLength(1)
+    source.scriptNext(listingOf([{
+      id: EMULATOR_DEVICE_ID,
+      name: 'Pixel_6_API_35',
+      channel: 'emulator',
+      state: 'online',
+      online: true,
+      logicalDisplay: { width: 2248, height: 1080 },
+    }]))
+    await act(async () => { await source.refresh() })
+    await flush()
+    expect(harness.gateway.mintedDevices).toHaveLength(1)
+    expect(screen.getByRole('img', { name: 'Pixel_6_API_35 实时画面' })).toBeInstanceOf(HTMLImageElement)
+    expect(screen.getByLabelText('画面状态 等待 MJPEG 首帧')).toBeTruthy()
+  })
+
+  it('does not remint a live MJPEG session when Host listing reports landscape', async () => {
+    const source = new FakeListingSource().seed(listingOf([{
+      id: EMULATOR_DEVICE_ID,
+      name: 'Pixel_6_API_35',
+      channel: 'emulator',
+      state: 'online',
+      online: true,
+      logicalDisplay: { width: 1080, height: 2248 },
+    }]))
+    const gateway = new FakeGateway()
+    gateway.queueMint({ session: { ...SESSION_A, preferredFormat: 'mjpeg' } })
+    render(
+      <PhoneConnectedView
+        serial={EMULATOR_DEVICE_ID}
+        name="Pixel_6_API_35"
+        visible={true}
+        source={source}
+        onOpenDevice={() => {}}
+        onShowPicker={() => {}}
+        createController={serial => new PhoneConnectionController({
+          gateway, deviceId: serial, schedule: new ManualScheduler().schedule,
+        })}
+      />,
+    )
+    await flush()
+    await step(() => { gateway.lastSocket!.accept() })
+    expect(gateway.mintedDevices).toHaveLength(1)
+    source.scriptNext(listingOf([{
+      id: EMULATOR_DEVICE_ID,
+      name: 'Pixel_6_API_35',
+      channel: 'emulator',
+      state: 'online',
+      online: true,
+      logicalDisplay: { width: 2248, height: 1080 },
+    }]))
+    await act(async () => { await source.refresh() })
+    await flush()
+    expect(gateway.mintedDevices).toHaveLength(1)
+    expect(screen.getByRole('img', { name: 'Pixel_6_API_35 实时画面' })).toBeInstanceOf(HTMLImageElement)
+  })
+
+  it('does not remint when only an iOS listing row reports landscape logicalDisplay', async () => {
+    const source = new FakeListingSource().seed(listingOf([], [{
+      id: IOS_DEVICE_ID,
+      name: 'Yishu iPhone',
+      channel: 'usb',
+      state: 'online',
+      online: true,
+    }]))
+    const gateway = new FakeGateway()
+    gateway.queueMint({ session: { ...SESSION_A, deviceId: IOS_DEVICE_ID } })
+    render(
+      <PhoneConnectedView
+        serial={IOS_DEVICE_ID}
+        name="Yishu iPhone"
+        visible={true}
+        source={source}
+        onOpenDevice={() => {}}
+        onShowPicker={() => {}}
+        createController={serial => new PhoneConnectionController({
+          gateway, deviceId: serial, schedule: new ManualScheduler().schedule,
+        })}
+      />,
+    )
+    await flush()
+    await step(() => { gateway.lastSocket!.accept() })
+    expect(gateway.mintedDevices).toHaveLength(1)
+    source.scriptNext(listingOf([], [{
+      id: IOS_DEVICE_ID,
+      name: 'Yishu iPhone',
+      channel: 'usb',
+      state: 'online',
+      online: true,
+      logicalDisplay: { width: 2248, height: 1080 },
+    }]))
+    await act(async () => { await source.refresh() })
+    await flush()
+    expect(gateway.mintedDevices).toHaveLength(1)
+    await act(async () => { h264Runtime.emitFrame(390, 844, 0) })
+    stubRect(screen.getByRole('application', { name: /Yishu iPhone 画面/ }), 200, 400)
+    fireEvent.pointerDown(screen.getByRole('application', { name: /Yishu iPhone 画面/ }), { clientX: 100, clientY: 200 })
+    fireEvent.pointerUp(screen.getByRole('application', { name: /Yishu iPhone 画面/ }), { clientX: 100, clientY: 200 })
+    expect(parseSentFrame(gateway.lastSocket!.sent[0]!)).toMatchObject({
+      method: 'tap', params: { captureWidth: 390, captureHeight: 844 },
+    })
+  })
+
+  it('keeps the locked 1:2 placeholder until the MJPEG frame reports its size', async () => {
+    vi.stubGlobal('createImageBitmap', vi.fn(async () => {
+      throw new Error('no current JPEG')
+    }))
+    await renderLiveMjpeg()
+    const surface = screen.getByRole('img', { name: 'Pixel_6_API_35 实时画面' })
+    expect(surface).toBeInstanceOf(HTMLImageElement)
+    // No measurement yet: no inline ratio, so the stylesheet's 0.5 fallback
+    // renders the locked 1:2 placeholder.
+    expect(frameRatio()).toBe('')
+
+    stubCurrentMjpegFrame(1080, 2400)
+    Object.defineProperties(surface, {
+      naturalWidth: { configurable: true, value: 1080 },
+      naturalHeight: { configurable: true, value: 2400 },
+    })
+    await act(async () => { fireEvent.load(surface) })
+    expect(frameRatio()).toBe(String(1080 / 2400))
+  })
+
+  it('flips the box from the current JPEG when naturalWidth stays portrait', async () => {
+    vi.useFakeTimers()
+    try {
+      const gateway = new FakeGateway()
+      gateway.queueMint({ session: { ...SESSION_A, preferredFormat: 'mjpeg' } })
+      const bitmap = stubCurrentMjpegFrame(1080, 2400)
+      render(
+        <PhoneConnectedView
+          serial={EMULATOR_DEVICE_ID}
+          name="Pixel_6_API_35"
+          visible={true}
+          source={new FakeListingSource().seed(listingOf(DEVICES))}
+          onOpenDevice={() => {}}
+          onShowPicker={() => {}}
+          createController={serial => new PhoneConnectionController({
+            gateway,
+            deviceId: serial,
+            schedule: new ManualScheduler().schedule,
+          })}
+        />,
+      )
+      await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+      gateway.lastSocket!.accept()
+      await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+
+      const surface = screen.getByRole('img', { name: 'Pixel_6_API_35 实时画面' })
+      Object.defineProperties(surface, {
+        naturalWidth: { configurable: true, value: 1080 },
+        naturalHeight: { configurable: true, value: 2400 },
+      })
+      await act(async () => { fireEvent.load(surface) })
+      expect(frameRatio()).toBe(String(1080 / 2400))
+
+      // Chromium keeps naturalWidth at the first JPEG; the poll reads the
+      // currently painted bitmap instead.
+      bitmap.set(2400, 1080)
+      await act(async () => { await vi.advanceTimersByTimeAsync(500) })
+      expect(Number(frameRatio())).toBeGreaterThan(1)
+      expect(frameRatio()).toBe(String(2400 / 1080))
+
+      bitmap.set(1080, 2400)
+      await act(async () => { await vi.advanceTimersByTimeAsync(500) })
+      expect(Number(frameRatio())).toBeLessThan(1)
+      expect(frameRatio()).toBe(String(1080 / 2400))
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
+
+describe('PhoneConnectedView touch and keys', () => {
+  async function withSurface(): Promise<Harness> {
+    const harness = await renderLive()
+    const canvas = screen.getByRole('img', { name: 'Pixel_6_API_35 实时画面' }) as HTMLCanvasElement
+    expect({ width: canvas.width, height: canvas.height }).toEqual({ width: 390, height: 844 })
+    stubRect(frame(), 200, 400)
+    return harness
+  }
+
+  it('sends a tap with device coordinates for a plain click', async () => {
+    const { gateway } = await withSurface()
+    fireEvent.pointerDown(frame(), { clientX: 100, clientY: 100 })
+    fireEvent.pointerUp(frame(), { clientX: 100, clientY: 100 })
+    expect(JSON.parse(gateway.lastSocket!.sent[0]!)).toEqual({
+      jsonrpc: '2.0', id: 1, method: 'tap',
+      params: {
+        deviceId: EMULATOR_DEVICE_ID, x: 195, y: 211, kind: 'capture', captureWidth: 390, captureHeight: 844, captureId: SESSION_A.h264.captureId, captureFormat: 'h264', captureRotation: 0,
+      },
+    })
+  })
+
+  it('captures the pointer and sends the WDA move-duration swipe from origin to release', async () => {
+    const { gateway } = await withSurface()
+    const target = frame()
+    const setPointerCapture = vi.fn()
+    const releasePointerCapture = vi.fn()
+    Object.defineProperties(target, {
+      hasPointerCapture: { configurable: true, value: vi.fn(() => true) },
+      setPointerCapture: { configurable: true, value: setPointerCapture },
+      releasePointerCapture: { configurable: true, value: releasePointerCapture },
+    })
+    fireEvent.pointerDown(target, { pointerId: 7, clientX: 20, clientY: 20 })
+    fireEvent.pointerMove(target, { pointerId: 7, clientX: 22, clientY: 22 })
+    fireEvent.pointerMove(target, { pointerId: 7, clientX: 120, clientY: 220 })
+    fireEvent.pointerMove(target, { pointerId: 7, clientX: 125, clientY: 225 })
+    fireEvent.pointerUp(target, { pointerId: 7, clientX: 130, clientY: 230 })
+    expect(setPointerCapture).toHaveBeenCalledWith(7)
+    expect(releasePointerCapture).toHaveBeenCalledWith(7)
+    expect(JSON.parse(gateway.lastSocket!.sent[0]!)).toEqual({
+      jsonrpc: '2.0', id: 1, method: 'swipe',
+      params: {
+        deviceId: EMULATOR_DEVICE_ID, kind: 'capture', captureWidth: 390, captureHeight: 844,
+        captureId: SESSION_A.h264.captureId, captureFormat: 'h264', captureRotation: 0,
+        x1: 39, y1: 42, x2: 254, y2: 485,
+      },
+    })
+  })
+
+  it('treats a release that crosses the threshold as a drag without an intermediate move', async () => {
+    const { gateway } = await withSurface()
+    fireEvent.pointerDown(frame(), { pointerId: 10, clientX: 20, clientY: 20 })
+    fireEvent.pointerUp(frame(), { pointerId: 10, clientX: 30, clientY: 30 })
+    expect(parseSentFrame(gateway.lastSocket!.sent[0]!)).toEqual({
+      jsonrpc: '2.0', id: 1, method: 'swipe',
+      params: {
+        deviceId: EMULATOR_DEVICE_ID, kind: 'capture', captureWidth: 390, captureHeight: 844,
+        captureId: SESSION_A.h264.captureId, captureFormat: 'h264', captureRotation: 0,
+        x1: 39, y1: 42, x2: 59, y2: 63,
+      },
+    })
+  })
+
+  it('releases pointer capture and drops a cancelled drag', async () => {
+    const { gateway } = await withSurface()
+    const target = frame()
+    const releasePointerCapture = vi.fn()
+    Object.defineProperties(target, {
+      hasPointerCapture: { configurable: true, value: vi.fn(() => true) },
+      setPointerCapture: { configurable: true, value: vi.fn() },
+      releasePointerCapture: { configurable: true, value: releasePointerCapture },
+    })
+    fireEvent.pointerDown(target, { pointerId: 8, clientX: 20, clientY: 20 })
+    fireEvent.pointerMove(target, { pointerId: 9, clientX: 120, clientY: 220 })
+    fireEvent.pointerUp(target, { pointerId: 9, clientX: 120, clientY: 220 })
+    fireEvent.pointerCancel(target, { pointerId: 9, clientX: 120, clientY: 220 })
+    expect(releasePointerCapture).not.toHaveBeenCalled()
+    fireEvent.pointerMove(target, { pointerId: 8, clientX: 120, clientY: 220 })
+    fireEvent.pointerCancel(target, { pointerId: 8, clientX: 120, clientY: 220 })
+    expect(releasePointerCapture).toHaveBeenCalledWith(8)
+    expect(gateway.lastSocket!.sent).toEqual([])
+  })
+
+  it('drops stray pointer events and keeps sub-threshold travel as a tap', async () => {
+    const { gateway } = await withSurface()
+    fireEvent.pointerMove(frame(), { clientX: 10, clientY: 10 })
+    fireEvent.pointerUp(frame(), { clientX: 10, clientY: 10 })
+    expect(gateway.lastSocket!.sent).toEqual([])
+
+    fireEvent.pointerDown(frame(), { clientX: 50, clientY: 50 })
+    fireEvent.pointerMove(frame(), { clientX: 53, clientY: 54 })
+    fireEvent.pointerUp(frame(), { clientX: 53, clientY: 54 })
+    expect(parseSentFrame(gateway.lastSocket!.sent[0]!)).toEqual({
+      jsonrpc: '2.0', id: 1, method: 'tap',
+      params: {
+        deviceId: EMULATOR_DEVICE_ID, x: 103, y: 114, kind: 'capture', captureWidth: 390, captureHeight: 844, captureId: SESSION_A.h264.captureId, captureFormat: 'h264', captureRotation: 0,
+      },
+    })
+  })
+
+  it('coalesces a trackpad wheel burst into one WDA swipe', async () => {
+    const { gateway } = await withSurface()
+    const surface = frame()
+    vi.useFakeTimers()
+    try {
+      fireEvent.wheel(surface, { deltaY: 0, deltaMode: 0 })
+      fireEvent.wheel(surface, { deltaY: 1, deltaMode: WheelEvent.DOM_DELTA_LINE })
+      fireEvent.wheel(surface, { deltaY: 1, deltaMode: WheelEvent.DOM_DELTA_PAGE })
+      expect(gateway.lastSocket!.sent).toEqual([])
+      await act(async () => { vi.advanceTimersByTime(50) })
+      const frame = parseSentFrame(gateway.lastSocket!.sent[0]!) as {
+        readonly params: { readonly y1?: number; readonly y2?: number }
+      }
+      const originY = frame.params.y1
+      const destinationY = frame.params.y2
+      expect(originY).toEqual(expect.any(Number))
+      expect(destinationY).toEqual(expect.any(Number))
+      expect(originY).not.toBe(destinationY)
+      expect(parseSentFrame(gateway.lastSocket!.sent[0]!)).toEqual({
+        jsonrpc: '2.0', id: 1, method: 'swipe',
+        params: {
+          deviceId: EMULATOR_DEVICE_ID, kind: 'capture', captureWidth: 390, captureHeight: 844,
+          captureId: SESSION_A.h264.captureId, captureFormat: 'h264', captureRotation: 0,
+          x1: 195, y1: originY, x2: 195, y2: destinationY,
+        },
+      })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('drops an in-flight wheel burst when the connected view unmounts', async () => {
+    const { gateway } = await withSurface()
+    vi.useFakeTimers()
+    try {
+      fireEvent.wheel(frame(), { deltaY: 80, deltaMode: 0 })
+      cleanup()
+      await act(async () => { vi.advanceTimersByTime(50) })
+      expect(gateway.lastSocket!.sent).toEqual([])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('drops a captured press when the tab hides or switches to another device', async () => {
+    const firstGateway = new FakeGateway()
+    const secondGateway = new FakeGateway()
+    const source = new FakeListingSource().seed(listingOf([
+      { id: DEVICE_A_ID, name: 'Device A', channel: 'usb', state: 'online', online: true, logicalDisplay: { width: 1080, height: 2248 } },
+      { id: DEVICE_B_ID, name: 'Device B', channel: 'usb', state: 'online', online: true, logicalDisplay: { width: 1080, height: 2248 } },
+    ]))
+    const view = render(
+      <PhoneConnectedView
+        serial={DEVICE_A_ID}
+        name="Device A"
+        visible={true}
+        source={source}
+        onOpenDevice={() => {}}
+        onShowPicker={() => {}}
+        createController={serial => new PhoneConnectionController({
+          gateway: serial === DEVICE_A_ID ? firstGateway : secondGateway,
+          deviceId: serial,
+        })}
+      />,
+    )
+    await flush()
+    await step(() => { firstGateway.lastSocket!.accept() })
+    let target = screen.getByRole('application', { name: /Device A 画面/ })
+    const releasePointerCapture = vi.fn()
+    Object.defineProperties(target, {
+      hasPointerCapture: { configurable: true, value: vi.fn(() => true) },
+      setPointerCapture: { configurable: true, value: vi.fn() },
+      releasePointerCapture: { configurable: true, value: releasePointerCapture },
+    })
+    fireEvent.pointerDown(target, { pointerId: 11, clientX: 20, clientY: 20 })
+
+    view.rerender(
+      <PhoneConnectedView
+        serial={DEVICE_A_ID} name="Device A" visible={false} source={source} onOpenDevice={() => {}} onShowPicker={() => {}}
+        createController={serial => new PhoneConnectionController({ gateway: firstGateway, deviceId: serial })}
+      />,
+    )
+    expect(releasePointerCapture).toHaveBeenCalledWith(11)
+    view.rerender(
+      <PhoneConnectedView
+        serial={DEVICE_A_ID} name="Device A" visible={true} source={source} onOpenDevice={() => {}} onShowPicker={() => {}}
+        createController={serial => new PhoneConnectionController({ gateway: firstGateway, deviceId: serial })}
+      />,
+    )
+    await flush()
+    await step(() => { firstGateway.lastSocket!.accept() })
+    target = screen.getByRole('application', { name: /Device A 画面/ })
+    fireEvent.pointerUp(target, { pointerId: 11, clientX: 120, clientY: 220 })
+    expect(firstGateway.sockets.flatMap(socket => socket.sent)).toEqual([])
+
+    Object.defineProperties(target, {
+      hasPointerCapture: { configurable: true, value: vi.fn(() => true) },
+      setPointerCapture: { configurable: true, value: vi.fn() },
+      releasePointerCapture: { configurable: true, value: releasePointerCapture },
+    })
+    fireEvent.pointerDown(target, { pointerId: 12, clientX: 20, clientY: 20 })
+    view.rerender(
+      <PhoneConnectedView
+        serial={DEVICE_B_ID} name="Device B" visible={true} source={source} onOpenDevice={() => {}} onShowPicker={() => {}}
+        createController={serial => new PhoneConnectionController({ gateway: secondGateway, deviceId: serial })}
+      />,
+    )
+    await flush()
+    await step(() => { secondGateway.lastSocket!.accept() })
+    fireEvent.pointerUp(
+      screen.getByRole('application', { name: /Device B 画面/ }),
+      { pointerId: 12, clientX: 120, clientY: 220 },
+    )
+    expect(releasePointerCapture).toHaveBeenCalledWith(12)
+    expect(firstGateway.sockets.flatMap(socket => socket.sent)).toEqual([])
+    expect(secondGateway.sockets.flatMap(socket => socket.sent)).toEqual([])
+  })
+
+  it('maps a zero-size rendered frame to the safe zero coordinate', async () => {
+    const { gateway } = await renderLive()
+    stubRect(frame(), 0, 0)
+    fireEvent.pointerDown(frame(), { clientX: 50, clientY: 50 })
+    fireEvent.pointerUp(frame(), { clientX: 50, clientY: 50 })
+    expect(parseSentFrame(gateway.lastSocket!.sent[0]!)).toEqual({
+      jsonrpc: '2.0', id: 1, method: 'tap',
+      params: {
+        deviceId: EMULATOR_DEVICE_ID, x: 0, y: 0, kind: 'capture', captureWidth: 390, captureHeight: 844, captureId: SESSION_A.h264.captureId, captureFormat: 'h264', captureRotation: 0,
+      },
+    })
+  })
+
+  it('types printable input and Enter as text and drops control keys', async () => {
+    const { gateway } = await withSurface()
+    fireEvent.keyDown(frame(), { key: 'a' })
+    fireEvent.keyDown(frame(), { key: 'Enter' })
+    fireEvent.keyDown(frame(), { key: 'Backspace' })
+    fireEvent.keyDown(frame(), { key: 'c', ctrlKey: true })
+    expect(gateway.lastSocket!.sent.map(parseSentFrame)).toEqual([
+      { jsonrpc: '2.0', id: 1, method: 'text', params: { deviceId: EMULATOR_DEVICE_ID, text: 'a' } },
+      { jsonrpc: '2.0', id: 2, method: 'text', params: { deviceId: EMULATOR_DEVICE_ID, text: '\n' } },
+    ])
+  })
+})
+
+describe('PhoneConnectedView toolbar', () => {
+  it('sends the nav buttons and refuses the not-yet-wired screenshot', async () => {
+    const { gateway } = await renderLive()
+    fireEvent.click(screen.getByRole('button', { name: '返回' }))
+    fireEvent.click(screen.getByRole('button', { name: '主屏幕' }))
+    fireEvent.click(screen.getByRole('button', { name: '最近任务' }))
+    const screenshot = screen.getByRole('button', { name: '截图' }) as HTMLButtonElement
+    expect(screenshot.disabled).toBe(true)
+    expect(gateway.lastSocket!.sent.map(parseSentFrame)).toEqual([
+      { jsonrpc: '2.0', id: 1, method: 'button', params: { deviceId: EMULATOR_DEVICE_ID, button: 'BACK' } },
+      { jsonrpc: '2.0', id: 2, method: 'button', params: { deviceId: EMULATOR_DEVICE_ID, button: 'HOME' } },
+      { jsonrpc: '2.0', id: 3, method: 'button', params: { deviceId: EMULATOR_DEVICE_ID, button: 'RECENTS' } },
+    ])
+  })
+
+  it('refreshes the stream through a brand-new session', async () => {
+    const harness = await renderLive()
+    const firstPlayback = h264Runtime.abortSignals[0]!
+    fireEvent.click(screen.getByRole('button', { name: '刷新流' }))
+    expect(firstPlayback.aborted).toBe(true)
+    expect(harness.gateway.mintedDevices).toHaveLength(2)
+    await flush()
+    await step(() => { harness.gateway.lastSocket!.accept() })
+    const canvas = screen.getByRole('img', { name: 'Pixel_6_API_35 实时画面' }) as HTMLCanvasElement
+    expect({ width: canvas.width, height: canvas.height }).toEqual({ width: 390, height: 844 })
+  })
+})
+
+describe('PhoneConnectedView error and recovery arms', () => {
+  it('installs a missing real-iPhone agent and reaches live GUI control', async () => {
+    const gateway = new FakeGateway()
+    gateway.queueMint({ error: new PhoneStreamHttpError(409, 'PHONE_AGENT_MISSING', 'agent missing') })
+    gateway.queueMint({ session: {
+      ...SESSION_A,
+      deviceId: IOS_DEVICE_ID,
+      agentManaged: true,
+    } })
+    render(
+      <PhoneConnectedView
+        serial={IOS_DEVICE_ID}
+        name="Yishu iPhone"
+        visible={true}
+        source={new FakeListingSource().seed(listingOf([], [
+          { id: IOS_DEVICE_ID, name: 'Yishu iPhone', channel: 'usb', state: 'online', online: true },
+        ]))}
+        onOpenDevice={() => {}}
+        onShowPicker={() => {}}
+        createController={serial => new PhoneConnectionController({ gateway, deviceId: serial })}
+      />,
+    )
+    await step(() => {})
+    expect(screen.getByText('设备控制代理未安装')).toBeTruthy()
+    const install = screen.getByRole('button', { name: '安装设备控制代理' })
+    const detect = screen.getByRole('button', { name: '重新检测' })
+    expect(install.className).toContain('minibtnPrimary')
+    expect(detect.className).toContain('minibtnSecondary')
+    fireEvent.click(install)
+    expect(screen.getByText('正在安装设备控制代理…')).toBeTruthy()
+    await flush()
+    await step(() => { gateway.lastSocket!.accept() })
+    expect(screen.getByRole('img', { name: 'Yishu iPhone 实时画面' })).toBeTruthy()
+    expect(gateway.agentInstallCalls).toEqual([{ deviceId: IOS_DEVICE_ID, force: false }])
+  })
+
+  it('keeps one-click Android agent preparation visible when USB installation is restricted', async () => {
+    const gateway = new FakeGateway()
+    gateway.queueMint({ error: new PhoneStreamHttpError(409, 'PHONE_AGENT_MISSING', 'agent missing') })
+    gateway.queueAgentInstall({
+      error: new PhoneStreamHttpError(
+        502, 'PHONE_UPSTREAM', 'adb install failed: INSTALL_FAILED_USER_RESTRICTED',
+      ),
+    })
+    render(
+      <PhoneConnectedView
+        serial={REAL_IOS_DEVICE_ID}
+        name="MI 8"
+        visible={true}
+        source={new FakeListingSource().seed(listingOf([
+          { id: REAL_IOS_DEVICE_ID, name: 'MI 8', channel: 'usb', state: 'online', online: true },
+        ], []))}
+        onOpenDevice={() => {}}
+        onShowPicker={() => {}}
+        createController={serial => new PhoneConnectionController({ gateway, deviceId: serial })}
+      />,
+    )
+    await step(() => {})
+    fireEvent.click(screen.getByRole('button', { name: '安装设备控制代理' }))
+    await flush()
+    expect(screen.getByText('设备拒绝安装控制代理')).toBeTruthy()
+    expect(screen.getByText(/USB 调试（安全设置）/u)).toBeTruthy()
+    expect(screen.getByRole('button', { name: '安装设备控制代理' })).toBeTruthy()
+  })
+
+  it('renders every structured real-iPhone prerequisite without claiming automatic signing or trust', async () => {
+    const cases = [
+      ['device-locked', '请解锁 iPhone', 'iPhone 已锁定'],
+      ['agent-profile-required', '打开配置文件', '未配置真机签名描述文件'],
+      ['cert-untrusted', 'Developer Mode', '设备控制代理未受信任'],
+      ['profile-expired', '重新安装设备控制代理', '签名描述文件已过期'],
+      ['tunnel-failed', '重新连接', '真机连接通道未建立'],
+      ['device-unplugged', '重新连接', 'iPhone 已断开连接'],
+    ] as const
+    for (const [issue, action, title] of cases) {
+      const gateway = new FakeGateway()
+      gateway.queueMint({
+        error: issue === 'agent-profile-required'
+          ? new PhoneStreamHttpError(409, 'PHONE_AGENT_PROFILE_REQUIRED', issue)
+          : new PhoneStreamHttpError(502, 'PHONE_REAL_DEVICE_ISSUE', issue, issue),
+      })
+      const mounted = render(
+        <PhoneConnectedView
+          serial={IOS_DEVICE_ID}
+          name="Yishu iPhone"
+          visible={true}
+          source={new FakeListingSource().seed(listingOf([], [
+            { id: IOS_DEVICE_ID, name: 'Yishu iPhone', channel: 'usb', state: 'online', online: true },
+          ]))}
+          onOpenDevice={() => {}}
+          onShowPicker={() => {}}
+          createController={serial => new PhoneConnectionController({ gateway, deviceId: serial })}
+        />,
+      )
+      await step(() => {})
+      expect(screen.getByText(title)).toBeTruthy()
+      expect(screen.getAllByText(new RegExp(action)).length).toBeGreaterThan(0)
+      mounted.unmount()
+    }
+  })
+
+  it('shows the agent-check and force-reinstall progress states', async () => {
+    const checkingGateway = new FakeGateway()
+    checkingGateway.queueMint({ session: { ...SESSION_A, deviceId: IOS_DEVICE_ID, agentManaged: true } })
+    vi.spyOn(checkingGateway, 'agentStatus').mockReturnValue(new Promise(() => {}))
+    const checking = render(
+      <PhoneConnectedView
+        serial={IOS_DEVICE_ID}
+        name="Yishu iPhone"
+        visible={true}
+        source={new FakeListingSource().seed(listingOf([], [
+          { id: IOS_DEVICE_ID, name: 'Yishu iPhone', channel: 'usb', state: 'online', online: true },
+        ]))}
+        onOpenDevice={() => {}}
+        onShowPicker={() => {}}
+        createController={serial => new PhoneConnectionController({
+          gateway: checkingGateway, deviceId: serial, retryLimit: 0,
+        })}
+      />,
+    )
+    await flush()
+    await step(() => { checkingGateway.lastSocket!.accept() })
+    await act(async () => { h264Runtime.failLastDecoder(); await flush() })
+    await act(async () => {
+      fireEvent.error(screen.getByRole('img', { name: 'Yishu iPhone 实时画面' }))
+      await flush()
+    })
+    expect(screen.getByText('正在检测设备控制代理…')).toBeTruthy()
+    checking.unmount()
+
+    const reinstallGateway = new FakeGateway()
+    reinstallGateway.queueMint({ error: new PhoneStreamHttpError(
+      502, 'PHONE_REAL_DEVICE_ISSUE', 'profile expired', 'profile-expired',
+    ) })
+    vi.spyOn(reinstallGateway, 'installAgent').mockReturnValue(new Promise(() => {}))
+    render(
+      <PhoneConnectedView
+        serial={IOS_DEVICE_ID}
+        name="Yishu iPhone"
+        visible={true}
+        source={new FakeListingSource().seed(listingOf([], [
+          { id: IOS_DEVICE_ID, name: 'Yishu iPhone', channel: 'usb', state: 'online', online: true },
+        ]))}
+        onOpenDevice={() => {}}
+        onShowPicker={() => {}}
+        createController={serial => new PhoneConnectionController({ gateway: reinstallGateway, deviceId: serial })}
+      />,
+    )
+    await step(() => {})
+    fireEvent.click(screen.getByRole('button', { name: '重新安装设备控制代理' }))
+    expect(screen.getByText('正在重新安装设备控制代理…')).toBeTruthy()
+  })
+
+  it('shows the refused and unavailable next-action copy', async () => {
+    renderView(true, new PhoneStreamHttpError(403, 'forbidden', 'forbidden'))
+    await step(() => {})
+    expect(screen.getByText('画面流被拒绝')).toBeTruthy()
+    expect(screen.getByText(/宿主拒绝了本次画面会话/)).toBeTruthy()
+    cleanup()
+
+    const gateway = new FakeGateway()
+    gateway.queueMint({ error: new TypeError('network down') })
+    render(
+      <PhoneConnectedView
+        serial={EMULATOR_DEVICE_ID}
+        name="Pixel_6_API_35"
+        visible={true}
+        source={new FakeListingSource().seed(listingOf(DEVICES))}
+        onOpenDevice={() => {}}
+        onShowPicker={() => {}}
+        createController={serial => new PhoneConnectionController({
+          gateway,
+          deviceId: serial,
+          retryLimit: 0,
+        })}
+      />,
+    )
+    await step(() => {})
+    expect(screen.getByText('无法连接设备画面')).toBeTruthy()
+    expect(screen.getByText(/画面服务暂时不可达/)).toBeTruthy()
+  })
+
+  it('shows the offline card with the reconnect next action when mint 404s', async () => {
+    const harness = renderView(true, new PhoneStreamHttpError(404, 'not-found', 'absent from the latest device listing'))
+    await step(() => {})
+    expect(screen.getByRole('alert')).toBeTruthy()
+    expect(screen.getByText('设备已离线')).toBeTruthy()
+    expect(screen.getByText(/已从设备清单消失/)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '重新连接' }))
+    await flush()
+    await step(() => { harness.gateway.lastSocket!.accept() })
+    expect(screen.getByRole('img', { name: 'Pixel_6_API_35 实时画面' })).toBeTruthy()
+  })
+
+  it('shows the unauthorized warn card when the upstream refuses debugging', async () => {
+    const harness = renderView(true, new PhoneStreamHttpError(502, 'upstream', 'device unauthorized: allow USB debugging'))
+    await step(() => {})
+    expect(screen.getByText('真机未授权调试')).toBeTruthy()
+    expect(screen.getByText(/允许「USB 调试」/)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '重新连接' }))
+    await flush()
+    await step(() => { harness.gateway.lastSocket!.accept() })
+    expect(screen.getByRole('img', { name: 'Pixel_6_API_35 实时画面' })).toBeTruthy()
+  })
+
+  it('shows the newest structured action failure while the picture remains live', async () => {
+    const harness = await renderLive()
+    const socket = harness.gateway.lastSocket!
+    const frame = screen.getByRole('application')
+    stubRect(frame, 390, 844)
+    fireEvent.pointerDown(frame, { clientX: 100, clientY: 100 })
+    fireEvent.pointerUp(frame, { clientX: 100, clientY: 100 })
+    expect(socket.sent).toHaveLength(1)
+    await act(async () => {
+      socket.receive(JSON.stringify({ jsonrpc: '2.0', id: 1, error: { code: -32000, message: 'first failure' } }))
+    })
+    expect(screen.getByRole('status').textContent).toContain('first failure')
+    expect(screen.getByRole('img', { name: 'Pixel_6_API_35 实时画面' })).toBeDefined()
+    fireEvent.pointerDown(frame, { clientX: 120, clientY: 120 })
+    fireEvent.pointerUp(frame, { clientX: 120, clientY: 120 })
+    await act(async () => {
+      socket.receive(JSON.stringify({ jsonrpc: '2.0', id: 2, error: { code: -32000, message: 'newest failure' } }))
+    })
+    expect(screen.getByRole('status').textContent).toContain('newest failure')
+  })
+
+  it('shows the reconnecting note between interruption retries', async () => {
+    const harness = await renderLive()
+    const firstPlayback = h264Runtime.abortSignals[0]!
+    await act(async () => { harness.gateway.lastSocket!.drop() })
+    expect(firstPlayback.aborted).toBe(true)
+    expect(screen.getByText(/画面重连中/)).toBeTruthy()
+    expect(screen.queryByRole('img')).toBeNull()
+    await step(() => { harness.scheduler.runNext() })
+    harness.gateway.lastSocket!.accept()
+    await act(async () => {})
+    expect(screen.getByText('代理中')).toBeTruthy()
+  })
+
+  it('releases the failed H264 decoder while the same session falls back to MJPEG', async () => {
+    await renderLive()
+    await act(async () => { h264Runtime.failLastDecoder() })
+    expect(screen.getByLabelText('画面状态 等待 MJPEG 首帧')).toBeTruthy()
+    expect(h264Runtime.abortSignals[0]!.aborted).toBe(true)
+    expect(h264Runtime.decoderCloseCounts[0]).toBe(1)
+  })
+
+  it('releases H264 playback when the connected view unmounts', async () => {
+    await renderLive()
+    cleanup()
+    expect(h264Runtime.abortSignals[0]!.aborted).toBe(true)
+    expect(h264Runtime.decoderCloseCounts[0]).toBe(1)
+    expect(h264Runtime.frameCloseCounts).toEqual([1])
+  })
+
+  it('surfaces the interrupted error card once the retry budget is spent', async () => {
+    const harness = await renderLive()
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await act(async () => { harness.gateway.lastSocket!.drop() })
+      await step(() => { harness.scheduler.runNext() })
+      harness.gateway.lastSocket!.accept()
+      await act(async () => {})
+    }
+    await act(async () => { harness.gateway.lastSocket!.drop() })
+    expect(screen.getByText('画面流中断')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '重新连接' }))
+    await flush()
+    await step(() => { harness.gateway.lastSocket!.accept() })
+    expect(screen.getByText('代理中')).toBeTruthy()
+  })
+})

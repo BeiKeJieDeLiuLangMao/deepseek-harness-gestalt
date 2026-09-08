@@ -14,7 +14,7 @@ Status: implemented
 
 实现包括：为了改动而阅读大面积代码、编写或编辑产品或文档文件、跑本地测试或其他可执行证据，以及批量修改。根会话通过运行时的 Agent 工具（`subagent`、`subagent_fork` 或 Codex worktree 任务）把这类工作派给该票的责任 owner。交付仍活跃时，用户反馈、CI 失败、review finding 和验收修复都回到该 owner。只有独立交付单元、必要的独立性或模型能力、owner 不可用或上下文明显陈旧，或早期交付关闭后的独立请求，才新建 writer；台账在其写入前记录替换关系和交接。
 
-根会话可以运行有界的只读状态与来源查询，检查精确 Git ref、worktree、GitHub、跟踪器、worker 报告、产物和 CI；更新交付台账；写 brief；创建空的规格分支和 Draft pull request；并在报告的证据通过后入队合并。这些查询只检查协调状态，不能替代 writer 负责的产品测试或其他可执行验收证据。根会话不在协调 checkout 里落地代码、文档或环境改动，也不启动 headed 验收实例或走体验路线。[规格 PR 决策](2026-09-02-spec-pr-delivery-and-retro.zh.md)仍然拥有 pull request 数量、merger 子代理、scratch 笔记和 retro 闸门。[还原度与验收路线决策](2026-09-03-ui-fidelity-and-acceptance-route.zh.md)拥有稿对照和专用验收会话。[按运行时选择执行器](2026-08-27-runtime-specific-delivery-executors.zh.md)仍然选择 Codex 或 DSH worker；顺序派发是顺序的隔离 writer，而不是根会话自己写。
+根会话可以运行有界的只读状态与来源查询，检查精确 Git ref、worktree、GitHub、跟踪器、worker 报告、产物和 CI；更新交付台账；写 brief；创建空的规格分支和 Draft pull request；并在报告的证据通过后入队合并。这些查询只检查协调状态，不能替代 writer 负责的产品测试或其他可执行验收证据。根会话不在协调 checkout 里落地代码、文档或环境改动，也不启动后台原生验收实例或走体验路线。[规格 PR 决策](2026-09-02-spec-pr-delivery-and-retro.zh.md)仍然拥有 pull request 数量、merger 子代理、scratch 笔记和 retro 闸门。[还原度与验收路线决策](2026-09-03-ui-fidelity-and-acceptance-route.zh.md)拥有稿对照和专用验收会话。[按运行时选择执行器](2026-08-27-runtime-specific-delivery-executors.zh.md)仍然选择 Codex 或 DSH worker；顺序派发是顺序的隔离 writer，而不是根会话自己写。
 
 当没有任何 Agent 工具能跑 writer 时，根会话报告该隔离失败并停止。它不退回在协调会话里实现。
 

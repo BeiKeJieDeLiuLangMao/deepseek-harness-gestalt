@@ -10,7 +10,10 @@ import { availableParallelism } from 'node:os'
 import { resolve } from 'node:path'
 import { performance } from 'node:perf_hooks'
 import { CLIENT_BUILD_PROFILE_SELECTOR } from './client-build-environment.ts'
-import { COVERAGE_EXEMPT_ENV, coverageExemptHeavySuites } from './coverage-exempt.ts'
+import {
+  COVERAGE_EXEMPT_ENV,
+  coverageExemptHeavySuites,
+} from './coverage-exempt.ts'
 import {
   COVERAGE_PARTITIONS_ENV,
   COVERAGE_TEST_TIMEOUT_ENV,
@@ -284,7 +287,7 @@ export function gatesForMode(selected: Mode): Gate[] {
     case 'ci-windows-native-coverage-merge':
       return coverageMergeGates()
     case 'ci-windows-native-coverage-exempt':
-      return coverageExemptHeavyGates()
+      return coverageExemptGates()
     case 'ci-snapshot':
       return [ciBuildGate(), snapshotGate()]
     case 'ci-artifacts':
@@ -716,9 +719,10 @@ function lintGate(options: { needs?: string[] } = {}): Gate {
 // DSH_COVERAGE_PARTITIONS is set, its single-worker processes replace the
 // instrumented share while this budget still sizes the exempt gate. The exempt
 // gate's wall clock is dominated by its longest single file, so it takes the
-// small share. A budget of 1 gives each gate 1 worker; lanes that need a strict
-// total of one (the serial reference jobs) also set DSH_GATE_CONCURRENCY=1,
-// which keeps the gates from overlapping at all.
+// small share. Isolated exempt suites start in a fresh one-worker process only
+// after both parallel gates settle. A budget of 1 gives each parallel gate 1
+// worker; lanes that need a strict total of one (the serial reference jobs)
+// also set DSH_GATE_CONCURRENCY=1, which keeps the gates from overlapping at all.
 // DSH_COVERAGE_TEST_TIMEOUT_MS raises Vitest's per-test and expect.poll
 // defaults together for instrumented lanes whose scheduling overhead exceeds
 // those defaults. Explicit fixture timeouts remain authoritative.
@@ -770,6 +774,11 @@ function coverageGates(needs?: string[]): Gate[] {
       label: 'test:coverage-exempt-heavy',
       ...dependency,
     }),
+    pnpmScript('coverage-exempt-isolated', 'gestalt:overlay-boot', {
+      label: 'test:coverage-exempt-isolated',
+      after: ['coverage', 'coverage-exempt-heavy'],
+      ...dependency,
+    }),
   ]
 }
 
@@ -787,7 +796,7 @@ function coverageMergeGates(): Gate[] {
   ]
 }
 
-function coverageExemptHeavyGates(): Gate[] {
+function coverageExemptGates(): Gate[] {
   const workers = coverageWorkerArgs()
   const timeouts = coverageTestTimeoutArgs(process.env[COVERAGE_TEST_TIMEOUT_ENV])
   return [
@@ -798,6 +807,10 @@ function coverageExemptHeavyGates(): Gate[] {
       ...workers.instrumented,
       ...timeouts,
     ], { label: 'test:coverage-exempt-heavy' }),
+    pnpmScript('coverage-exempt-isolated', 'gestalt:overlay-boot', {
+      label: 'test:coverage-exempt-isolated',
+      after: ['coverage-exempt-heavy'],
+    }),
   ]
 }
 
@@ -917,6 +930,7 @@ function builtBinSmokeGate(needs: string[] = ['build']): Gate {
     'packages/subagent/subagent-codex/tests/loader-composition.e2e.ts',
     'packages/subagent/subagent-claude-code/tests/loader-composition.e2e.ts',
     'packages/api/remotes/tests/built-lib.e2e.ts',
+    'apps/mobile/tests/mobile-browse-artifact.e2e.ts',
     // Built execution consumers: the only automated proof that package-name
     // imports reach their lib/ entrypoints under plain Node. The e2e lane runs
     // unbuilt, so these files self-skip there.

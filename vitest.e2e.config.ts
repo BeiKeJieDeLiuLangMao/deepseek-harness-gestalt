@@ -27,6 +27,9 @@ function positiveIntFromEnv(name: string, fallback: number): number {
 }
 
 const e2eMaxWorkers = positiveIntFromEnv('DSH_E2E_MAX_WORKERS', DEFAULT_E2E_MAX_WORKERS)
+const builtArtifactSuites = process.env.DSH_EXAMPLE_MODE === 'lib'
+  ? ['apps/mobile/tests/mobile-browse-artifact.e2e.ts']
+  : []
 
 export default defineConfig({
   // Same resolution note as vitest.config.ts: bare workspace names resolve
@@ -40,9 +43,15 @@ export default defineConfig({
   test: {
     execArgv: vitestExecArgv,
     setupFiles: ['./scripts/test-invariants.ts'],
-    // apps/cli only, not apps/*: apps/web/tests/*.e2e.ts needs the built
-    // frontend dist and runs under vitest.web.config.ts (the test:web job).
-    include: ['packages/*/*/tests/**/*.e2e.ts', 'apps/cli/tests/**/*.e2e.ts', 'examples/*/tests/**/*.e2e.ts'],
+    // apps/web/tests/*.e2e.ts needs the built frontend dist and runs under
+    // vitest.web.config.ts (the test:web job). Mobile's artifact suite enters
+    // only in lib mode, after the built-bin smoke gate's Client build.
+    include: [
+      'packages/*/*/tests/**/*.e2e.ts',
+      'apps/cli/tests/**/*.e2e.ts',
+      'examples/*/tests/**/*.e2e.ts',
+      ...builtArtifactSuites,
+    ],
     // Real model calls: generous timeouts, and retries for transient flakes
     // (the shared internal key hits concurrency quotas). No coverage — the
     // unit suites own the coverage gate.

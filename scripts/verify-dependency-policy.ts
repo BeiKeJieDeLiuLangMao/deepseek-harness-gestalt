@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /** Verify that repository checks reject unprepared dependencies without mutation. */
 
+import { rm } from 'node:fs/promises'
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import {
@@ -215,14 +216,25 @@ function clearMarkers(fixture: Fixture): void {
   rmSync(fixture.runMarker, { force: true })
 }
 
-/** Remove one owned fixture with Node's bounded Windows EPERM retry. */
-export function removeFixtureRoot(path: string, remove: typeof rmSync = rmSync): void {
-  remove(path, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
+/**
+ * Remove one owned fixture, awaiting Node's bounded Windows denial retries.
+ * @param path - Owned fixture root after its directory links are unlinked.
+ * @param remove - Asynchronous recursive removal implementation.
+ * @returns Completion after removal, or rejection when the retry budget is exhausted.
+ */
+export async function removeFixtureRoot(path: string, remove: typeof rm = rm): Promise<void> {
+  await remove(path, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
 }
 
-export function finishFixture(primaryError: unknown, cleanup: () => void): void {
+/**
+ * Await cleanup before propagating fixture errors, retaining both failures when present.
+ * @param primaryError - Original fixture exception, or undefined after normal completion.
+ * @param cleanup - Owned cleanup operation that must settle before the next fixture.
+ * @returns Completion only when the fixture and cleanup both succeeded.
+ */
+export async function finishFixture(primaryError: unknown, cleanup: () => Promise<void>): Promise<void> {
   try {
-    cleanup()
+    await cleanup()
   } catch (cleanupError) {
     if (primaryError !== undefined) {
       throw new AggregateError([primaryError, cleanupError], 'dependency policy fixture failed and cleanup also failed')
@@ -233,11 +245,11 @@ export function finishFixture(primaryError: unknown, cleanup: () => void): void 
   if (primaryError !== undefined) throw new Error('dependency policy fixture failed with a non-Error value')
 }
 
-function useFixture(
+async function useFixture(
   policy: Policy,
   environmentClass: EnvironmentClass,
   run: (fixture: Fixture) => void,
-): void {
+): Promise<void> {
   const fixture = createFixture(policy, environmentClass)
   let primaryError: unknown
   try {
@@ -245,9 +257,9 @@ function useFixture(
   } catch (error) {
     primaryError = error
   }
-  finishFixture(primaryError, () => {
+  await finishFixture(primaryError, async () => {
     unlinkFixtureLinks(fixture.root)
-    removeFixtureRoot(fixture.root)
+    await removeFixtureRoot(fixture.root)
   })
 }
 
@@ -309,13 +321,13 @@ function assertRejectedWithoutMutation(
   if (!sameBytes(readBytes(join(fixture.repo, 'package.json')), manifestBefore)) failures.push(`${label}: manifest bytes changed`)
 }
 
-function verifyPolicyRejection(
+async function verifyPolicyRejection(
   failures: string[],
   state: 'stale' | 'cold',
   entry: Entry,
   environmentClass: EnvironmentClass,
-): void {
-  useFixture('error', environmentClass, (fixture) => {
+): Promise<void> {
+  await useFixture('error', environmentClass, (fixture) => {
     if (state === 'stale') prepareWarmStale(fixture)
     else prepareCold(fixture)
     assertRejectedWithoutMutation(failures, `${state} ${entry} ${environmentClass}`, fixture, entry)
@@ -328,13 +340,13 @@ function verifyPolicyRejection(
   })
 }
 
-function verifyExplicitRecovery(
+async function verifyExplicitRecovery(
   failures: string[],
   state: 'stale' | 'cold',
   entry: Entry,
   environmentClass: EnvironmentClass,
-): void {
-  useFixture('error', environmentClass, (fixture) => {
+): Promise<void> {
+  await useFixture('error', environmentClass, (fixture) => {
     if (state === 'stale') prepareWarmStale(fixture)
     else prepareCold(fixture)
     assertRejectedWithoutMutation(failures, `recovery ${state} ${entry} ${environmentClass}`, fixture, entry)
@@ -358,8 +370,8 @@ function verifyExplicitRecovery(
   })
 }
 
-function verifyDefaultNegativeControl(failures: string[]): void {
-  useFixture('absent', 'local', (fixture) => {
+async function verifyDefaultNegativeControl(failures: string[]): Promise<void> {
+  await useFixture('absent', 'local', (fixture) => {
     prepareWarmStale(fixture)
     const lockBefore = readBytes(fixture.lockfile)
     const outcome = runPnpm(fixture, entryArgs('run'))
@@ -373,11 +385,11 @@ function verifyDefaultNegativeControl(failures: string[]): void {
   })
 }
 
-function verifyOverride(
+async function verifyOverride(
   failures: string[],
   kind: 'environment' | 'cli',
-): void {
-  useFixture('error', 'local', (fixture) => {
+): Promise<void> {
+  await useFixture('error', 'local', (fixture) => {
     prepareWarmStale(fixture)
     const outcome = kind === 'environment'
       ? runPnpm(fixture, entryArgs('run'), { pnpm_config_verify_deps_before_run: 'install' })
@@ -398,7 +410,25 @@ function verifySameLengthHashNegativeCase(failures: string[]): void {
   if (hashBytes(left) === hashBytes(right)) failures.push('byte hashing failed to distinguish same-length content')
 }
 
-function main(): void {
+/**
+ * Run ordered scenarios without losing collected violations when a scenario aborts.
+ * @param failures - Shared policy violations collected before an exception.
+ * @param verify - Ordered scenario execution, including awaited cleanup.
+ * @returns Completion, or rejection retaining violations and the original exception.
+ */
+export async function verifyPolicyScenarios(failures: readonly string[], verify: () => Promise<void>): Promise<void> {
+  try {
+    await verify()
+  } catch (error) {
+    if (failures.length === 0) throw error
+    throw new AggregateError([
+      new Error(`verify-dependency-policy: violations:\n  ${failures.join('\n  ')}`),
+      error,
+    ], 'dependency policy violations and fixture execution failed')
+  }
+}
+
+async function main(): Promise<void> {
   const failures: string[] = []
   const workspace = readFileSync(join(root, 'pnpm-workspace.yaml'), 'utf8')
   if (!/(^|\n)verifyDepsBeforeRun:\s*error\s*(\n|$)/u.test(workspace)) {
@@ -406,18 +436,20 @@ function main(): void {
   }
 
   verifySameLengthHashNegativeCase(failures)
-  for (const state of ['stale', 'cold'] as const) {
-    for (const entry of ['run', 'exec'] as const) {
-      for (const environmentClass of ['local', 'ci'] as const) {
-        verifyPolicyRejection(failures, state, entry, environmentClass)
+  await verifyPolicyScenarios(failures, async () => {
+    for (const state of ['stale', 'cold'] as const) {
+      for (const entry of ['run', 'exec'] as const) {
+        for (const environmentClass of ['local', 'ci'] as const) {
+          await verifyPolicyRejection(failures, state, entry, environmentClass)
+        }
       }
     }
-  }
-  verifyExplicitRecovery(failures, 'stale', 'run', 'local')
-  verifyExplicitRecovery(failures, 'cold', 'exec', 'ci')
-  verifyDefaultNegativeControl(failures)
-  verifyOverride(failures, 'environment')
-  verifyOverride(failures, 'cli')
+    await verifyExplicitRecovery(failures, 'stale', 'run', 'local')
+    await verifyExplicitRecovery(failures, 'cold', 'exec', 'ci')
+    await verifyDefaultNegativeControl(failures)
+    await verifyOverride(failures, 'environment')
+    await verifyOverride(failures, 'cli')
+  })
 
   if (failures.length > 0) {
     process.stderr.write('verify-dependency-policy: violations:\n')
@@ -429,4 +461,4 @@ function main(): void {
 }
 
 const scriptPath = fileURLToPath(import.meta.url)
-if (process.argv[1] !== undefined && resolve(process.argv[1]) === scriptPath) main()
+if (process.argv[1] !== undefined && resolve(process.argv[1]) === scriptPath) await main()

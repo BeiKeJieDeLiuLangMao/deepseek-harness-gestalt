@@ -3,7 +3,8 @@ import { mkdtemp, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
-  autoUpdaterFromModule, configurePackagedAutoUpdater, startAutoUpdater, type AutoUpdaterPort,
+  autoUpdaterFromModule, configurePackagedAutoUpdater, startAutoUpdater,
+  type AutoUpdaterPort, type NativeStagePort,
 } from '../src/updater.ts'
 
 function fakeUpdater(): AutoUpdaterPort & { emit: (event: string, info?: unknown) => void } {
@@ -27,6 +28,38 @@ function fakeUpdater(): AutoUpdaterPort & { emit: (event: string, info?: unknown
     emit(event, info) {
       for (const listener of listeners.get(event) ?? []) listener(info)
     },
+  }
+}
+
+function fakeNativeStage(): NativeStagePort & {
+  emitDownloaded(): void
+  emitError(error: Error): void
+  downloadedListener(): Parameters<NativeStagePort['addDownloadedListener']>[0] | undefined
+  errorListener(): Parameters<NativeStagePort['addErrorListener']>[0] | undefined
+  addedDownloaded: ReturnType<typeof vi.fn>
+  removedDownloaded: ReturnType<typeof vi.fn>
+  addedError: ReturnType<typeof vi.fn>
+  removedError: ReturnType<typeof vi.fn>
+} {
+  let downloaded: Parameters<NativeStagePort['addDownloadedListener']>[0] | undefined
+  let error: Parameters<NativeStagePort['addErrorListener']>[0] | undefined
+  const addedDownloaded = vi.fn((listener: NonNullable<typeof downloaded>) => { downloaded = listener })
+  const removedDownloaded = vi.fn()
+  const addedError = vi.fn((listener: NonNullable<typeof error>) => { error = listener })
+  const removedError = vi.fn()
+  return {
+    addDownloadedListener: addedDownloaded,
+    removeDownloadedListener: removedDownloaded,
+    addErrorListener: addedError,
+    removeErrorListener: removedError,
+    emitDownloaded: () => { downloaded?.({ preventDefault() {}, defaultPrevented: false }, '', '', new Date(0), '') },
+    emitError: (failure) => { error?.(failure) },
+    downloadedListener: () => downloaded,
+    errorListener: () => error,
+    addedDownloaded,
+    removedDownloaded,
+    addedError,
+    removedError,
   }
 }
 
@@ -220,7 +253,7 @@ describe('startAutoUpdater', () => {
 
   it('keeps Install disabled until the native Squirrel stage finishes', () => {
     const updater = fakeUpdater()
-    const native = fakeUpdater()
+    const native = fakeNativeStage()
     const life = startAutoUpdater({
       updater,
       nativeStage: native,
@@ -233,17 +266,23 @@ describe('startAutoUpdater', () => {
     expect(life.state()).toMatchObject({ state: 'preparing', newVersion: '0.1.4' })
     life.install()
     expect(updater.quitAndInstall).not.toHaveBeenCalled()
-    native.emit('update-downloaded')
+    native.emitDownloaded()
     expect(life.state()).toMatchObject({ state: 'downloaded', newVersion: '0.1.4' })
     life.install()
     expect(updater.quitAndInstall).toHaveBeenCalledWith(false, true)
+    const downloadedListener = native.downloadedListener()
+    const errorListener = native.errorListener()
+    expect(downloadedListener).toBeDefined()
+    expect(errorListener).toBeDefined()
     life.dispose()
+    expect(native.removedDownloaded).toHaveBeenCalledWith(downloadedListener)
+    expect(native.removedError).toHaveBeenCalledWith(errorListener)
   })
 
   it('fails preparation when the native stage never becomes ready', () => {
     vi.useFakeTimers()
     const updater = fakeUpdater()
-    const native = fakeUpdater()
+    const native = fakeNativeStage()
     const life = startAutoUpdater({
       updater,
       nativeStage: native,

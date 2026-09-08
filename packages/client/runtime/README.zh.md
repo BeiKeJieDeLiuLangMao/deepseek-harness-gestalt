@@ -8,6 +8,8 @@
 
 设置所有者共用本包定义的不依赖 React 的 `SettingsScopeSpec`、`SettingsScope` 与快照类型。ui-settings 拥有 `ctx.settingsScope.bind(spec)`、对应的 Host 传输、schema 校验与生命周期；详见[该包的约定](../ui-settings/README.zh.md)。
 
+`./client` export 在浏览器中继续使用 `lib/client.cjs` factory，在 plain Node 下则选择 ESM `lib/client-node.js` 产物。产物消费方因此可以加载不依赖 React 的 Client carrier，而不会执行浏览器 module loader。
+
 <a id="slot-declaration-injection"></a>
 
 ## Slot 声明注入

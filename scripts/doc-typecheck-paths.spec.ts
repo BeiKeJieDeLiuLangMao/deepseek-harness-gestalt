@@ -10,6 +10,15 @@ describe('builtDeclarationPath', () => {
       .toBe('./packages/core/session/lib/types/invariant.d.ts')
   })
 
+  it('preserves app source and test directories under an app-root declaration build', () => {
+    expect(builtDeclarationPath('./apps/desktop/src/companion-product.ts'))
+      .toBe('./apps/desktop/lib/types/src/companion-product.d.ts')
+    expect(builtDeclarationPath('./apps/mobile/src/MobileBrowse.tsx'))
+      .toBe('./apps/mobile/lib/types/src/MobileBrowse.d.ts')
+    expect(builtDeclarationPath('./apps/mobile/tests/fixtures/development-keyless-pairing.fixture.ts'))
+      .toBe('./apps/mobile/lib/types/tests/fixtures/development-keyless-pairing.fixture.d.ts')
+  })
+
   it('rejects aliases without a supported source target', () => {
     expect(() => builtDeclarationPath('./packages/runtime-diagnostics/invariants/source/index.ts'))
       .toThrow('cannot map workspace source path')
