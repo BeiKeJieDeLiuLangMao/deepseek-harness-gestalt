@@ -7,7 +7,7 @@
     "rewriteRelativeImportExtensions": false
   },
   "files": [
-    "platform-account.snapshot.ts",
+    "platform-account.spec.ts",
     "fixtures/driver.ts"
   ],
   "include": [],
