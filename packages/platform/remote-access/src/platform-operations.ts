@@ -1,5 +1,7 @@
 /** Development versus production Platform isolation and safe operations. */
 
+import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
+
 /** Allowed Platform environments. There is no staging selector. */
 export type PlatformEnvironment = 'development' | 'production'
 
@@ -96,7 +98,7 @@ export function platformOperationEvent(
   input: { category: PlatformOperationEvent['category']; error?: string },
 ): PlatformOperationEvent {
   return {
-    requestId: crypto.randomUUID(),
+    requestId: randomUUID(),
     pseudonym: `hmac-${input.category}`,
     category: input.category,
     ...(input.error === undefined ? {} : { error: input.error }),
