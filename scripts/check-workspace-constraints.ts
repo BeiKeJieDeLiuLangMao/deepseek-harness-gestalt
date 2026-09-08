@@ -8,6 +8,7 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { DYNAMIC_CLIENT_ARTIFACT } from './client-artifact-contract.ts'
 import { hasTypertRemoteNavigation, isForbiddenPublicationFile } from './publication-payload.ts'
 import { collectProjectReferenceFaceViolations } from './project-reference-faces.ts'
 
@@ -166,7 +167,8 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   '@deepseek-ai/dsh-remote-attachments': ['lib/http.js'],
   // Desktop bridge types are shared by Electron and the browser overlay through
   // a runtime subpath, so the protocol is bundled separately from the UI client.
-  '@deepseek-ai/dsh-client-ui-desktop': ['lib/protocol.js'],
+  '@deepseek-ai/dsh-client-runtime': ['lib/client-node.js'],
+  '@deepseek-ai/dsh-client-ui-desktop': ['lib/protocol.js', 'lib/pairing-source.js'],
   // The CPython side ships as source .py files, published as-is rather than built.
   '@deepseek-ai/dsh-code-runtime-python': ['py/**/*.py'],
   // The Python runtime uses a distinct closed-resolution bin; the public CLI
@@ -186,6 +188,7 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   '@deepseek-ai/dsh-browser-runtime-deterministic': ['lib/runtime-state-*.js'],
   '@deepseek-ai/dsh-browser-runtime-electron': ['lib/runtime-state-*.js', 'lib/testing.js', 'lib/host-seam.js'],
   '@deepseek-ai/dsh-browser-runtime-tandem': ['lib/runtime-state-*.js', 'THIRD_PARTY_NOTICES.md', 'UPSTREAM.md'],
+  '@deepseek-ai/dsh-phone-runtime': ['lib/runtime-state-*.js'],
   '@deepseek-ai/dsh-client-ui-better-sidebar': [
     'lib/client-terminal.js',
     'lib/client-editor.js',
@@ -211,10 +214,11 @@ function expectedDshPackageFiles(manifest: PackageManifest): readonly string[] {
     'lib/invariant.js',
     ...manifest.bin ? ['lib/bin.js'] : [],
     ...manifest.exports?.['./worker'] ? ['lib/worker.cjs'] : [],
-    // UI plugin packages ship their browser bundle beside the node lib
-    // (single-artifact ruling: dist/ retired, ./client resolves lib/client.js).
-    // Keyed on the artifact path, not the subpath name: apiproxy's ./client is
-    // a browser-safe source channel, not a bundle.
+    // Dynamic UI plugin packages ship their CommonJS browser factory beside
+    // the node lib. A package may instead expose an ESM ./client source channel.
+    ...exportDefault(manifest, './client') === DYNAMIC_CLIENT_ARTIFACT.exportPath
+      ? [DYNAMIC_CLIENT_ARTIFACT.relativePath]
+      : [],
     ...exportDefault(manifest, './client') === './lib/client.js' ? ['lib/client.js'] : [],
     // Shared browser presentation subpaths ship an ESM entry and every CSS
     // asset that the product shell compiles alongside it.

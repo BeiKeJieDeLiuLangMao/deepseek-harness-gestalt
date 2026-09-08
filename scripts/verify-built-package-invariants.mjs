@@ -1,4 +1,4 @@
-/** Verify every compiled companion through its staged package self-reference under plain Node. */
+/** Verify compiled package entry points through staged self-references under plain Node. */
 
 import {
   copyFileSync,
@@ -8,6 +8,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from 'node:fs'
@@ -24,6 +25,7 @@ const packagesRoot = resolve(options['packages-root'] ?? repositoryRoot)
 const loaderUrl = options['loader-url']
   ?? pathToFileURL(resolve(repositoryRoot, 'vendor/loader/lib/index.js')).href
 const failures = []
+const CLIENT_RUNTIME = '@deepseek-ai/dsh-client-runtime'
 const manifests = globSync('packages/*/*/package.json', { cwd: packagesRoot }).sort()
 const { default: Loader } = await import(loaderUrl)
 const loader = Object.create(Loader.prototype)
@@ -66,11 +68,40 @@ for (const manifestPath of manifests) {
       throw new Error('companion does not inject invariants')
     }
     if (typeof unwrapped.apply !== 'function') throw new Error('companion apply is missing')
+    if (packageName === CLIENT_RUNTIME) await verifyClientRuntimeEntry(manifest, packageName, stagedPackageDir)
   } catch (error) {
     failures.push(`${packageName}: ${error instanceof Error ? error.message : String(error)}`)
   } finally {
     rmSync(stagedPackageDir, { recursive: true, force: true })
   }
+}
+
+async function verifyClientRuntimeEntry(manifest, packageName, stagedPackageDir) {
+  const clientExport = manifest.exports?.['./client']
+  if (typeof clientExport !== 'object' || clientExport === null) {
+    throw new Error('exports["./client"] must be an object')
+  }
+  if (clientExport.node !== './lib/client-node.js') {
+    throw new Error(`exports["./client"].node must be ./lib/client-node.js; found ${JSON.stringify(clientExport.node)}`)
+  }
+  if (clientExport.default !== './lib/client.cjs') {
+    throw new Error(`exports["./client"].default must remain ./lib/client.cjs; found ${JSON.stringify(clientExport.default)}`)
+  }
+  for (const artifact of ['lib/client-node.js', 'lib/client.cjs']) {
+    if (!manifest.files?.includes(artifact)) throw new Error(`files must publish ${artifact}`)
+  }
+
+  const expected = pathToFileURL(realpathSync(resolve(stagedPackageDir, 'lib/client-node.js'))).href
+  const probePath = resolve(stagedPackageDir, 'client-probe.mjs')
+  writeFileSync(probePath, [
+    `const expected = ${JSON.stringify(expected)}`,
+    `const resolved = import.meta.resolve(${JSON.stringify(`${packageName}/client`)})`,
+    "if (resolved !== expected) throw new Error(`plain Node resolved ${resolved}; expected ${expected}`)",
+    `const client = await import(${JSON.stringify(`${packageName}/client`)})`,
+    "if (typeof client.createSnapshotStore !== 'function') throw new Error('client runtime public carrier is missing')",
+    '',
+  ].join('\n'))
+  await import(pathToFileURL(probePath).href)
 }
 
 if (failures.length > 0) {

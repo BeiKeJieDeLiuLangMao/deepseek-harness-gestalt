@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-22-companion-session-search-host-failures.md
-2026-08-22-companion-session-search-host-failures.md: d8ed192401bf427252335f6eec41be701c7c4a4e
-2026-08-22-companion-session-search-host-failures.zh.md: ddf33ed58a932446487ccf15418df380320fa96b
+2026-08-22-companion-session-search-host-failures.md: 6e80c2d4da45a925c49f7d6de5f14fe2218cd481
+2026-08-22-companion-session-search-host-failures.zh.md: 68c14fd7d67445f81deab355903a1175ca4b2f58

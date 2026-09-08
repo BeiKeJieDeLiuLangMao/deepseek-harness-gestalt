@@ -36,7 +36,7 @@ git -C plugins/dsh-sub2api-sidecar checkout <sha>
 git add plugins/dsh-sub2api-sidecar
 ```
 
-The recorded SHA is the product pin. The current pin is sidecar `v0.1.25` (`8c85bb6c37338795be0c838ed05cd8fc96c1f55d`).
+The recorded SHA is the product pin. The current pin is sidecar `v0.1.26` (`96f6e64c4328db49d08e22094631b7a9f3320c0c`).
 
 ## Constraints
 

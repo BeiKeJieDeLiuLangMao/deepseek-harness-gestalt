@@ -61,7 +61,7 @@ Npm sections describe installation and development relationships; each build fac
 1. **Every client package keeps Cordis in matching `peerDependencies` and `devDependencies`.** This includes the static packages because their Node face participates in the same Cordis plugin contract.
 2. **A dynamic package declares internal dynamic relationships as peer plus dev.** Production source imports, re-exports, module augmentations, and type-only references to an `@deepseek-ai/dsh-*` package count, as does a package named by `dsh.client.inject`. A test-only internal dependency stays dev-only.
 3. **Static client inputs are dev-only for a dynamic consumer.** A package without `dsh.client`, plus the React modules seeded by the web shell, belongs only in the consumer's `devDependencies`; it never belongs in that dynamic package's `dependencies` or `peerDependencies`. `packages/client/web` likewise keeps Loader, modules, and static UI inputs as development inputs; Cordis remains peer plus dev.
-4. **Ordinary installed libraries stay in `dependencies`.** This includes private implementation libraries bundled into `lib/client.js` and bare imports left in a statically linked `lib/index.js`; the final Vite host, not the library build, merges and splits the latter. A dynamic package never puts an `@deepseek-ai/dsh-*` package in `dependencies`.
+4. **Ordinary installed libraries stay in `dependencies`.** This includes private implementation libraries bundled into `lib/client.cjs` and bare imports left in a statically linked `lib/index.js`; the final Vite host, not the library build, merges and splits the latter. A dynamic package never puts an `@deepseek-ai/dsh-*` package in `dependencies`.
 5. **Every peer has a matching development range.** npm dependency and peer cycles are allowed; only the synchronous module-request graph has the separate acyclicity rule below.
 6. **Browser and Node build faces declare externality independently.** A dynamic browser half uses the baseline plus `dsh.client.external`; a statically linked face externalizes every bare specifier; a Node face externalizes its production dependencies ([`tsdown.client.ts`](tsdown.client.ts)). Moving a name between npm sections must not silently change bundle contents.
 7. **Keep the published payload closed.** Every relative runtime import and emitted asset must be covered by `files`; the repository publint pass checks the exact publication view.
@@ -72,7 +72,7 @@ Client business code may statically read `process.env.DSH_CLIENT_*`; every refer
 
 ## Shared modules and the module graph
 
-A dynamic browser half either carries a module privately or requests the shared module-table identity. The client baseline is centralized in [`web/src/platform.ts`](web/src/platform.ts): `PLATFORM_MODULES` names shell-seeded React, Cordis, and static UI libraries; `PRELOADED_CLIENT_EXTERNALS` names dynamic rows, currently runtime, whose ordinary `lib/client.js` factory arrives before shell boot.
+A dynamic browser half either carries a module privately or requests the shared module-table identity. The client baseline is centralized in [`web/src/platform.ts`](web/src/platform.ts): `PLATFORM_MODULES` names shell-seeded React, Cordis, and static UI libraries; `PRELOADED_CLIENT_EXTERNALS` names dynamic rows, currently runtime, whose ordinary `lib/client.cjs` factory arrives before shell boot.
 
 1. **Baseline externals are implicit for every dynamic bundle.** Do not repeat React, Cordis, runtime, `ui-primitives`, or `ui-slots` in package manifests.
 2. **`dsh.client.external` adds a package-specific request.** Use it only for a non-baseline value import whose dynamic row must be materialized through the module table. Declare the exact import specifier; only a trailing `/client` aliases the package row.
@@ -94,7 +94,7 @@ Three declarations read like dependency edges and none is interchangeable: Cordi
 
 The seam is `loader.internal = modules`: cordis reaches plugin code through `EntryTree.import`, so every module request must be satisfiable before cordis can order activation above it. The modules node half emits rows in topological order, and `ClientModuleSystem.import`/`prefetch` recursively registers dynamic provider factories before their consumers materialize. This module order is independent from Cordis activation: a provider that injects services can register first and activate last.
 
-`packages/client/web` is not a Loader entry. Its static imports seed `PLATFORM_MODULES`; parser-preloaded dynamic rows remain ordinary Loader entries and ordinary `lib/client.js` artifacts.
+`packages/client/web` is not a Loader entry. Its static imports seed `PLATFORM_MODULES`; parser-preloaded dynamic rows remain ordinary Loader entries and ordinary `lib/client.cjs` artifacts.
 
 ## Conversation Node discipline
 

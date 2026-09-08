@@ -82,6 +82,8 @@ describe('Desktop Platform HTTP system-Node helper', () => {
     await expect(fetch('https://example.com', { redirect: 'follow' })).rejects.toThrow('redirects must be disabled')
     await expect(fetch('https://example.com', { method: 'PUT' })).rejects.toThrow('method is unsupported')
     await expect(fetch('http://example.com')).rejects.toThrow('credential-free HTTPS')
+    await expect(fetch(new Request('https://example.com'))).rejects.toThrow('does not accept Request objects')
+    await expect(fetch('https://example.com', { body: new URLSearchParams() })).rejects.toThrow('body type is unsupported')
     expect(resolveProxy).not.toHaveBeenCalled()
   })
 })

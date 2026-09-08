@@ -1,0 +1,410 @@
+/**
+ * Same-origin transport of the Host `phoneStream` Consumer: session minting
+ * over `POST /phone/session`, the `/phone/ws/io` JSON-RPC WebSocket, and the
+ * pure io frame codec. This module owns wire facts only — the connection
+ * state machine in `phone-connection.ts` decides what the facts mean.
+ * @module @deepseek-ai/dsh-client-ui-phone/client/phone-stream-client
+ */
+import type { DeviceId, PhoneCaptureId } from '@deepseek-ai/dsh-phone-runtime'
+import type { PhoneIoHandlers, PhoneIoSocket, PhoneStreamGateway } from './phone-connection.ts'
+import { phoneCaptureIdOf } from './phone-capture-id.ts'
+import { phoneDeviceIdOf } from './phone-device-id.ts'
+
+/** Minting endpoint for signed same-origin capture URLs. */
+export const PHONE_SESSION_PATH = '/phone/session'
+/** Prefix for managed device-agent status and installation operations. */
+export const PHONE_AGENT_PATH = '/phone/agent'
+
+/** Structured iOS real-device failure arms projected by the Host. */
+export type PhoneRealDeviceIssueView =
+  | 'device-locked'
+  | 'cert-untrusted'
+  | 'profile-expired'
+  | 'tunnel-failed'
+  | 'device-unplugged'
+
+const REAL_DEVICE_ISSUES: readonly PhoneRealDeviceIssueView[] = [
+  'device-locked', 'cert-untrusted', 'profile-expired', 'tunnel-failed', 'device-unplugged',
+]
+
+/**
+ * Whether an upstream io/capture message reports the handset debugging gate.
+ * @param message - Wire or upstream error text.
+ * @returns true when the text names an unauthorized USB/WDA gate.
+ */
+export function isUnauthorizedMessage(message: string): boolean {
+  return /unauthor/i.test(message)
+}
+
+/** One signed same-origin capture URL plus its expiry (Host wire shape). */
+export interface PhoneStreamUrlView {
+  /** Path and query to load on this Host; never a `:12000` origin. */
+  readonly url: string
+  /** Opaque identity binding input to this exact active capture. */
+  readonly captureId: PhoneCaptureId
+  /** Unix epoch milliseconds after which the Host refuses this URL. */
+  readonly expiresAt: number
+}
+
+/** The minted session the browser plays and addresses io with. */
+export interface PhoneStreamSessionView {
+  /** Device these URLs address. */
+  readonly deviceId: DeviceId
+  /** Exact-path WebSocket upgrade path for io frames. */
+  readonly ioPath: string
+  /** Whether picture or socket failures for this session can enter product-managed device-agent recovery. */
+  readonly agentManaged: boolean
+  /** Encoding the Host selected as the first attempt for this device class. */
+  readonly preferredFormat: 'h264' | 'mjpeg'
+  /** Signed MJPEG capture URL. */
+  readonly mjpeg: PhoneStreamUrlView
+  /** Signed H264 capture URL. */
+  readonly h264: PhoneStreamUrlView
+}
+
+/** One mint failure with its wire status and code. */
+export class PhoneStreamHttpError extends Error {
+  /**
+   * @param status - HTTP status the minting endpoint answered with.
+   * @param code - wire error code (`forbidden`, `not-found`, …).
+   * @param message - wire error message.
+   * @param issue - optional structured iOS real-device failure arm.
+   */
+  constructor(
+    readonly status: number,
+    readonly code: string,
+    message: string,
+    readonly issue?: PhoneRealDeviceIssueView,
+  ) {
+    super(message)
+  }
+}
+
+/** io request vocabulary the browser sends; coordinates are device pixels. */
+export type PhoneClientIoRequest =
+  | {
+    readonly method: 'tap'
+    readonly x: number
+    readonly y: number
+    readonly source: {
+      readonly kind: 'capture'
+      readonly captureWidth: number
+      readonly captureHeight: number
+      readonly captureId: PhoneCaptureId
+      readonly captureFormat: 'h264' | 'mjpeg'
+      readonly captureRotation?: 0 | 90 | 180 | 270
+    }
+  }
+  | {
+    readonly method: 'swipe'
+    readonly x1: number
+    readonly y1: number
+    readonly x2: number
+    readonly y2: number
+    readonly source: {
+      readonly kind: 'capture'
+      readonly captureWidth: number
+      readonly captureHeight: number
+      readonly captureId: PhoneCaptureId
+      readonly captureFormat: 'h264' | 'mjpeg'
+      readonly captureRotation?: 0 | 90 | 180 | 270
+    }
+  }
+  | { readonly method: 'text'; readonly text: string }
+  | { readonly method: 'button'; readonly button: string }
+
+type PhoneClientIoRequestByMethod = {
+  readonly [Request in PhoneClientIoRequest as Request['method']]: Request
+}
+
+type PhoneIoFrameEncoderMap = {
+  readonly [Method in keyof PhoneClientIoRequestByMethod]: (
+    id: number,
+    deviceId: DeviceId,
+    request: PhoneClientIoRequestByMethod[Method],
+  ) => string
+}
+
+const PHONE_IO_FRAME_ENCODERS = {
+  tap: (id, deviceId, request) => JSON.stringify({
+    jsonrpc: '2.0',
+    id,
+    method: 'tap',
+    params: { deviceId, x: request.x, y: request.y, ...captureSizeParams(request) },
+  }),
+  swipe: (id, deviceId, request) => JSON.stringify({
+    jsonrpc: '2.0',
+    id,
+    method: 'swipe',
+    params: {
+      deviceId,
+      x1: request.x1,
+      y1: request.y1,
+      x2: request.x2,
+      y2: request.y2,
+      ...captureSizeParams(request),
+    },
+  }),
+  text: (id, deviceId, request) => JSON.stringify({
+    jsonrpc: '2.0', id, method: 'text', params: { deviceId, text: request.text },
+  }),
+  button: (id, deviceId, request) => JSON.stringify({
+    jsonrpc: '2.0', id, method: 'button', params: { deviceId, button: request.button },
+  }),
+} satisfies PhoneIoFrameEncoderMap
+
+/** One parsed io reply: ok results and errors alike. */
+export interface PhoneIoReply {
+  /** Echoed JSON-RPC id of the request. */
+  readonly id: number
+  /** Whether the Host reported success. */
+  readonly ok: boolean
+  /** Wire error code when {@link PhoneIoReply.ok} is false. */
+  readonly code?: number | undefined
+  /** Wire error message when {@link PhoneIoReply.ok} is false. */
+  readonly message?: string | undefined
+}
+
+/**
+ * Encode one io JSON-RPC frame.
+ * @param id - JSON-RPC request id minted by the caller.
+ * @param deviceId - device the frame addresses.
+ * @param request - the io request payload.
+ * @returns the text frame to send over the io socket.
+ */
+export function encodePhoneIoFrame(id: number, deviceId: DeviceId, request: PhoneClientIoRequest): string {
+  // The request discriminant selects the encoder whose mapped parameter carries that same discriminant.
+  const encode = PHONE_IO_FRAME_ENCODERS[request.method] as (
+    id: number, deviceId: DeviceId, request: PhoneClientIoRequest,
+  ) => string
+  return encode(id, deviceId, request)
+}
+
+function captureSizeParams(
+  request: Extract<PhoneClientIoRequest, { method: 'tap' | 'swipe' }>,
+): Record<string, unknown> {
+  return request.source
+}
+
+/**
+ * Parse one io reply frame. Notifications, malformed JSON, and frames
+ * without a numeric id read as undefined — only request replies are
+ * actionable to the controller.
+ * @param data - raw text frame from the io socket.
+ * @returns the parsed reply, or undefined when the frame carries no reply.
+ */
+export function parsePhoneIoReply(data: string): PhoneIoReply | undefined {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(data)
+  } catch {
+    return undefined
+  }
+  if (typeof parsed !== 'object' || parsed === null) return undefined
+  const record = parsed as { id?: unknown; result?: unknown; error?: unknown }
+  if (!Number.isSafeInteger(record.id) || (record.id as number) <= 0) return undefined
+  const hasResult = Object.hasOwn(record, 'result')
+  const hasError = Object.hasOwn(record, 'error')
+  if (hasResult === hasError) return undefined
+  if (hasResult) {
+    const result = record.result
+    if (typeof result !== 'object' || result === null) return undefined
+    const fields = result as Record<string, unknown>
+    if (Object.keys(fields).length !== 1 || fields.status !== 'ok') return undefined
+    return { id: record.id as number, ok: true }
+  }
+  if (typeof record.error !== 'object' || record.error === null) return undefined
+  const error = record.error as Record<string, unknown>
+  if (error.code !== undefined && !Number.isSafeInteger(error.code)) return undefined
+  if (error.message !== undefined && typeof error.message !== 'string') return undefined
+  if (error.code === undefined && error.message === undefined) return undefined
+  return {
+    id: record.id as number,
+    ok: false,
+    ...(error.code === undefined ? {} : { code: error.code as number }),
+    ...(error.message === undefined ? {} : { message: error.message }),
+  }
+}
+
+function isStreamUrlView(
+  value: unknown,
+  deviceId: string,
+  format: 'mjpeg' | 'h264',
+): value is Omit<PhoneStreamUrlView, 'captureId'> & { readonly captureId: string } {
+  if (typeof value !== 'object' || value === null) return false
+  const record = value as Record<string, unknown>
+  if (typeof record.url !== 'string' || typeof record.captureId !== 'string' || record.captureId.length === 0
+    || !Number.isSafeInteger(record.expiresAt) || (record.expiresAt as number) <= 0) return false
+  const expectedPath = `/phone/stream/${encodeURIComponent(deviceId)}/${format}`
+  if (!record.url.startsWith('/')) return false
+  try {
+    const url = new URL(record.url, 'https://dsh.invalid')
+    return url.origin === 'https://dsh.invalid' && url.pathname === expectedPath
+      && url.searchParams.get('token') === record.captureId
+  } catch (malformedUrl) {
+    // Illegal characters in a relative capture URL fail URL construction; that is not a signed same-origin stream.
+    void malformedUrl
+    return false
+  }
+}
+
+function issueOf(value: unknown): PhoneRealDeviceIssueView | undefined {
+  return REAL_DEVICE_ISSUES.includes(value as PhoneRealDeviceIssueView)
+    ? value as PhoneRealDeviceIssueView
+    : undefined
+}
+
+function errorOf(response: Response, body: unknown, fallback: string): PhoneStreamHttpError {
+  const record = (typeof body === 'object' && body !== null ? body : {}) as Record<string, unknown>
+  const error = (typeof record.error === 'object' && record.error !== null ? record.error : {}) as Record<string, unknown>
+  return new PhoneStreamHttpError(
+    response.status,
+    typeof error.code === 'string' ? error.code : 'http',
+    typeof error.message === 'string' ? error.message : fallback,
+    issueOf(error.issue),
+  )
+}
+
+/**
+ * Mint one signed same-origin session for one device.
+ * @param deviceId - Android serial or iOS UDID present in the latest listing.
+ * @returns the session with its preferred encoding, io path, and signed capture URLs.
+ * @throws {@link PhoneStreamHttpError} when the Host refuses the mint.
+ * @throws the network error when the Host is unreachable.
+ */
+export async function mintPhoneSession(deviceId: DeviceId): Promise<PhoneStreamSessionView> {
+  let response: Response
+  try {
+    response = await fetch(PHONE_SESSION_PATH, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ deviceId, format: 'avc' }),
+    })
+  } catch (error) {
+    throw new PhoneStreamHttpError(0, 'network', error instanceof Error ? error.message : String(error))
+  }
+  const body: unknown = await response.json().catch(() => null)
+  const record = (typeof body === 'object' && body !== null ? body : {}) as Record<string, unknown>
+  if (!response.ok || record.deviceId !== deviceId
+    || !isStreamUrlView(record.mjpeg, deviceId, 'mjpeg') || !isStreamUrlView(record.h264, deviceId, 'h264')
+    || record.ioPath !== '/phone/ws/io' || typeof record.agentManaged !== 'boolean'
+    || (record.preferredFormat !== 'h264' && record.preferredFormat !== 'mjpeg')) {
+    throw errorOf(response, body, `phone session mint failed with HTTP ${response.status}`)
+  }
+  return {
+    deviceId,
+    ioPath: record.ioPath,
+    agentManaged: record.agentManaged,
+    preferredFormat: record.preferredFormat,
+    mjpeg: { ...record.mjpeg, captureId: phoneCaptureIdOf(record.mjpeg.captureId) },
+    h264: { ...record.h264, captureId: phoneCaptureIdOf(record.h264.captureId) },
+  }
+}
+
+/** Browser projection of one on-device agent status or install answer. */
+export interface PhoneAgentStatusView {
+  readonly deviceId: DeviceId
+  readonly installed: boolean
+  readonly version?: string
+  readonly bundleId?: string
+  readonly profileReminder?: string
+  readonly reinstalled?: boolean
+}
+
+async function phoneAgentOperation(
+  operation: 'status' | 'install',
+  deviceId: DeviceId,
+  force?: boolean,
+): Promise<PhoneAgentStatusView> {
+  let response: Response
+  try {
+    response = await fetch(`${PHONE_AGENT_PATH}/${operation}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ deviceId, ...(force === undefined ? {} : { force }) }),
+    })
+  } catch (error) {
+    throw new PhoneStreamHttpError(0, 'network', error instanceof Error ? error.message : String(error))
+  }
+  const body: unknown = await response.json().catch(() => null)
+  if (!response.ok) throw errorOf(response, body, `phone agent ${operation} failed with HTTP ${response.status}`)
+  const record = (typeof body === 'object' && body !== null ? body : {}) as Record<string, unknown>
+  if (typeof record.deviceId !== 'string' || record.deviceId.length === 0 || typeof record.installed !== 'boolean'
+    || (record.reinstalled !== undefined && typeof record.reinstalled !== 'boolean')) {
+    throw new PhoneStreamHttpError(200, 'protocol', `phone agent ${operation} answered an invalid status`)
+  }
+  const optionalString = (name: 'version' | 'bundleId' | 'profileReminder'): string | undefined =>
+    typeof record[name] === 'string' ? record[name] : undefined
+  const version = optionalString('version')
+  const bundleId = optionalString('bundleId')
+  const profileReminder = optionalString('profileReminder')
+  return {
+    deviceId: phoneDeviceIdOf(record.deviceId),
+    installed: record.installed,
+    ...(version === undefined ? {} : { version }),
+    ...(bundleId === undefined ? {} : { bundleId }),
+    ...(profileReminder === undefined ? {} : { profileReminder }),
+    ...(typeof record.reinstalled === 'boolean' ? { reinstalled: record.reinstalled } : {}),
+  }
+}
+
+/**
+ * Read a managed device control-agent status from the Host.
+ * @param deviceId - Android or iOS real-device id from the current fleet listing.
+ * @returns the current on-device agent status.
+ */
+export function readPhoneAgentStatus(deviceId: DeviceId): Promise<PhoneAgentStatusView> {
+  return phoneAgentOperation('status', deviceId)
+}
+
+/**
+ * Install or force-reinstall a managed device control agent through the Host.
+ * @param deviceId - Android or iOS real-device id from the current fleet listing.
+ * @param force - whether to replace an already installed agent and refresh its signing.
+ * @returns the post-install on-device agent status.
+ */
+export function installPhoneAgent(deviceId: DeviceId, force: boolean): Promise<PhoneAgentStatusView> {
+  return phoneAgentOperation('install', deviceId, force)
+}
+
+/** Socket target the minted session names. */
+export type PhoneIoTarget = Pick<PhoneStreamSessionView, 'ioPath'>
+
+/**
+ * Open the io WebSocket against the current Host origin on the io path the
+ * Host minted. The browser fires `open` asynchronously, so handlers never
+ * run during this call.
+ * @param target - the minted session carrying the io upgrade path.
+ * @param handlers - the events the connection controller reacts to.
+ * @returns the socket handle the controller owns.
+ */
+export function openPhoneIoSocket(target: PhoneIoTarget, handlers: PhoneIoHandlers): PhoneIoSocket {
+  const protocol = globalThis.location.protocol === 'https:' ? 'wss' : 'ws'
+  const host = globalThis.location.host
+  const socket = new WebSocket(`${protocol}://${host}${target.ioPath}`)
+  socket.onopen = () => { handlers.onOpen() }
+  socket.onclose = () => { handlers.onClose() }
+  socket.onerror = () => { handlers.onError() }
+  socket.onmessage = (event) => { handlers.onMessage(typeof event.data === 'string' ? event.data : '') }
+  return {
+    send: (data) => {
+      if (socket.readyState !== WebSocket.OPEN) return false
+      try { socket.send(data); return true } catch { return false }
+    },
+    close: () => { socket.close() },
+  }
+}
+
+/**
+ * Wire the browser transport onto the gateway seam the connection
+ * controller consumes.
+ * @returns the production gateway backed by fetch and WebSocket.
+ */
+export function createHttpPhoneGateway(): PhoneStreamGateway {
+  return {
+    mintSession: deviceId => mintPhoneSession(deviceId),
+    agentStatus: deviceId => readPhoneAgentStatus(deviceId),
+    installAgent: (deviceId, force) => installPhoneAgent(deviceId, force),
+    connectIo: (target, handlers) => openPhoneIoSocket(target, handlers),
+  }
+}

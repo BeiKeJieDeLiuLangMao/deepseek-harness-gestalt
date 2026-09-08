@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-22-snow-companion-channel-library.md
-2026-08-22-snow-companion-channel-library.md: 5fd66c2191bc8a4f8d8f6cc22ac13c4f1efb9556
-2026-08-22-snow-companion-channel-library.zh.md: 48d6e1527954a5a793e08ecad39b868d0ab93cbe
+2026-08-22-snow-companion-channel-library.md: c208c64920b0cdd10f09637b48fb105dfa1d8527
+2026-08-22-snow-companion-channel-library.zh.md: d2edd7c76c4d1ce42922742c6f72e0cadcbac2ba

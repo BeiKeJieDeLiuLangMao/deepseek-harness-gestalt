@@ -421,9 +421,9 @@ export class DesktopSnowRelayChannelOwner {
     active.livePump = pump
     this.tasks.add(pump)
     void pump.then(
-      () => { if (active.livePump === pump) active.livePump = undefined },
+      () => { if (active.livePump === pump) delete active.livePump },
       (error: unknown) => {
-        if (active.livePump === pump) active.livePump = undefined
+        if (active.livePump === pump) delete active.livePump
         this.failActive(active, error instanceof Error ? error : new Error('Companion live projection failed', { cause: error }))
       },
     ).finally(() => { this.tasks.delete(pump) })
@@ -780,7 +780,7 @@ export function createDesktopRemoteRelay(options: DesktopRemoteRelayOptions): De
         limits,
         resolveProxy: options.resolveProxy,
         resolveTimeoutMs: config.attachTimeoutMs,
-        connectWithProxy: options.connectWithProxy,
+        ...options.connectWithProxy === undefined ? {} : { connectWithProxy: options.connectWithProxy },
       })
     },
     attachTimeoutMs: config.attachTimeoutMs,

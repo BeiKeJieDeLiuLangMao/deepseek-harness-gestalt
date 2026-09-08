@@ -143,13 +143,13 @@ describe('packaged Desktop main bundle', () => {
       stdio: 'pipe',
     })
     expect(JSON.parse(readFileSync(artifact, 'utf8'))).toEqual({
-      bundleUrl: 'https://github.com/gestaltrun/dsh-sub2api-sidecar/releases/download/v0.1.25/dsh-sub2api-sidecar-0.1.25.tgz',
+      bundleUrl: 'https://github.com/gestaltrun/dsh-sub2api-sidecar/releases/download/v0.1.26/dsh-sub2api-sidecar-0.1.26.tgz',
       bundleSha256SumsUrl:
-        'https://github.com/gestaltrun/dsh-sub2api-sidecar/releases/download/v0.1.25/bundle-sha256sums.txt',
+        'https://github.com/gestaltrun/dsh-sub2api-sidecar/releases/download/v0.1.26/bundle-sha256sums.txt',
       runtimePackUrl:
-        'https://github.com/gestaltrun/dsh-sub2api-sidecar/releases/download/v0.1.25/runtime-pack-0.1.183-dsh.445.13-darwin-arm64.tar.gz',
+        'https://github.com/gestaltrun/dsh-sub2api-sidecar/releases/download/v0.1.26/runtime-pack-0.1.183-dsh.445.13-darwin-arm64.tar.gz',
       runtimePackSha256SumsUrl:
-        'https://github.com/gestaltrun/dsh-sub2api-sidecar/releases/download/v0.1.25/runtime-pack-sha256sums.txt',
+        'https://github.com/gestaltrun/dsh-sub2api-sidecar/releases/download/v0.1.26/runtime-pack-sha256sums.txt',
     })
 
     execFileSync(process.execPath, [

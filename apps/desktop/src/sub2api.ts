@@ -11,8 +11,8 @@
  * @module @deepseek-ai/dsh-desktop/sub2api
  */
 
-import { rm } from 'node:fs/promises'
-import { join } from 'node:path'
+import { readdir, rm, stat } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import type { DesktopSub2ApiSnapshot } from '@deepseek-ai/dsh-client-ui-desktop/protocol'
 import { installSub2Api } from './sub2api-install.ts'
@@ -203,12 +203,20 @@ export class DesktopSub2ApiController implements DesktopSub2ApiActions {
       await setSub2ApiDisabled(this.options.profileDir, true)
       const version = await installedBundleVersion(this.options.profileDir)
       if (this.options.host.origin() !== undefined) {
-        this.set({ state: 'starting', enabled: false, version })
+        this.set({
+          state: 'starting',
+          enabled: false,
+          ...(version === undefined ? {} : { version }),
+        })
         await this.options.host.restart(COMPONENT_HOST_START_TIMEOUT_MS)
       }
       // The Web Host now boots with the row disabled: no processes run, so
       // there is nothing to probe — `installed` is the resting disabled state.
-      this.set({ state: 'installed', enabled: false, version })
+      this.set({
+        state: 'installed',
+        enabled: false,
+        ...(version === undefined ? {} : { version }),
+      })
       return this.snapshot
     } catch (error) {
       this.set({ state: 'error', enabled: this.snapshot.enabled, error: errorMessage(error) })
@@ -268,7 +276,11 @@ export class DesktopSub2ApiController implements DesktopSub2ApiActions {
     }
     const disabled = await isSub2ApiDisabled(this.options.profileDir)
     const version = await installedBundleVersion(this.options.profileDir)
-    this.set({ state: 'installed', enabled: !disabled, version })
+    this.set({
+      state: 'installed',
+      enabled: !disabled,
+      ...(version === undefined ? {} : { version }),
+    })
   }
 
   private async installedOnDisk(): Promise<boolean> {
@@ -344,16 +356,22 @@ export class DesktopSub2ApiController implements DesktopSub2ApiActions {
       if (this.probeStopped(abort)) return
       if (await probe(start)) {
         if (this.probeStopped(abort)) return
-        this.set({ state: 'running', enabled: true, version: await installedBundleVersion(this.options.profileDir) })
+        const version = await installedBundleVersion(this.options.profileDir)
+        this.set({
+          state: 'running',
+          enabled: true,
+          ...(version === undefined ? {} : { version }),
+        })
         return
       }
       if (Date.now() >= deadline) {
         // A dispose that raced the final poll lands in set(), which drops
         // pushes (and writes) after disposal.
+        const version = await installedBundleVersion(this.options.profileDir)
         this.set({
           state: 'error',
           enabled: true,
-          version: await installedBundleVersion(this.options.profileDir),
+          ...(version === undefined ? {} : { version }),
           error: STARTUP_TIMEOUT_ERROR,
         })
         return
@@ -395,8 +413,8 @@ function errorMessage(error: unknown): string {
 
 /**
  * Controller used when the controller could not start (unreadable sources
- * file, missing profile manifest). Every verb reports the reason; the card
- * renders it as the actionable error.
+ * file, invalid existing profile manifest). Every verb reports the reason;
+ * the card renders it as the actionable error.
  */
 export class UnavailableDesktopSub2ApiController implements DesktopSub2ApiActions {
   private readonly snapshot: DesktopSub2ApiSnapshot
@@ -462,22 +480,44 @@ export interface Sub2ApiFactoryOptions {
   readonly host: Sub2ApiHostControl
 }
 
+async function profileManifestExists(profileDir: string): Promise<boolean> {
+  let directory = profileDir
+  for (;;) {
+    let info
+    try {
+      info = await stat(directory)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      const parent = dirname(directory)
+      if (parent === directory) throw error
+      directory = parent
+      continue
+    }
+    if (!info.isDirectory()) throw new Error(`Sub2API profile path is not a directory: ${directory}`)
+    break
+  }
+  return directory === profileDir && (await readdir(profileDir)).includes('package.json')
+}
+
 /**
- * Build the Sub2API controller for this run. A broken sources file or an
- * unreadable profile manifest degrades to the unavailable controller carrying
- * the reason, so the card states the failure instead of crashing Desktop boot.
+ * Build the Sub2API controller for this run. The Web Host initializes a missing
+ * first-run profile after this factory returns, so that state remains a
+ * recoverable real controller. A broken sources file or invalid existing
+ * manifest degrades to the unavailable controller carrying the reason.
  * @param options - fetch client and Web Host control.
- * @returns the started controller.
+ * @returns the live controller, initialized from disk when the profile exists.
  */
 export async function createDesktopSub2Api(options: Sub2ApiFactoryOptions): Promise<DesktopSub2ApiActions> {
   try {
+    const paths = sub2ApiPathsFromHome(resolveDshHome())
     const controller = new DesktopSub2ApiController({
       sources: readDesktopSub2ApiSources(import.meta.url),
-      ...sub2ApiPathsFromHome(resolveDshHome()),
+      ...paths,
       host: options.host,
       fetchImpl: options.fetch,
     })
-    await controller.start()
+    // The Web Host starts after this factory and owns shipped-profile initialization.
+    if (await profileManifestExists(paths.profileDir)) await controller.start()
     return controller
   } catch (error) {
     return new UnavailableDesktopSub2ApiController(errorMessage(error))
