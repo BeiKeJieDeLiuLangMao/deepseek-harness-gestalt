@@ -229,6 +229,9 @@ importers:
       '@deepseek-ai/dsh-schedule':
         specifier: workspace:^
         version: link:../../packages/schedule/schedule
+      '@deepseek-ai/dsh-scope':
+        specifier: workspace:^
+        version: link:../../packages/core/scope
       '@deepseek-ai/dsh-sdk-app':
         specifier: workspace:^
         version: link:../../packages/bundle/sdk-app
@@ -256,6 +259,9 @@ importers:
       '@deepseek-ai/dsh-time-context':
         specifier: workspace:^
         version: link:../../packages/context/time-context
+      '@deepseek-ai/dsh-timeout':
+        specifier: workspace:^
+        version: link:../../packages/util/timeout
       '@deepseek-ai/dsh-tmux-context':
         specifier: workspace:^
         version: link:../../packages/context/tmux-context
@@ -11729,6 +11735,9 @@ importers:
       '@deepseek-ai/dsh-subagent-in-process-driver':
         specifier: workspace:^
         version: link:../../packages/subagent/subagent-in-process-driver
+      '@deepseek-ai/dsh-subagent-route-preauthorization':
+        specifier: workspace:^
+        version: link:../../packages/subagent/subagent-route-preauthorization
       '@deepseek-ai/dsh-subagent-spawn-in-process':
         specifier: workspace:^
         version: link:../../packages/subagent/subagent-spawn-in-process
