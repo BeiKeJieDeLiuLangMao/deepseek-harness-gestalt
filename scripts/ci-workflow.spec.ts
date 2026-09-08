@@ -25,7 +25,8 @@ describe('CI workflow', () => {
     }
     const dispatch = workflowEvent(workflow, 'workflow_dispatch')
     expect(dispatch).toMatchObject({ inputs: {
-      acceptance_run_id: { required: true, type: 'string' },
+      acceptance_run_id: { required: false, type: 'string' },
+      candidate_build_only: { required: true, type: 'boolean', default: false },
       accept_transport_risk: { required: true, type: 'boolean', default: false },
     } })
     const authorization = workflow.jobs['release-authorization']
@@ -62,6 +63,28 @@ describe('CI workflow', () => {
       APPLE_ID: '${{ secrets.APPLE_ID }}',
       APPLE_APP_SPECIFIC_PASSWORD: '${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}',
     } })
+  })
+
+  it('sets up pnpm before candidate-only release validation uses it', () => {
+    const workflow = loadWorkflow('.github/workflows/mobile-release.yml')
+    const releaseVersion = workflowJob(workflow, 'release-version')
+    if (!Array.isArray(releaseVersion.steps)) {
+      throw new TypeError('Mobile release version must define steps')
+    }
+    const steps = releaseVersion.steps.filter(isRecord)
+    const pnpmSetup = steps.findIndex(step => step.uses === 'pnpm/action-setup@v4')
+    const nodeSetup = steps.findIndex(step => step.uses === 'actions/setup-node@v6')
+    const validation = steps.findIndex(step => step.name === 'Read source-owned version and build number')
+
+    expect(pnpmSetup).toBeGreaterThanOrEqual(0)
+    expect(nodeSetup).toBeGreaterThan(pnpmSetup)
+    expect(steps[nodeSetup]?.with).toEqual({
+      'node-version': '${{ env.PRIMARY_NODE_VERSION }}',
+      cache: 'pnpm',
+    })
+    expect(validation).toBeGreaterThan(nodeSetup)
+    expect(String(steps[validation]?.run)).toContain('pnpm install --frozen-lockfile --ignore-scripts')
+    expect(String(steps[validation]?.run)).toContain('pnpm product-release:validate-candidate')
   })
 
   it('publishes candidate-bound Mobile Companion acceptance only after the verifier succeeds', () => {
@@ -1177,7 +1200,8 @@ describe('Python release workflows', () => {
     expect(plan.if).toContain('inputs.ci')
     expect(plan.if).toContain('inputs.release')
     expect(JSON.stringify(plan.steps)).toContain('pep440_version')
-    expect(install.run).toContain('scripts/retry-transient-ci.ts')
+    expect(install.run).toContain('node scripts/retry-transient-ci.ts')
+    expect(install.run).not.toContain('pnpm --silent exec tsx')
     expect(install.run).toContain('install-${{ matrix.target }}.json')
     expect(install.run).toContain('-- pnpm install --frozen-lockfile')
     expect(transientAttempts).toMatchObject({
