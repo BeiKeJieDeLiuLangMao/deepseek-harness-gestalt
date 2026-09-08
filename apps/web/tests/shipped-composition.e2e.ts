@@ -146,11 +146,9 @@ it('assembles the shipped Web transport, catalog, guidance, and defaults', async
       "mode": "always",
     }
   `)
-  // The catalog belongs to an AGENT, not to the process: every model-facing row
-  // now lives in a preset mounted under one session's scope, so the global
-  // layer holds nothing and a caller must name the agent to see anything. This
-  // composes from the deployment default — what a session that names no preset
-  // gets — which is the shape this test has always been about.
+  // Preset tools belong to an Agent scope. The process registry exposes only
+  // the reserved discovery tool activated by deferred Browser definitions;
+  // a caller must name an Agent to see the deployment-default preset catalog.
   expect(ctx.tools.schemas().map(schema => schema.name)).toEqual(['tool_search'])
   const handle = await ctx.agents.create({
     sessionId: SessionId('shipped-composition'),

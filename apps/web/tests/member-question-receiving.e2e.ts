@@ -18,7 +18,9 @@ import { afterAll, beforeAll, describe, expect, it, onTestFailed, vi } from 'vit
 import {
   launchWebScaffold, watchConsole, webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
-import { connectFreshWorkspace, newEnglishPage, saveFailureShot } from './support.ts'
+import {
+  connectFreshWorkspace, newEnglishPage, saveFailureShot, writeComposerDraft,
+} from './support.ts'
 
 const MODE = webSnapshotMode()
 const PNG_1X1 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
@@ -34,7 +36,7 @@ function launchMemberQuestionScaffold(
 }
 
 function isForbiddenSessionRequest(request: Request): boolean {
-  return /\/api\/session\.create$/.test(new URL(request.url()).pathname)
+  return /\/api\/session\/create$/.test(new URL(request.url()).pathname)
 }
 
 function operation(questionId: string, operationId: string, projectId: string) {
@@ -194,8 +196,8 @@ describe.skipIf(MODE === 'record')('web e2e: Host-owned member-question receivin
       expect(await readFile(join(workspaceRoot, 'docs', 'receiver-decision.md'), 'utf8'))
         .toBe('LOCAL WORKSPACE COPY\n')
       const agentComposer = page.locator('[data-composer-card]')
-      const composer = agentComposer.locator('textarea:enabled')
-      await composer.fill('Help me evaluate the rollout tradeoffs before I answer.')
+      const composer = agentComposer.locator('[data-composer-input]')
+      await writeComposerDraft(page, composer, 'Help me evaluate the rollout tradeoffs before I answer.')
       await agentComposer.getByRole('button', { name: 'Send message', exact: true }).click()
       await expect.poll(() => scaffold.ctx.sessions.get(first.receivingSessionId as never)?.snapshotEvents()
         .filter(event => event.type === 'turn/start').length).toBe(1)
@@ -456,19 +458,19 @@ describe.skipIf(MODE === 'record')('web e2e: Host-owned member-question receivin
       await expect.poll(() => faultRow.getAttribute('aria-selected')).toBe('true')
       const promptRpcIds: string[] = []
       faultPage.on('request', (request) => {
-        if (!new URL(request.url()).pathname.endsWith('/api/session.prompt')) return
+        if (!new URL(request.url()).pathname.endsWith('/api/session/prompt')) return
         promptRpcIds.push((request.postDataJSON() as { rpcId: string }).rpcId)
       })
       const realFlush = faultScaffold.ctx.sessions.flush.bind(faultScaffold.ctx.sessions)
       vi.spyOn(faultScaffold.ctx.sessions, 'flush')
         .mockImplementationOnce(realFlush)
         .mockRejectedValueOnce(new Error('response lost after Host admission'))
-      const composer = faultPage.locator('[data-composer-card] textarea:enabled')
+      const composer = faultPage.locator('[data-composer-card] [data-composer-input]')
       const text = 'Retain this exact human action across the lost response.'
-      await composer.fill(text)
+      await writeComposerDraft(faultPage, composer, text)
       await faultPage.getByRole('button', { name: 'Send message', exact: true }).click()
       await expect.poll(() => promptRpcIds.length).toBe(1)
-      await composer.fill(text)
+      await writeComposerDraft(faultPage, composer, text)
       await faultPage.getByRole('button', { name: 'Send message', exact: true }).click()
       await expect.poll(() => promptRpcIds.length).toBe(2)
       expect(promptRpcIds.length).toBeGreaterThan(0)
