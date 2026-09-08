@@ -23,6 +23,7 @@ import {
   REMOTE_PROTOCOL_LIMITS,
   type RelayRouteId,
 } from '@deepseek-ai/dsh-remote-protocol'
+import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
 import type {
   RelayConnectionToken,
   RelayCredentialFingerprint,
@@ -1173,7 +1174,7 @@ export class PersonalPairingProvider extends RemoteAccessService {
       throw new TypeError('Attachment reservation lifetime exceeds the protocol safety ceiling')
     }
     this.randomBytes = options.randomBytes ?? secureRandomBytes
-    this.randomId = options.randomId ?? (kind => `${kind}-${crypto.randomUUID()}`)
+    this.randomId = options.randomId ?? (kind => `${kind}-${randomUUID()}`)
     this.schedule = options.schedule ?? ((task, delayMs) => setTimeout(task, delayMs))
     ctx.effect(() => async () => { await this.dispose() }, 'remote-access: Personal Pairing resources')
   }

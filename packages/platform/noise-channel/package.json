@@ -30,6 +30,9 @@
     "build:wasm": "node ./rust/build.mjs"
   },
   "license": "MIT",
+  "dependencies": {
+    "@deepseek-ai/dsh-util-crypto": "workspace:^"
+  },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/dsh-remote-access": "workspace:^",
