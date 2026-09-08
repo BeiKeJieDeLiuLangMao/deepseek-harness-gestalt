@@ -6,6 +6,7 @@ import {
   isDesktopOverlayDocument, phoneDesktopOverlayBridgeOf, phoneDeviceIdFromSelection, phoneDeviceSelectionId,
   PHONE_DESKTOP_OVERLAY_ID_MAX_LENGTH, selectPhoneDeviceFromOverlay, waitForPhoneGate,
 } from '../src/client/desktop-device-open.ts'
+import { phoneDeviceIdOf } from '../src/client/phone-device-id.ts'
 import type { PhoneSettings } from '../src/phone-settings.ts'
 
 describe('Desktop Settings phone-device projection', () => {
@@ -19,7 +20,7 @@ describe('Desktop Settings phone-device projection', () => {
 
   it('round-trips device ids and rejects unrelated or malformed selections', () => {
     expect(PHONE_DESKTOP_OVERLAY_ID_MAX_LENGTH).toBe(CHROME_OVERLAY_ID_MAX_LENGTH)
-    const id = phoneDeviceSelectionId('device / 中文')
+    const id = phoneDeviceSelectionId(phoneDeviceIdOf('device / 中文'))
     expect(phoneDeviceIdFromSelection({ type: 'select', requestId: 'settings-1', id })).toBe('device / 中文')
     expect(phoneDeviceIdFromSelection({ type: 'close', requestId: 'settings-1', id })).toBeUndefined()
     expect(phoneDeviceIdFromSelection({ type: 'select', requestId: 'settings-1', id: 'other' })).toBeUndefined()
@@ -28,8 +29,7 @@ describe('Desktop Settings phone-device projection', () => {
     expect(phoneDeviceIdFromSelection({ type: 'select', id })).toBeUndefined()
     expect(phoneDeviceIdFromSelection({ type: 'select', requestId: 'x'.repeat(129), id })).toBeUndefined()
     expect(phoneDeviceIdFromSelection({ type: 'select', requestId: 'settings-1', id: 'x'.repeat(129) })).toBeUndefined()
-    expect(() => phoneDeviceSelectionId('')).toThrow(RangeError)
-    expect(() => phoneDeviceSelectionId('中'.repeat(39))).toThrow(RangeError)
+    expect(() => phoneDeviceSelectionId(phoneDeviceIdOf('中'.repeat(39)))).toThrow(RangeError)
     expect(phoneDeviceIdFromSelection(null)).toBeUndefined()
   })
 
@@ -41,12 +41,12 @@ describe('Desktop Settings phone-device projection', () => {
       onChromeOverlayResult: () => () => {},
     }
     expect(phoneDesktopOverlayBridgeOf(bridge)).toBe(bridge)
-    await selectPhoneDeviceFromOverlay(bridge, 'fbcd1d21')
+    await selectPhoneDeviceFromOverlay(bridge, phoneDeviceIdOf('fbcd1d21'))
     expect(result).toHaveBeenCalledWith({
       type: 'select', requestId: 'settings-1', id: 'phone-device:fbcd1d21',
     })
     bridge.chromeOverlayGetState.mockResolvedValue({ kind: 'menu', requestId: 'menu-1' })
-    await selectPhoneDeviceFromOverlay(bridge, 'other')
+    await selectPhoneDeviceFromOverlay(bridge, phoneDeviceIdOf('other'))
     expect(result).toHaveBeenCalledOnce()
     expect(phoneDesktopOverlayBridgeOf(null)).toBeUndefined()
     expect(phoneDesktopOverlayBridgeOf({})).toBeUndefined()

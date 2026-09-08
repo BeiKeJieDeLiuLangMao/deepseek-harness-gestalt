@@ -2,6 +2,7 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { PhonePlatformCards } from '../src/client/PhonePlatformCards.tsx'
+import { phoneDeviceIdOf } from '../src/client/phone-device-id.ts'
 import type {
   AndroidPreparationPlanView, PhoneAndroidView, PhoneIosView,
 } from '../src/client/phone-runtime-source.ts'
@@ -118,7 +119,7 @@ describe('PhonePlatformCards', () => {
 
     rerender(<PhonePlatformCards {...props({
       kind: 'ready', plan: { ...zeroPlan, components: { ...zeroPlan.components, avd: false } },
-      running: true, deviceId: 'emulator-5554',
+      running: true, deviceId: phoneDeviceIdOf('emulator-5554'),
     })} />)
     expect(screen.getByText('已启动 · emulator-5554')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: '重新检测' }))
@@ -199,7 +200,7 @@ describe('PhonePlatformCards', () => {
     expect(preparing.onCancelIos).toHaveBeenCalledOnce()
 
     const stopped = props({ kind: 'deferred' }, {
-      kind: 'ready', plan: IOS_PLAN, deviceId: 'ios-simulator-1', running: false,
+      kind: 'ready', plan: IOS_PLAN, deviceId: phoneDeviceIdOf('ios-simulator-1'), running: false,
     })
     rendered.rerender(<PhonePlatformCards {...stopped} />)
     fireEvent.click(screen.getByRole('button', { name: '启动默认模拟器' }))
@@ -208,7 +209,7 @@ describe('PhonePlatformCards', () => {
     expect(stopped.onRefreshIos).toHaveBeenCalledOnce()
 
     const running = props({ kind: 'deferred' }, {
-      kind: 'ready', plan: IOS_PLAN, deviceId: 'ios-simulator-1', running: true,
+      kind: 'ready', plan: IOS_PLAN, deviceId: phoneDeviceIdOf('ios-simulator-1'), running: true,
     })
     rendered.rerender(<PhonePlatformCards {...running} />)
     expect(screen.getByText('已启动 · MJPEG 实时画面 · ios-simulator-1')).toBeTruthy()

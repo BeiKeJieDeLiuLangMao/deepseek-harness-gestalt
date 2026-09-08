@@ -5,6 +5,7 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { phoneCaptureIdOf } from '../src/client/phone-capture-id.ts'
+import { phoneDeviceIdOf } from '../src/client/phone-device-id.ts'
 import {
   createHttpPhoneGateway, encodePhoneIoFrame, installPhoneAgent, mintPhoneSession, openPhoneIoSocket,
   parsePhoneIoReply, PHONE_AGENT_PATH, PHONE_SESSION_PATH, PhoneStreamHttpError, readPhoneAgentStatus,
@@ -33,7 +34,7 @@ describe('io frame codec', () => {
       source: { kind: 'capture', captureWidth: 2_868, captureHeight: 1_320,
         captureId: phoneCaptureIdOf('mjpeg-a'), captureFormat: 'mjpeg' },
     } satisfies PhoneClientIoRequest
-    expect(JSON.parse(encodePhoneIoFrame(5, 'emulator-5554', tap))).toEqual({
+    expect(JSON.parse(encodePhoneIoFrame(5, phoneDeviceIdOf('emulator-5554'), tap))).toEqual({
       jsonrpc: '2.0', id: 5, method: 'tap',
       params: { deviceId: 'emulator-5554', x: 99, y: 660, kind: 'capture', captureWidth: 2_868,
         captureHeight: 1_320, captureId: 'mjpeg-a', captureFormat: 'mjpeg' },
@@ -43,18 +44,18 @@ describe('io frame codec', () => {
       source: { kind: 'capture', captureWidth: 2_868, captureHeight: 1_320,
         captureId: phoneCaptureIdOf('h264-a'), captureFormat: 'h264', captureRotation: 90 },
     } satisfies PhoneClientIoRequest
-    expect(JSON.parse(encodePhoneIoFrame(6, 'emulator-5554', swipe))).toEqual({
+    expect(JSON.parse(encodePhoneIoFrame(6, phoneDeviceIdOf('emulator-5554'), swipe))).toEqual({
       jsonrpc: '2.0', id: 6, method: 'swipe',
       params: { deviceId: 'emulator-5554', x1: 99, y1: 660, x2: 100, y2: 200, kind: 'capture',
         captureWidth: 2_868, captureHeight: 1_320, captureId: 'h264-a', captureFormat: 'h264',
         captureRotation: 90 },
     })
     const text = { method: 'text', text: '验证码' } satisfies PhoneClientIoRequest
-    expect(JSON.parse(encodePhoneIoFrame(3, 'R3CN30', text))).toEqual({
+    expect(JSON.parse(encodePhoneIoFrame(3, phoneDeviceIdOf('R3CN30'), text))).toEqual({
       jsonrpc: '2.0', id: 3, method: 'text', params: { deviceId: 'R3CN30', text: '验证码' },
     })
     const button = { method: 'button', button: 'BACK' } satisfies PhoneClientIoRequest
-    expect(JSON.parse(encodePhoneIoFrame(4, 'R3CN30', button))).toEqual({
+    expect(JSON.parse(encodePhoneIoFrame(4, phoneDeviceIdOf('R3CN30'), button))).toEqual({
       jsonrpc: '2.0', id: 4, method: 'button', params: { deviceId: 'R3CN30', button: 'BACK' },
     })
   })
@@ -96,7 +97,7 @@ describe('session minting', () => {
       h264: { url: '/phone/stream/emulator-5554/h264?token=h264-a', captureId: 'h264-a', expiresAt: 1234 },
     }
     const seen = await stubFetch(200, session)
-    expect(await mintPhoneSession('emulator-5554')).toEqual(session)
+    expect(await mintPhoneSession(phoneDeviceIdOf('emulator-5554'))).toEqual(session)
     expect(seen.input).toBe(PHONE_SESSION_PATH)
     expect(seen.init.method).toBe('POST')
     expect(seen.init.body).toBe(JSON.stringify({ deviceId: 'emulator-5554', format: 'avc' }))
@@ -110,12 +111,12 @@ describe('session minting', () => {
       mjpeg: { url: '/phone/stream/fallback/mjpeg?token=mjpeg-a', captureId: 'mjpeg-a', expiresAt: 1234 },
       h264: { url: '/phone/stream/fallback/h264?token=h264-a', captureId: 'h264-a', expiresAt: 1234 },
     })
-    await expect(mintPhoneSession('fallback-device')).rejects.toBeInstanceOf(PhoneStreamHttpError)
+    await expect(mintPhoneSession(phoneDeviceIdOf('fallback-device'))).rejects.toBeInstanceOf(PhoneStreamHttpError)
   })
 
   it('maps error payloads and malformed bodies onto the wire error', async () => {
     await stubFetch(404, { error: { code: 'not-found', message: 'absent from the listing' } })
-    const missing = await rejectionOf(() => mintPhoneSession('gone'))
+    const missing = await rejectionOf(() => mintPhoneSession(phoneDeviceIdOf('gone')))
     expect(missing.code).toBe('not-found')
 
     await stubFetch(502, {
@@ -125,15 +126,15 @@ describe('session minting', () => {
         message: 'unlock the device',
       },
     })
-    const locked = await rejectionOf(() => mintPhoneSession('UDID-9'))
+    const locked = await rejectionOf(() => mintPhoneSession(phoneDeviceIdOf('UDID-9')))
     expect(locked.issue).toBe('device-locked')
 
     await stubFetch(500, 'not json')
-    const broken = await rejectionOf(() => mintPhoneSession('x'))
+    const broken = await rejectionOf(() => mintPhoneSession(phoneDeviceIdOf('x')))
     expect(broken.code).toBe('http')
 
     await stubFetch(200, { ioPath: 42 })
-    await expect(mintPhoneSession('x')).rejects.toBeInstanceOf(PhoneStreamHttpError)
+    await expect(mintPhoneSession(phoneDeviceIdOf('x'))).rejects.toBeInstanceOf(PhoneStreamHttpError)
 
     await stubFetch(200, {
       ioPath: '/phone/ws/io',
@@ -142,10 +143,10 @@ describe('session minting', () => {
       mjpeg: { url: '/phone/stream/x/mjpeg?token=mjpeg-a', captureId: 'mjpeg-a', expiresAt: 1234 },
       h264: { url: '/phone/stream/x/h264?token=h264-a', captureId: 'h264-a', expiresAt: 1234 },
     })
-    await expect(mintPhoneSession('x')).rejects.toBeInstanceOf(PhoneStreamHttpError)
+    await expect(mintPhoneSession(phoneDeviceIdOf('x'))).rejects.toBeInstanceOf(PhoneStreamHttpError)
 
     vi.stubGlobal('fetch', vi.fn(async () => new Response('not json', { status: 500 })))
-    const unparseable = await rejectionOf(() => mintPhoneSession('x'))
+    const unparseable = await rejectionOf(() => mintPhoneSession(phoneDeviceIdOf('x')))
     expect(unparseable.message).toBe('phone session mint failed with HTTP 500')
   })
 
@@ -153,13 +154,13 @@ describe('session minting', () => {
     vi.stubGlobal('fetch', vi.fn(async () => {
       throw new TypeError('load failed')
     }))
-    const network = await rejectionOf(() => mintPhoneSession('x'))
+    const network = await rejectionOf(() => mintPhoneSession(phoneDeviceIdOf('x')))
     expect(network.status).toBe(0)
 
     vi.stubGlobal('fetch', vi.fn(async () => {
       throw 'socket reset'
     }))
-    const nonError = await rejectionOf(() => mintPhoneSession('x'))
+    const nonError = await rejectionOf(() => mintPhoneSession(phoneDeviceIdOf('x')))
     expect(nonError.message).toBe('socket reset')
   })
 })
@@ -177,8 +178,8 @@ describe('iOS real-device agent operations', () => {
         : { deviceId: 'UDID-9', installed: true, reinstalled: true }), { status: 200 })
     }))
 
-    expect(await readPhoneAgentStatus('UDID-9')).toMatchObject({ installed: true, version: '0.0.25' })
-    expect(await installPhoneAgent('UDID-9', true)).toMatchObject({ installed: true, reinstalled: true })
+    expect(await readPhoneAgentStatus(phoneDeviceIdOf('UDID-9'))).toMatchObject({ installed: true, version: '0.0.25' })
+    expect(await installPhoneAgent(phoneDeviceIdOf('UDID-9'), true)).toMatchObject({ installed: true, reinstalled: true })
     expect(calls.map(call => call.input)).toEqual([
       `${PHONE_AGENT_PATH}/status`,
       `${PHONE_AGENT_PATH}/install`,
@@ -195,33 +196,33 @@ describe('iOS real-device agent operations', () => {
         code: 'PHONE_REAL_DEVICE_ISSUE', issue: 'profile-expired', message: 'profile expired',
       },
     }), { status: 502 })))
-    expect((await rejectionOf(() => installPhoneAgent('UDID-9', true))).issue).toBe('profile-expired')
+    expect((await rejectionOf(() => installPhoneAgent(phoneDeviceIdOf('UDID-9'), true))).issue).toBe('profile-expired')
 
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ installed: 'yes' }), { status: 200 })))
-    await expect(readPhoneAgentStatus('UDID-9')).rejects.toMatchObject({ code: 'protocol' })
+    await expect(readPhoneAgentStatus(phoneDeviceIdOf('UDID-9'))).rejects.toMatchObject({ code: 'protocol' })
 
     vi.stubGlobal('fetch', vi.fn(async () => new Response('null', { status: 200 })))
-    await expect(readPhoneAgentStatus('UDID-9')).rejects.toMatchObject({ code: 'protocol' })
+    await expect(readPhoneAgentStatus(phoneDeviceIdOf('UDID-9'))).rejects.toMatchObject({ code: 'protocol' })
 
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
       deviceId: 'UDID-9', installed: true, reinstalled: 'yes',
     }), { status: 200 })))
-    await expect(installPhoneAgent('UDID-9', true)).rejects.toMatchObject({ code: 'protocol' })
+    await expect(installPhoneAgent(phoneDeviceIdOf('UDID-9'), true)).rejects.toMatchObject({ code: 'protocol' })
   })
 
   it('normalizes agent network and non-JSON failures and accepts the minimal status', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('network down') }))
-    await expect(readPhoneAgentStatus('UDID-9')).rejects.toMatchObject({ code: 'network', message: 'network down' })
+    await expect(readPhoneAgentStatus(phoneDeviceIdOf('UDID-9'))).rejects.toMatchObject({ code: 'network', message: 'network down' })
     vi.stubGlobal('fetch', vi.fn(async () => { throw 'socket gone' }))
-    await expect(installPhoneAgent('UDID-9', false)).rejects.toMatchObject({ code: 'network', message: 'socket gone' })
+    await expect(installPhoneAgent(phoneDeviceIdOf('UDID-9'), false)).rejects.toMatchObject({ code: 'network', message: 'socket gone' })
     vi.stubGlobal('fetch', vi.fn(async () => new Response('not json', { status: 502 })))
-    await expect(readPhoneAgentStatus('UDID-9')).rejects.toMatchObject({
+    await expect(readPhoneAgentStatus(phoneDeviceIdOf('UDID-9'))).rejects.toMatchObject({
       code: 'http', message: 'phone agent status failed with HTTP 502',
     })
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
       deviceId: 'UDID-9', installed: false,
     }), { status: 200 })))
-    expect(await readPhoneAgentStatus('UDID-9')).toEqual({ deviceId: 'UDID-9', installed: false })
+    expect(await readPhoneAgentStatus(phoneDeviceIdOf('UDID-9'))).toEqual({ deviceId: 'UDID-9', installed: false })
   })
 })
 
@@ -300,7 +301,7 @@ describe('io socket wiring', () => {
       h264: { url: '/phone/stream/R3CN30/h264?token=h264-a', captureId: 'h264-a', expiresAt: 1234 },
     }
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(body), { status: 200 })))
-    expect((await createHttpPhoneGateway().mintSession('R3CN30')).deviceId).toBe('R3CN30')
+    expect((await createHttpPhoneGateway().mintSession(phoneDeviceIdOf('R3CN30'))).deviceId).toBe('R3CN30')
   })
 
   it('runs agent status and install through the production gateway facade', async () => {
@@ -313,7 +314,7 @@ describe('io socket wiring', () => {
       }), { status: 200 })
     }))
     const gateway = createHttpPhoneGateway()
-    expect(await gateway.agentStatus('UDID-9')).toMatchObject({ installed: true })
-    expect(await gateway.installAgent('UDID-9', true)).toMatchObject({ reinstalled: true })
+    expect(await gateway.agentStatus(phoneDeviceIdOf('UDID-9'))).toMatchObject({ installed: true })
+    expect(await gateway.installAgent(phoneDeviceIdOf('UDID-9'), true)).toMatchObject({ reinstalled: true })
   })
 })

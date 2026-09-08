@@ -9,15 +9,27 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import type { DeviceId } from '@deepseek-ai/dsh-phone-runtime'
 import { PhoneConnectedView } from '../src/client/PhoneConnectedView.tsx'
 import { PHONE_LISTING_POLL_INTERVAL_MS } from '../src/client/phone-listing-poll.ts'
 import { PhoneConnectionController } from '../src/client/phone-connection.ts'
 import { PhoneStreamHttpError } from '../src/client/phone-stream-client.ts'
+import { phoneDeviceIdOf } from '../src/client/phone-device-id.ts'
 import type { PhoneDeviceSummary } from '../src/client/registry.ts'
 import {
   FakeGateway, FakeListingSource, flush, installFakeH264Playback, listingOf, ManualScheduler,
   SESSION_A, SESSION_B, SESSION_C,
 } from './phone-fakes.client.ts'
+
+const EMULATOR_DEVICE_ID = phoneDeviceIdOf('emulator-5554')
+const USB_DEVICE_ID = phoneDeviceIdOf('R3CN30')
+const OFFLINE_DEVICE_ID = phoneDeviceIdOf('offline-1')
+const UNAUTHORIZED_DEVICE_ID = phoneDeviceIdOf('unauth-1')
+const IOS_DEVICE_ID = phoneDeviceIdOf('UDID-9')
+const PHYSICAL_IOS_DEVICE_ID = phoneDeviceIdOf('00008150-0008545C2608401C')
+const REAL_IOS_DEVICE_ID = phoneDeviceIdOf('fbcd1d21')
+const DEVICE_A_ID = phoneDeviceIdOf('device-a')
+const DEVICE_B_ID = phoneDeviceIdOf('device-b')
 
 let h264Runtime: ReturnType<typeof installFakeH264Playback>
 
@@ -37,10 +49,10 @@ afterEach(() => {
 })
 
 const DEVICES: readonly PhoneDeviceSummary[] = [
-  { id: 'emulator-5554', name: 'Pixel_6_API_35', channel: 'emulator', state: 'online', online: true, logicalDisplay: { width: 1080, height: 2248 } },
-  { id: 'R3CN30', name: 'SM-S9310', channel: 'usb', state: 'online', online: true, logicalDisplay: { width: 1080, height: 2248 } },
-  { id: 'offline-1', name: 'Galaxy_A54_API_34', channel: 'emulator', state: 'offline', online: false },
-  { id: 'unauth-1', name: 'Pixel_8', channel: 'usb', state: 'unauthorized', online: false },
+  { id: EMULATOR_DEVICE_ID, name: 'Pixel_6_API_35', channel: 'emulator', state: 'online', online: true, logicalDisplay: { width: 1080, height: 2248 } },
+  { id: USB_DEVICE_ID, name: 'SM-S9310', channel: 'usb', state: 'online', online: true, logicalDisplay: { width: 1080, height: 2248 } },
+  { id: OFFLINE_DEVICE_ID, name: 'Galaxy_A54_API_34', channel: 'emulator', state: 'offline', online: false },
+  { id: UNAUTHORIZED_DEVICE_ID, name: 'Pixel_8', channel: 'usb', state: 'unauthorized', online: false },
 ]
 
 interface Harness {
@@ -61,7 +73,7 @@ function renderView(visible = true, mintError?: unknown, source = new FakeListin
   if (mintError !== undefined) gateway.queueMint({ error: mintError })
   render(
     <PhoneConnectedView
-      serial="emulator-5554"
+      serial={EMULATOR_DEVICE_ID}
       name="Pixel_6_API_35"
       visible={visible}
       source={source}
@@ -135,7 +147,7 @@ function fetchInputUrl(input: unknown): string {
 }
 
 function sessionForDevice(
-  deviceId: string,
+  deviceId: DeviceId,
   session: typeof SESSION_A,
 ): typeof SESSION_A {
   return {
@@ -315,17 +327,17 @@ describe('PhoneConnectedView chrome', () => {
     gateway.queueMint({ error: new PhoneStreamHttpError(502, 'upstream', 'device unauthorized: allow USB debugging') })
     render(
       <PhoneConnectedView
-        serial="R3CN30"
+        serial={USB_DEVICE_ID}
         name="SM-S9310"
         visible={true}
         source={new FakeListingSource().seed(listingOf([
-          { id: 'R3CN30', name: 'SM-S9310', channel: 'usb', state: 'unauthorized', online: false },
+          { id: USB_DEVICE_ID, name: 'SM-S9310', channel: 'usb', state: 'unauthorized', online: false },
         ]))}
         onOpenDevice={() => {}}
         onShowPicker={() => {}}
         createController={() => new PhoneConnectionController({
           gateway,
-          deviceId: 'R3CN30',
+          deviceId: USB_DEVICE_ID,
           schedule: scheduler.schedule,
         })}
       />,
@@ -351,17 +363,17 @@ describe('PhoneConnectedView chrome', () => {
     const scheduler = new ManualScheduler()
     render(
       <PhoneConnectedView
-        serial="R3CN30"
+        serial={USB_DEVICE_ID}
         name="SM-S9310"
         visible={true}
         source={new FakeListingSource().seed(listingOf([
-          { id: 'R3CN30', name: 'SM-S9310', channel: 'usb', state: 'unauthorized', online: false },
+          { id: USB_DEVICE_ID, name: 'SM-S9310', channel: 'usb', state: 'unauthorized', online: false },
         ]))}
         onOpenDevice={() => {}}
         onShowPicker={() => {}}
         createController={() => new PhoneConnectionController({
           gateway,
-          deviceId: 'R3CN30',
+          deviceId: USB_DEVICE_ID,
           schedule: scheduler.schedule,
         })}
       />,
@@ -387,7 +399,7 @@ describe('PhoneConnectedView chrome', () => {
     expect(harness.onOpenDevice).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: '切换设备：Pixel_6_API_35' }))
     fireEvent.click(screen.getByRole('menuitem', { name: /SM-S9310/ }))
-    expect(harness.onOpenDevice).toHaveBeenCalledWith('R3CN30', 'SM-S9310')
+    expect(harness.onOpenDevice).toHaveBeenCalledWith(USB_DEVICE_ID, 'SM-S9310')
   })
 
   it('keeps the switcher open for unrelated keys and closes it on Escape', async () => {
@@ -416,7 +428,7 @@ describe('PhoneConnectedView chrome', () => {
     const source = new FakeListingSource().seed(listingOf(DEVICES))
     const { rerender } = render(
       <PhoneConnectedView
-        serial="emulator-5554"
+        serial={EMULATOR_DEVICE_ID}
         name="Pixel_6_API_35"
         visible={true}
         source={source}
@@ -433,10 +445,10 @@ describe('PhoneConnectedView chrome', () => {
     await step(() => { gateway.lastSocket!.accept() })
     await vi.waitFor(() => { expect(h264Runtime.abortSignals).toHaveLength(1) })
     const firstPlayback = h264Runtime.abortSignals[0]!
-    expect(gateway.mintedDevices).toEqual(['emulator-5554'])
+    expect(gateway.mintedDevices).toEqual([EMULATOR_DEVICE_ID])
     rerender(
       <PhoneConnectedView
-        serial="R3CN30"
+        serial={USB_DEVICE_ID}
         name="SM-S9310"
         visible={true}
         source={source}
@@ -453,7 +465,7 @@ describe('PhoneConnectedView chrome', () => {
     expect(firstPlayback.aborted).toBe(true)
     await step(() => { gateway.lastSocket!.accept() })
     await vi.waitFor(() => { expect(h264Runtime.abortSignals).toHaveLength(2) })
-    expect(gateway.mintedDevices).toEqual(['emulator-5554', 'R3CN30'])
+    expect(gateway.mintedDevices).toEqual([EMULATOR_DEVICE_ID, USB_DEVICE_ID])
     expect(screen.getByRole('button', { name: '切换设备：SM-S9310' })).toBeTruthy()
     expect(screen.getByRole('img', { name: 'SM-S9310 实时画面' })).toBeTruthy()
   })
@@ -463,12 +475,12 @@ describe('PhoneConnectedView chrome', () => {
     const scheduler = new ManualScheduler()
     const source = new FakeListingSource().seed(listingOf(DEVICES))
     const props = {
-      serial: 'emulator-5554',
+      serial: EMULATOR_DEVICE_ID,
       name: 'Pixel_6_API_35',
       source,
       onOpenDevice: () => {},
       onShowPicker: () => {},
-      createController: (serial: string) => new PhoneConnectionController({
+      createController: (serial: DeviceId) => new PhoneConnectionController({
         gateway, deviceId: serial, schedule: scheduler.schedule,
       }),
     }
@@ -522,7 +534,7 @@ describe('PhoneConnectedView chrome', () => {
       source.scriptNext(listingOf([
         ...DEVICES,
         {
-          id: '00008150-0008545C2608401C',
+          id: PHYSICAL_IOS_DEVICE_ID,
           name: '贝贝猫的iPhone',
           channel: 'usb',
           state: 'online',
@@ -553,7 +565,7 @@ describe('PhoneConnectedView screen frame aspect', () => {
     gateway.queueMint({ session: { ...SESSION_A, preferredFormat: 'mjpeg' } })
     render(
       <PhoneConnectedView
-        serial="emulator-5554"
+        serial={EMULATOR_DEVICE_ID}
         name="Pixel_6_API_35"
         visible={true}
         source={source}
@@ -589,7 +601,7 @@ describe('PhoneConnectedView screen frame aspect', () => {
 
   it('keeps a still-portrait H264 decode unstretched when Host listing is already landscape', async () => {
     const source = new FakeListingSource().seed(listingOf([{
-      id: 'emulator-5554',
+      id: EMULATOR_DEVICE_ID,
       name: 'Pixel_6_API_35',
       channel: 'emulator',
       state: 'online',
@@ -612,7 +624,7 @@ describe('PhoneConnectedView screen frame aspect', () => {
 
   it('blocks Android taps when listing logicalDisplay is missing after a dumpsys miss', async () => {
     const source = new FakeListingSource().seed(listingOf([{
-      id: 'emulator-5554',
+      id: EMULATOR_DEVICE_ID,
       name: 'Pixel_6_API_35',
       channel: 'emulator',
       state: 'online',
@@ -624,7 +636,7 @@ describe('PhoneConnectedView screen frame aspect', () => {
     await step(() => { harness.gateway.lastSocket!.accept() })
     await act(async () => { h264Runtime.emitFrame(1080, 2248, 0) })
     source.scriptNext(listingOf([{
-      id: 'emulator-5554',
+      id: EMULATOR_DEVICE_ID,
       name: 'Pixel_6_API_35',
       channel: 'emulator',
       state: 'online',
@@ -656,7 +668,7 @@ describe('PhoneConnectedView screen frame aspect', () => {
 
   it('replaces an already-painted H264 capture when Host listing later reports landscape', async () => {
     const source = new FakeListingSource().seed(listingOf([{
-      id: 'emulator-5554',
+      id: EMULATOR_DEVICE_ID,
       name: 'Pixel_6_API_35',
       channel: 'emulator',
       state: 'online',
@@ -669,7 +681,7 @@ describe('PhoneConnectedView screen frame aspect', () => {
     expect(frameRatio()).toBe(String(390 / 844))
     harness.gateway.queueMint({ session: SESSION_B })
     source.scriptNext(listingOf([{
-      id: 'emulator-5554',
+      id: EMULATOR_DEVICE_ID,
       name: 'Pixel_6_API_35',
       channel: 'emulator',
       state: 'online',
@@ -697,7 +709,7 @@ describe('PhoneConnectedView screen frame aspect', () => {
   it('replaces the live capture session when Host listing later reports landscape', async () => {
     // PhoneH264Surface restarts only when the signed URL changes.
     const androidMi8 = {
-      id: 'fbcd1d21',
+      id: REAL_IOS_DEVICE_ID,
       name: 'AndroidMI8',
       channel: 'usb' as const,
       state: 'online' as const,
@@ -784,7 +796,7 @@ describe('PhoneConnectedView screen frame aspect', () => {
 
   it('does not remint when Host logicalDisplay polls the same numeric size', async () => {
     const source = new FakeListingSource().seed(listingOf([{
-      id: 'emulator-5554',
+      id: EMULATOR_DEVICE_ID,
       name: 'Pixel_6_API_35',
       channel: 'emulator',
       state: 'online',
@@ -796,7 +808,7 @@ describe('PhoneConnectedView screen frame aspect', () => {
     await step(() => { harness.gateway.lastSocket!.accept() })
     expect(harness.gateway.mintedDevices).toHaveLength(1)
     source.scriptNext(listingOf([{
-      id: 'emulator-5554',
+      id: EMULATOR_DEVICE_ID,
       name: 'Pixel_6_API_35',
       channel: 'emulator',
       state: 'online',
@@ -810,7 +822,7 @@ describe('PhoneConnectedView screen frame aspect', () => {
 
   it('remints once live H264 after Host logicalDisplay changes while connecting', async () => {
     const source = new FakeListingSource().seed(listingOf([{
-      id: 'emulator-5554',
+      id: EMULATOR_DEVICE_ID,
       name: 'Pixel_6_API_35',
       channel: 'emulator',
       state: 'online',
@@ -823,7 +835,7 @@ describe('PhoneConnectedView screen frame aspect', () => {
     gateway.queueMint({ session: SESSION_B })
     render(
       <PhoneConnectedView
-        serial="emulator-5554"
+        serial={EMULATOR_DEVICE_ID}
         name="Pixel_6_API_35"
         visible={true}
         source={source}
@@ -837,7 +849,7 @@ describe('PhoneConnectedView screen frame aspect', () => {
     await flush()
     expect(gateway.mintedDevices).toHaveLength(1)
     source.scriptNext(listingOf([{
-      id: 'emulator-5554',
+      id: EMULATOR_DEVICE_ID,
       name: 'Pixel_6_API_35',
       channel: 'emulator',
       state: 'online',
@@ -862,7 +874,7 @@ describe('PhoneConnectedView screen frame aspect', () => {
 
   it('does not settle a stale landscape mint after Host listing returns to portrait', async () => {
     const source = new FakeListingSource().seed(listingOf([{
-      id: 'emulator-5554',
+      id: EMULATOR_DEVICE_ID,
       name: 'Pixel_6_API_35',
       channel: 'emulator',
       state: 'online',
@@ -876,7 +888,7 @@ describe('PhoneConnectedView screen frame aspect', () => {
     gateway.queueMint({ session: SESSION_C })
     render(
       <PhoneConnectedView
-        serial="emulator-5554"
+        serial={EMULATOR_DEVICE_ID}
         name="Pixel_6_API_35"
         visible={true}
         source={source}
@@ -893,7 +905,7 @@ describe('PhoneConnectedView screen frame aspect', () => {
       expect(vi.mocked(fetch).mock.calls.map(([input]) => fetchInputUrl(input))).toEqual([SESSION_A.h264.url])
     })
     source.scriptNext(listingOf([{
-      id: 'emulator-5554',
+      id: EMULATOR_DEVICE_ID,
       name: 'Pixel_6_API_35',
       channel: 'emulator',
       state: 'online',
@@ -904,7 +916,7 @@ describe('PhoneConnectedView screen frame aspect', () => {
     await flush()
     expect(gateway.mintedDevices).toHaveLength(2)
     source.scriptNext(listingOf([{
-      id: 'emulator-5554',
+      id: EMULATOR_DEVICE_ID,
       name: 'Pixel_6_API_35',
       channel: 'emulator',
       state: 'online',
@@ -932,7 +944,7 @@ describe('PhoneConnectedView screen frame aspect', () => {
 
   it('does not remint a hidden tab when Host listing reports landscape', async () => {
     const source = new FakeListingSource().seed(listingOf([{
-      id: 'emulator-5554',
+      id: EMULATOR_DEVICE_ID,
       name: 'Pixel_6_API_35',
       channel: 'emulator',
       state: 'online',
@@ -942,12 +954,12 @@ describe('PhoneConnectedView screen frame aspect', () => {
     const gateway = new FakeGateway()
     const scheduler = new ManualScheduler()
     const props = {
-      serial: 'emulator-5554',
+      serial: EMULATOR_DEVICE_ID,
       name: 'Pixel_6_API_35',
       source,
       onOpenDevice: () => {},
       onShowPicker: () => {},
-      createController: (serial: string) => new PhoneConnectionController({
+      createController: (serial: DeviceId) => new PhoneConnectionController({
         gateway, deviceId: serial, schedule: scheduler.schedule,
       }),
     }
@@ -958,7 +970,7 @@ describe('PhoneConnectedView screen frame aspect', () => {
     rerender(<PhoneConnectedView {...props} visible={false} />)
     await act(async () => {})
     source.scriptNext(listingOf([{
-      id: 'emulator-5554',
+      id: EMULATOR_DEVICE_ID,
       name: 'Pixel_6_API_35',
       channel: 'emulator',
       state: 'online',
@@ -982,7 +994,7 @@ describe('PhoneConnectedView screen frame aspect', () => {
     })
     vi.stubGlobal('createImageBitmap', vi.fn(() => pending))
     const source = new FakeListingSource().seed(listingOf([{
-      id: 'emulator-5554',
+      id: EMULATOR_DEVICE_ID,
       name: 'Pixel_6_API_35',
       channel: 'emulator',
       state: 'online',
@@ -1004,7 +1016,7 @@ describe('PhoneConnectedView screen frame aspect', () => {
 
   it('does not remint after H264 falls back to MJPEG when Host listing reports landscape', async () => {
     const source = new FakeListingSource().seed(listingOf([{
-      id: 'emulator-5554',
+      id: EMULATOR_DEVICE_ID,
       name: 'Pixel_6_API_35',
       channel: 'emulator',
       state: 'online',
@@ -1018,7 +1030,7 @@ describe('PhoneConnectedView screen frame aspect', () => {
     expect(screen.getByLabelText('画面状态 等待 MJPEG 首帧')).toBeTruthy()
     expect(harness.gateway.mintedDevices).toHaveLength(1)
     source.scriptNext(listingOf([{
-      id: 'emulator-5554',
+      id: EMULATOR_DEVICE_ID,
       name: 'Pixel_6_API_35',
       channel: 'emulator',
       state: 'online',
@@ -1034,7 +1046,7 @@ describe('PhoneConnectedView screen frame aspect', () => {
 
   it('does not remint a live MJPEG session when Host listing reports landscape', async () => {
     const source = new FakeListingSource().seed(listingOf([{
-      id: 'emulator-5554',
+      id: EMULATOR_DEVICE_ID,
       name: 'Pixel_6_API_35',
       channel: 'emulator',
       state: 'online',
@@ -1045,7 +1057,7 @@ describe('PhoneConnectedView screen frame aspect', () => {
     gateway.queueMint({ session: { ...SESSION_A, preferredFormat: 'mjpeg' } })
     render(
       <PhoneConnectedView
-        serial="emulator-5554"
+        serial={EMULATOR_DEVICE_ID}
         name="Pixel_6_API_35"
         visible={true}
         source={source}
@@ -1060,7 +1072,7 @@ describe('PhoneConnectedView screen frame aspect', () => {
     await step(() => { gateway.lastSocket!.accept() })
     expect(gateway.mintedDevices).toHaveLength(1)
     source.scriptNext(listingOf([{
-      id: 'emulator-5554',
+      id: EMULATOR_DEVICE_ID,
       name: 'Pixel_6_API_35',
       channel: 'emulator',
       state: 'online',
@@ -1075,17 +1087,17 @@ describe('PhoneConnectedView screen frame aspect', () => {
 
   it('does not remint when only an iOS listing row reports landscape logicalDisplay', async () => {
     const source = new FakeListingSource().seed(listingOf([], [{
-      id: 'UDID-9',
+      id: IOS_DEVICE_ID,
       name: 'Yishu iPhone',
       channel: 'usb',
       state: 'online',
       online: true,
     }]))
     const gateway = new FakeGateway()
-    gateway.queueMint({ session: { ...SESSION_A, deviceId: 'UDID-9' } })
+    gateway.queueMint({ session: { ...SESSION_A, deviceId: IOS_DEVICE_ID } })
     render(
       <PhoneConnectedView
-        serial="UDID-9"
+        serial={IOS_DEVICE_ID}
         name="Yishu iPhone"
         visible={true}
         source={source}
@@ -1100,7 +1112,7 @@ describe('PhoneConnectedView screen frame aspect', () => {
     await step(() => { gateway.lastSocket!.accept() })
     expect(gateway.mintedDevices).toHaveLength(1)
     source.scriptNext(listingOf([], [{
-      id: 'UDID-9',
+      id: IOS_DEVICE_ID,
       name: 'Yishu iPhone',
       channel: 'usb',
       state: 'online',
@@ -1147,7 +1159,7 @@ describe('PhoneConnectedView screen frame aspect', () => {
       const bitmap = stubCurrentMjpegFrame(1080, 2400)
       render(
         <PhoneConnectedView
-          serial="emulator-5554"
+          serial={EMULATOR_DEVICE_ID}
           name="Pixel_6_API_35"
           visible={true}
           source={new FakeListingSource().seed(listingOf(DEVICES))}
@@ -1205,7 +1217,7 @@ describe('PhoneConnectedView touch and keys', () => {
     expect(JSON.parse(gateway.lastSocket!.sent[0]!)).toEqual({
       jsonrpc: '2.0', id: 1, method: 'tap',
       params: {
-        deviceId: 'emulator-5554', x: 195, y: 211, kind: 'capture', captureWidth: 390, captureHeight: 844, captureId: SESSION_A.h264.captureId, captureFormat: 'h264', captureRotation: 0,
+        deviceId: EMULATOR_DEVICE_ID, x: 195, y: 211, kind: 'capture', captureWidth: 390, captureHeight: 844, captureId: SESSION_A.h264.captureId, captureFormat: 'h264', captureRotation: 0,
       },
     })
   })
@@ -1230,7 +1242,7 @@ describe('PhoneConnectedView touch and keys', () => {
     expect(JSON.parse(gateway.lastSocket!.sent[0]!)).toEqual({
       jsonrpc: '2.0', id: 1, method: 'swipe',
       params: {
-        deviceId: 'emulator-5554', kind: 'capture', captureWidth: 390, captureHeight: 844,
+        deviceId: EMULATOR_DEVICE_ID, kind: 'capture', captureWidth: 390, captureHeight: 844,
         captureId: SESSION_A.h264.captureId, captureFormat: 'h264', captureRotation: 0,
         x1: 39, y1: 42, x2: 254, y2: 485,
       },
@@ -1244,7 +1256,7 @@ describe('PhoneConnectedView touch and keys', () => {
     expect(parseSentFrame(gateway.lastSocket!.sent[0]!)).toEqual({
       jsonrpc: '2.0', id: 1, method: 'swipe',
       params: {
-        deviceId: 'emulator-5554', kind: 'capture', captureWidth: 390, captureHeight: 844,
+        deviceId: EMULATOR_DEVICE_ID, kind: 'capture', captureWidth: 390, captureHeight: 844,
         captureId: SESSION_A.h264.captureId, captureFormat: 'h264', captureRotation: 0,
         x1: 39, y1: 42, x2: 59, y2: 63,
       },
@@ -1283,7 +1295,7 @@ describe('PhoneConnectedView touch and keys', () => {
     expect(parseSentFrame(gateway.lastSocket!.sent[0]!)).toEqual({
       jsonrpc: '2.0', id: 1, method: 'tap',
       params: {
-        deviceId: 'emulator-5554', x: 103, y: 114, kind: 'capture', captureWidth: 390, captureHeight: 844, captureId: SESSION_A.h264.captureId, captureFormat: 'h264', captureRotation: 0,
+        deviceId: EMULATOR_DEVICE_ID, x: 103, y: 114, kind: 'capture', captureWidth: 390, captureHeight: 844, captureId: SESSION_A.h264.captureId, captureFormat: 'h264', captureRotation: 0,
       },
     })
   })
@@ -1309,7 +1321,7 @@ describe('PhoneConnectedView touch and keys', () => {
       expect(parseSentFrame(gateway.lastSocket!.sent[0]!)).toEqual({
         jsonrpc: '2.0', id: 1, method: 'swipe',
         params: {
-          deviceId: 'emulator-5554', kind: 'capture', captureWidth: 390, captureHeight: 844,
+          deviceId: EMULATOR_DEVICE_ID, kind: 'capture', captureWidth: 390, captureHeight: 844,
           captureId: SESSION_A.h264.captureId, captureFormat: 'h264', captureRotation: 0,
           x1: 195, y1: originY, x2: 195, y2: destinationY,
         },
@@ -1336,19 +1348,19 @@ describe('PhoneConnectedView touch and keys', () => {
     const firstGateway = new FakeGateway()
     const secondGateway = new FakeGateway()
     const source = new FakeListingSource().seed(listingOf([
-      { id: 'device-a', name: 'Device A', channel: 'usb', state: 'online', online: true, logicalDisplay: { width: 1080, height: 2248 } },
-      { id: 'device-b', name: 'Device B', channel: 'usb', state: 'online', online: true, logicalDisplay: { width: 1080, height: 2248 } },
+      { id: DEVICE_A_ID, name: 'Device A', channel: 'usb', state: 'online', online: true, logicalDisplay: { width: 1080, height: 2248 } },
+      { id: DEVICE_B_ID, name: 'Device B', channel: 'usb', state: 'online', online: true, logicalDisplay: { width: 1080, height: 2248 } },
     ]))
     const view = render(
       <PhoneConnectedView
-        serial="device-a"
+        serial={DEVICE_A_ID}
         name="Device A"
         visible={true}
         source={source}
         onOpenDevice={() => {}}
         onShowPicker={() => {}}
         createController={serial => new PhoneConnectionController({
-          gateway: serial === 'device-a' ? firstGateway : secondGateway,
+          gateway: serial === DEVICE_A_ID ? firstGateway : secondGateway,
           deviceId: serial,
         })}
       />,
@@ -1366,14 +1378,14 @@ describe('PhoneConnectedView touch and keys', () => {
 
     view.rerender(
       <PhoneConnectedView
-        serial="device-a" name="Device A" visible={false} source={source} onOpenDevice={() => {}} onShowPicker={() => {}}
+        serial={DEVICE_A_ID} name="Device A" visible={false} source={source} onOpenDevice={() => {}} onShowPicker={() => {}}
         createController={serial => new PhoneConnectionController({ gateway: firstGateway, deviceId: serial })}
       />,
     )
     expect(releasePointerCapture).toHaveBeenCalledWith(11)
     view.rerender(
       <PhoneConnectedView
-        serial="device-a" name="Device A" visible={true} source={source} onOpenDevice={() => {}} onShowPicker={() => {}}
+        serial={DEVICE_A_ID} name="Device A" visible={true} source={source} onOpenDevice={() => {}} onShowPicker={() => {}}
         createController={serial => new PhoneConnectionController({ gateway: firstGateway, deviceId: serial })}
       />,
     )
@@ -1391,7 +1403,7 @@ describe('PhoneConnectedView touch and keys', () => {
     fireEvent.pointerDown(target, { pointerId: 12, clientX: 20, clientY: 20 })
     view.rerender(
       <PhoneConnectedView
-        serial="device-b" name="Device B" visible={true} source={source} onOpenDevice={() => {}} onShowPicker={() => {}}
+        serial={DEVICE_B_ID} name="Device B" visible={true} source={source} onOpenDevice={() => {}} onShowPicker={() => {}}
         createController={serial => new PhoneConnectionController({ gateway: secondGateway, deviceId: serial })}
       />,
     )
@@ -1414,7 +1426,7 @@ describe('PhoneConnectedView touch and keys', () => {
     expect(parseSentFrame(gateway.lastSocket!.sent[0]!)).toEqual({
       jsonrpc: '2.0', id: 1, method: 'tap',
       params: {
-        deviceId: 'emulator-5554', x: 0, y: 0, kind: 'capture', captureWidth: 390, captureHeight: 844, captureId: SESSION_A.h264.captureId, captureFormat: 'h264', captureRotation: 0,
+        deviceId: EMULATOR_DEVICE_ID, x: 0, y: 0, kind: 'capture', captureWidth: 390, captureHeight: 844, captureId: SESSION_A.h264.captureId, captureFormat: 'h264', captureRotation: 0,
       },
     })
   })
@@ -1426,8 +1438,8 @@ describe('PhoneConnectedView touch and keys', () => {
     fireEvent.keyDown(frame(), { key: 'Backspace' })
     fireEvent.keyDown(frame(), { key: 'c', ctrlKey: true })
     expect(gateway.lastSocket!.sent.map(parseSentFrame)).toEqual([
-      { jsonrpc: '2.0', id: 1, method: 'text', params: { deviceId: 'emulator-5554', text: 'a' } },
-      { jsonrpc: '2.0', id: 2, method: 'text', params: { deviceId: 'emulator-5554', text: '\n' } },
+      { jsonrpc: '2.0', id: 1, method: 'text', params: { deviceId: EMULATOR_DEVICE_ID, text: 'a' } },
+      { jsonrpc: '2.0', id: 2, method: 'text', params: { deviceId: EMULATOR_DEVICE_ID, text: '\n' } },
     ])
   })
 })
@@ -1441,9 +1453,9 @@ describe('PhoneConnectedView toolbar', () => {
     const screenshot = screen.getByRole('button', { name: '截图' }) as HTMLButtonElement
     expect(screenshot.disabled).toBe(true)
     expect(gateway.lastSocket!.sent.map(parseSentFrame)).toEqual([
-      { jsonrpc: '2.0', id: 1, method: 'button', params: { deviceId: 'emulator-5554', button: 'BACK' } },
-      { jsonrpc: '2.0', id: 2, method: 'button', params: { deviceId: 'emulator-5554', button: 'HOME' } },
-      { jsonrpc: '2.0', id: 3, method: 'button', params: { deviceId: 'emulator-5554', button: 'RECENTS' } },
+      { jsonrpc: '2.0', id: 1, method: 'button', params: { deviceId: EMULATOR_DEVICE_ID, button: 'BACK' } },
+      { jsonrpc: '2.0', id: 2, method: 'button', params: { deviceId: EMULATOR_DEVICE_ID, button: 'HOME' } },
+      { jsonrpc: '2.0', id: 3, method: 'button', params: { deviceId: EMULATOR_DEVICE_ID, button: 'RECENTS' } },
     ])
   })
 
@@ -1466,16 +1478,16 @@ describe('PhoneConnectedView error and recovery arms', () => {
     gateway.queueMint({ error: new PhoneStreamHttpError(409, 'PHONE_AGENT_MISSING', 'agent missing') })
     gateway.queueMint({ session: {
       ...SESSION_A,
-      deviceId: 'UDID-9',
+      deviceId: IOS_DEVICE_ID,
       agentManaged: true,
     } })
     render(
       <PhoneConnectedView
-        serial="UDID-9"
+        serial={IOS_DEVICE_ID}
         name="Yishu iPhone"
         visible={true}
         source={new FakeListingSource().seed(listingOf([], [
-          { id: 'UDID-9', name: 'Yishu iPhone', channel: 'usb', state: 'online', online: true },
+          { id: IOS_DEVICE_ID, name: 'Yishu iPhone', channel: 'usb', state: 'online', online: true },
         ]))}
         onOpenDevice={() => {}}
         onShowPicker={() => {}}
@@ -1493,7 +1505,7 @@ describe('PhoneConnectedView error and recovery arms', () => {
     await flush()
     await step(() => { gateway.lastSocket!.accept() })
     expect(screen.getByRole('img', { name: 'Yishu iPhone 实时画面' })).toBeTruthy()
-    expect(gateway.agentInstallCalls).toEqual([{ deviceId: 'UDID-9', force: false }])
+    expect(gateway.agentInstallCalls).toEqual([{ deviceId: IOS_DEVICE_ID, force: false }])
   })
 
   it('keeps one-click Android agent preparation visible when USB installation is restricted', async () => {
@@ -1506,11 +1518,11 @@ describe('PhoneConnectedView error and recovery arms', () => {
     })
     render(
       <PhoneConnectedView
-        serial="fbcd1d21"
+        serial={REAL_IOS_DEVICE_ID}
         name="MI 8"
         visible={true}
         source={new FakeListingSource().seed(listingOf([
-          { id: 'fbcd1d21', name: 'MI 8', channel: 'usb', state: 'online', online: true },
+          { id: REAL_IOS_DEVICE_ID, name: 'MI 8', channel: 'usb', state: 'online', online: true },
         ], []))}
         onOpenDevice={() => {}}
         onShowPicker={() => {}}
@@ -1543,11 +1555,11 @@ describe('PhoneConnectedView error and recovery arms', () => {
       })
       const mounted = render(
         <PhoneConnectedView
-          serial="UDID-9"
+          serial={IOS_DEVICE_ID}
           name="Yishu iPhone"
           visible={true}
           source={new FakeListingSource().seed(listingOf([], [
-            { id: 'UDID-9', name: 'Yishu iPhone', channel: 'usb', state: 'online', online: true },
+            { id: IOS_DEVICE_ID, name: 'Yishu iPhone', channel: 'usb', state: 'online', online: true },
           ]))}
           onOpenDevice={() => {}}
           onShowPicker={() => {}}
@@ -1563,15 +1575,15 @@ describe('PhoneConnectedView error and recovery arms', () => {
 
   it('shows the agent-check and force-reinstall progress states', async () => {
     const checkingGateway = new FakeGateway()
-    checkingGateway.queueMint({ session: { ...SESSION_A, deviceId: 'UDID-9', agentManaged: true } })
+    checkingGateway.queueMint({ session: { ...SESSION_A, deviceId: IOS_DEVICE_ID, agentManaged: true } })
     vi.spyOn(checkingGateway, 'agentStatus').mockReturnValue(new Promise(() => {}))
     const checking = render(
       <PhoneConnectedView
-        serial="UDID-9"
+        serial={IOS_DEVICE_ID}
         name="Yishu iPhone"
         visible={true}
         source={new FakeListingSource().seed(listingOf([], [
-          { id: 'UDID-9', name: 'Yishu iPhone', channel: 'usb', state: 'online', online: true },
+          { id: IOS_DEVICE_ID, name: 'Yishu iPhone', channel: 'usb', state: 'online', online: true },
         ]))}
         onOpenDevice={() => {}}
         onShowPicker={() => {}}
@@ -1597,11 +1609,11 @@ describe('PhoneConnectedView error and recovery arms', () => {
     vi.spyOn(reinstallGateway, 'installAgent').mockReturnValue(new Promise(() => {}))
     render(
       <PhoneConnectedView
-        serial="UDID-9"
+        serial={IOS_DEVICE_ID}
         name="Yishu iPhone"
         visible={true}
         source={new FakeListingSource().seed(listingOf([], [
-          { id: 'UDID-9', name: 'Yishu iPhone', channel: 'usb', state: 'online', online: true },
+          { id: IOS_DEVICE_ID, name: 'Yishu iPhone', channel: 'usb', state: 'online', online: true },
         ]))}
         onOpenDevice={() => {}}
         onShowPicker={() => {}}
@@ -1624,7 +1636,7 @@ describe('PhoneConnectedView error and recovery arms', () => {
     gateway.queueMint({ error: new TypeError('network down') })
     render(
       <PhoneConnectedView
-        serial="emulator-5554"
+        serial={EMULATOR_DEVICE_ID}
         name="Pixel_6_API_35"
         visible={true}
         source={new FakeListingSource().seed(listingOf(DEVICES))}

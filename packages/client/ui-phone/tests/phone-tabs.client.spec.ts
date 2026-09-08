@@ -5,6 +5,7 @@
  a single 「手机」 tab, and a disabled deployment refuses switches.
  */
 import { describe, expect, it } from 'vitest'
+import { phoneDeviceIdOf } from '../src/client/phone-device-id.ts'
 import {
   buildPhoneTabDescriptor, createPhoneTabSwitcher, installPhoneTab, openPhoneTabOf, PHONE_TAB_ID, PHONE_TAB_TITLE,
   openPhoneDevicePanel, phoneDeviceTabMetaOf, phoneTabTitleOf, showPhonePicker,
@@ -104,7 +105,7 @@ const enOccupiedTitle = (name: string): string => `Phone · ${name}`
 describe('single phone tab with in-place switching', () => {
   it('opens a Settings device in the singleton visible panel', () => {
     const sidebar = new ContractSidebar()
-    openPhoneDevicePanel(sidebar, () => true, 'fbcd1d21', 'MI 8', zhOccupiedTitle)
+    openPhoneDevicePanel(sidebar, () => true, phoneDeviceIdOf('fbcd1d21'), 'MI 8', zhOccupiedTitle)
     expect(sidebar.tabs).toEqual([{
       id: PHONE_TAB_ID,
       type: PHONE_TAB_ID,
@@ -112,7 +113,7 @@ describe('single phone tab with in-place switching', () => {
       meta: { kind: 'device', serial: 'fbcd1d21', name: 'MI 8' },
     }])
     expect(sidebar.panelOpen).toBe(true)
-    openPhoneDevicePanel(sidebar, () => false, 'other', 'Blocked', zhOccupiedTitle)
+    openPhoneDevicePanel(sidebar, () => false, phoneDeviceIdOf('other'), 'Blocked', zhOccupiedTitle)
     expect(sidebar.tabs).toHaveLength(1)
   })
 
@@ -212,7 +213,7 @@ describe('single phone tab with in-place switching', () => {
     const sidebar = new ContractSidebar()
     sidebar.openTab({ type: PHONE_TAB_ID })
     const switchDevice = createPhoneTabSwitcher(sidebar, () => true, zhOccupiedTitle)
-    switchDevice(PHONE_TAB_ID, 'emulator-5554', 'Pixel_6_API_35')
+    switchDevice(PHONE_TAB_ID, phoneDeviceIdOf('emulator-5554'), 'Pixel_6_API_35')
     expect(phoneDeviceTabMetaOf(sidebar.tabs[0]!.meta)).toEqual({
       kind: 'device', serial: 'emulator-5554', name: 'Pixel_6_API_35',
     })
@@ -294,7 +295,7 @@ describe('single phone tab with in-place switching', () => {
       meta: { kind: 'device', serial: 'emulator-5554' },
     })
     gate = false
-    env.switchDevice(PHONE_TAB_ID, 'R3CN30', 'SM-S9310')
+    env.switchDevice(PHONE_TAB_ID, phoneDeviceIdOf('R3CN30'), 'SM-S9310')
     expect(sidebar.tabs[0]!.meta).toMatchObject({ serial: 'emulator-5554' })
     env.showPicker(PHONE_TAB_ID)
     expect(phoneDeviceTabMetaOf(sidebar.tabs[0]!.meta)).toBeUndefined()
@@ -305,11 +306,11 @@ describe('single phone tab with in-place switching', () => {
     const sidebar = new ContractSidebar()
     const switchDevice = createPhoneTabSwitcher(sidebar, () => true, enOccupiedTitle)
     sidebar.openTab({ type: PHONE_TAB_ID })
-    switchDevice(PHONE_TAB_ID, 'emulator-5554', 'Pixel_6_API_35')
+    switchDevice(PHONE_TAB_ID, phoneDeviceIdOf('emulator-5554'), 'Pixel_6_API_35')
     expect(sidebar.tabs[0]!.title).toBe('Phone · Pixel_6_API_35')
     showPhonePicker(sidebar, PHONE_TAB_ID, enTitle)
     expect(sidebar.tabs[0]!.title).toBe('Phone')
-    openPhoneDevicePanel(sidebar, () => true, 'emulator-5554', 'Pixel_6_API_35', enOccupiedTitle)
+    openPhoneDevicePanel(sidebar, () => true, phoneDeviceIdOf('emulator-5554'), 'Pixel_6_API_35', enOccupiedTitle)
     expect(sidebar.tabs[0]!.title).toBe('Phone · Pixel_6_API_35')
   })
 

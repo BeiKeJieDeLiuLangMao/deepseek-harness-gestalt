@@ -4,6 +4,7 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { PHONE_LISTING_POLL_INTERVAL_MS, startPhoneListingPoll } from '../src/client/phone-listing-poll.ts'
+import { phoneDeviceIdOf } from '../src/client/phone-device-id.ts'
 import { FakeListingSource, listingOf } from './phone-fakes.client.ts'
 
 afterEach(() => { vi.useRealTimers() })
@@ -14,7 +15,7 @@ describe('startPhoneListingPoll', () => {
     const listing = new FakeListingSource()
     const stop = startPhoneListingPoll(listing)
     listing.scriptNext(listingOf([], [{
-      id: '00008150-0008545C2608401C',
+      id: phoneDeviceIdOf('00008150-0008545C2608401C'),
       name: '贝贝猫的iPhone',
       channel: 'usb',
       state: 'online',

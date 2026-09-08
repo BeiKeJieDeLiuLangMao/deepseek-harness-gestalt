@@ -10,13 +10,14 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { PHONE_LISTING_POLL_INTERVAL_MS } from '../src/client/phone-listing-poll.ts'
 import { PhoneTab } from '../src/client/PhoneTab.tsx'
 import { PhoneStreamHttpError } from '../src/client/phone-stream-client.ts'
+import { phoneDeviceIdOf } from '../src/client/phone-device-id.ts'
 import type { PhoneDeviceSummary } from '../src/client/registry.ts'
 import { FakeGate, FakeListingSource, flush, listingOf } from './phone-fakes.client.ts'
 
 afterEach(cleanup)
 
 const EMULATOR: readonly PhoneDeviceSummary[] = [
-  { id: 'emulator-5554', name: 'Pixel_6_API_35', channel: 'emulator', state: 'online', online: true },
+  { id: phoneDeviceIdOf('emulator-5554'), name: 'Pixel_6_API_35', channel: 'emulator', state: 'online', online: true },
 ]
 
 const openDevice = vi.fn()
@@ -71,7 +72,7 @@ describe('PhoneTab empty state', () => {
 
   it('switches the active segment, its guidance copy, and its rows', async () => {
     const source = new FakeListingSource().seed(listingOf(EMULATOR, [
-      { id: 'iPhone-16', name: 'iPhone 16', channel: 'emulator', state: 'online', online: true },
+      { id: phoneDeviceIdOf('iPhone-16'), name: 'iPhone 16', channel: 'emulator', state: 'online', online: true },
     ]))
     await renderTab(true, source)
     const android = screen.getByRole('button', { name: 'Android' })
@@ -88,8 +89,8 @@ describe('PhoneTab empty state', () => {
 
   it('lists only online devices and keeps the USB placeholder when no handset is available', async () => {
     const source = new FakeListingSource().seed(listingOf([
-      { id: 'emulator-5554', name: 'Pixel_6_API_35', channel: 'emulator', state: 'online', online: true },
-      { id: 'R3CN30', name: 'SM-S9310', channel: 'usb', state: 'offline', online: false },
+      { id: phoneDeviceIdOf('emulator-5554'), name: 'Pixel_6_API_35', channel: 'emulator', state: 'online', online: true },
+      { id: phoneDeviceIdOf('R3CN30'), name: 'SM-S9310', channel: 'usb', state: 'offline', online: false },
     ]))
     await renderTab(true, source)
     expect(screen.getByText('Pixel_6_API_35')).toBeTruthy()
@@ -101,8 +102,8 @@ describe('PhoneTab empty state', () => {
 
   it('opens the occupying device only from listed online rows', async () => {
     const source = new FakeListingSource().seed(listingOf([
-      { id: 'emulator-5554', name: 'Pixel_6_API_35', channel: 'emulator', state: 'online', online: true },
-      { id: 'R3CN30', name: 'SM-S9310', channel: 'usb', state: 'offline', online: false },
+      { id: phoneDeviceIdOf('emulator-5554'), name: 'Pixel_6_API_35', channel: 'emulator', state: 'online', online: true },
+      { id: phoneDeviceIdOf('R3CN30'), name: 'SM-S9310', channel: 'usb', state: 'offline', online: false },
     ]))
     await renderTab(true, source)
     expect(screen.getAllByRole('button', { name: '打开' })).toHaveLength(1)
@@ -112,7 +113,7 @@ describe('PhoneTab empty state', () => {
 
   it('renders the design error arm for an unauthorized handset instead of 离线', async () => {
     const source = new FakeListingSource().seed(listingOf([
-      { id: 'R3CN30', name: 'SM-S9310', channel: 'usb', state: 'unauthorized', online: false },
+      { id: phoneDeviceIdOf('R3CN30'), name: 'SM-S9310', channel: 'usb', state: 'unauthorized', online: false },
     ]))
     await renderTab(true, source)
     expect(screen.getByRole('alert')).toBeTruthy()
@@ -125,7 +126,7 @@ describe('PhoneTab empty state', () => {
 
   it('renders iOS trust and Developer Mode guidance for an unauthorized iPhone', async () => {
     const source = new FakeListingSource().seed(listingOf([], [
-      { id: 'iphone-1', name: 'iPhone 17', channel: 'usb', state: 'unauthorized', online: false },
+      { id: phoneDeviceIdOf('iphone-1'), name: 'iPhone 17', channel: 'usb', state: 'unauthorized', online: false },
     ]))
     await renderTab(true, source)
     fireEvent.click(screen.getByRole('button', { name: 'iOS' }))
@@ -134,12 +135,12 @@ describe('PhoneTab empty state', () => {
 
   it('re-pulls the listing from the 重新检测 action of the unauthorized arm', async () => {
     const source = new FakeListingSource().seed(listingOf([
-      { id: 'R3CN30', name: 'SM-S9310', channel: 'usb', state: 'unauthorized', online: false },
+      { id: phoneDeviceIdOf('R3CN30'), name: 'SM-S9310', channel: 'usb', state: 'unauthorized', online: false },
     ]))
     await renderTab(true, source)
     const pulls = source.refreshCount
     source.scriptNext(listingOf([
-      { id: 'R3CN30', name: 'SM-S9310', channel: 'usb', state: 'online', online: true },
+      { id: phoneDeviceIdOf('R3CN30'), name: 'SM-S9310', channel: 'usb', state: 'online', online: true },
     ]))
     await act(async () => {
       fireEvent.click(screen.getByRole('button', { name: '重新检测' }))
@@ -152,9 +153,9 @@ describe('PhoneTab empty state', () => {
 
   it('shows the per-channel running state in the row meta of listed devices', async () => {
     const source = new FakeListingSource().seed(listingOf([
-      { id: 'emulator-5554', name: 'Pixel_6_API_35', channel: 'emulator', state: 'online', online: true },
-      { id: 'emulator-9999', name: 'Galaxy_A54_API_34', channel: 'emulator', state: 'offline', online: false },
-      { id: 'R3CN30', name: 'SM-S9310', channel: 'usb', state: 'online', online: true },
+      { id: phoneDeviceIdOf('emulator-5554'), name: 'Pixel_6_API_35', channel: 'emulator', state: 'online', online: true },
+      { id: phoneDeviceIdOf('emulator-9999'), name: 'Galaxy_A54_API_34', channel: 'emulator', state: 'offline', online: false },
+      { id: phoneDeviceIdOf('R3CN30'), name: 'SM-S9310', channel: 'usb', state: 'online', online: true },
     ]))
     await renderTab(true, source)
     expect(screen.getByText('运行中')).toBeTruthy()
@@ -165,7 +166,7 @@ describe('PhoneTab empty state', () => {
 
   it('keeps the USB placeholder while only simulators answer', async () => {
     const source = new FakeListingSource().seed(listingOf([
-      { id: 'emulator-5554', name: 'Pixel_6_API_35', channel: 'emulator', state: 'offline', online: false },
+      { id: phoneDeviceIdOf('emulator-5554'), name: 'Pixel_6_API_35', channel: 'emulator', state: 'offline', online: false },
     ]))
     await renderTab(true, source)
     expect(screen.queryByText('Pixel_6_API_35')).toBeNull()
@@ -264,7 +265,7 @@ describe('PhoneTab live listing', () => {
   afterEach(() => { vi.useRealTimers() })
 
   const IPHONE: PhoneDeviceSummary = {
-    id: '00008150-0008545C2608401C',
+    id: phoneDeviceIdOf('00008150-0008545C2608401C'),
     name: '贝贝猫的iPhone',
     channel: 'usb',
     state: 'online',

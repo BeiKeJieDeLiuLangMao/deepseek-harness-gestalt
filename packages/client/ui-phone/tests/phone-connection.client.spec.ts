@@ -5,15 +5,20 @@
  * suspend/resume, and the touch/keyboard io frames with their coordinates.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { DeviceId } from '@deepseek-ai/dsh-phone-runtime'
 import { PhoneConnectionController } from '../src/client/phone-connection.ts'
+import { phoneDeviceIdOf } from '../src/client/phone-device-id.ts'
 import type { PhoneStreamGateway } from '../src/client/phone-connection.ts'
 import { PhoneStreamHttpError } from '../src/client/phone-stream-client.ts'
 import { FakeGateway, flush, ManualScheduler, SESSION_A, SESSION_B, SESSION_C } from './phone-fakes.client.ts'
 
+const EMULATOR_DEVICE_ID = phoneDeviceIdOf('emulator-5554')
+const IOS_DEVICE_ID = phoneDeviceIdOf('UDID-9')
+
 function controllerOn(gateway: FakeGateway, scheduler: ManualScheduler): PhoneConnectionController {
   return new PhoneConnectionController({
     gateway,
-    deviceId: 'emulator-5554',
+    deviceId: EMULATOR_DEVICE_ID,
     platform: 'android',
     schedule: scheduler.schedule,
   })
@@ -42,7 +47,7 @@ describe('PhoneConnectionController lifecycle', () => {
     expect(controller.snapshot()).toEqual({ kind: 'idle' })
     controller.connect()
     expect(controller.snapshot()).toEqual({ kind: 'connecting' })
-    expect(gateway.mintedDevices).toEqual(['emulator-5554'])
+    expect(gateway.mintedDevices).toEqual([EMULATOR_DEVICE_ID])
     await flush()
     gateway.lastSocket!.accept()
     expect(controller.snapshot()).toEqual({
@@ -75,13 +80,13 @@ describe('PhoneConnectionController lifecycle', () => {
     const gateway = new FakeGateway()
     const controller = new PhoneConnectionController({
       gateway,
-      deviceId: 'emulator-5554',
+      deviceId: EMULATOR_DEVICE_ID,
       retryLimit: 1,
       retryBaseDelayMs: 5,
     })
     controller.connect()
     controller.connect()
-    expect(gateway.mintedDevices).toEqual(['emulator-5554'])
+    expect(gateway.mintedDevices).toEqual([EMULATOR_DEVICE_ID])
     await vi.advanceTimersByTimeAsync(0)
     gateway.lastSocket!.accept()
     controller.connect()
@@ -99,7 +104,7 @@ describe('PhoneConnectionController lifecycle', () => {
     const gateway = new FakeGateway()
     const controller = new PhoneConnectionController({
       gateway,
-      deviceId: 'emulator-5554',
+      deviceId: EMULATOR_DEVICE_ID,
       retryBaseDelayMs: 5,
     })
     controller.connect()
@@ -108,7 +113,7 @@ describe('PhoneConnectionController lifecycle', () => {
     gateway.lastSocket!.closeFromRemote()
     controller.dispose()
     await vi.advanceTimersByTimeAsync(5)
-    expect(gateway.mintedDevices).toEqual(['emulator-5554'])
+    expect(gateway.mintedDevices).toEqual([EMULATOR_DEVICE_ID])
   })
 
   it('reconnects with a fresh session after a live socket drop', async () => {
@@ -191,14 +196,14 @@ describe('PhoneConnectionController lifecycle', () => {
     let socketAttempts = 0
     const gateway: PhoneStreamGateway = {
       mintSession: () => pending,
-      agentStatus: async () => ({ deviceId: 'emulator-5554', installed: true }),
-      installAgent: async () => ({ deviceId: 'emulator-5554', installed: true }),
+      agentStatus: async () => ({ deviceId: EMULATOR_DEVICE_ID, installed: true }),
+      installAgent: async () => ({ deviceId: EMULATOR_DEVICE_ID, installed: true }),
       connectIo: () => {
         socketAttempts += 1
         throw new Error('a stale mint must not open io')
       },
     }
-    const controller = new PhoneConnectionController({ gateway, deviceId: 'emulator-5554' })
+    const controller = new PhoneConnectionController({ gateway, deviceId: EMULATOR_DEVICE_ID })
     controller.connect()
     controller.disconnect()
     resolveMint(SESSION_A)
@@ -280,10 +285,10 @@ describe('PhoneConnectionController lifecycle', () => {
     gateway.queueMint({ error: new PhoneStreamHttpError(409, 'PHONE_AGENT_MISSING', 'agent is missing') })
     gateway.queueMint({ session: {
       ...SESSION_A,
-      deviceId: 'UDID-9',
+      deviceId: IOS_DEVICE_ID,
       agentManaged: true,
     } })
-    const controller = new PhoneConnectionController({ gateway, deviceId: 'UDID-9', platform: 'ios', schedule: scheduler.schedule })
+    const controller = new PhoneConnectionController({ gateway, deviceId: IOS_DEVICE_ID, platform: 'ios', schedule: scheduler.schedule })
     controller.connect()
     await flush()
     expect(controller.snapshot()).toEqual({
@@ -296,15 +301,15 @@ describe('PhoneConnectionController lifecycle', () => {
     gateway.lastSocket!.accept()
     controller.noteSurface('h264', SESSION_A.h264.captureId, 390, 844)
     expect(controller.button('HOME')).toBe(true)
-    expect(gateway.agentInstallCalls).toEqual([{ deviceId: 'UDID-9', force: false }])
+    expect(gateway.agentInstallCalls).toEqual([{ deviceId: IOS_DEVICE_ID, force: false }])
     expect(JSON.parse(gateway.lastSocket!.sent[0]!)).toMatchObject({
-      method: 'button', params: { deviceId: 'UDID-9', button: 'HOME' },
+      method: 'button', params: { deviceId: IOS_DEVICE_ID, button: 'HOME' },
     })
   })
 
   it('keeps agent recovery within an error generation and preserves a failed install result', async () => {
     const gateway = new FakeGateway()
-    const controller = new PhoneConnectionController({ gateway, deviceId: 'UDID-9', platform: 'ios' })
+    const controller = new PhoneConnectionController({ gateway, deviceId: IOS_DEVICE_ID, platform: 'ios' })
     controller.recoverAgent(false)
     expect(gateway.agentInstallCalls).toEqual([])
 
@@ -330,14 +335,14 @@ describe('PhoneConnectionController lifecycle', () => {
     for (const outcome of ['success', 'failure'] as const) {
       const gateway = new FakeGateway()
       gateway.queueMint({ error: new PhoneStreamHttpError(409, 'PHONE_AGENT_MISSING', 'agent missing') })
-      const controller = new PhoneConnectionController({ gateway, deviceId: 'UDID-9', platform: 'ios' })
+      const controller = new PhoneConnectionController({ gateway, deviceId: IOS_DEVICE_ID, platform: 'ios' })
       controller.connect()
       await flush()
-      const pending = Promise.withResolvers<{ readonly deviceId: string; readonly installed: boolean }>()
+      const pending = Promise.withResolvers<{ readonly deviceId: DeviceId; readonly installed: boolean }>()
       vi.spyOn(gateway, 'installAgent').mockReturnValue(pending.promise)
       controller.recoverAgent(false)
       controller.disconnect()
-      if (outcome === 'success') pending.resolve({ deviceId: 'UDID-9', installed: true })
+      if (outcome === 'success') pending.resolve({ deviceId: IOS_DEVICE_ID, installed: true })
       else pending.reject(new Error('late install failure'))
       await flush()
       expect(controller.snapshot()).toEqual({ kind: 'idle' })
@@ -347,14 +352,14 @@ describe('PhoneConnectionController lifecycle', () => {
   it('re-checks the agent after a managed real-device picture exhausts retries', async () => {
     const gateway = new FakeGateway()
     const scheduler = new ManualScheduler()
-    const managed = { ...SESSION_A, deviceId: 'UDID-9', agentManaged: true }
+    const managed = { ...SESSION_A, deviceId: IOS_DEVICE_ID, agentManaged: true }
     for (let attempt = 0; attempt < 4; attempt += 1) gateway.queueMint({ session: managed })
     gateway.queueAgentStatus({
       error: new PhoneStreamHttpError(
         502, 'PHONE_REAL_DEVICE_ISSUE', 'device tunnel failed', 'tunnel-failed',
       ),
     })
-    const controller = new PhoneConnectionController({ gateway, deviceId: 'UDID-9', platform: 'ios', schedule: scheduler.schedule })
+    const controller = new PhoneConnectionController({ gateway, deviceId: IOS_DEVICE_ID, platform: 'ios', schedule: scheduler.schedule })
     controller.connect()
     await flush()
     gateway.lastSocket!.accept()
@@ -368,21 +373,21 @@ describe('PhoneConnectionController lifecycle', () => {
     expect(controller.snapshot()).toEqual({ kind: 'checking-agent' })
     await flush()
     expect(controller.snapshot()).toEqual({ kind: 'error', failure: { kind: 'tunnel-failed' } })
-    expect(gateway.agentStatusDevices).toEqual(['UDID-9'])
+    expect(gateway.agentStatusDevices).toEqual([IOS_DEVICE_ID])
   })
 
   it('keeps a managed session live and surfaces a structured tap error', async () => {
     for (const session of [
       { ...SESSION_A, agentManaged: true },
-      { ...SESSION_A, deviceId: 'UDID-9', agentManaged: true },
+      { ...SESSION_A, deviceId: IOS_DEVICE_ID, agentManaged: true },
     ]) {
       const gateway = new FakeGateway()
       gateway.queueMint({ session })
       const controller = new PhoneConnectionController({
         gateway, deviceId: session.deviceId, schedule: new ManualScheduler().schedule,
-        platform: session.deviceId === 'UDID-9' ? 'ios' : 'android',
+        platform: session.deviceId === IOS_DEVICE_ID ? 'ios' : 'android',
       })
-      if (session.deviceId !== 'UDID-9') controller.noteLogicalDisplay({ width: 2868, height: 1320 })
+      if (session.deviceId !== IOS_DEVICE_ID) controller.noteLogicalDisplay({ width: 2868, height: 1320 })
       controller.connect()
       await flush()
       gateway.lastSocket!.accept()
@@ -426,10 +431,10 @@ describe('PhoneConnectionController lifecycle', () => {
     for (const installed of [false, true]) {
       const gateway = new FakeGateway()
       const scheduler = new ManualScheduler()
-      const managed = { ...SESSION_A, deviceId: 'UDID-9', agentManaged: true }
+      const managed = { ...SESSION_A, deviceId: IOS_DEVICE_ID, agentManaged: true }
       for (let attempt = 0; attempt < 4; attempt += 1) gateway.queueMint({ session: managed })
       gateway.queueAgentStatus({ installed })
-      const controller = new PhoneConnectionController({ gateway, deviceId: 'UDID-9', platform: 'ios', schedule: scheduler.schedule })
+      const controller = new PhoneConnectionController({ gateway, deviceId: IOS_DEVICE_ID, platform: 'ios', schedule: scheduler.schedule })
       controller.connect()
       await flush()
       gateway.lastSocket!.accept()
@@ -454,11 +459,11 @@ describe('PhoneConnectionController lifecycle', () => {
     for (const outcome of ['success', 'failure'] as const) {
       const gateway = new FakeGateway()
       const scheduler = new ManualScheduler()
-      const managed = { ...SESSION_A, deviceId: 'UDID-9', agentManaged: true }
+      const managed = { ...SESSION_A, deviceId: IOS_DEVICE_ID, agentManaged: true }
       for (let attempt = 0; attempt < 4; attempt += 1) gateway.queueMint({ session: managed })
-      const pending = Promise.withResolvers<{ readonly deviceId: string; readonly installed: boolean }>()
+      const pending = Promise.withResolvers<{ readonly deviceId: DeviceId; readonly installed: boolean }>()
       vi.spyOn(gateway, 'agentStatus').mockReturnValue(pending.promise)
-      const controller = new PhoneConnectionController({ gateway, deviceId: 'UDID-9', platform: 'ios', schedule: scheduler.schedule })
+      const controller = new PhoneConnectionController({ gateway, deviceId: IOS_DEVICE_ID, platform: 'ios', schedule: scheduler.schedule })
       controller.connect()
       await flush()
       gateway.lastSocket!.accept()
@@ -471,7 +476,7 @@ describe('PhoneConnectionController lifecycle', () => {
       gateway.lastSocket!.drop()
       expect(controller.snapshot()).toEqual({ kind: 'checking-agent' })
       controller.disconnect()
-      if (outcome === 'success') pending.resolve({ deviceId: 'UDID-9', installed: true })
+      if (outcome === 'success') pending.resolve({ deviceId: IOS_DEVICE_ID, installed: true })
       else pending.reject(new Error('late status failure'))
       await flush()
       expect(controller.snapshot()).toEqual({ kind: 'idle' })
@@ -566,7 +571,7 @@ describe('PhoneConnectionController lifecycle', () => {
       captureId: SESSION_A.mjpeg.captureId,
       expiresAt: SESSION_A.mjpeg.expiresAt,
     })
-    expect(gateway.mintedDevices).toEqual(['emulator-5554'])
+    expect(gateway.mintedDevices).toEqual([EMULATOR_DEVICE_ID])
     expect(gateway.lastSocket).toBe(socket)
     expect(scheduler.scheduledCount).toBe(0)
   })
@@ -734,7 +739,7 @@ describe('PhoneConnectionController io', () => {
     expect(JSON.parse(gateway.lastSocket!.sent[0]!)).toEqual({
       jsonrpc: '2.0', id: 1, method: 'tap',
       params: {
-        deviceId: 'emulator-5554', x: 180, y: 180, kind: 'capture', captureWidth: 360, captureHeight: 720,
+        deviceId: EMULATOR_DEVICE_ID, x: 180, y: 180, kind: 'capture', captureWidth: 360, captureHeight: 720,
         captureId: SESSION_A.h264.captureId, captureFormat: 'h264',
       },
     })
@@ -909,7 +914,7 @@ describe('PhoneConnectionController io', () => {
   it('blocks painted Android coordinates until listing classifies the platform', async () => {
     const gateway = new FakeGateway()
     const controller = new PhoneConnectionController({
-      gateway, deviceId: 'emulator-5554', schedule: new ManualScheduler().schedule,
+      gateway, deviceId: EMULATOR_DEVICE_ID, schedule: new ManualScheduler().schedule,
     })
     controller.connect()
     await flush()
@@ -981,7 +986,7 @@ describe('PhoneConnectionController io', () => {
   it('keeps iOS coordinate IO when listing logicalDisplay is absent', async () => {
     const gateway = new FakeGateway()
     const controller = new PhoneConnectionController({
-      gateway, deviceId: 'UDID-9', platform: 'ios', schedule: new ManualScheduler().schedule,
+      gateway, deviceId: IOS_DEVICE_ID, platform: 'ios', schedule: new ManualScheduler().schedule,
     })
     controller.connect()
     await flush()
@@ -1027,7 +1032,7 @@ describe('PhoneConnectionController io', () => {
     expect(parseSentFrame(gateway.lastSocket!.sent[0]!)).toEqual({
       jsonrpc: '2.0', id: 1, method: 'tap',
       params: {
-        deviceId: 'emulator-5554', x: 633, y: 195, kind: 'capture', captureWidth: 844, captureHeight: 390,
+        deviceId: EMULATOR_DEVICE_ID, x: 633, y: 195, kind: 'capture', captureWidth: 844, captureHeight: 390,
         captureId: SESSION_A.h264.captureId, captureFormat: 'h264',
       },
     })
@@ -1055,7 +1060,7 @@ describe('PhoneConnectionController io', () => {
     expect(JSON.parse(gateway.lastSocket!.sent[0]!)).toEqual({
       jsonrpc: '2.0', id: 1, method: 'swipe',
       params: {
-        deviceId: 'emulator-5554', kind: 'capture', captureWidth: 360, captureHeight: 720,
+        deviceId: EMULATOR_DEVICE_ID, kind: 'capture', captureWidth: 360, captureHeight: 720,
         captureId: SESSION_A.h264.captureId, captureFormat: 'h264',
         x1: 0, y1: 0, x2: 360, y2: 720,
       },
@@ -1071,10 +1076,10 @@ describe('PhoneConnectionController io', () => {
     controller.button('HOME')
     const [textFrame, buttonFrame] = gateway.lastSocket!.sent.map(parseSentFrame)
     expect(textFrame).toEqual({
-      jsonrpc: '2.0', id: 1, method: 'text', params: { deviceId: 'emulator-5554', text: '验证码' },
+      jsonrpc: '2.0', id: 1, method: 'text', params: { deviceId: EMULATOR_DEVICE_ID, text: '验证码' },
     })
     expect(buttonFrame).toEqual({
-      jsonrpc: '2.0', id: 2, method: 'button', params: { deviceId: 'emulator-5554', button: 'HOME' },
+      jsonrpc: '2.0', id: 2, method: 'button', params: { deviceId: EMULATOR_DEVICE_ID, button: 'HOME' },
     })
     expect(controller.text('')).toBe(false)
   })

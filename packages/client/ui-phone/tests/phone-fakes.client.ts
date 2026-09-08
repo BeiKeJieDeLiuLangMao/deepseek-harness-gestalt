@@ -5,16 +5,21 @@
  * `createHttpPhoneGateway` and its own listing source via
  * `createHttpPhoneListingSource`.
  */
+import type { DeviceId } from '@deepseek-ai/dsh-phone-runtime'
 import type { PhoneIoHandlers, PhoneIoSocket, PhoneStreamGateway } from '../src/client/phone-connection.ts'
 import { phoneCaptureIdOf } from '../src/client/phone-capture-id.ts'
+import { phoneDeviceIdOf } from '../src/client/phone-device-id.ts'
 import type { PhoneIoTarget, PhoneStreamSessionView } from '../src/client/phone-stream-client.ts'
 import type {
   PhoneBadgeSnapshot, PhoneDeviceSummary, PhoneGateSource, PhoneListingSnapshot, PhoneListingSource,
 } from '../src/client/registry.ts'
 import { vi } from 'vitest'
 
+/** Shared Android fixture identity. */
+export const EMULATOR_DEVICE_ID = phoneDeviceIdOf('emulator-5554')
+
 export const SESSION_A: PhoneStreamSessionView = {
-  deviceId: 'emulator-5554',
+  deviceId: EMULATOR_DEVICE_ID,
   ioPath: '/phone/ws/io',
   agentManaged: false,
   preferredFormat: 'h264',
@@ -24,7 +29,7 @@ export const SESSION_A: PhoneStreamSessionView = {
 
 /** Distinct signed capture from SESSION_A; PhoneH264Surface restarts only when `url` changes. */
 export const SESSION_B: PhoneStreamSessionView = {
-  deviceId: 'emulator-5554',
+  deviceId: EMULATOR_DEVICE_ID,
   ioPath: '/phone/ws/io',
   agentManaged: false,
   preferredFormat: 'h264',
@@ -34,7 +39,7 @@ export const SESSION_B: PhoneStreamSessionView = {
 
 /** Third signed capture for a later portrait remint after SESSION_B. */
 export const SESSION_C: PhoneStreamSessionView = {
-  deviceId: 'emulator-5554',
+  deviceId: EMULATOR_DEVICE_ID,
   ioPath: '/phone/ws/io',
   agentManaged: false,
   preferredFormat: 'h264',
@@ -230,10 +235,10 @@ export class FakeSocket implements PhoneIoSocket {
 /** Gateway fake with a scripted mint queue and observable sockets. */
 export class FakeGateway implements PhoneStreamGateway {
   readonly sockets: FakeSocket[] = []
-  readonly mintedDevices: string[] = []
+  readonly mintedDevices: DeviceId[] = []
   readonly dialedPaths: string[] = []
-  readonly agentStatusDevices: string[] = []
-  readonly agentInstallCalls: Array<{ readonly deviceId: string; readonly force: boolean }> = []
+  readonly agentStatusDevices: DeviceId[] = []
+  readonly agentInstallCalls: Array<{ readonly deviceId: DeviceId; readonly force: boolean }> = []
   private readonly mintScript: Array<{
     readonly session?: PhoneStreamSessionView
     readonly error?: unknown
@@ -268,7 +273,7 @@ export class FakeGateway implements PhoneStreamGateway {
     this.agentInstallScript.push(outcome)
   }
 
-  async mintSession(deviceId: string): Promise<PhoneStreamSessionView> {
+  async mintSession(deviceId: DeviceId): Promise<PhoneStreamSessionView> {
     this.mintedDevices.push(deviceId)
     const next = this.mintScript.shift()
     if (next !== undefined && next.error !== undefined) throw next.error
@@ -276,14 +281,14 @@ export class FakeGateway implements PhoneStreamGateway {
     return next?.session ?? SESSION_A
   }
 
-  async agentStatus(deviceId: string): Promise<{ readonly deviceId: string; readonly installed: boolean }> {
+  async agentStatus(deviceId: DeviceId): Promise<{ readonly deviceId: DeviceId; readonly installed: boolean }> {
     this.agentStatusDevices.push(deviceId)
     const next = this.agentStatusScript.shift()
     if (next?.error !== undefined) throw next.error
     return { deviceId, installed: next?.installed ?? true }
   }
 
-  async installAgent(deviceId: string, force: boolean): Promise<{ readonly deviceId: string; readonly installed: boolean }> {
+  async installAgent(deviceId: DeviceId, force: boolean): Promise<{ readonly deviceId: DeviceId; readonly installed: boolean }> {
     this.agentInstallCalls.push({ deviceId, force })
     const next = this.agentInstallScript.shift()
     if (next?.error !== undefined) throw next.error
@@ -348,12 +353,17 @@ export class FakeGate implements PhoneGateSource {
   }
 }
 
+/** Raw trusted device fixture accepted before its id is branded. */
+export type PhoneDeviceFixture = Omit<PhoneDeviceSummary, 'id'> & { readonly id: string }
+
 /** One committed listing built from per-platform rows. */
 export function listingOf(
-  android: readonly PhoneDeviceSummary[] = [],
-  ios: readonly PhoneDeviceSummary[] = [],
+  android: readonly PhoneDeviceFixture[] = [],
+  ios: readonly PhoneDeviceFixture[] = [],
 ): PhoneListingSnapshot {
-  return { android, ios }
+  const summaries = (devices: readonly PhoneDeviceFixture[]): readonly PhoneDeviceSummary[] =>
+    devices.map(device => ({ ...device, id: phoneDeviceIdOf(device.id) }))
+  return { android: summaries(android), ios: summaries(ios) }
 }
 
 /**

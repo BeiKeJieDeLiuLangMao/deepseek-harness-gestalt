@@ -13,6 +13,7 @@ import { MISSING_PHONE_ENVIRONMENT, type PhoneRuntimeSource } from '../src/clien
 import { createListingPhoneEnvironmentSource } from '../src/client/phone-environment-listing.ts'
 import { PHONE_LISTING_POLL_INTERVAL_MS } from '../src/client/phone-listing-poll.ts'
 import { PhoneStreamHttpError } from '../src/client/phone-stream-client.ts'
+import { phoneDeviceIdOf } from '../src/client/phone-device-id.ts'
 import { FakeListingSource, flush, listingOf } from './phone-fakes.client.ts'
 import type { PhoneSettings } from '../src/phone-settings.ts'
 
@@ -47,7 +48,7 @@ describe('resolvePhoneCardView', () => {
 describe('PhoneSettingsCardController first-open auto-detect', () => {
   it('auto-probes when enable arrives after construction: probing paints, ready lands', async () => {
     const listing = new FakeListingSource().seed(listingOf([
-      { id: 'emulator-5554', name: 'Pixel_6_API_35', channel: 'emulator', state: 'online', online: true },
+      { id: phoneDeviceIdOf('emulator-5554'), name: 'Pixel_6_API_35', channel: 'emulator', state: 'online', online: true },
     ]))
     // The real card constructs at apply time, before the scope hydrates —
     // the enable flip arrives later and must kick the one auto-detect.
@@ -74,7 +75,7 @@ describe('PhoneSettingsCardController first-open auto-detect', () => {
 
   it('auto-probes on construction when the deployment is already enabled', async () => {
     const listing = new FakeListingSource().seed(listingOf([
-      { id: 'emulator-5554', name: 'Pixel_6_API_35', channel: 'emulator', state: 'online', online: true },
+      { id: phoneDeviceIdOf('emulator-5554'), name: 'Pixel_6_API_35', channel: 'emulator', state: 'online', online: true },
     ]))
     const host = readyScope(true)
     const controller = new PhoneSettingsCardController(host.scope, createListingPhoneEnvironmentSource(listing))
@@ -111,7 +112,7 @@ describe('PhoneSettingsCardController first-open auto-detect', () => {
     vi.useFakeTimers()
     const listing = new FakeListingSource()
     listing.scriptNext(listingOf([], [{
-      id: 'CB65BAB1-E388-4C27-B9AB-81CFB37920C3',
+      id: phoneDeviceIdOf('CB65BAB1-E388-4C27-B9AB-81CFB37920C3'),
       name: 'DSH Gestalt iPhone',
       channel: 'emulator',
       state: 'online',
@@ -128,7 +129,7 @@ describe('PhoneSettingsCardController first-open auto-detect', () => {
     expect(listing.refreshCount).toBe(1)
 
     listing.scriptNext(listingOf([], [{
-      id: 'CB65BAB1-E388-4C27-B9AB-81CFB37920C3',
+      id: phoneDeviceIdOf('CB65BAB1-E388-4C27-B9AB-81CFB37920C3'),
       name: 'DSH Gestalt iPhone',
       channel: 'emulator',
       state: 'offline',
@@ -143,7 +144,7 @@ describe('PhoneSettingsCardController first-open auto-detect', () => {
     expect(listing.refreshCount).toBe(2)
 
     listing.scriptNext(listingOf([
-      { id: 'emulator-5554', name: 'Pixel_6_API_35', channel: 'emulator', state: 'online', online: true },
+      { id: phoneDeviceIdOf('emulator-5554'), name: 'Pixel_6_API_35', channel: 'emulator', state: 'online', online: true },
     ]))
     await vi.advanceTimersByTimeAsync(PHONE_LISTING_POLL_INTERVAL_MS)
     expect(listing.refreshCount).toBe(3)
@@ -228,7 +229,7 @@ describe('PhoneSettingsCardController', () => {
       readyScope(false).scope, MISSING_PHONE_ENVIRONMENT_SOURCE, undefined, runtime,
     )
     expect(runtimeListeners.size).toBe(1)
-    expect(() => { controller.inject().openDevice('offline') }).not.toThrow()
+    expect(() => { controller.inject().openDevice(phoneDeviceIdOf('offline')) }).not.toThrow()
     controller.setSource(MISSING_PHONE_ENVIRONMENT_SOURCE)
     expect(runtimeListeners.size).toBe(1)
     controller.dispose()
@@ -338,7 +339,7 @@ describe('PhoneSettingsCardController', () => {
       },
     }
     const selectedSimulator = {
-      id: 'DFB02630-3444-4FB0-B746-0A3C4509CB72',
+      id: phoneDeviceIdOf('DFB02630-3444-4FB0-B746-0A3C4509CB72'),
       name: 'iPhone 17 Pro',
       channel: 'emulator' as const,
       state: 'online',
@@ -373,7 +374,7 @@ describe('PhoneSettingsCardController', () => {
         runtime: { kind: 'ready', source: 'managed' },
         view: {
           kind: 'ready',
-          devices: [{ id: 'DFB02630-3444-4FB0-B746-0A3C4509CB72', online: true }],
+          devices: [{ id: phoneDeviceIdOf('DFB02630-3444-4FB0-B746-0A3C4509CB72'), online: true }],
         },
       })
     })

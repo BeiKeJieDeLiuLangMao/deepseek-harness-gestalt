@@ -9,6 +9,7 @@ import InvariantRegistry from '@deepseek-ai/dsh-invariants'
 import {
   PHONE_TAB_TITLE, type PhoneTabDescriptor, type PhoneTabEnvironment, type PhoneTabOptions,
 } from '../src/client/registry.ts'
+import { phoneDeviceIdOf } from '../src/client/phone-device-id.ts'
 import * as PhoneInvariant from '../src/invariant.ts'
 
 const probe = vi.hoisted(() => ({ options: undefined as PhoneTabOptions | undefined }))
@@ -56,7 +57,7 @@ describe('ui-phone invariant wiring', () => {
     const stopGate = options.gate.subscribe(() => {})
     expect(stopGate).toBeTypeOf('function')
     stopGate()
-    expect(() => options.createController('emulator-5554')).toThrow('never renders a tab body')
+    expect(() => options.createController(phoneDeviceIdOf('emulator-5554'))).toThrow('never renders a tab body')
     await fiber.dispose()
   })
 })

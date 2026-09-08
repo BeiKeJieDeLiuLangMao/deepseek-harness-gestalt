@@ -8,6 +8,7 @@ import { createListingPhoneEnvironmentSource } from '../src/client/phone-environ
 import { PHONE_LISTING_POLL_INTERVAL_MS } from '../src/client/phone-listing-poll.ts'
 import { MOBILECLI_MISSING_ERROR, PROBE_FAILED_ERROR } from '../src/client/phone-environment.ts'
 import { PhoneStreamHttpError } from '../src/client/phone-stream-client.ts'
+import { phoneDeviceIdOf } from '../src/client/phone-device-id.ts'
 import { FakeListingSource, listingOf } from './phone-fakes.client.ts'
 import type { PhoneDeviceSummary } from '../src/client/registry.ts'
 
@@ -17,16 +18,16 @@ afterEach(() => {
 })
 
 const ANDROID_EMULATOR: PhoneDeviceSummary = {
-  id: 'emulator-5554', name: 'Pixel_6_API_35', channel: 'emulator', state: 'online', online: true,
+  id: phoneDeviceIdOf('emulator-5554'), name: 'Pixel_6_API_35', channel: 'emulator', state: 'online', online: true,
 }
 const ANDROID_USB: PhoneDeviceSummary = {
-  id: 'R3CN30', name: 'SM-S9310', channel: 'usb', state: 'online', online: true,
+  id: phoneDeviceIdOf('R3CN30'), name: 'SM-S9310', channel: 'usb', state: 'online', online: true,
 }
 const IOS_SIMULATOR: PhoneDeviceSummary = {
-  id: 'iPhone-16', name: 'iPhone 16 Pro', channel: 'emulator', state: 'offline', online: false,
+  id: phoneDeviceIdOf('iPhone-16'), name: 'iPhone 16 Pro', channel: 'emulator', state: 'offline', online: false,
 }
 const IOS_USB: PhoneDeviceSummary = {
-  id: 'UDID-9', name: 'iPhone', channel: 'usb', state: 'unauthorized', online: false,
+  id: phoneDeviceIdOf('UDID-9'), name: 'iPhone', channel: 'usb', state: 'unauthorized', online: false,
 }
 
 function deferred() {
@@ -167,7 +168,7 @@ describe('createListingPhoneEnvironmentSource', () => {
   it('shows 已停止 after a later listing commit without calling redetect', async () => {
     const listing = new FakeListingSource()
     listing.scriptNext(listingOf([], [{
-      id: 'CB65BAB1-E388-4C27-B9AB-81CFB37920C3',
+      id: phoneDeviceIdOf('CB65BAB1-E388-4C27-B9AB-81CFB37920C3'),
       name: 'DSH Gestalt iPhone',
       channel: 'emulator',
       state: 'online',
@@ -185,7 +186,7 @@ describe('createListingPhoneEnvironmentSource', () => {
     expect(listing.refreshCount).toBe(1)
 
     listing.scriptNext(listingOf([], [{
-      id: 'CB65BAB1-E388-4C27-B9AB-81CFB37920C3',
+      id: phoneDeviceIdOf('CB65BAB1-E388-4C27-B9AB-81CFB37920C3'),
       name: 'DSH Gestalt iPhone',
       channel: 'emulator',
       state: 'offline',
@@ -206,7 +207,7 @@ describe('createListingPhoneEnvironmentSource', () => {
     vi.useFakeTimers()
     const listing = new FakeListingSource()
     listing.scriptNext(listingOf([], [{
-      id: 'CB65BAB1-E388-4C27-B9AB-81CFB37920C3',
+      id: phoneDeviceIdOf('CB65BAB1-E388-4C27-B9AB-81CFB37920C3'),
       name: 'DSH Gestalt iPhone',
       channel: 'emulator',
       state: 'online',
@@ -223,7 +224,7 @@ describe('createListingPhoneEnvironmentSource', () => {
     const extra = source.subscribe(() => {})
     extra()
     listing.scriptNext(listingOf([], [{
-      id: 'CB65BAB1-E388-4C27-B9AB-81CFB37920C3',
+      id: phoneDeviceIdOf('CB65BAB1-E388-4C27-B9AB-81CFB37920C3'),
       name: 'DSH Gestalt iPhone',
       channel: 'emulator',
       state: 'offline',

@@ -8,12 +8,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
+import type { DeviceId } from '@deepseek-ai/dsh-phone-runtime'
 import { PhoneSettingsCard } from '../src/client/PhoneSettingsCard.tsx'
 import { PhoneSettingsSection } from '../src/client/PhoneSettingsSection.tsx'
 import type { PhoneSettingsSectionProps } from '../src/client/PhoneSettingsSection.tsx'
 import type { PhoneEnvironmentView } from '../src/client/phone-environment.ts'
 import { zh } from '../src/client/locales.ts'
 import type { PhoneSettingsCardState } from '../src/client/phone-settings-controller.ts'
+import { phoneDeviceIdOf } from '../src/client/phone-device-id.ts'
 import { ANDROID_INSTALL_PLATFORM_TOOLS } from '../src/client/phone-wizard-commands.ts'
 
 afterEach(() => {
@@ -27,7 +29,7 @@ function renderCard(view: PhoneEnvironmentView, rest: {
   onRedetect?: () => void
   onCopy?: (command: string) => void
   onNextAction?: (kind: string) => void
-  onOpenDevice?: (deviceId: string) => void
+  onOpenDevice?: (deviceId: DeviceId) => void
 } = {}) {
   render(
     <PhoneSettingsCard
@@ -137,28 +139,28 @@ describe('PhoneSettingsCard six states', () => {
       availableCount: 3,
       devices: [
         {
-          id: 'emulator-5554',
+          id: phoneDeviceIdOf('emulator-5554'),
           name: 'Pixel_6_API_35',
           group: 'android-emulator',
           online: true,
           meta: 'Android 15 · 运行中 · serial emulator-5554',
         },
         {
-          id: 'Galaxy_A54_API_34',
+          id: phoneDeviceIdOf('Galaxy_A54_API_34'),
           name: 'Galaxy_A54_API_34',
           group: 'android-emulator',
           online: false,
           meta: 'Android 14 · 已停止',
         },
         {
-          id: 'iphone-16-pro',
+          id: phoneDeviceIdOf('iphone-16-pro'),
           name: 'iPhone 16 Pro',
           group: 'ios-simulator',
           online: true,
           meta: 'iOS 18.4 · 运行中',
         },
         {
-          id: 'R3CN30',
+          id: phoneDeviceIdOf('R3CN30'),
           name: 'SM-S9310（Galaxy S24）',
           group: 'usb',
           online: true,
@@ -267,7 +269,7 @@ describe('PhoneSettingsCard six states', () => {
       kind: 'ready',
       availableCount: 1,
       devices: [{
-        id: 'R3CN30',
+        id: phoneDeviceIdOf('R3CN30'),
         name: 'SM-S9310',
         group: 'usb',
         online: true,
@@ -398,7 +400,7 @@ describe('PhoneSettingsSection', () => {
     store.set({ ...store.getSnapshot(), platforms: { android: { kind: 'deferred' }, ios: {
       kind: 'ready', plan: { ...plan, runtime: {
         identifier: 'runtime-26-0', name: 'iOS 26.0', version: '26.0', available: true,
-      } }, deviceId: '8294A429-4C99-411F-A46D-0AD9499B7FDD', running: true,
+      } }, deviceId: phoneDeviceIdOf('8294A429-4C99-411F-A46D-0AD9499B7FDD'), running: true,
     } } })
     rendered.rerender(<PhoneSettingsSection {...props} />)
     expect(screen.getByText(/MJPEG 实时画面/)).toBeTruthy()
