@@ -36,6 +36,7 @@ function selectReadOnlySubagent(owner: ComposerChainProps): SubagentReadOnlyMatc
   const subagent = owner.session?.subagent
   if (subagent === undefined || subagent === null) return null
   if (subagent.address.mode === 'one-shot') return { reason: 'one-shot' }
+  if (owner.session?.promptRoute === 'feature') return null
   // The parent catalog is fetched ahead of the selected Session. Until it
   // resolves, leave the normal disabled composer in place instead of briefly
   // claiming that the parent is offline.

@@ -55,6 +55,7 @@ function sessionSnapshot(openState: SessionSnapshot['openState']): SessionSnapsh
     pendingSubmissions: [],
     running: false,
     subagent: null,
+    promptRoute: 'session',
     removed: false,
     openState,
     openError: null,

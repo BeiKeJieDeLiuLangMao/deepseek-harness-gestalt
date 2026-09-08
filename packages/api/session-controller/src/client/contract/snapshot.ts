@@ -68,6 +68,8 @@ export interface SessionSnapshot {
   /** Local prompt-submission echoes not yet observed as durable events or queue occurrences. */
   readonly pendingSubmissions: readonly PendingSubmission[]
   readonly running: boolean
+  /** Current prompt dispatcher, derived from registered feature admission and the retained subagent address. */
+  readonly promptRoute: 'session' | 'subagent' | 'feature'
   readonly subagent: {
     readonly address: SubagentAddress
     /** Absent until the direct-parent catalog resolves. */

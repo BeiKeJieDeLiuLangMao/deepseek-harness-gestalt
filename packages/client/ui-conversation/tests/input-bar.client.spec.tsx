@@ -67,6 +67,7 @@ interface BenchOptions {
   draft?: string
   running?: boolean
   subagent?: Exclude<SessionSnapshot['subagent'], null>
+  promptRoute?: SessionSnapshot['promptRoute']
   disabled?: boolean
   inert?: boolean
   blocked?: { readonly reason: string }
@@ -113,6 +114,7 @@ function bench(over?: BenchOptions) {
   const session = createSnapshotStore<SessionSnapshot>(snapshotOf({
     running: over?.running ?? false,
     subagent: over?.subagent ?? null,
+    promptRoute: over?.promptRoute ?? 'session',
     removed: over?.disabled ?? false,
     promptError: over?.promptError ?? null,
     queue: over?.queue ?? [],
@@ -796,6 +798,24 @@ describe('running and lock semantics', () => {
     expect(sink).toHaveBeenCalledWith('后续消息', [], 'queue', expect.any(AbortSignal))
     fireEvent.click(interruptButton!)
     expect(stop).toHaveBeenCalledTimes(1)
+  })
+
+  it('routes a cold-parent continuation through its feature owner and locks after revocation', () => {
+    const { button, textarea, sink, session } = bench({
+      draft: 'Continue the restored child',
+      promptRoute: 'feature',
+      subagent: {
+        address: { parentSessionId: 'parent' as SessionId, childSessionId: SID, mode: 'continuable' },
+        parentAvailable: false,
+      },
+    })
+    expect(textarea.getAttribute('aria-disabled')).not.toBe('true')
+    expect(button.disabled).toBe(false)
+    fireEvent.click(button)
+    expect(sink).toHaveBeenCalledWith('Continue the restored child', [], 'queue', expect.any(AbortSignal))
+    act(() => { session.set({ ...session.getSnapshot(), promptRoute: 'subagent' }) })
+    expect(textarea.getAttribute('aria-disabled')).toBe('true')
+    expect(button.disabled).toBe(true)
   })
 
   it('parent-offline running continuable locks Send but keeps independent Stop usable', () => {

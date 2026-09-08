@@ -124,11 +124,12 @@ describe('apply', () => {
     const owner = (
       subagent: SessionSnapshot['subagent'] | undefined,
       running = false,
+      promptRoute: SessionSnapshot['promptRoute'] = 'subagent',
     ): ComposerChainProps => ({
       sessionId: subagent?.address.childSessionId,
       session: subagent === undefined
         ? undefined
-        : ({ subagent, running } as SessionSnapshot),
+        : ({ subagent, running, promptRoute } as SessionSnapshot),
       pendingInteraction: undefined,
     })
     expect(select(owner(undefined))).toBeNull()
@@ -145,5 +146,8 @@ describe('apply', () => {
     // A RUNNING parent-offline continuable yields the default composer, whose
     // disabled input still carries the primary Stop; stopped, it takes back over.
     expect(select(owner({ address, parentAvailable: false }, true))).toBeNull()
+    expect(select(owner({ address, parentAvailable: false }, false, 'feature'))).toBeNull()
+    expect(select(owner({ address: { ...address, mode: 'one-shot' }, parentAvailable: false }, false, 'feature')))
+      .toEqual({ reason: 'one-shot' })
   })
 })

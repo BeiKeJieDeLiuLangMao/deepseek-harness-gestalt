@@ -33,6 +33,7 @@ const sessionState: SessionState = {
   pendingSubmissions: [],
   running: false,
   subagent: null,
+  promptRoute: 'session',
   removed: false,
   openState: 'open',
   openError: null,

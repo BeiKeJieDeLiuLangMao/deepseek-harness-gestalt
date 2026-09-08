@@ -43,6 +43,8 @@ The Session object also carries local submission echoes: `session.beginSubmissio
 
 -----
 
+`SessionSnapshot.promptRoute` identifies the current `session`, `subagent`, or registered `feature` prompt dispatcher. Admission registration, replacement, and revocation refresh it without changing the subagent address or `parentAvailable`; registration does not grant Host permissions. A received `member-question/received` brief makes a Session nonblank before any model turn. Projection state version 2 refolds older Session-list metadata caches.
+
 <a id="configuration"></a>
 ## Configuration
 

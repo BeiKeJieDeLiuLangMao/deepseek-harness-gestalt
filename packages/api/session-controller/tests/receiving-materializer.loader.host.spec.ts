@@ -17,6 +17,7 @@ import LocalAttachmentStore from '@deepseek-ai/dsh-attachment-local'
 import LocalFileReferenceService from '@deepseek-ai/dsh-file-reference-local'
 import LlmRuntime from '@deepseek-ai/dsh-llm'
 import FileMemberQuestionReceiver from '@deepseek-ai/dsh-member-question-receiver'
+import { applySessionListMetadata } from '../src/list.ts'
 import type { PlatformAccountId } from '@deepseek-ai/dsh-platform-account'
 import {
   parseCompanionOperationId,
@@ -24,7 +25,7 @@ import {
   parseMemberQuestionId,
   parseMemberQuestionProjectId,
 } from '@deepseek-ai/dsh-remote-protocol'
-import SessionStore, { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
+import SessionStore, { SessionId, SessionLogOffset, type SessionEvent } from '@deepseek-ai/dsh-session'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import SqliteSessionQueryEngine from '@deepseek-ai/dsh-session-query-sqlite'
@@ -226,6 +227,20 @@ describe('receiving materializer through a real Loader composition', () => {
     const sessionId = arrived.receivingSessionId as unknown as SessionId
     const events = ctx.sessions.get(sessionId)?.snapshotEvents() ?? []
     expect(events.filter(event => event.type === 'member-question/received')).toHaveLength(1)
+    const received = events.find(event => event.type === 'member-question/received')!
+    expect(applySessionListMetadata({ blank: true, lastPromptAt: null }, received))
+      .toEqual({ blank: false, lastPromptAt: null })
+    const listed = await ctx.sessionController.list({}, new AbortController().signal)
+    expect(listed.items.find(item => item.sessionId === sessionId)?.blank).toBe(false)
+    const oldCheckpoint = {
+      sessionListMetadata: { ver: 1, seq: received.seq, val: { blank: true, lastPromptAt: null } },
+    }
+    expect(ctx.sessionProjections.restoreFloor(oldCheckpoint)).toBe(0)
+    const restored = ctx.sessionProjections.restore(
+      oldCheckpoint, events, SessionLogOffset(0), ctx.sessions.get(sessionId)!.header, SessionLogOffset(0),
+    )
+    expect(restored.snapshot.values.sessionListMetadata).toEqual({ blank: false, lastPromptAt: null })
+    expect(restored.checkpoint.sessionListMetadata?.ver).toBe(2)
     expect(events.filter(event => event.type === 'agent/inbox/spliced'
       && event.data.inserted.some(message => message.id === `member-question-brief:${envelope.operation.questionId}`)))
       .toHaveLength(1)

@@ -1,0 +1,42 @@
+- img
+- text: Use the selected alternate route for this…
+- button "Close":
+  - img
+- button "New tab":
+  - img
+- banner:
+  - tablist:
+    - tab "Chat" [selected]
+    - tab "Trajectory"
+- text: Use the selected alternate route for this first Side Chat prompt. {{clock}}
+- button "Copy":
+  - img
+- button "Thought for a while":
+  - text: Thought for a while
+  - img
+- button "System prompt":
+  - img
+  - img
+  - text: System prompt
+- paragraph: The first Side Chat request used its selected alternate model.
+- button "Copy":
+  - img
+- button "Good response":
+  - img
+- button "Bad response":
+  - img
+- button "Branch into a new conversation":
+  - img
+- button "Ran for {{duration}}":
+  - img
+  - text: Ran for {{duration}}
+- text: {{clock}}
+- textbox "Message or run a task... / commands, @ files or sessions"
+- button "Commands":
+  - img
+- 'button "Access mode, current: Read Only"': Read Only
+- button "Select model, current SideChat Test B":
+  - text: SideChat Test B
+  - img
+- button "Send message" [disabled]
+- text: 2 turns · 2 steps LLM {{duration}} TTFT avg {{duration}} · {{throughput}} tok/s Cache hit 99% Input 7.8K tok · Output 79 tok

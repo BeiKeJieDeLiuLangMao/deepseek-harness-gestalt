@@ -669,7 +669,7 @@ describe('Session Client admission dispatch', () => {
         activity: 'inactive',
         hasChildren: false,
       }],
-      parentAvailable: true,
+      parentAvailable: false,
     }))
     await svc.refresh()
     await svc.refreshSubagents(parentId)
@@ -680,6 +680,9 @@ describe('Session Client admission dispatch', () => {
     })
 
     const child = svc.binding(childId)!
+    expect(child.session.getSnapshot()).toMatchObject({
+      promptRoute: 'subagent', subagent: { parentAvailable: false },
+    })
     expect(svc.list.getSnapshot().byId[childId]?.displayTitle).toBe('Side Chat')
     expect(svc.resolveAdmission(childId)).toBeUndefined()
     expect(svc.commandCatalogSessionId(childId)).toBeUndefined()
@@ -698,6 +701,9 @@ describe('Session Client admission dispatch', () => {
       prompt: promptMock,
       cancel: cancelMock,
     })
+    expect(child.session.getSnapshot()).toMatchObject({
+      promptRoute: 'feature', subagent: { parentAvailable: false },
+    })
     api.calls.length = 0
 
     await child.session.prompt([{ type: 'text', text: 'owned child' }], 'queue')
@@ -711,6 +717,9 @@ describe('Session Client admission dispatch', () => {
       || c.method === 'session.cancel',
     )).toEqual([])
     drop()
+    expect(child.session.getSnapshot()).toMatchObject({
+      promptRoute: 'subagent', subagent: { parentAvailable: false },
+    })
   })
 
   it('rejects admission registration after ClientSessions disposal', async () => {

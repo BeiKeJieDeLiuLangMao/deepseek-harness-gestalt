@@ -495,12 +495,11 @@ export class Session implements SessionFace {
   }
 
   /**
-   * Recompute the displayed history window after admission register or revoke.
-   * No-op while the Session has no installed journal.
+   * Refresh the prompt dispatcher and displayed history after admission register or revoke.
+   * A Session without a journal still publishes its current dispatcher.
    */
   applyHistoryScope(): void {
-    if (this.openState === 'cold' || this.openState === 'error') return
-    this.publishVisibleWindow()
+    if (this.openState !== 'cold' && this.openState !== 'error') this.publishVisibleWindow()
     this.notifier.markDirty()
   }
 
@@ -862,6 +861,9 @@ export class Session implements SessionFace {
       queue: this.queueMirror.snapshot(),
       pendingSubmissions: this.pendingSubmissions,
       running: this.running,
+      promptRoute: this.options.admission?.(this.sessionId) !== undefined
+        ? 'feature'
+        : this.address === undefined ? 'session' : 'subagent',
       subagent: this.address === undefined
         ? null
         : {

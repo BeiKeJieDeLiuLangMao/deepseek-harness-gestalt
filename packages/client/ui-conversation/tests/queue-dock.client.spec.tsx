@@ -38,6 +38,7 @@ function snapshotWith(queue: QueuedMessage[]): SessionSnapshot {
   return {
     sessionId: SID, queue, running: true, removed: false, openState: 'open', openError: null,
     hasMore: false, loadingOlder: false, promptError: null, blank: false, subagent: null,
+    promptRoute: 'session',
     pendingSubmissions: [],
     lastAgentError: null, promptAttempted: true, awaitingFirstTurn: false,
   }

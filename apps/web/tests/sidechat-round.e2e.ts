@@ -1,4 +1,5 @@
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import type { Browser, Page } from 'playwright'
@@ -25,6 +26,7 @@ import {
 const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/sidechat-round', import.meta.url))
 const EXPECTED = join(SNAPSHOT_DIR, 'ui.expected.md')
 const RESTORED_EXPECTED = join(SNAPSHOT_DIR, 'restored.expected.md')
+const COLD_RESTORED_EXPECTED = join(SNAPSHOT_DIR, 'cold-restored.expected.md')
 const PICKER_EXPECTED = join(SNAPSHOT_DIR, 'picker.expected.md')
 const FLOAT_EXPECTED = join(SNAPSHOT_DIR, 'float.expected.md')
 const DESCENDANT_EXPECTED = join(SNAPSHOT_DIR, 'descendant.expected.md')
@@ -440,6 +442,7 @@ describe.skipIf(MODE === 'record')('web e2e: Side Chat through the shipped workb
       'picker.expected.md',
       'restored-child.jsonl',
       'restored.expected.md',
+      'cold-restored.expected.md',
       'ui.expected.md',
     ])
   })
@@ -450,11 +453,15 @@ describe.skipIf(MODE === 'record')('web e2e: Side Chat provisional model authori
   let browser: Browser
   let page: Page
   let tripwire: ReturnType<typeof watchConsole>
+  let harnessHome: string
+  let scaffoldClosed = false
   const adapter = new AlternateSideChatAdapter()
   const starts: Record<string, unknown>[] = []
 
   beforeAll(async () => {
+    harnessHome = await mkdtemp(join(tmpdir(), 'dsh-sidechat-cold-web-'))
     scaffold = await launchWebScaffold({
+      harnessHome,
       replayFixture: sideChatRoundReplayConfig.file,
       compareReplaySession: false,
     })
@@ -471,12 +478,16 @@ describe.skipIf(MODE === 'record')('web e2e: Side Chat provisional model authori
     })
     await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
-    await connectFreshWorkspace(page, scaffold.workspaceCwd)
+    await connectFreshWorkspace(page, harnessHome)
   }, 120_000)
 
   afterAll(async () => {
     await browser?.close()
-    await scaffold?.close()
+    try {
+      if (!scaffoldClosed) await scaffold?.close()
+    } finally {
+      if (harnessHome !== undefined) await rm(harnessHome, { recursive: true, force: true })
+    }
   })
 
   it('keeps model B through post-selection inspection and uses it for the first prompt', async () => {
@@ -534,5 +545,66 @@ describe.skipIf(MODE === 'record')('web e2e: Side Chat provisional model authori
     })
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
-  }, 90_000)
+
+    await panel.getByRole('button', { name: 'Access mode, current: Workspace Write', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Read Only', exact: true }).click()
+    await panel.getByRole('button', { name: 'Access mode, current: Read Only', exact: true }).waitFor()
+    await expect.poll(() => latestPermissionPreset(child?.session.ownEvents() ?? [])).toBe('read-only')
+    const childTab = panel.locator('[draggable="true"][title]')
+      .filter({ has: page.getByRole('button', { name: 'Close', exact: true }) })
+    expect(await childTab.count()).toBe(1)
+    const childTabTitle = await childTab.getAttribute('title')
+    if (childTabTitle === null) throw new Error('the published Side Chat tab has no title')
+    const persistenceRoot = join(harnessHome, 'session-backup')
+    const storageRoot = join(harnessHome, 'storage-backup')
+    await browser.close()
+    await scaffold.closeWithStateBackup({ persistenceRoot, storageRoot })
+    scaffoldClosed = true
+    scaffold = await launchWebScaffold({ harnessHome, persistenceSeed: persistenceRoot, storageSeed: storageRoot })
+    scaffoldClosed = false
+    scaffold.ctx.effect(
+      () => scaffold.ctx.llm.registerAdapter([ALTERNATE_PROVIDER], adapter),
+      'web e2e: cold Side Chat alternate model',
+    )
+    expect(scaffold.ctx.agents.get(parentId)?.id, 'parent Agent remains cold').toBeUndefined()
+    expect(scaffold.ctx.agents.get(childId)?.id, 'child Agent starts cold').toBeUndefined()
+    expect((await scaffold.ctx.subagents.remoteExportList(parentId, new AbortController().signal)).parentAvailable)
+      .toBe(false)
+    browser = await chromium.launch()
+    page = await newEnglishPage(browser, 800)
+    tripwire = watchConsole(page)
+    await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
+    const parentRow = page.locator(`[data-session-row="${parentId}"]`)
+    const workspaceRow = page.getByRole('treeitem').first()
+    await workspaceRow.waitFor({ timeout: 15_000 })
+    if (await workspaceRow.getAttribute('aria-expanded') === 'false') await workspaceRow.click()
+    await parentRow.click({ timeout: 15_000 })
+    const restoredPanel = page.locator('[data-dsh-panel]:not([data-dsh-bottom-panel]):visible')
+    if (!await restoredPanel.isVisible()) {
+      await page.getByRole('button', { name: 'Expand sidebar', exact: true }).click()
+    }
+    const restoredTab = restoredPanel.getByTitle(childTabTitle, { exact: true })
+      .filter({ has: page.getByRole('button', { name: 'Close', exact: true }) })
+    await restoredTab.click({ timeout: 15_000 })
+    await restoredPanel.getByRole('button', { name: `Select model, current ${ALTERNATE_MODEL_NAME}`, exact: true })
+      .waitFor({ timeout: 15_000 })
+    await restoredPanel.getByRole('button', { name: 'Access mode, current: Read Only', exact: true }).waitFor()
+    await compareOrRefreshGolden(
+      COLD_RESTORED_EXPECTED,
+      await captureStableAria(page, '[data-dsh-panel]', scaffold.workspaceCwd),
+      MODE,
+    )
+    const resumed = scaffold.whenTurnSettled()
+    const restoredComposer = restoredPanel.locator('[data-composer-input][contenteditable="true"]:visible')
+    await restoredComposer.fill('Continue the same child after cold restoration.')
+    await restoredComposer.press('Enter')
+    expect(await resumed).toBe(childId)
+    await expect.poll(() => adapter.requests.length).toBe(2)
+    expect(adapter.requests[1]).toMatchObject({ provider: ALTERNATE_PROVIDER, model: ALTERNATE_MODEL })
+    const resumedChild = scaffold.ctx.agents.get(childId)
+    expect(resumedChild?.session.ownEvents().filter(event => event.type === 'turn/end')).toHaveLength(2)
+    expect(latestPermissionPreset(resumedChild?.session.ownEvents() ?? [])).toBe('read-only')
+    expect(tripwire.pageErrors).toEqual([])
+    expect(tripwire.warnings).toEqual([])
+  }, 120_000)
 })

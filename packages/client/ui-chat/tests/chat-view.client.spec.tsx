@@ -70,6 +70,7 @@ function sessionSnapshot(overrides: Partial<SessionSnapshot> = {}): SessionSnaps
     promptError: null,
     blank: false,
     subagent: null,
+    promptRoute: 'session',
     lastAgentError: null,
     promptAttempted: true,
     awaitingFirstTurn: false,

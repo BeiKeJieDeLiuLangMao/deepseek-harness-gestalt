@@ -33,7 +33,9 @@ Rows display mode plus `running`/`inactive` activity and an optional log-backed 
 
 ### Continuing a conversation
 
-A continuable child with a live parent keeps the ordinary input chrome: typing and Send stay available while the child runs because every follow-up joins the child's FIFO inbox, and an independent Stop routes through `subagents/interruptByParent`. A continuable child whose exact parent is unavailable and which is not running elects a read-only composer explaining the recovery path; while such a child still runs, the selector yields to the ordinary composer with input and Send disabled but its independent Stop usable.
+A continuable child with a live parent keeps the ordinary input chrome: typing and Send stay available while the child runs because every follow-up joins the child's FIFO inbox, and an independent Stop routes through `subagents/interruptByParent`. A continuable child without a feature admission owner whose exact parent is unavailable and which is not running elects a read-only composer explaining the recovery path; while such a child still runs, the selector yields to the ordinary composer with input and Send disabled but its independent Stop usable.
+
+A continuable Session routed to a registered feature admission keeps that owner’s composer while its parent is offline. One-shot Sessions remain read-only; revoking the admission restores the ordinary parent-availability check.
 
 ### The `@` reference source
 
@@ -59,7 +61,7 @@ Token totals sum the four disjoint `tokenUsage` buckets. Duration sums completed
 
 ### Composer election
 
-One-shot children always elect a read-only composer. A continuable child elects one only when its exact parent is unavailable and the child is not running; otherwise the ordinary composer's Session routes prompts through `subagents/prompt`. This package never receives host context or calls a model-facing tool.
+One-shot children always elect a read-only composer. A continuable child without a feature admission owner elects one only when its exact parent is unavailable and the child is not running; otherwise Session Controller uses its current prompt dispatcher. This package never receives host context or calls a model-facing tool.
 
 </details>
 

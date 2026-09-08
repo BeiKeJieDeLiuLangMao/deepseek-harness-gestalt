@@ -62,6 +62,7 @@ function sessionSnapshot(): SessionSnapshot {
     promptError: null,
     blank: false,
     subagent: null,
+    promptRoute: 'session',
     lastAgentError: null,
     promptAttempted: true,
     awaitingFirstTurn: false,

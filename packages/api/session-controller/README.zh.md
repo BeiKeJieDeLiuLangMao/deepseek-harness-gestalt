@@ -43,6 +43,8 @@ Session 对象还承载本地提交回显：`session.beginSubmission` 在调用�
 
 -----
 
+`SessionSnapshot.promptRoute` 标识当前 `session`、`subagent` 或已注册 `feature` 提交分派方。准入注册、替换与撤销会刷新它，不改变 subagent 地址或 `parentAvailable`；注册不授予 Host 权限。收到 `member-question/received` 简报后，Session 在模型轮次开始前即为非空。投影状态版本 2 会重新折叠旧的 Session 列表元数据缓存。
+
 <a id="configuration"></a>
 ## 配置
 
