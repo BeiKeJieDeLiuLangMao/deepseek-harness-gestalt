@@ -15,7 +15,7 @@ Own one isolated Desktop Electron per user goal. Automated lanes such as `pnpm -
 
 3. **Refuse a second instance.** Scan for other Desktop test processes that still belong to this goal (same scratch root, same memoed `DSH_HOME`, or the same ticket/PR Electron). Stop them before creating a replacement. Complete when this goal has zero live test Electron / Host / PostgreSQL / sidecar processes.
 
-4. **Choose headed only for looking.** Agent self-test, bug reproduction, prototype checks, fidelity comparison, and the experience-route walk run headless. Start a visible window only when asking the user to look, click, accept, or review a prototype or product that already passed the headless check, including a complete experience-route walk when one exists. Complete when the chosen mode is `headless` or `headed` and matches that rule.
+4. **Choose the least disruptive computer-use mode.** Product GUI self-test, bug reproduction, prototype checks, fidelity comparison, and the experience-route walk use an existing or authorized Codex session that has callable computer-use tools; a Codex model or provider name without those tools is insufficient and does not authorize creating a user-owned task. Prefer background control of the exact isolated application, then an existing headless route, and use headed foreground control only when a required product surface cannot run through either earlier mode. Treat support as proven only after the selected mode captures the actual application, sends harmless user-level input, and observes the resulting UI without direct DOM or Electron IPC scripting. An unknown mode gets one bounded capability probe. A missing bridge marks that mode unavailable for the scenario; try the next mode without substituting scripted E2E, and do not expand the delivery to build a bridge unless its accepted scope includes that infrastructure. Report a blocker only if no mode can cover the required surface. Complete when the candidate mode and probe plan are recorded.
 
 5. **Choose the operated Platform config from the scenario.** Desktop `build-main.mjs` requires `DSH_DESKTOP_OPERATED_PLATFORM_CONFIG` or an argv path; `pnpm gestalt:dev` does not supply one. Pick the config before launch:
 
@@ -24,9 +24,9 @@ Own one isolated Desktop Electron per user goal. Automated lanes such as `pnpm -
 
    Record the chosen path in the memo. Do not wait for the user to ask for a login. Complete when the chosen file exists and matches that rule.
 
-6. **Create a fresh scratch and inherit the installed provider.** Make a new `0700` scratch root with `dsh-home` and `electron-user-data`. Blind-copy only `settings.yaml` and `.credentials.yaml` from the normal DSH Home, following `copyModelConfiguration` in `scripts/web-acceptance.ts`: regular files, no symlinks, target mode `0600`. Copy no session, workspace, browser, or Ego state. Do not invent provider models. If those two files are absent, stop and report the credential blocker. Complete when the scratch exists, the copied files are owner-only, and the instance will load that installed provider catalog.
+6. **Create a fresh scratch and copy model configuration only when required.** Make a new `0700` scratch root with `dsh-home` and `electron-user-data`. A keyless UI probe copies no provider configuration. When the accepted scenario requires a real model call and the user explicitly authorized it, blind-copy only `settings.yaml` and `.credentials.yaml` from the normal DSH Home, following `copyModelConfiguration` in `scripts/web-acceptance.ts`: regular files, no symlinks, target mode `0600`. Copy no session, workspace, browser, or Ego state. Do not invent provider models. Missing authorization or either file blocks only the real-model scenario, not a keyless control-path probe. Complete when the scratch exists and every copied file is owner-only.
 
-7. **Start exactly one instance and write the memo.** Launch Desktop against that scratch `DSH_HOME` and user-data, passing the chosen Platform config into `build-main.mjs`. Record every live PID, port, directory, and Platform config path in `.agents/local/runtime-memo.json` without secrets. Complete when one instance is up and the memo's `desktop` record matches it.
+7. **Start exactly one instance and prove its control path.** Launch Desktop against that scratch `DSH_HOME` and user-data, passing the chosen Platform config into `build-main.mjs`. Record the application path, served revision, every live PID, port, directory, Platform config path, selected mode, and active desktop-input owner in `.agents/local/runtime-memo.json` without secrets. On macOS, target the unique test `.app` by its absolute path when the available computer-use integration supports that selector; a shared bundle identifier is ambiguous when several builds run. Before acceptance work, capture its actual pixels and accessibility state, perform one harmless user-level action, verify the visible result, and for background mode confirm the user's foreground application did not change. Headless or virtual-display execution qualifies only when the current integration proves the same screenshot-input-result loop for this exact instance. Complete when one instance is up, one session owns its input, and the memo matches the verified control path.
 
 8. **Clear the memo on teardown.** After the user finishes, the HEAD changes, the run fails, or a replacement is required, stop the recorded processes, delete the scratch root, and remove or empty the `desktop` record. Complete when the next read of the memo cannot name a live instance.
 
@@ -34,14 +34,16 @@ Own one isolated Desktop Electron per user goal. Automated lanes such as `pnpm -
 
 | Request | Mode |
 |---|---|
-| Agent self-test, reproduce, fix, prototype check, fidelity comparison, experience-route walk, re-run before review | `headless` |
-| Ask the user to look, click, accept, or review a draft or product that already passed headless, including a complete experience-route walk | `headed` after the same cleanup |
+| Product GUI validation on macOS when exact-app capture and input preserve the user's foreground application | `background` |
+| Product GUI validation when an existing headless or virtual-display route proves exact-app screenshot, input, and result | `headless` |
+| Required native surface unavailable through background and headless computer use | `headed`, with the fallback reason and foreground duration minimized |
+| Ask the user to review a draft or product after the agent completed the route | hand off the verified isolated instance |
 
-Headed and headless both use the scratch home. Never point a test instance at the user's normal `DSH_HOME`.
+Every mode uses the scratch home. Background means the application is controlled without taking over the foreground; it does not mean headless. Never point a test instance at the user's normal `DSH_HOME`.
 
 ## Model provider
 
-A test instance that calls a model uses the provider catalog already stored in the normal DSH Home. The copy in step 5 is that catalog. Do not add fallback models, edit `route.models`, or point the instance at a fixture provider unless the user names that substitute.
+A test instance that calls a model uses the provider catalog already stored in the normal DSH Home. The authorized copy in step 6 is that catalog. Do not add fallback models, edit `route.models`, or point the instance at a fixture provider unless the user names that substitute.
 
 Print no secret values. Record only provider and model reference names in logs, memos, and pull-request text.
 
@@ -53,7 +55,10 @@ Print no secret values. Record only provider and model reference names in logs, 
 {
   "goal": "445-sub2api",
   "desktop": {
-    "mode": "headless",
+    "mode": "background",
+    "appPath": "/absolute/path/to/isolated/DeepSeek Gestalt.app",
+    "revision": "0123456789abcdef",
+    "inputOwner": "acceptance-environment",
     "pid": 12345,
     "hostPid": 12346,
     "postgresPids": [12347],
@@ -84,4 +89,4 @@ Stop recorded PIDs, then verify. Do not use a command-line substring kill that c
 
 The Sub2API Electron runner already fails if those survivors remain; agent-started instances use the same completion bar.
 
-GIF recording still follows [record-browser-gif](../record-browser-gif/SKILL.md). Browser automation still follows [ego-browser](../ego-browser/SKILL.md), which reads and writes the `ego` record in this memo. UI prototypes follow [prototype/UI.md](../prototype/UI.md) and use this skill for the headless check then the headed review. Fidelity comparison and the dedicated acceptance walk follow [the fidelity-and-acceptance-route decision](../../notes/implemented/process/2026-09-03-ui-fidelity-and-acceptance-route.md) and use this skill for one isolated instance per goal.
+Scripted unit, protocol, snapshot, and Electron CI lanes retain their existing runners and complement this product GUI evidence; they do not replace a Codex computer-use walk through the actual native route. GIF recording still follows [record-browser-gif](../record-browser-gif/SKILL.md). Web-only browser automation follows [ego-browser](../ego-browser/SKILL.md), which reads and writes the `ego` record in this memo. UI prototypes follow [prototype/UI.md](../prototype/UI.md). Fidelity comparison and the dedicated acceptance walk follow [the fidelity-and-acceptance-route decision](../../notes/implemented/process/2026-09-03-ui-fidelity-and-acceptance-route.md) and use this skill for one isolated instance per goal.

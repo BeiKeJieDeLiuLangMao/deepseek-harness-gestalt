@@ -90,15 +90,15 @@ Behaviour:
 
 Put the switcher in a single shared component. Locate it wherever shared UI lives in the project.
 
-### 5. Self-check headless, then ask for headed review
+### 5. Self-check through the real surface, then ask for review
 
 Follow [dsh-desktop-test-instance](../dsh-desktop-test-instance/SKILL.md):
 
-1. Start one isolated instance headless, with mock data for the new function.
-2. Walk every `?variant=` key. Confirm the host chrome is the real page, the new region uses existing components, and no caption or switcher sits inside the draft.
-3. Only after that check passes, start a headed instance and ask the user to review. Surface the URL and the `?variant=` keys.
+1. For a native Desktop prototype, use a Codex computer-use session against one isolated Electron, preferring background control, then a proven headless route, then a recorded headed fallback. A Web-only prototype may use an isolated headless browser. Mock data for the new function remains acceptable.
+2. Walk every `?variant=` key through user-level input. Confirm the host chrome is the real page, the new region uses existing components, and no caption or switcher sits inside the draft.
+3. Only after that check passes, ask the user to review the verified instance. Surface the URL and the `?variant=` keys.
 
-Do not open a headed window to decide whether the draft is ready.
+The review handoff never substitutes for the agent's completed walk.
 
 ### 6. Capture the answer and clean up
 
@@ -113,7 +113,7 @@ The full set of variants is the primary source, so it lands on the throwaway bra
 
 - **Variants that differ only in colour or copy.** That's a tweak, not a prototype. Real variants disagree about interaction.
 - **A parallel visual language.** New function, same product. Reuse the host page's components; do not restyle the chrome to make the idea clearer.
-- **Narration inside the draft.** Callouts, grilling notes, and the switcher bar are scaffolding. The headed review shows only the high-fidelity page.
-- **Headed-first self-review.** The agent checks headless; the user reviews headed.
+- **Narration inside the draft.** Callouts, grilling notes, and the switcher bar are scaffolding. Human review shows only the high-fidelity page.
+- **Human-first review.** The agent completes the real interaction walk before asking the user to review.
 - **Wiring variants to real mutations.** Read-only prototypes are fine. If a variant needs to mutate, point it at a stub. The question is "how should this interact", not "does the backend work".
 - **Promoting the prototype directly to production.** The variant code was written under prototype constraints. Rewrite it properly when you fold it in.
