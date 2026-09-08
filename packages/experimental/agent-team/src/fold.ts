@@ -19,7 +19,7 @@ export { isTeamEvent } from './persisted-events.ts'
 const numericTaskIdPattern = /^task-(\d+)$/u
 
 function assertNeverEvent(event: never): never {
-  throw new Error(`unhandled Agent Teams event type ${String((event as TeamSessionEvent).type)}`)
+  throw new Error(`unhandled Agent Teams event type ${(event as TeamSessionEvent).type}`)
 }
 
 /** Mutable internal replay state. */

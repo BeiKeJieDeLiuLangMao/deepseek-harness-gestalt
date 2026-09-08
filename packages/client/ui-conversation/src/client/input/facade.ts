@@ -20,6 +20,7 @@ import {
 import { registerPlainText } from '@lexical/plain-text'
 import { createEmptyHistoryState, registerHistory } from '@lexical/history'
 import { mergeRegister } from '@lexical/utils'
+import z from '@deepseek-ai/schemastery'
 import type {
   ArbitrateKey, ArbitrateOutcome, CommandClaim, ConsumeTokenRequest, DraftAttachmentId,
   InputActions, InputEffect, InputNotice, InputState, InputTriggerController, PickOutcome,
@@ -116,6 +117,43 @@ const EMPTY_LEXICON: ReadonlyMap<'/' | '@', readonly string[]> = new Map()
  * literal one in text would forge chip positions.
  */
 const REFERENCE_PLACEHOLDER_RE = /[\uE100-\uE11D\uFFFC]/gu
+const annotationIdSchema = z.transform(z.string().min(1).required(), brandAnnotationId).required()
+const textAnchorSchema = z.object({
+  sourceId: z.string().required(),
+  quote: z.string().required(),
+  prefix: z.string().required(),
+  suffix: z.string().required(),
+}).required()
+const draftAnnotationSchema = z.union([
+  z.object({
+    id: annotationIdSchema,
+    kind: z.const('text').required(),
+    anchor: textAnchorSchema,
+    note: z.string().required(),
+  }).required(),
+  z.object({
+    id: annotationIdSchema,
+    kind: z.const('image-pin').required(),
+    imageId: z.string().min(1).required(),
+    source: z.union(['composer', 'history'] as const).required(),
+    imageName: z.string().required(),
+    x: z.number().min(0).max(100).required(),
+    y: z.number().min(0).max(100).required(),
+    note: z.string().required(),
+  }).required(),
+])
+const persistedAnnotationDraftShape = z.object({
+  annotations: z.array(draftAnnotationSchema).required(),
+  nextSeq: z.number().step(1).min(1).max(Number.MAX_SAFE_INTEGER).required(),
+}).required() as unknown as z<PersistedAnnotationDraft>
+const persistedAnnotationDraftSchema = z.transform(persistedAnnotationDraftShape, (draft) => {
+  const reused = draft.annotations.some((annotation) => {
+    const suffix = /^annotation-(\d+)$/u.exec(annotation.id)?.[1]
+    return suffix !== undefined && Number(suffix) >= draft.nextSeq
+  })
+  if (reused) throw new Error('persisted annotation draft nextSeq reuses an existing identity')
+  return draft
+}) as unknown as z<unknown, PersistedAnnotationDraft>
 
 /** Undo merge window for contiguous typing, in ms (the old machine's mergeWindowMs). */
 const HISTORY_MERGE_DELAY_MS = 1000
@@ -665,17 +703,14 @@ export class SessionInputShell implements SessionInput {
    * Adopt a persisted annotation draft after remount.
    * @param value - stored draft; malformed values are ignored.
    */
-  restoreAnnotationDraft(value: PersistedAnnotationDraft): void {
-    if (!Array.isArray(value.annotations) || typeof value.nextSeq !== 'number') return
-    const restored: DraftAnnotation[] = []
-    for (const item of value.annotations) {
-      if (item === null || typeof item !== 'object' || !('kind' in item) || !('id' in item)) return
-      if (item.kind === 'text' && 'anchor' in item && typeof item.note === 'string') restored.push(item)
-      else if (item.kind === 'image-pin' && typeof item.imageId === 'string') restored.push(item)
-      else return
+  restoreAnnotationDraft(value: unknown): void {
+    try {
+      const restored = persistedAnnotationDraftSchema(value)
+      this.annotations = [...restored.annotations]
+      this.annotationSeq = restored.nextSeq
+    } catch {
+      return
     }
-    this.annotations = restored
-    this.annotationSeq = value.nextSeq
     this.publish()
   }
 

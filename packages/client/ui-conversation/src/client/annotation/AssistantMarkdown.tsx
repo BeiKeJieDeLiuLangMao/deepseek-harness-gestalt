@@ -47,7 +47,7 @@ export function AssistantMarkdown({
     <TextAnnotationTarget
       sourceId={sourceId}
       selectionMapRef={selectionMapRef}
-      annotations={annotations.filter(item => item.kind === 'text')}
+      annotations={annotations}
       add={(anchor, note) => annotationActions.addTextAnnotation(anchor, note)}
       t={t}
     >

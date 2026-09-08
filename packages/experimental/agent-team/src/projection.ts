@@ -23,7 +23,7 @@ const teamMessageIdSchema = z.string().min(1).transform(toTeamMessageId)
 const numericTaskIdPattern = /^task-(\d+)$/u
 
 function assertNeverEvent(event: never): never {
-  throw new Error(`unhandled Agent Teams event type ${String((event as TeamSessionEvent).type)}`)
+  throw new Error(`unhandled Agent Teams event type ${(event as TeamSessionEvent).type}`)
 }
 
 /** Current Team state selected by durable Team identity. */

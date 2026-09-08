@@ -4,7 +4,7 @@ import type {
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 
 function unstubbed(name: keyof InputActions): never {
-  throw new Error(`test input action "${String(name)}" is not stubbed`)
+  throw new Error(`test input action "${name}" is not stubbed`)
 }
 
 /**

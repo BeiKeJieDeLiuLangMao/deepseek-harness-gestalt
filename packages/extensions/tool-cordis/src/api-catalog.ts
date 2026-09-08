@@ -3338,7 +3338,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Tool registry and execution pipeline. Scoped registrations shadow globals; one visibility resolver feeds presentation, lookup, and dispatch.',
     methods: [
       {
-        signature: 'presentAs(mode: ToolPresentationMode): () => void',
+        signature: 'presentAs(mode: ToolPresentationMode): () => Promise<void>',
         description: 'Present the calling scope\'s tools in `mode` instead of the deployment default. Nearest scope on the chain wins, so a preset\'s standing declaration covers every agent joined under it.\n\nScoped only, and one declaration per scope: this is how an agent preset composes PTC mode agents beside native ones in the same process, and a process-global override would be the `mode` config field instead.',
         parameters: [{ name: 'mode', description: 'the presentation the covered agents\' models see.' }],
         returns: 'the exact disposer that restores the deployment default.',
@@ -3850,9 +3850,9 @@ export const EVENT_API: readonly EventApiEntry[] = [
     name: 'api-session/added',
     mode: 'emit',
     signature: '\'api-session/added\'(summary: SessionSummary): void',
-    summary: 'A Session became visible to Session list consumers.',
-    description: 'A Session became visible to Session list consumers.',
-    parameters: [{ name: 'summary', description: 'initial list row for the Session.' }],
+    summary: 'A Session became visible or its current summary changed for Session list consumers.',
+    description: 'A Session became visible or its current summary changed for Session list consumers.',
+    parameters: [{ name: 'summary', description: 'current list row to merge by Session identity.' }],
   },
   {
     name: 'api-session/error',
@@ -7484,7 +7484,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ToolRuntime',
-    declaration: 'export class ToolRuntime extends Service {\n    static inject;\n    static Config: z<Config>;\n    readonly [TOOL_RUNTIME_SCHEDULER]: ToolRuntimeScheduler;\n    readonly [TOOL_ELIGIBILITY_CONTRIBUTIONS]: ToolEligibilityContributions;\n    constructor(ctx: Context, config: Config = {});\n    presentAs(mode: ToolPresentationMode): () => void;\n    register(definition: ToolDefinition): () => void;\n    restrict(filter: ToolRestriction): () => void;\n    allowEligible(names: readonly string[]): () => void;\n    eligibilityAllow(scope?: ScopeKey): readonly string[] | undefined;\n    guard(guard: ToolGuard): () => void;\n    get(name: string, scope?: ScopeKey): ToolDefinition | undefined;\n    schemas(scope?: ScopeKey): ToolSchema[];\n    catalogSchemas(scope?: ScopeKey): ToolSchema[];\n    executionMode(exec: ToolExecutionInput): ToolExecutionMode;\n    async execute(exec: ToolExecutionInput): Promise<ToolExecutionResult>;\n}',
+    declaration: 'export class ToolRuntime extends Service {\n    static inject;\n    static Config: z<Config>;\n    readonly [TOOL_RUNTIME_SCHEDULER]: ToolRuntimeScheduler;\n    readonly [TOOL_ELIGIBILITY_CONTRIBUTIONS]: ToolEligibilityContributions;\n    constructor(ctx: Context, config: Config = {});\n    presentAs(mode: ToolPresentationMode): () => Promise<void>;\n    register(definition: ToolDefinition): () => void;\n    restrict(filter: ToolRestriction): () => void;\n    allowEligible(names: readonly string[]): () => void;\n    eligibilityAllow(scope?: ScopeKey): readonly string[] | undefined;\n    guard(guard: ToolGuard): () => void;\n    get(name: string, scope?: ScopeKey): ToolDefinition | undefined;\n    schemas(scope?: ScopeKey): ToolSchema[];\n    catalogSchemas(scope?: ScopeKey): ToolSchema[];\n    executionMode(exec: ToolExecutionInput): ToolExecutionMode;\n    async execute(exec: ToolExecutionInput): Promise<ToolExecutionResult>;\n}',
   },
   {
     name: 'ToolRuntimeScheduler',

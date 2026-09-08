@@ -130,10 +130,77 @@ describe('annotation draft persistence', () => {
 
   it('ignores a malformed persisted value instead of adopting garbage', () => {
     const shell = makeShell()
-    shell.restoreAnnotationDraft({ annotations: [{ id: TextAnnotationId('x'), kind: 'text' }], nextSeq: 2 } as unknown as PersistedAnnotationDraft)
+    shell.restoreAnnotationDraft({
+      annotations: [{ id: TextAnnotationId('x'), kind: 'image-pin', imageId: 'image-1' }],
+      nextSeq: 2,
+    })
     expect(shell.snapshot.annotations).toEqual([])
     const anchor = createTextAnchor('message-1:0', 'Exact quotation', 'Exact quotation', 0)
     expect(shell.actions.addTextAnnotation(anchor, '').length).toBeGreaterThan(0)
+  })
+
+  it('restores a valid image pin and continues after its persisted sequence', () => {
+    const shell = makeShell()
+    shell.restoreAnnotationDraft({
+      annotations: [{
+        id: 'annotation-7',
+        kind: 'image-pin',
+        imageId: 'image-1',
+        source: 'history',
+        imageName: 'diagram.png',
+        x: 25,
+        y: 75,
+        note: 'inspect this region',
+      }],
+      nextSeq: 8,
+    })
+    expect(shell.snapshot.annotations).toEqual([{
+      id: 'annotation-7',
+      kind: 'image-pin',
+      imageId: 'image-1',
+      source: 'history',
+      imageName: 'diagram.png',
+      x: 25,
+      y: 75,
+      note: 'inspect this region',
+    }])
+    const anchor = createTextAnchor('message-1:0', 'Exact quotation', 'Exact quotation', 0)
+    expect(shell.actions.addTextAnnotation(anchor, '')).toBe(TextAnnotationId('annotation-8'))
+  })
+
+  it('rejects a persisted sequence that would reuse a restored identity', () => {
+    const shell = makeShell()
+    const anchor = createTextAnchor('message-1:0', 'Exact quotation', 'Exact quotation', 0)
+    shell.restoreAnnotationDraft({
+      annotations: [{ id: 'annotation-3', kind: 'text', anchor, note: '' }],
+      nextSeq: 3,
+    })
+    expect(shell.snapshot.annotations).toEqual([])
+    expect(shell.actions.addTextAnnotation(anchor, '')).toBe(TextAnnotationId('annotation-1'))
+  })
+
+  it('rejects missing and null persisted annotation discriminants', () => {
+    const anchor = createTextAnchor('message-1:0', 'Exact quotation', 'Exact quotation', 0)
+    for (const annotation of [
+      { id: 'annotation-2', anchor, note: '' },
+      { id: 'annotation-2', kind: null, anchor, note: '' },
+    ]) {
+      const shell = makeShell()
+      shell.restoreAnnotationDraft({ annotations: [annotation], nextSeq: 3 })
+      expect(shell.snapshot.annotations).toEqual([])
+    }
+  })
+
+  it('rejects missing and null persisted annotation identities', () => {
+    const anchor = createTextAnchor('message-1:0', 'Exact quotation', 'Exact quotation', 0)
+    for (const annotation of [
+      { kind: 'text', anchor, note: '' },
+      { id: null, kind: 'text', anchor, note: '' },
+    ]) {
+      const shell = makeShell()
+      shell.restoreAnnotationDraft({ annotations: [annotation], nextSeq: 3 })
+      expect(shell.snapshot.annotations).toEqual([])
+    }
   })
 
   it('keeps independent same-key instances unsynchronized with deterministic last-writer-wins', () => {

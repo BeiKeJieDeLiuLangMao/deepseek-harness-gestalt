@@ -87,8 +87,8 @@ export function createPendingInvitationsSource(
     notify()
   }
 
-  const poll = (): void => {
-    if (disposed) return
+  const poll = (): PendingInvitationPollClient | undefined => {
+    if (disposed) return undefined
     const current = readClient()
     if (current !== bound) {
       generation += 1
@@ -97,10 +97,10 @@ export function createPendingInvitationsSource(
       if (current === undefined) {
         stopTimer()
         publish(EMPTY_INVITATIONS)
-        return
+        return undefined
       }
     }
-    if (inFlight || bound === undefined) return
+    if (inFlight || bound === undefined) return bound
     const client = bound
     const token = generation
     inFlight = true
@@ -113,6 +113,7 @@ export function createPendingInvitationsSource(
       if (token !== generation) return
       inFlight = false
     })
+    return bound
   }
 
   const stopTimer = (): void => {
@@ -134,16 +135,16 @@ export function createPendingInvitationsSource(
       bound = undefined
       generation += 1
       inFlight = false
-      poll()
-      if (bound !== undefined && timer === undefined) timer = setInterval(poll, intervalMs)
+      const client = poll()
+      if (client !== undefined && timer === undefined) timer = setInterval(poll, intervalMs)
     },
     notifyProviderChange(): void {
       if (disposed) return
       generation += 1
       inFlight = false
       bound = undefined
-      poll()
-      if (bound === undefined) stopTimer()
+      const client = poll()
+      if (client === undefined) stopTimer()
       else if (timer === undefined) timer = setInterval(poll, intervalMs)
     },
     dispose(): void {

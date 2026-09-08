@@ -48,6 +48,15 @@ import { sessionAdmissionModelRoute } from './admission-result.ts'
 /** Runtime mirror for Cordis's erased `FiberState` const enum. */
 const FIBER_ACTIVE = 2 as FiberState.ACTIVE
 
+/** Preserve Error identity and retain non-Error command rejections as causes. */
+function errorFromUnknown(error: unknown, operation: string): Error {
+  if (error instanceof Error) return error
+  const message = typeof error === 'string' || typeof error === 'number' || typeof error === 'boolean'
+    ? String(error)
+    : `sessions.${operation} failed with a non-Error rejection`
+  return new Error(message, { cause: error })
+}
+
 /** Session list row projected from the host list RPC plus live stream increments. */
 export interface SessionSummary {
   id: SessionId
@@ -826,11 +835,11 @@ export class ClientSessions implements ISessions {
         try {
           running = run()
         } catch (error: unknown) {
-          reject(error)
+          reject(errorFromUnknown(error, operation))
           return
         }
         void running.then(resolve, (error: unknown) => {
-          reject(this.disposed ? this.disposedError(operation) : error)
+          reject(this.disposed ? this.disposedError(operation) : errorFromUnknown(error, operation))
         })
       })
     })

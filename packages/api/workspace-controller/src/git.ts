@@ -98,7 +98,7 @@ export function createWorkspaceGitCommand(
     if (timeoutOf(hostDeadline.signal, WORKSPACE_GIT_TIMEOUT_CODE) !== undefined) {
       throw new Error(`workspace Git timed out after ${timeoutMs}ms`)
     }
-    if (spawnError !== undefined) throw spawnError
+    if (spawnError !== undefined) throw workspaceGitError(spawnError)
     if (handle === undefined || outcome === undefined) throw new Error('workspace Git process did not start')
     const stdout = handle.collected.stdout?.readFrom(0)
     const stderr = handle.collected.stderr?.readFrom(0)
@@ -115,6 +115,15 @@ export function createWorkspaceGitCommand(
     }
     return { stdout: stdout.text, stderr: stderr.text }
   }
+}
+
+/** Preserve a subprocess Error and retain non-Error throws as the cause. */
+function workspaceGitError(error: unknown): Error {
+  if (error instanceof Error) return error
+  const message = typeof error === 'string' || typeof error === 'number' || typeof error === 'boolean'
+    ? String(error)
+    : 'workspace Git process failed'
+  return new Error(message, { cause: error })
 }
 
 /**

@@ -25,7 +25,7 @@ export interface ToolPresentationProps {
 }
 
 const NOOP_OPEN_FILE = (_path: string): void => {}
-const NOOP_LOAD_IMAGE: MessageImageLoader = async () => ''
+const NOOP_LOAD_IMAGE: MessageImageLoader = () => Promise.resolve('')
 
 function callName(block: ToolCallBlock): string {
   return 'kind' in block ? block.call?.name ?? '' : block.name
