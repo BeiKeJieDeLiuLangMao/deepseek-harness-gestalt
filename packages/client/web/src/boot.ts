@@ -11,6 +11,7 @@ import type {
 } from '@deepseek-ai/dsh-client-modules/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { BootPage } from './boot-page.ts'
+import { markDesktopOverlayDocument } from './desktop-overlay-mode.ts'
 import { getStaticModules } from './seed.ts'
 import { STATE_LABELS } from './loader-status.ts'
 import './base.css'
@@ -39,12 +40,14 @@ export class AppWebEntry {
   }
 
   /**
-   * Load and activate every client entry, then hand the mount point to the
-   * UI renderer. Plugin failures remain visible on the boot page.
+   * Mark Desktop overlay documents, load and activate every client entry,
+   * then hand the mount point to the UI renderer. Plugin failures remain
+   * visible on the boot page.
    * @returns Resolves after application mount or failure rendering.
    */
   async run(): Promise<void> {
     try {
+      markDesktopOverlayDocument()
       // Boot-readiness gate: whichever bootstrap applies the injection table
       // settles this deferred once every row has taken effect — the served
       // index resolves it in the rendered tail, so the await returns on the
