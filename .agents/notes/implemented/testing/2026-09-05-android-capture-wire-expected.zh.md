@@ -2,7 +2,7 @@
 
 Status: implemented
 
-[English](2026-09-05-android-capture-wire-golden.md) | 中文
+[English](2026-09-05-android-capture-wire-expected.md) | 中文
 
 ## Problem
 
