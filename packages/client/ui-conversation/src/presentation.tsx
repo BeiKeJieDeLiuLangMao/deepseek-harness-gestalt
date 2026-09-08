@@ -19,20 +19,14 @@ export type ConversationPresentationLocale = 'zh' | 'en'
 
 const COMMON = {
   zh: {
-    copy: '复制',
-    copied: '复制成功',
     loading: '加载中…',
     'message.unknownSurface': '未知 surface 事件：{type}',
     'json.truncated': '… 已截断，共 {total} 字符',
-    footnotes: '脚注',
   },
   en: {
-    copy: 'Copy',
-    copied: 'Copied',
     loading: 'Loading…',
     'message.unknownSurface': 'Unknown surface event: {type}',
     'json.truncated': '… truncated, {total} characters total',
-    footnotes: 'Footnotes',
   },
 } as const
 

@@ -18,6 +18,8 @@ export interface ImageLightboxLabels {
   dialog: string
   /** Accessible label of the close control. */
   close: string
+  /** Accessible label of one numbered annotation pin. */
+  pin: (index: number) => string
 }
 
 /** One displayed pin mark in displayed-raster percentages. */
@@ -110,7 +112,7 @@ export function ImageLightbox({ src, alt, labels, onClose, annotation, editor }:
             className={css.pin}
             data-annotation-pin={pin.id}
             style={{ left: `${pin.x}%`, top: `${pin.y}%` }}
-            aria-label={`Pin ${pin.index}`}
+            aria-label={labels.pin(pin.index)}
             onPointerDown={(event) => { event.stopPropagation() }}
             onClick={(event) => {
               event.stopPropagation()

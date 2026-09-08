@@ -263,7 +263,10 @@ export const TITLE_BAR_STRIP_MIN = 0
 export const TITLE_BAR_STRIP_MAX = 120
 export const TITLE_BAR_STRIP_DEFAULT = 40
 
-/** The title-bar / shell compatibility schemes (see {@link SidebarPrefs.titleBarScheme}). */
+/**
+ * The title-bar / shell compatibility schemes (see {@link SidebarPrefs.titleBarScheme}).
+ * @uiI18n protocol
+ */
 export const TITLE_BAR_SCHEMES = ['auto', 'web', 'preset', 'custom'] as const
 export type TitleBarScheme = typeof TITLE_BAR_SCHEMES[number]
 

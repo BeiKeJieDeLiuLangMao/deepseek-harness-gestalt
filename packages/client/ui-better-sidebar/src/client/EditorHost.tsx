@@ -37,7 +37,7 @@ import { openSidebarFile } from './intercept.tsx'
 import { openWithSshActive, openWithUrl, parseOpenWithConfig, resolveOpenWithTargets } from './open-with.ts'
 import { updatePluginSettings } from './plugin-settings.ts'
 import { TreePanel } from './TreePanel.tsx'
-import { t } from './locales.ts'
+import { saveShortcutTitle, t } from './locales.ts'
 import { relativeTo } from './paths.ts'
 import { resolveSidebarPath } from './produced-files.ts'
 import type { EditorToolbarControls, EditorToolbarState, FileViewerDescriptor } from './service.ts'
@@ -431,7 +431,7 @@ export function EditorHost(props: {
             type="button"
             className={css.iconButton}
             aria-label={t('save')}
-            title={`${t('save')} (Ctrl/Cmd+S)`}
+            title={saveShortcutTitle()}
             onClick={() => { controlsRef.current?.save() }}
           >
             <IconCheckOutline16 size={14} />

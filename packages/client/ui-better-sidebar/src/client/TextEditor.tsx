@@ -35,7 +35,7 @@ import { analyzeMarkdownHtml } from './markdown-html.ts'
 import { LazyMermaidMarkdown, MarkdownDocument, type MarkdownHtmlMedia } from './MarkdownHtml.tsx'
 import { MdToc } from './md-toc.tsx'
 import { splitMermaidBlocks } from './mermaid-blocks.ts'
-import { t } from './locales.ts'
+import { saveShortcutTitle, t } from './locales.ts'
 import type { EditorToolbarState, FileViewerProps } from './service.ts'
 import css from './sidebar.module.css'
 
@@ -465,7 +465,7 @@ export function TextEditor(props: FileViewerProps) {
               type="button"
               className={css.iconButton}
               aria-label={t('save')}
-              title={`${t('save')} (Ctrl/Cmd+S)`}
+              title={saveShortcutTitle()}
               onClick={save}
             >
               <IconCheckOutline16 />

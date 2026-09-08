@@ -45,6 +45,7 @@ export function BrandWordmark({ size = 24, className, includeMark = true, badge 
       <rect x="129.348" y="5.5" width="52" height="14" rx="2" fill="currentColor"/>
       {badge === 'gestalt' ? (
         <text
+          data-ui-i18n="brand"
           x="155.348"
           y="15.6"
           textAnchor="middle"
