@@ -372,17 +372,17 @@ export class SlotRegistry extends Service {
   ): { element: ReturnType<SlotRenderer['renderSession']>; release: () => void } {
     if (key === 'root') throw new Error("explicit Session rendering cannot target 'root'")
     const spec = this._core.specDynamic(key)
-    if (spec === undefined) throw new Error(`explicit Session slot '${key}' is not declared`)
+    if (spec === undefined) throw new Error(`explicit Session slot '${String(key)}' is not declared`)
     if (spec.scope !== 'session' && spec.scope !== 'session-maybe') {
-      throw new Error(`explicit Session slot '${key}' has non-Session scope '${spec.scope}'`)
+      throw new Error(`explicit Session slot '${String(key)}' has non-Session scope '${spec.scope}'`)
     }
     if (this._renderer === undefined) {
-      throw new Error(`slot renderer not installed — cannot render explicit Session slot '${key}'`)
+      throw new Error(`slot renderer not installed — cannot render explicit Session slot '${String(key)}'`)
     }
     const adapter = this._scopes.get('session')
-    if (adapter === undefined) throw new Error(`explicit Session slot '${key}' requires an installed 'session' scope adapter`)
+    if (adapter === undefined) throw new Error(`explicit Session slot '${String(key)}' requires an installed 'session' scope adapter`)
     if (adapter.resolve(sessionId) === undefined) {
-      throw new Error(`explicit Session slot '${key}' could not resolve Session '${sessionId}'`)
+      throw new Error(`explicit Session slot '${String(key)}' could not resolve Session '${sessionId}'`)
     }
     const release = adapter.acquireForRender?.(sessionId) ?? (() => {})
     try {

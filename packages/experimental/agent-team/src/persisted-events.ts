@@ -125,7 +125,7 @@ function invalid(type: TeamEventType, cause?: unknown): never {
 
 function ownDataProperty(value: unknown, key: string): unknown {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
-  const prototype = Object.getPrototypeOf(value)
+  const prototype = Reflect.getPrototypeOf(value)
   if (prototype !== Object.prototype && prototype !== null) return undefined
   const descriptor = Object.getOwnPropertyDescriptor(value, key)
   if (descriptor === undefined || !('value' in descriptor)) return undefined
@@ -141,7 +141,7 @@ function parse<T>(type: TeamEventType, schema: z.ZodType<T>, value: unknown): T 
 }
 
 function assertNeverEvent(event: never): never {
-  throw new Error(`unhandled persisted Agent Teams event type ${String((event as TeamSessionEvent).type)}`)
+  throw new Error(`unhandled persisted Agent Teams event type ${(event as TeamSessionEvent).type}`)
 }
 
 /**

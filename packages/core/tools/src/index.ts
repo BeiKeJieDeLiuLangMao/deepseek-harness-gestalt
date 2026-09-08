@@ -137,7 +137,7 @@ function parseDeferredToolSchema(value: unknown, subject: string): ToolSchema {
   if (typeof value.description !== 'string') throw new Error(`${subject}.description must be a string`)
   assertDeferredParameterSchema(value.parameters, subject)
   const parameters = snapshotJsonValue(value.parameters)
-  if (parameters === undefined || typeof parameters !== 'object' || parameters === null || Array.isArray(parameters)) {
+  if (parameters === undefined || typeof parameters !== 'object' || Array.isArray(parameters)) {
     throw new Error(`${subject}.parameters must be lossless JSON`)
   }
   return { name: value.name, description: value.description, parameters }
@@ -1221,7 +1221,7 @@ export class ToolRuntime extends Service {
    * @param mode - the presentation the covered agents' models see.
    * @returns the exact disposer that restores the deployment default.
    */
-  presentAs(mode: ToolPresentationMode): () => void {
+  presentAs(mode: ToolPresentationMode): () => Promise<void> {
     const ctx = this.ctx
     if (scopeOf(ctx) === undefined) {
       throw new Error('tools.presentAs() requires a scoped context (agent.ctx): a context-global presentation is the `mode` config field on the tools row')

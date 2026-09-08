@@ -1013,13 +1013,13 @@ Source: [`packages/api/session-controller/src/types.ts`](../../packages/api/sess
 
 #### `api-session/added` — emit
 
-A Session became visible to Session list consumers.
+A Session became visible or its current summary changed for Session list consumers.
 
 ```ts cordis-catalog
 /**
- * A Session became visible to Session list consumers.
+ * A Session became visible or its current summary changed for Session list consumers.
  * @mode emit
- * @param summary - initial list row for the Session.
+ * @param summary - current list row to merge by Session identity.
  */
 'api-session/added'(summary: SessionSummary): void
 ```

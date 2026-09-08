@@ -117,7 +117,7 @@ export class ModelDirectory {
     const generation = ++this.generation
     this.store.update((s) => { s.status = 'selecting'; s.error = null })
     const result = await route.selectModel(selection)
-    if (this.disposed || generation !== this.generation) {
+    if (!this.isCurrent(generation)) {
       if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`)
       return
     }
@@ -127,7 +127,7 @@ export class ModelDirectory {
     }
     if (route.kind === 'feature') {
       const inspection = await route.inspect()
-      if (this.disposed || generation !== this.generation) {
+      if (!this.isCurrent(generation)) {
         if (!inspection.ok) throw new Error(`${inspection.error.code}: ${inspection.error.message}`)
         return
       }
@@ -140,6 +140,10 @@ export class ModelDirectory {
     }
     this.store.update((s) => { s.status = 'ready'; s.error = null })
     this.syncInputs()
+  }
+
+  private isCurrent(generation: number): boolean {
+    return !this.disposed && generation === this.generation
   }
 
   /**

@@ -180,7 +180,7 @@ export class WorkspaceCommands {
       const remoteUrl = stdout.trim()
       return remoteUrl === '' ? {} : { remoteUrl }
     } catch (error) {
-      if (signal.aborted) {
+      if (isAborted(signal)) {
         throw new RemoteError('gateway/cancelled', 'workspace remote inspection was aborted', {}, { cause: error })
       }
       if (isUnboundOriginFailure(error)) return {}
@@ -281,6 +281,10 @@ export class WorkspaceCommands {
     this.operationTail = result.then(() => undefined, () => undefined)
     return result
   }
+}
+
+function isAborted(signal: AbortSignal): boolean {
+  return signal.aborted
 }
 
 function workspaceNotFound(workspaceId: WorkspaceId): RemoteError<'workspace/not-found'> {

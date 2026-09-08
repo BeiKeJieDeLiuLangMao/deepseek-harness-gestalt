@@ -616,6 +616,27 @@ describe('provisional identity lifecycle', () => {
     await expect(b.ctx.fiber.dispose()).resolves.toBeUndefined()
   })
 
+  it('normalizes a live non-Error command rejection and retains its cause', async () => {
+    const b = bench()
+    const readiness = b.ctx.plugin(() => undefined)
+    await readiness
+    await feedList(b, [{ id: 'parent' }])
+    const gate = deferred<Awaited<ReturnType<FakeApiClient['onCreate']>>>()
+    const rejection = { kind: 'transport-failure' }
+    b.api.onCreate = () => gate.promise
+    const created = b.svc.create({ cwd: '/w' })
+    await Promise.resolve()
+    gate.reject(rejection)
+
+    const failure = await created.then(() => undefined, (error: unknown) => error)
+    expect(failure).toBeInstanceOf(Error)
+    expect(failure).toMatchObject({
+      message: 'sessions.create failed with a non-Error rejection',
+      cause: rejection,
+    })
+    await expect(b.ctx.fiber.dispose()).resolves.toBeUndefined()
+  })
+
   it('rejects an in-flight titled fork after disposal without rename or a child binding', async () => {
     const b = bench()
     const readiness = b.ctx.plugin(() => undefined)

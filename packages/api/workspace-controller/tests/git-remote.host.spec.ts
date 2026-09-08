@@ -380,6 +380,21 @@ describe('createWorkspaceGitCommand', () => {
     }
   })
 
+  it('normalizes a non-Error spawn failure and retains its cause', async () => {
+    const rejection = { kind: 'spawn-failure' }
+    const ctx = new Context()
+    ctx.provide('subprocess', {
+      spawn() {
+        throw rejection
+      },
+    } as never)
+    const run = createWorkspaceGitCommand(ctx, process.cwd())
+    const failure = await run('git', ['status'], new AbortController().signal)
+      .then(() => undefined, (error: unknown) => error)
+    expect(failure).toBeInstanceOf(Error)
+    expect(failure).toMatchObject({ message: 'workspace Git process failed', cause: rejection })
+  })
+
   it('maps a lossy capture to overflow', async () => {
     const ctx = new Context()
     ctx.provide('subprocess', {
