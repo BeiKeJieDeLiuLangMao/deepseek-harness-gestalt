@@ -10,7 +10,11 @@ Status: implemented
 
 ## Decision
 
-[`dsh-desktop-test-instance`](../../../skills/dsh-desktop-test-instance/SKILL.md) 负责由智能体启动的 Desktop 测试 Electron 生命周期。一个用户目标只对应一套实例和一个活跃桌面输入 owner。原生产品 GUI 检查由 Codex computer-use 会话在实际隔离 Electron 路线上执行，依次优先使用 [macOS 后台 computer use](https://learn.chatgpt.com/docs/computer-use#when-to-use-computer-use)、已有的无头或虚拟显示路线、以及前台有窗口控制；[Windows computer use 仍在前台运行](https://learn.chatgpt.com/docs/computer-use#windows-foreground-use)。每种模式都必须先证明能截取精确应用、发送用户级输入并观察结果 UI；后台模式还必须保持用户的前台应用不变。无头渲染、进程存在、直接 DOM 或 Electron IPC 脚本以及独立 Web 界面都不能证明原生路线。缺少 bridge 只表示该模式不适用于当前场景；新建 bridge 需要已接受的基础设施范围。智能体完整走通路线后才开始人工评审。智能体先停止备忘中的实例，再停止该目标下其他仍存活的测试进程，然后才启动替换实例，并按场景选择 operated Platform 配置：除非本轮必须连接真实 Platform，或 diff 改了 Platform 身份、callback、Relay 或 companion-attachment 字段，否则使用 `apps/desktop/tests/fixtures/operated-platform.json`。无密钥探测不复制模型配置；经用户明确授权、需要调用模型的实例只从正式 DSH Home 盲拷 `settings.yaml` 和 `.credentials.yaml`，并且不得编造 provider 模型。
+[`dsh-desktop-test-instance`](../../../skills/dsh-desktop-test-instance/SKILL.md) 负责由智能体启动的 Desktop 测试 Electron 生命周期。一个用户目标只对应一套实例和一个活跃桌面输入 owner。原生产品 GUI 检查由 Codex computer-use 会话在实际隔离 Electron 路线上执行，依次优先使用 [macOS 后台 computer use](https://learn.chatgpt.com/docs/computer-use#when-to-use-computer-use)、已有的无头或虚拟显示路线、以及前台有窗口控制；[Windows computer use 仍在前台运行](https://learn.chatgpt.com/docs/computer-use#windows-foreground-use)。每种模式都必须先证明能截取精确应用、发送用户级输入并观察结果 UI；后台模式还必须保持用户的前台应用不变。
+
+macOS 参考验证使用唯一绝对路径下字节一致的 DSH 0.1.15 应用副本并保留原 Developer ID 签名，通过 `open -g -j -n -a "$appPath" --env "DSH_HOME=$scratchDshHome" --args "--user-data-dir=$scratchUserData"` 启动，并让 computer use 绑定该精确路径。验证过程匹配测试进程与 Host，截取全新 UI，点击通过 onboarding，打开 Settings，输入搜索文本并观察到结果，期间 ChatGPT 始终在前台；缺少 `-j`、只用 `-g` 时 DSH 会进入前台。该证据只证明这个版本的后台控制入口，不能证明指针位置不变、任意目标构建或完整产品 E2E。目标构建可以没有签名；它的副本仍须字节一致，并保留已有的签名状态。
+
+无头渲染、进程存在、直接 DOM 或 Electron IPC 脚本以及独立 Web 界面都不能证明原生路线。缺少 bridge 只表示该模式不适用于当前场景；新建 bridge 需要已接受的基础设施范围。智能体完整走通路线后才开始人工评审。智能体先停止备忘中的实例，再停止该目标下其他仍存活的测试进程，然后才启动替换实例，并按场景选择 operated Platform 配置：除非本轮必须连接真实 Platform，或 diff 改了 Platform 身份、callback、Relay 或 companion-attachment 字段，否则使用 `apps/desktop/tests/fixtures/operated-platform.json`。无密钥探测不复制模型配置；经用户明确授权、需要调用模型的实例只从正式 DSH Home 盲拷 `settings.yaml` 和 `.credentials.yaml`，并且不得编造 provider 模型。
 
 `.agents/local/runtime-memo.json` 是该 checkout 的 gitignore 本机清单。Desktop 在其中记录精确应用路径、revision、模式、输入 owner、PID、端口和临时路径；[`ego-browser`](../../../skills/ego-browser/SKILL.md) 在同一文件中记录当前 DSH Task Space id，并一直复用该 id，直到用户要求新 Space、目标改变，或已记录的 Space 不存在。第一个 Space 仍在时再创建第二个 DSH Space，本轮失败。
 
