@@ -10,10 +10,10 @@ Trajectory 视图没有任何方式把调试工件交到人手里：原始会话
 
 ## 决策
 
-- **导出是宿主侧的下载面，不是 RPC**：`GET /api/session.export?sessionId=…&includeDescendants=true` 流式返回一个 ZIP 附件。每个文件都是会话**存储工件的逐字原文**：持久化服务新增的 `readRaw` 读取后端自己的持久化字节（jsonl 后端解码其物理 zstd 帧，或直接返回明文）——绝非从解析后事件重建，因此 chunk 打包、键序、换行全部逐字节保留——放在其原始基础文件名下（根为 `session.jsonl`，子代理为 `subagents/<id>/session.jsonl`）。压缩在宿主侧使用 fflate 流式 `Zip`/`ZipDeflate` API 和已验证的 `sessionExportCompressionLevel` 0–9（默认 6），使部署可以在 CPU／延迟与归档大小之间取舍；每个条目按有界分块边产出边压缩，响应随生成分块写出，宿主从不把整个归档放进单个缓冲区（除预载的根外，最多同时持有一条后代的工件文本）。到达 64 KiB 响应字节高水位后，生产会等待 Consumer pull 恢复容量；fflate 的同步回调最多只会在该队列界限外再增加一次有界输入 push。不写清单——每个文件都与持久化工件逐字节一致，并通过自身 header 行自描述。
-- **错误词汇是 HTTP 原生的**：服务缺失 → 500，后端不提供每会话原始工件 → 501，根会话缺失 → 404（三者都在任何字节流出前判定），后代缺少存储工件 → 流失败（fail-loud，绝不静默少导出）。请求中止会保持取消语义而不会改写成 500；请求取消与响应 Consumer 取消汇合到生产者 signal，该 signal 会传到血缘、持久化与附件读取，并终止活跃压缩器。载体（`toFetchHandler`）已对 `/api` 应用信任围栏；GET 分支与既有 SSE GET 路由并列，由 `ApiProxy.downloads.sessionLog`（host-only、无 wire 信封、不在 `IApiClient` 上）实现。
+- **导出是宿主侧的下载面，不是 RPC**：`GET /api/session.export?sessionId=…&includeDescendants=true` 流式返回一个 ZIP 附件。每个会话文件都是通过 persistence read handle 读取完整逻辑日志后序列化得到的规范 JSONL：一行物理格式 header，其后每个已提交事件一行；根文件为 `session.jsonl`，后代文件为 `subagents/<id>/session.jsonl`。因此任意已挂载的持久化后端都会导出同一种表示，后端专用的分帧、压缩与键序不会跨越 seam。压缩在宿主侧使用 fflate 流式 `Zip`／`ZipDeflate` API 和已验证的 `compressionLevel` 0–9（默认 6），使部署可以在 CPU／延迟与归档大小之间取舍；每个条目按有界分块边产出边压缩，响应随生成分块写出，宿主从不把整个归档放进单个缓冲区（除预载的根外，最多同时持有一条后代的序列化日志）。到达 64 KiB 响应字节高水位后，生产会等待 Consumer pull 恢复容量；fflate 的同步回调最多只会在该队列界限外再增加一次有界输入 push。不写清单——每个会话文件都是有效的规范 JSONL，并通过自身 header 行自描述。
+- **错误词汇是 HTTP 原生的**：无效 query → 400，服务缺失或根会话准备失败 → 500，根会话缺失 → 404，三者都在任何字节流出前判定。后代缺失或无法读取，以及附件读取失败，都会使流报错（fail-loud，绝不静默少导出）。请求中止会保持取消语义而不会改写成 500；请求取消与响应 Consumer 取消汇合到生产者 signal，该 signal 会传到血缘、持久化与附件读取，并终止活跃压缩器。Connection 先对 `/api` 应用信任围栏，再分发由 `session-log-export` 注册的精确 `GET`／`HEAD /api/session.export` 路由。
 - **UI 只负责下载**：浏览器 Consumer 可以先发出不读取 body 的 `HEAD` 预检以取得准备阶段错误，再把 GET 端点交给浏览器原生下载管理器，因此 JavaScript 不会缓冲 ZIP。早先迭代发布的 `session.log` RPC 已删除——下载端点是它唯一的消费者，仓库规则是不留无当前所有者的公共接口。客户端 bundle 不包含任何归档实现。
-- 当前 Header 与 `/export` Consumer 由 [Web 导出命令与弹窗决策](2026-08-11-web-export-command-and-dialog.zh.md)定义。
+- 当前 Header 与 `/export` Consumer 由 [session-log export 包约定](../../../../packages/session-query/session-log-export/README.zh.md)定义。
 
 ## 考虑过的替代方案
 
@@ -24,7 +24,7 @@ Trajectory 视图没有任何方式把调试工件交到人手里：原始会话
 
 ## 后果
 
-- 导出保真度：读取每个实时根会话或后代前，导出器会通过权威的 `SessionStore.flush` 持久性屏障；每个导出文件都与由此得到的持久化工件逐字节一致。实时会话可能在自身读取后再次追加，因此归档是按会话读取边界形成的快照，而不是整棵树的原子快照。压缩包名为 `dsh-session-<sanitized-id>.zip`，归档路径在塑造条目前会先净化会话 id。
-- `supportsRawArtifacts` 明确区分后端能力与会话缺失：SQLite 等不支持的后端报告 `false`，具体 `readRaw` 默认会拒绝；JSONL 覆写则报告 `true`、自持物理解码，并只用 `undefined` 表示工件缺失。`ApiProxy.downloads.sessionLog` 为契约新增一个 host-only 成员，外加宿主侧 query schema，并在 fetch handler 加一个 GET 分支——没有 RPC map 行、信封 schema 或客户端 `IApiClient` 面。
+- 导出保真度：读取每个实时根会话或后代前，导出器会通过权威的 `SessionStore.flush` 持久性屏障；每个导出文件都以规范 JSONL 表示该读取边界上的已提交逻辑日志。实时会话可能在自身读取后再次追加，因此归档是按会话读取边界形成的快照，而不是整棵树的原子快照。压缩包名为 `dsh-session-<sanitized-id>.zip`，归档路径在塑造条目前会先净化会话 id。
+- 导出不需要 seam capability：每份日志都通过 persistence read handle 读取，并在这里序列化为规范 JSONL，因此任意已挂载的后端都以相同方式导出（[持久化导出与预发布精简](../simplification/2026-08-27-persistence-export-and-pre-release-trims.zh.md)记录了早先逐字工件 surface 的移除）。是否缺失由 `persistence.open(id, 'read')` 判定：只有 `SessionPersistenceNotFoundError` 是带类型的未找到结果，根会话会将其映射为 404；其他 open 或 read 失败均保持 fail-loud。`session-log-export` 向 Connection 注册一条精确的 Host-only Fetch 路由；流式响应没有对应的 Remote descriptor 或 JSON 信封。
 - fixture 模式（无宿主）对导出应答 404，浏览器会将其报告为下载失败；navigation-panes golden 快照包含「导出」按钮。
-- 暂缓：transcript.md 以及 report/feedback 打包留待后续；逐字节忠实、无清单的形态让 v2 的打包扩展保持廉价。
+- 暂缓：transcript.md 以及 report/feedback 打包留待后续；规范 JSONL、无清单的形态让 v2 的打包扩展保持廉价。

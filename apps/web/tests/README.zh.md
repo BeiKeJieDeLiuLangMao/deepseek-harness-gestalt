@@ -7,6 +7,8 @@
 [`scaffold.ts`](scaffold.ts) 和
 [浏览器 e2e Agent Note](../../../.agents/notes/implemented/testing/2026-07-24-web-gui-browser-e2e-lane.zh.md)中。
 
+`member-question-receiving.e2e.ts` 只把 mock remote Agent 用作发送方身份，随后演练发行版 Host receiver、API Proxy、WebSocket mux、Client Runtime、动态模块表、接收侧边栏行、member-question 组合卡片、共享问题呈现与 Host settlement RPC。问题到达时，会在 invitation 绑定的 Workspace 中物化一份 Host Session 并注入 Decision Brief，不启动模型轮次；本地回答不会留下永久的已回答提示条。引用 chip 会通过 Better Sidebar Files 打开由接收方拥有的隐藏 Workspace 副本，断言 Files 载荷路径位于 `.dsh/member-questions/<questionId>/` 下，并保持 Workspace 中的同名文件不变。
+
 ## 这些是 Host 面的测试
 
 它们在根 `tsconfig.host.json` 中做类型检查，而不在 Client aggregate 中，因为它们直接读取

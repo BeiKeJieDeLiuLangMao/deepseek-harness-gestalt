@@ -2,23 +2,23 @@
 
 Status: implemented
 
-> 路径更新（2026-07-22，插件体系重构）：本文三层理念与黄金路径方法仍为现行；家搬了——对象层 spec 现居 `packages/client/runtime/tests/`（原 web-runtime）、wire spec 现居 `packages/client/connection/tests/`，`web-ui` 覆盖豁免随包消亡（组件 spec 为各 `packages/client/*/tests/` 的 jsdom 套件）。组件 spec 形态遵循 [slot 体系标准](../architecture/2026-07-22-slot-type-chain-implementation.zh.md)：props 直喂——store 份额来自 `createXXXStore().create()`（真引擎，获认可的无额外机制路径），框架钩子用普通桩；无渲染机制、不挂载提供方。slot 归属/注册表语义归 2 层地界（`runtime` + `ui-slots` 套件），不归组件 spec。
+> 路径更新（2026-08-27，Remote 迁移）：本文三层理念与黄金路径方法仍为现行；对象层 spec 分布在 `packages/api/session-controller/tests/` 与 `packages/test-support/client-runtime/tests/`，Remote 与 carrier spec 分布在 `packages/api/gateway/tests/` 与 `packages/client/connection/tests/`。组件 spec 是各 `packages/client/*/tests/` 下的 jsdom 套件。组件 spec 形态遵循 [slot 体系标准](../architecture/2026-07-22-slot-type-chain-implementation.zh.md)：props 直喂——store 份额来自 `createXXXStore().create()`（真引擎，获认可的无额外机制路径），框架钩子用普通桩；无渲染机制、不挂载提供方。slot 归属与注册表语义归 2 层地界（`ui-renderer` + `ui-slots` 套件），不归组件 spec。
 
 [English](2026-07-20-gui-testing-system.md) | 中文
 
 > 分工线：本篇只讲 GUI（`packages/{client,host}/*` + `apps/web`）特有的测试结构；全仓测试政策（分层原则、with-key 政策、真实实现优先、REAL-composition）见 [docs/testing.md](../../../../docs/testing.zh.md)，不在此复述。
 
-## Problem
+## 问题
 
 GUI 栈需要考虑多种应用形态，同应用形态内的不同运行环境（Node host、数据协议层、浏览器对象层、React/DOM），单一车道的测试给不了有效信号。需要对各环节都进行有效测试，并具备全链路测试的基础能力。
 
-## Decision
+## 决策
 
 沿架构天然的测试钩子切分为三层，自底向上：
 
 | 层 | 被测物 | 关键手段 | 文件落点 |
 |---|---|---|---|
-| 1 协议同构层 | `AbstractApiClient` + `toFetchHandler`（双向数据/rpcId/ZOD 类型/SSE（Server-Sent Events）流/合批/超时） | **同构点全链**：`InProcessApiClient(toFetchHandler(脚本化 impl))` 不过网络但真跑 wire 序列化——零浏览器、纯 node env | `packages/host/apiproxy/tests/client-handler.spec.ts` |
+| 1 协议同构层 | 生成的 Typert Remote descriptor + `ApiGateway` + Connection RPC carrier（参数／结果／错误／流／取消） | **同构点全链**：gateway host/client 套件在进程内校验 descriptor codec 与 Remote dispatch；Connection host 套件在无浏览器条件下演练同一 `/api` carrier framing 与 trust check | `packages/api/gateway/tests/`、`packages/client/connection/tests/` |
 | 2 对象层编排 | `Session`/`SessionManager`/`ConnectionController`（状态机与时序：缝合/去重/翻页/乐观清稿/pendingBuffers/重连/退避） | **「事件序列进→快照出」黄金路径**：可编程假体 + deferred 控时序 + fake timers 控退避 | `packages/client/{runtime,connection}/tests/` |
 | 3 组装呈现层 | 构建产物 × 真实 client loader 与插件组合 | 归应用所有的语义快照会在 jsdom 下启动全部 8 个已构建的 client 插件，以确定性方式驱动跨插件状态变化；另有最简 Playwright 冒烟测试负责验证真实浏览器/承载层边界，真 host 用例在无密钥时自行跳过；无密钥浏览器 e2e 车道会禁用交付配置中的模型适配器行，并通过 `dsh-llm-replay` 在真实进程内 web 组装中回放录制的会话 fixture（测试前置数据），与会话区 aria 预期输出比对（[web e2e 车道](../testing/2026-07-24-web-gui-browser-e2e-lane.zh.md)、[必需 CI 门禁](../testing/2026-07-30-web-browser-snapshot-ci-gate.zh.md)） | `apps/web/tests/*.snapshot.ts`、`apps/web/tests/smoke-{fixture,real}.e2e.ts`、`apps/web/tests/{replay-round-trip,seeded-history}.e2e.ts` |
 
@@ -45,11 +45,11 @@ GUI 栈需要考虑多种应用形态，同应用形态内的不同运行环境�
 - **fixture 全绿不算完，真 wire 也要过**：fixture 短路的恰是 wire 承载链（node:http 桥 close 语义、真网络时序），两次实证 bug 都藏在那里。改动触及连接/桥/handler/SSE 的，浏览器车道（`pnpm run test:web`）必跑——其无密钥 e2e 场景驱动真实 HTTP/SSE 承载，带密钥的真 host 冒烟测试仍是真模型侧的补充。
 - 落盘代码即答案的对表工作流：行为改动落盘打红既有用例时，当场对表校准（改测试还是改代码以 RFC/约定为裁），不留悬红。
 
-## Consequences
+## 后果
 
 各车道各测各层：改动任意 GUI 源码后都能获得秒级 `test:gui` 反馈，wire/对象层语义在 Node 环境中进行毫秒级断言，基于构建后组合的快照固定确定性的用户可见投影，浏览器负责接线与承载层验收。层间纪律仍由评审负责，而 Linux CI 通过机器门禁确保浏览器预期输出的新鲜度。每个新的应用快照都必须避开不稳定的布局或时钟输出。
 
-## Alternatives considered
+## 曾考虑的替代方案
 
 | 放弃项 | 一句话理由 |
 |---|---|

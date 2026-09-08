@@ -14,9 +14,11 @@ Status: implemented
 
 生成签名引用的每个类型都必须能在目录中某处解析：agent 所有权词汇从生成器的 `TYPE_LINK_EXEMPTIONS` 移入 `LINK_MAP → core.md`，因此豁免只留给确实仅用于服务内部或来自 vendored 代码的类型结构。每个粘贴的声明只有一个家（`SessionEvent` 位于 [session.md](../../../../docs/subsystems/session.zh.md)；core.md 概括并链接）。
 
-每个 `packages/<group>/README.md` 配对都是统一形状的精简入口：一段先说明「为什么」的介绍、一张包表格（包 / 角色 / ctx 键）、一个指向对应子系统页面的收尾链接。如果承载关键信息的正文超出这一结构所能容纳的范围，就将其迁移到对应的子系统页面，而非删除。
+每个 `packages/<group>/README.md` 配对都是统一形状的精简入口：一段先说明「为什么」的介绍、一张包表格（包 / 角色 / ctx 键）、一个指向对应子系统页面的收尾链接。若某分组不声明独立的子系统参考，则在 `GROUPS_WITHOUT_SUBSYSTEM_PAGE` 中用非空理由分类。如果承载关键信息的正文超出这一结构所能容纳的范围，就将其迁移到对应的子系统页面，而非删除。
 
-[子系统 README](../../../../docs/subsystems/README.zh.md) 在中英文两侧索引目录中的每一页；`scripts/project-doc-site.spec.ts` 强制每个页面对应一个表格行，因此后续 PR 新增（或合并吸收）的页面无法悄悄缺席索引。
+`verify-subsystem-pages` 从两个语言的分组 README 与 child package manifest 中发现分组。它会拒绝：缺失分组 README；某分组既没有面向读者、直接指向 `docs/subsystems/` 下一个英文文件的链接，也没有显式豁免；空白或孤立的豁免；已获得链接的豁免分组；以及目标页面不存在的链接。代码、注释、图片、嵌套路径与目录穿越都不能满足所有权要求。该检查作为独立的 `doc-sync` leaf 运行，因此新增包分组无法悄悄省略其文档 owner。
+
+[子系统 README](../../../../docs/subsystems/README.zh.md) 在中英文两侧索引目录中的每一页；`scripts/project-doc-site.spec.ts` 强制每个页面对应一个表格行，因此新增或合并的页面无法悄悄缺席索引。
 
 ## 考虑过的替代方案
 
@@ -29,6 +31,7 @@ Status: implemented
 ## 后果
 
 - 哪一页记录某类型可由 `packages/<group>/` 预测；子系统 README 是由测试强制的完整索引。
+- 每个包分组都会让其子系统 owner 或缺席理由可供审查，`verify-subsystem-pages` 会拒绝未分类的新增项与陈旧豁免。
 - 生成的签名页脚链接 agent 所有权词汇，而不是静默豁免。
 - `verify-type-equiv` 的 1:1 manifest（元数据清单）保证每个粘贴单一归属；重复的 `SessionEvent` 粘贴已移除。
 - [原目录 Agent Note](2026-06-20-core-data-structures-catalog.zh.md) 仍拥有 `ts type-equiv` 漂移门禁机制；此处仅取代其页面范围界定规则。
