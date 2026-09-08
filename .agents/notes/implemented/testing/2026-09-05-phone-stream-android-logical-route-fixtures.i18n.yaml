@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/testing/2026-09-05-phone-stream-android-logical-route-fixtures.md
-2026-09-05-phone-stream-android-logical-route-fixtures.md: 13ea15de2b55bd8e5958b6edc651ee827e3a5761
-2026-09-05-phone-stream-android-logical-route-fixtures.zh.md: 56f1311c58fc748c068395c9bc3096a3a9926081
+2026-09-05-phone-stream-android-logical-route-fixtures.md: c9731e571828cc9ac06790351934a8e4a0581c0b
+2026-09-05-phone-stream-android-logical-route-fixtures.zh.md: f21abab5380f2484c9814e35b474909c55322a75

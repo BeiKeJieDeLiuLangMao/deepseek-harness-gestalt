@@ -10,7 +10,7 @@ Phone-stream 路由测试会铸造 Android 采集，并以解码后的 `captureW
 
 ## 决定
 
-`packages/phone/phone-stream/tests/routes.spec.ts` 仍默认把 `readAndroidLogicalDisplay` mock 为 `undefined`。tap JSON-RPC 用例设为 `{ width: 100, height: 200 }`，与解码源 100×200 对齐。live capture-size 用例设为 `{ width: 2868, height: 1320 }`，并继续断言 Host `io` 看到这些解码尺寸。对 `android-h264-process.ts` 的声明式 `vi.mock` 返回 `buildGradientH264()`，使横屏清单不会启动 host `adb`。生产代码不变。
+`packages/phone/phone-stream/tests/routes.spec.ts` 仍默认把 `readAndroidLogicalDisplay` mock 为 `undefined`。tap JSON-RPC 和并行采集撤销用例设为 `{ width: 100, height: 200 }`，与解码源 100×200 对齐。live capture-size 用例设为 `{ width: 2868, height: 1320 }`，并继续断言 Host `io` 看到这些解码尺寸。对 `android-h264-process.ts` 的声明式 `vi.mock` 返回 `buildGradientH264()`，使横屏清单不会启动 host `adb`。生产代码不变。
 
 ## 考虑过的替代方案
 
@@ -20,4 +20,4 @@ Phone-stream 路由测试会铸造 Android 采集，并以解码后的 `captureW
 
 ## 后果
 
-基线 feature 在 dumpsys 缺失时仍保持绿色，仅这两处用例被装饰。后端合并后，同一夹具提供相容宽高比，采集 IO 可被接纳，且不改变解码平面断言。
+基线 feature 在 dumpsys 缺失时仍保持绿色，仅这三处用例被装饰。同一夹具提供相容宽高比，采集 IO 可被接纳，且不改变解码平面断言。

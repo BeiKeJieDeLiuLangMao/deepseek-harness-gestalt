@@ -967,6 +967,7 @@ describe('phone stream Host routes', () => {
   })
 
   it('revokes one capture before gated cancellation settles and leaves a parallel capture active', async () => {
+    vi.mocked(readAndroidLogicalDisplay).mockReturnValue({ width: 100, height: 200 })
     const { origin, context } = await mount(undefined, { streamFrameCount: 20 })
     const host = new URL(origin).host
     const session = await mint(origin)

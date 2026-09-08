@@ -10,7 +10,7 @@ Phone-stream route tests mint Android captures and forward tap JSON-RPC with dec
 
 ## Decision
 
-`packages/phone/phone-stream/tests/routes.spec.ts` still mocks `readAndroidLogicalDisplay` to `undefined` by default. The tap JSON-RPC case sets `{ width: 100, height: 200 }` to match the decoded 100×200 source. The live capture-size case sets `{ width: 2868, height: 1320 }` and keeps asserting Host `io` saw those decoded extents. A declared `vi.mock` of `android-h264-process.ts` returns `buildGradientH264()` so landscape listing never launches host `adb`. Production code is unchanged.
+`packages/phone/phone-stream/tests/routes.spec.ts` still mocks `readAndroidLogicalDisplay` to `undefined` by default. The tap JSON-RPC and parallel-capture revocation cases set `{ width: 100, height: 200 }` to match the decoded 100×200 source. The live capture-size case sets `{ width: 2868, height: 1320 }` and keeps asserting Host `io` saw those decoded extents. A declared `vi.mock` of `android-h264-process.ts` returns `buildGradientH264()` so landscape listing never launches host `adb`. Production code is unchanged.
 
 ## Alternatives considered
 
@@ -20,4 +20,4 @@ Phone-stream route tests mint Android captures and forward tap JSON-RPC with dec
 
 ## Consequences
 
-Baseline feature stays green when dumpsys is absent except the two decorated cases. After backend merge, the same fixtures supply compatible aspect so capture IO is admitted without changing the decoded-wire assertion.
+Baseline feature stays green when dumpsys is absent except the three decorated cases. The same fixtures supply compatible aspect so capture IO is admitted without changing the decoded-wire assertion.
