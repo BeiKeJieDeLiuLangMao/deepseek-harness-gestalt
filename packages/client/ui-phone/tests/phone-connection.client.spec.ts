@@ -679,7 +679,7 @@ describe('PhoneConnectionController lifecycle', () => {
     const report = vi.fn()
     const controller = new PhoneConnectionController({
       gateway: new FakeGateway(),
-      deviceId: 'emulator-5554',
+      deviceId: EMULATOR_DEVICE_ID,
       onListenerError: report,
     })
     const survivor = vi.fn()
