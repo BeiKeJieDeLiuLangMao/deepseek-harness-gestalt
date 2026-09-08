@@ -404,8 +404,8 @@ export class ClientSessions implements ISessions {
   }
 
   /**
-   * Apply one remotely forwarded Session-list addition.
-   * @param summary - current Host summary for the added Session.
+   * Merge one remotely forwarded current Session summary.
+   * @param summary - current Host summary to merge by Session identity.
    */
   handleSessionAdded(summary: Parameters<SessionManager['handleSessionAdded']>[0]): void {
     this.manager.handleSessionAdded(summary)

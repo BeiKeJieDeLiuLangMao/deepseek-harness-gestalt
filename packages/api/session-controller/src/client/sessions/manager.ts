@@ -846,8 +846,8 @@ export class SessionManager {
   }
 
   /**
-   * Apply one Session-list addition forwarded through `ctx.remote.$on`.
-   * @param summary - current Host summary for the added Session.
+   * Merge a current Session summary forwarded through `ctx.remote.$on`.
+   * @param summary - current Host summary to merge by Session identity.
    */
   handleSessionAdded(summary: SessionSummary): void {
     if (!this.accepting()) return
