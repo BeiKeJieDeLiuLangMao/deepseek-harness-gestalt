@@ -11,8 +11,8 @@
  * @module @deepseek-ai/dsh-desktop/sub2api
  */
 
-import { access, rm } from 'node:fs/promises'
-import { join } from 'node:path'
+import { readdir, rm, stat } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import type { DesktopSub2ApiSnapshot } from '@deepseek-ai/dsh-client-ui-desktop/protocol'
 import { installSub2Api } from './sub2api-install.ts'
@@ -481,13 +481,22 @@ export interface Sub2ApiFactoryOptions {
 }
 
 async function profileManifestExists(profileDir: string): Promise<boolean> {
-  try {
-    await access(join(profileDir, 'package.json'))
-    return true
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false
-    throw error
+  let directory = profileDir
+  for (;;) {
+    let info
+    try {
+      info = await stat(directory)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      const parent = dirname(directory)
+      if (parent === directory) throw error
+      directory = parent
+      continue
+    }
+    if (!info.isDirectory()) throw new Error(`Sub2API profile path is not a directory: ${directory}`)
+    break
   }
+  return directory === profileDir && (await readdir(profileDir)).includes('package.json')
 }
 
 /**

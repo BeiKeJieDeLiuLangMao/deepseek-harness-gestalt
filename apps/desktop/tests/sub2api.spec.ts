@@ -1,6 +1,6 @@
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   createDesktopSub2Api,
@@ -21,9 +21,28 @@ import type { DesktopSub2ApiSnapshot } from '@deepseek-ai/dsh-client-ui-desktop/
 import { manifestListsBundle, SUB2API_BUNDLE_NAME } from '../src/sub2api-profile.ts'
 import type { Sub2ApiInstall, Sub2ApiInstallInput, Sub2ApiInstallResult } from '../src/sub2api-install.ts'
 
+const missingFilesystem = vi.hoisted(() => ({
+  enabled: false,
+  probes: [] as string[],
+}))
+
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>()
+  return {
+    ...actual,
+    stat: (async (...args: Parameters<typeof actual.stat>) => {
+      if (!missingFilesystem.enabled) return actual.stat(...args)
+      missingFilesystem.probes.push(String(args[0]))
+      throw Object.assign(new Error('profile filesystem root is missing'), { code: 'ENOENT' })
+    }) as typeof actual.stat,
+  }
+})
+
 const dirs: string[] = []
 
 afterEach(async () => {
+  missingFilesystem.enabled = false
+  missingFilesystem.probes = []
   await Promise.all(dirs.splice(0).map(dir => rm(dir, { recursive: true, force: true })))
 })
 
@@ -596,10 +615,11 @@ describe('createDesktopSub2Api', () => {
     }
   })
 
-  it('does not treat an invalid existing profile path as first-run absence', async () => {
+  it.each(['profiles', 'profiles/web'])('does not treat an existing file at %s as first-run absence', async (relativePath) => {
     const root = await mkdtemp(join(tmpdir(), 'sub2api-factory-invalid-profile-'))
     dirs.push(root)
-    await writeFile(join(root, 'profiles'), 'not a directory')
+    if (relativePath === 'profiles/web') await mkdir(join(root, 'profiles'))
+    await writeFile(join(root, relativePath), 'not a directory')
     const originalHome = process.env['DSH_HOME']
     const originalSources = process.env.DSH_DESKTOP_SUB2API_SOURCES
     try {
@@ -610,6 +630,28 @@ describe('createDesktopSub2Api', () => {
       expect(actions).toBeInstanceOf(UnavailableDesktopSub2ApiController)
       expect(actions.getSnapshot().error).toMatch(/ENOTDIR|not a directory/iu)
     } finally {
+      if (originalHome === undefined) delete process.env['DSH_HOME']
+      else process.env['DSH_HOME'] = originalHome
+      if (originalSources === undefined) delete process.env.DSH_DESKTOP_SUB2API_SOURCES
+      else process.env.DSH_DESKTOP_SUB2API_SOURCES = originalSources
+    }
+  })
+
+  it('stops at a missing filesystem root instead of retrying it', async () => {
+    const originalHome = process.env['DSH_HOME']
+    const originalSources = process.env.DSH_DESKTOP_SUB2API_SOURCES
+    try {
+      process.env['DSH_HOME'] = join('/', 'missing-sub2api-profile-root')
+      delete process.env.DSH_DESKTOP_SUB2API_SOURCES
+      missingFilesystem.enabled = true
+      const host: Sub2ApiHostControl = { restart: async () => 'http://127.0.0.1:12/', origin: () => undefined }
+      const actions = await createDesktopSub2Api({ fetch, host })
+      expect(actions).toBeInstanceOf(UnavailableDesktopSub2ApiController)
+      expect(actions.getSnapshot().error).toBe('profile filesystem root is missing')
+      expect(new Set(missingFilesystem.probes).size).toBe(missingFilesystem.probes.length)
+      expect(dirname(missingFilesystem.probes.at(-1)!)).toBe(missingFilesystem.probes.at(-1))
+    } finally {
+      missingFilesystem.enabled = false
       if (originalHome === undefined) delete process.env['DSH_HOME']
       else process.env['DSH_HOME'] = originalHome
       if (originalSources === undefined) delete process.env.DSH_DESKTOP_SUB2API_SOURCES
