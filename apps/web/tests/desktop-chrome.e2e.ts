@@ -14,6 +14,14 @@ import {
 } from './scaffold.ts'
 import { connectFreshWorkspace, writeComposerDraft } from './support.ts'
 
+type SettingsRequest = { kind: 'settings'; requestId: string; sectionId?: string }
+type SettingsResult = { type: 'close'; requestId: string }
+interface SettingsPreloadFixture {
+  readonly chromeOverlayShow: (request: SettingsRequest) => Promise<void>
+  chromeOverlayResult(result: SettingsResult): void
+  onChromeOverlayResult(listener: (result: SettingsResult) => void): () => void
+}
+
 const DESKTOP_BRIDGE_FIXTURE = fileURLToPath(
   new URL('../../../packages/client/ui-desktop/tests/desktop-bridge-fixture.client.ts', import.meta.url),
 )
@@ -24,6 +32,7 @@ const FIXTURE = fileURLToPath(new URL('../../../snapshots/web/desktop-chrome/ses
 const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/desktop-chrome', import.meta.url))
 const INACTIVE_EXPECTED = fileURLToPath(new URL('./snapshots/desktop-chrome/inactive.expected.md', import.meta.url))
 const MENU_EXPECTED = fileURLToPath(new URL('./snapshots/desktop-chrome/overlay-menu.expected.md', import.meta.url))
+const SETTINGS_EXPECTED = fileURLToPath(new URL('./snapshots/desktop-chrome/overlay-settings.expected.md', import.meta.url))
 const MODE = webSnapshotMode()
 const PROMPT = 'Reply with the single word LIGHTHOUSE and stop.'
 
@@ -178,8 +187,75 @@ describe('web e2e: Desktop Session Surface overlay', () => {
     }
   })
 
+  it('opens the same fullscreen Settings through native chrome and returns its close result', async () => {
+    const overlay = await openDesktopPage(browser, scaffold.authenticatedUrl, 'darwin', true)
+    const requests: SettingsRequest[] = []
+    const replies: SettingsResult[] = []
+    try {
+      await macPage.exposeFunction('forwardSettingsRequest', async (request: SettingsRequest) => {
+        requests.push(request)
+        await overlay.evaluate(async (value) => {
+          await (globalThis as unknown as { dshDesktop: SettingsPreloadFixture }).dshDesktop.chromeOverlayShow(value)
+        }, request)
+      })
+      await overlay.exposeFunction('returnSettingsReply', async (reply: SettingsResult) => {
+        replies.push(reply)
+        await macPage.evaluate((value) => {
+          (globalThis as unknown as { dshDesktop: SettingsPreloadFixture }).dshDesktop.chromeOverlayResult(value)
+        }, reply)
+      })
+      await macPage.evaluate(() => {
+        const bridge = (globalThis as unknown as { dshDesktop: SettingsPreloadFixture }).dshDesktop
+        const show = bridge.chromeOverlayShow
+        Object.defineProperty(bridge, 'chromeOverlayShow', { value: async (request: SettingsRequest) => {
+          await show(request)
+          await (globalThis as unknown as { forwardSettingsRequest(value: SettingsRequest): Promise<void> })
+            .forwardSettingsRequest(request)
+        } })
+      })
+      await overlay.evaluate(() => {
+        (globalThis as unknown as { dshDesktop: SettingsPreloadFixture }).dshDesktop.onChromeOverlayResult((reply) => {
+          void (globalThis as unknown as { returnSettingsReply(value: SettingsResult): Promise<void> })
+            .returnSettingsReply(reply)
+        })
+      })
+      const trigger = macPage.getByRole('button', { name: 'Settings', exact: true })
+      const dialog = overlay.getByRole('dialog', { name: 'Settings', exact: true })
+      await trigger.click()
+      await dialog.waitFor({ timeout: 10_000 })
+      expect(await macPage.getByRole('dialog', { name: 'Settings', exact: true }).count()).toBe(0)
+      expect(requests).toHaveLength(1)
+      expect(requests[0]?.kind).toBe('settings')
+      expect(await dialog.evaluate((element) => {
+        const rect = element.getBoundingClientRect()
+        return [rect.x, rect.y, rect.width, rect.height, window.innerWidth, window.innerHeight]
+      })).toEqual([0, 0, 1280, 800, 1280, 800])
+      await dialog.getByRole('button', { name: 'Models', exact: true }).click()
+      await dialog.getByRole('button', { name: 'Add a custom provider', exact: true }).waitFor()
+      await compareOrRefreshGolden(SETTINGS_EXPECTED, await captureStableAria(
+        overlay, '[role="dialog"]', scaffold.workspaceCwd,
+      ), MODE)
+      await dialog.getByRole('button', { name: 'Close', exact: true }).click()
+      await dialog.waitFor({ state: 'hidden' })
+      await expect.poll(() => replies).toEqual([{ type: 'close', requestId: requests[0]!.requestId }])
+      await expect.poll(() => trigger.getAttribute('aria-expanded')).toBe('false')
+      expect(await trigger.evaluate(element => document.activeElement === element)).toBe(true)
+      await trigger.click()
+      await dialog.waitFor()
+      await overlay.keyboard.press('Escape')
+      await dialog.waitFor({ state: 'hidden' })
+      await expect.poll(() => replies).toEqual([
+        { type: 'close', requestId: requests[0]!.requestId },
+        { type: 'close', requestId: requests[1]!.requestId },
+      ])
+      expect(requests[1]!.requestId).not.toBe(requests[0]!.requestId)
+    } finally {
+      await overlay.close()
+    }
+  })
+
   it('keeps its snapshot inventory closed', async () => {
-    await assertFixtureInventory(SNAPSHOT_DIR, ['inactive.expected.md', 'overlay-menu.expected.md'])
+    await assertFixtureInventory(SNAPSHOT_DIR, ['inactive.expected.md', 'overlay-menu.expected.md', 'overlay-settings.expected.md'])
     await assertFixtureInventory(fileURLToPath(new URL('../../../snapshots/web/desktop-chrome', import.meta.url)), [
       'session.jsonl', 'system-prompt.expected.md', 'tool-schemas.expected.json',
     ])

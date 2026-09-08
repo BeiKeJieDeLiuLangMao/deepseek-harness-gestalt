@@ -127,6 +127,36 @@ describe('ui-settings apply', () => {
     expect(b.reconnect).toHaveBeenCalledOnce()
   })
 
+  it('binds native callbacks and reports a rejected preload read from the apply owner', async () => {
+    const failure = new Error('native read failed')
+    const show = vi.fn(async () => {})
+    const report = vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.stubGlobal('document', { documentElement: { hasAttribute: () => false } })
+    vi.stubGlobal('dshDesktop', {
+      chromeOverlayShow: show,
+      chromeOverlayGetState: async () => { throw failure },
+      chromeOverlayResult: () => {},
+      onChromeOverlayState: () => () => {},
+      onChromeOverlayResult: () => () => {},
+    })
+    try {
+      const b = await bench()
+      declare(b.slots)
+      const fiber = b.ctx.plugin({ inject: [...inject], apply })
+      await fiber.await()
+      const injected = injectedOf(b.slots)
+      expect(injected.chromeMode).toBe('desktop-host')
+      injected.openChromeSettings('models')
+      expect(show).toHaveBeenCalledWith(expect.objectContaining({ kind: 'settings', sectionId: 'models' }))
+      injected.closeChromeSettings('stale')
+      await fiber.dispose()
+      expect(report).toHaveBeenCalledWith('ui-settings-general: Desktop chrome operation failed', failure)
+    } finally {
+      vi.unstubAllGlobals()
+      report.mockRestore()
+    }
+  })
+
   it('projects onboarding entries into stable coordinator order', async () => {
     const b = await bench()
     declare(b.slots)

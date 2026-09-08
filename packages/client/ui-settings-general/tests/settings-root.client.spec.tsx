@@ -14,6 +14,7 @@ afterEach(() => {
 
 type Row = { id: string; order: number; label: string }
 type Step = { id: string; order: number }
+type ChromeRequest = { requestId: string; sectionId?: string } | null
 
 /** Slot-content stand-ins: the shell renders whatever the seats contribute. */
 const SEAT_CONTENT: Record<string, string> = {
@@ -30,6 +31,8 @@ const useSessionPendingInteraction: SettingsRootComponentProps['useSessionPendin
 
 function mount({
   wide = true,
+  chromeMode = 'web',
+  chromeRequest = null,
   connectionState = 'connected',
   onboardingActive = true,
   rows = [
@@ -43,6 +46,8 @@ function mount({
   ],
 }: {
   wide?: boolean
+  chromeMode?: 'web' | 'desktop-host' | 'overlay'
+  chromeRequest?: ChromeRequest
   connectionState?: ConnectionSnapshot
   onboardingActive?: boolean
   rows?: Row[]
@@ -55,6 +60,10 @@ function mount({
   const listeners = new Set<() => void>()
   const connectionListeners = new Set<() => void>()
   const reconnect = vi.fn()
+  const openChromeSettings = vi.fn()
+  const closeChromeSettings = vi.fn()
+  let currentChromeRequest = chromeRequest
+  const chromeListeners = new Set<() => void>()
   const renderSlot = vi.fn(
     ((key: string, _owner: unknown, opts?: { only?: string }) => {
       if (key === 'settings.section') return <div data-testid={`section-${opts?.only ?? 'all'}`} />
@@ -75,6 +84,18 @@ function mount({
     useWorkspaces: unusedHook,
     wide,
     reconnect,
+    ...{
+      chromeMode, openChromeSettings, closeChromeSettings,
+      useChromeState: <T,>(select: (request: ChromeRequest) => T) => {
+        const [, force] = useState(0)
+        useEffect(() => {
+          const listener = () => { force(n => n + 1) }
+          chromeListeners.add(listener)
+          return () => { chromeListeners.delete(listener) }
+        }, [])
+        return select(currentChromeRequest)
+      },
+    },
     t: makeTranslate(en),
     useConnectionState: (select) => {
       const [, force] = useState(0)
@@ -110,7 +131,13 @@ function mount({
       for (const fn of [...connectionListeners]) fn()
     })
   }
-  return { view, renderSlot, bump, listeners, reconnect, setConnectionState }
+  const setChromeRequest = (request: ChromeRequest) => {
+    act(() => {
+      currentChromeRequest = request
+      for (const listener of chromeListeners) listener()
+    })
+  }
+  return { view, renderSlot, bump, listeners, reconnect, setConnectionState, openChromeSettings, closeChromeSettings, setChromeRequest }
 }
 
 function openPanel() {
@@ -168,7 +195,7 @@ describe('SettingsRoot trigger', () => {
   })
 })
 
-describe('SettingsPanel chrome seats', () => {
+describe('SettingsPage chrome seats', () => {
   it('names the dialog via aria-labelledby pointing at the header seat node', () => {
     mount()
     openPanel()
@@ -196,7 +223,7 @@ describe('SettingsPanel chrome seats', () => {
   })
 })
 
-describe('SettingsPanel close paths', () => {
+describe('SettingsPage close paths', () => {
   it('closes via the header button and restores trigger focus', async () => {
     mount()
     const trigger = openPanel()
@@ -205,13 +232,11 @@ describe('SettingsPanel close paths', () => {
     await vi.waitFor(() => { expect(document.activeElement).toBe(trigger) })
   })
 
-  it('closes via a mask click and restores trigger focus', async () => {
+  it('keeps the page open when its empty surface is clicked', () => {
     mount()
-    const trigger = openPanel()
-    const dialog = screen.getByRole('dialog')
-    fireEvent.click(dialog.parentElement!.firstElementChild!)
-    expect(screen.queryByRole('dialog')).toBeNull()
-    await vi.waitFor(() => { expect(document.activeElement).toBe(trigger) })
+    openPanel()
+    fireEvent.click(screen.getByRole('dialog'))
+    expect(screen.getByRole('dialog')).toBeTruthy()
   })
 
   it('closes via document-level Escape, restores trigger focus, and unhooks the listener', async () => {
@@ -235,7 +260,7 @@ describe('SettingsPanel close paths', () => {
   })
 })
 
-describe('SettingsPanel navigation', () => {
+describe('SettingsPage navigation', () => {
   it('projects rows, marks the first active, and renders only that section', () => {
     mount()
     openPanel()
@@ -339,5 +364,48 @@ describe('SettingsPanel navigation', () => {
     expect(listeners.size).toBe(1)
     view.unmount()
     expect(listeners.size).toBe(0)
+  })
+})
+
+
+describe('SettingsRoot native presentation', () => {
+  it('delegates the ordinary Desktop trigger without painting a second Settings page', () => {
+    const mounted = mount({ chromeMode: 'desktop-host' })
+    openPanel()
+    expect(mounted.openChromeSettings).toHaveBeenCalledWith()
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('opens the requested onboarding section through native chrome', () => {
+    const mounted = mount({ chromeMode: 'desktop-host' })
+    const step = mounted.renderSlot.mock.calls.find(call => call[0] === 'settings.onboarding')
+    act(() => { (step?.[1] as { openSection: (id: string) => void }).openSection('models') })
+    expect(mounted.openChromeSettings).toHaveBeenCalledWith('models')
+    expect(screen.queryByRole('dialog')).toBeNull()
+    mounted.setChromeRequest({ requestId: 'host-settings', sectionId: 'models' })
+    expect(screen.getByRole('button', { name: 'Settings', expanded: true })).toBeTruthy()
+    mounted.setChromeRequest(null)
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Settings' }))
+  })
+
+  it('paints the native Settings request and sends its exact close result', () => {
+    const mounted = mount({ chromeMode: 'overlay', chromeRequest: { requestId: 'settings-1', sectionId: 'models' } })
+    expect(screen.getByRole('dialog', { name: 'Settings Title' })).toBeTruthy()
+    expect(screen.getByTestId('section-models')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Settings' })).toBeNull()
+    expect(mounted.renderSlot.mock.calls.filter(call => call[0] === 'settings.onboarding')).toHaveLength(0)
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+    expect(mounted.closeChromeSettings).toHaveBeenCalledWith('settings-1')
+    mounted.setChromeRequest(null)
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('keeps the overlay empty for a menu and renders a later Settings request', () => {
+    const mounted = mount({ chromeMode: 'overlay' })
+    expect(mounted.view.container.textContent).toBe('')
+    mounted.setChromeRequest({ requestId: 'settings-2' })
+    expect(screen.getByRole('dialog')).toBeTruthy()
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(mounted.closeChromeSettings).toHaveBeenCalledWith('settings-2')
   })
 })

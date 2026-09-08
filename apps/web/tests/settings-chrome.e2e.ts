@@ -1,4 +1,4 @@
-// Web e2e scenarios: the settings surface — the modal shell (trigger, nav,
+// Web e2e scenarios: the settings surface — the fullscreen page (trigger, nav,
 // section switching, both close paths), the Appearance preference row (the
 // real theme gesture — click 深色 and the whole cascade runs: ThemeRuntime preference -> Host settings
 // -> theme/change -> ui-layout's presenter -> body attribute -> alias token +
@@ -160,6 +160,10 @@ describe('web e2e: settings modal and General preferences', () => {
     await trigger.click()
     const dialog = page.getByRole('dialog', { name: '设置' })
     await dialog.waitFor({ timeout: 10_000 })
+    expect(await dialog.evaluate((element) => {
+      const rect = element.getBoundingClientRect()
+      return [rect.x, rect.y, rect.width, rect.height, window.innerWidth, window.innerHeight]
+    })).toEqual([0, 0, 1680, 1000, 1680, 1000])
     expect(await trigger.getAttribute('aria-expanded')).toBe('true')
     // General is active by default; Permission, Language and Appearance are functional.
     expect(await dialog.getByRole('button', { name: '通用设置' }).getAttribute('aria-current')).toBe('true')

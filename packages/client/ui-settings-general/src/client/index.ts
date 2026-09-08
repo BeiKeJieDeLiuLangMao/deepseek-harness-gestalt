@@ -28,6 +28,7 @@ import { CloseLabel, HeaderContent, TriggerContent } from './chrome.tsx'
 import { GeneralSection } from './GeneralSection.tsx'
 import { SettingsDocumentAction } from './SettingsDocumentAction.tsx'
 import type { SettingsDocumentActionInjected } from './SettingsDocumentAction.tsx'
+import { SettingsChrome } from './settings-chrome.ts'
 import { SettingsDocumentStore } from './settings-document-store.ts'
 import { en, zh, type SettingsKey } from './locales.ts'
 
@@ -67,6 +68,15 @@ export const inject = ['slots', 'locale', 'connection', 'remote', 'remote.settin
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-settings-general: dictionaries')
   const connection = ctx.get('connection') as ConnectionHandle
+  const chrome = new SettingsChrome(
+    (globalThis as { dshDesktop?: unknown }).dshDesktop,
+    typeof document !== 'undefined' && document.documentElement.hasAttribute('data-dsh-desktop-overlay'),
+    (error) => { console.error('ui-settings-general: Desktop chrome operation failed', error) },
+  )
+  ctx.effect(() => {
+    chrome.start()
+    return () => chrome.dispose()
+  }, 'ui-settings-general: native chrome')
 
   // Copy freshness is framework-owned: components read the standard `t`
   // seat, and the nav label is a thunk the owner resolves per render — no
@@ -94,8 +104,12 @@ export function apply(ctx: ClientContext): void {
   let onboardingVersion = -1
   let onboardingSteps: readonly SettingsOnboardingStep[] = []
   const shellInjected = (): SettingsRootInjected => ({
+    chromeMode: chrome.mode,
+    openChromeSettings: (sectionId) => { chrome.open(sectionId) },
+    closeChromeSettings: (requestId) => { chrome.close(requestId) },
     reconnect: () => { connection.reconnect() },
     hooks: {
+      chromeState: chrome.state,
       connectionState: connection.state,
       sections: {
         getSnapshot: () => {

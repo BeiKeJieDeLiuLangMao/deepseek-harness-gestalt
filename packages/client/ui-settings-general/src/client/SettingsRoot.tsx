@@ -1,10 +1,10 @@
 /**
- * Settings shell root: the sidebar-foot trigger row plus the centered modal
- * panel (figma 501:29947, 1080x700) with the section nav rail. The shell is
+ * Settings shell root: the sidebar-foot trigger row plus the full-viewport
+ * page shared by Web and the Desktop overlay document. The shell is
  * a pure composition face — every piece of text (trigger label, panel title,
  * close label, sections) arrives from registrants through slots; accessible
  * names resolve to that content (trigger: its own text; dialog:
- * aria-labelledby the title node; close: visually-hidden slot text). Modal
+ * aria-labelledby the title node; close: visually-hidden slot text). Page
  * open state and the active section id are component-local viewing state;
  * the onboarding coordinator mounts exactly one ordered registrant while the
  * sessions-derived empty-Hero fact is active. Visible dialog chrome belongs
@@ -31,22 +31,16 @@ function navIcon(id: string) {
   return <IconSettingsOutline16 className={css.navIcon} size={16} />
 }
 
-type PanelProps = {
+type PageProps = {
   rows: readonly SettingsSectionRow[]
   renderSlot: SettingsRootComponentProps['renderSlot']
-  activeId: string | undefined
-  onSelect: (id: string) => void
+  initialSectionId: string | undefined
   onClose: () => void
 }
 
-/**
- * The modal layer: full-viewport mask + centered panel. Close paths: the
- * header button, a mask click, and document-level Escape (mounted only while
- * open, so the listener lifetime is the panel's).
- */
-function SettingsPanel({ rows, renderSlot, activeId, onSelect, onClose }: PanelProps) {
-  // Entries can unmount underneath the requested id, so the render-time
-  // projection falls back to the first row when the id is gone.
+/** Full-viewport Settings page; its section selection is local viewing state. */
+function SettingsPage({ rows, renderSlot, initialSectionId, onClose }: PageProps) {
+  const [activeId, setActiveId] = useState(initialSectionId)
   const active = rows.find(r => r.id === activeId)?.id ?? rows[0]?.id
   const titleId = useId()
 
@@ -63,37 +57,34 @@ function SettingsPanel({ rows, renderSlot, activeId, onSelect, onClose }: PanelP
   useEffect(() => { closeButton.current?.focus() }, [])
 
   return (
-    <div className={css.overlay} role="presentation">
-      <div className={css.mask} aria-hidden="true" onClick={onClose} />
-      <div className={css.panel} role="dialog" aria-modal="true" aria-labelledby={titleId}>
-        <nav className={css.nav}>
-          <div className={css.navTitle} id={titleId}>{renderSlot('settings.header', {})}</div>
-          <div className={css.navList}>
-            {rows.map(row => (
-              <button
-                key={row.id}
-                type="button"
-                className={clsx(css.navCell, row.id === active && css.active)}
-                aria-current={row.id === active ? 'true' : undefined}
-                onClick={() => { onSelect(row.id) }}
-              >
-                {navIcon(row.id)}
-                <span className={css.navLabel}>{row.label}</span>
-              </button>
-            ))}
-          </div>
-        </nav>
-        <div className={css.content}>
-          <div className={css.header}>
-            <div className={css.actions}>{renderSlot('settings.action', {})}</div>
-            <button ref={closeButton} type="button" className={css.close} onClick={onClose}>
-              <IconCloseOutline16 size={14} />
-              <span className={css.hiddenLabel}>{renderSlot('settings.close', {})}</span>
+    <div className={css.page} role="dialog" aria-modal="true" aria-labelledby={titleId}>
+      <nav className={css.nav}>
+        <div className={css.navTitle} id={titleId}>{renderSlot('settings.header', {})}</div>
+        <div className={css.navList}>
+          {rows.map(row => (
+            <button
+              key={row.id}
+              type="button"
+              className={clsx(css.navCell, row.id === active && css.active)}
+              aria-current={row.id === active ? 'true' : undefined}
+              onClick={() => { setActiveId(row.id) }}
+            >
+              {navIcon(row.id)}
+              <span className={css.navLabel}>{row.label}</span>
             </button>
-          </div>
-          <div className={css.options}>
-            {active !== undefined && renderSlot('settings.section', { close: onClose }, { only: active })}
-          </div>
+          ))}
+        </div>
+      </nav>
+      <div className={css.content}>
+        <div className={css.header}>
+          <div className={css.actions}>{renderSlot('settings.action', {})}</div>
+          <button ref={closeButton} type="button" className={css.close} onClick={onClose}>
+            <IconCloseOutline16 size={14} />
+            <span className={css.hiddenLabel}>{renderSlot('settings.close', {})}</span>
+          </button>
+        </div>
+        <div className={css.options}>
+          {active !== undefined && renderSlot('settings.section', { close: onClose }, { only: active })}
         </div>
       </div>
     </div>
@@ -108,26 +99,44 @@ function SettingsPanel({ rows, renderSlot, activeId, onSelect, onClose }: PanelP
 export function SettingsRoot(props: SettingsRootComponentProps) {
   const {
     wide, reconnect, useConnectionState, useSections, useOnboardingSteps, useSessions, renderSlot, t,
+    chromeMode, openChromeSettings, closeChromeSettings, useChromeState,
   } = props
-  const [open, setOpen] = useState(false)
+  const [localOpen, setOpen] = useState(false)
+  const chromeRequest = useChromeState(state => state)
+  const open = chromeMode === 'web' ? localOpen : chromeRequest !== null
+  useEffect(() => {
+    if (chromeMode !== 'web' || !open) return
+    window.dispatchEvent(new CustomEvent('dsh-overlay-lock', { detail: { held: true } }))
+    return () => {
+      window.dispatchEvent(new CustomEvent('dsh-overlay-lock', { detail: { held: false } }))
+    }
+  }, [chromeMode, open])
   const [activeId, setActiveId] = useState<string | undefined>(undefined)
   const [completedOnboarding, setCompletedOnboarding] = useState<ReadonlySet<string>>(() => new Set())
   const [showRecovery, setShowRecovery] = useState(false)
   const triggerButton = useRef<HTMLButtonElement | null>(null)
   const wasOpen = useRef(open)
   const close = useCallback(() => {
+    if (chromeMode === 'overlay' && chromeRequest !== null) {
+      closeChromeSettings(chromeRequest.requestId)
+      return
+    }
     setOpen(false)
     setActiveId(undefined)
-  }, [])
+  }, [chromeMode, chromeRequest, closeChromeSettings])
   // Restore after the close commit, when the dialog can no longer own focus.
   useEffect(() => {
     if (wasOpen.current && !open) triggerButton.current?.focus()
     wasOpen.current = open
   }, [open])
   const openSection = useCallback((id: string) => {
+    if (chromeMode !== 'web') {
+      openChromeSettings(id)
+      return
+    }
     setActiveId(id)
     setOpen(true)
-  }, [])
+  }, [chromeMode, openChromeSettings])
 
   // The ledger tick keeps the nav rows fresh: registrants re-register with
   // freshly localized text on locale change, and the trigger/header/close
@@ -177,6 +186,18 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
     connectionIndicator = 'recovered'
   }
 
+  if (chromeMode === 'overlay') {
+    return chromeRequest === null ? null : (
+      <SettingsPage
+        key={`${chromeRequest.requestId}:${chromeRequest.sectionId ?? ''}`}
+        rows={rows}
+        renderSlot={renderSlot}
+        initialSectionId={chromeRequest.sectionId}
+        onClose={close}
+      />
+    )
+  }
+
   return (
     <>
       <div className={clsx(css.triggerRow, !wide && css.railRow)}>
@@ -186,7 +207,10 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
           className={clsx(css.trigger, !wide && css.rail)}
           aria-haspopup="dialog"
           aria-expanded={open}
-          onClick={() => { setOpen(true) }}
+          onClick={() => {
+            if (chromeMode === 'desktop-host') openChromeSettings()
+            else setOpen(true)
+          }}
         >
           {renderSlot('settings.trigger', { wide })}
         </button>
@@ -201,12 +225,12 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
           onReconnect={reconnect}
         />
       </div>
-      {open && (
-        <SettingsPanel
+      {chromeMode === 'web' && open && (
+        <SettingsPage
+          key={activeId}
           rows={rows}
           renderSlot={renderSlot}
-          activeId={activeId}
-          onSelect={setActiveId}
+          initialSectionId={activeId}
           onClose={close}
         />
       )}

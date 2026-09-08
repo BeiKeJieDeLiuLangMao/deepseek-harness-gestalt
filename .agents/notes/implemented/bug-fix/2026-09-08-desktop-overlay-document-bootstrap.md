@@ -12,7 +12,7 @@ The Desktop Host opens native chrome at `?dsh-desktop-overlay=1`, but the Web en
 
 `AppWebEntry.run()` calls `markDesktopOverlayDocument()` before awaiting bootstrap readiness, loading bundles, activating plugins, or mounting the UI. The document attribute is available when `ui-desktop.apply` registers `DesktopChromeOverlay` into `shell.overlay`. The document retains this role until navigation destroys it; ordinary pages remain unmarked.
 
-The Web entry owns the initialization because client plugins cannot depend on another plugin discovering the document role first. The native-view design in [Official Browser](../feature/2026-08-21-workbench-official-browser.md) remains separate. This fix does not implement the [fullscreen Settings decision](../architecture/2026-08-27-settings-fullscreen-shell.md): the current Settings root has no Desktop request subscription, so a Settings bridge request has no corresponding UI transition.
+The Web entry owns the initialization because client plugins cannot depend on another plugin discovering the document role first. The native-view design in [Official Browser](../feature/2026-08-21-workbench-official-browser.md) remains separate. The [Settings request projection](2026-09-08-settings-native-request-projection.md) owns the subscription and presentation required by the [fullscreen Settings decision](../architecture/2026-08-27-settings-fullscreen-shell.md).
 
 ## Alternatives considered
 
@@ -24,4 +24,4 @@ The Web entry owns the initialization because client plugins cannot depend on an
 
 The entry regression loads the real Desktop plugin through the module system and Cordis Loader, checking its menu seat before mounting and preserving ordinary-page behavior. The assembled Desktop Web scenario authenticates through the Host, loads the shipped Desktop patch with its installation dependency closure, opens an overlay query, and records the actual menu plus its Side Chat result through a preload IPC fixture. Its session fixture owns the Desktop persisted projection and header sidecars; the response reuses keyless recorded model chunks. Removing the initialization call makes the assembled menu assertion fail.
 
-The preload fixture does not prove Electron view stacking. Native Electron acceptance and the missing Settings request subscription remain distinct obligations; no Settings golden is claimed by this fix.
+The preload fixture does not prove Electron view stacking. Native Electron acceptance and Settings request/result verification remain distinct obligations; the bootstrap regression owns the menu golden.
