@@ -229,22 +229,27 @@ export const longProbe = 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 +
     expect(lefthook).not.toContain('eslint.format.config.mjs')
   })
 
-  it('checks the Remote Protocol example in its own typed project and rejects invalid input', async () => {
-    const exampleRoot = join(repositoryRoot, 'examples/remote-protocol')
+  it.each([
+    { directory: 'remote-protocol', files: ['start.ts'], transport: false },
+    { directory: 'remote-protocol/tests', files: ['remote-protocol.snapshot.ts'], transport: false },
+    { directory: 'two-instance-relay', files: ['start.ts'], transport: false },
+    { directory: 'personal-pairing', files: ['start.ts', 'src/provider.ts'], transport: true },
+  ])('checks $directory in its own typed project and rejects invalid input', async ({ directory, files, transport }) => {
+    const exampleRoot = join(repositoryRoot, 'examples', directory)
     const exampleConfig = parseConfigFileTextToJson(
       'tsconfig.json', await readFile(join(exampleRoot, 'tsconfig.json'), 'utf8'),
     ).config as unknown
     if (!isRecord(exampleConfig) || !isUnknownArray(exampleConfig.references)) {
-      throw new Error('Remote Protocol example must declare its TypeScript project references')
+      throw new Error('example must declare its TypeScript project references')
     }
-    expect(exampleConfig.files).toEqual(['start.ts'])
+    expect(exampleConfig.files).toEqual(files)
     const references = exampleConfig.references.map((reference) => {
       if (!isRecord(reference) || typeof reference.path !== 'string') {
         throw new Error('example TypeScript project reference must contain a path')
       }
       return { path: resolve(exampleRoot, reference.path) }
     })
-    const valid = runOxlint(['examples/remote-protocol/start.ts', '--format', 'unix'])
+    const valid = runOxlint([...files.map(file => relative(repositoryRoot, join(exampleRoot, file))), '--format', 'unix'])
     expect(valid.error).toBeUndefined()
     expect(valid.status, normalizedOutput(valid)).toBe(0)
 
@@ -256,9 +261,11 @@ export const longProbe = 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 +
       await writeFile(join(probeRoot, 'tsconfig.json'), JSON.stringify({
         extends: '../tsconfig.json', files: ['negative.ts'], references,
       }))
-      await writeFile(join(probeRoot, 'negative.ts'),
-        "import { negotiateRelayTransportVersion } from '@deepseek-ai/dsh-remote-protocol'\n"
-        + "export const rejected = negotiateRelayTransportVersion('invalid', [1])\n")
+      await writeFile(join(probeRoot, 'negative.ts'), transport
+        ? "import { RemoteAccessHttpTransport } from '@deepseek-ai/dsh-remote-access-client'\n"
+          + 'export const rejected = new RemoteAccessHttpTransport({})\n'
+        : "import { negotiateRelayTransportVersion } from '@deepseek-ai/dsh-remote-protocol'\n"
+          + "export const rejected = negotiateRelayTransportVersion('invalid', [1])\n")
       const invalid = runOxlint([
         '--config', relative(repositoryRoot, configPath), '--type-check', '--format', 'unix',
         relative(repositoryRoot, join(probeRoot, 'negative.ts')),
@@ -266,8 +273,10 @@ export const longProbe = 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 +
       const output = normalizedOutput(invalid)
       expect(invalid.error).toBeUndefined()
       expect(invalid.status, output).toBe(1)
-      expect(output).toContain('TS2345')
-      expect(output).toContain("Argument of type 'string' is not assignable to parameter of type 'readonly number[]'")
+      expect(output).toContain(transport ? 'TS2741' : 'TS2345')
+      expect(output).toContain(transport
+        ? "Property 'environment' is missing in type '{}'"
+        : "Argument of type 'string' is not assignable to parameter of type 'readonly number[]'")
       expect(output).not.toContain('no-unsafe-')
     } finally {
       await Promise.all([rm(probeRoot, { recursive: true, force: true }), rm(configPath, { force: true })])
