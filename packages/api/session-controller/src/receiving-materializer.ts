@@ -12,7 +12,6 @@ import {
   type TerminalMemberQuestionView,
 } from '@deepseek-ai/dsh-member-question-receiver'
 import type { Session, SessionId } from '@deepseek-ai/dsh-session'
-import { SessionAlreadyExistsError } from '@deepseek-ai/dsh-session-persistence'
 import { WorkspaceId } from '@deepseek-ai/dsh-workspace'
 import type { ApiSessionAgentController } from './agent.ts'
 import type { SessionRequestId } from './types.ts'
@@ -70,7 +69,8 @@ function hasMessage(session: Session, messageId: string): boolean {
  * terminal Session sync. Creates or continues the receiver-owned Session
  * identity, attaches the bound Workspace, records ignorable
  * `member-question/received` metadata, and injects the Decision Brief without
- * starting a model turn. After a durable terminal, appends ignorable
+ * starting a model turn. Agent activation owns the persistence writer.
+ * After a durable terminal, appends ignorable
  * `member-question/settled` once and flushes. Failed flushes retry on the
  * configured timer. Human turns resume an already-materialized Session, mark
  * `source.kind=user` with the reserved rpcId, and steer or follow up. Dispose
@@ -98,6 +98,7 @@ export function installReceivingSessionMaterializer(
   let retryHandle: unknown
   let recoveryHandle: unknown
   let disposed = false
+  const isDisposed = (): boolean => disposed
 
   const track = <T>(task: Promise<T>, cleanup?: () => void): Promise<T> => {
     ownedTasks.add(task)
@@ -117,14 +118,6 @@ export function installReceivingSessionMaterializer(
     const sessionId = input.receivingSessionId as unknown as SessionId
     const agent = await agents.ensureSession(sessionId, workspace.path, true)
     await workspace.attachSession(sessionId)
-    const persistence = ctx.get('sessionPersistence')
-    if (persistence !== undefined) {
-      try {
-        await persistence.create(agent.session.header)
-      } catch (error: unknown) {
-        if (!(error instanceof SessionAlreadyExistsError)) throw error
-      }
-    }
     const titles = ctx.get('sessionTitle')
     const origin = admission.questions[0] === undefined
       ? undefined
@@ -206,33 +199,22 @@ export function installReceivingSessionMaterializer(
     return workspace
   }
 
-  const persistWriter = async (header: Session['header']): Promise<void> => {
-    const persistence = ctx.get('sessionPersistence')
-    if (persistence === undefined) return
-    try {
-      await persistence.create(header)
-    } catch (error: unknown) {
-      if (!(error instanceof SessionAlreadyExistsError)) throw error
-    }
-  }
-
   const syncMaterializedTerminal = async (view: TerminalMemberQuestionView): Promise<void> => {
-    if (disposed || view.hostSessionId === undefined) return
+    if (isDisposed() || view.hostSessionId === undefined) return
     const workspace = await resolveWorkspace(view)
     const sessionId = view.hostSessionId
     const agent = await agents.resumeExistingSession(sessionId, workspace.path)
     await workspace.attachSession(sessionId)
-    await persistWriter(agent.session.header)
     if (!agent.session.snapshotEvents().some(event => event.type === 'member-question/settled'
       && event.data.questionId === view.questionId)) {
       agent.session.append('member-question/settled', view.terminal, { ignorable: true })
     }
-    if (disposed) return
+    if (isDisposed()) return
     await ctx.sessions.flush(agent.session)
   }
 
   const scheduleTerminalSync = (view: TerminalMemberQuestionView): Promise<void> => {
-    if (disposed) return Promise.reject(new Error('member-question terminal sync is disposed'))
+    if (isDisposed()) return Promise.reject(new Error('member-question terminal sync is disposed'))
     const key = String(view.questionId)
     const task = (terminalSyncs.get(key) ?? Promise.resolve())
       .catch(() => undefined)
@@ -244,7 +226,7 @@ export function installReceivingSessionMaterializer(
   }
 
   const queueTerminalRetry = (view: TerminalMemberQuestionView): void => {
-    if (disposed) return
+    if (isDisposed()) return
     terminalRetryPending.set(String(view.questionId), view)
     if (retryHandle !== undefined) return
     retryHandle = timer.set(() => {
@@ -255,7 +237,7 @@ export function installReceivingSessionMaterializer(
 
   const drainTerminalRetries = async (): Promise<void> => {
     for (const [questionId, view] of [...terminalRetryPending]) {
-      if (disposed) return
+      if (isDisposed()) return
       try {
         await scheduleTerminalSync(view)
         terminalRetryPending.delete(questionId)
@@ -271,7 +253,7 @@ export function installReceivingSessionMaterializer(
     content.map(block => structuredClone(block))
 
   const admitter: MemberQuestionHumanTurnAdmitter = async (input, admission) => {
-    if (disposed) throw new Error('member-question human admission is disposed')
+    if (isDisposed()) throw new Error('member-question human admission is disposed')
     const workspace = ctx.workspaceRegistry.get(WorkspaceId(admission.workspaceId))
     if (workspace === undefined) {
       throw new Error(`member-question binding references unknown Workspace ${admission.workspaceId}`)
@@ -290,7 +272,7 @@ export function installReceivingSessionMaterializer(
       if (input.mode === 'steer') agent.steer(message)
       else agent.followup(message)
     }
-    if (disposed) throw new Error('member-question human admission is disposed')
+    if (isDisposed()) throw new Error('member-question human admission is disposed')
     await ctx.sessions.flush(agent.session)
     return { accepted: true as const }
   }
@@ -312,7 +294,7 @@ export function installReceivingSessionMaterializer(
       const snapshot = await receiver.snapshot()
       for (const view of snapshot.terminal) await scheduleTerminalSync(view)
     } catch (error: unknown) {
-      if (disposed) return
+      if (isDisposed()) return
       ctx.logger.error(`member-question Host recovery failed: ${String(error)}`)
       recoveryHandle = timer.set(() => {
         recoveryHandle = undefined

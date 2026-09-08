@@ -120,17 +120,18 @@ function compositionYaml(root: string): string {
   ].join('\n')
 }
 
-async function boot(): Promise<{
+async function boot(existingRoot?: string): Promise<{
+  root: string
   ctx: Context
   adapter: MockAdapter
   workspacePath: string
   jsonlRoot: string
 }> {
-  const root = realpathSync.native(mkdtempSync(join(tmpdir(), 'dsh-receiving-materializer-loader-')))
-  roots.push(root)
+  const root = existingRoot ?? realpathSync.native(mkdtempSync(join(tmpdir(), 'dsh-receiving-materializer-loader-')))
+  if (existingRoot === undefined) roots.push(root)
   const workspacePath = join(root, 'workspace')
-  mkdirSync(workspacePath)
-  mkdirSync(join(root, 'dsh-home'))
+  mkdirSync(workspacePath, { recursive: true })
+  mkdirSync(join(root, 'dsh-home'), { recursive: true })
   const configPath = join(root, 'cordis.yml')
   await writeFile(configPath, compositionYaml(root))
   const ctx = new Context()
@@ -178,7 +179,7 @@ async function boot(): Promise<{
     textResponse('acknowledged the image'),
   ])
   ctx.llm.registerAdapter(['mock'], adapter)
-  return { ctx, adapter, workspacePath, jsonlRoot: join(root, 'sessions') }
+  return { root, ctx, adapter, workspacePath, jsonlRoot: join(root, 'sessions') }
 }
 
 const PNG_1X1 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
@@ -214,12 +215,14 @@ function waitForIdle(ctx: Context, sessionId: SessionId): Promise<void> {
 describe('receiving materializer through a real Loader composition', () => {
   it('injects the Decision Brief on a real AgentLoop Agent without waking a model turn', async () => {
     const { ctx, adapter, workspacePath, jsonlRoot } = await boot()
+    const create = vi.spyOn(ctx.sessionPersistence, 'create')
     const workspace = await ctx.workspaceRegistry.create(workspacePath)
     const receiver = ctx.memberQuestionReceiver as FileMemberQuestionReceiver
     await receiver.bind(envelope.authority.accountId, envelope.operation.projectId, workspace.id)
     const arrived = await receiver.ingest(envelope)
     const replayed = await receiver.ingest(envelope)
     expect(replayed.receivingSessionId).toBe(arrived.receivingSessionId)
+    expect(create).toHaveBeenCalledTimes(1)
     const sessionId = arrived.receivingSessionId as unknown as SessionId
     const events = ctx.sessions.get(sessionId)?.snapshotEvents() ?? []
     expect(events.filter(event => event.type === 'member-question/received')).toHaveLength(1)
@@ -267,11 +270,66 @@ describe('receiving materializer through a real Loader composition', () => {
     expect(ctx.agents.get(arrived.receivingSessionId as unknown as SessionId)?.status).toBe('idle')
   })
 
+  it('reopens the existing writer after Loader restart and persists one terminal without recreating the Session', async () => {
+    const first = await boot()
+    const workspace = await first.ctx.workspaceRegistry.create(first.workspacePath)
+    const receiver = first.ctx.memberQuestionReceiver as FileMemberQuestionReceiver
+    await receiver.bind(envelope.authority.accountId, envelope.operation.projectId, workspace.id)
+    const arrived = await receiver.ingest(envelope)
+    const sessionId = arrived.receivingSessionId as unknown as SessionId
+    await first.ctx.fiber.dispose()
+    contexts.splice(contexts.indexOf(first.ctx), 1)
+
+    const restarted = await boot(first.root)
+    const create = vi.spyOn(restarted.ctx.sessionPersistence, 'create')
+    const open = vi.spyOn(restarted.ctx.sessionPersistence, 'open')
+    expect(restarted.ctx.agents.get(sessionId)).toBeUndefined()
+    const restartedReceiver = restarted.ctx.memberQuestionReceiver as FileMemberQuestionReceiver
+    const terminal = {
+      kind: 'declined' as const,
+      settledByInstallationId: 'installation-local' as never,
+      settledByDeviceName: 'Local Mac',
+      settledAt: Date.now(),
+    }
+    await restartedReceiver.settle(envelope.operation.questionId, terminal)
+    await vi.waitFor(() => {
+      expect(restarted.ctx.sessions.get(sessionId)?.snapshotEvents()
+        .filter(event => event.type === 'member-question/settled')).toHaveLength(1)
+    })
+    await restartedReceiver.settle(envelope.operation.questionId, terminal)
+    await restarted.ctx.sessions.flush(restarted.ctx.sessions.get(sessionId)!)
+    expect(create).not.toHaveBeenCalled()
+    expect(open.mock.calls.filter(([, mode]) => mode === 'write').map(([id, mode]) => [id, mode])).toEqual([[sessionId, 'write']])
+    expect(first.adapter.requests).toEqual([])
+    expect(restarted.adapter.requests).toEqual([])
+    await restarted.ctx.fiber.dispose()
+    contexts.splice(contexts.indexOf(restarted.ctx), 1)
+
+    const reader = new Context()
+    contexts.push(reader)
+    await reader.plugin(SessionStore)
+    await reader.plugin(JsonlSessionPersistence, { root: first.jsonlRoot, compression: 'none' })
+    const stored = await reader.sessionPersistence.open(sessionId, 'read')
+    try {
+      const persisted = await stored.read()
+      expect(stored.header.id).toBe(sessionId)
+      expect(persisted.filter(event => event.type === 'member-question/received')).toHaveLength(1)
+      expect(persisted.filter(event => event.type === 'agent/inbox/spliced'
+        && event.data.inserted.some(message => message.id === `member-question-brief:${envelope.operation.questionId}`)))
+        .toHaveLength(1)
+      expect(persisted.filter(event => event.type === 'member-question/settled')).toHaveLength(1)
+      expect(persisted.filter(event => event.type === 'turn/start')).toEqual([])
+    } finally {
+      await stored.close()
+    }
+  })
+
   it('retries a failed terminal flush on the configured production timer without duplicating settled', async () => {
     const { ctx, adapter, workspacePath } = await boot()
     const workspace = await ctx.workspaceRegistry.create(workspacePath)
     const receiver = ctx.memberQuestionReceiver as FileMemberQuestionReceiver
     await receiver.bind(envelope.authority.accountId, envelope.operation.projectId, workspace.id)
+    const create = vi.spyOn(ctx.sessionPersistence, 'create')
     const arrived = await receiver.ingest(envelope)
     const sessionId = arrived.receivingSessionId as unknown as SessionId
     const flush = vi.spyOn(ctx.sessions, 'flush')
@@ -283,6 +341,7 @@ describe('receiving materializer through a real Loader composition', () => {
       settledAt: 1_100,
     })
     await vi.waitFor(() => { expect(flush.mock.calls.length).toBeGreaterThanOrEqual(2) }, { timeout: 1_000 })
+    expect(create).toHaveBeenCalledTimes(1)
     expect(ctx.sessions.get(sessionId)?.snapshotEvents()
       .filter(event => event.type === 'member-question/settled')).toHaveLength(1)
     expect(adapter.requests).toEqual([])
@@ -345,7 +404,7 @@ describe('receiving materializer through a real Loader composition', () => {
       mode: 'queue',
     })).rejects.toMatchObject({
       code: 'member-question/human-turn-failed',
-      message: expect.stringContaining('unknown receiving Session'),
+      message: expect.stringContaining('unknown receiving Session') as unknown,
     })
   })
 

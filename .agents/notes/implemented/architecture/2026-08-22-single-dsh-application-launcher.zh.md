@@ -14,7 +14,7 @@ Python SDK 通过四个平台 wheel 包分发原生可执行文件。其打包�
 
 ### 启动范围
 
-所有受支持的 Node 应用都通过 `dsh` CLI 与一个具名 profile 启动。随附应用命令是 `dsh web`、`dsh --profile headless`、`dsh --profile sdk`、`dsh --profile sdk-minimal` 与 `dsh --profile acp`；`dsh web` 是刻意为 `--profile web` 保留的便捷别名，不是另一个应用入口。
+所有受支持的 Agent、SDK、ACP 与 Web Node 应用都通过 `dsh` CLI 与一个具名 profile 启动。[operated Platform 启动器分类](2026-09-08-operated-platform-launcher-classification.zh.md) 将本规则限定在这些 profile 应用，并单独分类生产后端基础设施入口。随附应用命令是 `dsh web`、`dsh --profile headless`、`dsh --profile sdk`、`dsh --profile sdk-minimal` 与 `dsh --profile acp`；`dsh web` 是刻意为 `--profile web` 保留的便捷别名，不是另一个应用入口。
 
 Vendor CLI、仅用于构建和测试的可执行文件、进程内直接挂载插件以及私有浏览器 WebWorker 预览都不属于应用启动清单。包应用 bin 或直接启动包入口的根 demo 都不是可接受的扩展点。
 
@@ -52,7 +52,7 @@ Python 运行时 wheel 通过私有 `dsh-python-runtime-closure` 部署 manifest
 
 ### 强制校验
 
-`verify-application-entrypoints` 扫描应用／包 manifest、可执行源码和根 demo 脚本。允许清单对 `dsh` 产品 bin、排除的 vendor 范围、私有 WebWorker 构建工具和测试支持进行分类。未分类的 shebang、新包 bin 或绕过 `apps/cli/src/bin.ts` 的 demo wrapper 都会使 hygiene 与 primary／static CI 聚合失败。
+`verify-application-entrypoints` 扫描应用／包 manifest、可执行源码和根 demo 脚本。允许清单对 `dsh` 产品 bin、精确的 operated Platform bin、排除的 vendor 范围、构建与发行工具及测试支持进行分类。未分类的 shebang、新包 bin 或绕过 `apps/cli/src/bin.ts` 的 demo wrapper 都会使 hygiene 与 primary／static CI 聚合失败。
 
 ## 既有决策与取代关系
 

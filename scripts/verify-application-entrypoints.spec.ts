@@ -29,12 +29,40 @@ describe('application entrypoints', () => {
     expect(applicationEntrypointViolations(resolve(import.meta.dirname, '..'))).toEqual([])
   })
 
+  it('accepts only the classified operated Platform bin', () => {
+    const root = fixture()
+    write(root, 'apps/platform/package.json', JSON.stringify({ bin: { 'dsh-platform': './dist/boot.mjs' } }))
+    expect(applicationEntrypointViolations(root)).toEqual([])
+  })
+
+  it.each([
+    { platform: './dist/boot.mjs' },
+    { 'dsh-platform': './dist/other.mjs' },
+    { 'dsh-platform': './dist/boot.mjs', other: './dist/other.mjs' },
+  ])('rejects an altered Platform bin: %j', (bin) => {
+    const root = fixture()
+    write(root, 'apps/platform/package.json', JSON.stringify({ bin }))
+    expect(applicationEntrypointViolations(root)).toEqual([
+      `apps/platform/package.json: classified bin must remain {"dsh-platform":"./dist/boot.mjs"}, got ${JSON.stringify(bin)}`,
+    ])
+  })
+
+  it('rejects new Desktop tooling outside the exact executable inventory', () => {
+    const root = fixture()
+    write(root, 'apps/desktop/scripts/new-build.mjs', '#!/usr/bin/env node\n')
+    write(root, 'apps/desktop/tests/new-e2e/run-electron.ts', '#!/usr/bin/env node\n')
+    expect(applicationEntrypointViolations(root)).toEqual([
+      'apps/desktop/scripts/new-build.mjs: executable source has no application/build/test classification',
+      'apps/desktop/tests/new-e2e/run-electron.ts: executable source has no application/build/test classification',
+    ])
+  })
+
   it('rejects a package-level application bin', () => {
     const root = fixture()
     write(root, 'packages/example/app/package.json', JSON.stringify({ bin: { app: 'lib/bin.js' } }))
 
     expect(applicationEntrypointViolations(root)).toEqual([
-      'packages/example/app/package.json: package bin bypasses the dsh launcher; applications use apps/cli profiles',
+      'packages/example/app/package.json: package bin has no explicit classification; Agent, SDK, ACP, and Web applications use apps/cli profiles',
     ])
   })
 
