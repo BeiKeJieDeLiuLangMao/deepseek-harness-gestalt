@@ -2,7 +2,7 @@
 
 import { JSDOM } from 'jsdom'
 import { expect, it } from 'vitest'
-import { EDIT_PATH_BUTTON_SELECTOR, TASKS_TAB_SELECTOR } from './ui-selectors.ts'
+import { EDIT_PATH_BUTTON_SELECTOR, TASKS_CARD_SELECTOR } from './ui-selectors.ts'
 
 it('finds the icon-only path editor without matching its textbox or another action', () => {
   const dom = new JSDOM(`
@@ -23,18 +23,19 @@ it('finds the icon-only path editor without matching its textbox or another acti
   }
 })
 
-it('selects the panel Tasks tab independently of its badge and nested close control', () => {
+it('selects the panel Tasks welcome card without matching other titled controls', () => {
   const dom = new JSDOM(`
-    <div title="Tasks" id="outside">Tasks</div>
+    <button title="Tasks" id="outside">Tasks</button>
     <section>
-      <div title="Tasks" id="tasks"><span>2</span><span>Tasks</span><button aria-label="Close"><svg /></button></div>
+      <button title="Tasks" id="tasks"><svg aria-hidden="true" /><span>Tasks</span></button>
       <button id="other-tasks-action">Tasks</button>
+      <div title="Tasks" id="wrong-tag">Tasks</div>
       <div title="Other Tasks">Other Tasks</div>
     </section>
   `)
   try {
     const root = dom.window.document.querySelector('section')!
-    expect(matchingIds(root, TASKS_TAB_SELECTOR)).toEqual(['tasks'])
+    expect(matchingIds(root, TASKS_CARD_SELECTOR)).toEqual(['tasks'])
   } finally {
     dom.window.close()
   }

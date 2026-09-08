@@ -21,7 +21,7 @@ import {
   type SessionStateEvidence,
   type StoredSessionLog,
 } from './artifact-io.ts'
-import { EDIT_PATH_BUTTON_SELECTOR, TASKS_TAB_SELECTOR } from './ui-selectors.ts'
+import { EDIT_PATH_BUTTON_SELECTOR, TASKS_CARD_SELECTOR } from './ui-selectors.ts'
 import { replacePathInput } from './keyboard-input.ts'
 
 const PARENT_PROMPT = 'Answer with the parent route marker.'
@@ -62,9 +62,9 @@ async function createPhase(): Promise<void> {
 
   await expandSidePanel()
   const panel = await visiblePanel()
-  const tasksTab = await element(panel, TASKS_TAB_SELECTOR)
-  await tasksTab.waitForClickable({ timeout: 10_000 })
-  await tasksTab.click()
+  const tasksCard = await element(panel, TASKS_CARD_SELECTOR)
+  await tasksCard.waitForClickable({ timeout: 10_000 })
+  await tasksCard.click()
   const taskTree = await element(panel, '[role="tree"][aria-label="Tasks"]')
   await taskTree.waitForDisplayed({ timeout: 20_000 })
   await browser.waitUntil(async () => await taskTree.getAttribute('aria-busy') !== 'true', {
