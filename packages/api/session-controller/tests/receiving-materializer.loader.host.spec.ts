@@ -218,6 +218,8 @@ describe('receiving materializer through a real Loader composition', () => {
     const { ctx, adapter, workspacePath, jsonlRoot } = await boot()
     const create = vi.spyOn(ctx.sessionPersistence, 'create')
     const workspace = await ctx.workspaceRegistry.create(workspacePath)
+    const addedFrames: { sessionId: SessionId; blank: boolean; running: boolean }[] = []
+    ctx.on('api-session/added', (summary) => { addedFrames.push(summary) })
     const receiver = ctx.memberQuestionReceiver as FileMemberQuestionReceiver
     await receiver.bind(envelope.authority.accountId, envelope.operation.projectId, workspace.id)
     const arrived = await receiver.ingest(envelope)
@@ -225,6 +227,9 @@ describe('receiving materializer through a real Loader composition', () => {
     expect(replayed.receivingSessionId).toBe(arrived.receivingSessionId)
     expect(create).toHaveBeenCalledTimes(1)
     const sessionId = arrived.receivingSessionId as unknown as SessionId
+    expect(addedFrames.filter(frame => frame.sessionId === sessionId).map(frame => ({
+      blank: frame.blank, running: frame.running,
+    }))).toEqual([{ blank: true, running: false }, { blank: false, running: false }])
     const events = ctx.sessions.get(sessionId)?.snapshotEvents() ?? []
     expect(events.filter(event => event.type === 'member-question/received')).toHaveLength(1)
     const received = events.find(event => event.type === 'member-question/received')!

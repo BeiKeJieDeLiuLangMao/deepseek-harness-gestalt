@@ -482,12 +482,15 @@ describe.skipIf(MODE === 'record')('web e2e: Side Chat provisional model authori
   }, 120_000)
 
   afterAll(async () => {
-    await browser?.close()
+    const failures: unknown[] = []
+    try { await browser?.close() } catch (error) { failures.push(error) }
     try {
       if (!scaffoldClosed) await scaffold?.close()
-    } finally {
+    } catch (error) { failures.push(error) }
+    try {
       if (harnessHome !== undefined) await rm(harnessHome, { recursive: true, force: true })
-    }
+    } catch (error) { failures.push(error) }
+    if (failures.length > 0) throw new AggregateError(failures, 'cold Side Chat test cleanup failed')
   })
 
   it('keeps model B through post-selection inspection and uses it for the first prompt', async () => {

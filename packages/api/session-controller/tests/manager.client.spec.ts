@@ -787,6 +787,21 @@ describe('remaining branches', () => {
     expect(manager.getListSnapshot().items).toHaveLength(1)
   })
 
+  it('applies a live nonblank summary without selecting or running the Session', () => {
+    const api = new FakeApiClient()
+    const manager = new SessionManager(fakeRemote(api))
+    manager.handleSessionAdded(summary(S1, { blank: true }))
+    expect(manager.getListSnapshot().current).toBeUndefined()
+    manager.handleSessionAdded(summary(S1, { blank: false }))
+    expect(manager.getListSnapshot().items).toEqual([
+      expect.objectContaining({ sessionId: S1, blank: false, running: false }),
+    ])
+    expect(manager.getListSnapshot().current).toBeUndefined()
+    expect(api.callsOf('session.list')).toHaveLength(0)
+    manager.handleSessionAdded(summary(S1, { blank: true }))
+    expect(manager.getListSnapshot().items[0]?.blank).toBe(false)
+  })
+
   it('subscribe notifies on list changes and stops after unsubscribe', async () => {
     const api = new FakeApiClient()
     const manager = new SessionManager(fakeRemote(api))

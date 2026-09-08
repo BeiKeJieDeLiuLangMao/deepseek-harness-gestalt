@@ -180,6 +180,9 @@ export class SessionController extends TypertRemoteService {
       ctx.emit('api-session/error', agent.id, errorChain(error))
     })
     ctx.on('session/event', (session, event) => {
+      if (event.type === 'member-question/received') {
+        ctx.emit('api-session/added', this.listState.summaryFor(session))
+      }
       if (event.type === 'request/header') {
         const agent = ctx.agents.get(session.id)
         if (agent?.session === session) this.agents.consumeSelection(
