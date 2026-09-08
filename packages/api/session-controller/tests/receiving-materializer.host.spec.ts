@@ -164,9 +164,11 @@ async function harness(options: {
 describe('Session Controller receiving materializer', () => {
   it('materializes the receiver Session identity onto JSONL from authenticated ingest', async () => {
     const { ctx, receiver, jsonlRoot, adapter } = await harness()
+    const create = vi.spyOn(ctx.sessionPersistence, 'create')
     const arrived = await receiver.ingest(envelope)
     const replayed = await receiver.ingest(envelope)
     expect(replayed.receivingSessionId).toBe(arrived.receivingSessionId)
+    expect(create).toHaveBeenCalledTimes(1)
     const snapshot = await receiver.snapshot()
     expect(snapshot.pending).toHaveLength(1)
     expect(snapshot.pending[0]).toMatchObject({
@@ -190,7 +192,7 @@ describe('Session Controller receiving materializer', () => {
     expect(brief).toHaveLength(1)
     expect(brief[0]?.data.inserted[0]?.content).toEqual([{
       type: 'text',
-      text: expect.stringContaining('Decision Brief from Ada'),
+      text: expect.stringContaining('Decision Brief from Ada') as unknown,
     }])
     expect(events.filter(event => event.type === 'turn/start')).toHaveLength(0)
     const agent = ctx.agents.get(arrived.receivingSessionId as unknown as SessionId)
@@ -241,14 +243,17 @@ describe('Session Controller receiving materializer', () => {
 
   it('keeps materialized false when arrival flush fails and retries to the same Session', async () => {
     const { ctx, receiver, adapter } = await harness()
+    const create = vi.spyOn(ctx.sessionPersistence, 'create')
     const flush = vi.spyOn(ctx.sessions, 'flush')
     flush.mockRejectedValueOnce(new Error('injected arrival flush failure'))
     await expect(receiver.ingest(envelope)).rejects.toThrow('injected arrival flush failure')
     expect((await receiver.snapshot()).pending[0]?.hostSessionId).toBeUndefined()
     expect(adapter.requests).toEqual([])
+    expect(create).toHaveBeenCalledTimes(1)
     flush.mockRestore()
     const arrived = await receiver.ingest(envelope)
     expect((await receiver.snapshot()).pending[0]?.hostSessionId).toBe(arrived.receivingSessionId)
+    expect(create).toHaveBeenCalledTimes(1)
     const session = ctx.sessions.get(arrived.receivingSessionId as unknown as SessionId)
     expect(session?.snapshotEvents().filter(event => event.type === 'member-question/received')).toHaveLength(1)
     expect(session?.snapshotEvents().filter(event => event.type === 'agent/inbox/spliced'
@@ -270,6 +275,7 @@ describe('Session Controller receiving materializer', () => {
 
   it('appends one ignorable settled event when the receiver terminal commits', async () => {
     const { ctx, receiver } = await harness({ terminalAuthority: new MemoryTerminalAuthority() })
+    const create = vi.spyOn(ctx.sessionPersistence, 'create')
     const arrived = await receiver.ingest(envelope)
     await receiver.settle(envelope.operation.questionId, {
       kind: 'declined',
@@ -295,6 +301,7 @@ describe('Session Controller receiving materializer', () => {
       settledAt: 1_200,
     })
     await Promise.resolve()
+    expect(create).toHaveBeenCalledTimes(1)
     expect(session?.snapshotEvents().filter(event => event.type === 'member-question/settled')).toHaveLength(1)
   })
 
@@ -371,6 +378,8 @@ describe('Session Controller receiving materializer', () => {
       envelope.operation.projectId,
       workspace.id,
     )
+    const create = vi.spyOn(ctx.sessionPersistence, 'create')
+    const open = vi.spyOn(ctx.sessionPersistence, 'open')
     createSessionTestController(ctx, {
       defaultModelSelection: () => ({ provider: 'mock', model: 'mock' }),
       cwd: workspacePath,
@@ -379,6 +388,10 @@ describe('Session Controller receiving materializer', () => {
       const session = ctx.sessions.get(arrived.receivingSessionId as unknown as SessionId)
       expect(session?.snapshotEvents().filter(event => event.type === 'member-question/settled')).toHaveLength(1)
     })
+    expect(create).not.toHaveBeenCalled()
+    expect(open.mock.calls.filter(([, mode]) => mode === 'write').map(([id, mode]) => [id, mode])).toEqual([
+      [arrived.receivingSessionId, 'write'],
+    ])
   })
 
   it('withdraws the materializer so a later Host owner can replace it', async () => {

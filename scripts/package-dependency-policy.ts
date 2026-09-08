@@ -51,7 +51,7 @@ const SAFE_HOST_DEPENDENCY_EXPORTS = {
     'createUserMessage',
     'freezeMessage',
   ],
-  '@deepseek-ai/dsh-session': ['SessionId', 'foldRequestHeader'],
+  '@deepseek-ai/dsh-session': ['SessionId', 'SessionLogOffset', 'foldRequestHeader'],
   '@deepseek-ai/dsh-subagent': ['foldSubagentDescriptor', 'snapshotSubagentDescriptor'],
   '@deepseek-ai/dsh-timeout': ['MAX_TIMER_DELAY_MS'],
   '@deepseek-ai/dsh-tools': ['defineTool'],

@@ -14,7 +14,7 @@ The Python SDK distributes a native executable through four platform wheels. Its
 
 ### Launch scope
 
-Every supported Node application starts through the `dsh` CLI and one named profile. The shipped application commands are `dsh web`, `dsh --profile headless`, `dsh --profile sdk`, `dsh --profile sdk-minimal`, and `dsh --profile acp`; `dsh web` is the deliberate convenience alias for `--profile web`, not another application entry.
+Every supported Agent, SDK, ACP, and Web Node application starts through the `dsh` CLI and one named profile. The [operated Platform launcher classification](2026-09-08-operated-platform-launcher-classification.md) limits this rule to those profile applications and separately classifies the production backend infrastructure entry. The shipped application commands are `dsh web`, `dsh --profile headless`, `dsh --profile sdk`, `dsh --profile sdk-minimal`, and `dsh --profile acp`; `dsh web` is the deliberate convenience alias for `--profile web`, not another application entry.
 
 Vendor CLIs, build-only and test-only executables, direct in-process plugin mounting, and the private browser WebWorker preview are outside the application-launch inventory. A package app bin or root demo that launches a package entry is not an accepted extension point.
 
@@ -52,7 +52,7 @@ The executable family is `deepseek-harness-sdk-runtime-<platform>-<arch>`. The S
 
 ### Enforcement
 
-`verify-application-entrypoints` scans application/package manifests, executable sources, and root demo scripts. The allowlist classifies the `dsh` product bin, vendor-excluded scope, the private WebWorker build tool, and test support. An unclassified shebang, a new package bin, or a demo wrapper that bypasses `apps/cli/src/bin.ts` fails hygiene and the primary/static CI aggregates.
+`verify-application-entrypoints` scans application/package manifests, executable sources, and root demo scripts. The allowlist classifies the `dsh` product bin, the exact operated Platform bin, vendor-excluded scope, build and release tools, and test support. An unclassified shebang, a new package bin, or a demo wrapper that bypasses `apps/cli/src/bin.ts` fails hygiene and the primary/static CI aggregates.
 
 ## Existing decisions and supersession
 
