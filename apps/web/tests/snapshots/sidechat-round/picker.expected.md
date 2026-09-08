@@ -18,3 +18,4 @@
 - button "Browser":
   - img
   - text: Browser
+- button "Phone"

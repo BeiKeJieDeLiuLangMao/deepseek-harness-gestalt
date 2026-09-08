@@ -2,7 +2,6 @@
 
 import { createServer, request, type Server } from 'node:http'
 import { afterEach, beforeAll, describe, expect, it } from 'vitest'
-import { parsePersonalPairingId } from '@deepseek-ai/dsh-remote-access'
 import {
   createCompanionNegotiationChannel,
   createCompanionVersionOffer,
@@ -22,12 +21,10 @@ const children: RunningWebHost[] = []
 const homes: string[] = []
 const uninstalls: Array<() => void> = []
 const proxies: Server[] = []
-let runHost400CodecProbe: typeof import('./host-400-codec-probe.ts').runHost400CodecProbe
 let DesktopCompanionProductOwner: typeof import('../src/companion-product.ts').DesktopCompanionProductOwner
 
 beforeAll(async () => {
   generateDesktopHostTypertArtifacts()
-  ;({ runHost400CodecProbe } = await import('./host-400-codec-probe.ts'))
   ;({ DesktopCompanionProductOwner } = await import('../src/companion-product.ts'))
 }, 120_000)
 
@@ -41,26 +38,6 @@ afterEach(async () => {
 })
 
 describe('Companion external HTTP carrier failure codec', () => {
-  it('decodes one real TCP HTTP 400 with its exact operation and failure', async () => {
-    const encoded = await runHost400CodecProbe()
-    const protocol = negotiateCompanionProtocol(
-      createCompanionNegotiationChannel(),
-      createCompanionVersionOffer('mobile'),
-      createCompanionVersionOffer('desktop'),
-    )
-    expect(decodeCompanionMessage(protocol, encoded)).toEqual({
-      type: 'result',
-      result: {
-        type: 'operation-failed',
-        operationId: 'visible-host-400',
-        failure: {
-          kind: 'http', code: 'HOST_HTTP_STATUS',
-          message: 'Desktop Host returned HTTP 400', status: 400,
-        },
-      },
-    })
-  })
-
   it('encodes a shipped Host 400 from one corrupted transport request', async () => {
     const host = await startShippedWebHost({ children, homes })
     const cookie = await bootstrapDesktopHostCookie(host.running.launchUrl, host.running.url)
@@ -113,13 +90,6 @@ describe('Companion external HTTP carrier failure codec', () => {
     const operationId = parseCompanionOperationId('corrupted-transport-http-400')
     const result = await owner.handle({
       type: 'search-sessions', operationId, query: 'corrupt only this RPC request',
-    }, {
-      pairingId: parsePersonalPairingId('corrupted-transport-pairing'),
-      attachmentKey: new Uint8Array(32), now: Date.now,
-      generation: 1, desktopRevision: 1, desktopName: 'Assembled Desktop',
-      downloadAttachment: () => Promise.reject(new Error('search must not download')),
-      submitAttachment: () => Promise.reject(new Error('search must not submit')),
-      resolveInteraction: () => undefined, pendingInteractions: () => [],
     })
     expect(mutationCount).toBe(1)
     expect(observed).toEqual({

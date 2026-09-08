@@ -161,6 +161,7 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   '@deepseek-ai/dsh-remote-access-client': ['lib/desktop-relay-lifecycle.js', 'lib/node-relay-socket.js'],
   '@deepseek-ai/dsh-remote-access-http': ['lib/relay.js'],
   '@deepseek-ai/dsh-remote-attachments': ['lib/http.js'],
+  '@deepseek-ai/dsh-phone-runtime': ['lib/runtime-state-*.js'],
   '@deepseek-ai/dsh-client-ui-desktop': ['lib/protocol.js'],
   '@deepseek-ai/dsh-browser-runtime-deterministic': ['lib/runtime-state-*.js'],
   '@deepseek-ai/dsh-browser-runtime-electron': ['lib/runtime-state-*.js', 'lib/testing.js', 'lib/host-seam.js'],

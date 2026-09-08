@@ -637,6 +637,9 @@ jobs:
           } else {
             pnpm install --frozen-lockfile
           }
+      - name: Install Chromium for built-artifact smoke
+        shell: pwsh
+        run: pnpm --filter @deepseek-ai/dsh-mobile exec playwright install chromium
       - name: Run Windows observational gates
         shell: pwsh
         run: pnpm run check:ci:windows-observational

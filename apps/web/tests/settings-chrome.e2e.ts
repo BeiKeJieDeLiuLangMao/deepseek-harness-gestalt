@@ -28,6 +28,8 @@ const DIALOG_EXPECTED = join(SNAPSHOT_DIR, 'dialog.expected.md')
 const PLUGINS_EXPECTED = join(SNAPSHOT_DIR, 'plugins.expected.md')
 // The English fallback surface: a browser naming no shipped language.
 const DIALOG_EN_EXPECTED = join(SNAPSHOT_DIR, 'dialog-en.expected.md')
+const PHONE_DEVICES_EXPECTED = join(SNAPSHOT_DIR, 'phone-devices.expected.md')
+const PHONE_DEVICES_RUNTIME_READY_EXPECTED = join(SNAPSHOT_DIR, 'phone-devices-runtime-ready.expected.md')
 const PLUGIN_ROW_SELECTOR = '[data-plugin-entry$="ui-settings"]'
 const MODE = webSnapshotMode()
 const SEARCH_PROVIDER_FIXTURE = fileURLToPath(new URL('./fixtures/settings-search-provider.mjs', import.meta.url))
@@ -130,11 +132,26 @@ async function startSearchProviderFixture(): Promise<SearchProviderFixture> {
   }
 }
 
+function phoneEnvironmentSnapshot(ready: boolean): unknown {
+  return {
+    revision: ready ? 2 : 1,
+    enabled: false,
+    runtime: ready
+      ? { kind: 'ready', version: '1.0.5', source: 'managed' }
+      : { kind: 'missing', targetVersion: '1.0.5', assetBytes: 5_458_848 },
+    platforms: {
+      android: { kind: 'deferred' },
+      ios: { kind: 'unsupported', reason: 'iOS simulators require macOS and Xcode.' },
+    },
+  }
+}
+
 describe('web e2e: settings modal and General preferences', () => {
   let scaffold: WebScaffold
   let browser: Browser
   let page: Page
   let tripwire: ReturnType<typeof watchConsole>
+  let phoneRuntimeReady = false
 
   beforeAll(async () => {
     scaffold = await launchWebScaffold({})
@@ -143,6 +160,48 @@ describe('web e2e: settings modal and General preferences', () => {
     // the client derives from it (the English default has its own spec below).
     page = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: ZH_BROWSER_LOCALE })
     tripwire = watchConsole(page)
+    await page.route('**/phone/environment', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(phoneEnvironmentSnapshot(phoneRuntimeReady)),
+      })
+    })
+    await page.route('**/phone/environment/prepare', async (route) => {
+      phoneRuntimeReady = true
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(phoneEnvironmentSnapshot(true)),
+      })
+    })
+    await page.route('**/phone/devices', async (route) => {
+      if (!phoneRuntimeReady) {
+        await route.fulfill({
+          status: 502,
+          contentType: 'application/json',
+          body: JSON.stringify({ error: { code: 'PHONE_UNRESOLVED', message: 'mobilecli is unavailable' } }),
+        })
+        return
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          android: [],
+          ios: {
+            simulators: [{
+              id: 'DFB02630-3444-4FB0-B746-0A3C4509CB72',
+              name: 'iPhone 17 Pro',
+              kind: 'simulator',
+              state: 'online',
+              online: true,
+            }],
+            reals: [],
+          },
+        }),
+      })
+    })
     await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
   }, 120_000)
@@ -235,6 +294,21 @@ describe('web e2e: settings modal and General preferences', () => {
       scaffold.workspaceCwd,
     )
     await compareOrRefreshGolden(PLUGINS_EXPECTED, pluginsSnapshot, MODE)
+    await dialog.getByRole('button', { name: '手机设备', exact: true }).click()
+    const phoneSettings = dialog.locator('[data-phone-settings]')
+    await phoneSettings.getByText('设备运行时 · mobilecli', { exact: true }).waitFor({ timeout: 10_000 })
+    const phoneSnapshot = await captureStableAria(page, '[data-phone-settings]', scaffold.workspaceCwd)
+    await compareOrRefreshGolden(PHONE_DEVICES_EXPECTED, phoneSnapshot, MODE)
+    const phoneSwitch = phoneSettings.getByRole('switch', { name: '启用手机设备' })
+    const phoneSwitchLabel = phoneSwitch.locator('xpath=..')
+    await phoneSwitchLabel.click()
+    await phoneSettings.getByText('未找到 mobilecli').waitFor({ timeout: 10_000 })
+    await phoneSettings.getByRole('button', { name: '准备 mobilecli' }).first().click()
+    await phoneSettings.getByText('iPhone 17 Pro', { exact: true }).waitFor({ timeout: 10_000 })
+    expect(await phoneSettings.getByText('未找到 mobilecli').count()).toBe(0)
+    const readyPhoneSnapshot = await captureStableAria(page, '[data-phone-settings]', scaffold.workspaceCwd)
+    await compareOrRefreshGolden(PHONE_DEVICES_RUNTIME_READY_EXPECTED, readyPhoneSnapshot, MODE)
+    await phoneSwitchLabel.click()
     // Close path 1: Escape.
     await page.keyboard.press('Escape')
     await expect.poll(() => page.getByRole('dialog', { name: '设置' }).count(), { timeout: 5_000 }).toBe(0)
@@ -839,6 +913,10 @@ describe('web e2e: settings modal and General preferences', () => {
 
   it.skipIf(MODE === 'record')('keeps the fixture inventory closed', async () => {
     expect(tripwire.warnings).toEqual([])
-    await assertFixtureInventory(SNAPSHOT_DIR, ['dialog-en.expected.md', 'dialog.expected.md', 'plugins.expected.md'])
+    await assertFixtureInventory(SNAPSHOT_DIR, [
+      'dialog-en.expected.md', 'dialog.expected.md',
+      'phone-devices-runtime-ready.expected.md', 'phone-devices.expected.md',
+      'plugins.expected.md',
+    ])
   })
 })

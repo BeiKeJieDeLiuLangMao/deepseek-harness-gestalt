@@ -58,7 +58,7 @@ function styleInjectionModule(
  * Everything else under @deepseek-ai/* is either a module-table entry
  * (external) or a leak the purity gate rejects.
  */
-export const INLINE_SAFE = /^(?:@deepseek-ai\/dsh-(?:file-reference|session|llm|tools|brand|deque|typert-protocol|util-crypto|util-values|util-workspace-path)(?:\/|$)|@deepseek-ai\/dsh-browser-workspace\/client$|@deepseek-ai\/dsh-platform-account\/privacy$|@deepseek-ai\/dsh-project-membership\/invite-role$|@deepseek-ai\/dsh-token-meter\/client$|@deepseek-ai\/dsh-agent-presets\/display$)/
+export const INLINE_SAFE = /^(?:@deepseek-ai\/dsh-(?:file-reference|session|llm|tools|brand|deque|typert-protocol|util-crypto|util-values|util-workspace-path)(?:\/|$)|@deepseek-ai\/dsh-browser-workspace\/client$|@deepseek-ai\/dsh-platform-account\/privacy$|@deepseek-ai\/dsh-project-membership\/(?:remote-url|invite-role)$|@deepseek-ai\/dsh-phone-runtime\/swipe$|@deepseek-ai\/dsh-request-trust(?:\/|$)|@deepseek-ai\/dsh-token-meter\/client$|@deepseek-ai\/dsh-agent-presets\/display$)/
 
 /**
  * Vendored framework libraries: rescoped into @deepseek-ai, so the gate below
@@ -162,6 +162,32 @@ export function staticLinked(id: string, libEntry: readonly string[]): BuildFace
 }
 
 /**
+ * Build browser-only ESM subpaths for a product shell whose primary package is
+ * not part of the static Client package roster.
+ * @param id - Package name used in build diagnostics.
+ * @param libEntry - Emitted JavaScript entries consumed from `lib/types`.
+ * @param options - Package-relative source root used to recover stylesheet assets.
+ * @returns Client-face configs for the browser subpaths.
+ */
+export function browserSubpath(
+  id: string,
+  libEntry: readonly string[],
+  options: BrowserSubpathOptions = {},
+): BuildFaceConfig {
+  const names = new Set(libEntry.map(entry => basename(entry, '.js')))
+  if (names.size !== libEntry.length) {
+    throw new Error(`tsdown: ${id} entries collide on an output name: ${libEntry.join(', ')}`)
+  }
+  return clientOnly(libEntry.map(entry => staticLinkedConfig(
+    id,
+    entry,
+    basename(entry, '.js'),
+    false,
+    options.assetSourceRoot,
+  )))
+}
+
+/**
  * Whether a package's tsdown configs put it in the static assembly channel.
  * The roster has no separate list: gates load each package's own
  * `tsdown.config.ts`, call it for the Client face, and ask this.
@@ -202,6 +228,11 @@ interface ClientBundleOptions {
   readonly companions?: readonly UserConfig[]
   /** Overrides for the package's primary Node-side library config. */
   readonly lib?: UserConfig
+}
+
+interface BrowserSubpathOptions {
+  /** Package-relative source root containing assets imported by emitted modules. */
+  readonly assetSourceRoot?: '.' | 'src'
 }
 
 type BuildFace = 'host' | 'client' | undefined
@@ -253,7 +284,13 @@ interface AssetEmitter {
   }): string
 }
 
-function staticLinkedConfig(id: string, entry: string, outputName = basename(entry, '.js')): UserConfig {
+function staticLinkedConfig(
+  id: string,
+  entry: string,
+  outputName = basename(entry, '.js'),
+  roster = true,
+  assetSourceRoot: '.' | 'src' = 'src',
+): UserConfig {
   const emitted = new Set<string>()
   return {
     name: id,
@@ -274,7 +311,7 @@ function staticLinkedConfig(id: string, entry: string, outputName = basename(ent
       // resolve and inline every specifier missing from the npm production
       // sections, which is the coupling this preset exists to remove. The name
       // is also the roster marker {@link isStaticLinkedConfig} reads.
-      name: STATIC_LINKED_PLUGIN,
+      name: roster ? STATIC_LINKED_PLUGIN : BROWSER_SUBPATH_PLUGIN,
       resolveId: {
         order: 'pre' as const,
         handler(source: string, importer: string | undefined) {
@@ -289,7 +326,7 @@ function staticLinkedConfig(id: string, entry: string, outputName = basename(ent
       name: 'dsh-css-asset',
       async resolveId(this: AssetEmitter, source: string, importer: string | undefined) {
         if (!source.endsWith('.css') || importer === undefined) return null
-        const { file, fileName } = stylesheetAsset(source, importer)
+        const { file, fileName } = stylesheetAsset(source, importer, assetSourceRoot)
         if (!emitted.has(fileName)) {
           emitted.add(fileName)
           // originalFileName also puts the physical sheet in the watch graph.
@@ -315,11 +352,19 @@ function isBareSpecifier(specifier: string): boolean {
  * @param importer - absolute path of the importing module, emitted or source.
  * @returns the stylesheet on disk plus its `src`-relative name under `lib/`.
  */
-function stylesheetAsset(source: string, importer: string): { readonly file: string, readonly fileName: string } {
-  const file = sourceAssetPath(source, importer)
-  const boundary = file.lastIndexOf(SOURCE_MARKER)
-  if (boundary < 0) throw new Error(`tsdown: stylesheet ${file} is outside the package sources`)
-  return { file, fileName: file.slice(boundary + SOURCE_MARKER.length).split(sep).join('/') }
+function stylesheetAsset(
+  source: string,
+  importer: string,
+  assetSourceRoot: '.' | 'src',
+): { readonly file: string, readonly fileName: string } {
+  const packageRoot = packageRootPath(importer)
+  const sourceRoot = resolvePath(packageRoot, assetSourceRoot)
+  const file = sourceAssetPath(source, importer, assetSourceRoot)
+  const sourcePath = relative(sourceRoot, file)
+  if (sourcePath === '..' || sourcePath.startsWith(`..${sep}`) || isAbsolute(sourcePath)) {
+    throw new Error(`tsdown: stylesheet ${file} is outside the package sources`)
+  }
+  return { file, fileName: sourcePath.split(sep).join('/') }
 }
 
 /** The manifest fields the build faces read to state their own module edges. */
@@ -607,6 +652,7 @@ const TYPES_MARKER = `${sep}lib${sep}types${sep}`
 
 /** Plugin name carrying contract 1, and the marker that identifies a statically linked config. */
 const STATIC_LINKED_PLUGIN = 'dsh-static-linked-external'
+const BROWSER_SUBPATH_PLUGIN = 'dsh-browser-subpath-external'
 
 /** Path segment a package's sources hang under, and the root emitted assets mirror. */
 const SOURCE_MARKER = `${sep}src${sep}`
@@ -615,10 +661,23 @@ const SOURCE_MARKER = `${sep}src${sep}`
 const SOURCEMAP_COMMENT = /\n\/\/# sourceMappingURL=.*\s*$/
 
 /** Resolve an emitted JS asset import against its source-tree counterpart. */
-function sourceAssetPath(source: string, importer: string): string {
+function sourceAssetPath(source: string, importer: string, assetSourceRoot: '.' | 'src' = 'src'): string {
   const emitted = resolvePath(dirname(importer), source)
   if (existsSync(emitted)) return emitted
   const boundary = emitted.indexOf(TYPES_MARKER)
   if (boundary < 0) return emitted
-  return resolvePath(emitted.slice(0, boundary), 'src', emitted.slice(boundary + TYPES_MARKER.length))
+  return resolvePath(
+    emitted.slice(0, boundary),
+    assetSourceRoot,
+    emitted.slice(boundary + TYPES_MARKER.length),
+  )
+}
+
+/** Return the package root owning a source or emitted module path. */
+function packageRootPath(importer: string): string {
+  const typesBoundary = importer.indexOf(TYPES_MARKER)
+  if (typesBoundary >= 0) return importer.slice(0, typesBoundary)
+  const sourceBoundary = importer.indexOf(SOURCE_MARKER)
+  if (sourceBoundary >= 0) return importer.slice(0, sourceBoundary)
+  return dirname(importer)
 }

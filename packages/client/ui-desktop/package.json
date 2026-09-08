@@ -27,7 +27,11 @@
       "default": "./lib/protocol.js"
     },
     "./src/*": "./src/*",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./pairing-source": {
+      "types": "./lib/types/pairing-source.d.ts",
+      "default": "./lib/pairing-source.js"
+    }
   },
   "dsh": {
     "client": {
@@ -73,6 +77,7 @@
     "lib/index.js",
     "lib/client.js",
     "lib/protocol.js",
-    "lib/types/**/*.d.ts"
+    "lib/types/**/*.d.ts",
+    "lib/pairing-source.js"
   ]
 }

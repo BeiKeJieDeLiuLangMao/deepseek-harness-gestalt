@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   createCompanionNegotiationChannel, createCompanionVersionOffer, encodeCompanionMessage,
   decodeRelayMessage, encodeRelayMessage, parseRelayAttachmentId, parseRelayPairingSelector,
-  negotiateCompanionProtocol, parseRelayAttachChallengeId,
+  negotiateCompanionProtocol, parseRelayAttachChallengeId, parseCompanionOperationId,
   generateRelayCredential, parseCompanionSessionId,
   REMOTE_PROTOCOL_LIMITS,
   type CompanionSessionSummaryProjection,
@@ -581,6 +581,7 @@ describe('Desktop Remote Relay composition', () => {
   ] as const)(
     'bounds %s before Snow sealing without reconnecting',
     async (_scenario, nodes) => {
+      const sessionId = parseCompanionSessionId('session-live-bytes')
       const selector = parseRelayPairingSelector('pairing-live-bytes')
       const desktopAttachmentId = parseRelayAttachmentId('desktop-live-bytes')
       const mobileAttachmentId = parseRelayAttachmentId('mobile-live-bytes')
@@ -630,7 +631,7 @@ describe('Desktop Remote Relay composition', () => {
       )
       channel.seal.mockClear()
       changed?.({
-        type: 'session', sessionId: 'session-live-bytes' as never,
+        type: 'session', sessionId,
         includeConversation: true, observationEpoch: 1,
       })
       await owner.drain()
@@ -685,14 +686,14 @@ describe('Desktop Remote Relay composition', () => {
     )
 
     changed?.({
-      type: 'session', sessionId: 'session-live-active', includeConversation: false, observationEpoch: 0,
-    } as DesktopCompanionLiveProjectionChange)
+      type: 'session', sessionId: parseCompanionSessionId('session-live-active'), includeConversation: false, observationEpoch: 0,
+    })
     await Promise.resolve()
     for (let index = 0; index <= REMOTE_PROTOCOL_LIMITS.liveProjectionPendingSessions; index += 1) {
       changed?.({
-        type: 'session', sessionId: `session-live-${String(index)}`,
+        type: 'session', sessionId: parseCompanionSessionId(`session-live-${String(index)}`),
         includeConversation: false, observationEpoch: 0,
-      } as DesktopCompanionLiveProjectionChange)
+      })
     }
 
     expect(reconnect).toHaveBeenCalledWith(selector, expect.objectContaining({
@@ -1249,7 +1250,7 @@ function deferred<T>(): { promise: Promise<T>; resolve(value: T): void } {
 function fakeSnowChannel(applicationMajor: 3 | 4 = 4) {
   const channel = Object.create(SnowCompanionProtocolChannel.prototype) as SnowCompanionProtocolChannel
   const open = vi.fn<(ciphertext: Uint8Array) => ReturnType<SnowCompanionProtocolChannel['open']>>(
-    () => ({ type: 'result', result: { type: 'status', operationId: 'fake' as never, absent: true } }),
+    () => ({ type: 'result', result: { type: 'status', operationId: parseCompanionOperationId('fake'), absent: true } }),
   )
   const seal = vi.fn<(
     message: Parameters<SnowCompanionProtocolChannel['seal']>[0],

@@ -13,6 +13,8 @@ Desktop-only Session Surface chrome and Mobile Pairing plus Sub2API Settings sec
 
 The macOS chrome reserves 28px above the unchanged DSH sidebar header and center Session content for the native traffic lights. The Windows row spans the viewport and keeps its three caption buttons outside the drag region without changing the Session content inset. Other development platforms render no custom Window Chrome and keep their system frame.
 
+The `@deepseek-ai/dsh-client-ui-desktop/pairing-source` ESM entry exports only `createDesktopPairingSource` and `bindDesktopPairing` without loading the UI plugin. The caller owns the mutable snapshot source and the binding disposer; disposal blocks late reads and pushes and unsubscribes from the Host. Pairing authority remains with the Host.
+
 ## Table of Contents
 
 - [Model Experience](#model-experience)

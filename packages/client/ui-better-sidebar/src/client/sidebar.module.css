@@ -491,7 +491,6 @@ body[data-dsh-sidebar-dragging] .bottomPanel {
    browsers and in shells without drag regions — safe everywhere. */
 .toggleCluster,
 .toggleButton,
-.tabBar,
 .floatHeader {
   -webkit-app-region: no-drag;
 }

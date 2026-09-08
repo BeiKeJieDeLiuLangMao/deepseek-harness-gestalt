@@ -318,6 +318,9 @@ flowchart LR
   pkg_member_question_sender --> svc_memberQuestionSender
   pkg_message_feedback --> svc_messageFeedback
   pkg_permission_presets --> svc_permissionPresets
+  pkg_phone_environment --> svc_phoneEnvironment
+  pkg_phone_runtime --> svc_phoneDevices
+  pkg_phone_stream --> svc_phoneStream
   pkg_plan_mode --> svc_planMode
   pkg_platform_account --> svc_platformAccount
   pkg_platform_account_core --> svc_platformAccount

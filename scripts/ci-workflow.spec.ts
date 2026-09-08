@@ -8,6 +8,33 @@ const runnerPrivatePnpmDestination = /^\$\{\{ runner\.temp \}\}\/setup-pnpm-\$\{
 const nativeWindowsPnpmDestination = '${{ runner.temp }}/setup-pnpm-js-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}'
 
 describe('CI workflow', () => {
+  it('keeps candidate-only Mobile release inputs and prepares pnpm before validation', () => {
+    const workflow = loadWorkflow('.github/workflows/mobile-release.yml')
+    const dispatch = workflowEvent(workflow, 'workflow_dispatch')
+    const releaseVersion = workflowJob(workflow, 'release-version')
+    if (!isRecord(dispatch.inputs) || !Array.isArray(releaseVersion.steps)) {
+      throw new TypeError('Mobile release workflow must define dispatch inputs and release-version steps')
+    }
+
+    expect(dispatch.inputs).toMatchObject({
+      acceptance_run_id: { required: false, type: 'string' },
+      candidate_build_only: { required: true, type: 'boolean', default: false },
+    })
+    const steps = releaseVersion.steps.filter(isRecord)
+    const pnpmSetup = steps.findIndex(step => step.uses === 'pnpm/action-setup@v4')
+    const nodeSetup = steps.findIndex(step => step.uses === 'actions/setup-node@v6')
+    const validation = steps.findIndex(step => step.name === 'Read source-owned version and build number')
+    expect(pnpmSetup).toBeGreaterThanOrEqual(0)
+    expect(nodeSetup).toBeGreaterThan(pnpmSetup)
+    expect(steps[nodeSetup]?.with).toEqual({
+      'node-version': '${{ env.PRIMARY_NODE_VERSION }}',
+      cache: 'pnpm',
+    })
+    expect(validation).toBeGreaterThan(nodeSetup)
+    expect(String(steps[validation]?.run)).toContain('pnpm install --frozen-lockfile --ignore-scripts')
+    expect(String(steps[validation]?.run)).toContain('pnpm product-release:validate-candidate')
+  })
+
   it('isolates every pnpm action setup destination per runner', () => {
     const files = ['.github/workflows/ci.yml', '.github/workflows/ci-master.yml']
     const setups: Array<{ jobName: string; step: unknown }> = []
@@ -180,6 +207,27 @@ describe('CI workflow', () => {
     // windows-observational is non-blocking.
     expect(windowsObservational.name).toBe('windows node 24 / observational')
     expect(windowsObservational['continue-on-error']).toBe(true)
+    const observationalSteps = windowsObservational.steps as unknown[]
+    const observationalInstall = observationalSteps.findIndex(
+      step => isRecord(step) && step.name === 'Install (immutable)',
+    )
+    const chromium = observationalSteps.findIndex(
+      step => isRecord(step) && step.name === 'Install Chromium for built-artifact smoke',
+    )
+    const observationalRun = observationalSteps.findIndex(
+      step => isRecord(step) && step.name === 'Run Windows observational gates',
+    )
+    expect(observationalSteps[chromium]).toMatchObject({
+      shell: 'pwsh',
+      run: 'pnpm --filter @deepseek-ai/dsh-mobile exec playwright install chromium',
+    })
+    expect(chromium).toBeGreaterThan(observationalInstall)
+    expect(observationalRun).toBeGreaterThan(chromium)
+    for (const job of [windowsBuild, windowsCoverage, windowsNativeTests]) {
+      expect((job.steps as unknown[]).some(
+        step => isRecord(step) && step.name === 'Install Chromium for built-artifact smoke',
+      )).toBe(false)
+    }
 
     // wine-apt-cache: master-only, seeds the Wine apt cache, lives in ci-master.
     expect(wineAptCache.if).toBe("github.event_name == 'push' && github.ref == 'refs/heads/master'")
@@ -530,6 +578,7 @@ describe('Python release workflows', () => {
     }
 
     const buildSteps: unknown[] = build.steps
+    const install = buildSteps.find(step => isRecord(step) && step.name === 'Install (immutable)')
     const manylinuxAddon = buildSteps.find(step => isRecord(step) && step.name === 'Rebuild Linux node-pty against manylinux 2.28')
     const macosCheck = buildSteps.find(step => isRecord(step) && step.name === 'Check macOS deployment target')
     const manylinuxSmoke = buildSteps.find(step => isRecord(step) && step.name === 'Run wheel in a manylinux 2.28 container')
@@ -541,7 +590,11 @@ describe('Python release workflows', () => {
     const realApiPreflightWindows = buildSteps.find(step => isRecord(step) && step.name === 'Preflight installed-wheel real API test (Windows)')
     const installedRealApiPosix = buildSteps.find(step => isRecord(step) && step.name === 'Run installed-wheel real API black-box test (POSIX)')
     const installedRealApiWindows = buildSteps.find(step => isRecord(step) && step.name === 'Run installed-wheel real API black-box test (Windows)')
-    if (!isRecord(cleanVenvPosix) || !isRecord(cleanVenvWindows)
+    const transientAttempts = buildSteps.find(
+      step => isRecord(step) && step.name === 'Publish transient infrastructure attempts',
+    )
+    if (!isRecord(install) || typeof install.run !== 'string' || !isRecord(transientAttempts)
+      || !isRecord(cleanVenvPosix) || !isRecord(cleanVenvWindows)
       || !isRecord(installedKeylessPosix) || !isRecord(installedKeylessWindows)
       || !isRecord(realApiPreflightPosix) || !isRecord(realApiPreflightWindows)
       || !isRecord(installedRealApiPosix) || !isRecord(installedRealApiWindows)) {
@@ -562,6 +615,15 @@ describe('Python release workflows', () => {
     expect(plan.if).toContain('inputs.ci')
     expect(plan.if).toContain('inputs.release')
     expect(JSON.stringify(plan.steps)).toContain('pep440_version')
+    expect(install.run).toContain('node scripts/retry-transient-ci.ts')
+    expect(install.run).not.toContain('pnpm --silent exec tsx')
+    expect(install.run).toContain('install-${{ matrix.target }}.json')
+    expect(install.run).toContain("runner.os == 'Windows' && 'pnpm.cmd' || 'pnpm'")
+    expect(install.run).toContain('install --frozen-lockfile')
+    expect(transientAttempts).toMatchObject({
+      if: "always() && runner.os == 'Linux'",
+      with: { path: '${{ runner.temp }}/ci-evidence/*.json' },
+    })
     const workflowJson = JSON.stringify(workflow)
     expect(workflowJson).toContain('macosx_14_0_arm64')
     expect(workflowJson).toContain('win_amd64')

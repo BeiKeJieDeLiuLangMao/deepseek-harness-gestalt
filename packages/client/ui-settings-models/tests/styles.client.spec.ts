@@ -29,6 +29,14 @@ function block(selector: string): string {
 }
 
 describe('ModelsSection theme styles', () => {
+  it('defines the CSS modules referenced by capability tags', () => {
+    const sources = ['InputModalityTags.tsx', 'ReasoningEffortTags.tsx']
+      .map(name => readFileSync(fileURLToPath(new URL(`../src/client/${name}`, import.meta.url)), 'utf8'))
+    const names = sources.flatMap(source => [...source.matchAll(/styles\['([^']+)'\]/g)]
+      .flatMap(([, name]) => name === undefined ? [] : [name]))
+    for (const name of new Set(names)) expect(css).toMatch(new RegExp(`\\.${name}(?![\\w-])`))
+  })
+
   it('names only theme variables the token sheet defines', () => {
     // A `--dsw-*` name the sheet never declares is not a near miss: it silently
     // resolves to whatever literal sits in its fallback slot, which is how this

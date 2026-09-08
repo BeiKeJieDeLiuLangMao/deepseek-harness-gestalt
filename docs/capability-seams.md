@@ -185,6 +185,24 @@ flowchart LR
   svc_jobs["ctx.jobs<br/>Background job registry"]
   pkg_jobs_local["jobs-local"]
   pkg_tool_jobs["tool-jobs"]
+  pkg_browser["browser"]
+  svc_browserRuntime["ctx.browserRuntime<br/>Browser Runtime capability"]
+  pkg_browser_runtime_deterministic["browser-runtime-deterministic"]
+  pkg_browser_runtime_electron["browser-runtime-electron"]
+  pkg_browser_runtime_tandem["browser-runtime-tandem"]
+  pkg_tool_browser["tool-browser"]
+  pkg_browser_workspace["browser-workspace"]
+  svc_browserWorkspace["ctx.browserWorkspace<br/>Session-owned Browser Workspace binder"]
+  pkg_client_ui_browser["client-ui-browser"]
+  pkg_client_ui_workbench["client-ui-workbench"]
+  pkg_phone_runtime["phone-runtime"]
+  svc_phoneDevices["ctx.phoneDevices<br/>Phone device fleet capability"]
+  pkg_tool_phone["tool-phone"]
+  pkg_phone_stream["phone-stream"]
+  pkg_phone_environment["phone-environment"]
+  svc_phoneEnvironment["ctx.phoneEnvironment<br/>Host-owned phone toolchain environment"]
+  pkg_client_ui_phone["client-ui-phone"]
+  svc_phoneStream["ctx.phoneStream<br/>Same-origin phone IO and capture reverse-proxy"]
   pkg_web["web"]
   svc_web["ctx.web<br/>Web access provider registry"]
   pkg_web_search_exa["web-search-exa"]
@@ -219,15 +237,6 @@ flowchart LR
   svc_dynamicCordisRunner["ctx.dynamicCordisRunner<br/>Dynamic Cordis package host runner"]
   svc_cordisInspect["ctx.cordisInspect<br/>Dynamic Cordis inspect registry"]
   pkg_browser_runtime["browser-runtime"]
-  svc_browserRuntime["ctx.browserRuntime<br/>Browser Runtime seam"]
-  pkg_browser_runtime_deterministic["browser-runtime-deterministic"]
-  pkg_browser_runtime_electron["browser-runtime-electron"]
-  pkg_browser_runtime_tandem["browser-runtime-tandem"]
-  pkg_tool_browser["tool-browser"]
-  pkg_browser_workspace["browser-workspace"]
-  svc_browserWorkspace["ctx.browserWorkspace<br/>Workspace-backed browser projection"]
-  pkg_client_ui_browser["client-ui-browser"]
-  pkg_client_ui_workbench["client-ui-workbench"]
   pkg_platform_account["platform-account"]
   svc_platformAccount["ctx.platformAccount<br/>Platform account seam"]
   pkg_platform_account_core["platform-account-core"]
@@ -270,6 +279,8 @@ flowchart LR
   pkg_authorization --> svc_authorization
   pkg_bash_local --> svc_shell
   pkg_bash_sandbox --> svc_shell
+  pkg_browser --> svc_browserRuntime
+  pkg_browser --> svc_browserWorkspace
   pkg_browser_runtime --> svc_browserRuntime
   pkg_browser_runtime_deterministic --> svc_browserRuntime
   pkg_browser_runtime_electron --> svc_browserRuntime
@@ -316,6 +327,9 @@ flowchart LR
   pkg_member_question_sender --> svc_memberQuestionSender
   pkg_message_feedback --> svc_messageFeedback
   pkg_permission_presets --> svc_permissionPresets
+  pkg_phone_environment --> svc_phoneEnvironment
+  pkg_phone_runtime --> svc_phoneDevices
+  pkg_phone_stream --> svc_phoneStream
   pkg_plan_mode --> svc_planMode
   pkg_platform_account --> svc_platformAccount
   pkg_platform_account_core --> svc_platformAccount
@@ -438,6 +452,10 @@ flowchart LR
   svc_lsp --> pkg_tool_lsp
   svc_memberQuestionReceiver --> pkg_api_session_controller
   svc_memberQuestionSender --> pkg_tool_ask_user
+  svc_phoneDevices --> pkg_phone_environment
+  svc_phoneDevices --> pkg_phone_stream
+  svc_phoneDevices --> pkg_tool_phone
+  svc_phoneEnvironment --> pkg_client_ui_phone
   svc_platformAccount --> pkg_platform_account_http
   svc_platformAccount --> pkg_project_membership_http
   svc_projectMembership --> pkg_project_membership_http
@@ -594,6 +612,11 @@ flowchart LR
 | `ctx.agentTeams` | `core` | [`experimental-agent-team`](../packages/experimental/agent-team) | - | [`experimental-tool-agent-team`](../packages/experimental/tool-agent-team), [`experimental-client-ui-agent-team`](../packages/experimental/client-ui-agent-team) | - | Owns the implicit-root roster, durable peer mailbox, shared task DAG, continuable-child lifecycle, and generated Team Remote methods; tool-agent-team contributes model controls and client-ui-agent-team mounts the browser contribution. |
 | `ctx.inspector` | `core` | `inspector` | - | - | - | Owns the Worker-hosted CDP target and the transport-independent Host and Client observation and Cordis-tree query API. |
 | `ctx.jobs` | `seam` | [`jobs`](../packages/jobs/jobs) | [`jobs-local`](../packages/jobs/jobs-local) | [`tool-bash`](../packages/shell/tool-bash), [`tool-terminal`](../packages/terminal/tool-terminal), [`tool-subagent`](../packages/subagent/tool-subagent), [`tool-jobs`](../packages/jobs/tool-jobs) | - | Producers (background bash, PTY sends, and subagent delegations) register running work; tool-jobs is the model-facing controller that reads, lists, and kills it; jobs-local is the process-local registry. |
+| `ctx.browserRuntime` | `seam` | `browser` | [`browser-runtime-deterministic`](../packages/browser/browser-runtime-deterministic), [`browser-runtime-electron`](../packages/browser/browser-runtime-electron), [`browser-runtime-tandem`](../packages/browser/browser-runtime-tandem) | [`tool-browser`](../packages/browser/tool-browser), [`browser-workspace`](../packages/browser/browser-workspace) | - | Opaque Profile, Workspace, browser, and tab identities stay behind ctx.browserRuntime; the deferred Consumer uses ordinary discovery, results, and presentation. |
+| `ctx.browserWorkspace` | `core` | `browser` | - | [`tool-browser`](../packages/browser/tool-browser), [`client-ui-browser`](../packages/client/ui-browser), [`client-ui-workbench`](../packages/client/ui-workbench) | - | Each Session independently owns Dock facts, instances, and tabs over ctx.browserRuntime identities; the deferred Consumer binds created tabs when a calling Agent Session is present; the workbench sidebar reads the same snapshot. |
+| `ctx.phoneDevices` | `seam` | [`phone-runtime`](../packages/phone/phone-runtime) | - | [`tool-phone`](../packages/phone/tool-phone), [`phone-stream`](../packages/phone/phone-stream), [`phone-environment`](../packages/phone/phone-environment) | - | Opaque DeviceId identities stay behind ctx.phoneDevices; the deferred Consumer uses ordinary discovery, results, and tools/pre-execute ask for mutations; the same-origin stream Consumer reverse-proxies io and capture. |
+| `ctx.phoneEnvironment` | `core` | [`phone-environment`](../packages/phone/phone-environment) | - | [`client-ui-phone`](../packages/client/ui-phone) | - | Owns trusted runtime discovery, managed preparation, activation, and revisioned full snapshots; the settings Consumer drives its durable enable value and renders preparation state. |
+| `ctx.phoneStream` | `core` | [`phone-stream`](../packages/phone/phone-stream) | - | - | - | Registers Host WebSocket and signed HTTP capture routes so the browser never dials mobilecli :12000. |
 | `ctx.web` | `seam` | [`web`](../packages/web/web) | [`web-search-exa`](../packages/web/web-search-exa), [`web-search-perplexity`](../packages/web/web-search-perplexity), [`web-search-deepseek`](../packages/web/web-search-deepseek), [`web-fetch-http`](../packages/web/web-fetch-http) | [`tool-web`](../packages/web/tool-web) | - | Search and fetch providers register into one ctx.web seam; tool-web owns the stable model-facing names. |
 | `ctx.spillStore` | `seam` | [`spill`](../packages/spill/spill) | [`spill-local`](../packages/spill/spill-local) | [`spill-policy`](../packages/spill/spill-policy) | - | The backend saves oversized tool text and returns a model-facing locator plus retrieval hint; spill-policy is the tools/post-execute consumer that decides when to spill. |
 | `ctx.directoryPicker` | `seam` | [`host-directory-picker`](../packages/host/directory-picker) | [`host-directory-picker-native`](../packages/host/directory-picker-native), [`host-directory-picker-browse`](../packages/host/directory-picker-browse) | [`api-workspace-controller`](../packages/api/workspace-controller) | - | Discriminated interaction capability: the native backend opens one OS chooser on the host display, the browse backend serves listing/creation primitives for the in-app browser; dual-face backends fill ui-workspace directory-flow slots from their browser halves (no wire advertisement). |

@@ -32,6 +32,14 @@ function buildFixture(environment: Record<string, string>): string {
   write(join(root, 'package.json'), `${JSON.stringify({ version: environment.DSH_CLIENT_VERSION ?? '0.0.1' })}\n`)
   write(join(root, 'apps/web/dist/index.html'), '<main></main>')
   write(join(root, 'packages/client/example/lib/client.js'), 'module.exports = {}\n')
+  write(join(root, 'packages/client/example/lib/client.js.map'), `${JSON.stringify({
+    version: 3,
+    file: 'client.js',
+    sources: [],
+    sourcesContent: [],
+    names: [],
+    mappings: '',
+  })}\n`)
   writeClientBuildRecord(root, environment)
   return root
 }

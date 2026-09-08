@@ -2,10 +2,12 @@
  * Models settings section: the provider rows joined from the configurable
  * directory, settings namespaces, and credential states, with one editor
  * card at a time. Rows expose only confirmed API-key state through accessible
- * solid configured or missing dots. A whole-section provider without a
- * configured key renders as its open setup card instead of a row, but only in
- * the first-run posture — no provider on the page can serve requests yet — and
- * only until the user closes that card; the add flow is a card carrying the
+ * solid configured or missing dots. Official DeepSeek is listed only when
+ * a stored section or credential occupies it. Deletion leaves an empty user
+ * section off the list; a configured catalog DeepSeek route does not also
+ * list an unoccupied official row through its shared credential reference.
+ * A listed whole-section provider without a key opens its setup card while
+ * no provider can serve requests. The add flow is a card carrying the
  * dormant-provider select. Each card kind owns its own open state, so closing
  * one never discards a draft in another. Every mutation writes through the
  * wire, while a provider removal first requires confirmation; the page
@@ -125,6 +127,7 @@ export async function removeProviderProfile(
     undefined,
   )
   if (written.kind !== 'written') return written.message
+  controller.acceptWrite(written.view)
   await controller.load()
   return undefined
 }
@@ -145,6 +148,33 @@ export function needsSetup(row: ProviderRow, anyUsable: boolean): boolean {
 }
 
 /**
+ * Select stored provider rows, including credential-only official occupancy.
+ * @param rows - the joined directory, settings, and credential facts.
+ * @returns visible rows without duplicating a catalog DeepSeek credential.
+ */
+export function listedProviderRows(rows: readonly ProviderRow[]): ProviderRow[] {
+  const catalogDeepseekConfigured = rows.some(row => row.configured
+    && row.entry.provider === 'deepseek' && row.entry.settingsNs === 'llm-pi-ai')
+  return rows.filter((row) => {
+    if (catalogDeepseekConfigured && isOfficialDeepSeek(row) && !row.configured) return false
+    return row.configured || row.credential?.configured === true
+  })
+}
+
+function isOfficialDeepSeek(row: ProviderRow): boolean {
+  return row.entry.provider === 'deepseek-official' && row.entry.settingsPath.length === 0
+}
+
+/**
+ * Offer dormant catalog routes while leaving official DeepSeek unoccupied.
+ * @param rows - the joined configurable-provider rows.
+ * @returns routes available through Add provider.
+ */
+export function addableProviderRows(rows: readonly ProviderRow[]): ProviderRow[] {
+  return rows.filter(row => !row.configured && row.entry.settingsNs !== '' && !isOfficialDeepSeek(row))
+}
+
+/**
  * The provider-card seat's credential fact: the reference this page would use
  * for the row — the profile's `apiKeyEnv`, or the page's derived
  * `<ROUTE>_API_KEY` while the profile names none — confirmed configured. The
@@ -159,10 +189,13 @@ function keyConfiguredOf(row: ProviderRow): boolean {
 
 function targetOf(row: ProviderRow): EditorTarget {
   const managedRef = deriveKeyRef(row.entry.provider)
-  const credentialRef = row.apiKeyEnv === managedRef
+  const keyRef = row.apiKeyEnv === managedRef
+    ? managedRef
+    : isOfficialDeepSeek(row) ? row.apiKeyEnv : undefined
+  const credentialRef = keyRef !== undefined
     && row.credential?.configured === true
     && row.credential.writable
-    ? managedRef
+    ? keyRef
     : undefined
   return {
     provider: row.entry.provider,
@@ -256,6 +289,11 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
           setDeleteFailure(failure)
           return
         }
+        setDismissedSetup((previous) => {
+          const next = new Set(previous)
+          next.delete(deleteTarget.provider)
+          return next
+        })
         setDeleteTarget(undefined)
       })
       .finally(() => { setDeleting(false) })
@@ -289,8 +327,8 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
   // One fact decides both first-run postures on this page and the onboarding
   // step: whether the user already has a provider to talk to.
   const anyUsable = state.rows.some(providerUsable)
-  const configured = state.rows.filter(row => row.configured)
-  const addable = state.rows.filter(row => !row.configured && row.entry.settingsNs !== '')
+  const configured = listedProviderRows(state.rows)
+  const addable = addableProviderRows(state.rows)
   const addTarget = adding ? editing : undefined
   const addNamespace = addTarget === undefined ? undefined : state.namespaces.get(addTarget.settingsNs)
   // The draft's directory row, for the card extension seat. A refresh can drop

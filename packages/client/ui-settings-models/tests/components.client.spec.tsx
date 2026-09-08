@@ -9,7 +9,7 @@ import type {
 } from '@deepseek-ai/dsh-api-remotes/client'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import {
-  ModelsSection, needsSetup, providerCopy, providerTargetLabel, removeProviderProfile,
+  ModelsSection, addableProviderRows, listedProviderRows, needsSetup, providerCopy, providerTargetLabel, removeProviderProfile,
 } from '../src/client/ModelsSection.tsx'
 import type { ModelsSectionInjected, ModelsSectionProps } from '../src/client/ModelsSection.tsx'
 import { pathOps } from '../src/client/ProviderEditor.tsx'
@@ -1222,6 +1222,62 @@ describe('ModelsSection', () => {
     fireEvent.change(editorKey, { target: { value: 'sk-live' } })
     fireEvent.click(screen.getByText(en.apply))
     await waitFor(() => { expect(set).toHaveBeenCalledTimes(1) })
+  })
+
+  it('removes official DeepSeek and its writable credential without reopening Settings', async () => {
+    const official = wireNamespaces().find(view => view.ns === 'llm-deepseek')!
+    let stored = true
+    const scripted = scriptedFace({
+      unset: vi.fn(() => { stored = false; return Promise.resolve(remoteOk(undefined)) }),
+      mutate: vi.fn(() => Promise.resolve(remoteOk({ ...official, user: {}, revision: 1 }))),
+    })
+    scripted.face.credentials.describe.mockImplementation((refs: string[]) => Promise.resolve(remoteOk(
+      Object.fromEntries(refs.map(ref => [ref, {
+        configured: ref === 'OPENAI_API_KEY' || (ref === 'DEEPSEEK_API_KEY' && stored),
+        writable: true,
+      }])),
+    )))
+    const directory = await scripted.face.llm.listConfigurableProviders()
+    scripted.face.llm.listConfigurableProviders.mockResolvedValue(remoteOk([...directory.value, {
+      provider: 'deepseek', displayName: 'DeepSeek', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'deepseek'],
+    }]))
+    const { unset, mutate, controller } = await mountFace(scripted)
+    fireEvent.click(screen.getByRole('button', { name: deepSeekCopy(en.removeProvider) }))
+    const dialog = screen.getByRole('dialog', { name: deepSeekCopy(en.deleteTitle) })
+    expect(unset).not.toHaveBeenCalled()
+    fireEvent.click(within(dialog).getByRole('button', { name: deepSeekCopy(en.deleteConfirm) }))
+    await waitFor(() => { expect(screen.queryByRole('button', { name: deepSeekCopy(en.editProvider) })).toBeNull() })
+    expect(unset).toHaveBeenCalledWith('DEEPSEEK_API_KEY')
+    expect(mutate).toHaveBeenCalledWith('llm-deepseek', [{ op: 'unset', path: [] }], undefined)
+    expect(unset.mock.invocationCallOrder[0]).toBeLessThan(mutate.mock.invocationCallOrder[0] as number)
+    expect(controller.store.getSnapshot().namespaces.get('llm-deepseek')?.user).toEqual({})
+    expect(screen.getByRole('button', { name: openaiCopy(en.editProvider) })).toBeTruthy()
+    fireEvent.click(screen.getByText(en.add))
+    const select = await screen.findByLabelText<HTMLSelectElement>(en.provider)
+    expect(Array.from(select.options).map(option => option.value)).toContain('deepseek')
+    expect(Array.from(select.options).map(option => option.value)).not.toContain('deepseek-official')
+    fireEvent.change(select, { target: { value: 'deepseek' } })
+    expect(select.value).toBe('deepseek')
+    expect(await screen.findByLabelText(en.keyInput)).toBeTruthy()
+  })
+
+  it('keeps the official row dormant when a re-added catalog route shares its credential', () => {
+    const official: ProviderRow = {
+      entry: { provider: 'deepseek-official', displayName: 'DeepSeek', settingsNs: 'llm-deepseek', settingsPath: [], active: true },
+      configured: false, removable: true, apiKeyEnv: 'DEEPSEEK_API_KEY',
+      credential: { configured: false, writable: true },
+    }
+    const catalog: ProviderRow = {
+      ...official,
+      entry: { provider: 'deepseek', displayName: 'DeepSeek', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'deepseek'], active: true },
+    }
+    expect(listedProviderRows([official, catalog])).toEqual([])
+    expect(addableProviderRows([official, catalog])).toEqual([catalog])
+    const credential = { configured: true, writable: true }
+    const readded = { ...catalog, configured: true, credential }
+    expect(listedProviderRows([{ ...official, credential }, readded])).toEqual([readded])
+    expect(addableProviderRows([official, readded])).toEqual([])
+    expect(listedProviderRows([{ ...official, credential }])).toHaveLength(1)
   })
 
   it('requires confirmation before removing a user-added provider', async () => {

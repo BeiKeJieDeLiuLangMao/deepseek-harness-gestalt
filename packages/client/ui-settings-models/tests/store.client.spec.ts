@@ -4,7 +4,7 @@ import type { RpcResponse } from '@deepseek-ai/dsh-api-remotes/client'
 import { RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
 import { SettingsDescribeMirror } from '@deepseek-ai/dsh-client-ui-settings/src/client/settings-mirror.ts'
 import { settingsSchema } from './settings-schema.client.ts'
-import { ModelsSettingsStore } from '../src/client/store.ts'
+import { ModelsSettingsStore, userSectionOccupied } from '../src/client/store.ts'
 
 let nextRpc = 0
 function ok<T>(value: T): RpcResponse<T> {
@@ -122,8 +122,8 @@ describe('ModelsSettingsStore', () => {
     expect(seenRefs).toEqual([['DEEPSEEK_API_KEY', 'OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'GHOST_API_KEY']])
     const byProvider = new Map(state.rows.map(row => [row.entry.provider, row]))
     expect(byProvider.get('deepseek-official')).toMatchObject({
-      configured: true,
-      removable: false,
+      configured: false,
+      removable: true,
       apiKeyEnv: 'DEEPSEEK_API_KEY',
       credential: { configured: false, writable: true },
     })
@@ -317,5 +317,13 @@ describe('edge joins', () => {
     await first
     // The stale empty directory never overwrote the newer join.
     expect(store.store.getSnapshot().rows).toHaveLength(4)
+  })
+})
+
+describe('provider section occupancy', () => {
+  it('distinguishes an absent or deleted section from a stored profile', () => {
+    expect(userSectionOccupied(undefined)).toBe(false)
+    expect(userSectionOccupied({})).toBe(false)
+    expect(userSectionOccupied({ apiKeyEnv: 'DEEPSEEK_API_KEY' })).toBe(true)
   })
 })

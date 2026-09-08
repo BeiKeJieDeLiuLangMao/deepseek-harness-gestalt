@@ -35,6 +35,15 @@ describe('web shell base.css', () => {
     expect(baseCss).not.toContain(THEME_PACKAGE)
   })
 
+  it('keeps the Desktop overlay document transparent', () => {
+    expect(normalizedCss).toContain(
+      'html[data-dsh-desktop-overlay], html[data-dsh-desktop-overlay] body, html[data-dsh-desktop-overlay] #root { background: transparent; }',
+    )
+    expect(normalizedCss).toContain(
+      'html[data-dsh-desktop-overlay] [data-dsh-boot] { display: none; }',
+    )
+  })
+
   it('auto-spaces prose while preserving literal content', () => {
     expect(baseCss).toMatch(/body\s*\{[^}]*text-autospace:\s*normal;/)
     expect(normalizedCss).toContain(

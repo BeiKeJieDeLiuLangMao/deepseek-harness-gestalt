@@ -102,6 +102,18 @@ probePromise()
         paths.push([label, relative(repositoryRoot, path), tsconfig])
       }
       const clientScript = 'scripts/client-bundle-purity.spec.ts'
+      const dedicatedFaces = [
+        [
+          'Desktop Companion Client test',
+          'apps/desktop/tests/companion-host-assembled.spec.ts',
+          'apps/desktop/tests/tsconfig.json',
+        ],
+        [
+          'Desktop Companion Host fixture',
+          'apps/desktop/tests/companion-fixture/host-400-codec-probe.ts',
+          'apps/desktop/tests/companion-fixture/tsconfig.json',
+        ],
+      ] as const
 
       const result = runOxlint([
         '--config',
@@ -110,6 +122,7 @@ probePromise()
         'unix',
         ...paths.map(([, path]) => path),
         clientScript,
+        ...dedicatedFaces.map(([, path]) => path),
       ], { OXC_LOG: 'debug' })
       const output = normalizedOutput(result)
 
@@ -125,6 +138,11 @@ probePromise()
       expect(output, 'client aggregate script project').toContain(
         `Got tsconfig for file ${join(repositoryRoot, clientScript).replaceAll('\\', '/')}: ${join(repositoryRoot, 'tsconfig.client.json').replaceAll('\\', '/')}`,
       )
+      for (const [label, path, tsconfig] of dedicatedFaces) {
+        expect(output, `${label} project`).toContain(
+          `Got tsconfig for file ${join(repositoryRoot, path).replaceAll('\\', '/')}: ${join(repositoryRoot, tsconfig).replaceAll('\\', '/')}`,
+        )
+      }
       expect(output).not.toContain('Unmatched file:')
     } finally {
       await Promise.all([

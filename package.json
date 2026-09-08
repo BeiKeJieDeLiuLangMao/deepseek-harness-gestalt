@@ -159,7 +159,11 @@
     "demo:inspector": "node --import tsx/esm apps/cli/src/bin.ts web --patch ./packages/experimental/inspector/cordis.source.patch.yml",
     "mock:llm": "node --import tsx packages/test-support/llm-mock-server/src/bin.ts",
     "dev:web": "tsx scripts/dev-web.ts --poll",
-    "postinstall": "node scripts/install-lefthook.mjs"
+    "postinstall": "node scripts/install-lefthook.mjs",
+    "typecheck:desktop:contracts-ready": "node scripts/check-desktop-compiler-faces.mjs",
+    "verify-dependency-policy": "tsx scripts/verify-dependency-policy.ts",
+    "gestalt:overlay-boot": "npm run build && vitest run apps/desktop/tests/overlay-boot.spec.ts --maxWorkers=1",
+    "test:e2e-electron": "pnpm --filter @deepseek-ai/dsh-desktop test:e2e-electron"
   },
   "devDependencies": {
     "@deepseek-ai/dsh-tool-session-query": "workspace:^",

@@ -244,6 +244,63 @@ describe.skipIf(MODE === 'record')('web e2e: first-run DeepSeek credential setup
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
 
+  it('withdraws deleted DeepSeek models from existing and new Session selectors', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-onboarding-deepseek-delete-picker'))
+    // The preceding scenario leaves the model menu drilled into its model
+    // pane. Back out and close it before opening Settings.
+    await page.keyboard.press('Escape')
+    await page.keyboard.press('Escape')
+    await page.getByRole('button', { name: '设置', exact: true }).click()
+    const settings = page.getByRole('dialog', { name: '设置' })
+    await settings.waitFor({ timeout: 10_000 })
+    await settings.getByRole('button', { name: '模型' }).click()
+    await settings.getByRole('button', { name: '删除 DeepSeek (deepseek-official)', exact: true }).click()
+    const deletion = page.getByRole('dialog', { name: '删除 DeepSeek (deepseek-official)？' })
+    await deletion.waitFor({ timeout: 10_000 })
+    await deletion.getByRole('button', { name: '删除 DeepSeek (deepseek-official)', exact: true }).click()
+    await deletion.waitFor({ state: 'detached', timeout: 15_000 })
+
+    await expect.poll(
+      () => readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8'),
+      { timeout: 10_000 },
+    ).toMatch(/^llm-deepseek:\s*\{\}\s*$/m)
+    await expect.poll(
+      () => readFile(join(scaffold.harnessHome, '.credentials.yaml'), 'utf8'),
+      { timeout: 10_000 },
+    ).not.toContain('DEEPSEEK_API_KEY')
+    await expect.poll(
+      () => scaffold.ctx.llm.listProviders().map(provider => provider.id),
+      { timeout: 10_000 },
+    ).not.toContain('deepseek-official')
+
+    await page.keyboard.press('Escape')
+    await settings.waitFor({ state: 'detached', timeout: 10_000 })
+    const historical = page.getByRole('button', {
+      name: '选择模型，当前 deepseek-official/deepseek-v4-flash',
+    })
+    await historical.waitFor({ timeout: 10_000 })
+    expect(await historical.isDisabled()).toBe(false)
+    await historical.click()
+    await page.getByRole('menuitem', { name: /模型/ }).click()
+    await page.getByText('没有可用的模型。', { exact: true }).waitFor({ timeout: 10_000 })
+    expect(await page.getByRole('menuitemradio').count()).toBe(0)
+    await page.keyboard.press('Escape')
+    await page.keyboard.press('Escape')
+
+    await page.getByRole('button', { name: /新.*会话/ }).last().click()
+    const fresh = page.getByRole('button', {
+      name: '选择模型，当前 deepseek-official/deepseek-v4-flash',
+    })
+    await fresh.waitFor({ timeout: 10_000 })
+    expect(await fresh.isDisabled()).toBe(false)
+    await fresh.click()
+    await page.getByRole('menuitem', { name: /模型/ }).click()
+    await page.getByText('没有可用的模型。', { exact: true }).waitFor({ timeout: 10_000 })
+    expect(await page.getByRole('menuitemradio').count()).toBe(0)
+    expect(tripwire.warnings).toEqual([])
+    expect(tripwire.pageErrors).toEqual([])
+  }, 60_000)
+
   it('keeps the fixture inventory closed', async () => {
     await assertFixtureInventory(
       SNAPSHOT_DIR,

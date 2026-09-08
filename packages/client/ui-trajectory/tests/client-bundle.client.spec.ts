@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Real tsdown artifact shape: lib/client.js hands off through
+ * Real tsdown artifact: lib/client.js hands off through
  * window.__ModuleLoader__.load, resolves externals through the injected
  * require, returns the exports (apply + inject), and a mounted apply
  * registers the view tab into a real SlotRegistry ring. Skips when dist/ is

@@ -59,6 +59,7 @@ async function bench() {
   const ctx = new Context()
   let defaultSelection: ModelSelection = { provider: 'deepseek-official', model: 'deepseek-v4-flash' }
   let selected = defaultSelection
+  let groups = GROUPS
   const calls = { models: 0, select: 0 }
   const projections = new Map<SessionId, SnapshotStore<ModelSelectionProjection | undefined>>()
   // Whether the Host reports an adapter for the current route; the composer
@@ -72,7 +73,7 @@ async function bench() {
         value: {
           default: defaultSelection,
           routableProviders: routable ? ['deepseek-official'] : [],
-          groups: GROUPS,
+          groups,
           failures: [],
         },
       })
@@ -211,6 +212,7 @@ async function bench() {
       for (const listener of admissionListeners) listener()
     },
     setRoutable: (next: boolean) => { routable = next },
+    setGroups: (next: typeof GROUPS) => { groups = next },
     setFeature: (id: SessionId, current: ModelSelection, nextRoutable: boolean) => {
       features.set(id, { current, routable: nextRoutable, inspections: 0 })
     },
@@ -344,6 +346,45 @@ describe('ui-model-selection dual entry', () => {
         status: 'ready',
       })
     })
+  })
+
+  it('keeps historical selections while deleted-provider models leave existing and new Session pickers', async () => {
+    const b = await bench()
+    b.mint('existing')
+    const existing = b.seat().inject!(sid('existing'))
+    await existing.load()
+    expect(existing.directory.getSnapshot()).toMatchObject({
+      current: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
+      routable: true,
+    })
+
+    b.setGroups([])
+    b.setRoutable(false)
+    b.remote.emit('settings/document-updated', ['llm-deepseek', 1])
+    await vi.waitFor(() => {
+      expect(existing.directory.getSnapshot()).toMatchObject({
+        current: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
+        routable: false,
+        groups: [],
+      })
+    })
+    await expect(b.contribution().ui.options(
+      projection('existing'),
+      new AbortController().signal,
+    )).resolves.toEqual([])
+
+    b.mint('new')
+    const created = b.seat().inject!(sid('new'))
+    await created.load()
+    expect(created.directory.getSnapshot()).toMatchObject({
+      current: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
+      routable: false,
+      groups: [],
+    })
+    await expect(b.contribution().ui.options(
+      projection('new'),
+      new AbortController().signal,
+    )).resolves.toEqual([])
   })
 
   it('scope disposal drops the directory; a reborn scope gets a fresh one', async () => {

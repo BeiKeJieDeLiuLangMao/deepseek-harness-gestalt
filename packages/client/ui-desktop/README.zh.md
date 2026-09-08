@@ -13,6 +13,8 @@ kind: "package-reference"
 
 macOS chrome 在未改动的 DSH 侧栏标题行和中间 Session 内容上方为原生 traffic lights 保留 28px 空间。Windows 拖拽行横跨视口，三个 caption 按钮位于不可拖拽区域，但不改变 Session 内容的顶部间距。其他开发平台不绘制自定义 Window Chrome，并保留系统窗口框架。
 
+`@deepseek-ai/dsh-client-ui-desktop/pairing-source` ESM 入口仅导出 `createDesktopPairingSource` 和 `bindDesktopPairing`，不加载 UI 插件。调用方拥有可变快照 source 和绑定 disposer；释放绑定会阻止迟到的读取结果与推送，并取消 Host 订阅。配对权限仍由 Host 持有。
+
 ## 目录
 
 - [Model Experience](#model-experience)

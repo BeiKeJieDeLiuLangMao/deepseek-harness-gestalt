@@ -94,7 +94,7 @@ describe('assembled Desktop Companion attachments on shipped dsh web', () => {
         const message = channels.desktop.open(sealed)
         if (message.type !== 'operation') throw new Error('Desktop expected a Snow operation')
         opened.push(message.operation)
-        const dependencies: Parameters<InstanceType<typeof DesktopCompanionProductOwner>['handle']>[1] = {
+        const dependencies: import('../src/companion-product.ts').DesktopCompanionPairingDependencies = {
           pairingId: parsePersonalPairingId(channels.pairingSelector),
           attachmentKey: channels.attachmentKey.slice(), now: Date.now,
           generation: channels.generation, desktopRevision: 1, desktopName: 'Assembled Desktop',

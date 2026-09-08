@@ -5,20 +5,22 @@
  * `llm-deepseek` user-settings section (`ctx.settings`) and resolves the API
  * key through the optional credential seam (`ctx.credentials`), so a changed
  * base URL, catalog, or key reaches the very next request without restarting
- * anything, while an in-flight stream keeps the facts it started with. The
- * one registration-captured fact — the retry policy — re-registers the route
- * in place when it changes.
+ * anything, while an in-flight stream keeps the facts it started with. With
+ * settings attached, an explicit empty user section and no credential withdraw
+ * the route atomically; a never-written first run remains available for setup.
+ * Retry-policy and occupancy changes share the registration's atomic replace.
  * @module @deepseek-ai/dsh-llm-deepseek
  */
 
-import type { Context } from '@deepseek-ai/cordis'
+import { FiberState, type Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { assertUsableApiKey, LlmError, resolveImageAttachmentAccess, resolveRetryPolicy, RetryPolicySchema } from '@deepseek-ai/dsh-llm'
 import type { ModelModality, RetryPolicyConfig } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-fs'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
+import type { CredentialProvider, CredentialRef } from '@deepseek-ai/dsh-credentials'
 import { launchEnvironmentOf, type LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
-import type {} from '@deepseek-ai/dsh-settings'
+import type { SettingsProvider } from '@deepseek-ai/dsh-settings'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import { deepEqualJson } from '@deepseek-ai/dsh-util-values'
 import { getOrCreateAnonymousUserId, type AnonymousUserId } from '@deepseek-ai/dsh-anonymous-user-id'
@@ -474,25 +476,108 @@ export function apply(ctx: Context, config: Config): void {
   // Route effects bind to this apply fiber via the stable `ctx` reference,
   // even when a swap runs inside the scoped settings callback below.
   const registration = ctx.llm.registerAdapter([PROVIDER], adapter)
+  let routeActive = true
   let registeredPolicy = options().retryPolicy
-  const ensureRegistrationFacts = (): void => {
+  const ensureRegistrationFacts = (active = routeActive): void => {
     const policy = options().retryPolicy
-    if (deepEqualJson(policy, registeredPolicy)) return
-    // The registry captures the retry policy at registration, so it is the one
-    // fact per-request resolution cannot refresh. `replace` re-reads it in one
-    // synchronous registry section: disposing and re-registering instead would
-    // publish an empty route set between the two, and an observer that reacted
-    // to it would see this provider disappear and come back.
-    registration.replace([PROVIDER])
+    if (active === routeActive && deepEqualJson(policy, registeredPolicy)) return
+    // The registry captures the retry policy and route set. One replace swaps
+    // both facts, so topology observers never see a dispose/register gap.
+    registration.replace(active ? [PROVIDER] : [])
+    routeActive = active
     registeredPolicy = policy
   }
 
+  let activeSettings: SettingsProvider | undefined
+  let activeCredentials: CredentialProvider | undefined
+  let occupancyGeneration = 0
+
+  const rawUserSection = (settings: SettingsProvider): unknown => settings.describe()
+    .find(descriptor => descriptor.ns === NS)?.user
+
+  const environmentCredentialConfigured = (ref: CredentialRef): boolean => {
+    const value = launchEnvironmentOf(ctx).get(ref)?.value
+    return value !== undefined && value.length > 0
+  }
+
+  /** Reconcile the route with first-run, user-section, and credential occupancy. */
+  const reconcileOccupancy = (): void => {
+    if (ctx.fiber.state === FiberState.UNLOADING || ctx.fiber.state === FiberState.DISPOSED) return
+    const generation = ++occupancyGeneration
+    const settings = activeSettings
+    // A composition without settings keeps the declared provider route. With
+    // settings, an absent user section is the never-written first run; the
+    // Models page writes an explicit empty object when the user deletes the
+    // official provider.
+    if (settings === undefined) {
+      ensureRegistrationFacts(true)
+      return
+    }
+    const user = rawUserSection(settings)
+    const explicitlyEmpty = user !== undefined
+      && typeof user === 'object'
+      && user !== null
+      && !Array.isArray(user)
+      && Object.keys(user).length === 0
+    if (!explicitlyEmpty) {
+      ensureRegistrationFacts(true)
+      return
+    }
+
+    const ref = options().apiKeyEnv
+    const credentials = activeCredentials
+    if (credentials === undefined) {
+      ensureRegistrationFacts(environmentCredentialConfigured(ref))
+      return
+    }
+    void credentials.describe(ref).then((info) => {
+      if (generation !== occupancyGeneration) return
+      try {
+        ensureRegistrationFacts(info.configured)
+      } catch (error) {
+        ctx.logger.error('llm-deepseek: keeping the previous route occupancy after a refused adapter update')
+        ctx.logger.error(error)
+      }
+    }, (error: unknown) => {
+      if (generation !== occupancyGeneration) return
+      // Credential presence is an availability fact. A failed read cannot
+      // prove absence, so retain the last topology until a later commit or
+      // service generation provides a conclusive answer.
+      ctx.logger.error(`llm-deepseek: keeping the previous route occupancy after credential description failed for ${ref}`)
+      ctx.logger.error(error)
+    })
+  }
+
   ctx.inject(['settings'], (settingsCtx) => {
+    const provider = settingsCtx.settings
+    activeSettings = provider
+    settingsCtx.on('settings/document-updated', (ns) => {
+      if (ns === NS) reconcileOccupancy()
+    })
+    settingsCtx.effect(() => () => {
+      if (activeSettings !== provider) return
+      activeSettings = undefined
+      reconcileOccupancy()
+    })
     settingsCtx.settings.installSection(ctx, NS, Config, config, {
       setSource: (source) => {
         current = source
       },
-      onChange: ensureRegistrationFacts,
+      onChange: reconcileOccupancy,
+    })
+  })
+
+  ctx.inject(['credentials'], (credentialsCtx) => {
+    const provider = credentialsCtx.credentials
+    activeCredentials = provider
+    credentialsCtx.on('credentials/reference-updated', (ref) => {
+      if (ref === options().apiKeyEnv) reconcileOccupancy()
+    })
+    reconcileOccupancy()
+    credentialsCtx.effect(() => () => {
+      if (activeCredentials !== provider) return
+      activeCredentials = undefined
+      reconcileOccupancy()
     })
   })
 }

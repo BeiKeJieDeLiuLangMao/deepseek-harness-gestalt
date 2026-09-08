@@ -9,6 +9,7 @@ import type { Readable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
 import { chromium, type Browser } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { OPERATED_PLATFORM_BUILD_ENV } from './fixtures/operated-platform-environment.fixture.ts'
 
 const MOBILE_ROOT = fileURLToPath(new URL('..', import.meta.url))
 const VITE_BIN = fileURLToPath(new URL('../node_modules/vite/bin/vite.js', import.meta.url))
@@ -20,22 +21,6 @@ let previewClosed: Promise<unknown> | undefined
 let previewStdout: Promise<void> | undefined
 let previewStderr: Promise<void> | undefined
 let previewRoot: string | undefined
-
-const BUILD_ENV = {
-  VITE_PLATFORM_ENV: '',
-  VITE_PLATFORM_ORIGIN: 'https://platform.example.com',
-  VITE_PLATFORM_CALLBACK_URL: 'https://platform.example.com/v1/account/oauth/github/callback',
-  VITE_PLATFORM_GITHUB_CLIENT_ID: 'mobile-operated',
-  VITE_PLATFORM_CREDENTIAL_REFERENCE: 'credentials://operated',
-  VITE_PLATFORM_DATABASE_IDENTITY: 'database-operated',
-  VITE_PLATFORM_IDENTITY_NAMESPACE: 'namespace-operated',
-  VITE_REMOTE_RELAY_WSS_URL: 'wss://relay.example.com/v1/remote-access/relay',
-  VITE_REMOTE_RELAY_INBOUND_MAX_BYTES: '9999999',
-  VITE_REMOTE_RELAY_INBOUND_MAX_MESSAGES: '8',
-  VITE_REMOTE_RELAY_ATTACH_TIMEOUT_MS: '1000',
-  VITE_REMOTE_RELAY_HEARTBEAT_INTERVAL_MS: '5000',
-  VITE_REMOTE_RELAY_RECONNECT_DELAY_MS: '100',
-}
 
 function drain(stream: Readable | null): Promise<void> {
   if (stream === null) return Promise.resolve()
@@ -105,7 +90,7 @@ async function availablePort(): Promise<number> {
 }
 
 async function waitForPreview(url: string): Promise<void> {
-  const deadline = Date.now() + 15_000
+  const deadline = Date.now() + 30_000
   while (Date.now() < deadline) {
     try {
       const response = await fetch(url)
@@ -126,7 +111,7 @@ beforeAll(async () => {
     '--outDir', previewRoot, '--emptyOutDir',
   ], {
     cwd: MOBILE_ROOT,
-    env: { ...process.env, ...BUILD_ENV },
+    env: { ...process.env, ...OPERATED_PLATFORM_BUILD_ENV },
     encoding: 'utf8',
   })
   if (build.status !== 0) throw new Error(`Mobile product build failed:\n${build.stdout}\n${build.stderr}`)
@@ -139,6 +124,7 @@ beforeAll(async () => {
     '--host', '127.0.0.1', '--port', String(port), '--strictPort',
   ], {
     cwd: MOBILE_ROOT,
+    env: { ...process.env, ...OPERATED_PLATFORM_BUILD_ENV },
     stdio: ['ignore', 'pipe', 'pipe'],
     detached: process.platform !== 'win32',
   })
@@ -164,6 +150,7 @@ describe('bundled Mobile product entry', () => {
       pairingHeading: 'Paired Desktops', selected: 'Selected', select: 'Select this Desktop',
       searchTrigger: 'Search chat history', searchHeading: 'Search', searchField: 'Search Desktop Sessions',
       newUngrouped: 'New ungrouped Session', newHeading: 'New Session', backProjects: 'Back to projects',
+      stopped: 'Stopped',
     },
     {
       locale: 'zh-CN', colorScheme: 'light' as const, back: '返回', placeholder: '给智能体发消息',
@@ -171,10 +158,11 @@ describe('bundled Mobile product entry', () => {
       pairingHeading: '已配对的桌面端', selected: '当前选择', select: '选择此桌面端',
       searchTrigger: '搜索聊天记录', searchHeading: '搜索', searchField: '搜索桌面端会话',
       newUngrouped: '新建未分组会话', newHeading: '新会话', backProjects: '返回项目',
+      stopped: '已停止',
     },
   ])('renders authenticated shared conversation behavior in $locale/$colorScheme', async ({
     locale, colorScheme, back, placeholder, account, managePairing, pairingHeading, selected, select,
-    searchTrigger, searchHeading, searchField, newUngrouped, newHeading, backProjects,
+    searchTrigger, searchHeading, searchField, newUngrouped, newHeading, backProjects, stopped,
   }) => {
     const activeBrowser = browser
     if (activeBrowser === undefined) throw new Error('Mobile snapshot browser unavailable')
@@ -220,6 +208,7 @@ describe('bundled Mobile product entry', () => {
     await page.getByRole('treeitem', { name: /Shared Session/ }).click()
     await expect.poll(async () => await page.locator('[data-mobile-conversation="detail"]').count()).toBe(1)
     expect(await page.getByText('Shared Markdown').evaluate(node => node.tagName)).toBe('STRONG')
+    expect(await page.getByText(stopped, { exact: true }).isVisible()).toBe(true)
     expect(await page.locator('pre code').filter({ hasText: 'const shared = true' }).count()).toBe(1)
     expect(await page.getByAltText('shared.gif').count()).toBe(1)
     expect(await page.locator('[data-toolview="file-mutation"] [data-tool="edit"]').count()).toBe(1)

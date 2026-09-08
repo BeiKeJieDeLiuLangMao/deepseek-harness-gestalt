@@ -70,11 +70,11 @@ For interactive programs, `spawnTerminal` allocates a real PTY: write text, read
 
 ### Environment every child starts from
 
-Children never inherit the harness's ambient secrets: credential-shaped names and ambient `DSH_*` facts are scrubbed, and the caller's explicit `env` merges after that scrub. A deliberately forwarded credential or a current `DSH_*` deployment fact still reaches the child; an explicit `undefined` tombstone removes an ordinary ambient entry.
+Children never inherit the harness's ambient secrets: credential-shaped names and ambient `DSH_*` facts are scrubbed, and the caller's explicit `env` merges after that scrub. A deliberately forwarded credential or a current `DSH_*` deployment fact still reaches the child; an explicit `undefined` tombstone removes an ordinary ambient entry. On Windows, `childEnv()` applies overrides case-insensitively, so an explicit `PATH` replaces inherited `Path` instead of leaving both spellings in the child environment.
 
 ### What can go wrong
 
-An executable that cannot be resolved fails loud with a stable error. A spawn that never starts rejects `done`; there is no buffered output for a process that never ran. A daemonized child that leaves its tree or session can outlive termination — provider READMEs document their observability limits. When a transport owns its own spawn (the SDK client, MCP), route around the service and import `scrubbedParentEnv` directly so environment policy stays single-sourced.
+An executable that cannot be resolved fails loud with a stable error. A spawn that never starts rejects `done`; there is no buffered output for a process that never ran. A daemonized child that leaves its tree or session can outlive termination — provider READMEs document their observability limits. When a transport owns its own spawn (the SDK client, MCP), route around the service and import `childEnv` directly so environment policy stays single-sourced.
 
 -----
 
@@ -94,7 +94,7 @@ The seam is built on one separation: the service owns process coordinates and li
 
 | File | Role |
 |---|---|
-| [`src/index.ts`](src/index.ts) | Plugin entry: abstract `SubprocessRuntime`, `ctx.subprocess` registration, the shared `scrubbedParentEnv` scrub |
+| [`src/index.ts`](src/index.ts) | Plugin entry: abstract `SubprocessRuntime`, `ctx.subprocess` registration, the shared `scrubbedParentEnv` scrub and `childEnv` override merge |
 | [`src/types.ts`](src/types.ts) | Vocabulary: spawn spec, stdio modes, handles, readers, outcomes, `DSH_*` namespace |
 | — | No runtime invariant companion is published; this stateless Service Definition owns spawn-spec/handle types, while Service Providers own observations. |
 
@@ -139,7 +139,7 @@ No direct invalidation; the named consumers own any request-prefix changes.
 
 These limits define when the seam is a poor fit or leaves work to its consumers. They are current package constraints, not a comparison or a backlog.
 
-- **SDK-managed spawns remain outside** — a transport that owns its internal spawn (the SDK client, MCP) cannot route that call through this service; it can still import `scrubbedParentEnv` so environment policy stays single-sourced.
+- **SDK-managed spawns remain outside** — a transport that owns its internal spawn (the SDK client, MCP) cannot route that call through this service; it can still import `childEnv` so environment policy stays single-sourced.
 - **Teardown ladders are consumer-owned** — the seam ships signalling verbs and the whole-tree wait, not a canned quiesce sequence; each out-of-process consumer encodes its child's cooperation shape itself (the ACP backend's stdin-EOF-first ladder is the in-repo template).
 - **Observability is provider-specific** — a daemonized child that leaves its tree or session can outlive termination; providers document their substrate limits, and the seam adds no continuous process-table monitor.
 

@@ -41,6 +41,8 @@ This table connects model-visible tool names to the plugin package and service s
 | `@deepseek-ai/dsh-experimental-tool-agent-team` | `interrupt_agent`, `list_agents`, `send_message`, `spawn_teammate`, `team_task_create`, `team_task_get`, `team_task_list`, `team_task_update`, `wait_agent` | `ctx.tools`, `ctx.systemPrompt`, `ctx.agentTeams`, `an exact live Team member Agent` | `tool/call`, `team/member`, `team/message/queued`, `team/message/delivered`, `team/task`, `tool/result` | - | All nine tools are scoped to implicit Team Leads and durable teammates. The shipped dsh-base bundle keeps the package disabled; the documented Agent Teams profile patch enables it while disabling the legacy continuable-child control names. |
 | `@deepseek-ai/dsh-tool-todo` | `todo_write` | `ctx.tools`, `owning Agent session` | `tool/call`, `todo/write`, `tool/result` | - | todo_write is session-owned state; UIs render the latest todo/write event as a checklist. `allowParallelInProgress` is required with no default, so the catalog states its choice: `true`, whose description invites several `in_progress` items. A deployment choosing `false` receives the same tool with a description asking for exactly one active task. |
 | `@deepseek-ai/dsh-tool-workflow` | `workflow` | `ctx.tools`, `ctx.workflowEngine`, `ctx.systemPrompt`, `a calling Agent (exec.agent parents the script children)` | `tool/call`, `tool/result` | - | - |
+| `@deepseek-ai/dsh-tool-browser` | `browser_close`, `browser_create`, `browser_focus`, `browser_input`, `browser_navigate`, `browser_observe`, `browser_screenshot` | `ctx.tools`, `ctx.browserRuntime` | `tool/call`, `tool/result` | - | All Browser tools are deferred: tool_search returns their schemas without activating them, and current eligibility remains authoritative. |
+| `@deepseek-ai/dsh-tool-phone` | `device_act`, `device_close`, `device_list`, `device_observe`, `device_open`, `device_screenshot` | `ctx.tools`, `ctx.phoneDevices` | `tool/call`, `tool/result` | - | All phone device tools are deferred: tool_search returns their schemas without activating them, and current eligibility remains authoritative. device_open and device_close default to tools/pre-execute ask; device_act does not. |
 | `@deepseek-ai/dsh-tool-web` | `web_fetch`, `web_search` | `ctx.tools`, `ctx.web`, `ctx.systemPrompt` | `tool/call`, `tool/result` | - | web_search and web_fetch keep provider selection behind ctx.web so model-visible schemas stay stable across backend swaps. |
 
 <a id="deepseek-aidsh-tool-ask-user"></a>
@@ -2598,6 +2600,571 @@ Constraints: concurrency and total-agent caps apply; no filesystem, network, tim
 ```
 
 Source: [`packages/workflow/tool-workflow/src/index.ts`](../packages/workflow/tool-workflow/src/index.ts)
+
+<a id="deepseek-aidsh-tool-browser"></a>
+
+## `@deepseek-ai/dsh-tool-browser`
+
+### `browser_close`
+
+Close one browser tab using the latest revision. Temporary Profiles discard identity; named Profiles keep the persist partition.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profileId": {
+          "type": "string"
+        },
+        "workspaceId": {
+          "type": "string"
+        },
+        "browserId": {
+          "type": "string"
+        },
+        "tabId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "profileId",
+        "workspaceId",
+        "browserId",
+        "tabId"
+      ]
+    },
+    "expectedRevision": {
+      "type": "integer",
+      "description": "Latest revision returned by a browser operation."
+    }
+  },
+  "required": [
+    "target",
+    "expectedRevision"
+  ]
+}
+```
+
+Source: [`packages/browser/tool-browser/src/index.ts`](../packages/browser/tool-browser/src/index.ts)
+
+### `browser_create`
+
+Create one shared, temporary, or named persistent Browser Profile, Browser Workspace, browser instance, and tab. Omit profile to use the Browser settings default (shared unless that page changes it).
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "profile": {
+      "type": "string",
+      "description": "Omit or shared reuses one identity across Sessions. persistent restores a named isolated Profile. temporary discards identity.",
+      "enum": [
+        "temporary",
+        "persistent",
+        "shared"
+      ]
+    },
+    "name": {
+      "type": "string",
+      "description": "Named persistent Browser Profile. Required when profile is persistent."
+    },
+    "attach": {
+      "type": "object",
+      "description": "Attach a new instance or tab to an existing Session-owned hierarchy.",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "type": "string",
+          "description": "workspace starts another instance; browser starts another tab.",
+          "enum": [
+            "workspace",
+            "browser"
+          ]
+        },
+        "workspaceId": {
+          "type": "string",
+          "description": "Existing Browser Workspace to reuse."
+        },
+        "browserId": {
+          "type": "string",
+          "description": "Existing browser instance to reuse when kind is browser."
+        }
+      }
+    }
+  }
+}
+```
+
+Source: [`packages/browser/tool-browser/src/index.ts`](../packages/browser/tool-browser/src/index.ts)
+
+### `browser_focus`
+
+Focus one browser tab using its latest revision.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profileId": {
+          "type": "string"
+        },
+        "workspaceId": {
+          "type": "string"
+        },
+        "browserId": {
+          "type": "string"
+        },
+        "tabId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "profileId",
+        "workspaceId",
+        "browserId",
+        "tabId"
+      ]
+    },
+    "expectedRevision": {
+      "type": "integer",
+      "description": "Latest revision returned by a browser operation."
+    }
+  },
+  "required": [
+    "target",
+    "expectedRevision"
+  ]
+}
+```
+
+Source: [`packages/browser/tool-browser/src/index.ts`](../packages/browser/tool-browser/src/index.ts)
+
+### `browser_input`
+
+Send synthetic Agent input to a browser tab using its latest revision.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profileId": {
+          "type": "string"
+        },
+        "workspaceId": {
+          "type": "string"
+        },
+        "browserId": {
+          "type": "string"
+        },
+        "tabId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "profileId",
+        "workspaceId",
+        "browserId",
+        "tabId"
+      ]
+    },
+    "expectedRevision": {
+      "type": "integer",
+      "description": "Latest revision returned by a browser operation."
+    },
+    "url": {
+      "type": "string",
+      "description": "Optional URL for the synthetic input."
+    },
+    "text": {
+      "type": "string",
+      "description": "Optional text for the synthetic input."
+    }
+  },
+  "required": [
+    "target",
+    "expectedRevision"
+  ]
+}
+```
+
+Source: [`packages/browser/tool-browser/src/index.ts`](../packages/browser/tool-browser/src/index.ts)
+
+### `browser_navigate`
+
+Navigate one browser tab to a URL using its latest revision.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profileId": {
+          "type": "string"
+        },
+        "workspaceId": {
+          "type": "string"
+        },
+        "browserId": {
+          "type": "string"
+        },
+        "tabId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "profileId",
+        "workspaceId",
+        "browserId",
+        "tabId"
+      ]
+    },
+    "expectedRevision": {
+      "type": "integer",
+      "description": "Latest revision returned by a browser operation."
+    },
+    "url": {
+      "type": "string",
+      "description": "URL to open in the browser tab."
+    }
+  },
+  "required": [
+    "target",
+    "expectedRevision",
+    "url"
+  ]
+}
+```
+
+Source: [`packages/browser/tool-browser/src/index.ts`](../packages/browser/tool-browser/src/index.ts)
+
+### `browser_observe`
+
+Observe the latest facts for one browser tab, including a closed receipt.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profileId": {
+          "type": "string"
+        },
+        "workspaceId": {
+          "type": "string"
+        },
+        "browserId": {
+          "type": "string"
+        },
+        "tabId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "profileId",
+        "workspaceId",
+        "browserId",
+        "tabId"
+      ]
+    }
+  },
+  "required": [
+    "target"
+  ]
+}
+```
+
+Source: [`packages/browser/tool-browser/src/index.ts`](../packages/browser/tool-browser/src/index.ts)
+
+### `browser_screenshot`
+
+Capture the deterministic PNG screenshot facts for one browser tab.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profileId": {
+          "type": "string"
+        },
+        "workspaceId": {
+          "type": "string"
+        },
+        "browserId": {
+          "type": "string"
+        },
+        "tabId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "profileId",
+        "workspaceId",
+        "browserId",
+        "tabId"
+      ]
+    }
+  },
+  "required": [
+    "target"
+  ]
+}
+```
+
+Source: [`packages/browser/tool-browser/src/index.ts`](../packages/browser/tool-browser/src/index.ts)
+
+All Browser tools are deferred: tool_search returns their schemas without activating them, and current eligibility remains authoritative.
+
+<a id="deepseek-aidsh-tool-phone"></a>
+
+## `@deepseek-ai/dsh-tool-phone`
+
+### `device_act`
+
+Perform one closed tap, swipe, type, or hardware-button action on a phone device. There is no arbitrary shell.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "deviceId": {
+      "type": "string",
+      "description": "Android serial or iOS UDID returned by device_list."
+    },
+    "action": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "tap"
+            },
+            "x": {
+              "type": "integer",
+              "description": "Horizontal pixel coordinate in the latest device screenshot the model inspected; the service maps and validates that plane before dispatch."
+            },
+            "y": {
+              "type": "integer",
+              "description": "Vertical pixel coordinate in the latest device screenshot the model inspected; the service maps and validates that plane before dispatch."
+            }
+          },
+          "required": [
+            "kind",
+            "x",
+            "y"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "swipe"
+            },
+            "x1": {
+              "type": "integer",
+              "description": "Start horizontal pixel coordinate in the latest device screenshot the model inspected; the service maps and validates that plane before dispatch."
+            },
+            "y1": {
+              "type": "integer",
+              "description": "Start vertical pixel coordinate in the latest device screenshot the model inspected; the service maps and validates that plane before dispatch."
+            },
+            "x2": {
+              "type": "integer",
+              "description": "End horizontal pixel coordinate in the latest device screenshot the model inspected; the service maps and validates that plane before dispatch."
+            },
+            "y2": {
+              "type": "integer",
+              "description": "End vertical pixel coordinate in the latest device screenshot the model inspected; the service maps and validates that plane before dispatch."
+            }
+          },
+          "required": [
+            "kind",
+            "x1",
+            "y1",
+            "x2",
+            "y2"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "type"
+            },
+            "text": {
+              "type": "string",
+              "description": "Non-empty text to type."
+            }
+          },
+          "required": [
+            "kind",
+            "text"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "button"
+            },
+            "name": {
+              "type": "string",
+              "description": "Hardware button to press.",
+              "enum": [
+                "home",
+                "back",
+                "recents",
+                "power",
+                "volume_up",
+                "volume_down"
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "name"
+          ]
+        }
+      ],
+      "description": "Exactly one closed semantic action or hardware-button action."
+    }
+  },
+  "required": [
+    "deviceId",
+    "action"
+  ]
+}
+```
+
+Source: [`packages/phone/tool-phone/src/index.ts`](../packages/phone/tool-phone/src/index.ts)
+
+### `device_close`
+
+Shut down one iOS simulator or Android emulator. Physical handsets are refused.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "deviceId": {
+      "type": "string",
+      "description": "Android serial or iOS UDID returned by device_list."
+    }
+  },
+  "required": [
+    "deviceId"
+  ]
+}
+```
+
+Source: [`packages/phone/tool-phone/src/index.ts`](../packages/phone/tool-phone/src/index.ts)
+
+### `device_list`
+
+List every Android and iOS device known to the phone fleet, including offline simulators and emulators.
+
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+
+Source: [`packages/phone/tool-phone/src/index.ts`](../packages/phone/tool-phone/src/index.ts)
+
+### `device_observe`
+
+Observe one phone device from the latest fleet listing.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "deviceId": {
+      "type": "string",
+      "description": "Android serial or iOS UDID returned by device_list."
+    }
+  },
+  "required": [
+    "deviceId"
+  ]
+}
+```
+
+Source: [`packages/phone/tool-phone/src/index.ts`](../packages/phone/tool-phone/src/index.ts)
+
+### `device_open`
+
+Boot one iOS simulator or Android emulator. Physical handsets are refused.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "deviceId": {
+      "type": "string",
+      "description": "Android serial or iOS UDID returned by device_list."
+    }
+  },
+  "required": [
+    "deviceId"
+  ]
+}
+```
+
+Source: [`packages/phone/tool-phone/src/index.ts`](../packages/phone/tool-phone/src/index.ts)
+
+### `device_screenshot`
+
+Capture one PNG screenshot of a phone device and return its absolute file path.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "deviceId": {
+      "type": "string",
+      "description": "Android serial or iOS UDID returned by device_list."
+    }
+  },
+  "required": [
+    "deviceId"
+  ]
+}
+```
+
+Source: [`packages/phone/tool-phone/src/index.ts`](../packages/phone/tool-phone/src/index.ts)
+
+All phone device tools are deferred: tool_search returns their schemas without activating them, and current eligibility remains authoritative. device_open and device_close default to tools/pre-execute ask; device_act does not.
 
 <a id="deepseek-aidsh-tool-web"></a>
 

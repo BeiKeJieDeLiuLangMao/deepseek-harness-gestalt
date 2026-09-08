@@ -3,6 +3,7 @@ import { parsePersonalPairingId } from '@deepseek-ai/dsh-remote-access'
 import {
   deriveCompanionAttachmentKey,
   hashCompanionCiphertext,
+  parseAttachmentCapability,
   parseCompanionOperationId,
   parseCompanionSessionId,
   REMOTE_PROTOCOL_LIMITS,
@@ -25,8 +26,10 @@ async function offer(overrides: Partial<CompanionOfferAttachmentOperation> = {})
   ciphertext: Uint8Array
   hash: string
 }> {
-  const key = await deriveCompanionAttachmentKey(attachmentKey)
-  const sealed = await sealCompanionAttachment(key, plaintext)
+  const sealed = await sealCompanionAttachment(
+    await deriveCompanionAttachmentKey(attachmentKey),
+    plaintext,
+  )
   return {
     ciphertext: sealed.ciphertext,
     hash: sealed.ciphertextSha256,
@@ -34,7 +37,7 @@ async function offer(overrides: Partial<CompanionOfferAttachmentOperation> = {})
       type: 'offer-attachment',
       operationId: parseCompanionOperationId('operation-one'),
       sessionId: parseCompanionSessionId('session-one'),
-      capability: 'A'.repeat(43) as never,
+      capability: parseAttachmentCapability('A'.repeat(43)),
       ciphertextSha256: sealed.ciphertextSha256,
       byteLength: sealed.ciphertext.byteLength,
       expiresAt: 2_000,
@@ -87,7 +90,7 @@ describe('Desktop Companion attachment receive', () => {
 
     const tampered = new Uint8Array(prepared.ciphertext)
     const firstByte = tampered[0]
-    if (firstByte === undefined) throw new Error('sealed attachment is empty')
+    if (firstByte === undefined) throw new Error('sealed fixture ciphertext must contain a byte')
     tampered[0] = firstByte ^ 0xff
     expect(await hashCompanionCiphertext(tampered)).not.toBe(prepared.hash)
     await expect(receiveCompanionAttachment(prepared.offer, {

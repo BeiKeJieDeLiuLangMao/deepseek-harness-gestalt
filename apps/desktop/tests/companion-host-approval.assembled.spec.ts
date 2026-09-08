@@ -124,9 +124,12 @@ describe('assembled Desktop Companion Approval on shipped dsh web', () => {
     const surface = new MobileCompanionSurface(runtime)
     const settlementIds: CompanionOperationId[] = []
     const originalHandle = owner.handle.bind(owner)
-    owner.handle = async (operation, dependencies) => {
+    owner.handle = async (...args) => {
+      const operation = args[0]
       if (operation.type === 'settle-interaction') settlementIds.push(operation.operationId)
-      return await originalHandle(operation, dependencies)
+      return args.length === 1
+        ? await originalHandle(args[0])
+        : await originalHandle(args[0], args[1])
     }
     const receiverRef: { current?: MobileNoiseCompanionReceiver } = {}
     const product = new MobileSnowCompanionProductChannel({
@@ -281,7 +284,7 @@ async function approvalResultLog(home: string, sessionId: string, marker: string
 function pairingDependencies(
   owner: InstanceType<typeof DesktopCompanionProductOwner>,
   channels: Awaited<ReturnType<typeof snowProductChannels>>,
-): Parameters<InstanceType<typeof DesktopCompanionProductOwner>['handle']>[1] {
+): import('../src/companion-product.ts').DesktopCompanionPairingDependencies {
   const attachmentKey = channels.attachmentKey.slice()
   return {
     pairingId: parsePersonalPairingId(channels.pairingSelector),

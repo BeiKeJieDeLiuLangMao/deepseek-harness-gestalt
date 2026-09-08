@@ -235,6 +235,15 @@ describe('gate graph validation', () => {
     },
   )
 
+  it.each(['ci-primary', 'ci-static'] as const)(
+    'keeps dependency preparation enforcement in %s',
+    (mode) => {
+      const ids = withPnpmEntrypoint(() => gatesForMode(mode).map(subject => subject.id))
+
+      expect(ids).toContain('dependency-policy')
+    },
+  )
+
   it.each(['ci-primary', 'ci-static', 'check-all'] as const)(
     'keeps the client dependency policy in %s',
     (mode) => {
@@ -301,6 +310,21 @@ describe('gate graph validation', () => {
     expect(completeBuiltBin?.after).toContain('windows-site')
     expect(completeBuiltBin?.after).not.toContain('docs-site-build')
   })
+
+  it.each(['ci-coverage', 'ci-primary'] as const)(
+    'runs the isolated coverage suite after both parallel gates in %s',
+    (mode) => {
+      const gates = withPnpmEntrypoint(() => gatesForMode(mode))
+      const isolated = gates.find(subject => subject.id === 'coverage-exempt-isolated')
+
+      expect(isolated).toMatchObject({
+        displayCommand: 'pnpm run gestalt:overlay-boot',
+        args: ['/private/pnpm.cjs', 'run', 'gestalt:overlay-boot'],
+        after: ['coverage', 'coverage-exempt-heavy'],
+      })
+      expect(isolated?.needs).toBeUndefined()
+    },
+  )
 
   it('applies one configured test, polling, and hook timeout to both coverage gates', () => {
     const gates = withEnv('DSH_COVERAGE_TEST_TIMEOUT_MS', '15000', () =>
@@ -556,6 +580,7 @@ describe('Node 24 lane ownership', () => {
         'packages/subagent/subagent-claude-code/tests/loader-composition.e2e.ts',
         'packages/experimental/agent-team/tests/built-lib.e2e.ts',
         'packages/platform/remote-attachments/tests/http-assembled.built.e2e.ts',
+        'apps/mobile/tests/mobile-browse-artifact.e2e.ts',
       ]),
     )
     expect(subject.find(item => item.id === 'web-snapshot')).toMatchObject({

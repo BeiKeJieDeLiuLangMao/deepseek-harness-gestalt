@@ -2,9 +2,13 @@
 
 DeepSeek Harness is an all-plugin Cordis agent harness. Read [docs/architecture.md](docs/architecture.md) before changing `packages/`; follow [docs/AGENTS.md](docs/AGENTS.md) for documentation.
 
-## Pre-release stance: foundation over blast radius
+## Agent skills
 
-**Remove at the first tagged release.** Until then, prefer correct foundations to compatibility shims: rename or repackage freely and update every reference. Backends reject old on-disk formats. SQLite uses monotonic `SCHEMA_VERSION`; `dsh-session` keeps `SESSION_FORMAT_VERSION` at `0` with no compatibility promise.
+Use the [tracker](docs/agents/issue-tracker.md), [labels](docs/agents/triage-labels.md), [contexts](CONTEXT-MAP.md), and [domain rules](docs/agents/domain.md); Agent Notes own decisions. Subagent descriptions/todos use user language, else runtime/UI locale, runtime language, then conversation language—not shell `LANG`; identifiers, paths, commands, and internal prompts stay unchanged. Apply [routing/context reuse](docs/agents/delegation-routing.md) before delegating. [Orchestrate delivery](.agents/skills/orchestrate-dsh-delivery/SKILL.md); tags/releases need approval.
+
+## Unstable-format stance
+
+Until its owner declares compatibility, prefer correct foundations to compatibility shims: rename or repackage freely and update every reference. Backends reject old on-disk formats. SQLite uses monotonic `SCHEMA_VERSION`; `dsh-session` keeps `SESSION_FORMAT_VERSION` at `0` with no compatibility promise.
 
 **Application launch.** Only `dsh` profiles launch supported Node apps; package bins, demos, and public SDK argv escapes are forbidden ([rule](docs/architecture.md#profiles-and-bundles)).
 
@@ -25,6 +29,8 @@ packages/    @deepseek-ai/dsh-<pkg> workspaces at packages/<group>/<pkg>/
   lsp/         language-server capability
   skill/       skill provider registry + local impl + catalog/loader tool
   web/         web capability: Service Definition + search/fetch providers + tool Consumer
+  browser/     Browser Runtime capability: Providers + deferred tools
+  phone/       mobilecli-backed phone device fleet Service (Host half)
   compaction/     compaction capability + basic provider
   context/     request-context plugins
   subagent/    subagent capability: Service Definition + providers + delegation Consumers
@@ -56,7 +62,7 @@ scripts/     repo gates and generators
 website/     VitePress projection of selected bilingual docs/ sources
 ```
 
-Package groups: [packages/README.md](packages/README.md).
+See [packages](packages/README.md) and [plugins](plugins/README.md).
 
 ## Commands
 
@@ -97,6 +103,8 @@ Run checks before pushes via [dsh-pre-push-checks](.agents/skills/dsh-pre-push-c
 ## Secrets / .env
 
 Real-API tests and demos read `DEEPSEEK_API_KEY`, optional `DEEPSEEK_BASE_URL`, and root `.env`. cordis.yml allows `!!js` (never `!js`) under plugin `config` and entry `disabled`; other metadata stays literal, so conditional composition also uses overlays ([primer](docs/cordis-primer.md#loader-configuration)). Never commit credentials. CI e2e skips without a key; [testing.md](docs/testing.md) owns key policy.
+
+An explicit user request or approval to import required model settings and credentials into a specified instance authorizes its source, target, and scope without repeat confirmation; changes require authorization. Blind-copy only from the application's read-only normal `DSH_HOME` to a fresh gitignored scratch `DSH_HOME`, directory mode `0700`, files `0600`. Copy no session, workspace, browser, or application state. Never print or parse-display secrets; tracked files, PRs, logs, and artifacts contain only provider/model references. Delete the scratch and verify removal; without authorization, report the credential blocker.
 
 ## Conventions
 

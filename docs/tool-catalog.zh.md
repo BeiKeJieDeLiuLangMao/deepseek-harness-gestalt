@@ -45,6 +45,8 @@
 | `@deepseek-ai/dsh-experimental-tool-agent-team` | `followup_task`、`interrupt_agent`、`list_agents`、`send_message`、`spawn_teammate`、`team_task_create`、`team_task_get`、`team_task_list`、`team_task_update`、`wait_agent` | `ctx.tools`、`ctx.systemPrompt`、`ctx.agentTeams`、`an exact live Team member Agent` | `tool/call`、`team/member`、`team/message/queued`、`team/message/delivered`、`team/task`、`tool/result` | - | 这 10 个工具限定于隐式 Team Lead 与持久 teammate 作用域。随产品发布的 dsh-base bundle 默认禁用该包；文档中的 Agent Teams profile patch 会启用它，并禁用旧 continuable child 的同名控制工具。 |
 | `@deepseek-ai/dsh-tool-todo` | `todo_write` | `ctx.tools`、`owning Agent session` | `tool/call`、`todo/write`、`tool/result` | - | todo_write 是会话所有的状态；UI 将最新的 todo/write 事件渲染为检查清单。`allowParallelInProgress` 是没有默认值的必填项，因此本目录明确选择 `true`，对应描述允许同时存在多个 `in_progress` 项。选择 `false` 的部署会获得同一工具，但描述会要求只能有 1 个活动任务。 |
 | `@deepseek-ai/dsh-tool-workflow` | `workflow` | `ctx.tools`、`ctx.workflowEngine`、`ctx.systemPrompt`、`a calling Agent (exec.agent parents the script children)` | `tool/call`、`tool/result` | - | - |
+| `@deepseek-ai/dsh-tool-browser` | `browser_close`、`browser_create`、`browser_focus`、`browser_input`、`browser_navigate`、`browser_observe`、`browser_screenshot` | `ctx.tools`、`ctx.browserRuntime` | `tool/call`、`tool/result` | - | 所有 Browser 工具均为 deferred：tool_search 返回其 schema 而不激活工具，当前 eligibility 继续作为权威。 |
+| `@deepseek-ai/dsh-tool-phone` | `device_act`、`device_close`、`device_list`、`device_observe`、`device_open`、`device_screenshot` | `ctx.tools`、`ctx.phoneDevices` | `tool/call`、`tool/result` | - | 所有手机设备工具均为 deferred：tool_search 返回其 schema 而不激活工具，当前 eligibility 继续作为权威。device_open 与 device_close 默认走 tools/pre-execute ask；device_act 不走。 |
 | `@deepseek-ai/dsh-tool-web` | `web_fetch`、`web_search` | `ctx.tools`、`ctx.web`、`ctx.systemPrompt` | `tool/call`、`tool/result` | - | web_search 和 web_fetch 将提供方选择置于 ctx.web 之后，使模型可见 schema 在更换后端时保持稳定。 |
 
 <a id="deepseek-aidsh-tool-ask-user"></a>
@@ -2608,6 +2610,571 @@ todo_write 是会话所有的状态；UI 将最新的 todo/write 事件渲染为
 来源：[`packages/workflow/tool-workflow/src/index.ts`](../packages/workflow/tool-workflow/src/index.ts)
 
 <a id="deepseek-aidsh-tool-browser"></a>
+
+## `@deepseek-ai/dsh-tool-browser`
+
+### `browser_close`
+
+使用最新修订号关闭一个浏览器标签页。临时 Profile 丢弃身份；命名 Profile 保留 persist partition。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profileId": {
+          "type": "string"
+        },
+        "workspaceId": {
+          "type": "string"
+        },
+        "browserId": {
+          "type": "string"
+        },
+        "tabId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "profileId",
+        "workspaceId",
+        "browserId",
+        "tabId"
+      ]
+    },
+    "expectedRevision": {
+      "type": "integer",
+      "description": "Latest revision returned by a browser operation."
+    }
+  },
+  "required": [
+    "target",
+    "expectedRevision"
+  ]
+}
+```
+
+来源：[`packages/browser/tool-browser/src/index.ts`](../packages/browser/tool-browser/src/index.ts)
+
+### `browser_create`
+
+创建一个共享、临时或命名持久 Browser Profile、Browser Workspace、浏览器实例与标签页。省略 profile 会使用浏览器设置页的默认身份（在该页改掉之前仍是共享）。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "profile": {
+      "type": "string",
+      "description": "Omit or shared reuses one identity across Sessions. persistent restores a named isolated Profile. temporary discards identity.",
+      "enum": [
+        "temporary",
+        "persistent",
+        "shared"
+      ]
+    },
+    "name": {
+      "type": "string",
+      "description": "Named persistent Browser Profile. Required when profile is persistent."
+    },
+    "attach": {
+      "type": "object",
+      "description": "Attach a new instance or tab to an existing Session-owned hierarchy.",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "type": "string",
+          "description": "workspace starts another instance; browser starts another tab.",
+          "enum": [
+            "workspace",
+            "browser"
+          ]
+        },
+        "workspaceId": {
+          "type": "string",
+          "description": "Existing Browser Workspace to reuse."
+        },
+        "browserId": {
+          "type": "string",
+          "description": "Existing browser instance to reuse when kind is browser."
+        }
+      }
+    }
+  }
+}
+```
+
+来源：[`packages/browser/tool-browser/src/index.ts`](../packages/browser/tool-browser/src/index.ts)
+
+### `browser_focus`
+
+使用最新修订号聚焦一个浏览器标签页。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profileId": {
+          "type": "string"
+        },
+        "workspaceId": {
+          "type": "string"
+        },
+        "browserId": {
+          "type": "string"
+        },
+        "tabId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "profileId",
+        "workspaceId",
+        "browserId",
+        "tabId"
+      ]
+    },
+    "expectedRevision": {
+      "type": "integer",
+      "description": "Latest revision returned by a browser operation."
+    }
+  },
+  "required": [
+    "target",
+    "expectedRevision"
+  ]
+}
+```
+
+来源：[`packages/browser/tool-browser/src/index.ts`](../packages/browser/tool-browser/src/index.ts)
+
+### `browser_input`
+
+使用标签页的最新修订号发送 Agent 合成输入。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profileId": {
+          "type": "string"
+        },
+        "workspaceId": {
+          "type": "string"
+        },
+        "browserId": {
+          "type": "string"
+        },
+        "tabId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "profileId",
+        "workspaceId",
+        "browserId",
+        "tabId"
+      ]
+    },
+    "expectedRevision": {
+      "type": "integer",
+      "description": "Latest revision returned by a browser operation."
+    },
+    "url": {
+      "type": "string",
+      "description": "Optional URL for the synthetic input."
+    },
+    "text": {
+      "type": "string",
+      "description": "Optional text for the synthetic input."
+    }
+  },
+  "required": [
+    "target",
+    "expectedRevision"
+  ]
+}
+```
+
+来源：[`packages/browser/tool-browser/src/index.ts`](../packages/browser/tool-browser/src/index.ts)
+
+### `browser_navigate`
+
+使用最新修订号把一个浏览器标签页导航到 URL。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profileId": {
+          "type": "string"
+        },
+        "workspaceId": {
+          "type": "string"
+        },
+        "browserId": {
+          "type": "string"
+        },
+        "tabId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "profileId",
+        "workspaceId",
+        "browserId",
+        "tabId"
+      ]
+    },
+    "expectedRevision": {
+      "type": "integer",
+      "description": "Latest revision returned by a browser operation."
+    },
+    "url": {
+      "type": "string",
+      "description": "URL to open in the browser tab."
+    }
+  },
+  "required": [
+    "target",
+    "expectedRevision",
+    "url"
+  ]
+}
+```
+
+来源：[`packages/browser/tool-browser/src/index.ts`](../packages/browser/tool-browser/src/index.ts)
+
+### `browser_observe`
+
+观察一个浏览器标签页的最新事实，包括关闭回执。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profileId": {
+          "type": "string"
+        },
+        "workspaceId": {
+          "type": "string"
+        },
+        "browserId": {
+          "type": "string"
+        },
+        "tabId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "profileId",
+        "workspaceId",
+        "browserId",
+        "tabId"
+      ]
+    }
+  },
+  "required": [
+    "target"
+  ]
+}
+```
+
+来源：[`packages/browser/tool-browser/src/index.ts`](../packages/browser/tool-browser/src/index.ts)
+
+### `browser_screenshot`
+
+捕获一个浏览器标签页的确定性 PNG 截图事实。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profileId": {
+          "type": "string"
+        },
+        "workspaceId": {
+          "type": "string"
+        },
+        "browserId": {
+          "type": "string"
+        },
+        "tabId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "profileId",
+        "workspaceId",
+        "browserId",
+        "tabId"
+      ]
+    }
+  },
+  "required": [
+    "target"
+  ]
+}
+```
+
+来源：[`packages/browser/tool-browser/src/index.ts`](../packages/browser/tool-browser/src/index.ts)
+
+所有 Browser 工具均为 deferred：tool_search 返回其 schema 而不激活工具，当前 eligibility 继续作为权威。
+
+<a id="deepseek-aidsh-tool-phone"></a>
+
+## `@deepseek-ai/dsh-tool-phone`
+
+### `device_act`
+
+在一台手机设备上执行一次封闭的 tap、swipe、type 或硬件按钮动作。没有任意 shell。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "deviceId": {
+      "type": "string",
+      "description": "Android serial or iOS UDID returned by device_list."
+    },
+    "action": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "tap"
+            },
+            "x": {
+              "type": "integer",
+              "description": "Horizontal pixel coordinate in the latest device screenshot the model inspected; the service maps and validates that plane before dispatch."
+            },
+            "y": {
+              "type": "integer",
+              "description": "Vertical pixel coordinate in the latest device screenshot the model inspected; the service maps and validates that plane before dispatch."
+            }
+          },
+          "required": [
+            "kind",
+            "x",
+            "y"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "swipe"
+            },
+            "x1": {
+              "type": "integer",
+              "description": "Start horizontal pixel coordinate in the latest device screenshot the model inspected; the service maps and validates that plane before dispatch."
+            },
+            "y1": {
+              "type": "integer",
+              "description": "Start vertical pixel coordinate in the latest device screenshot the model inspected; the service maps and validates that plane before dispatch."
+            },
+            "x2": {
+              "type": "integer",
+              "description": "End horizontal pixel coordinate in the latest device screenshot the model inspected; the service maps and validates that plane before dispatch."
+            },
+            "y2": {
+              "type": "integer",
+              "description": "End vertical pixel coordinate in the latest device screenshot the model inspected; the service maps and validates that plane before dispatch."
+            }
+          },
+          "required": [
+            "kind",
+            "x1",
+            "y1",
+            "x2",
+            "y2"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "type"
+            },
+            "text": {
+              "type": "string",
+              "description": "Non-empty text to type."
+            }
+          },
+          "required": [
+            "kind",
+            "text"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "button"
+            },
+            "name": {
+              "type": "string",
+              "description": "Hardware button to press.",
+              "enum": [
+                "home",
+                "back",
+                "recents",
+                "power",
+                "volume_up",
+                "volume_down"
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "name"
+          ]
+        }
+      ],
+      "description": "Exactly one closed semantic action or hardware-button action."
+    }
+  },
+  "required": [
+    "deviceId",
+    "action"
+  ]
+}
+```
+
+来源：[`packages/phone/tool-phone/src/index.ts`](../packages/phone/tool-phone/src/index.ts)
+
+### `device_close`
+
+关闭一台 iOS 模拟器或 Android 仿真器。真机被拒绝。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "deviceId": {
+      "type": "string",
+      "description": "Android serial or iOS UDID returned by device_list."
+    }
+  },
+  "required": [
+    "deviceId"
+  ]
+}
+```
+
+来源：[`packages/phone/tool-phone/src/index.ts`](../packages/phone/tool-phone/src/index.ts)
+
+### `device_list`
+
+列出手机设备群已知的全部 Android 与 iOS 设备，包括离线模拟器与仿真器。
+
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+
+来源：[`packages/phone/tool-phone/src/index.ts`](../packages/phone/tool-phone/src/index.ts)
+
+### `device_observe`
+
+从最新设备群清单观察一台手机设备。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "deviceId": {
+      "type": "string",
+      "description": "Android serial or iOS UDID returned by device_list."
+    }
+  },
+  "required": [
+    "deviceId"
+  ]
+}
+```
+
+来源：[`packages/phone/tool-phone/src/index.ts`](../packages/phone/tool-phone/src/index.ts)
+
+### `device_open`
+
+启动一台 iOS 模拟器或 Android 仿真器。真机被拒绝。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "deviceId": {
+      "type": "string",
+      "description": "Android serial or iOS UDID returned by device_list."
+    }
+  },
+  "required": [
+    "deviceId"
+  ]
+}
+```
+
+来源：[`packages/phone/tool-phone/src/index.ts`](../packages/phone/tool-phone/src/index.ts)
+
+### `device_screenshot`
+
+捕获一台手机设备的 PNG 截图并返回其绝对文件路径。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "deviceId": {
+      "type": "string",
+      "description": "Android serial or iOS UDID returned by device_list."
+    }
+  },
+  "required": [
+    "deviceId"
+  ]
+}
+```
+
+来源：[`packages/phone/tool-phone/src/index.ts`](../packages/phone/tool-phone/src/index.ts)
+
+所有手机设备工具均为 deferred：tool_search 返回其 schema 而不激活工具，当前 eligibility 继续作为权威。device_open 与 device_close 默认走 tools/pre-execute ask；device_act 不走。
+
+<a id="deepseek-aidsh-tool-web"></a>
 
 ## `@deepseek-ai/dsh-tool-web`
 

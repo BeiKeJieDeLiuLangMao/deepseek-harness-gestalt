@@ -20,6 +20,11 @@ import { DocumentTitle } from './DocumentTitle.tsx'
 import type { createLayoutStore } from './stores.ts'
 import css from './AppFrame.module.css'
 
+/** True when this document is the Desktop native overlay renderer. */
+function isDesktopOverlayDocument(): boolean {
+  return document.documentElement.hasAttribute('data-dsh-desktop-overlay')
+}
+
 /** Full composed props: runtime share + child-slot render share + store share. */
 export type AppFrameProps =
   & PropsRuntime<'root'>
@@ -96,6 +101,20 @@ export function AppFrame({
   SessionProvider,
   t,
 }: AppFrameProps) {
+  // The overlay WebContentsView paints only native chrome. Rendering the
+  // Session Surface here creates a full-window duplicate that receives input
+  // above the Host window after a menu or Settings request opens the view.
+  if (isDesktopOverlayDocument()) {
+    return (
+      <div data-dsh-desktop-overlay-root="">
+        {renderSlot('sidebar', {
+          collapsed: false,
+          width: SIDEBAR_DEFAULT,
+        })}
+        {renderSlot('shell.overlay', {})}
+      </div>
+    )
+  }
   const panels = useStore(s => s)
   const detailsSession = useSessions((s) => {
     const current = s.current

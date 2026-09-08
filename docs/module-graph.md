@@ -16,6 +16,7 @@ flowchart TD
     pkg_launch_environment["launch-environment"]
     pkg_native_command["native-command"]
     pkg_output_retention["output-retention"]
+    pkg_request_trust["request-trust"]
     pkg_timeout["timeout"]
     pkg_util_crypto["util-crypto"]
     pkg_util_time["util-time"]
@@ -169,6 +170,7 @@ flowchart TD
     pkg_client_ui_message_feedback["client-ui-message-feedback"]
     pkg_client_ui_model_selection["client-ui-model-selection"]
     pkg_client_ui_permission_presets["client-ui-permission-presets"]
+    pkg_client_ui_phone["client-ui-phone"]
     pkg_client_ui_plan["client-ui-plan"]
     pkg_client_ui_primitives["client-ui-primitives"]
     pkg_client_ui_reference["client-ui-reference"]
@@ -221,6 +223,9 @@ flowchart TD
     pkg_e2b["e2b"]
     pkg_fs_e2b["fs-e2b"]
     pkg_subprocess_e2b["subprocess-e2b"]
+  end
+  subgraph group_examples["packages/examples"]
+    pkg_phone_capture_wire_demo["phone-capture-wire-demo"]
   end
   subgraph group_experimental["packages/experimental"]
     pkg_experimental_agent_team["experimental-agent-team"]
@@ -281,6 +286,14 @@ flowchart TD
   end
   subgraph group_mcp["packages/mcp"]
     pkg_mcp_client["mcp-client"]
+  end
+  subgraph group_phone["packages/phone"]
+    pkg_phone_environment["phone-environment"]
+    pkg_phone_environment_android["phone-environment-android"]
+    pkg_phone_environment_ios["phone-environment-ios"]
+    pkg_phone_runtime["phone-runtime"]
+    pkg_phone_stream["phone-stream"]
+    pkg_tool_phone["tool-phone"]
   end
   subgraph group_platform["packages/platform"]
     pkg_noise_channel["noise-channel"]
@@ -396,6 +409,7 @@ flowchart TD
   subgraph group_workspace["packages/workspace"]
     pkg_workspace["workspace"]
   end
+  pkg_request_trust --> pkg_invariants
   pkg_scope --> pkg_invariants
   pkg_subagent_route_preauthorization_static --> pkg_subagent_route_preauthorization
   pkg_web --> pkg_llm
@@ -403,21 +417,17 @@ flowchart TD
   pkg_browser_runtime --> pkg_brand
   pkg_credentials --> pkg_invariants
   pkg_e2b --> pkg_http_proxy
+  pkg_phone_capture_wire_demo --> pkg_invariants
   pkg_experimental_code_runtime_python --> pkg_code_runtime
   pkg_experimental_code_runtime_python --> pkg_timeout
   pkg_experimental_code_runtime_python --> pkg_util_values
   pkg_experimental_inspector --> pkg_client_modules
   pkg_experimental_inspector --> pkg_host_webserver
-  pkg_experimental_webworker_runtime --> pkg_client_connection
-  pkg_experimental_webworker_runtime --> pkg_client_modules
-  pkg_experimental_webworker_runtime --> pkg_host_webserver
   pkg_host_directory_picker_auto --> pkg_client_ui_directory_picker_browse
   pkg_host_directory_picker_auto --> pkg_client_ui_directory_picker_native
   pkg_host_directory_picker_auto --> pkg_host_directory_picker_browse
   pkg_host_directory_picker_auto --> pkg_host_directory_picker_native
   pkg_host_directory_picker_auto --> pkg_host_webserver
-  pkg_host_frontend_static --> pkg_client_connection
-  pkg_host_frontend_static --> pkg_host_webserver
   pkg_anonymous_user_id --> pkg_brand
   pkg_anonymous_user_id --> pkg_home_paths
   pkg_lsp --> pkg_brand
@@ -452,6 +462,7 @@ flowchart TD
   pkg_browser_runtime_tandem --> pkg_browser_runtime
   pkg_browser_runtime_tandem --> pkg_invariants
   pkg_browser_runtime_tandem --> pkg_subprocess
+  pkg_client_connection --> pkg_request_trust
   pkg_authorization --> pkg_credentials
   pkg_authorization --> pkg_invariants
   pkg_authorization --> pkg_llm
@@ -462,6 +473,12 @@ flowchart TD
   pkg_subprocess_e2b --> pkg_e2b
   pkg_subprocess_e2b --> pkg_subprocess
   pkg_subprocess_e2b --> pkg_timeout
+  pkg_phone_runtime --> pkg_brand
+  pkg_phone_runtime --> pkg_home_paths
+  pkg_phone_runtime --> pkg_invariants
+  pkg_phone_runtime --> pkg_request_trust
+  pkg_phone_runtime --> pkg_subprocess
+  pkg_phone_runtime --> pkg_timeout
   pkg_platform_account_client --> pkg_platform_account
   pkg_platform_account_core --> pkg_platform_account
   pkg_platform_account_http --> pkg_host_webserver
@@ -480,6 +497,22 @@ flowchart TD
   pkg_code_runtime_worker_thread --> pkg_code_runtime
   pkg_code_runtime_worker_thread --> pkg_session
   pkg_code_runtime_worker_thread --> pkg_timeout
+  pkg_experimental_webworker_runtime --> pkg_client_connection
+  pkg_experimental_webworker_runtime --> pkg_client_modules
+  pkg_experimental_webworker_runtime --> pkg_host_webserver
+  pkg_host_frontend_static --> pkg_client_connection
+  pkg_host_frontend_static --> pkg_host_webserver
+  pkg_phone_environment --> pkg_atomic_write
+  pkg_phone_environment --> pkg_home_paths
+  pkg_phone_environment --> pkg_host_webserver
+  pkg_phone_environment --> pkg_invariants
+  pkg_phone_environment --> pkg_phone_runtime
+  pkg_phone_environment --> pkg_request_trust
+  pkg_phone_environment --> pkg_subprocess
+  pkg_phone_stream --> pkg_host_webserver
+  pkg_phone_stream --> pkg_invariants
+  pkg_phone_stream --> pkg_phone_runtime
+  pkg_phone_stream --> pkg_request_trust
   pkg_project_membership_client --> pkg_platform_account
   pkg_project_membership_client --> pkg_project_membership
   pkg_project_membership_core --> pkg_atomic_write
@@ -536,6 +569,15 @@ flowchart TD
   pkg_member_question_receiver --> pkg_remote_protocol
   pkg_member_question_receiver --> pkg_session
   pkg_member_question_receiver --> pkg_typert_protocol
+  pkg_phone_environment_android --> pkg_home_paths
+  pkg_phone_environment_android --> pkg_invariants
+  pkg_phone_environment_android --> pkg_phone_environment
+  pkg_phone_environment_android --> pkg_phone_runtime
+  pkg_phone_environment_android --> pkg_subprocess
+  pkg_phone_environment_ios --> pkg_invariants
+  pkg_phone_environment_ios --> pkg_phone_environment
+  pkg_phone_environment_ios --> pkg_phone_runtime
+  pkg_phone_environment_ios --> pkg_subprocess
   pkg_remote_access --> pkg_brand
   pkg_remote_access --> pkg_platform_account
   pkg_remote_access --> pkg_remote_protocol
@@ -633,7 +675,6 @@ flowchart TD
   pkg_browser_workspace --> pkg_typert_protocol
   pkg_browser_workspace --> pkg_workspace
   pkg_client_ui_better_sidebar --> pkg_agent
-  pkg_client_ui_better_sidebar --> pkg_session_persistence
   pkg_client_ui_better_sidebar --> pkg_settings
   pkg_file_reference --> pkg_agent
   pkg_time_context --> pkg_agent
@@ -943,6 +984,10 @@ flowchart TD
   pkg_mcp_client --> pkg_subprocess
   pkg_mcp_client --> pkg_timeout
   pkg_mcp_client --> pkg_tools
+  pkg_tool_phone --> pkg_invariants
+  pkg_tool_phone --> pkg_llm
+  pkg_tool_phone --> pkg_phone_runtime
+  pkg_tool_phone --> pkg_tools
   pkg_agent_presets --> pkg_agent
   pkg_agent_presets --> pkg_atomic_write
   pkg_agent_presets --> pkg_home_paths
@@ -1315,7 +1360,6 @@ flowchart TD
 | [`base`](../packages/bundle/base) | `bundle` | — |
 | [`sdk-app`](../packages/bundle/sdk-app) | `bundle` | — |
 | [`sdk-minimal`](../packages/bundle/sdk-minimal) | `bundle` | — |
-| [`client-connection`](../packages/client/connection) | `client` | — |
 | [`client-hmr`](../packages/client/hmr) | `client` | — |
 | [`client-locale`](../packages/client/locale) | `client` | — |
 | [`client-modules`](../packages/client/modules) | `client` | — |
@@ -1340,6 +1384,7 @@ flowchart TD
 | [`client-ui-message-feedback`](../packages/client/ui-message-feedback) | `client` | — |
 | [`client-ui-model-selection`](../packages/client/ui-model-selection) | `client` | — |
 | [`client-ui-permission-presets`](../packages/client/ui-permission-presets) | `client` | — |
+| [`client-ui-phone`](../packages/client/ui-phone) | `client` | — |
 | [`client-ui-plan`](../packages/client/ui-plan) | `client` | — |
 | [`client-ui-primitives`](../packages/client/ui-primitives) | `client` | — |
 | [`client-ui-reference`](../packages/client/ui-reference) | `client` | — |
@@ -1382,6 +1427,7 @@ flowchart TD
 | [`typert-generator`](../packages/typert/generator) | `typert` | — |
 | [`typert-protocol`](../packages/typert/protocol) | `typert` | — |
 | [`typert-registry`](../packages/typert/registry) | `typert` | — |
+| [`request-trust`](../packages/util/request-trust) | `util` | [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`scope`](../packages/core/scope) | `core` | [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`subagent-route-preauthorization-static`](../packages/subagent/subagent-route-preauthorization-static) | `subagent` | [`subagent-route-preauthorization`](../packages/subagent/subagent-route-preauthorization) |
 | [`web`](../packages/web/web) | `web` | [`llm`](../packages/llm/llm) |
@@ -1389,11 +1435,10 @@ flowchart TD
 | [`browser-runtime`](../packages/browser/browser-runtime) | `browser` | [`brand`](../packages/util/brand) |
 | [`credentials`](../packages/credentials/credentials) | `credentials` | [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`e2b`](../packages/e2b/e2b) | `e2b` | [`http-proxy`](../packages/util/http-proxy) |
+| [`phone-capture-wire-demo`](../packages/examples/phone-capture-wire-demo) | `examples` | [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`experimental-code-runtime-python`](../packages/experimental/code-runtime-python) | `experimental` | [`code-runtime`](../packages/code-runtime/code-runtime), [`timeout`](../packages/util/timeout), [`util-values`](../packages/util/values) |
 | [`experimental-inspector`](../packages/experimental/inspector) | `experimental` | [`client-modules`](../packages/client/modules), [`host-webserver`](../packages/host/webserver) |
-| [`experimental-webworker-runtime`](../packages/experimental/webworker-runtime) | `experimental` | [`client-connection`](../packages/client/connection), [`client-modules`](../packages/client/modules), [`host-webserver`](../packages/host/webserver) |
 | [`host-directory-picker-auto`](../packages/host/directory-picker-auto) | `host` | [`client-ui-directory-picker-browse`](../packages/client/ui-directory-picker-browse), [`client-ui-directory-picker-native`](../packages/client/ui-directory-picker-native), [`host-directory-picker-browse`](../packages/host/directory-picker-browse), [`host-directory-picker-native`](../packages/host/directory-picker-native), [`host-webserver`](../packages/host/webserver) |
-| [`host-frontend-static`](../packages/host/frontend-static) | `host` | [`client-connection`](../packages/client/connection), [`host-webserver`](../packages/host/webserver) |
 | [`anonymous-user-id`](../packages/identity/anonymous-user-id) | `identity` | [`brand`](../packages/util/brand), [`home-paths`](../packages/util/home-paths) |
 | [`lsp`](../packages/lsp/lsp) | `lsp` | [`brand`](../packages/util/brand), [`llm`](../packages/llm/llm) |
 | [`platform-account`](../packages/platform/platform-account) | `platform` | [`brand`](../packages/util/brand) |
@@ -1413,9 +1458,11 @@ flowchart TD
 | [`browser-runtime-deterministic`](../packages/browser/browser-runtime-deterministic) | `browser` | [`browser-runtime`](../packages/browser/browser-runtime), [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`browser-runtime-electron`](../packages/browser/browser-runtime-electron) | `browser` | [`browser-runtime`](../packages/browser/browser-runtime), [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`browser-runtime-tandem`](../packages/browser/browser-runtime-tandem) | `browser` | [`browser-runtime`](../packages/browser/browser-runtime), [`invariants`](../packages/runtime-diagnostics/invariants), [`subprocess`](../packages/subprocess/subprocess) |
+| [`client-connection`](../packages/client/connection) | `client` | [`request-trust`](../packages/util/request-trust) |
 | [`authorization`](../packages/credentials/authorization) | `credentials` | [`credentials`](../packages/credentials/credentials), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm) |
 | [`credentials-local`](../packages/credentials/credentials-local) | `credentials` | [`atomic-write`](../packages/util/atomic-write), [`credentials`](../packages/credentials/credentials), [`home-paths`](../packages/util/home-paths), [`launch-environment`](../packages/util/launch-environment) |
 | [`subprocess-e2b`](../packages/e2b/subprocess-e2b) | `e2b` | [`e2b`](../packages/e2b/e2b), [`subprocess`](../packages/subprocess/subprocess), [`timeout`](../packages/util/timeout) |
+| [`phone-runtime`](../packages/phone/phone-runtime) | `phone` | [`brand`](../packages/util/brand), [`home-paths`](../packages/util/home-paths), [`invariants`](../packages/runtime-diagnostics/invariants), [`request-trust`](../packages/util/request-trust), [`subprocess`](../packages/subprocess/subprocess), [`timeout`](../packages/util/timeout) |
 | [`platform-account-client`](../packages/platform/platform-account-client) | `platform` | [`platform-account`](../packages/platform/platform-account) |
 | [`platform-account-core`](../packages/platform/platform-account-core) | `platform` | [`platform-account`](../packages/platform/platform-account) |
 | [`platform-account-http`](../packages/platform/platform-account-http) | `platform` | [`host-webserver`](../packages/host/webserver), [`platform-account`](../packages/platform/platform-account) |
@@ -1425,6 +1472,10 @@ flowchart TD
 | [`spill`](../packages/spill/spill) | `spill` | [`brand`](../packages/util/brand), [`llm`](../packages/llm/llm), [`session`](../packages/core/session) |
 | [`app-boot`](../packages/boot/app-boot) | `boot` | [`home-paths`](../packages/util/home-paths), [`launch-environment`](../packages/util/launch-environment), [`system-prompt`](../packages/core/system-prompt) |
 | [`code-runtime-worker-thread`](../packages/code-runtime/code-runtime-worker-thread) | `code-runtime` | [`code-runtime`](../packages/code-runtime/code-runtime), [`session`](../packages/core/session), [`timeout`](../packages/util/timeout) |
+| [`experimental-webworker-runtime`](../packages/experimental/webworker-runtime) | `experimental` | [`client-connection`](../packages/client/connection), [`client-modules`](../packages/client/modules), [`host-webserver`](../packages/host/webserver) |
+| [`host-frontend-static`](../packages/host/frontend-static) | `host` | [`client-connection`](../packages/client/connection), [`host-webserver`](../packages/host/webserver) |
+| [`phone-environment`](../packages/phone/phone-environment) | `phone` | [`atomic-write`](../packages/util/atomic-write), [`home-paths`](../packages/util/home-paths), [`host-webserver`](../packages/host/webserver), [`invariants`](../packages/runtime-diagnostics/invariants), [`phone-runtime`](../packages/phone/phone-runtime), [`request-trust`](../packages/util/request-trust), [`subprocess`](../packages/subprocess/subprocess) |
+| [`phone-stream`](../packages/phone/phone-stream) | `phone` | [`host-webserver`](../packages/host/webserver), [`invariants`](../packages/runtime-diagnostics/invariants), [`phone-runtime`](../packages/phone/phone-runtime), [`request-trust`](../packages/util/request-trust) |
 | [`project-membership-client`](../packages/platform/project-membership-client) | `platform` | [`platform-account`](../packages/platform/platform-account), [`project-membership`](../packages/platform/project-membership) |
 | [`project-membership-core`](../packages/platform/project-membership-core) | `platform` | [`atomic-write`](../packages/util/atomic-write), [`invariants`](../packages/runtime-diagnostics/invariants), [`platform-account`](../packages/platform/platform-account), [`project-membership`](../packages/platform/project-membership) |
 | [`project-membership-http`](../packages/platform/project-membership-http) | `platform` | [`host-webserver`](../packages/host/webserver), [`platform-account`](../packages/platform/platform-account), [`platform-account-http`](../packages/platform/platform-account-http), [`project-membership`](../packages/platform/project-membership) |
@@ -1442,6 +1493,8 @@ flowchart TD
 | [`session-log-export`](../packages/session-query/session-log-export) | `session-query` | [`session-persistence`](../packages/session/session-persistence) |
 | [`message-feedback`](../packages/feedback/message-feedback) | `feedback` | [`brand`](../packages/util/brand), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`session-persistence`](../packages/session/session-persistence), [`storage-domain`](../packages/storage/storage-domain), [`typert-protocol`](../packages/typert/protocol) |
 | [`member-question-receiver`](../packages/interaction/member-question-receiver) | `interaction` | [`atomic-write`](../packages/util/atomic-write), [`attachment`](../packages/attachment/attachment), [`brand`](../packages/util/brand), [`invariants`](../packages/runtime-diagnostics/invariants), [`platform-account`](../packages/platform/platform-account), [`project-membership`](../packages/platform/project-membership), [`remote-protocol`](../packages/platform/remote-protocol), [`session`](../packages/core/session), [`typert-protocol`](../packages/typert/protocol) |
+| [`phone-environment-android`](../packages/phone/phone-environment-android) | `phone` | [`home-paths`](../packages/util/home-paths), [`invariants`](../packages/runtime-diagnostics/invariants), [`phone-environment`](../packages/phone/phone-environment), [`phone-runtime`](../packages/phone/phone-runtime), [`subprocess`](../packages/subprocess/subprocess) |
+| [`phone-environment-ios`](../packages/phone/phone-environment-ios) | `phone` | [`invariants`](../packages/runtime-diagnostics/invariants), [`phone-environment`](../packages/phone/phone-environment), [`phone-runtime`](../packages/phone/phone-runtime), [`subprocess`](../packages/subprocess/subprocess) |
 | [`remote-access`](../packages/platform/remote-access) | `platform` | [`brand`](../packages/util/brand), [`platform-account`](../packages/platform/platform-account), [`remote-protocol`](../packages/platform/remote-protocol) |
 | [`sandbox-local`](../packages/sandbox/sandbox-local) | `sandbox` | [`llm`](../packages/llm/llm), [`sandbox`](../packages/sandbox/sandbox), [`session`](../packages/core/session) |
 | [`session-persistence-jsonl`](../packages/session/session-persistence-jsonl) | `session` | [`session`](../packages/core/session), [`session-persistence`](../packages/session/session-persistence) |
@@ -1463,7 +1516,7 @@ flowchart TD
 | [`hook-protocol`](../packages/hooks/hook-protocol) | `hooks` | [`invariants`](../packages/runtime-diagnostics/invariants), [`session`](../packages/core/session), [`shell`](../packages/shell/shell) |
 | [`api-workspace-controller`](../packages/api/workspace-controller) | `api` | [`api-gateway`](../packages/api/gateway), [`client-connection`](../packages/client/connection), [`host-directory-picker`](../packages/host/directory-picker), [`native-command`](../packages/util/native-command), [`session`](../packages/core/session), [`storage-domain`](../packages/storage/storage-domain), [`subprocess`](../packages/subprocess/subprocess), [`timeout`](../packages/util/timeout), [`typert-protocol`](../packages/typert/protocol), [`workspace`](../packages/workspace/workspace) |
 | [`browser-workspace`](../packages/browser/browser-workspace) | `browser` | [`browser-runtime`](../packages/browser/browser-runtime), [`invariants`](../packages/runtime-diagnostics/invariants), [`session`](../packages/core/session), [`session-projection`](../packages/session/session-projection), [`typert-protocol`](../packages/typert/protocol), [`workspace`](../packages/workspace/workspace) |
-| [`client-ui-better-sidebar`](../packages/client/ui-better-sidebar) | `client` | [`agent`](../packages/core/agent), [`session-persistence`](../packages/session/session-persistence), [`settings`](../packages/settings/settings) |
+| [`client-ui-better-sidebar`](../packages/client/ui-better-sidebar) | `client` | [`agent`](../packages/core/agent), [`settings`](../packages/settings/settings) |
 | [`file-reference`](../packages/context/file-reference) | `context` | [`agent`](../packages/core/agent) |
 | [`time-context`](../packages/context/time-context) | `context` | [`agent`](../packages/core/agent), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`session-projection`](../packages/session/session-projection) |
 | [`tmux-context`](../packages/context/tmux-context) | `context` | [`agent`](../packages/core/agent), [`session`](../packages/core/session), [`session-projection`](../packages/session/session-projection), [`shell`](../packages/shell/shell) |
@@ -1528,6 +1581,7 @@ flowchart TD
 | [`tool-jobs`](../packages/jobs/tool-jobs) | `jobs` | [`agent`](../packages/core/agent), [`jobs`](../packages/jobs/jobs), [`llm`](../packages/llm/llm), [`output-retention`](../packages/util/output-retention), [`system-prompt`](../packages/core/system-prompt), [`tools`](../packages/core/tools) |
 | [`tool-lsp`](../packages/lsp/tool-lsp) | `lsp` | [`llm`](../packages/llm/llm), [`lsp`](../packages/lsp/lsp), [`system-prompt`](../packages/core/system-prompt), [`timeout`](../packages/util/timeout), [`tools`](../packages/core/tools) |
 | [`mcp-client`](../packages/mcp/mcp-client) | `mcp` | [`attachment`](../packages/attachment/attachment), [`llm`](../packages/llm/llm), [`scope`](../packages/core/scope), [`subprocess`](../packages/subprocess/subprocess), [`timeout`](../packages/util/timeout), [`tools`](../packages/core/tools) |
+| [`tool-phone`](../packages/phone/tool-phone) | `phone` | [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`phone-runtime`](../packages/phone/phone-runtime), [`tools`](../packages/core/tools) |
 | [`agent-presets`](../packages/preset/agent-presets) | `preset` | [`agent`](../packages/core/agent), [`atomic-write`](../packages/util/atomic-write), [`home-paths`](../packages/util/home-paths), [`invariants`](../packages/runtime-diagnostics/invariants), [`scope`](../packages/core/scope), [`session`](../packages/core/session), [`session-projection`](../packages/session/session-projection), [`settings`](../packages/settings/settings), [`system-prompt`](../packages/core/system-prompt), [`tools`](../packages/core/tools), [`typert-protocol`](../packages/typert/protocol) |
 | [`schedule`](../packages/schedule/schedule) | `schedule` | [`agent`](../packages/core/agent), [`brand`](../packages/util/brand), [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`session-persistence`](../packages/session/session-persistence), [`session-projection`](../packages/session/session-projection), [`tools`](../packages/core/tools) |
 | [`session-checkpoint-policy`](../packages/session/session-checkpoint-policy) | `session` | [`agent`](../packages/core/agent), [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`session-persistence`](../packages/session/session-persistence), [`tools`](../packages/core/tools) |

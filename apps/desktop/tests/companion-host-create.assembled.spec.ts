@@ -129,7 +129,7 @@ function productOwner(baseUrl: string, cookieHeader: string): InstanceType<typeo
 function pairingDependencies(
   owner: InstanceType<typeof DesktopCompanionProductOwner>,
   pairingId: ReturnType<typeof parsePersonalPairingId>,
-): Parameters<InstanceType<typeof DesktopCompanionProductOwner>['handle']>[1] {
+): import('../src/companion-product.ts').DesktopCompanionPairingDependencies {
   const attachmentKey = new Uint8Array(32)
   return {
     pairingId,

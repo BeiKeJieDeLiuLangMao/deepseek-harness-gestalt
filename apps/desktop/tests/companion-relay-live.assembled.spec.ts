@@ -547,7 +547,7 @@ async function startControlledStreamingLlm(apiKey: string): Promise<{
 function pairingDependencies(
   owner: InstanceType<typeof DesktopCompanionProductOwner>,
   channels: Awaited<ReturnType<typeof snowProductChannels>>,
-): Parameters<InstanceType<typeof DesktopCompanionProductOwner>['handle']>[1] {
+): import('../src/companion-product.ts').DesktopCompanionPairingDependencies {
   const attachmentKey = channels.attachmentKey.slice()
   return {
     pairingId: parsePersonalPairingId(channels.pairingSelector),

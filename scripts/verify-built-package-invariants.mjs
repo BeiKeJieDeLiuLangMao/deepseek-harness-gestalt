@@ -1,4 +1,4 @@
-/** Verify every compiled companion through its staged package self-reference under plain Node. */
+/** Verify compiled package entry points through staged self-references under plain Node. */
 
 import {
   copyFileSync,

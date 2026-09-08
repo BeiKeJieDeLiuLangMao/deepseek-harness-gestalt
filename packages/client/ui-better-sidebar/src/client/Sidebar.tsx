@@ -58,6 +58,7 @@ import { FreeWindowLayer, useFloatDragout } from './sidebar/free-windows.tsx'
 import type { TabDragPayload } from './TabBar.tsx'
 import { relativeTo } from './paths.ts'
 import { t } from './locales.ts'
+import { tabBadgeNode } from './tab-badge.tsx'
 import { api } from './api.ts'
 import css from './sidebar.module.css'
 
@@ -836,9 +837,7 @@ export function Sidebar(props: { ctx: SidebarContext; store: SidebarStore }) {
       console.error('[dsh-better-sidebar] tab badge error:', error)
       return null
     }
-    if (value === null || value === undefined || value === '') return null
-    const text = typeof value === 'number' ? (value > 99 ? '99+' : String(value)) : String(value)
-    return <span className={css.tabBadge}>{text}</span>
+    return tabBadgeNode(value)
   }
 
   /**

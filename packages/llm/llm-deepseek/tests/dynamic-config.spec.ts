@@ -104,6 +104,7 @@ async function home(): Promise<string> {
 
 interface Harness {
   ctx: Context
+  deepSeekFiber: { dispose(): Promise<void> }
   settingsFiber: { dispose(): Promise<void> }
 }
 
@@ -124,8 +125,9 @@ async function boot(dir: string, config: object): Promise<Harness> {
   const settingsFiber = ctx.plugin(FileSettingsProvider, { path: join(dir, 'settings.yaml'), watch: false })
   await settingsFiber
   await ctx.plugin(LocalCredentialProvider, { path: join(dir, '.credentials.yaml'), watch: false })
-  await ctx.plugin(LlmDeepSeek, config)
-  return { ctx, settingsFiber }
+  const deepSeekFiber = ctx.plugin(LlmDeepSeek, config)
+  await deepSeekFiber
+  return { ctx, deepSeekFiber, settingsFiber }
 }
 
 function prompt(ctx: Context) {
@@ -166,6 +168,66 @@ describe('request-level dynamic configuration', () => {
     await prompt(ctx)
     expect(server.headers[0]?.authorization).toBe('Bearer sk-arrived')
     await expect(access(join(dir, '.anonymous-user-id'))).resolves.toBeUndefined()
+  })
+
+  it('withdraws the official route after deletion and restores credential-only occupancy', async () => {
+    vi.stubEnv('DEEPSEEK_API_KEY', '')
+    const dir = await home()
+    const { ctx, deepSeekFiber } = await boot(dir, { baseURL: 'http://127.0.0.1:1' })
+
+    // A never-written first run keeps the official route available for the
+    // credential onboarding flow. The explicit empty user section below is
+    // the durable residual written by the Models page when the user deletes it.
+    expect(ctx.llm.listProviders().map(provider => provider.id)).toContain('deepseek-official')
+    await ctx.settings.update(NS, { models: [{ id: 'owned-model' }] })
+    await ctx.credentials.set(KEY_REF, 'sk-owned')
+
+    await ctx.credentials.unset(KEY_REF)
+    expect(ctx.llm.listProviders().map(provider => provider.id)).toContain('deepseek-official')
+    await ctx.settings.mutate(NS, [{ op: 'unset', path: [] }])
+    await vi.waitFor(() => {
+      expect(ctx.llm.listProviders().map(provider => provider.id)).not.toContain('deepseek-official')
+    })
+    expect(ctx.llm.listConfigurableProviders()).toEqual([
+      { provider: 'deepseek-official', displayName: 'DeepSeek', settingsNs: NS, settingsPath: [] },
+    ])
+
+    // A credential can occupy the official provider without materializing a
+    // settings section. Removing it again returns to the explicit deletion.
+    await ctx.credentials.set(KEY_REF, 'sk-credential-only')
+    await vi.waitFor(() => {
+      expect(ctx.llm.listProviders().map(provider => provider.id)).toContain('deepseek-official')
+    })
+    await ctx.credentials.unset(KEY_REF)
+    await vi.waitFor(() => {
+      expect(ctx.llm.listProviders().map(provider => provider.id)).not.toContain('deepseek-official')
+    })
+
+    await expect(deepSeekFiber.dispose()).resolves.toBeUndefined()
+    expect(ctx.llm.listProviders()).toEqual([])
+    expect(ctx.llm.listConfigurableProviders()).toEqual([])
+  })
+
+  it('ignores an older credential description after settings occupy the route again', async () => {
+    vi.stubEnv('DEEPSEEK_API_KEY', '')
+    const dir = await home()
+    const { ctx } = await boot(dir, { baseURL: 'http://127.0.0.1:1' })
+    await ctx.settings.update(NS, { models: [{ id: 'before-delete' }] })
+    let settleDescription!: (info: { configured: boolean; writable: boolean }) => void
+    const delayedDescription = new Promise<{ configured: boolean; writable: boolean }>((resolve) => {
+      settleDescription = resolve
+    })
+    const describe = vi.spyOn(LocalCredentialProvider.prototype, 'describe').mockReturnValue(delayedDescription)
+
+    await ctx.settings.mutate(NS, [{ op: 'unset', path: [] }])
+    await vi.waitFor(() => { expect(describe).toHaveBeenCalledWith(KEY_REF) })
+    await ctx.settings.update(NS, { models: [{ id: 'restored' }] })
+    settleDescription({ configured: false, writable: true })
+    await delayedDescription
+    await Promise.resolve()
+
+    expect(ctx.llm.listProviders().map(provider => provider.id)).toContain('deepseek-official')
+    describe.mockRestore()
   })
 
   it('rejects a stored credential no header can carry, never echoing it in the failure', async () => {

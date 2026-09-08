@@ -170,9 +170,12 @@ describe('assembled Desktop Companion submit and cancel on shipped dsh web', () 
     const llmCallsBeforeCancel = llm.requests.length
     const cancelOperationIds: CompanionOperationId[] = []
     const originalHandle = owner.handle.bind(owner)
-    owner.handle = async (operation, dependencies) => {
+    owner.handle = async (...args) => {
+      const operation = args[0]
       if (operation.type === 'cancel-session') cancelOperationIds.push(operation.operationId)
-      return await originalHandle(operation, dependencies)
+      return args.length === 1
+        ? await originalHandle(args[0])
+        : await originalHandle(args[0], args[1])
     }
     surface.cancel(localSessionId)
     await expect.poll(() => cancelOperationIds.length).toBe(1)
@@ -230,7 +233,7 @@ function productOwner(baseUrl: string, cookieHeader: string): InstanceType<typeo
 function pairingDependencies(
   owner: InstanceType<typeof DesktopCompanionProductOwner>,
   channels: Awaited<ReturnType<typeof snowProductChannels>>,
-): Parameters<InstanceType<typeof DesktopCompanionProductOwner>['handle']>[1] {
+): import('../src/companion-product.ts').DesktopCompanionPairingDependencies {
   const attachmentKey = channels.attachmentKey.slice()
   return {
     pairingId: parsePersonalPairingId(channels.pairingSelector),

@@ -166,8 +166,7 @@ describe('Mobile shipped entry foreground mutation gate', () => {
       committedAt: 1,
     })
     firstResync.acceptValidatedDesktopResync(createdSessionsProjection('workspace'))
-    await screen.findByRole('heading', { name: 'New Session' })
-    fireEvent.click(screen.getByRole('button', { name: 'Back' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Back' }))
     expect(within(screen.getByRole('region', { name: 'Work' })).getByRole('treeitem', { name: /New Session/ }))
       .toBeTruthy()
 
@@ -180,8 +179,7 @@ describe('Mobile shipped entry foreground mutation gate', () => {
       committedAt: 2,
     })
     firstResync.acceptValidatedDesktopResync(createdSessionsProjection('ungrouped'))
-    await screen.findByRole('heading', { name: 'New Session' })
-    fireEvent.click(screen.getByRole('button', { name: 'Back' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Back' }))
     expect([
       screen.getByRole('region', { name: 'Work' }).textContent,
       screen.getByRole('region', { name: 'Ungrouped' }).textContent,

@@ -79,7 +79,10 @@ describe('TabBar Desktop + menu', () => {
     expect(rule).not.toContain('position: absolute')
     const tabDragRule = /body\[data-dsh-tab-dragging\] \.windowDragSpace\s*\{(?<body>[^}]+)\}/.exec(source)?.groups?.body ?? ''
     expect(tabDragRule).toContain('-webkit-app-region: no-drag')
-    expect(source).not.toMatch(/\.toggleButton,\s*\.tabBar\s*\{[^}]*-webkit-app-region:\s*no-drag/)
+    const noDragSelectors = [...source.matchAll(/(?<selectors>[^{}]+)\{(?<body>[^{}]*)\}/g)]
+      .filter(match => match.groups?.body.includes('-webkit-app-region: no-drag'))
+      .flatMap(match => match.groups?.selectors.split(',').map(selector => selector.trim()))
+    expect(noDragSelectors).not.toContain('.tabBar')
   })
 
   it('opens the in-page menu when Desktop overlay verbs are absent', () => {

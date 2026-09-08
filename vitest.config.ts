@@ -4,7 +4,7 @@ import tsconfigPaths from 'vite-tsconfig-paths'
 import { resolvePwshPath } from './packages/shell/pwsh-local/src/resolve.ts'
 import { defineConfig } from 'vitest/config'
 import { standardDecoratorPlugin, vitestExecArgv } from './vitest.shared.ts'
-import { COVERAGE_EXEMPT_ENV, coverageExemptHeavySuites } from './scripts/coverage-exempt.ts'
+import { COVERAGE_EXEMPT_ENV, coverageExemptSuites } from './scripts/coverage-exempt.ts'
 import { COVERAGE_PARTITION_MODE_ENV } from './scripts/coverage-partitions.ts'
 
 // Prints exact `path:line:col` records for every uncovered statement, branch
@@ -55,6 +55,8 @@ const windowsUnsupportedTests = process.platform === 'win32'
       // undeliverable to a table pid. The worker host always reports 'linux',
       // so the Linux lanes hold the ladder.
       'packages/experimental/webworker-runtime/tests/node/child-process.spec.ts',
+      'apps/platform/tests/certificate-renewal.spec.ts',
+      'apps/mobile/tests/android-acceptance-candidate.spec.ts',
     ]
   : []
 
@@ -93,7 +95,12 @@ const windowsOnlyCoverageExclusions = process.platform !== 'win32'
 // never measures child processes. Its behavior is pinned end-to-end by
 // tests/runner.spec.ts, which spawns the real entry through tsx.
 const windowsRunnerCoverageExclusions = process.platform === 'win32'
-  ? ['packages/sandbox/sandbox-windows-acl/src/runner.ts']
+  ? [
+      'packages/sandbox/sandbox-windows-acl/src/runner.ts',
+      // The iOS command adapter owns Xcode/simctl POSIX process groups and is
+      // runnable only on macOS. Windows still type-checks the package.
+      'packages/phone/phone-environment-ios/src/process.ts',
+    ]
   : []
 
 // pwsh-local's run/start/lifecycle suites self-skip without a real pwsh
@@ -117,15 +124,15 @@ const testIncludes = [
   'scripts/**/*.spec.ts',
 ]
 
-// The instrumented coverage gate sets this env; the exempt heavy suites then
-// run beside it uninstrumented (membership contract in scripts/coverage-exempt.ts).
+// The instrumented coverage gate sets this env; separate uninstrumented gates
+// retain the exempt suites (membership contract in scripts/coverage-exempt.ts).
 // A set-but-not-'1' value is a misconfiguration, not a silent no-op.
 const coverageExemptRaw = process.env[COVERAGE_EXEMPT_ENV]
 if (coverageExemptRaw !== undefined && coverageExemptRaw !== '' && coverageExemptRaw !== '1') {
   throw new Error(`vitest config: ${COVERAGE_EXEMPT_ENV} must be '1' or unset, got ${JSON.stringify(coverageExemptRaw)}.`)
 }
 const coverageExemptExcludes = coverageExemptRaw === '1'
-  ? coverageExemptHeavySuites.map(suite => suite.exclude)
+  ? coverageExemptSuites.map(suite => suite.exclude)
   : []
 
 const coveragePartitionRaw = process.env[COVERAGE_PARTITION_MODE_ENV]

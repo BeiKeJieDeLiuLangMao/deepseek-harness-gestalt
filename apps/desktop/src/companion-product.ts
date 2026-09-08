@@ -261,24 +261,32 @@ export class DesktopCompanionProductOwner {
 
   /**
    * Execute one operation decoded by the reviewed channel against the current Web Host.
-   * @param operation - validated Companion operation.
-   * @param dependencies - exact Personal Pairing identity, key, and attachment adapters.
+   * @param args - search alone, or an authenticated operation with its exact pairing dependencies.
    * @returns correlated product result; absent Web Host becomes a stable wire failure.
    */
   async handle(
-    operation: CompanionProductOperation,
-    dependencies: DesktopCompanionPairingDependencies,
+    ...args:
+      | [operation: CompanionSearchSessionsOperation]
+      | [operation: CompanionProductOperation, dependencies: DesktopCompanionPairingDependencies]
   ): Promise<DesktopCompanionOperationOutput> {
+    const operation = args[0]
     const installed = this.installed
     if (installed === undefined) {
       return operationFailed(operation, {
         kind: 'wire', code: 'HOST_WIRE_INVALID', message: 'Desktop Web Host is not available',
       })
     }
-    if (operation.type === 'observe-session') {
-      this.liveProjection.observe(dependencies.pairingId, operation.sessionId)
+    if (args.length === 1) {
+      return await searchSessions(args[0], {
+        host: installed.rpc,
+        workspaceSnapshot: signal => installed.workspace.wait(signal),
+      })
+    }
+    const [authenticatedOperation, dependencies] = args
+    if (authenticatedOperation.type === 'observe-session') {
+      this.liveProjection.observe(dependencies.pairingId, authenticatedOperation.sessionId)
       return {
-        type: 'confirmed', operationId: operation.operationId,
+        type: 'confirmed', operationId: authenticatedOperation.operationId,
         committedAt: dependencies.now(), outcome: 'accepted',
       }
     }
@@ -289,24 +297,24 @@ export class DesktopCompanionProductOwner {
         workspaceSnapshot: signal => installed.workspace.wait(signal),
         sessionHistory: installed.history,
       }
-      const output = operation.type === 'refresh-surface'
-        ? await this.surfaceDiscovery.refresh(operation, withHost)
-        : await handleCompanionProductOperation(operation, withHost)
-      if (operation.type === 'settle-interaction'
+      const output = authenticatedOperation.type === 'refresh-surface'
+        ? await this.surfaceDiscovery.refresh(authenticatedOperation, withHost)
+        : await handleCompanionProductOperation(authenticatedOperation, withHost)
+      if (authenticatedOperation.type === 'settle-interaction'
         && !Array.isArray(output)
         && 'type' in output
         && output.type === 'interaction-receipt'
         && output.accepted) {
-        const pending = this.interactions.resolve(operation.interactionId, dependencies.attachmentKey)
+        const pending = this.interactions.resolve(authenticatedOperation.interactionId, dependencies.attachmentKey)
         if (pending !== undefined) this.interactions.forget(pending.eventId)
       }
       return output
     }
-    if (!isLedgerMutation(operation)) return await execute()
-    if (this.ledger === undefined) return operationFailed(operation, {
+    if (!isLedgerMutation(authenticatedOperation)) return await execute()
+    if (this.ledger === undefined) return operationFailed(authenticatedOperation, {
       kind: 'wire', code: 'HOST_WIRE_INVALID', message: 'Desktop Companion operation ledger is unavailable',
     })
-    return await this.ledger.execute(dependencies.pairingId, operation, async () => {
+    return await this.ledger.execute(dependencies.pairingId, authenticatedOperation, async () => {
       const output = await execute()
       if (isCompanionResultList(output) || isCompanionProjectionOutput(output)) {
         throw new Error('Desktop Companion mutation produced a projection')
@@ -799,7 +807,7 @@ async function receiveAttachment(
 
 async function searchSessions(
   operation: CompanionSearchSessionsOperation,
-  dependencies: CompanionProductOperationDependencies,
+  dependencies: Pick<CompanionProductOperationDependencies, 'host' | 'workspaceSnapshot'>,
 ): Promise<CompanionSessionSearchResult | CompanionOperationFailedResult> {
   const [response, workspaceValue] = await Promise.all([
     searchDesktopHostSessions(dependencies.host, operation.query),
@@ -1019,11 +1027,13 @@ function parseConversationHistory(
     } else if (event.type === 'assistant/message') {
       const message = event.data.message
       if (!isRecord(message) || !Array.isArray(message.content)) return undefined
+      if (event.data.interrupted !== undefined && event.data.interrupted !== true) return undefined
       nodes.push({
         kind: 'assistant', seq: event.seq, time: event.time,
         messageId: typeof message.id === 'string' ? message.id : undefined,
         turn: numberOr(event.data.turn, 0), step: numberOr(event.data.step, 0),
         blocks: message.content.map(assistantBlock),
+        ...(event.data.interrupted === true ? { interrupted: true } : {}),
       })
       if (partial?.turn === numberOr(event.data.turn, 0) && partial.step === numberOr(event.data.step, 0)) {
         partial = undefined

@@ -17,6 +17,7 @@ const t: SidebarRootComponentProps['t'] = key =>
 
 afterEach(() => {
   cleanup()
+  document.documentElement.removeAttribute('data-dsh-desktop-overlay')
   vi.unstubAllEnvs()
   vi.useRealTimers()
 })
@@ -86,6 +87,18 @@ function mountShell({ collapsed = false, width = 300 }: { collapsed?: boolean; w
 }
 
 describe('SidebarRoot shell', () => {
+  it('renders only the settings seat in the Desktop overlay document', () => {
+    document.documentElement.setAttribute('data-dsh-desktop-overlay', '')
+    const b = mountShell()
+
+    expect(screen.getByTestId('settings-seat').getAttribute('data-wide')).toBe('true')
+    expect(screen.queryByTestId('region')).toBeNull()
+    expect(screen.queryByTestId('footer-action-seat')).toBeNull()
+    expect(screen.queryByTestId('custom-brand-mark')).toBeNull()
+    expect(b.startSession).not.toHaveBeenCalled()
+    expect(b.toggleSidebar).not.toHaveBeenCalled()
+  })
+
   it('routes New Session (capsule + wordmark) and the column toggle', () => {
     const b = mountShell()
     expect(screen.getByTestId('custom-brand-mark')).toBeTruthy()

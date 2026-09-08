@@ -70,11 +70,11 @@ const output = handle.collected.stdout?.readFrom(0)
 
 ### 每个子进程起步时的环境
 
-子进程永远不会隐式继承 harness 的环境秘密：形似凭据的名称与环境中的 `DSH_*` 事实都会被清除，调用方显式的 `env` 在该清除之后合并。有意转发的凭据或当前的 `DSH_*` 部署事实仍会到达子进程；显式的 `undefined` 墓碑值则移除一个普通的环境项。
+子进程永远不会隐式继承 harness 的环境秘密：形似凭据的名称与环境中的 `DSH_*` 事实都会被清除，调用方显式的 `env` 在该清除之后合并。有意转发的凭据或当前的 `DSH_*` 部署事实仍会到达子进程；显式的 `undefined` 墓碑值则移除一个普通的环境项。在 Windows 上，`childEnv()` 以不区分大小写的方式应用覆盖，因此显式 `PATH` 会替换继承的 `Path`，不会让两种拼写同时留在子进程环境中。
 
 ### 可能出错的地方
 
-无法解析的可执行文件会以稳定的错误快速失败。从未启动成功的 spawn 会让 `done` reject；从未运行过的进程没有任何缓冲输出。脱离进程树或会话的 daemon 化子进程可能比终止更长寿——提供方 README 会记录各自的可观察性限制。当传输拥有自己的 spawn（SDK 客户端、MCP）时，请绕开本服务并直接导入 `scrubbedParentEnv`，让环境策略保持单一来源。
+无法解析的可执行文件会以稳定的错误快速失败。从未启动成功的 spawn 会让 `done` reject；从未运行过的进程没有任何缓冲输出。脱离进程树或会话的 daemon 化子进程可能比终止更长寿——提供方 README 会记录各自的可观察性限制。当传输拥有自己的 spawn（SDK 客户端、MCP）时，请绕开本服务并直接导入 `childEnv`，让环境策略保持单一来源。
 
 -----
 
@@ -94,7 +94,7 @@ const output = handle.collected.stdout?.readFrom(0)
 
 | 文件 | 职责 |
 |---|---|
-| [`src/index.ts`](src/index.ts) | 插件入口：抽象 `SubprocessRuntime`、`ctx.subprocess` 注册、共享的 `scrubbedParentEnv` 清除 |
+| [`src/index.ts`](src/index.ts) | 插件入口：抽象 `SubprocessRuntime`、`ctx.subprocess` 注册、共享的 `scrubbedParentEnv` 清除与 `childEnv` 覆盖合并 |
 | [`src/types.ts`](src/types.ts) | 词汇：spawn spec、stdio 模式、句柄、读取器、结果、`DSH_*` 命名空间 |
 | — | 不发布运行时不变式伴生入口；观察由提供方负责。 |
 
@@ -139,7 +139,7 @@ spawn 立即返回活动句柄；请求的中止信号驱动与 `terminate()` �
 
 这些限制说明该 seam 何时不合适，或何时把工作留给消费方。它们是当前包约束，不是对比或任务积压。
 
-- **由 SDK 管理的 spawn 仍在服务之外**——拥有内部 spawn 的传输（SDK 客户端、MCP）无法把该调用路由到本服务；它仍可导入 `scrubbedParentEnv`，使环境策略保持单一来源。
+- **由 SDK 管理的 spawn 仍在服务之外**——拥有内部 spawn 的传输（SDK 客户端、MCP）无法把该调用路由到本服务；它仍可导入 `childEnv`，使环境策略保持单一来源。
 - **拆卸阶梯归消费方所有**——该 seam 只提供信号动词与整棵进程树的等待，不提供现成的停稳序列；每个进程外消费方自行编码其子进程的配合方式（ACP 后端以 stdin EOF 打头的阶梯是仓库内模板）。
 - **可观察性取决于提供方**——脱离进程树或会话的 daemon 化子进程可能比终止更长寿；提供方记录各自的执行基底限制，seam 不新增持续的进程表监视器。
 

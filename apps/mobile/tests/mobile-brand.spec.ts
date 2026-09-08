@@ -31,8 +31,12 @@ describe('Mobile brand validation', () => {
     const workflow = source('../../../.github/workflows/mobile-release.yml')
 
     for (const release of [android, ios]) {
-      expect(release).toContain('pnpm --filter @deepseek-ai/dsh-mobile run verify:brand')
+      const buildPrerequisite = release.indexOf('pnpm run build:lib:host')
+      const brandValidation = release.indexOf('pnpm --filter @deepseek-ai/dsh-mobile run verify:brand')
+      expect(buildPrerequisite).toBeGreaterThanOrEqual(0)
+      expect(brandValidation).toBeGreaterThan(buildPrerequisite)
     }
+    expect(workflow.match(/run: bash apps\/mobile\/scripts\/build-android-release\.sh/gu)).toHaveLength(2)
     expect(android).toContain('Gestalt-${MOBILE_VERSION}-${MOBILE_BUILD_NUMBER}.apk')
     expect(android).toContain('-PdshMobileVersionCode="${MOBILE_BUILD_NUMBER}"')
     expect(android).toContain('-PdshMobileVersionName="${MOBILE_VERSION}"')
@@ -80,7 +84,10 @@ describe('Mobile brand validation', () => {
     expect(iosRelease).toContain('MOBILE_BUNDLE_ID:?MOBILE_BUNDLE_ID is required')
     expect(androidRelease).not.toContain('MOBILE_BUNDLE_ID:-')
     expect(iosRelease).not.toContain('MOBILE_BUNDLE_ID:-')
-    expect(workflow.match(/MOBILE_BUNDLE_ID: \$\{\{ vars\.MOBILE_BUNDLE_ID \}\}/gu)).toHaveLength(2)
+    expect(workflow.match(/MOBILE_BUNDLE_ID: \$\{\{ vars\.MOBILE_BUNDLE_ID \}\}/gu)).toHaveLength(3)
+    for (const job of ['android-acceptance-candidate', 'android', 'ios']) {
+      expect(workflow).toMatch(new RegExp(`\\n  ${job}:[\\s\\S]*?MOBILE_BUNDLE_ID: \\$\\{\\{ vars\\.MOBILE_BUNDLE_ID \\}\\}`, 'u'))
+    }
 
     for (const owner of [
       capacitor,

@@ -4,7 +4,9 @@ import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
 import {
   parseAccountProofJti,
+  parseDesktopInstallationPresentation,
   parseInstallationId,
+  parsePlatformAccountId,
   type AuthenticatedInstallationView,
 } from '@deepseek-ai/dsh-platform-account'
 import {
@@ -37,13 +39,13 @@ describe('Desktop Settings Remote Access composition', () => {
       account: {
         currentInstallation: vi.fn(async () => ({
           account: {
-            id: 'account-one' as never, githubId: 1, githubLogin: 'account-one',
+            id: parsePlatformAccountId('account-one'), githubId: 1, githubLogin: 'account-one',
             avatarUrl: 'https://avatars.example/account',
           },
           installation: {
             id: parseInstallationId('desktop-one'),
-            kind: 'desktop',
-            presentation: { name: 'Settings Desktop', platform: 'macos' },
+            kind: 'desktop' as const,
+            presentation: parseDesktopInstallationPresentation({ name: 'Settings Desktop', platform: 'macos' }),
           },
         } satisfies AuthenticatedInstallationView)),
       },
@@ -76,7 +78,7 @@ describe('Desktop Settings Remote Access composition', () => {
             status: 'signed-in' as const,
             privacyAccepted: true,
             account: {
-              id: 'account-one' as never, githubId: 1, githubLogin: 'account-one',
+              id: parsePlatformAccountId('account-one'), githubId: 1, githubLogin: 'account-one',
               avatarUrl: 'https://avatars.example/account',
             },
           })),
@@ -152,8 +154,11 @@ class SettingsRelaySocket implements RelayEndpointSocket {
     this.sent.push(message)
     if (message.type === 'attach') {
       this.push(encodeRelayMessage({
-        type: 'ready', transportVersion: 1, routeId: message.routeId,
-        attachmentId: message.attachmentId, peers: [],
+        type: 'ready',
+        transportVersion: 1,
+        routeId: message.routeId,
+        attachmentId: message.attachmentId,
+        peers: [],
       }))
     }
   }

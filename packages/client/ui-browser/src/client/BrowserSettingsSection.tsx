@@ -4,10 +4,12 @@
  * `browser_create` read these defaults.
  */
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
-import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
+import {
+  Button, IconEditOutline16, IconGlobeOutline14, IconPlusOutline16, IconTrashOutline16, Input, Modal,
+} from '@deepseek-ai/dsh-client-ui-primitives'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import {
   isBrowserProfileName,
@@ -61,132 +63,248 @@ export function BrowserSettingsSection({
   const defaultKind = useSettings(s => s.defaultKind)
   const defaultPersistentName = useSettings(s => s.defaultPersistentName)
   const namedProfiles = useSettings(s => s.namedProfiles)
-  const [draft, setDraft] = useState('')
-  const [edits, setEdits] = useState<Record<string, string>>({})
-  const trimmed = draft.trim()
-  const invalid = trimmed.length > 0 && !isBrowserProfileName(trimmed)
-  const duplicate = namedProfiles.includes(trimmed)
-  const commitRename = (from: string): void => {
-    const next = (edits[from] ?? from).trim()
-    if (next === from) return
-    if (!isBrowserProfileName(next) || namedProfiles.includes(next)) return
-    renameNamedProfile(from, next)
+  const [addOpen, setAddOpen] = useState(false)
+  const [addDraft, setAddDraft] = useState('')
+  const addOpener = useRef<HTMLButtonElement | null>(null)
+  const [renameFrom, setRenameFrom] = useState<string>()
+  const [renameDraft, setRenameDraft] = useState('')
+  const addName = addDraft.trim()
+  const addInvalid = addName.length > 0 && !isBrowserProfileName(addName)
+  const addDuplicate = namedProfiles.includes(addName)
+  const addBlocked = addName.length === 0 || addInvalid || addDuplicate
+  const closeAdd = (): void => {
+    setAddOpen(false)
+    setAddDraft('')
+    addOpener.current?.focus()
+    addOpener.current = null
+  }
+  const closeRename = (): void => {
+    setRenameFrom(undefined)
+    setRenameDraft('')
+  }
+  const commitRename = (): void => {
+    if (renameFrom === undefined) return
+    const next = renameDraft.trim()
+    if (next === renameFrom || !isBrowserProfileName(next) || namedProfiles.includes(next)) return
+    renameNamedProfile(renameFrom, next)
+    closeRename()
   }
   return (
-    <section className={css.section} data-browser-settings>
+    <section
+      className={css.section}
+      data-browser-settings
+      onKeyDown={(event) => {
+        if (!addOpen || event.key !== 'Escape') return
+        event.stopPropagation()
+        closeAdd()
+      }}
+    >
       <h2 className={css.title}>{t('settings.title')}</h2>
       <p className={css.intro}>{t('settings.intro')}</p>
-      <div className={css.field}>
-        <span id="browser-default-kind">{t('settings.defaultKind')}</span>
+      <div className={css.identityCard}>
+        <span id="browser-default-kind" className={css.cardLabel}>{t('settings.defaultKind')}</span>
         <div className={css.kinds} role="radiogroup" aria-labelledby="browser-default-kind">
           {KINDS.map(({ id, labelKey }) => (
-            <label key={id} className={css.row}>
+            <label key={id} className={css.kindOption} data-selected={defaultKind === id || undefined}>
               <input
+                className={css.srOnly}
                 type="radio"
                 name="browser-default-kind"
                 checked={defaultKind === id}
                 onChange={() => { setDefaultKind(id) }}
               />
-              {t(labelKey)}
+              <span>{t(labelKey)}</span>
             </label>
           ))}
         </div>
+        {defaultKind === 'persistent'
+          ? (
+            <label className={css.persistentField}>
+              <span className={css.fieldLabel}>{t('settings.defaultPersistentName')}</span>
+              <select
+                className={css.select}
+                value={defaultPersistentName}
+                onChange={(event) => { setDefaultPersistentName(event.target.value) }}
+              >
+                <option value="">{t('settings.defaultPersistentName.empty')}</option>
+                {namedProfiles.map(name => (
+                  <option key={name} value={name}>{name}</option>
+                ))}
+              </select>
+            </label>
+          )
+          : null}
       </div>
-      {defaultKind === 'persistent'
-        ? (
-          <label className={css.field}>
-            {t('settings.defaultPersistentName')}
-            <select
-              className={css.control}
-              value={defaultPersistentName}
-              onChange={(event) => { setDefaultPersistentName(event.target.value) }}
-            >
-              <option value="">{t('settings.defaultPersistentName.empty')}</option>
-              {namedProfiles.map(name => (
-                <option key={name} value={name}>{name}</option>
-              ))}
-            </select>
-          </label>
-        )
-        : null}
-      <div className={css.field}>
-        <span>{t('settings.roster')}</span>
+      <div className={css.rosterSection}>
+        <div className={css.rosterHeader}>
+          <h3 className={css.rosterTitle}>{t('settings.roster')}</h3>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            icon={<IconPlusOutline16 size={14} />}
+            onClick={(event) => {
+              closeRename()
+              addOpener.current = event.currentTarget
+              setAddOpen(true)
+            }}
+          >
+            {t('settings.roster.openAdd')}
+          </Button>
+        </div>
         {namedProfiles.length === 0
           ? <p className={css.empty}>{t('settings.roster.empty')}</p>
           : (
             <ul className={css.roster}>
               {namedProfiles.map((name) => {
-                const value = edits[name] ?? name
-                const next = value.trim()
+                const editing = renameFrom === name
+                const next = renameDraft.trim()
                 const renameInvalid = next.length > 0 && !isBrowserProfileName(next)
                 const renameDuplicate = next !== name && namedProfiles.includes(next)
                 const canRename = next !== name && !renameInvalid && !renameDuplicate
+                if (editing) {
+                  return (
+                    <li key={name} className={`${css.rosterRow} ${css.rosterRowEditing}`}>
+                      <form
+                        className={css.renameForm}
+                        onSubmit={(event) => {
+                          event.preventDefault()
+                          commitRename()
+                        }}
+                      >
+                        <div className={css.renameLine}>
+                          <Input
+                            className={`${css.renameInput} ${renameInvalid || renameDuplicate ? css.inputInvalid : ''}`}
+                            type="text"
+                            value={renameDraft}
+                            autoFocus
+                            spellCheck={false}
+                            aria-label={`${t('settings.roster.name')}: ${name}`}
+                            aria-invalid={renameInvalid || renameDuplicate || undefined}
+                            aria-describedby={renameInvalid || renameDuplicate ? 'browser-profile-rename-error' : undefined}
+                            onChange={(event) => { setRenameDraft(event.target.value) }}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Escape') {
+                                event.preventDefault()
+                                closeRename()
+                              } else if (event.key === 'Enter') {
+                                event.preventDefault()
+                                commitRename()
+                              }
+                            }}
+                          />
+                          <span className={css.renameActions}>
+                            <Button type="button" variant="outline" size="sm" onClick={closeRename}>
+                              {t('settings.cancel')}
+                            </Button>
+                            <Button type="submit" variant="primary" size="sm" disabled={!canRename}>
+                              {t('settings.roster.save')}
+                            </Button>
+                          </span>
+                        </div>
+                        {renameInvalid || renameDuplicate
+                          ? (
+                            <p id="browser-profile-rename-error" className={css.error} role="alert">
+                              {t(renameInvalid ? 'settings.roster.invalid' : 'settings.roster.duplicate')}
+                            </p>
+                          )
+                          : null}
+                      </form>
+                    </li>
+                  )
+                }
                 return (
                   <li key={name} className={css.rosterRow}>
-                    <input
-                      className={`${css.control} ${css.rosterName}`}
-                      type="text"
-                      value={value}
-                      aria-label={t('settings.roster.name')}
-                      aria-invalid={renameInvalid || undefined}
-                      onChange={(event) => {
-                        setEdits(current => ({ ...current, [name]: event.target.value }))
-                      }}
-                      onBlur={() => { commitRename(name) }}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter') {
-                          event.preventDefault()
-                          commitRename(name)
-                        }
-                      }}
-                    />
+                    <span className={css.profileIdentity}>
+                      <span className={css.profileIcon} aria-hidden="true">
+                        <IconGlobeOutline14 size={14} />
+                      </span>
+                      <span className={css.profileName}>{name}</span>
+                    </span>
                     <span className={css.rosterActions}>
                       <Button
                         type="button"
+                        variant="ghost"
                         size="sm"
-                        disabled={!canRename}
-                        onClick={() => { commitRename(name) }}
-                      >
-                        {t('settings.roster.rename')}
-                      </Button>
-                      <Button type="button" size="sm" onClick={() => { removeNamedProfile(name) }}>
-                        {t('settings.roster.remove')}
-                      </Button>
+                        className={css.iconAction}
+                        icon={<IconEditOutline16 size={14} />}
+                        aria-label={`${t('settings.roster.rename')}: ${name}`}
+                        title={t('settings.roster.rename')}
+                        onClick={() => {
+                          setRenameFrom(name)
+                          setRenameDraft(name)
+                        }}
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className={`${css.iconAction} ${css.removeAction}`}
+                        icon={<IconTrashOutline16 size={14} />}
+                        aria-label={`${t('settings.roster.remove')}: ${name}`}
+                        title={t('settings.roster.remove')}
+                        onClick={() => { removeNamedProfile(name) }}
+                      />
                     </span>
                   </li>
                 )
               })}
             </ul>
           )}
-        <label className={css.field}>
-          {t('settings.roster.add')}
-          <input
-            className={css.control}
-            type="text"
-            value={draft}
-            aria-invalid={invalid || undefined}
-            aria-describedby={invalid ? 'browser-profile-name-error' : undefined}
-            onChange={(event) => { setDraft(event.target.value) }}
-          />
-        </label>
-        {invalid
-          ? (
-            <p id="browser-profile-name-error" className={css.error} role="alert">
-              {t('settings.roster.invalid')}
-            </p>
-          )
-          : null}
-        <Button
-          type="button"
-          disabled={trimmed.length === 0 || invalid || duplicate}
-          onClick={() => {
-            addNamedProfile(trimmed)
-            setDraft('')
+      </div>
+      <Modal
+        open={addOpen}
+        onClose={closeAdd}
+        title={t('settings.roster.addTitle')}
+        closeLabel={t('settings.close')}
+        className={css.dialog as string}
+        footer={(
+          <>
+            <Button type="button" variant="outline" onClick={closeAdd}>{t('settings.cancel')}</Button>
+            <Button
+              type="submit"
+              variant="primary"
+              form="browser-profile-add-form"
+              disabled={addBlocked}
+            >
+              {t('settings.roster.submit')}
+            </Button>
+          </>
+        )}
+      >
+        <form
+          id="browser-profile-add-form"
+          className={css.dialogField}
+          onSubmit={(event) => {
+            event.preventDefault()
+            if (addBlocked) return
+            addNamedProfile(addName)
+            closeAdd()
           }}
         >
-          {t('settings.roster.submit')}
-        </Button>
-      </div>
+          <label className={css.fieldLabel} htmlFor="browser-profile-add-name">
+            {t('settings.roster.add')}
+          </label>
+          <Input
+            id="browser-profile-add-name"
+            className={`${css.modalInput} ${addInvalid || addDuplicate ? css.inputInvalid : ''}`}
+            type="text"
+            value={addDraft}
+            autoFocus
+            spellCheck={false}
+            aria-invalid={addInvalid || addDuplicate || undefined}
+            aria-describedby={addInvalid || addDuplicate ? 'browser-profile-name-error' : undefined}
+            onChange={(event) => { setAddDraft(event.target.value) }}
+          />
+          {addInvalid || addDuplicate
+            ? (
+              <p id="browser-profile-name-error" className={css.error} role="alert">
+                {t(addInvalid ? 'settings.roster.invalid' : 'settings.roster.duplicate')}
+              </p>
+            )
+            : null}
+        </form>
+      </Modal>
     </section>
   )
 }

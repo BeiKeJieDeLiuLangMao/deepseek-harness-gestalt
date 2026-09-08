@@ -132,6 +132,17 @@ export function protocolChoices(
   return list.list.map(entry => entry.value).filter((value): value is string => typeof value === 'string')
 }
 
+/**
+ * Whether the user layer contains a stored provider section.
+ * @param user - the described namespace's user layer.
+ * @returns false for an absent or empty section left by removal.
+ */
+export function userSectionOccupied(user: unknown): boolean {
+  if (user === undefined || user === null) return false
+  if (typeof user !== 'object' || Array.isArray(user)) return true
+  return Object.keys(user).length > 0
+}
+
 /** The credential reference a resolved profile names (its `apiKeyEnv` field). */
 function apiKeyEnvOf(
   namespace: SettingsNamespaceView | undefined,
@@ -168,6 +179,14 @@ export class ModelsSettingsStore {
   ) {}
 
   /**
+   * Publish a committed namespace before reloading the page's joined facts.
+   * @param view - namespace returned by the successful Host mutation.
+   */
+  acceptWrite(view: SettingsNamespaceView): void {
+    this.describeFace.acceptView(view)
+  }
+
+  /**
    * Refresh the whole page snapshot: the provider directory and the mirror's
    * settings answer in parallel, then one batched credential describe over
    * every referenced ref. Provider failure or absence of an initial settings
@@ -196,12 +215,19 @@ export class ModelsSettingsStore {
     const namespaces = new Map(views.map(view => [view.ns, view]))
     const rows: ProviderRow[] = providers.map((entry) => {
       const namespace = namespaces.get(entry.settingsNs)
-      const configured = namespace !== undefined
-        && (entry.settingsPath.length === 0 || this.schema.getPath(namespace.value, entry.settingsPath) !== undefined)
-      const removable = namespace !== undefined
-        && entry.settingsPath.length > 0
-        && this.schema.hasPath(namespace.user, entry.settingsPath)
-        && !this.schema.hasPath(namespace.base, entry.settingsPath)
+      const configured = namespace !== undefined && (
+        entry.settingsPath.length === 0
+          ? userSectionOccupied(namespace.user) || namespace.secrets.some(slot => slot.set)
+          : this.schema.getPath(namespace.value, entry.settingsPath) !== undefined
+      )
+      const removable = namespace !== undefined && (
+        (entry.provider === 'deepseek-official'
+          && entry.settingsNs === 'llm-deepseek'
+          && entry.settingsPath.length === 0)
+        || (entry.settingsPath.length > 0
+          && this.schema.hasPath(namespace.user, entry.settingsPath)
+          && !this.schema.hasPath(namespace.base, entry.settingsPath))
+      )
       return {
         entry,
         configured,

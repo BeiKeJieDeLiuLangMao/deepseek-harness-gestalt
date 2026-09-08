@@ -457,7 +457,12 @@ export function MobileConversationNodeView({
     case 'steering':
       return <UserMessage node={record} loadImage={loadImage} labels={labels} t={t} />
     case 'assistant':
-      return <AssistantBlocks blocks={asArray(record.blocks) ?? []} loadImage={loadImage} labels={labels} t={t} />
+      return (
+        <>
+          <AssistantBlocks blocks={asArray(record.blocks) ?? []} loadImage={loadImage} labels={labels} t={t} />
+          {record.interrupted === true && <div data-variant="stopped">{t('message.stopped')}</div>}
+        </>
+      )
     case 'tool-result':
       return <ToolCallRow node={record} t={t} cwd={cwd} home={home} />
     case 'context':

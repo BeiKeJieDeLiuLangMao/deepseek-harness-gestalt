@@ -10,6 +10,8 @@
  * engine, so the frame width comes from a mocked getBoundingClientRect and
  * resizes are driven through the ResizeObserver stub.
  */
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, render } from '@testing-library/react'
 import { useSyncExternalStore } from 'react'
@@ -48,6 +50,10 @@ class ResizeObserverStub {
 }
 
 let frameWidth = 1920
+const appFrameCss = readFileSync(
+  join(process.cwd(), 'packages/client/ui-layout/src/client/AppFrame.module.css'),
+  'utf8',
+)
 
 /** Test-local selector hook over a framework-neutral store instance. */
 function hookOf<T>(inst: { subscribe: (fn: () => void) => () => void; getSnapshot: () => T }) {
@@ -146,6 +152,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup()
+  document.documentElement.removeAttribute('data-dsh-desktop-overlay')
   document.title = ''
   vi.useRealTimers()
   vi.unstubAllGlobals()
@@ -153,6 +160,19 @@ afterEach(() => {
 })
 
 describe('AppFrame', () => {
+  it('renders only native overlay seats in the Desktop overlay document', () => {
+    document.documentElement.setAttribute('data-dsh-desktop-overlay', '')
+    const { container, slotCalls } = mountFrame()
+
+    expect(container.querySelector('[data-dsh-desktop-overlay-root]')).not.toBeNull()
+    expect(slotCalls).toEqual([
+      { key: 'sidebar', props: { collapsed: false, width: 280 } },
+      { key: 'shell.overlay', props: {} },
+    ])
+    expect(container.querySelector('[data-testid="center-content"]')).toBeNull()
+    expect(container.querySelector('[data-testid="details-content"]')).toBeNull()
+  })
+
   it('localizes the product title when the build does not supply one', () => {
     mountFrame()
     expect(document.title).toBe('DSH Local Build')
@@ -282,11 +302,15 @@ describe('AppFrame', () => {
     expect(instance.getSnapshot().details).toBe(320)
   })
 
-  it('details column stays mounted at zero width', () => {
+  it('details column stays mounted but cannot paint or receive input at zero width', () => {
     const { frame, getByTestId } = mountFrame()
+    const collapsedRule = /\.frame\[data-details-collapsed\] \.detailsCol\s*\{(?<body>[^}]+)\}/
+      .exec(appFrameCss)?.groups?.body ?? ''
     expect(tracks(frame)).toEqual([280, 0])
     expect(getByTestId('details-content')).toBeTruthy()
     expect(frame.hasAttribute('data-details-collapsed')).toBe(true)
+    expect(collapsedRule).toContain('visibility: hidden')
+    expect(collapsedRule).toContain('pointer-events: none')
   })
 
   it('closed sidebar keeps its compact rail with mounted slot content and collapsed owner props', () => {

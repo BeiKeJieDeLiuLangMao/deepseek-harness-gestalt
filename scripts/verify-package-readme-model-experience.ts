@@ -36,6 +36,7 @@ const NO_MODEL_EXPERIENCE_SECTION: Readonly<Record<string, string>> = {
   'packages/util/launch-environment': 'The package only resolves host environment values; model-facing consumers own any rendered use.',
   'packages/util/workspace-path': 'The package only formats Workspace paths for browser UI; it never constructs model input.',
   'packages/util/values': 'The package only validates, snapshots, compares, freezes, or rejects caller-owned values; consumers own every model-facing use.',
+  'packages/util/request-trust': 'The package only judges HTTP request trust headers; model-facing consumers own any rendered use.',
 }
 
 /**
@@ -44,6 +45,11 @@ const NO_MODEL_EXPERIENCE_SECTION: Readonly<Record<string, string>> = {
  * blocks. A package moves on or off this list with its context behavior.
  */
 const SENTENCE_MODEL_EXPERIENCE: Readonly<Record<string, SentenceContract>> = {
+  'packages/phone/phone-environment': { kind: 'indirect', reason: 'The Host-side environment service delegates model rendering to dsh-tool-phone.' },
+  'packages/phone/phone-environment-android': { kind: 'indirect', reason: 'The Android environment Provider reaches the model through dsh-tool-phone.' },
+  'packages/phone/phone-environment-ios': { kind: 'indirect', reason: 'The iOS environment Provider reaches the model through dsh-tool-phone.' },
+  'packages/phone/phone-runtime': { kind: 'indirect', reason: 'The Host-side device fleet service delegates model rendering to dsh-tool-phone.' },
+  'packages/phone/phone-stream': { kind: 'none', reason: 'The Host-side reverse-proxy registers no prompt, schema, or model-visible surface.' },
   'packages/attachment/attachment': { kind: 'indirect', reason: 'The storage seam delegates model request rendering to provider adapters.' },
   'packages/attachment/attachment-local': { kind: 'indirect', reason: 'The local backend delegates model request rendering to provider adapters.' },
   'packages/shell/shell': { kind: 'indirect', reason: 'The service interface delegates all model rendering to dsh-tool-bash.' },
@@ -83,6 +89,7 @@ const SENTENCE_MODEL_EXPERIENCE: Readonly<Record<string, SentenceContract>> = {
   'packages/experimental/client-ui-agent-team': { kind: 'none', reason: 'The browser projection and task controls register no model-facing input.' },
   'packages/client/ui-layout': { kind: 'none', reason: 'Browser-side UI plugin layer; registers nothing model-facing.' },
   'packages/client/ui-sidebar': { kind: 'none', reason: 'Browser-side UI plugin layer; registers nothing model-facing.' },
+  'packages/client/ui-phone': { kind: 'none', reason: 'The browser UI, Host settings namespace, and video playback register no prompt, tool schema, session event, or provider request.' },
   'packages/client/ui-brand-official': { kind: 'none', reason: 'Browser-side presentation occupants; registers nothing model-facing.' },
   'packages/client/ui-conversation': { kind: 'none', reason: 'Browser-side UI plugin layer; registers nothing model-facing.' },
   'packages/client/ui-approval': { kind: 'none', reason: 'Browser-side approval presentation; registers nothing model-facing.' },
