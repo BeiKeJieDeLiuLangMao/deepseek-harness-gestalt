@@ -31,6 +31,8 @@ The shell base styles apply automatic CJK/Latin spacing to ordinary content in s
 
 ### What boot looks like
 
+Before either stage, `AppWebEntry.run()` marks documents opened with `?dsh-desktop-overlay=1` so Desktop plugins can register native overlay UI during activation. The document retains this role for its lifetime.
+
 Boot runs in two stages: the module stage adopts the parser-loaded bootstrap batch, builds the module system from the Host-provided boot graph, and prefetches the `immediately` tier through the shared application-batch URL, which executes once. The plugin stage then activates every graph entry and waits for all of them before handing the marked boot DOM to the UI renderer, which hydrates it and switches to the complete UI.
 
 ### The boot page

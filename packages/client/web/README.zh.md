@@ -31,6 +31,8 @@ kind: "package-library"
 
 ### 启动过程是怎样的
 
+在两个阶段开始前，`AppWebEntry.run()` 会标记通过 `?dsh-desktop-overlay=1` 打开的文档，使 Desktop 插件能够在激活期间注册原生叠层 UI。文档在整个生命周期内保留此角色。
+
 启动分两个阶段：模块阶段接纳 parser 已加载的 bootstrap 批次，从 Host 提供的启动图构建模块系统，并通过只执行一次的共享 application 批次 URL 预取 `immediately` 层级。插件阶段随后激活每个图 entry 并等待全部就绪，之后才把带标记的启动 DOM 交给 UI 渲染器，由它 hydrate 并切换到完整 UI。
 
 ### 启动页
