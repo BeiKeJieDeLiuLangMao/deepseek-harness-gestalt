@@ -12,19 +12,31 @@ import type { Browser, Locator, Page, Request } from 'playwright'
 import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed, vi } from 'vitest'
 import {
   launchWebScaffold, watchConsole, webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
-import { connectFreshWorkspace, newEnglishPage, saveFailureShot } from './support.ts'
+import {
+  connectFreshWorkspace, newEnglishPage, saveFailureShot, writeComposerDraft,
+} from './support.ts'
 
 const MODE = webSnapshotMode()
 const PNG_1X1 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
 const SESSION_SELECTION_KEY = 'dsh.sessions.current'
+const DEVELOPMENT_LOCAL_OVERLAY = fileURLToPath(new URL(
+  './fixtures/member-question-development-local.cordis.yml', import.meta.url,
+))
+
+function launchMemberQuestionScaffold(
+  options: Parameters<typeof launchWebScaffold>[0] = {},
+): ReturnType<typeof launchWebScaffold> {
+  return launchWebScaffold({ ...options, extraOverlayPath: DEVELOPMENT_LOCAL_OVERLAY })
+}
 
 function isForbiddenSessionRequest(request: Request): boolean {
-  return /\/api\/session\.create$/.test(new URL(request.url()).pathname)
+  return /\/api\/session\/create$/.test(new URL(request.url()).pathname)
 }
 
 function operation(questionId: string, operationId: string, projectId: string) {
@@ -84,7 +96,7 @@ describe.skipIf(MODE === 'record')('web e2e: Host-owned member-question receivin
 
   beforeAll(async () => {
     harnessHome = await mkdtemp(join(tmpdir(), 'dsh-web-member-question-home-'))
-    scaffold = await launchWebScaffold({ harnessHome })
+    scaffold = await launchMemberQuestionScaffold({ harnessHome })
     const service = scaffold.ctx.get('memberQuestionReceiver')
     if (service === undefined) throw new Error('member-question e2e: receiver unavailable')
     receiver = service
@@ -94,7 +106,7 @@ describe.skipIf(MODE === 'record')('web e2e: Host-owned member-question receivin
     page.on('request', (request) => {
       if (isForbiddenSessionRequest(request)) forbiddenRequests.push(request.url())
     })
-    await page.goto(scaffold.baseUrl, { waitUntil: 'load' })
+    await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
     await connectFreshWorkspace(page, scaffold.workspaceCwd)
   }, 120_000)
@@ -135,6 +147,9 @@ describe.skipIf(MODE === 'record')('web e2e: Host-owned member-question receivin
       expect(first.receivingSessionId).not.toMatch(/^mq-recv:/u)
 
       const title = 'Project Atlas — Receiver launch decision'
+      const workspaceRow = page.getByText('Atlas Bound Workspace', { exact: true })
+        .locator('xpath=ancestor::*[@role="treeitem"][1]')
+      if (await workspaceRow.getAttribute('aria-expanded') !== 'true') await workspaceRow.click()
       const row = sessionRow(page, title)
       await row.waitFor({ timeout: 30_000 })
       await expect.poll(() => sessionGroupHeader(row).textContent()).toContain('Atlas Bound Workspace')
@@ -181,8 +196,8 @@ describe.skipIf(MODE === 'record')('web e2e: Host-owned member-question receivin
       expect(await readFile(join(workspaceRoot, 'docs', 'receiver-decision.md'), 'utf8'))
         .toBe('LOCAL WORKSPACE COPY\n')
       const agentComposer = page.locator('[data-composer-card]')
-      const composer = agentComposer.locator('textarea:enabled')
-      await composer.fill('Help me evaluate the rollout tradeoffs before I answer.')
+      const composer = agentComposer.locator('[data-composer-input]')
+      await writeComposerDraft(page, composer, 'Help me evaluate the rollout tradeoffs before I answer.')
       await agentComposer.getByRole('button', { name: 'Send message', exact: true }).click()
       await expect.poll(() => scaffold.ctx.sessions.get(first.receivingSessionId as never)?.snapshotEvents()
         .filter(event => event.type === 'turn/start').length).toBe(1)
@@ -252,7 +267,7 @@ describe.skipIf(MODE === 'record')('web e2e: Host-owned member-question receivin
         storageRoot: storageBackup,
       })
 
-      scaffold = await launchWebScaffold({
+      scaffold = await launchMemberQuestionScaffold({
         harnessHome,
         persistenceSeed: sessionBackup,
         storageSeed: storageBackup,
@@ -281,7 +296,7 @@ describe.skipIf(MODE === 'record')('web e2e: Host-owned member-question receivin
 
       const afterRestart = await receiver.snapshot()
       expect(afterRestart).toEqual(beforeRestart)
-      await page.goto(scaffold.baseUrl, { waitUntil: 'load' })
+      await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
       await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
       const restartedRow = sessionRow(page, title)
       await restartedRow.waitFor({ timeout: 30_000 })
@@ -318,7 +333,7 @@ describe.skipIf(MODE === 'record')('web e2e: Host-owned member-question receivin
 
   it('recovers one reserved post-prompt admission across Host restart through the same wire rpcId', async () => {
     const restartHome = await mkdtemp(join(tmpdir(), 'dsh-web-member-question-reserved-restart-'))
-    let restartScaffold = await launchWebScaffold({ harnessHome: restartHome })
+    let restartScaffold = await launchMemberQuestionScaffold({ harnessHome: restartHome })
     const workspacePath = join(restartScaffold.workspaceCwd, 'workspace')
     const backup = join(restartHome, 'reserved-session-backup')
     try {
@@ -341,9 +356,7 @@ describe.skipIf(MODE === 'record')('web e2e: Host-owned member-question receivin
         ],
         mode: 'queue' as const,
       }
-      const realFlush = restartScaffold.ctx.sessions.flush.bind(restartScaffold.ctx.sessions)
       vi.spyOn(restartScaffold.ctx.sessions, 'flush')
-        .mockImplementationOnce(realFlush)
         .mockRejectedValueOnce(new Error('injected post-prompt restart failure'))
       const failed = restartScaffold.ctx.typertGateway.invoke({
         namespace: 'memberQuestion',
@@ -372,7 +385,7 @@ describe.skipIf(MODE === 'record')('web e2e: Host-owned member-question receivin
       vi.restoreAllMocks()
       await restartScaffold.close()
 
-      restartScaffold = await launchWebScaffold({ harnessHome: restartHome, persistenceSeed: backup })
+      restartScaffold = await launchMemberQuestionScaffold({ harnessHome: restartHome, persistenceSeed: backup })
       await mkdir(workspacePath, { recursive: true })
       workspace = await restartScaffold.ctx.workspaceRegistry.create(workspacePath)
       service = restartScaffold.ctx.get('memberQuestionReceiver')
@@ -412,7 +425,8 @@ describe.skipIf(MODE === 'record')('web e2e: Host-owned member-question receivin
         return message === undefined ? [] : [message.content]
       })[0]
       expect(humanContent?.some(block => block.type === 'image'
-        && block.attachment.mediaType === 'image/png')).toBe(true)
+        && block.attachment.attachmentId.startsWith('sha256:')
+        && block.attachment.name === 'decision.png')).toBe(true)
     } finally {
       vi.restoreAllMocks()
       await restartScaffold.close()
@@ -422,11 +436,11 @@ describe.skipIf(MODE === 'record')('web e2e: Host-owned member-question receivin
 
   it('retries an ordinary Host prompt after a lost response on the materialized Session', async () => {
     const faultHome = await mkdtemp(join(tmpdir(), 'dsh-web-member-question-lost-response-'))
-    const faultScaffold = await launchWebScaffold({ harnessHome: faultHome })
+    const faultScaffold = await launchMemberQuestionScaffold({ harnessHome: faultHome })
     const faultBrowser = await chromium.launch()
     const faultPage = await newEnglishPage(faultBrowser)
     try {
-      await faultPage.goto(faultScaffold.baseUrl, { waitUntil: 'load' })
+      await faultPage.goto(faultScaffold.authenticatedUrl, { waitUntil: 'load' })
       await faultPage.waitForSelector('[class*="frame"]', { timeout: 30_000 })
       await connectFreshWorkspace(faultPage, faultScaffold.workspaceCwd)
       const workspace = faultScaffold.ctx.workspaceRegistry.list()
@@ -444,19 +458,19 @@ describe.skipIf(MODE === 'record')('web e2e: Host-owned member-question receivin
       await expect.poll(() => faultRow.getAttribute('aria-selected')).toBe('true')
       const promptRpcIds: string[] = []
       faultPage.on('request', (request) => {
-        if (!new URL(request.url()).pathname.endsWith('/api/session.prompt')) return
+        if (!new URL(request.url()).pathname.endsWith('/api/session/prompt')) return
         promptRpcIds.push((request.postDataJSON() as { rpcId: string }).rpcId)
       })
       const realFlush = faultScaffold.ctx.sessions.flush.bind(faultScaffold.ctx.sessions)
       vi.spyOn(faultScaffold.ctx.sessions, 'flush')
         .mockImplementationOnce(realFlush)
         .mockRejectedValueOnce(new Error('response lost after Host admission'))
-      const composer = faultPage.locator('[data-composer-card] textarea:enabled')
+      const composer = faultPage.locator('[data-composer-card] [data-composer-input]')
       const text = 'Retain this exact human action across the lost response.'
-      await composer.fill(text)
+      await writeComposerDraft(faultPage, composer, text)
       await faultPage.getByRole('button', { name: 'Send message', exact: true }).click()
       await expect.poll(() => promptRpcIds.length).toBe(1)
-      await composer.fill(text)
+      await writeComposerDraft(faultPage, composer, text)
       await faultPage.getByRole('button', { name: 'Send message', exact: true }).click()
       await expect.poll(() => promptRpcIds.length).toBe(2)
       expect(promptRpcIds.length).toBeGreaterThan(0)
@@ -474,7 +488,7 @@ describe.skipIf(MODE === 'record')('web e2e: Host-owned member-question receivin
 
   it('retries terminal persistence and drains the owned retry before Host disposal', async () => {
     const faultHome = await mkdtemp(join(tmpdir(), 'dsh-web-member-question-terminal-retry-'))
-    const faultScaffold = await launchWebScaffold({ harnessHome: faultHome })
+    const faultScaffold = await launchMemberQuestionScaffold({ harnessHome: faultHome })
     let closeStarted = false
     try {
       const faultReceiver = faultScaffold.ctx.get('memberQuestionReceiver')
@@ -534,7 +548,7 @@ describe.skipIf(MODE === 'record')('web e2e: Host-owned member-question receivin
     'post-prompt',
   ] as const)('retries a %s Host admission failure without duplicating the Session or turn', async (stage) => {
     const faultHome = await mkdtemp(join(tmpdir(), `dsh-web-member-question-${stage}-`))
-    const faultScaffold = await launchWebScaffold({ harnessHome: faultHome })
+    const faultScaffold = await launchMemberQuestionScaffold({ harnessHome: faultHome })
     try {
       const faultReceiver = faultScaffold.ctx.get('memberQuestionReceiver')
       if (faultReceiver === undefined) throw new Error('member-question fault e2e: receiver unavailable')
@@ -558,12 +572,10 @@ describe.skipIf(MODE === 'record')('web e2e: Host-owned member-question receivin
       if (stage === 'post-create') {
         vi.spyOn(workspace, 'attachSession').mockRejectedValueOnce(new Error('injected post-create failure'))
       } else {
-        const realFlush = faultScaffold.ctx.sessions.flush.bind(faultScaffold.ctx.sessions)
         const flush = vi.spyOn(faultScaffold.ctx.sessions, 'flush')
         if (stage === 'post-record') {
           flush.mockRejectedValueOnce(new Error('injected post-record failure'))
         } else {
-          flush.mockImplementationOnce(realFlush)
           flush.mockRejectedValueOnce(new Error('injected post-prompt failure'))
         }
       }

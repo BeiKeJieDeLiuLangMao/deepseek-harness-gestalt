@@ -13,6 +13,8 @@ kind: "package-reference"
 
 本包在产品 composer 上方注册一个叠加式 `conversation.input.dock` 入口。Host pending 成员提问行在此渲染 Decision Brief；`plan-review` 与普通 composer 接管仍走共享问题链。观察到共享呈现自身的最小化开关时，整卡折叠为一条「远端 · 发起人」窄条并标记为已收起；呈现保持挂载，因此其草稿得以保留。
 
+随发行版交付的 Web 应用会把本包作为 `ui-member-questions` Loader 行挂载到 Web 与 Desktop。Client 模块注册表只发现活跃 Loader 行；本包的 `dsh.client` 声明会排列依赖顺序，但不会自行激活本包。
+
 材料芯片只通过 Better Sidebar Files 打开 receiver 所有的缓存副本。Host 把传输 bytes 写到 `.dsh/member-questions/<questionId>/`，因此同名 Workspace 文件不会被覆盖或误打开。点击芯片会用 receiving Session id 与缓存 path 调用 `ctx.betterSidebar.openFile`；缺少 `cachedPath` 时芯片是 no-op。markdown、沙箱 HTML 与不受支持的类型复用普通 Files viewer。Files editor 标签未注册时，芯片调用 `ctx.remote.session.openWorkspacePath({ path: absolute })` 与 Host 系统打开器。不存在成员提问专用文档 dock。
 
 `ReceivingQuestionBook` 是唯一 Host snapshot owner。它保存生成 `memberQuestion.snapshot` 的 Host pending 视图，仅在 Remote 写入成功后经 `memberQuestion.settle` 刷新，并在 `member-question-receiver/changed` 时刷新。dock 把 Host questions 映射为 JSON，并声明 `question.presentation`，传入 Host answer/cancel callback。`PendingQuestion` 与草稿仍由 ui-user-questions 拥有。Host settle 失败时 Host pending 视图与 QuestionComposer 草稿都保留。
