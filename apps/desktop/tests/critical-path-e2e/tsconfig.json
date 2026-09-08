@@ -13,6 +13,7 @@
   },
   "include": ["./**/*.ts", "../electron-runner-infrastructure.ts"],
   "references": [
+    { "path": "../../../../vendor/include" },
     { "path": "../../../../packages/core/session" },
     { "path": "../../../../packages/session/session-persistence-jsonl" },
     { "path": "../../../../packages/subprocess/subprocess-local" }
