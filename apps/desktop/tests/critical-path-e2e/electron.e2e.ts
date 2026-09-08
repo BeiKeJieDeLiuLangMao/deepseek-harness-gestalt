@@ -123,20 +123,25 @@ async function restorePhase(): Promise<void> {
   await mainRow.click()
   await expandSidePanel()
   const panel = await visiblePanel()
-  await element(panel, `[title="${SIDE_PROMPT}"]`)
-    .then(tab => tab.waitForDisplayed({ timeout: 30_000 }))
+  const restoredTab = await element(
+    panel,
+    `.//*[@title="${SIDE_PROMPT}" and .//button[@aria-label="Close"]]`,
+  )
+  await restoredTab.waitForClickable({ timeout: 30_000 })
+  await restoredTab.click()
+  const sidePane = await activeSideChatPane(panel, state.mainSessionId, state.childId)
   const tabs = await persistedSideChats(state.mainSessionId)
   expect(tabs.filter(tab => tab.threadId === state.childId)).toHaveLength(1)
-  await modelTrigger(panel, SIDE_MODEL)
-  await permissionTrigger(panel, 'Read Only')
+  await modelTrigger(sidePane, SIDE_MODEL)
+  await permissionTrigger(sidePane, 'Read Only')
 
-  await modelTrigger(panel, SIDE_MODEL)
+  await modelTrigger(sidePane, SIDE_MODEL)
 
   const before = await childLog(state.childId)
   expect(ownRequestHeaders(before)).toHaveLength(state.ownSideRequestCount)
   const beforeOwnEventCount = ownEvents(before).length
   const visibleResponsesBefore = await visibleTextOccurrences(SIDE_RESPONSE)
-  await sendPrompt(await editableComposer(panel), RESTORE_PROMPT)
+  await sendPrompt(await editableComposer(sidePane), RESTORE_PROMPT)
   let child: StoredSessionLog | undefined
   await browser.waitUntil(async () => {
     const log = (await sessionLogs()).find(candidate => candidate.header.id === state.childId)
@@ -332,16 +337,22 @@ async function setReadOnly(panel: WebdriverIO.Element): Promise<void> {
   await permissionTrigger(panel, 'Read Only')
 }
 
-async function modelTrigger(panel: WebdriverIO.Element, model: string): Promise<WebdriverIO.Element> {
-  const trigger = await element(panel, `button[aria-label="Select model, current ${model}"]`)
-  await trigger.waitForExist({ timeout: 20_000 })
-  return trigger
+async function modelTrigger(root: WebdriverIO.Element, model: string): Promise<WebdriverIO.Element> {
+  return await uniqueDisplayedElement(
+    root,
+    `button[aria-label="Select model, current ${model}"]`,
+    `visible ${model} model trigger`,
+    20_000,
+  )
 }
 
-async function permissionTrigger(panel: WebdriverIO.Element, mode: string): Promise<WebdriverIO.Element> {
-  const trigger = await element(panel, `button[aria-label="Access mode, current: ${mode}"]`)
-  await trigger.waitForExist({ timeout: 20_000 })
-  return trigger
+async function permissionTrigger(root: WebdriverIO.Element, mode: string): Promise<WebdriverIO.Element> {
+  return await uniqueDisplayedElement(
+    root,
+    `button[aria-label="Access mode, current: ${mode}"]`,
+    `visible ${mode} access trigger`,
+    20_000,
+  )
 }
 
 async function sendPrompt(composer: WebdriverIO.Element, text: string): Promise<void> {
@@ -352,9 +363,30 @@ async function sendPrompt(composer: WebdriverIO.Element, text: string): Promise<
 }
 
 async function editableComposer(root: WebdriverIO.Browser | WebdriverIO.Element): Promise<WebdriverIO.Element> {
-  const composer = await element(root, '[data-composer-input][contenteditable="true"]')
-  await composer.waitForDisplayed({ timeout: 30_000 })
-  return composer
+  return await uniqueDisplayedElement(
+    root,
+    '[data-composer-input][contenteditable="true"]',
+    'visible editable composer',
+    30_000,
+  )
+}
+
+async function uniqueDisplayedElement(
+  root: WebdriverIO.Browser | WebdriverIO.Element,
+  selector: string,
+  description: string,
+  timeout: number,
+): Promise<WebdriverIO.Element> {
+  let visible: WebdriverIO.Element[] = []
+  await browser.waitUntil(async () => {
+    visible = []
+    for (const candidate of await elements(root, selector)) {
+      if (await candidate.isDisplayed()) visible.push(candidate)
+    }
+    if (visible.length > 1) throw new Error(`expected one ${description}, found ${String(visible.length)}`)
+    return visible.length === 1
+  }, { timeout, timeoutMsg: `${description} was not displayed` })
+  return visible[0]!
 }
 
 async function expandSidePanel(): Promise<void> {
@@ -435,27 +467,40 @@ async function persistedSideChats(parentSessionId: SessionIdType): Promise<Array
   parentSessionId: SessionIdType
   threadId: SessionIdType
   provisional: boolean
+  active: boolean
+  paneId?: string
 }>> {
   const entries = await browser.execute((expectedParentSessionId: string) => {
-    const results: Array<{ parentSessionId: string; threadId: string; provisional: boolean }> = []
+    const results: Array<{
+      parentSessionId: string
+      threadId: string
+      provisional: boolean
+      active: boolean
+      paneId?: string
+    }> = []
     const raw = localStorage.getItem(`dsh-sidebar:v1:${expectedParentSessionId}`)
     if (raw === null) return results
     let value: unknown
     try { value = JSON.parse(raw) } catch { return results }
     const seen = new Set<object>()
-    const visit = (candidate: unknown): void => {
+    const visit = (candidate: unknown, activeTabId?: string, paneId?: string): void => {
       if (typeof candidate !== 'object' || candidate === null || seen.has(candidate)) return
       seen.add(candidate)
       const record = candidate as Record<string, unknown>
+      const leaf = record['kind'] === 'leaf' && typeof record['id'] === 'string'
+      const currentActive = leaf && typeof record['active'] === 'string' ? record['active'] : activeTabId
+      const currentPaneId = leaf ? record['id'] as string : paneId
       const meta = record['meta'] as Record<string, unknown> | undefined
       if (record['type'] === 'sidechat' && typeof meta?.['threadId'] === 'string') {
         results.push({
           parentSessionId: expectedParentSessionId,
           threadId: meta['threadId'],
           provisional: meta['provisional'] === true,
+          active: record['id'] === currentActive,
+          ...(currentPaneId === undefined ? {} : { paneId: currentPaneId }),
         })
       }
-      for (const child of Object.values(record)) visit(child)
+      for (const child of Object.values(record)) visit(child, currentActive, currentPaneId)
     }
     visit(value)
     return results
@@ -464,7 +509,33 @@ async function persistedSideChats(parentSessionId: SessionIdType): Promise<Array
     parentSessionId: SessionId(entry.parentSessionId),
     threadId: SessionId(entry.threadId),
     provisional: entry.provisional,
+    active: entry.active,
+    ...(entry.paneId === undefined ? {} : { paneId: entry.paneId }),
   }))
+}
+
+async function activeSideChatPane(
+  panel: WebdriverIO.Element,
+  parentSessionId: SessionIdType,
+  childId: SessionIdType,
+): Promise<WebdriverIO.Element> {
+  let paneId: string | undefined
+  await browser.waitUntil(async () => {
+    const matches = (await persistedSideChats(parentSessionId))
+      .filter(tab => tab.threadId === childId && tab.active)
+    if (matches.length > 1) {
+      throw new Error(`restored Side Chat ${childId} is active in multiple panes: ${JSON.stringify(matches)}`)
+    }
+    paneId = matches[0]?.paneId
+    return paneId !== undefined
+  }, {
+    timeout: 15_000,
+    timeoutMsg: `restored Side Chat ${childId} did not become the active tab for parent ${parentSessionId}`,
+  })
+  if (paneId === undefined) throw new Error(`the active Side Chat pane for ${childId} was unavailable`)
+  const pane = await element(panel, `[data-dsh-pane="${paneId}"]`)
+  await pane.waitForDisplayed({ timeout: 15_000 })
+  return pane
 }
 
 async function sessionLogs(): Promise<StoredSessionLog[]> {
