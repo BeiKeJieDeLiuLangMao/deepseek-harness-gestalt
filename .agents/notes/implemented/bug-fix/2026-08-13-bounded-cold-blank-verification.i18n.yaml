@@ -3,4 +3,4 @@
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-13-bounded-cold-blank-verification.md
 2026-08-13-bounded-cold-blank-verification.md: 8244b93641cfe576cd2f5b0c618ae69fbb215dd5
-2026-08-13-bounded-cold-blank-verification.zh.md: 8c9c4b611bb975d144ca8fdbd5477b7ff848390a
+2026-08-13-bounded-cold-blank-verification.zh.md: 0ec33033f19ea49fc1ff07f8cffa3f2c32d772f1

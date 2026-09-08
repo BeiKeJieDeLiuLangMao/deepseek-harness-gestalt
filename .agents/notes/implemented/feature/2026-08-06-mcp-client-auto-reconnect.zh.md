@@ -1,4 +1,4 @@
-# Agent Note: MCP client auto-reconnect with bounded backoff
+# Agent Note: MCP 客户端自动重连与有界退避
 
 Status: implemented
 

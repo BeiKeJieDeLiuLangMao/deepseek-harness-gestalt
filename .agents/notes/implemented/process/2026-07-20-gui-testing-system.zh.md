@@ -8,11 +8,11 @@ Status: implemented
 
 > 分工线：本篇只讲 GUI（`packages/{client,host}/*` + `apps/web`）特有的测试结构；全仓测试政策（分层原则、with-key 政策、真实实现优先、REAL-composition）见 [docs/testing.md](../../../../docs/testing.zh.md)，不在此复述。
 
-## Problem
+## 问题
 
 GUI 栈需要考虑多种应用形态，同应用形态内的不同运行环境（Node host、数据协议层、浏览器对象层、React/DOM），单一车道的测试给不了有效信号。需要对各环节都进行有效测试，并具备全链路测试的基础能力。
 
-## Decision
+## 决策
 
 沿架构天然的测试钩子切分为三层，自底向上：
 
@@ -45,11 +45,11 @@ GUI 栈需要考虑多种应用形态，同应用形态内的不同运行环境�
 - **fixture 全绿不算完，真 wire 也要过**：fixture 短路的恰是 wire 承载链（node:http 桥 close 语义、真网络时序），两次实证 bug 都藏在那里。改动触及连接/桥/handler/SSE 的，浏览器车道（`pnpm run test:web`）必跑——其无密钥 e2e 场景驱动真实 HTTP/SSE 承载，带密钥的真 host 冒烟测试仍是真模型侧的补充。
 - 落盘代码即答案的对表工作流：行为改动落盘打红既有用例时，当场对表校准（改测试还是改代码以 RFC/约定为裁），不留悬红。
 
-## Consequences
+## 后果
 
 各车道各测各层：改动任意 GUI 源码后都能获得秒级 `test:gui` 反馈，wire/对象层语义在 Node 环境中进行毫秒级断言，基于构建后组合的快照固定确定性的用户可见投影，浏览器负责接线与承载层验收。层间纪律仍由评审负责，而 Linux CI 通过机器门禁确保浏览器预期输出的新鲜度。每个新的应用快照都必须避开不稳定的布局或时钟输出。
 
-## Alternatives considered
+## 曾考虑的替代方案
 
 | 放弃项 | 一句话理由 |
 |---|---|
