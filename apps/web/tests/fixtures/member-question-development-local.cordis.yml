@@ -5,3 +5,5 @@
     maxRecords: 1000
     terminalRetryMs: 1000
     terminalAuthorityMode: development-local
+    memberQuestionInstallationId: receiver-installation
+    memberQuestionDeviceName: Receiver Desktop

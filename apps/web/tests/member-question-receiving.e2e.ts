@@ -238,7 +238,11 @@ describe.skipIf(MODE === 'record')('web e2e: Host-owned member-question receivin
       await expect.poll(() => scaffold.ctx.sessions.get(first.receivingSessionId as never)?.snapshotEvents().filter(event =>
         event.type === 'member-question/received' && event.data.questionId === 'mq-web-host-3').length).toBe(1)
       const nextAgentComposer = page.locator('[data-composer-card]')
-      await nextAgentComposer.locator('textarea:enabled').fill('Include the newly arrived rollback question too.')
+      await writeComposerDraft(
+        page,
+        nextAgentComposer.locator('[data-composer-input]'),
+        'Include the newly arrived rollback question too.',
+      )
       await nextAgentComposer.getByRole('button', { name: 'Send message', exact: true }).click()
       await expect.poll(() => scaffold.ctx.sessions.get(first.receivingSessionId as never)?.snapshotEvents().filter(event =>
         event.type === 'user/message' && event.data.id === 'member-question-brief:mq-web-host-3').length).toBe(1)
