@@ -1,4 +1,8 @@
+import { spawn } from 'node:child_process'
+import { once } from 'node:events'
+import { createInterface } from 'node:readline'
 import { lstatSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
@@ -8,15 +12,16 @@ import {
   fixtureScripts,
   fixtureWorkspaceSettings,
   removeFixtureRoot,
+  verifyPolicyScenarios,
   unlinkFixtureLinks,
 } from './verify-dependency-policy.ts'
 
-function withTemporaryDirectory(run: (path: string) => void): void {
+async function withTemporaryDirectory(run: (path: string) => void | Promise<void>): Promise<void> {
   const root = mkdtempSync(join(tmpdir(), 'dsh-dependency-policy-test-'))
   try {
-    run(root)
+    await run(root)
   } finally {
-    rmSync(root, { recursive: true, force: true })
+    await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
   }
 }
 
@@ -35,62 +40,53 @@ describe('dependency policy fixture commands', () => {
 })
 
 describe('dependency policy fixture cleanup', () => {
-  it('uses bounded recursive retries for transient Windows removal failures', () => {
-    const remove = vi.fn()
-
-    removeFixtureRoot('owned-fixture', remove)
-
+  it('waits for recursive removal with the configured retry budget', async () => {
+    let release!: () => void
+    const pending = new Promise<void>((resolve) => { release = resolve })
+    const remove = vi.fn(() => pending)
+    const completion = removeFixtureRoot('owned-fixture', remove)
+    expect(completion).toBeInstanceOf(Promise)
+    let completed = false
+    const settled = Promise.resolve(completion).then(() => { completed = true })
+    await Promise.resolve()
+    expect(completed).toBe(false)
     expect(remove).toHaveBeenCalledWith('owned-fixture', {
-      recursive: true,
-      force: true,
-      maxRetries: 10,
-      retryDelay: 100,
+      recursive: true, force: true, maxRetries: 10, retryDelay: 100,
     })
+    release()
+    await settled
+    expect(completed).toBe(true)
   })
 
-  it('does not swallow a final cleanup failure', () => {
+  it('does not swallow a final cleanup rejection', async () => {
     const cleanup = Object.assign(new Error('permission denied'), { code: 'EPERM' })
-    const remove = vi.fn(() => {
-      throw cleanup
-    })
-
-    expect(() => {
-      removeFixtureRoot('owned-fixture', remove)
-    }).toThrow(cleanup)
-    expect(() => {
-      finishFixture(undefined, () => {
-        throw cleanup
-      })
-    }).toThrow(cleanup)
+    const remove = vi.fn(async () => { throw cleanup })
+    await expect(removeFixtureRoot('owned-fixture', remove)).rejects.toBe(cleanup)
+    await expect(finishFixture(undefined, async () => { throw cleanup })).rejects.toBe(cleanup)
   })
 
-  it('preserves the primary failure when cleanup succeeds', () => {
+  it('waits for cleanup before propagating the primary failure', async () => {
     const primary = new Error('prepare failed')
-
-    expect(() => {
-      finishFixture(primary, () => {})
-    }).toThrow(primary)
+    let release!: () => void
+    const pending = new Promise<void>((resolve) => { release = resolve })
+    const completion = finishFixture(primary, () => pending)
+    let completed = false
+    const observed = Promise.resolve(completion).catch((error: unknown) => { completed = true; return error })
+    await Promise.resolve()
+    expect(completed).toBe(false)
+    release()
+    expect(await observed).toBe(primary)
   })
 
-  it('reports both original errors when the fixture and cleanup fail', () => {
+  it('reports both original errors when the fixture and cleanup reject', async () => {
     const primary = new Error('prepare failed')
     const cleanup = Object.assign(new Error('cleanup failed'), { code: 'EPERM' })
-
-    try {
-      finishFixture(primary, () => {
-        throw cleanup
-      })
-      expect.unreachable('finishFixture must throw')
-    } catch (error) {
-      expect(error).toBeInstanceOf(AggregateError)
-      expect((error as AggregateError).errors).toEqual([primary, cleanup])
-      expect((error as AggregateError).errors[0]).toBe(primary)
-      expect((error as AggregateError).errors[1]).toBe(cleanup)
-    }
+    await expect(finishFixture(primary, async () => { throw cleanup }))
+      .rejects.toMatchObject({ errors: [primary, cleanup] })
   })
 
-  it('removes dangling directory links', () => {
-    withTemporaryDirectory((root) => {
+  it('removes dangling directory links', async () => {
+    await withTemporaryDirectory((root) => {
       const target = join(root, 'removed-target')
       const link = join(root, 'dangling-link')
       mkdirSync(target)
@@ -103,8 +99,8 @@ describe('dependency policy fixture cleanup', () => {
     })
   })
 
-  it('unlinks directory links without removing their external targets', () => {
-    withTemporaryDirectory((root) => {
+  it('unlinks directory links without removing their external targets', async () => {
+    await withTemporaryDirectory((root) => {
       const fixture = join(root, 'fixture')
       const external = join(root, 'external')
       const marker = join(external, 'marker')
@@ -119,5 +115,83 @@ describe('dependency policy fixture cleanup', () => {
       expect(() => lstatSync(link)).toThrow()
       expect(lstatSync(marker).isFile()).toBe(true)
     })
+  })
+})
+
+async function withWindowsFileHold(
+  release: 'timed' | 'manual',
+  run: (root: string) => Promise<void>,
+): Promise<void> {
+  await withTemporaryDirectory(async (root) => {
+    const file = join(root, 'held.txt')
+    writeFileSync(file, 'owned fixture')
+    const script = [
+      `$f=[System.IO.File]::Open('${file.replaceAll("'", "''")}',[System.IO.FileMode]::Open,[System.IO.FileAccess]::ReadWrite,[System.IO.FileShare]::ReadWrite)`,
+      "try { [Console]::WriteLine('READY')",
+      release === 'timed' ? 'Start-Sleep -Milliseconds 700' : '[Console]::ReadLine() | Out-Null',
+      '} finally { $f.Dispose() }',
+    ].join('; ')
+    const child = spawn('powershell.exe', [
+      '-NoProfile', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64'),
+    ], { stdio: ['pipe', 'pipe', 'pipe'], signal: AbortSignal.timeout(120_000) })
+    const closed = once(child, 'close')
+    const lines = createInterface({ input: child.stdout })
+    child.stderr.resume()
+    try {
+      const ready = once(lines, 'line')
+      await Promise.race([
+        ready.then(([line]) => { expect(line).toBe('READY') }),
+        closed.then(() => { throw new Error('Windows file holder exited before readiness') }),
+      ])
+      await run(root)
+    } finally {
+      child.stdin.end('release\n')
+      await closed
+      lines.close()
+    }
+  })
+}
+
+describe.skipIf(process.platform !== 'win32')('Windows dependency fixture file holds', () => {
+  it('waits for a short file hold and removes its owned directory', async () => {
+    await withWindowsFileHold('timed', async (root) => {
+      await removeFixtureRoot(root)
+      expect(() => lstatSync(root)).toThrow()
+    })
+  }, 130_000)
+
+  it('rejects a hold that outlasts the removal budget', async () => {
+    await withWindowsFileHold('manual', async (root) => {
+      await expect(removeFixtureRoot(root)).rejects.toMatchObject({ code: 'EBUSY' })
+      expect(lstatSync(root).isDirectory()).toBe(true)
+    })
+  }, 130_000)
+})
+
+describe('dependency policy diagnostics', () => {
+  it('propagates the original exception when no policy violation was collected', async () => {
+    const original = new Error('fixture preparation failed')
+    await expect(verifyPolicyScenarios([], async () => { throw original })).rejects.toBe(original)
+  })
+
+  it('leaves normally collected violations available to the final report', async () => {
+    const failures: string[] = []
+    await verifyPolicyScenarios(failures, async () => { failures.push('policy violation') })
+    expect(failures).toEqual(['policy violation'])
+  })
+
+  it('retains collected violations and cleanup rejection without entering another fixture', async () => {
+    const failures: string[] = []
+    const cleanup = Object.assign(new Error('cleanup failed'), { code: 'EPERM' })
+    const nextFixture = vi.fn()
+    const result = verifyPolicyScenarios(failures, async () => {
+      failures.push('stale run local: requested command ran')
+      await finishFixture(undefined, async () => { throw cleanup })
+      nextFixture()
+    })
+    await expect(result).rejects.toMatchObject({
+      errors: [expect.objectContaining({ message: expect.stringContaining('stale run local: requested command ran') }), cleanup],
+    })
+    expect(nextFixture).not.toHaveBeenCalled()
   })
 })

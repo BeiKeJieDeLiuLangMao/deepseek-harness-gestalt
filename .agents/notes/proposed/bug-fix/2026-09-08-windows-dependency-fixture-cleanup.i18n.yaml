@@ -1,6 +1,0 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
-#   pnpm run verify-translation-pairing --write .agents/notes/proposed/bug-fix/2026-09-08-windows-dependency-fixture-cleanup.md
-2026-09-08-windows-dependency-fixture-cleanup.md: aae44e1db5eb0241f65e6b1146690cecf374ea06
-2026-09-08-windows-dependency-fixture-cleanup.zh.md: 51ff89b04eaa48f471c119b8326c0381fc204d5b
