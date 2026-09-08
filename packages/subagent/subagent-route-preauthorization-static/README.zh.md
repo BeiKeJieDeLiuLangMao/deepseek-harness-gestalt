@@ -41,6 +41,8 @@ Provider 本身不增加 token。Provider 被替换后，已记录的 Session �
 
 - **静态生命周期配置** — 修改路由需要替换 Provider fiber；已有 Session 策略保持不变。
 
+本包不发布运行时不变式配套插件，因为此 Provider 在加载时校验并冻结路由快照，之后没有独立观察。
+
 <a id="dev-note"></a>
 ### 开发备注
 

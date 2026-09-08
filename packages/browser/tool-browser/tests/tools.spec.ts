@@ -7,9 +7,7 @@ import BrowserWorkspaceBinder from '@deepseek-ai/dsh-browser-workspace'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import BrowserRuntimeDeterministic from '@deepseek-ai/dsh-browser-runtime-deterministic'
-import InvariantRegistry from '@deepseek-ai/dsh-invariants'
 import * as ToolBrowser from '@deepseek-ai/dsh-tool-browser'
-import * as ToolBrowserInvariant from '../src/invariant.ts'
 
 const signal = new AbortController().signal
 const PNG_1X1 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
@@ -581,7 +579,7 @@ describe('deferred Browser Runtime Consumer', () => {
     })).resolves.toMatchObject({ isError: false })
   })
 
-  it('uses the direct-call timeout default and disposes its empty invariant companion', async () => {
+  it('uses the direct-call timeout default', async () => {
     const ctx = new Context()
     await ctx.plugin(SystemPrompt)
     await ctx.plugin(ToolRuntime, { toolSearch: { maxResultBytes: 65_536 } })
@@ -596,8 +594,5 @@ describe('deferred Browser Runtime Consumer', () => {
     ToolBrowser.apply(ctx, {})
     expect(ctx.tools.catalogSchemas()).toHaveLength(7)
 
-    await ctx.plugin(InvariantRegistry)
-    const fiber = await ctx.plugin(ToolBrowserInvariant)
-    await expect(fiber.dispose()).resolves.toBeUndefined()
   })
 })

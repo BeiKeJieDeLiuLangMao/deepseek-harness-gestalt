@@ -15,22 +15,19 @@
     ".": { "types": "./lib/types/index.d.ts", "default": "./lib/index.js" },
     "./desktop-relay-lifecycle": { "types": "./lib/types/desktop-relay-lifecycle.d.ts", "default": "./lib/desktop-relay-lifecycle.js" },
     "./node-relay-socket": { "types": "./lib/types/node-relay-socket.d.ts", "default": "./lib/node-relay-socket.js" },
-    "./invariant": { "types": "./lib/types/invariant.d.ts", "default": "./lib/invariant.js" },
     "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
-  "files": ["lib/index.js", "lib/invariant.js", "lib/desktop-relay-lifecycle.js", "lib/node-relay-socket.js", "lib/types/**/*.d.ts"],
+  "files": ["lib/index.js", "lib/desktop-relay-lifecycle.js", "lib/node-relay-socket.js", "lib/types/**/*.d.ts"],
   "license": "MIT",
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
     "@deepseek-ai/dsh-platform-account": "workspace:^",
     "@deepseek-ai/dsh-remote-access": "workspace:^",
     "@deepseek-ai/dsh-remote-protocol": "workspace:^"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
     "@deepseek-ai/dsh-platform-account": "workspace:^",
     "@deepseek-ai/dsh-remote-access": "workspace:^",
     "@deepseek-ai/dsh-remote-protocol": "workspace:^",

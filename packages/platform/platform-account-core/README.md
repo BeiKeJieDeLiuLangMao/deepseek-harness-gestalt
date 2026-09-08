@@ -46,6 +46,8 @@ The Provider adds no stable request prefix; its identities and authorization dec
 - This package defines no production database, distributed invalidation, secret manager, rate limiter, or audit sink; the Platform deployment composition owns those adapters.
 - The GitHub adapter supports OAuth Apps only and accepts public identity without provider scopes.
 
+No runtime invariant companion is published because the backend and invalidation bus are constructor-private adapters with no Context-visible observation; the Provider publishes after durable mutation and reports later publication failures.
+
 <a id="dev-note"></a>
 ### Dev Note
 

@@ -34,9 +34,6 @@
     },
     {
       "path": "../../platform/project-membership"
-    },
-    {
-      "path": "../../runtime-diagnostics/invariants"
     }
   ]
 }

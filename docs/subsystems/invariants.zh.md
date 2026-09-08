@@ -2,7 +2,7 @@
 
 [English](invariants.md) | 中文
 
-[dsh-invariants](../../packages/runtime-diagnostics/invariants) 是面向包自有运行时不变式检查的可配置注册表服务（`ctx.invariants`）。它是一个 support 组的包，不是三包能力 seam，也不属于 agent loop（智能体循环）主干：注册表拥有选择逻辑、名称保留、子 fiber 生命周期和归因到包的失败，而每个工作区包发布一个 `./invariant` 配套插件，以自己确切的 npm 包名注册检查。检查可以断言什么（权威事件流或可变数据，绝不是服务或方法是否存在）是 [AGENTS.md](../../AGENTS.md#conventions) 中的运行时不变式约定；注册表设计由[不变式服务 Agent Note](../../.agents/notes/implemented/architecture/2026-07-19-package-owned-invariant-service.zh.md)规定。
+[dsh-invariants](../../packages/runtime-diagnostics/invariants) 是面向包自有运行时不变式检查的可配置注册表服务（`ctx.invariants`）。它是一个 support 组的包，不是三包能力 seam，也不属于 agent loop（智能体循环）主干：注册表拥有选择逻辑、名称保留、子 fiber 生命周期和归因到包的失败。只有当工作区包拥有可独立观察的事件或可变数据关系时，才以确切 npm 包名发布 `./invariant` 配套插件；否则会省略配套插件，并在 README 中记录该包的具体原因。检查可以断言什么（权威事件流或可变数据，绝不是服务或方法是否存在）是 [AGENTS.md](../../AGENTS.md#conventions) 中的运行时不变式约定；注册表设计由[不变式服务 Agent Note](../../.agents/notes/implemented/architecture/2026-07-19-package-owned-invariant-service.zh.md)规定，省略规则由[省略 Agent Note](../../.agents/notes/implemented/simplification/2026-08-28-omit-unneeded-invariant-companions.zh.md)规定。
 
 源码：[`packages/runtime-diagnostics/invariants/src/index.ts`](../../packages/runtime-diagnostics/invariants/src/index.ts)
 
@@ -56,7 +56,7 @@ interface InvariantInstaller {
 
 ## 配套插件约定
 
-每个工作区包都拥有一个 `./invariant` 配套插件（[包约定](../../packages/AGENTS.md)）；发布与注册是穷尽式的，但刻意不合成断言。只有当包拥有某个可观察事件或某种可变数据关系时，配套插件才安装检查；否则它导出一个空安装器，其起始注释以 `No runtime invariant:` 开头，针对该包具体解释为什么没有可检查项。`pnpm run verify-package-invariants` 机械地拒绝「生成文件」标记、无解释的空安装器、遗漏或忽略报告器的非空安装器、错误的注册名称，以及不完整的导出、发布、依赖或打包接线（[机械规则 Agent Note](../../.agents/notes/implemented/architecture/2026-07-19-package-invariant-runtime-contracts.zh.md)）。可执行配套插件的目录与标准组合方式见[包 README](../../packages/runtime-diagnostics/invariants/README.zh.md)。
+工作区包只为可独立观察的运行时关系发布 `./invariant` 配套插件（[包约定](../../packages/AGENTS.md)）。没有此类关系的包会省略源文件、公共子路径、构建产物、仅供不变式使用的依赖与引用，以及配套插件专用测试；其 README 会记录该包的具体原因。`pnpm run verify-package-invariants` 会拒绝空 installer、遗漏或忽略报告器的非空 installer、错误的注册名称、残留的省略接线，以及不完整的发布或构建接线（[机械规则 Agent Note](../../.agents/notes/implemented/architecture/2026-07-19-package-invariant-runtime-contracts.zh.md)）。可执行配套插件的目录与标准组合方式见[包 README](../../packages/runtime-diagnostics/invariants/README.zh.md)。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 

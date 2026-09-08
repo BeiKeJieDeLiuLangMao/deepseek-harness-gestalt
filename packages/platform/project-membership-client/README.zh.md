@@ -33,6 +33,8 @@ kind: "package-reference"
 
 - 本地 Git 检查、clone、Workspace 注册与 Account/Project 绑定仍由 Host 和 UI 组合负责。
 
+本包不发布运行时不变式配套插件，因为这个无状态 transport 会校验每个响应，且不保留 roster 状态。
+
 <a id="dev-note"></a>
 ### 开发备注
 

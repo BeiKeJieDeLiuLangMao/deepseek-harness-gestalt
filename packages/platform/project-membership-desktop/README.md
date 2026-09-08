@@ -45,6 +45,8 @@ The provider adds no independent request prefix; consumers own the schema and ap
 - **Desktop Host is required** — browser-only `dsh web` has no Account proof owner or loopback projection, so the standard preset omits `project_members` and member-directed eligibility there.
 - **The bridge is read-only** — Project creation, invitations, roles, tags, and removals remain renderer-to-Desktop operations and are not exposed to agent presets.
 
+No runtime invariant companion is published because the private roster presentation map is written and read by the same service implementation and has no independent observer.
+
 <a id="dev-note"></a>
 ### Dev Note
 

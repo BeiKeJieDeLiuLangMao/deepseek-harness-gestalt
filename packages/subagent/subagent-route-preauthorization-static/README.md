@@ -41,6 +41,8 @@ The Provider adds no tokens directly. A recorded Session policy keeps the Consum
 
 - **Static lifetime configuration** — changing routes requires replacing the Provider fiber; existing Session policies remain unchanged.
 
+No runtime invariant companion is published because this Provider validates and freezes its route snapshot at load and has no independent later observation.
+
 <a id="dev-note"></a>
 ### Dev Note
 

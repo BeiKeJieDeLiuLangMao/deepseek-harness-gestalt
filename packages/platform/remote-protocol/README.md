@@ -106,6 +106,8 @@ The codecs add no model request content, so they do not affect provider cache re
 - Session rename, archive, deletion, and fork; Workspace administration; terminal input; and settings, credential, plugin, model, and preset mutations are not part of Companion major 4.
 - Pairing handshakes, credential persistence, challenge lifecycle, and production Companion message encryption belong to service or reviewed endpoint integrations, not these codecs.
 
+No runtime invariant companion is published because this package contains pure codecs, limits, negotiation functions, and types with no mutable state or event stream.
+
 <a id="dev-note"></a>
 ### Dev Note
 

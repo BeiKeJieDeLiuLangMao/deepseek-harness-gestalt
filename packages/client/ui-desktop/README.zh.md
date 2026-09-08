@@ -38,6 +38,8 @@ macOS chrome 在未改动的 DSH 侧栏标题行和中间 Session 内容上方�
 - **组装后的 Desktop Web E2E 安装 `installDesktopBridgeFixture`** — 该 fixture 缺少必需 preload 成员时类型检查失败，而不是浏览器超时（[带类型的 DesktopBridge fixture](../../../.agents/notes/implemented/testing/2026-08-21-typed-desktop-bridge-e2e-fixture.zh.md)）。
 - **产品配对由端点持有** — Host 挂载不透明 mailbox、端点 Snow owner、持久 key vault、密封 Mobile authority 投递和真实 Relay 生命周期。独立评审与 WebView 真机运行仍是发布证据。
 
+本包不发布运行时不变式配套插件，因为 Host 不贡献状态，Client bridge subscription 与 slots 仍由其来源服务拥有。
+
 <a id="dev-note"></a>
 ### 开发备注
 

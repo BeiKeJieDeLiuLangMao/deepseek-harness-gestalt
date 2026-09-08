@@ -9,11 +9,6 @@ const configs = [
     fixedExtension: false, outputOptions: { codeSplitting: false }, dts: false, clean: false,
   },
   {
-    entry: ['lib/types/invariant.js'],
-    outDir: 'lib', format: ['esm'], platform: 'browser', target: 'es2024',
-    fixedExtension: false, outputOptions: { codeSplitting: false }, dts: false, clean: false,
-  },
-  {
     entry: ['lib/types/desktop-relay-lifecycle.js'],
     outDir: 'lib', format: ['esm'], platform: 'browser', target: 'es2024',
     fixedExtension: false, outputOptions: { codeSplitting: false }, dts: false, clean: false,

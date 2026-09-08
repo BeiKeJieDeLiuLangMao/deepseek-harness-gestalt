@@ -41,6 +41,8 @@ Session 持有的官方 Browser chrome 与收起后的标签页预览。[`dsh-cl
 - **无密钥 web 与 headless Runtime 仍是确定性的**——浏览器 `dsh web` 与 headless 继续使用 `dsh-browser-runtime-deterministic`。Desktop Host 持有进程内 Electron `webContents`，并把叠加层 HTTP 客户端指向该 loopback origin。
 - **Profile 设置页不会创建标签页**——该分区只写名册与默认身份。
 
+本包不发布运行时不变式配套插件，因为此 adapter 消费的可变关系分别由 Settings、slots 与 Browser Workspace 拥有。
+
 <a id="dev-note"></a>
 ### 开发备注
 

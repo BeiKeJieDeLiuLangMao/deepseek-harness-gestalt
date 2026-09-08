@@ -50,6 +50,8 @@ The allowance is fixed when the preset is composed. A changed eligible schema se
 
 - The row names exact tool ids; it does not define aliases, patterns, categories, or a deny list.
 
+No runtime invariant companion is published because `dsh-tools` owns the scoped eligibility union and disposal relationship contributed by this package.
+
 <a id="dev-note"></a>
 ### Dev Note
 

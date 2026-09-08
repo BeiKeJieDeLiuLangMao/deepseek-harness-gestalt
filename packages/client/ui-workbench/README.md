@@ -36,6 +36,8 @@ The adapter adds no stable request prefix; later browser tool results reflect hu
 - **Snapshot fs/git/pty stay on `/sidebar`** — this phase does not migrate them onto official `fs` or `terminal` capability seams.
 - **Client `apply` types the root context from Cordis and Session identities from `@deepseek-ai/dsh-session/types`.** The live Session list is the Session Controller `sessions` service, not `@deepseek-ai/dsh-client-runtime`.
 
+No runtime invariant companion is published because Sessions and Better Sidebar own the snapshots this adapter reconciles, and the adapter retains no independent authority.
+
 <a id="dev-note"></a>
 ### Dev Note
 

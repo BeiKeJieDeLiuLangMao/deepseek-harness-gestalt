@@ -43,6 +43,8 @@ This package alone adds no model tokens and changes no request prefix.
 
 - Dock chrome lives in [`dsh-client-ui-browser`](../../client/ui-browser/README.md). Session-local Workspace ownership lives in [`dsh-browser-workspace`](../browser-workspace/README.md).
 
+No runtime invariant companion is published because each Browser Runtime Provider owns the authoritative state reader and pre-commit stream for its implementation.
+
 <a id="dev-note"></a>
 ### Dev Note
 

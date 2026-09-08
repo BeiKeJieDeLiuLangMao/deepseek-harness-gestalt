@@ -47,6 +47,8 @@ host 与 CPython 子进程在子进程的 fd 3 上交换一个无版本号的 JS
 - **跨语言 guard 覆盖运行时执行的面与帧字段形状** —— `tests/protocol-mirror.e2e.ts` 启动一个真实 `python3`，对照 `src/protocol.ts` 断言 `PROTOCOL_FD` / 日志截断标记文本，以及 `py/protocol.py` 中每个 `TypedDict` 的必填/可选 wire 字段集。它不比较字段的*类型*（例如 `cpuSeconds` 两侧都是 `int`）：跨 TypeScript 与 Python 比较类型声明在此无机械等价物，故类型级漂移仍由 review 加后端真子进程套件捕获，而非本包的测试。
 - **`src/index.ts` 只导出协议词汇** —— 本包不含子进程执行路径，也不含 Python 侧的 JSON codec，因此除 mirror 测试之外没有任何地方会启动 `python3`。
 
+本包不发布运行时不变式配套插件，因为 fd-3 协议是由 TypeScript 与 Python 测试校验的 codec，不是实时事件与状态之间的关系。
+
 <a id="dev-note"></a>
 ### 开发备注
 

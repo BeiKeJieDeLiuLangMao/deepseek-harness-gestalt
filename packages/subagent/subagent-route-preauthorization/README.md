@@ -41,6 +41,8 @@ The service itself adds no model tokens. A Consumer may expose stable route-sele
 
 - **One Provider per service scope** — combine deployment routes inside the Provider configuration; user authorization remains a separate Consumer-owned union input.
 
+No runtime invariant companion is published because this Service Definition owns only an immutable deployment snapshot and no independently observable event or mutable-data relationship.
+
 <a id="dev-note"></a>
 ### Dev Note
 

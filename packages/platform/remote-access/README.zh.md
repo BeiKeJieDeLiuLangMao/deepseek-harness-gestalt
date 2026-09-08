@@ -50,6 +50,8 @@ Platform 返回不含邀请 PSK 的路由元数据。Desktop 在本地创建完�
 - 产品 Desktop 与 Mobile 使用 endpoint-owned Snow mailbox 和 Companion channel；Platform 不挂载配对密码实现。物理 WebView 证据与针对确切实现的独立评审仍是 release blocker。
 - 项目对等授权的交付止步于密封信封与持久记录：对端 installation 侧打开信封，以及承载它的跨机注册表传输，都要等该传输存在后再做；生产级密封继续处于独立加密评审之后。
 
+本包不发布运行时不变式配套插件，因为 route store 与 coordinator 是 constructor 私有 adapter，Provider 在各操作中检查 revision 与 compensation 关系，但不公开独立的 Context 观察。
+
 <a id="dev-note"></a>
 ### 开发备注
 

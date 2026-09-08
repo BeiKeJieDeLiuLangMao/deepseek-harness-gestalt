@@ -38,6 +38,8 @@ Redis Provider 不增加模型请求内容，因此不影响提供方缓存复�
 - Redis 服务供应、TLS、鉴权、监控与可用性由部署负责。
 - 持久 route credential digest 与 revision 属于部署的 `RelayRouteStore`，不属于 Redis 协调。
 
+本包不发布运行时不变式配套插件，因为每个 Redis coordinator 操作都会直接校验外部值，且不公开独立的事件与状态读取器组合。
+
 <a id="dev-note"></a>
 ### 开发备注
 

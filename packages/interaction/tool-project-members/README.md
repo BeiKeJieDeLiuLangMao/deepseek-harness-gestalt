@@ -90,6 +90,8 @@ Append-only; newly visible content follows the reusable request prefix and does 
 - **Read-only by design** — the tool exposes no membership mutations; invitations, role changes, and tag edits stay behind the project-membership HTTP surface and out of the model's toolset.
 - **The workspace binding is composition-defined** — the tool cannot resolve a bound project on its own; without an injected `boundProjectResolver` every omitted-`projectId` call answers `PROJECT_UNBOUND`.
 
+No runtime invariant companion is published because this read-only tool adapter creates no durable or lifecycle state beyond its injected membership resolvers.
+
 <a id="dev-note"></a>
 ### Dev Note
 

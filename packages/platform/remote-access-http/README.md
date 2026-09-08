@@ -40,6 +40,8 @@ The HTTP and WSS layer adds no model request content, so it does not affect prov
 - The WSS Consumer forwards opaque Relay ciphertext only; it never accepts Host requests or Companion plaintext.
 - Deployment TLS, edge limits, and audit policy remain Platform composition responsibilities.
 
+No runtime invariant companion is published because its WebServer effects and private pump sets are settled by the owning route and Consumer lifecycles without an independent published stream.
+
 <a id="dev-note"></a>
 ### Dev Note
 

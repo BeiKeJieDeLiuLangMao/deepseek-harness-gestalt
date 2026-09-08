@@ -48,6 +48,8 @@ The Service Definition adds no stable request prefix; downstream tools and routi
 - This package defines vocabulary and gates only; it owns no storage. The file-backed development provider lives in [`dsh-project-membership-core`](../project-membership-core/README.md), and operated deployments supply their own backend.
 - Routed member questions and presence derivation consume this capability but are not part of it; production activation of routed questions stays behind the standing encryption review gate recorded in [the placement Agent Note](../../../.agents/notes/implemented/feature/2026-08-27-project-membership-core.md).
 
+No runtime invariant companion is published because this Service Definition owns no Provider state, while the Project Membership Core companion checks the durable roster-version stream.
+
 <a id="dev-note"></a>
 ### Dev Note
 

@@ -36,6 +36,8 @@ Account state adds no stable request prefix by itself; authorization changes whi
 - This library supplies current-Installation Account authorization to Personal Pairing but does not grant Desktop or Companion authority.
 - Mobile native packaging must supply a stable WebView storage origin; the Mobile composition owns its Capacitor Browser adapter.
 
+No runtime invariant companion is published because its request, socket, and snapshot state is private to the controller and has no independent event stream.
+
 <a id="dev-note"></a>
 ### Dev Note
 

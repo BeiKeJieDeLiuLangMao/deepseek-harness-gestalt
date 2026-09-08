@@ -58,6 +58,8 @@ The store adds no model request content, so it does not affect provider cache re
 - `RemoteAttachmentStoreProvider` remains a fixture for package tests. The operated Platform first deploys the PostgreSQL atomic-consume bridge to every host, then enables private OSS bytes in a separate deployment after every predecessor reports bridge mode. The bridge and OSS store share a claim token; active sweeps remove expiry and explicitly inactive pairing candidates and release quota reservations.
 - Desktop maps consume HTTP 403/404/410/413 onto protocol-native rejection reasons, decrypts only after hash verification, and admits exact bytes through the Session-scoped Host file RPC.
 
+No runtime invariant companion is published because `observe()` projects the same private entries map mutated by the store operations, so a companion would only repeat a same-source check.
+
 <a id="dev-note"></a>
 ### Dev Note
 

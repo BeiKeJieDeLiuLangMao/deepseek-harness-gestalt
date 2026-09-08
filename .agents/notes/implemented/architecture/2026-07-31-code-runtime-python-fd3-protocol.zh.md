@@ -20,7 +20,7 @@ CPython code-runtime 后端（`@deepseek-ai/dsh-code-runtime-python`，分多个
 
 `py/protocol.py` 用 `TypedDict` 镜像消息形状，并重新声明两侧都会 EXECUTE 的两个面——`PROTOCOL_FD = 3` 与 `log_truncation_marker`——文本逐字节一致。
 
-包骨架（`package.json`、`tsconfig.json`、`tsdown.config.ts`、`src/index.ts`、`src/invariant.ts`、README 三件套）在此交付，而非放到后续 stack 层：`check-workspace-constraints` 无条件读取每个 `packages/<group>/<pkg>` 的 package.json，coverage 与 invariant-topology gate 也要求包在其目录出现的那一刻即存在且可构建。后续的 backend-core PR 会用 `PythonCodeRuntime` 扩展 `src/index.ts` 并增补 `package.json` 的依赖；因为它 base 在本分支上，那些是编辑，不是冲突。
+包骨架（`package.json`、`tsconfig.json`、`tsdown.config.ts`、`src/index.ts`、README 三件套）在此交付，而非放到后续 stack 层：`check-workspace-constraints` 无条件读取每个 `packages/<group>/<pkg>` 的 package.json，coverage 与 package-invariant gate 也要求包在其目录出现的那一刻即存在且可构建。后续的 backend-core PR 会用 `PythonCodeRuntime` 扩展 `src/index.ts` 并增补 `package.json` 的依赖；因为它 base 在本分支上，那些是编辑，不是冲突。
 
 ## Wire contract
 
@@ -34,7 +34,7 @@ CPython code-runtime 后端（`@deepseek-ai/dsh-code-runtime-python`，分多个
 
 **把 Python JSON codec（`_encode_json_plain` / `_decode_json_plain`）挪进 `py/protocol.py` 以与 `protocol.ts` 跨侧对称。** 拒绝。仓库的 “prefer symmetry for parallel values” 规则指向真正平行的值；这两者不是。`protocol.ts` 里的 host 侧 codec 校验的是敌意输入，自包含。Python codec 在受信任侧产出输出，且耦合于 bootstrap 内部 helper（`_Emit`、`_dump_scalar`/`_dump_string`/`_dump_float`、`LogBuffer` 的成本核算、`_check_done_value`、`_lossless_json_violation`）；只把两个入口挪过去会把这一整片拖进 `protocol.py`，或制造 `bootstrap.py` ↔ `protocol.py` 的 import 环。真正的跨侧平行是 “host 校验入站（`protocol.ts`） ↔ child 信任 host 并发出（`bootstrap.py`）”，这个对称性被保留：`protocol.py` 保持它在 TS 侧一样的纯 wire-vocabulary 镜像定位。Python codec 留在 `bootstrap.py`，由 backend-core PR 交付。
 
-**把包骨架推迟到“拥有” package.json 的 backend-core PR。** 拒绝：workspace-constraint、coverage、invariant-topology gate 会在 `code-runtime-python` 目录一存在而包不可构建时立即失败。stacked 拆分无法在一个尚不能编译的包里创建源文件。
+**把包骨架推迟到“拥有” package.json 的 backend-core PR。** 拒绝：workspace-constraint、coverage、package-invariant gate 会在 `code-runtime-python` 目录一存在而包不可构建时立即失败。stacked 拆分无法在一个尚不能编译的包里创建源文件。
 
 ## Consequences
 

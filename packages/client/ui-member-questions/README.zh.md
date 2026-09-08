@@ -44,6 +44,8 @@ pending 卡片消失后，answered、declined、expired、withdrawn 与 supersed
 - **Admission 失败会保留在 receiving card** —— 共享 input state 保留 draft 并暴露 Host diagnostic。只有 Host materialization 成功后，普通 model、command 与 skill route 才会开放。
 - **Receiving Session face 仍由 session-controller 拥有** —— `ReceivingQuestionBook` 把 Host snapshot 行投影为 JSON。本包不再保留第二条 Remote ledger。
 
+本包不发布运行时不变式配套插件，因为 Host 不贡献状态，Client 只渲染一个 carrier payload，不保留路由或结算状态。
+
 <a id="dev-note"></a>
 ### 开发备注
 

@@ -1,9 +1,7 @@
 /** Client apply binds official pages; Host apply lives in apply.host.spec.ts. */
 import { Context, Service } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
-import InvariantRegistry from '@deepseek-ai/dsh-invariants'
 import { apply as applyClient, inject as clientInject } from '../src/client/index.ts'
-import * as WorkbenchInvariant from '../src/invariant.ts'
 
 const TARGET = { profileId: 'p', workspaceId: 'w', browserId: 'b', tabId: 't' }
 
@@ -113,18 +111,5 @@ describe('ui-workbench client apply', () => {
       bind: () => ({ getSnapshot: () => ({ value: undefined }) }),
     })
     await expect(ctx.plugin({ inject: [...clientInject], apply: applyClient }).await()).resolves.toBeDefined()
-  })
-})
-
-describe('ui-workbench invariant', () => {
-  it('reserves package ownership under its declared companion name', async () => {
-    const ctx = new Context()
-    await ctx.plugin(InvariantRegistry, { enabled: true })
-    const fiber = ctx.plugin(WorkbenchInvariant)
-    await fiber.await()
-    expect(WorkbenchInvariant.name).toBe('client-ui-workbench-invariant')
-    expect(WorkbenchInvariant.inject).toEqual(['invariants'])
-    expect(() => { (ctx.emit as (event: string) => void)('slots/changed') }).not.toThrow()
-    await fiber.dispose()
   })
 })

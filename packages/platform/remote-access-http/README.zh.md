@@ -40,6 +40,8 @@ HTTP 与 WSS 层不增加模型请求内容，因此不影响提供方缓存复�
 - WSS 消费方只转发不透明 Relay 密文；它从不接受 Host request 或 Companion 明文。
 - 部署 TLS、边缘限制与审计策略仍由 Platform 组合负责。
 
+本包不发布运行时不变式配套插件，因为 WebServer effect 与私有 pump set 由所属路由及 Consumer 生命周期结算，没有独立发布的事件流。
+
 <a id="dev-note"></a>
 ### 开发备注
 

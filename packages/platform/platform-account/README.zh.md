@@ -38,6 +38,8 @@ kind: "package-reference"
 - 账号删除、会话列表、远程退出、全部退出、恢复和身份关联不属于本服务。
 - 个人配对是独立能力，`signOut` 永远不会删除它。
 
+本包不发布运行时不变式配套插件，因为此 Service Definition 及其 parser、quota 与类型不拥有 Provider 状态或事件流。
+
 <a id="dev-note"></a>
 ### 开发备注
 

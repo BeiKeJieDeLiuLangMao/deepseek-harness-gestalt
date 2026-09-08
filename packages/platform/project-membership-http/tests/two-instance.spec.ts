@@ -2,7 +2,7 @@
  * Dual-instance scenario over one durable document: two real Loader
  * compositions assemble the same storagePath config, each with its own
  * provider, WebServer, and process-local presence registry, over one shared
- * Account backend. Instance A commits the project and invitation rows,
+ * Account backend and the Project Membership Core invariant companion. Instance A commits the project and invitation rows,
  * instance B loads the authoritative document afterwards, completes the
  * acceptance, and answers the same role-gate envelopes; presence stays
  * process-local, so a heartbeat on one instance never reads online through
@@ -38,12 +38,8 @@ import {
 import InvariantRegistry from '@deepseek-ai/dsh-invariants'
 import WebServer from '@deepseek-ai/dsh-host-webserver'
 import ProjectMembershipCore from '@deepseek-ai/dsh-project-membership-core'
-import * as PlatformAccountInvariant from '@deepseek-ai/dsh-platform-account/invariant'
-import * as PlatformAccountCoreInvariant from '@deepseek-ai/dsh-platform-account-core/invariant'
-import * as ProjectMembershipInvariant from '@deepseek-ai/dsh-project-membership/invariant'
 import * as ProjectMembershipCoreInvariant from '@deepseek-ai/dsh-project-membership-core/invariant'
 import * as ProjectMembershipHttp from '../src/index.ts'
-import * as ProjectMembershipHttpInvariant from '../src/invariant.ts'
 
 const ENVIRONMENT_PAIR = validatePlatformEnvironmentPair({
   development: {
@@ -300,7 +296,7 @@ async function errorOf(response: Promise<Response> | Response): Promise<[number,
 
 /**
  * Assemble one Platform instance over the shared storage root and shared
- * Account plane: the invariants companions, the Account provider, the
+ * Account plane: the Project Membership Core invariant companion, the Account provider, the
  * file-backed membership provider, and the HTTP consumer behind a real TCP
  * WebServer.
  */
@@ -314,16 +310,12 @@ async function bootInstance(storagePath: string, shared: Shared): Promise<Instan
     "    host: '127.0.0.1'",
     '    port: 0',
     "- name: '@deepseek-ai/dsh-invariants'",
-    "- name: '@deepseek-ai/dsh-platform-account/invariant'",
-    "- name: '@deepseek-ai/dsh-platform-account-core/invariant'",
     "- name: 'two-instance-platform-account-provider'",
-    "- name: '@deepseek-ai/dsh-project-membership/invariant'",
     "- name: '@deepseek-ai/dsh-project-membership-core/invariant'",
     "- name: '@deepseek-ai/dsh-project-membership-core'",
     '  config:',
     `    storagePath: '${storagePath}'`,
     "    environment: 'development'",
-    "- name: '@deepseek-ai/dsh-project-membership-http/invariant'",
     "- name: '@deepseek-ai/dsh-project-membership-http'",
     '  config:',
     '    origins:',
@@ -350,13 +342,9 @@ async function bootInstance(storagePath: string, shared: Shared): Promise<Instan
   const modules = new Map<string, unknown>([
     ['@deepseek-ai/dsh-host-webserver', WebServer],
     ['@deepseek-ai/dsh-invariants', InvariantRegistry],
-    ['@deepseek-ai/dsh-platform-account/invariant', PlatformAccountInvariant],
-    ['@deepseek-ai/dsh-platform-account-core/invariant', PlatformAccountCoreInvariant],
     ['two-instance-platform-account-provider', provider],
-    ['@deepseek-ai/dsh-project-membership/invariant', ProjectMembershipInvariant],
     ['@deepseek-ai/dsh-project-membership-core/invariant', ProjectMembershipCoreInvariant],
     ['@deepseek-ai/dsh-project-membership-core', ProjectMembershipCore],
-    ['@deepseek-ai/dsh-project-membership-http/invariant', ProjectMembershipHttpInvariant],
     ['@deepseek-ai/dsh-project-membership-http', ProjectMembershipHttp],
   ])
   context.loader.internal = {

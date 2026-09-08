@@ -44,6 +44,8 @@ It adds no stable request prefix; each submitted answer contributes retained too
 - **Admission failures remain on the receiving card** — the shared input state keeps the draft and exposes the Host diagnostic. Only a successful Host materialization unlocks ordinary model, command, and skill routes.
 - **Receiving Session faces stay session-controller-owned** — `ReceivingQuestionBook` projects Host snapshot rows as JSON. This package does not keep a second Remote ledger.
 
+No runtime invariant companion is published because the Host contributes no state and the Client renders one carrier payload without retaining routing or settlement state.
+
 <a id="dev-note"></a>
 ### Dev Note
 

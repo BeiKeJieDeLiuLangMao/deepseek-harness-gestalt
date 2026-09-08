@@ -106,6 +106,8 @@ Major 4 还承载两个 Platform 账号的配对安装之间交换的成员提�
 - Session 重命名、归档、删除与 fork、Workspace 管理、terminal 输入，以及 settings、credential、plugin、model 与 preset mutation 不属于 Companion major 4。
 - 配对 handshake、凭据持久化、challenge lifecycle 与生产 Companion 消息加密属于服务或经评审的 endpoint 集成，不属于这些 codec。
 
+本包不发布运行时不变式配套插件，因为本包只包含纯 codec、限制、协商函数与类型，没有可变状态或事件流。
+
 <a id="dev-note"></a>
 ### 开发备注
 

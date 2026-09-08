@@ -33,6 +33,8 @@ The client adds no stable request prefix; later tool results reflect the committ
 
 - Local Git inspection, clone, Workspace registration, and Account/Project binding remain Host and UI composition responsibilities.
 
+No runtime invariant companion is published because this stateless transport validates each response and retains no roster state.
+
 <a id="dev-note"></a>
 ### Dev Note
 

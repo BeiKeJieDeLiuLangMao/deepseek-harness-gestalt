@@ -54,6 +54,8 @@ IK 完成后，`SnowDesktopAttachmentOwner` 会把 Desktop 的加密 Companion �
 - Desktop 与 Mobile 产品入口已经组装 endpoint-owned 首配、持久 static state、credential-bound Relay peer discovery，以及每个物理 attachment 一条 Snow IK channel。Platform 挂载不透明 mailbox 与 digest-only Relay authority，不持有 endpoint key 或应用明文。
 - Node 22 与 24 以及现有 simulator 与 emulator proof 覆盖所选 Snow 依赖。物理 iOS 与 Android 证据，以及针对这一确切适配器的独立安全审查记录，仍是 release blocker。
 
+本包不发布运行时不变式配套插件，因为 codec 与 endpoint 状态机同步拒绝无效转换，且不公开独立事件或快照。
+
 <a id="dev-note"></a>
 ### 开发备注
 

@@ -52,6 +52,8 @@ The channel adds no model request content, so it does not affect provider cache 
 - Desktop and Mobile product entries assemble endpoint-owned first pairing, durable static state, credential-bound Relay peer discovery, and one Snow IK channel per physical attachment. Platform mounts the opaque mailbox and digest-only Relay authority without endpoint keys or application plaintext.
 - Node 22 and 24 plus the existing simulator and emulator proof cover the selected Snow dependency. Physical iOS and Android evidence and the independent security-review record for this exact adapter remain release blockers.
 
+No runtime invariant companion is published because its codecs and endpoint state machines reject invalid transitions synchronously and expose no independent event or snapshot.
+
 <a id="dev-note"></a>
 ### Dev Note
 
