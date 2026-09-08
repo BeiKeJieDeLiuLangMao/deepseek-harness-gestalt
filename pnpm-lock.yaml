@@ -214,9 +214,6 @@ importers:
       '@deepseek-ai/dsh-mcp-client':
         specifier: workspace:^
         version: link:../../packages/mcp/mcp-client
-      '@deepseek-ai/dsh-member-question-sender':
-        specifier: workspace:^
-        version: link:../../packages/interaction/member-question-sender
       '@deepseek-ai/dsh-persona':
         specifier: workspace:^
         version: link:../../packages/preset/persona
@@ -271,6 +268,9 @@ importers:
       '@deepseek-ai/dsh-token-meter':
         specifier: workspace:^
         version: link:../../packages/llm/token-meter
+      '@deepseek-ai/dsh-member-question-sender':
+        specifier: workspace:^
+        version: link:../../packages/interaction/member-question-sender
       '@deepseek-ai/dsh-tool-ask-user':
         specifier: workspace:^
         version: link:../../packages/interaction/tool-ask-user
@@ -2148,15 +2148,15 @@ importers:
       '@deepseek-ai/dsh-client-ui-attachment':
         specifier: workspace:^
         version: link:../../client/ui-attachment
-      '@deepseek-ai/dsh-client-ui-better-sidebar':
-        specifier: workspace:^
-        version: link:../../client/ui-better-sidebar
       '@deepseek-ai/dsh-client-ui-brand-official':
         specifier: workspace:^
         version: link:../../client/ui-brand-official
       '@deepseek-ai/dsh-client-ui-browser':
         specifier: workspace:^
         version: link:../../client/ui-browser
+      '@deepseek-ai/dsh-client-ui-better-sidebar':
+        specifier: workspace:^
+        version: link:../../client/ui-better-sidebar
       '@deepseek-ai/dsh-client-ui-chat':
         specifier: workspace:^
         version: link:../../client/ui-chat
@@ -2253,12 +2253,12 @@ importers:
       '@deepseek-ai/dsh-client-ui-user-questions':
         specifier: workspace:^
         version: link:../../client/ui-user-questions
-      '@deepseek-ai/dsh-client-ui-workbench':
-        specifier: workspace:^
-        version: link:../../client/ui-workbench
       '@deepseek-ai/dsh-client-ui-workflow-run':
         specifier: workspace:^
         version: link:../../client/ui-workflow-run
+      '@deepseek-ai/dsh-client-ui-workbench':
+        specifier: workspace:^
+        version: link:../../client/ui-workbench
       '@deepseek-ai/dsh-client-ui-workspace':
         specifier: workspace:^
         version: link:../../client/ui-workspace
@@ -2295,18 +2295,18 @@ importers:
       '@deepseek-ai/dsh-host-plugin-inventory':
         specifier: workspace:^
         version: link:../../host/plugin-inventory
-      '@deepseek-ai/dsh-host-webserver':
-        specifier: workspace:^
-        version: link:../../host/webserver
-      '@deepseek-ai/dsh-launch-environment':
-        specifier: workspace:^
-        version: link:../../util/launch-environment
       '@deepseek-ai/dsh-member-question-receiver':
         specifier: workspace:^
         version: link:../../interaction/member-question-receiver
       '@deepseek-ai/dsh-member-question-sender':
         specifier: workspace:^
         version: link:../../interaction/member-question-sender
+      '@deepseek-ai/dsh-host-webserver':
+        specifier: workspace:^
+        version: link:../../host/webserver
+      '@deepseek-ai/dsh-launch-environment':
+        specifier: workspace:^
+        version: link:../../util/launch-environment
       '@deepseek-ai/dsh-message-feedback':
         specifier: workspace:^
         version: link:../../feedback/message-feedback
