@@ -284,17 +284,14 @@ export async function scanRetainedArtifacts(
  * @returns Redacted diagnostic text.
  */
 export function redactArtifactDiagnostic(text: string, credentials: readonly AmbientCredential[]): string {
-  let redacted = text
-    .replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----/gu, '[REDACTED PRIVATE KEY]')
-    .replace(genericCredentialAssignmentPattern('gimu'), '$1[REDACTED]')
+  let redacted = text.replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----/gu, '[REDACTED PRIVATE KEY]')
   for (const credential of credentials) {
+    redacted = redacted.replace(credentialAssignmentPattern(credential, 'gimu'), '$1[REDACTED]')
     if (isBareCredentialValue(credential.value)) {
       redacted = redacted.replaceAll(credential.value, '[REDACTED]')
-    } else {
-      redacted = redacted.replace(credentialAssignmentPattern(credential, 'gimu'), '$1[REDACTED]')
     }
   }
-  return redacted
+  return redacted.replace(genericCredentialAssignmentPattern('gimu'), '$1[REDACTED]')
 }
 
 function optionalProcessIdentity(
@@ -429,16 +426,19 @@ function isBareCredentialValue(value: string): boolean {
 
 function credentialAssignmentPattern(credential: AmbientCredential, flags: string): RegExp {
   const name = escapeRegExp(credential.name)
-  const value = escapeRegExp(credential.value)
+  const values = [...new Set([
+    credential.value,
+    JSON.stringify(credential.value).slice(1, -1),
+  ])].sort((left, right) => right.length - left.length).map(escapeRegExp).join('|')
   return new RegExp(
-    `((?:^|[^A-Za-z0-9_])["']?${name}["']?\\s*[:=]\\s*["']?(?:bearer\\s+)?)${value}(?=$|[\\s"',;}\\]])`,
+    `((?:^|[^A-Za-z0-9_])["']?${name}["']?\\s*[:=]\\s*["']?(?:bearer\\s+)?)(?:${values})(?![A-Za-z0-9_])`,
     flags,
   )
 }
 
 function genericCredentialAssignmentPattern(flags: string): RegExp {
   return new RegExp(
-    String.raw`((?:^|[^A-Za-z0-9_])["']?(?:api[_-]?key|authorization|password|secret|token)["']?\s*[:=]\s*["']?(?:bearer\s+)?)[^\s"',;}\]]+`,
+    String.raw`((?:^|[^A-Za-z0-9_])["']?(?:api[_-]?key|authorization|password|secret|token)["']?\s*[:=]\s*["']?(?:bearer\s+)?)(?!\[REDACTED\])[^\s"',;}\]]+`,
     flags,
   )
 }

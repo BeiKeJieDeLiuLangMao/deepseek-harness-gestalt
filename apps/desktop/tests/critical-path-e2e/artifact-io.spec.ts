@@ -142,7 +142,7 @@ describe('critical-path durable evidence', () => {
         writeFile(buildLog, 'command exited 1\n'),
         writeFile(buildSource, '{"exitCode":1}\n'),
         writeFile(result, '{"message":"pnpm exited 1"}\n'),
-        writeFile(namedLeak, '{"FIXTURE_ACCESS_KEY_ID":"1"}\n'),
+        writeFile(namedLeak, 'failure (FIXTURE_ACCESS_KEY_ID=1)\n'),
         writeFile(genericLeak, '{"authorization":"Bearer x"}\n'),
       ])
 
@@ -156,10 +156,31 @@ describe('critical-path durable evidence', () => {
       await expect(readOptionalFile(namedLeak)).resolves.toBeUndefined()
       await expect(readOptionalFile(genericLeak)).resolves.toBeUndefined()
       expect(redactArtifactDiagnostic('pnpm exited 1', credentials)).toBe('pnpm exited 1')
-      expect(redactArtifactDiagnostic('{"FIXTURE_ACCESS_KEY_ID":"1"}', credentials))
-        .toBe('{"FIXTURE_ACCESS_KEY_ID":"[REDACTED]"}')
+      expect(redactArtifactDiagnostic('failure (FIXTURE_ACCESS_KEY_ID=1)', credentials))
+        .toBe('failure (FIXTURE_ACCESS_KEY_ID=[REDACTED])')
       expect(redactArtifactDiagnostic('{"authorization":"Bearer x"}', credentials))
         .toBe('{"authorization":"Bearer [REDACTED]"}')
+    } finally {
+      await rm(root, { recursive: true })
+    }
+  })
+
+  it('matches a JSON-escaped ambient credential in scans and diagnostics', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-critical-json-secret-scan-'))
+    const leaked = join(root, 'runner.json')
+    const credential = { name: 'FIXTURE_ACCESS_KEY_SECRET', value: 'ab"cd\\efgh' }
+    const diagnostic = JSON.stringify({ [credential.name]: credential.value })
+    try {
+      await writeFile(leaked, diagnostic + '\n')
+
+      await expect(scanRetainedArtifacts(root, [credential])).resolves.toEqual({
+        shareable: true,
+        removedFiles: 1,
+      })
+      await expect(readOptionalFile(leaked)).resolves.toBeUndefined()
+      expect(redactArtifactDiagnostic(diagnostic, [credential])).toBe(JSON.stringify({
+        [credential.name]: '[REDACTED]',
+      }))
     } finally {
       await rm(root, { recursive: true })
     }
