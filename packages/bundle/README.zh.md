@@ -20,6 +20,8 @@ kind: "package-group"
 <a id="packages"></a>
 ## 包
 
+Bundle 身份由 manifest 声明，而不是由本目录定义。领域包可以携带自己的可选 Profile layer；[Codex 与 Claude Code subagent 包](../subagent/README.zh.md)就是可直接安装的示例。
+
 | 包 | 职责 | ctx key |
 |---|---|---|
 | [`base`](base/README.zh.md) | 基于 base 的 profile 共享核心 | —（仅 patch） |
