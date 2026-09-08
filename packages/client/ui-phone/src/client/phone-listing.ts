@@ -147,9 +147,12 @@ export async function fetchPhoneListing(signal?: AbortSignal): Promise<PhoneList
  * consumes. The source starts empty and quiet; every successful refresh
  * publishes the next snapshot to its subscribers and failures leave the
  * committed listing untouched.
+ * @param onListenerError - Reporter for one contained subscriber failure.
  * @returns the production listing source backed by `fetch`.
  */
-export function createHttpPhoneListingSource(): PhoneListingSource {
+export function createHttpPhoneListingSource(
+  onListenerError: (error: unknown) => void = (error) => { console.error('phone listing subscriber failed', error) },
+): PhoneListingSource {
   let committed: PhoneListingSnapshot = Object.freeze({ android: Object.freeze([]), ios: Object.freeze([]) })
   const listeners = new Set<() => void>()
   return {
@@ -160,7 +163,9 @@ export function createHttpPhoneListingSource(): PhoneListingSource {
     refresh: async () => {
       const next = await fetchPhoneListing()
       committed = next
-      for (const listener of [...listeners]) listener()
+      for (const listener of [...listeners]) {
+        try { listener() } catch (error) { onListenerError(error) }
+      }
     },
     subscribe: (listener) => {
       listeners.add(listener)

@@ -670,6 +670,23 @@ describe('PhoneConnectionController lifecycle', () => {
     expect(phases).toEqual(['connecting', 'live', 'idle'])
   })
 
+  it('reports a throwing subscriber and continues the phase fan-out', () => {
+    const report = vi.fn()
+    const controller = new PhoneConnectionController({
+      gateway: new FakeGateway(),
+      deviceId: 'emulator-5554',
+      onListenerError: report,
+    })
+    const survivor = vi.fn()
+    controller.subscribe(() => { throw new Error('connection subscriber failed') })
+    controller.subscribe(survivor)
+
+    expect(() => { controller.disconnect() }).not.toThrow()
+
+    expect(report).toHaveBeenCalledWith(expect.any(Error))
+    expect(survivor).toHaveBeenCalledOnce()
+  })
+
   it('stops every timer and socket on dispose', async () => {
     const gateway = new FakeGateway()
     const scheduler = new ManualScheduler()

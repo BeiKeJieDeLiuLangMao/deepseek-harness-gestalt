@@ -85,6 +85,33 @@ function controlledStart(): ControlledStart {
   }
 }
 
+function trackedAbortSignal(stackMarker?: string): { readonly signal: AbortSignal; readonly activeListeners: () => number } {
+  const signal = new AbortController().signal
+  const listeners = new Set<EventListenerOrEventListenerObject>()
+  const target: EventTarget = signal
+  const add = target.addEventListener.bind(target)
+  const remove = target.removeEventListener.bind(target)
+  signal.addEventListener = ((
+    type: string,
+    listener: EventListenerOrEventListenerObject,
+    options?: boolean | AddEventListenerOptions,
+  ): void => {
+    if (type === 'abort' && (stackMarker === undefined || new Error().stack?.includes(stackMarker) === true)) {
+      listeners.add(listener)
+    }
+    add(type, listener, options)
+  }) as AbortSignal['addEventListener']
+  signal.removeEventListener = ((
+    type: string,
+    listener: EventListenerOrEventListenerObject,
+    options?: boolean | EventListenerOptions,
+  ): void => {
+    if (type === 'abort') listeners.delete(listener)
+    remove(type, listener, options)
+  }) as AbortSignal['removeEventListener']
+  return { signal, activeListeners: () => listeners.size }
+}
+
 describe('PhoneRuntimePool occupancy', () => {
   it('retains a stop failure and blocks an unsafe restart', async () => {
     const failure = new Error('stop failed')
@@ -426,6 +453,39 @@ describe('PhoneRuntimePool occupancy', () => {
     await expect(b.listDevices()).resolves.toEqual(EMPTY_LIST)
     await b.release()
     expect(starts).toBe(1)
+  })
+
+  it('removes every acquire cancellation listener when its waiter settles', async () => {
+    const attempts: Array<PromiseWithResolvers<PhoneRuntimeStart>> = []
+    const pool = createPhoneRuntimePool({
+      start() {
+        const attempt = Promise.withResolvers<PhoneRuntimeStart>()
+        attempts.push(attempt)
+        return attempt.promise
+      },
+    }, { cleanupTimeoutMs: 200 })
+    pools.push(pool)
+
+    const firstSignal = trackedAbortSignal()
+    const first = pool.acquireExternal(firstSignal.signal)
+    await vi.waitFor(() => { expect(attempts).toHaveLength(1) })
+    attempts[0]?.resolve({ generation: stubGeneration('first'), async stop() {} })
+    const handles = [await first]
+    expect(firstSignal.activeListeners()).toBe(0)
+
+    for (let index = 0; index < 8; index += 1) {
+      const tracked = trackedAbortSignal()
+      handles.push(await pool.acquireExternal(tracked.signal))
+      expect(tracked.activeListeners()).toBe(0)
+    }
+    await Promise.all(handles.map(async (handle) => { await handle.release() }))
+
+    const rejectedSignal = trackedAbortSignal()
+    const rejected = pool.acquireExternal(rejectedSignal.signal)
+    await vi.waitFor(() => { expect(attempts).toHaveLength(2) })
+    attempts[1]?.reject(new Error('synthetic start failure'))
+    await expect(rejected).rejects.toMatchObject({ code: 'PHONE_UNAVAILABLE' })
+    expect(rejectedSignal.activeListeners()).toBe(0)
   })
 
   it('rejects a cancelled sibling immediately without awaiting Adapter start', async () => {
@@ -1273,6 +1333,41 @@ function fakeAdapter(devices: Array<Record<string, unknown>>): PhoneRuntimeAdapt
 }
 
 describe('PhoneRuntimePool isolation', () => {
+  it('releases caller pause listeners after real multi-round readiness', async () => {
+    const fake = await stageFake({
+      devices: [wireDevice('SIM-A', 'ios', 'simulator', 'offline')],
+      failArm: { method: 'server.info', message: 'not ready yet', remaining: 3 },
+    })
+    fakes.push(fake)
+    await fake.claim()
+    const context = new Context()
+    contexts.push(context)
+    const adapter = new MobilecliPhoneRuntime(
+      resolveValidatedConfig(Config({
+        serverPort: fake.port,
+        pollIntervalMs: 20,
+        readyStabilityMs: 20,
+        readyTimeoutMs: 6_000,
+        requestTimeoutMs: 1_500,
+      })),
+      context.logger,
+      () => ({ validate: () => undefined, changed: () => {}, readiness: () => {} }),
+    )
+    const tracked = trackedAbortSignal('pauseBeforeNextProbe')
+    const started = await adapter.start({
+      slot: phoneRuntimeSlot('multi-round'),
+      kind: 'external',
+      signal: tracked.signal,
+      config: { provenance: 'host-external', executablePath: fake.executablePath },
+    })
+    try {
+      expect((await fake.counters()).rpc.filter(entry => entry.method === 'server.info')).toHaveLength(4)
+      expect(tracked.activeListeners()).toBe(0)
+    } finally {
+      await started.stop()
+    }
+  })
+
   it('refuses unsupported or unresolved starts at the production adapter seam', async () => {
     const context = new Context()
     contexts.push(context)

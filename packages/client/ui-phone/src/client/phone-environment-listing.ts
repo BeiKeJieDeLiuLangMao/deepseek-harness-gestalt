@@ -112,6 +112,8 @@ export interface ListingPhoneEnvironmentOptions {
    * false; a ready runtime proves the fleet is active.
    */
   readonly runtimeReady?: () => boolean
+  /** Reporter for one contained subscriber failure. */
+  readonly onListenerError?: (error: unknown) => void
 }
 
 /**
@@ -133,8 +135,11 @@ export function createListingPhoneEnvironmentSource(
   const listeners = new Set<() => void>()
   let stopListing: (() => void) | undefined
   let pollTimer: (() => void) | undefined
+  const reportListenerError = options.onListenerError ?? defaultListenerErrorReporter
   const notify = (): void => {
-    for (const listener of [...listeners]) listener()
+    for (const listener of [...listeners]) {
+      try { listener() } catch (error) { reportListenerError(error) }
+    }
   }
   const syncPolling = (): void => {
     const shouldPoll = phase === 'ready' && listeners.size > 0
@@ -206,4 +211,8 @@ export function createListingPhoneEnvironmentSource(
     },
   }
   return source
+}
+
+function defaultListenerErrorReporter(error: unknown): void {
+  console.error('phone environment subscriber failed', error)
 }

@@ -211,6 +211,8 @@ export interface PhoneConnectionOptions {
   readonly retryLimit?: number
   /** Linear backoff base milliseconds. */
   readonly retryBaseDelayMs?: number
+  /** Reporter for one contained subscriber failure. */
+  readonly onListenerError?: (error: unknown) => void
 }
 
 /**
@@ -227,6 +229,7 @@ export class PhoneConnectionController {
   private readonly schedule: (delayMs: number, fn: () => void) => () => void
   private readonly retryLimit: number
   private readonly retryBaseDelayMs: number
+  private readonly onListenerError: (error: unknown) => void
   private readonly listeners = new Set<() => void>()
 
   private phase: PhoneConnectionPhase = { kind: 'idle' }
@@ -258,6 +261,8 @@ export class PhoneConnectionController {
     this.schedule = options.schedule ?? defaultSchedule
     this.retryLimit = options.retryLimit ?? RETRY_LIMIT
     this.retryBaseDelayMs = options.retryBaseDelayMs ?? RETRY_BASE_DELAY_MS
+    this.onListenerError = options.onListenerError
+      ?? ((error) => { console.error('phone connection subscriber failed', error) })
   }
 
   /**
@@ -773,6 +778,8 @@ export class PhoneConnectionController {
   }
 
   private notify(): void {
-    for (const listener of this.listeners) listener()
+    for (const listener of [...this.listeners]) {
+      try { listener() } catch (error) { this.onListenerError(error) }
+    }
   }
 }

@@ -121,6 +121,20 @@ describe('phone listing source', () => {
     expect(commits).toEqual([1])
   })
 
+  it('reports a throwing subscriber and continues the refresh fan-out', async () => {
+    stubFetch(200, WIRE_LISTING)
+    const report = vi.fn()
+    const source = createHttpPhoneListingSource(report)
+    const survivor = vi.fn()
+    source.subscribe(() => { throw new Error('listing subscriber failed') })
+    source.subscribe(survivor)
+
+    await expect(source.refresh()).resolves.toBeUndefined()
+
+    expect(report).toHaveBeenCalledWith(expect.any(Error))
+    expect(survivor).toHaveBeenCalledOnce()
+  })
+
   it('keeps the committed listing when the Host refuses or sends a malformed body', async () => {
     stubFetch(200, WIRE_LISTING)
     const source = createHttpPhoneListingSource()

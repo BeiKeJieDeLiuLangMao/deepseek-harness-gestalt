@@ -426,8 +426,10 @@ export class MobilecliGeneration implements PhoneRuntimeGeneration {
     const child = this.child as MobilecliServerProcess
     const client = this.rpcClient as MobilecliRpc
     let settledExit: { readonly code: number | null } | undefined
-    const exitSeen = child.exit.then((exit) => {
+    const exitAbort = new AbortController()
+    void child.exit.then((exit) => {
       settledExit = exit
+      exitAbort.abort(exit)
     })
     const window = deadline(undefined, this.resolved.readyTimeoutMs, 'READY_WINDOW')
     const startupSignal = AbortSignal.any([window.signal, this.lifetime.signal, signal])
@@ -449,7 +451,7 @@ export class MobilecliGeneration implements PhoneRuntimeGeneration {
           window.signal,
           this.lifetime.signal,
           signal,
-          exitSeen,
+          exitAbort.signal,
         )
       }
       void child.exit.then((exit) => { this.onChildExit(child, exit) })
@@ -465,7 +467,7 @@ export class MobilecliGeneration implements PhoneRuntimeGeneration {
         window.signal,
         this.lifetime.signal,
         signal,
-        exitSeen,
+        exitAbort.signal,
       )
       const exitAfterStability = readSettledExit(() => settledExit)
       if (exitAfterStability !== undefined) throw exitedBeforeReady(child, exitAfterStability)
@@ -1779,24 +1781,22 @@ async function pauseBeforeNextProbe(
   window: AbortSignal,
   lifetime: AbortSignal,
   caller: AbortSignal,
-  exitSeen: Promise<unknown>,
+  exit: AbortSignal,
 ): Promise<void> {
-  if (window.aborted || lifetime.aborted || caller.aborted) return
-  const slept = new Promise<'slept'>((resolveSleep) => {
-    const timer = setTimeout(() => {
-      resolveSleep('slept')
-    }, ms)
-    timer.unref()
-  })
-  const abortedOrExited = new Promise<'interrupted'>((resolveInterrupted) => {
-    for (const signal of [window, lifetime, caller]) {
-      signal.addEventListener('abort', () => {
-        resolveInterrupted('interrupted')
-      }, { once: true })
+  const signals = [window, lifetime, caller, exit]
+  if (signals.some(signal => signal.aborted)) return
+  await new Promise<void>((resolve) => {
+    let settled = false
+    const settle = (): void => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      for (const signal of signals) signal.removeEventListener('abort', settle)
+      resolve()
     }
-    void exitSeen.then(() => {
-      resolveInterrupted('interrupted')
-    })
+    const timer = setTimeout(settle, ms)
+    timer.unref()
+    for (const signal of signals) signal.addEventListener('abort', settle, { once: true })
+    if (signals.some(signal => signal.aborted)) settle()
   })
-  await Promise.race([slept, abortedOrExited])
 }

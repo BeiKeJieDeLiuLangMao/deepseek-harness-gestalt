@@ -198,6 +198,7 @@ interface OccupancyRecord {
   readonly epoch: number
   state: OccupancyState
   readonly waiter: PromiseWithResolvers<PhoneRuntimeHandle>
+  cancelAbortWait(): void
 }
 
 interface Cell {
@@ -356,19 +357,27 @@ export function createPhoneRuntimePool(
       epoch,
       state: cell.phase === 'ready' && cell.generation !== undefined && !cell.unresolved ? 'live' : 'pending',
       waiter: Promise.withResolvers<PhoneRuntimeHandle>(),
+      cancelAbortWait: () => {},
     }
     cell.occupancies.set(occupancy.id, occupancy)
     const onAbort = (): void => {
       if (occupancy.state !== 'pending') return
       occupancy.state = 'aborted'
+      occupancy.cancelAbortWait()
       occupancy.waiter.reject(new PhoneDevicesError('PHONE_ABORTED', 'phone runtime acquire was cancelled'))
       void occupancy.waiter.promise.catch(() => {})
       cell.occupancies.delete(occupancy.id)
       if (liveOrPending(cell) === 0) void lastRelease(cell)
     }
-    signal?.addEventListener('abort', onAbort, { once: true })
+    if (signal !== undefined) {
+      signal.addEventListener('abort', onAbort, { once: true })
+      occupancy.cancelAbortWait = () => { signal.removeEventListener('abort', onAbort) }
+    }
     occupancy.waiter.promise.catch(() => {})
-    if (occupancy.state === 'live') occupancy.waiter.resolve(bindHandle(cell, occupancy))
+    if (occupancy.state === 'live') {
+      occupancy.cancelAbortWait()
+      occupancy.waiter.resolve(bindHandle(cell, occupancy))
+    }
     return occupancy
   }
 
@@ -426,6 +435,7 @@ export function createPhoneRuntimePool(
       for (const occupancy of cell.occupancies.values()) {
         if (occupancy.epoch !== epoch || occupancy.state !== 'pending') continue
         occupancy.state = 'live'
+        occupancy.cancelAbortWait()
         occupancy.waiter.resolve(bindHandle(cell, occupancy))
       }
     })
@@ -445,6 +455,7 @@ export function createPhoneRuntimePool(
     for (const occupancy of [...cell.occupancies.values()]) {
       if (occupancy.state !== 'pending') continue
       occupancy.state = 'aborted'
+      occupancy.cancelAbortWait()
       occupancy.waiter.reject(failure)
       void occupancy.waiter.promise.catch(() => {})
       cell.occupancies.delete(occupancy.id)
@@ -596,6 +607,7 @@ export function createPhoneRuntimePool(
       const pending = occupancy.state === 'pending'
       occupancy.state = 'aborted'
       if (pending) {
+        occupancy.cancelAbortWait()
         occupancy.waiter.reject(new PhoneDevicesError('PHONE_ABORTED', 'the phone runtime occupancy was aborted'))
         void occupancy.waiter.promise.catch(() => {})
         cell.occupancies.delete(occupancy.id)
@@ -663,6 +675,7 @@ export function createPhoneRuntimePool(
     for (const occupancy of [...cell.occupancies.values()]) {
       if (occupancy.state !== 'pending') continue
       occupancy.state = 'aborted'
+      occupancy.cancelAbortWait()
       occupancy.waiter.reject(new PhoneDevicesError('PHONE_ABORTED', 'the phone runtime occupancy was aborted'))
       void occupancy.waiter.promise.catch(() => {})
       cell.occupancies.delete(occupancy.id)
@@ -683,6 +696,7 @@ export function createPhoneRuntimePool(
         for (const occupancy of cell.occupancies.values()) {
           if (occupancy.state === 'pending') {
             occupancy.state = 'aborted'
+            occupancy.cancelAbortWait()
             occupancy.waiter.reject(new PhoneDevicesError('PHONE_DISPOSED', 'the phone runtime pool is closed'))
             void occupancy.waiter.promise.catch(() => {})
           } else if (occupancy.state === 'live') {

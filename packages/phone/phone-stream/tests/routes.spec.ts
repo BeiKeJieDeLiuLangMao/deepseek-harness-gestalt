@@ -81,6 +81,19 @@ function jsonObject(body: Buffer): Record<string, unknown> {
   return parsed as Record<string, unknown>
 }
 
+function rejectAfterAbort(signal: AbortSignal | undefined, entered: () => void): Promise<never> {
+  entered()
+  if (signal === undefined) return Promise.reject(new Error('missing HTTP transaction cancellation signal'))
+  const abortReason = (): Error => {
+    const reason: unknown = signal.reason
+    return reason instanceof Error ? reason : new Error('HTTP transaction was cancelled', { cause: reason })
+  }
+  if (signal.aborted) return Promise.reject(abortReason())
+  return new Promise<never>((_resolve, reject) => {
+    signal.addEventListener('abort', () => { reject(abortReason()) }, { once: true })
+  })
+}
+
 const contexts: Context[] = []
 const fakes: Array<Awaited<ReturnType<typeof stageFake>>> = []
 
@@ -1309,28 +1322,34 @@ describe('phone stream Host routes', () => {
     expect((await rawRequest({ origin, path: '/phone/session', host: new URL(origin).host, method: 'POST' })).status).toBe(404)
   })
 
-  it('prevents agent install after managed-device listing crosses disposal', async () => {
+  it('cancels the managed-agent listing through the HTTP transaction signal', async () => {
     const { origin, context, phoneStreamFiber } = await mount()
-    const original = context.phoneDevices.listDevices.bind(context.phoneDevices); let release!: () => void; let entered!: () => void
-    const gate = new Promise<void>((resolve) => { release = resolve })
+    let entered!: () => void
     const admission = new Promise<void>((resolve) => { entered = resolve })
-    context.phoneDevices.listDevices = async () => { entered(); await gate; return await original() }
+    let seen: AbortSignal | undefined
+    context.phoneDevices.listDevices = async (signal) => {
+      seen = signal
+      return await rejectAfterAbort(signal, entered)
+    }
     const install = vi.fn(async () => ({} as never)); context.phoneDevices.installAgent = install
     const request = fetch(`${origin}/phone/agent/install`, { method: 'POST', headers: { host: new URL(origin).host, 'content-type': 'application/json' }, body: JSON.stringify({ deviceId: 'emulator-5554' }) })
-    await admission; const disposal = phoneStreamFiber.dispose(); release(); const response = await request
-    expect(response.status).toBe(503); expect(install).not.toHaveBeenCalled(); await disposal
+    await admission; const disposal = phoneStreamFiber.dispose(); const response = await request
+    expect(seen?.aborted).toBe(true); expect(response.status).toBe(503); expect(install).not.toHaveBeenCalled(); await disposal
     expect((await rawRequest({ origin, path: '/phone/agent/install', host: new URL(origin).host, method: 'POST' })).status).toBe(404)
   })
 
-  it('prevents a device listing commit after its acquisition crosses disposal', async () => {
+  it('cancels the device-list route through the HTTP transaction signal', async () => {
     const { origin, context, phoneStreamFiber } = await mount()
-    const original = context.phoneDevices.listDevices.bind(context.phoneDevices)
-    let release!: () => void; let entered!: () => void; const gate = new Promise<void>((resolve) => { release = resolve })
+    let entered!: () => void
     const admission = new Promise<void>((resolve) => { entered = resolve })
-    context.phoneDevices.listDevices = async () => { entered(); await gate; return await original() }
+    let seen: AbortSignal | undefined
+    context.phoneDevices.listDevices = async (signal) => {
+      seen = signal
+      return await rejectAfterAbort(signal, entered)
+    }
     const request = fetch(`${origin}/phone/devices`, { headers: { host: new URL(origin).host } }); await admission
-    const disposal = phoneStreamFiber.dispose(); release(); const response = await request
-    expect(response.status).toBe(503); expect(await response.text()).not.toContain('emulator-5554'); await disposal
+    const disposal = phoneStreamFiber.dispose(); const response = await request
+    expect(seen?.aborted).toBe(true); expect(response.status).toBe(503); expect(await response.text()).not.toContain('emulator-5554'); await disposal
     expect((await rawRequest({ origin, path: '/phone/devices', host: new URL(origin).host })).status).toBe(404)
   })
 
@@ -1826,80 +1845,67 @@ describe('phone stream Host routes', () => {
     }
   })
 
-  it('prevents mint after listing returns across disposal', async () => {
+  it('cancels the initial session listing through the HTTP transaction signal', async () => {
     const { origin, context, phoneStreamFiber } = await mount()
-    const original = context.phoneDevices.listDevices.bind(context.phoneDevices)
-    let release!: () => void; let entered!: () => void
-    const gate = new Promise<void>((resolve) => { release = resolve })
+    let entered!: () => void
     const admission = new Promise<void>((resolve) => { entered = resolve })
-    context.phoneDevices.listDevices = async () => { entered(); await gate; return await original() }
+    let seen: AbortSignal | undefined
+    context.phoneDevices.listDevices = async (signal) => {
+      seen = signal
+      return await rejectAfterAbort(signal, entered)
+    }
     const request = fetch(`${origin}/phone/session`, {
       method: 'POST',
       headers: { host: new URL(origin).host, 'content-type': 'application/json' },
       body: JSON.stringify({ deviceId: 'emulator-5554' }),
     })
-    try {
-      await admission
-      const disposal = phoneStreamFiber.dispose()
-      release()
-      expect((await request).status).toBe(503)
-      await disposal
-    } finally {
-      release()
-      context.phoneDevices.listDevices = original
-    }
+    await admission
+    const disposal = phoneStreamFiber.dispose()
+    expect((await request).status).toBe(503)
+    expect(seen?.aborted).toBe(true)
+    await disposal
   })
 
-  it('prevents agent status commit after the status call crosses disposal', async () => {
+  it('cancels agent status through the HTTP transaction signal', async () => {
     const { origin, context, phoneStreamFiber } = await mount()
-    const originalStatus = context.phoneDevices.agentStatus.bind(context.phoneDevices)
-    let release!: () => void; let entered!: () => void
-    const gate = new Promise<void>((resolve) => { release = resolve })
+    let entered!: () => void
     const admission = new Promise<void>((resolve) => { entered = resolve })
-    context.phoneDevices.agentStatus = async () => { entered(); await gate; return { deviceId: ANDROID, installed: true } }
+    let seen: AbortSignal | undefined
+    context.phoneDevices.agentStatus = async (_id, signal) => {
+      seen = signal
+      return await rejectAfterAbort(signal, entered)
+    }
     const request = fetch(`${origin}/phone/agent/status`, {
       method: 'POST',
       headers: { host: new URL(origin).host, 'content-type': 'application/json' },
       body: JSON.stringify({ deviceId: 'emulator-5554' }),
     })
-    try {
-      await admission
-      const disposal = phoneStreamFiber.dispose()
-      release()
-      expect((await request).status).toBe(503)
-      await disposal
-    } finally {
-      release()
-      context.phoneDevices.agentStatus = originalStatus
-    }
+    await admission
+    const disposal = phoneStreamFiber.dispose()
+    expect((await request).status).toBe(503)
+    expect(seen?.aborted).toBe(true)
+    await disposal
   })
 
-  it('prevents agent install commit after install returns across disposal', async () => {
+  it('cancels agent install through the HTTP transaction signal', async () => {
     const { origin, context, phoneStreamFiber } = await mount()
-    const originalInstall = context.phoneDevices.installAgent.bind(context.phoneDevices)
-    let release!: () => void; let entered!: () => void
-    const gate = new Promise<void>((resolve) => { release = resolve })
+    let entered!: () => void
     const admission = new Promise<void>((resolve) => { entered = resolve })
-    context.phoneDevices.installAgent = async () => {
-      entered()
-      await gate
-      return { deviceId: ANDROID, installed: true, reinstalled: false }
+    let seen: AbortSignal | undefined
+    context.phoneDevices.installAgent = async (_id, options) => {
+      seen = options?.signal
+      return await rejectAfterAbort(options?.signal, entered)
     }
     const request = fetch(`${origin}/phone/agent/install`, {
       method: 'POST',
       headers: { host: new URL(origin).host, 'content-type': 'application/json' },
       body: JSON.stringify({ deviceId: 'emulator-5554' }),
     })
-    try {
-      await admission
-      const disposal = phoneStreamFiber.dispose()
-      release()
-      expect((await request).status).toBe(503)
-      await disposal
-    } finally {
-      release()
-      context.phoneDevices.installAgent = originalInstall
-    }
+    await admission
+    const disposal = phoneStreamFiber.dispose()
+    expect((await request).status).toBe(503)
+    expect(seen?.aborted).toBe(true)
+    await disposal
   })
 
   it('prevents iOS mint after a successful install recrosses disposal on the follow-up status', async () => {

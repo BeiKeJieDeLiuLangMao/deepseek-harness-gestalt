@@ -149,6 +149,21 @@ describe('createListingPhoneEnvironmentSource', () => {
     stop()
   })
 
+  it('reports a throwing subscriber and continues each detection fan-out', async () => {
+    const listing = new FakeListingSource()
+    listing.scriptNext(listingOf([ANDROID_EMULATOR]))
+    const report = vi.fn()
+    const source = createListingPhoneEnvironmentSource(listing, { onListenerError: report })
+    const survivor = vi.fn()
+    source.subscribe(() => { throw new Error('environment subscriber failed') })
+    source.subscribe(survivor)
+
+    await expect(source.redetect()).resolves.toBeUndefined()
+
+    expect(report).toHaveBeenCalledTimes(2)
+    expect(survivor).toHaveBeenCalledTimes(2)
+  })
+
   it('shows 已停止 after a later listing commit without calling redetect', async () => {
     const listing = new FakeListingSource()
     listing.scriptNext(listingOf([], [{

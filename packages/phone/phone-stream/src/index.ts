@@ -241,7 +241,7 @@ export class PhoneStream extends Service {
         throw new HttpError(400, 'bad-request', 'deviceId is required')
       }
       const id = deviceId(rawId)
-      const list = await this.ctx.phoneDevices.listDevices()
+      const list = await this.ctx.phoneDevices.listDevices(signal)
       if (this.isClosing(signal)) { this.rejectClosing(res, false); return }
       const knownReal = list.ios.reals.find(ref => ref.id === id)
       const knownSimulator = list.ios.simulators.find(ref => ref.id === id)
@@ -297,10 +297,10 @@ export class PhoneStream extends Service {
         throw new HttpError(400, 'bad-request', 'deviceId is required')
       }
       const id = deviceId(rawId)
-      await this.requireManagedAgentDevice(id)
+      await this.requireManagedAgentDevice(id, signal)
       if (this.isClosing(signal)) { this.rejectClosing(res, false); return }
       if (pathname === `${PHONE_AGENT_PATH}/status`) {
-        const status = await this.ctx.phoneDevices.agentStatus(id)
+        const status = await this.ctx.phoneDevices.agentStatus(id, signal)
         if (this.isClosing(signal)) { this.rejectClosing(res, false); return }
         writeJson(res, 200, status)
         return
@@ -308,7 +308,7 @@ export class PhoneStream extends Service {
       if (body.force !== undefined && typeof body.force !== 'boolean') {
         throw new HttpError(400, 'bad-request', 'force must be a boolean')
       }
-      const installed = await this.ctx.phoneDevices.installAgent(id, { force: body.force === true })
+      const installed = await this.ctx.phoneDevices.installAgent(id, { force: body.force === true, signal })
       if (this.isClosing(signal)) { this.rejectClosing(res, false); return }
       writeJson(res, 200, installed)
     } catch (error) {
@@ -316,8 +316,8 @@ export class PhoneStream extends Service {
     }
   }
 
-  private async requireManagedAgentDevice(id: DeviceId): Promise<void> {
-    const list = await this.ctx.phoneDevices.listDevices()
+  private async requireManagedAgentDevice(id: DeviceId, signal: AbortSignal): Promise<void> {
+    const list = await this.ctx.phoneDevices.listDevices(signal)
     if ([...list.android, ...list.ios.reals].some(device => device.id === id)) return
     if (list.ios.simulators.some(device => device.id === id)) {
       throw new HttpError(400, 'agent-not-managed', 'phone agent operations require Android or an iOS real device')
@@ -343,7 +343,7 @@ export class PhoneStream extends Service {
       return
     }
     try {
-      const list = await this.ctx.phoneDevices.listDevices()
+      const list = await this.ctx.phoneDevices.listDevices(signal)
       if (this.isClosing(signal)) { this.rejectClosing(res, false); return }
       const refOf = ({
         id, name, kind, state, online, logicalDisplay,
