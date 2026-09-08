@@ -16,6 +16,7 @@
     "musl-gcc",
     "openssl",
     "ps",
+    "powershell.exe",
     "postgres",
     "python3",
     "postgres",
