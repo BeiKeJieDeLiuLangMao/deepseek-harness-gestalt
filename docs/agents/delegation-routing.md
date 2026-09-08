@@ -39,9 +39,11 @@ An installation-specific mapping may supplement this reference. [The optional CL
 
 Before creating a child, inspect relevant direct continuable children when the runtime provides that catalog.
 
-**Continue a direct child** for a related follow-up when its evidence remains current, its fixed model still fits, its scope and permissions still fit, and independence is unnecessary. Send a delta brief: the new objective, current base, changed files or invalidated facts, retained constraints, and completion evidence. A follow-up message schedules the child's next turn; it does not change the route or redirect work already running.
+Treat ownership as delivery-scoped. A child that owns one delivery unit remains its owner through implementation, local tests, review findings, integration failures, and acceptance fixes. An independent reviewer remains responsible for delta review of its findings, and an environment owner remains responsible through rebuilds, diagnosis, re-walks, and cleanup. The coordinator decides any additional write-capable owner; a child may propose a split but does not recursively create one.
 
-**Start a fresh child** for independent review, a model change, stale or systematically incorrect assumptions, unrelated work, or a task whose concise handoff costs less than repairing old context.
+**Continue a direct child** for a related follow-up when its evidence remains current, its fixed model still fits, its scope and permissions still fit, and independence is unnecessary. Send a delta brief: the new objective, current base, changed files or invalidated facts, retained constraints, and completion evidence. A follow-up message schedules the child's next turn; it does not change the route or redirect work already running. Batch coherent findings instead of creating one child or turn per small fix.
+
+**Start a fresh child** for independent review, a model capability the current child lacks, stale or systematically incorrect assumptions, unrelated work, an unavailable owner, or a standalone request after the earlier delivery closed. A merely preferred model does not replace a suitable owner. Record the reason and hand off the current base, retained evidence, open findings, and next check. Mark the old owner complete or replaced before the new child writes. A repeated command failure by itself is not a routing reason; keep the current owner and replace the retry with a discriminating experiment.
 
 **Fork the parent** only when the task genuinely requires decisions spread across completed parent turns and a concise brief would lose necessary context. A fork is not an independent review and does not imply provider-side cache reuse.
 
@@ -62,4 +64,4 @@ Use a minimal task packet:
 - required distinctions between confirmed facts, hypotheses, and unknowns;
 - expected findings, checks actually run, and unresolved limitations.
 
-Reuse saves reconstruction only when the retained evidence outweighs stale context, correction cost, queue delay, and bias. Do not use arbitrary token thresholds or claim persistent KV cache. If a route repeatedly violates evidence or tool requirements, narrow once with explicit correction, then start fresh on a better-fitting route.
+Reuse saves reconstruction only when the retained evidence outweighs stale context, correction cost, queue delay, and bias. Do not use arbitrary token thresholds or claim persistent KV cache. If a route repeatedly violates evidence or tool requirements, narrow once with explicit correction, then record the replacement and start fresh on a better-fitting route.
