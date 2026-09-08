@@ -1,6 +1,6 @@
 import { chmod, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join, posix } from 'node:path'
+import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import {
   executableOnHost, parseAndroidLogicalDisplay, readAndroidLogicalDisplay, resolveAdbExecutable,
@@ -63,10 +63,11 @@ describe('readAndroidLogicalDisplay', () => {
     }, { platform: 'linux', exec: () => { throw new Error('adb missing') } })).toBeUndefined()
   })
 
-  it.runIf(process.platform !== 'win32')('uses the default executable probe for a POSIX SDK', async () => {
+  it('uses the default executable probe for the Host SDK', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'dsh-adb-sdk-'))
-    const platformTools = posix.join(dir, 'platform-tools')
-    const adb = posix.join(platformTools, 'adb')
+    const platformTools = join(dir, 'platform-tools')
+    const basename = process.platform === 'win32' ? 'adb.exe' : 'adb'
+    const adb = join(platformTools, basename)
     const exec = vi.fn((options: {
       readonly executablePath: string
       readonly args: readonly string[]
@@ -79,8 +80,8 @@ describe('readAndroidLogicalDisplay', () => {
       expect(readAndroidLogicalDisplay({
         deviceId: 'fbcd1d21',
         environment: { ANDROID_SDK_ROOT: dir },
-      }, { platform: 'linux', exec })).toEqual({ width: 2248, height: 1080 })
-      expect(exec.mock.calls[0]![0].executablePath).toBe('adb')
+      }, { exec })).toEqual({ width: 2248, height: 1080 })
+      expect(exec.mock.calls[0]![0].executablePath).toBe(basename)
 
       await mkdir(platformTools)
       await writeFile(adb, '')
@@ -89,7 +90,7 @@ describe('readAndroidLogicalDisplay', () => {
       expect(readAndroidLogicalDisplay({
         deviceId: 'fbcd1d21',
         environment: { ANDROID_SDK_ROOT: dir },
-      }, { platform: 'linux', exec })).toEqual({ width: 2248, height: 1080 })
+      }, { exec })).toEqual({ width: 2248, height: 1080 })
       expect(exec.mock.calls[0]![0].executablePath).toBe(adb)
     } finally {
       await rm(dir, { recursive: true, force: true })
