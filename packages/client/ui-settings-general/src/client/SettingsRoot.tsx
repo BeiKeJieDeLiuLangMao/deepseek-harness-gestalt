@@ -13,7 +13,7 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
 import {
-  ConnectionIndicator,
+  ConnectionIndicator, useOverlayLock,
   IconAgentPresetOutline16, IconCloseOutline16, IconDataOutline16,
   IconPersonalizationOutline16, IconSettingsOutline16,
 } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -104,13 +104,7 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
   const [localOpen, setOpen] = useState(false)
   const chromeRequest = useChromeState(state => state)
   const open = chromeMode === 'web' ? localOpen : chromeRequest !== null
-  useEffect(() => {
-    if (chromeMode !== 'web' || !open) return
-    window.dispatchEvent(new CustomEvent('dsh-overlay-lock', { detail: { held: true } }))
-    return () => {
-      window.dispatchEvent(new CustomEvent('dsh-overlay-lock', { detail: { held: false } }))
-    }
-  }, [chromeMode, open])
+  useOverlayLock(chromeMode === 'web' && open)
   const [activeId, setActiveId] = useState<string | undefined>(undefined)
   const [completedOnboarding, setCompletedOnboarding] = useState<ReadonlySet<string>>(() => new Set())
   const [showRecovery, setShowRecovery] = useState(false)

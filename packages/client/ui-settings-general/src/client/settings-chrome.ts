@@ -105,13 +105,13 @@ export class SettingsChrome {
       requestId: this.mode === 'overlay' && current !== null ? current.requestId : randomUUID(),
       ...(sectionId === undefined ? {} : { sectionId }),
     }
-    this.eventRevision += 1
+    const revision = ++this.eventRevision
     this.publish(request)
     this.own(async () => {
       try {
         await bridge.chromeOverlayShow({ kind: 'settings', ...request })
       } catch (error) {
-        if (!this.stopped && this.state.getSnapshot()?.requestId === request.requestId) this.publish(null)
+        if (!this.stopped && revision === this.eventRevision) this.publish(null)
         throw error
       }
     })

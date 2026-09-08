@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useEffect, useState } from 'react'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { subscribeOverlayLock } from '@deepseek-ai/dsh-client-ui-primitives/src/overlay-lock.ts'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type { SettingsRootComponentProps } from '../src/client/shell-contract.ts'
 import { SettingsRoot } from '../src/client/SettingsRoot.tsx'
@@ -230,6 +231,20 @@ describe('SettingsPage close paths', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Close' }))
     expect(screen.queryByRole('dialog')).toBeNull()
     await vi.waitFor(() => { expect(document.activeElement).toBe(trigger) })
+  })
+
+  it('releases the shared Web overlay lock on close and unmount', () => {
+    const held: boolean[] = []
+    const off = subscribeOverlayLock((value) => { held.push(value) })
+    const mounted = mount()
+    openPanel()
+    expect(held).toEqual([true])
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+    expect(held).toEqual([true, false])
+    openPanel()
+    mounted.view.unmount()
+    expect(held).toEqual([true, false, true, false])
+    off()
   })
 
   it('keeps the page open when its empty surface is clicked', () => {
