@@ -17,12 +17,18 @@
  * snapshot inside the boundary prompt.
  */
 import type { SessionId } from '@deepseek-ai/dsh-session'
-/** The durable thread-label prefix used to identify Side Chat Sessions. */
+/**
+ * The durable thread-label prefix used to identify Side Chat Sessions.
+ * @uiI18n protocol
+ */
 export const SIDE_LABEL_PREFIX = 'Side: '
 
-/** The historical placeholder label of a persisted empty thread created by
- *  builds that published the child before its first prompt. The client renders
- *  it localized; the prefix keeps the row filter honest. */
+/**
+ * The historical placeholder label of a persisted empty thread created by
+ * builds that published the child before its first prompt. The client renders
+ * it localized; the prefix keeps the row filter honest.
+ * @uiI18n protocol
+ */
 export const SIDE_NEW_THREAD_TITLE = 'Side: New thread'
 
 /** Maximum code points kept in a durable thread label (matches subagent labels). */

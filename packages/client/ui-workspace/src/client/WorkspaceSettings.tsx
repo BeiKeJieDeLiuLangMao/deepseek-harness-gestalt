@@ -398,9 +398,9 @@ function MemberRowItem({ row, gateway, onAct, t }: {
           onAct(() => gateway.changeRole(row.membershipId, role))
         }}
       >
-        <option value="owner">owner</option>
-        <option value="admin">admin</option>
-        <option value="member">member</option>
+        <option value="owner">{t('members.role.owner')}</option>
+        <option value="admin">{t('members.role.admin')}</option>
+        <option value="member">{t('members.role.member')}</option>
       </select>
       <input
         className={css.tagsInput}

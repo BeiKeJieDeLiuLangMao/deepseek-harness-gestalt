@@ -48,6 +48,19 @@ const IMMUTABLE_LANGUAGE_TOKENS = new Set([
   'undefined',
 ])
 const LOCALE_KEY = /^[a-z][a-zA-Z0-9]*(?:[._-][a-zA-Z0-9]+)+$/
+const NON_UI_LITERAL_CATEGORIES = new Set(['brand', 'diagnostic', 'protocol'])
+
+function htmlStaticUiText(text: string): string {
+  const trimmed = text.trimStart()
+  if (!/^<!doctype\s+html(?:\s|>)/i.test(trimmed)) return text
+  const attributes = [...trimmed.matchAll(
+    /(?:^|\s)(?:alt|aria-description|aria-label|aria-valuetext|placeholder|title)\s*=\s*(?:(["'])(.*?)\1|([^\s"'`=<>]+))/giu,
+  )].map(match => match[2] ?? match[3] ?? '')
+  const bodyText = trimmed
+    .replace(/<!doctype[^>]*>/giu, ' ')
+    .replace(/<[^>]*>/gu, ' ')
+  return [...attributes, bodyText].join(' ')
+}
 
 /** One hard-coded product-copy occurrence. */
 export interface UiI18nViolation {
@@ -72,7 +85,7 @@ function localeOwner(file: string): boolean {
 }
 
 function containsProductText(text: string): boolean {
-  const normalized = text.replace(/\s+/g, ' ').trim()
+  const normalized = htmlStaticUiText(text).replace(/\s+/g, ' ').trim()
   return normalized !== ''
     && !IMMUTABLE_LANGUAGE_TOKENS.has(normalized)
     && !LOCALE_KEY.test(normalized)
@@ -94,8 +107,44 @@ function compactText(text: string): string {
 }
 
 function looksLikeNaturalText(text: string): boolean {
-  const normalized = text.replace(/\s+/g, ' ').trim()
+  const normalized = htmlStaticUiText(text).replace(/\s+/g, ' ').trim()
   return /\s|[\u3400-\u9fff]/u.test(normalized) || /^[A-Z]/.test(normalized)
+}
+
+function hasNonUiLiteralCategory(node: ts.Node): boolean {
+  return ts.getJSDocTags(node).some(tag => (
+    tag.tagName.text === 'uiI18n'
+    && typeof tag.comment === 'string'
+    && NON_UI_LITERAL_CATEGORIES.has(tag.comment.trim())
+  ))
+}
+
+function hasInvariantJsxAncestor(node: ts.JsxText): boolean {
+  let current: ts.Node = node.parent
+  while (!ts.isSourceFile(current)) {
+    if (ts.isJsxElement(current)) {
+      const translateNo = current.openingElement.attributes.properties.some(property => (
+        ts.isJsxAttribute(property)
+        && property.name.getText() === 'translate'
+        && property.initializer !== undefined
+        && ts.isStringLiteral(property.initializer)
+        && property.initializer.text === 'no'
+      ))
+      if (translateNo) return true
+      const svgBrandText = current === node.parent
+        && current.openingElement.tagName.getText() === 'text'
+        && current.openingElement.attributes.properties.some(property => (
+          ts.isJsxAttribute(property)
+          && property.name.getText() === 'data-ui-i18n'
+          && property.initializer !== undefined
+          && ts.isStringLiteral(property.initializer)
+          && property.initializer.text === 'brand'
+        ))
+      if (svgBrandText) return true
+    }
+    current = current.parent
+  }
+  return false
 }
 
 /**
@@ -233,7 +282,7 @@ export function findUiI18nViolations(file: string, sourceText: string): UiI18nVi
   }
 
   const visit = (node: ts.Node): void => {
-    if (ts.isJsxText(node)) report(node, node.text, 'JSX text')
+    if (ts.isJsxText(node) && !hasInvariantJsxAncestor(node)) report(node, node.text, 'JSX text')
 
     if (ts.isJsxAttribute(node)) {
       const name = node.name.getText(source)
@@ -260,7 +309,9 @@ export function findUiI18nViolations(file: string, sourceText: string): UiI18nVi
 
     if (ts.isVariableDeclaration(node) && node.initializer !== undefined) {
       const name = propertyName(node.name)
-      if (name !== undefined && (COPY_NAME.test(name) || COPY_SUFFIX.test(name))) {
+      if (name !== undefined
+        && !hasNonUiLiteralCategory(node)
+        && (COPY_NAME.test(name) || COPY_SUFFIX.test(name))) {
         collectExpression(node.initializer, `${name} value`)
       }
     }

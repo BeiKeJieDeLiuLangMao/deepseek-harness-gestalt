@@ -102,6 +102,8 @@ export const zh = {
   terminalError: '终端连接失败',
   terminalConnectFailed: '终端多次连接失败',
   terminalRetry: '重试',
+  renderError: 'dsh-better-sidebar：{message}',
+  chunkMissing: '[dsh-better-sidebar] 分块“{chunk}”缺少组件',
   terminalDepsFailed: '终端依赖 node-pty 加载失败',
   terminalDepsHint: '在 DSH 所在环境的终端或 cmd 中执行以下命令修复，然后点重试（node-pty 与 DSH 核心保持同一版本）：',
   terminalDepsProfile: '（检测到 profile：{profile}）',
@@ -510,6 +512,8 @@ export const en: Record<keyof typeof zh, string> = {
   terminalError: 'Terminal connection failed',
   terminalConnectFailed: 'Terminal failed to connect repeatedly',
   terminalRetry: 'Retry',
+  renderError: 'dsh-better-sidebar: {message}',
+  chunkMissing: '[dsh-better-sidebar] chunk "{chunk}" is missing its component',
   terminalDepsFailed: 'Terminal dependency node-pty failed to load',
   terminalDepsHint: 'Run the command below in a terminal or cmd on the DSH machine to repair it, then retry (node-pty stays in sync with the DSH core version):',
   terminalDepsProfile: ' (detected profile: {profile})',
@@ -941,6 +945,11 @@ export function t(key: CopyKey, params?: Record<string, string | number>): strin
     }
   }
   return text
+}
+
+/** Format the shared editor save title with its platform shortcut. */
+export function saveShortcutTitle(): string {
+  return `${t('save')} (Ctrl/Cmd+S)`
 }
 
 /** Whether the active locale is Chinese (used for selectors). */

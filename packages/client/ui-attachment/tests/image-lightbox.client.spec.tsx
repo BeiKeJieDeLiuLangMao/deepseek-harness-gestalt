@@ -6,7 +6,7 @@ import { ImageLightbox } from '../src/ImageLightbox.tsx'
 
 afterEach(cleanup)
 
-const labels = { dialog: '原图预览', close: '关闭原图预览' }
+const labels = { dialog: '原图预览', close: '关闭原图预览', pin: (index: number) => `标注点 ${index}` }
 
 describe('ImageLightbox', () => {
   it('focuses its close control, closes by button and Escape, and restores focus', () => {
@@ -107,7 +107,7 @@ describe('ImageLightbox', () => {
     expect(onPlace).not.toHaveBeenCalled()
     expect(view.getByRole('alert').textContent).toBe('Cannot add another pin')
 
-    const pin = view.getByRole('button', { name: 'Pin 1' })
+    const pin = view.getByRole('button', { name: '标注点 1' })
     fireEvent.pointerDown(pin)
     fireEvent.click(pin)
     expect(onSelect).toHaveBeenCalledWith('pin-1')

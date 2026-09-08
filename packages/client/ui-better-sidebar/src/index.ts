@@ -699,6 +699,7 @@ export function apply(ctx: SidebarContext, config?: SidebarConfig): void {
   // native dependencies — the tool works even in node-pty degraded mode.
   const agentOpenRegistry = new AgentOpenRegistry((error) => {
     const detail = error instanceof Error ? error.message : String(error)
+    /** @uiI18n diagnostic */
     const message = `[dsh-better-sidebar] sidebar_open sender failed: ${detail}`
     if (ctx.logger !== undefined) ctx.logger.warn(message)
     else console.error(message)
