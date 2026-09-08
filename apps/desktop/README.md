@@ -51,6 +51,7 @@ The Desktop owner consumes the authoritative Host mux and Session event streams 
 ```sh
 pnpm install
 DSH_DESKTOP_OPERATED_PLATFORM_CONFIG=/absolute/path/to/operated-platform.json pnpm gestalt:dev
+pnpm --dir apps/desktop test:e2e-critical-path-electron
 DSH_SUB2API_E2E_SOURCES=/absolute/path/to/public-sub2api-sources.json DSH_SUB2API_E2E_SIDECAR_SHA=<release-commit> DSH_SUB2API_E2E_CREDENTIALS_SOURCE=/absolute/path/to/read-only-credentials.yaml pnpm --dir apps/desktop test:e2e-sub2api
 ```
 
@@ -87,4 +88,5 @@ The hoisted deploy includes workspace packages without pnpm's linked virtual dep
 - **Packaged extraResources Node + dsh snapshot is assembled by the release workflow** — `gestalt:dev` runs the workspace source tree.
 - **Windows Authenticode is absent** — SmartScreen warns; the updater still runs.
 - **Companion release evidence is repository-owned** — Node 22 and 24 plus iOS Simulator WKWebView and Android Emulator WebView execute the exact checked-in Snow JS/WASM package and its bounded attack cases. The assembled Desktop/Mobile product flow remains the acceptance surface; local Vite, test certificates, and `prototype-companion` are not product acceptance.
+- **The non-Member-Questions critical-path Electron acceptance is source-only** — `pnpm run test:e2e-critical-path-electron` builds current source once, launches one isolated Desktop three times, and drives Workspace connection, main-Session prompting, live Models configuration, Side Chat model and permission selection, process restoration, close, and durable archive verification. Each invocation owns an exclusive artifact namespace, parses production JSONL through its persistence owner, samples exact Electron and Host process identities with their descendants, and removes any retained file that matches credential material before writing its final result. An owner or scan that cannot settle leaves a failed result, retains scratch for diagnosis, and suppresses the artifact share path. Its loopback model records only phase, request path, and model id; the lane never reads the normal `DSH_HOME` and requires a visible `DISPLAY` on Linux.
 - **Project Members three-installation Electron acceptance is source-only** — `pnpm run test:e2e-project-members-electron` rebuilds current source, boots A1/B1/B2 against one local keyless Platform, and requires a visible `DISPLAY` on Linux. Packaged Desktop never accepts `--dsh-e2e-profile`.

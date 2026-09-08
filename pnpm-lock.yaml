@@ -594,6 +594,9 @@ importers:
       '@deepseek-ai/dsh-remote-access-http':
         specifier: workspace:^
         version: link:../../packages/platform/remote-access-http
+      '@deepseek-ai/dsh-session-persistence-jsonl':
+        specifier: workspace:^
+        version: link:../../packages/session/session-persistence-jsonl
       '@deepseek-ai/dsh-storage':
         specifier: workspace:^
         version: link:../../packages/storage/storage
@@ -603,6 +606,9 @@ importers:
       '@deepseek-ai/dsh-storage-sqlite':
         specifier: workspace:^
         version: link:../../packages/storage/storage-sqlite
+      '@deepseek-ai/dsh-subprocess-local':
+        specifier: workspace:^
+        version: link:../../packages/subprocess/subprocess-local
       '@deepseek-ai/dsh-system-prompt':
         specifier: workspace:^
         version: link:../../packages/core/system-prompt
