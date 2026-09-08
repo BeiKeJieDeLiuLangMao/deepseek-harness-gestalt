@@ -110,7 +110,7 @@ describe('Desktop Electron runner ownership', () => {
       .toBe('pnpm run typecheck:fake-policy && pnpm run typecheck:source-e2e && tsc -p tests/e2e-electron/tsconfig.json')
     expect(desktopManifest.scripts?.['typecheck:e2e-electron']).not.toContain('tsc -p tsconfig.json')
     expect(rootManifest.scripts?.['typecheck:contracts-ready'])
-      .toContain('pnpm --filter @deepseek-ai/dsh-desktop run typecheck:e2e-electron')
+      .toBe('node scripts/check-desktop-compiler-faces.mjs --contracts-ready')
     const sourceE2E = JSON.parse(await readFile(join(repoRoot, 'apps', 'desktop', 'tests', 'tsconfig.source-e2e.json'), 'utf8')) as {
       compilerOptions?: {
         noEmit?: boolean
@@ -153,7 +153,8 @@ describe('Desktop Electron runner ownership', () => {
     expect(main).toContain("desktopE2EProfile?.windowPresentation ?? 'visible'")
     expect(main).toContain('...desktopWindowConstructorOptions(windowPresentation)')
     expect(main).toContain('if (handleDesktopWindowActivate(windowPresentation, window) === \'handled\') return')
-    expect(main).toContain("if (planDesktopWindowReopen(host !== undefined) === 'boot')")
+    expect(main).toContain('const running = hostLifecycle.current')
+    expect(main).toContain('await revealCurrentHost(target, running')
     expect(main).toContain('await boot()')
     expect(main).toContain('const target = createWindow()')
     expect(main).not.toMatch(/if \(process\.env\.CI/)
