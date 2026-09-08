@@ -1984,7 +1984,7 @@ describe('phone runtime service lifecycle', () => {
     await second.claim()
     const controller = new AbortController()
     const replacing = context.phoneDevices.activateExecutable(second.executablePath, controller.signal)
-    void replacing.catch((_activationError) => {
+    void replacing.catch((_activationError: unknown) => {
       // Observe an early activation rejection; the original promise retains the asserted outcome.
     })
     await second.awaitOwnedOnlineAt(first.baseUrl)
