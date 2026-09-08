@@ -379,22 +379,22 @@ export function parseMobileConversationProjection(
   const lastAgentError = record.lastAgentError === null ? null : projectionString(record.lastAgentError)
   return {
     sessionId,
-    nodes: nodes as unknown as MobileConversationProjectionDto['nodes'],
+    nodes,
     turnTimings,
     turnEnds,
-    partial: partial as MobileConversationProjectionDto['partial'],
-    runningCalls: runningCalls as unknown as MobileConversationProjectionDto['runningCalls'],
+    partial,
+    runningCalls,
     pending,
-    queue: queue as unknown as MobileConversationProjectionDto['queue'],
+    queue,
     running: projectionBoolean(record.running),
-    subagent: subagent as MobileConversationProjectionDto['subagent'],
+    subagent,
     composerPhase: projectionEnum(record.composerPhase, ['blank', 'engaging', 'active']),
     removed: projectionBoolean(record.removed),
     openState: projectionEnum(record.openState, ['cold', 'loading', 'open', 'error']),
-    openError: openError as MobileConversationProjectionDto['openError'],
+    openError,
     hasMore: projectionBoolean(record.hasMore),
     loadingOlder: projectionBoolean(record.loadingOlder),
-    promptError: promptError as MobileConversationProjectionDto['promptError'],
+    promptError,
     blank: projectionBoolean(record.blank),
     lastAgentError,
   }
@@ -913,11 +913,11 @@ function adaptSessions(dto: MobileSessionListDto): SessionListState {
     byId,
     current: dto.current === null ? undefined : SessionId(dto.current),
     phase: dto.phase,
-    subagentsByParent: dto.subagentsByParent as unknown as SessionListState['subagentsByParent'],
-    jobsBySession: dto.jobsBySession as SessionListState['jobsBySession'],
+    subagentsByParent: dto.subagentsByParent,
+    jobsBySession: dto.jobsBySession,
     currentAddress: dto.currentAddress === null
       ? undefined
-      : dto.currentAddress as SessionListState['currentAddress'],
+      : dto.currentAddress,
   }
 }
 

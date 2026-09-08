@@ -26,9 +26,7 @@ import type {} from '@deepseek-ai/dsh-project-membership-client'
 import type { WorkspaceBrowserInjected, WorkspacePickerInjected } from './contract/slots.ts'
 import { Config, type WorkspaceConfig } from '../config.ts'
 import { createMembershipAvailabilitySource, membershipGatewayOf } from './membership-gateway.ts'
-import {
-  createPendingInvitationsSource, type PendingInvitationPollClient,
-} from './pending-invitations-source.ts'
+import { createPendingInvitationsSource } from './pending-invitations-source.ts'
 import { UiWorkspaceService } from './navigation.ts'
 import { createWorkspaceViewStore } from './stores.ts'
 import { WorkspaceBrowser } from './rows/WorkspaceBrowser.tsx'
@@ -89,7 +87,7 @@ export function apply(ctx: Context, config?: WorkspaceConfig): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-workspace: dictionaries')
   const pollIntervalMs = Config(config ?? {}).pollIntervalMs as number
   const pendingInvitations = createPendingInvitationsSource(
-    () => ctx.get('projectMembershipClient') as PendingInvitationPollClient | undefined,
+    () => ctx.get('projectMembershipClient'),
     pollIntervalMs,
   )
   const membershipAvailability = createMembershipAvailabilitySource(

@@ -137,9 +137,7 @@ export const memberQuestionRemoteSettleRequestSchema = z.strictObject({
  * Canonical terminal returned by Host-owned Remote settlement.
  * @typert schema
  */
-export const memberQuestionRemoteSettleResponseSchema = terminalSchema as unknown as z.ZodType<
-  MemberQuestionRemoteSettleResponse
->
+export const memberQuestionRemoteSettleResponseSchema: z.ZodType<MemberQuestionRemoteSettleResponse> = terminalSchema
 
 /**
  * Exact human-turn admission request: encoded uploads only, no attachment refs.
