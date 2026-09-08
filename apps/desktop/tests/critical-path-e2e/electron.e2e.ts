@@ -118,6 +118,9 @@ async function createPhase(): Promise<void> {
 
 async function restorePhase(): Promise<void> {
   const state = await readSessionState()
+  const mainRow = await element(browser, `[data-session-row="${state.mainSessionId}"]`)
+  await mainRow.waitForClickable({ timeout: 15_000 })
+  await mainRow.click()
   await expandSidePanel()
   const panel = await visiblePanel()
   await element(panel, `[title="${SIDE_PROMPT}"]`)
@@ -127,9 +130,6 @@ async function restorePhase(): Promise<void> {
   await modelTrigger(panel, SIDE_MODEL)
   await permissionTrigger(panel, 'Read Only')
 
-  const mainRow = await element(browser, `[data-session-row="${state.mainSessionId}"]`)
-  await mainRow.waitForClickable({ timeout: 15_000 })
-  await mainRow.click()
   await modelTrigger(panel, SIDE_MODEL)
 
   const before = await childLog(state.childId)
