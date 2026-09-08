@@ -18,10 +18,12 @@ import {
   terminateOwnedProcesses,
 } from '../electron-runner-infrastructure.ts'
 import {
+  collectAmbientCredentials,
   readOptionalFile,
   readProcessEvidence,
   redactArtifactDiagnostic,
   scanRetainedArtifacts,
+  type AmbientCredential,
   type PhaseProcessEvidence,
 } from './artifact-io.ts'
 import {
@@ -39,7 +41,7 @@ const artifactBase = process.env.DSH_CRITICAL_PATH_ELECTRON_ARTIFACTS
   ?? join(repoRoot, '.artifacts', 'critical-path-electron')
 await mkdir(artifactBase, { recursive: true, mode: 0o700 })
 const artifactRoot = await mkdtemp(join(artifactBase, `${stamp}-${shortHead}-`))
-const secretValues = ambientSecretValues(process.env)
+const ambientCredentials = collectAmbientCredentials(process.env)
 
 const phases: readonly CriticalPathPhase[] = ['create', 'restore', 'archive']
 const buildResults: Array<{
@@ -303,7 +305,7 @@ try {
     cleanupFailures.push(sourceMovementFailure)
   }
   if (ownersQuiescent) {
-    const scan = await scanRetainedArtifacts(artifactRoot, secretValues)
+    const scan = await scanRetainedArtifacts(artifactRoot, ambientCredentials)
     if (scan.shareable) {
       if (scan.removedFiles > 0) {
         cleanupFailures.push(new Error(
@@ -359,7 +361,7 @@ async function retainResultManifest(
         mainSession: join(artifactRoot, 'main-session-evidence.jsonl'),
         childSession: join(artifactRoot, 'child-session-evidence.jsonl'),
       },
-      failures: failures.map(failure => failureSummary(failure, secretValues)),
+      failures: failures.map(failure => failureSummary(failure, ambientCredentials)),
     }, undefined, 2) + '\n')
   } catch (resultEvidenceFailure) {
     cleanupFailures.push(resultEvidenceFailure)
@@ -370,14 +372,14 @@ function currentFailures(failure: unknown, cleanupFailures: readonly unknown[]):
   return [...failure === undefined ? [] : [failure], ...cleanupFailures]
 }
 
-function failureSummary(error: unknown, secrets: readonly string[]): { name: string; message: string } {
+function failureSummary(error: unknown, credentials: readonly AmbientCredential[]): { name: string; message: string } {
   if (error instanceof Error) {
     return {
-      name: redactArtifactDiagnostic(error.name, secrets),
-      message: redactArtifactDiagnostic(error.message, secrets),
+      name: redactArtifactDiagnostic(error.name, credentials),
+      message: redactArtifactDiagnostic(error.message, credentials),
     }
   }
-  return { name: 'Error', message: redactArtifactDiagnostic(String(error), secrets) }
+  return { name: 'Error', message: redactArtifactDiagnostic(String(error), credentials) }
 }
 
 function throwFailures(failures: readonly unknown[], message: string): void {
@@ -430,12 +432,6 @@ function identitiesOf(evidence: PhaseProcessEvidence | undefined): ProcessIdenti
 
 function processKey(phase: CriticalPathPhase, identity: ProcessIdentity): string {
   return `${phase}:${String(identity.pid)}:${identity.started}`
-}
-
-function ambientSecretValues(source: NodeJS.ProcessEnv): string[] {
-  return [...new Set(Object.entries(source).flatMap(([name, value]) => (
-    /KEY|SECRET|TOKEN|PASSWORD/i.test(name) && value !== undefined && value.length > 0 ? [value] : []
-  )))]
 }
 
 async function assertSourceUnchanged(): Promise<void> {
