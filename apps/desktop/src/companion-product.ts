@@ -968,11 +968,13 @@ function parseConversationHistory(
     } else if (event.type === 'assistant/message') {
       const message = event.data.message
       if (!isRecord(message) || !Array.isArray(message.content)) return undefined
+      if (event.data.interrupted !== undefined && event.data.interrupted !== true) return undefined
       nodes.push({
         kind: 'assistant', seq: event.seq, time: event.time,
         messageId: typeof message.id === 'string' ? message.id : undefined,
         turn: numberOr(event.data.turn, 0), step: numberOr(event.data.step, 0),
         blocks: message.content.map(assistantBlock),
+        ...(event.data.interrupted === true ? { interrupted: true } : {}),
       })
       if (partial?.turn === numberOr(event.data.turn, 0) && partial.step === numberOr(event.data.step, 0)) {
         partial = undefined

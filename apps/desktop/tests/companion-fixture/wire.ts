@@ -12,6 +12,7 @@ export type FixtureCommand =
   | { type: 'append'; id: SessionId; event: 'step/start'; data: SessionEventMap['step/start'] }
   | { type: 'append'; id: SessionId; event: 'assistant/chunk'; data: SessionEventMap['assistant/chunk'] }
   | { type: 'message'; id: SessionId; text: string }
+  | { type: 'finish-cancelled-response'; id: SessionId; turn: number; step: number; text: string }
   | { type: 'events'; id: SessionId }
   | { type: 'cancelled' }
   | { type: 'workspace-create'; root: string; name: string }
@@ -36,6 +37,7 @@ export interface FixtureResults {
   'create-session': undefined
   append: undefined
   message: undefined
+  'finish-cancelled-response': undefined
   events: SessionEvent[]
   cancelled: number
   'workspace-create': { id: WorkspaceId }
@@ -74,6 +76,10 @@ export function isFixtureRequest(value: unknown): value is FixtureRequest {
         && (c.event === 'step/start' || (c.event === 'assistant/chunk' && record(c.data.chunk)
           && c.data.chunk.index === 0 && ((c.data.chunk.type === 'block-start' && c.data.chunk.blockType === 'text')
             || (c.data.chunk.type === 'text-delta' && typeof c.data.chunk.text === 'string'))))))
+    case 'finish-cancelled-response': return typeof c.id === 'string'
+      && typeof c.turn === 'number' && Number.isSafeInteger(c.turn) && c.turn > 0
+      && typeof c.step === 'number' && Number.isSafeInteger(c.step) && c.step > 0
+      && typeof c.text === 'string' && c.text.trim() !== ''
     case 'message': return typeof c.id === 'string' && typeof c.text === 'string'
     case 'events': return typeof c.id === 'string'
     case 'workspace-create': return typeof c.root === 'string' && typeof c.name === 'string'

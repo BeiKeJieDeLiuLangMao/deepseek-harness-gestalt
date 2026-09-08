@@ -8,7 +8,7 @@ import AgentRegistry, { type Agent } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import LocalAttachmentStore from '@deepseek-ai/dsh-attachment-local'
 import { createApiProxy, toFetchHandler } from '@deepseek-ai/dsh-host-apiproxy'
-import LlmRuntime, { createUserMessage } from '@deepseek-ai/dsh-llm'
+import LlmRuntime, { createAssistantMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import { WebSocketDownlinks } from '@deepseek-ai/dsh-client-connection/src/websocket-downlink.ts'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import SqliteSessionPersistence from '@deepseek-ai/dsh-session-persistence-sqlite'
@@ -81,6 +81,20 @@ async function dispatch(command: FixtureCommand): Promise<unknown> {
       const session = ctx.sessions.get(command.id)
       if (session === undefined) throw new Error(`Missing fixture Session ${command.id}`)
       session.append(command.event, command.data)
+      return
+    }
+    case 'finish-cancelled-response': {
+      const session = ctx.sessions.get(command.id)
+      if (session === undefined) throw new Error(`Missing fixture Session ${command.id}`)
+      session.append('assistant/message', {
+        turn: command.turn, step: command.step, interrupted: true,
+        message: createAssistantMessage({
+          content: [{ type: 'text', text: command.text }],
+          source: { provider: 'assembled-provider', model: 'assembled-model' },
+        }),
+      }, { surfaceOp: 'append' })
+      session.append('step/end', { turn: command.turn, step: command.step })
+      session.append('turn/end', { turn: command.turn, reason: { kind: 'aborted', reason: { kind: 'user' } } })
       return
     }
     case 'message': {

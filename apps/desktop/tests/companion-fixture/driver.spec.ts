@@ -170,4 +170,15 @@ describe('suite-local fixture process ownership', () => {
     expect(isFixtureRequest({ id: 1, command: { type: 'settlement', token: 'other' } })).toBe(false)
     expect(isFixtureRequest({ id: 1, command: { type: 'append', id: 'session', event: 'arbitrary', data: {} } })).toBe(false)
   })
+  it('validates cancelled-response fixture arguments before dispatch', () => {
+    const command = { type: 'finish-cancelled-response', id: 'session', turn: 1, step: 1, text: 'delivered prefix' }
+    expect(isFixtureRequest({ id: 1, command })).toBe(true)
+    for (const invalid of [
+      { ...command, turn: 0 }, { ...command, step: 1.5 },
+      { ...command, text: ' ' }, { ...command, text: null }, { ...command, id: null },
+    ]) {
+      expect(isFixtureRequest({ id: 1, command: invalid })).toBe(false)
+    }
+  })
+
 })

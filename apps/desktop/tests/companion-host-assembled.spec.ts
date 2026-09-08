@@ -272,8 +272,20 @@ describe('assembled Desktop Companion Host search', () => {
     await surface.submit(assembled.sessionId, 'submitted through Companion v3')
     await expect.poll(async () => (await assembled.request({ type: 'events', id: assembled.sessionId })).some(event => event.type === 'user/message'
       && JSON.stringify(event.data).includes('submitted through Companion v3'))).toBe(true)
+    await assembled.request({ type: 'append', id: assembled.sessionId, event: 'turn/start', data: { turn: 1 } })
+    await assembled.request({ type: 'append', id: assembled.sessionId, event: 'step/start', data: { turn: 1, step: 1 } })
     surface.cancel(assembled.sessionId)
     await expect.poll(() => assembled.request({ type: 'cancelled' })).toBe(1)
+    await assembled.request({
+      type: 'finish-cancelled-response', id: assembled.sessionId, turn: 1, step: 1,
+      text: 'Cancelled Companion prefix',
+    })
+    surface.trackHistoryRefresh(assembled.sessionId, product.loadOlder(assembled.sessionId))
+    await expect.poll(() => surface.getSnapshot().conversations[assembled.sessionId]?.nodes
+      .find(node => node.kind === 'assistant')).toMatchObject({
+      kind: 'assistant', interrupted: true,
+      blocks: [{ kind: 'text', text: 'Cancelled Companion prefix' }],
+    })
 
     const resultCount = received.length
     const image = surface.loadImage(assembled.sessionId, assembled.image)
@@ -460,6 +472,17 @@ describe('assembled Desktop Companion Host search', () => {
       .toBeGreaterThan(surfaceOperations)
     expect(surface.getSnapshot().conversations[assembled.sessionId]?.partial)
       .toMatchObject({ blocks: [{ kind: 'text', text: 'LIVE_PUSH_OK' }] })
+    await assembled.request({
+      type: 'finish-cancelled-response', id: assembled.sessionId, turn: 1, step: 1,
+      text: 'LIVE_PUSH_OK',
+    })
+    await expect.poll(() => surface.getSnapshot().conversations[assembled.sessionId]?.nodes
+      .find(node => node.kind === 'assistant')).toMatchObject({
+      kind: 'assistant', interrupted: true,
+      blocks: [{ kind: 'text', text: 'LIVE_PUSH_OK' }],
+    })
+    expect(surface.getSnapshot().conversations[assembled.sessionId]?.partial).toBeNull()
+    expect(operationTypes.filter(type => type === 'load-history')).toHaveLength(historyOperations)
     const secondaryId = SessionId('desktop-secondary-workspace-session')
     await assembled.request({ type: 'create-session', id: secondaryId, createdAt: 100, cwd: secondaryRoot })
     await assembled.request({ type: 'workspace-attach', workspaceId: secondaryWorkspace.id, sessionId: secondaryId })
