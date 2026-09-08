@@ -1,6 +1,6 @@
 /** REAL Loader and TCP composition for open-registration Account quotas. */
 
-import { generateKeyPairSync, sign } from 'node:crypto'
+import { generateKeyPairSync, sign, randomUUID } from 'node:crypto'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -175,7 +175,7 @@ function installationKey() {
   return {
     publicKey: pair.publicKey.export({ format: 'jwk' }),
     proof(operation: string, binding: string, issuedAt = Date.parse('2026-08-19T10:00:00.000Z')): AccountProof {
-      const jti = parseAccountProofJti(crypto.randomUUID())
+      const jti = parseAccountProofJti(randomUUID())
       return {
         jti,
         issuedAt,

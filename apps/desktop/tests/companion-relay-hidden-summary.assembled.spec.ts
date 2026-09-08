@@ -48,8 +48,8 @@ import { MobileNoiseCompanionReceiver } from '../../mobile/src/noise-companion.t
 
 const children: RunningWebHost[] = []
 const homes: string[] = []
-const uninstalls: Array<() => void> = []
-const cleanups: Array<() => Promise<void>> = []
+const uninstalls: Array<() => void | Promise<void>> = []
+const cleanups: Array<() => void | Promise<void>> = []
 let DesktopCompanionProductOwner: typeof import('../src/companion-product.ts').DesktopCompanionProductOwner
 
 beforeAll(async () => {
@@ -408,12 +408,12 @@ describe('assembled Desktop Relay hidden Session summary on shipped dsh web', ()
     })).resolves.toMatchObject({ ok: true, value: { accepted: true } })
     await expect.poll(() => {
       const row = surface.getSnapshot().sessions.byId[hiddenLocalId]
-      return row !== undefined && row.running === true
+      return row !== undefined &&  row.running
     }, { timeout: 60_000 }).toBe(true)
     llm.release()
     await expect.poll(() => {
       const row = surface.getSnapshot().sessions.byId[hiddenLocalId]
-      return row !== undefined && row.running === false && row.blank === false
+      return row !== undefined && ! row.running && ! row.blank
     }, { timeout: 60_000 }).toBe(true)
     expect(surface.getSnapshot().conversations[hiddenLocalId]).toBeUndefined()
     expect(observedConversationEvidence(surface, observedId)).toEqual(observedNodes)
@@ -505,7 +505,7 @@ async function startControlledStreamingLlm(apiKey: string): Promise<{
   return {
     release,
     baseUrl: `http://127.0.0.1:${String(address.port)}`,
-    close: () => new Promise<void>((resolve) => { server.close(() => resolve()) }),
+    close: () => new Promise<void>((resolve) => { server.close(() => { resolve() }) }),
   }
 }
 
@@ -554,10 +554,10 @@ function observedConversationEvidence(
   for (const node of nodes) {
     if (!isRecord(node)) continue
     if (node.kind === 'user' && Array.isArray(node.content)) {
-      const text = node.content.find(block => isRecord(block) && block.type === 'text')
+      const text: unknown = node.content.find(block => isRecord(block) && block.type === 'text')
       if (isRecord(text) && typeof text.text === 'string') evidence.push({ kind: 'user', text: text.text })
     } else if (node.kind === 'assistant' && Array.isArray(node.blocks)) {
-      const text = node.blocks.find(block => isRecord(block) && block.kind === 'text')
+      const text: unknown = node.blocks.find(block => isRecord(block) && block.kind === 'text')
       if (isRecord(text) && typeof text.text === 'string') evidence.push({ kind: 'assistant', text: text.text })
     }
   }

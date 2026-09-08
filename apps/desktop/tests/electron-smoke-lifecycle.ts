@@ -36,7 +36,7 @@ export function observeSmokeChild(child: ChildProcess): {
 /** Request bounded TERM→KILL termination and wait until the owned child exits. */
 export async function stopSmokeChild(child: ChildProcess | undefined, exited: Promise<void> | undefined): Promise<void> {
   if (child === undefined || exited === undefined) return
-  if (child.exitCode !== null || child.signalCode !== null) return await exited
+  if (child.exitCode !== null || child.signalCode !== null) { await exited; return }
   child.kill('SIGTERM')
   if (await settlesWithin(exited, TERMINATION_GRACE_MS)) return
   child.kill('SIGKILL')

@@ -215,7 +215,7 @@ describe('Mobile Companion JSON projection', () => {
   })
 
   it('rejects class-backed values and malformed conversation nodes', () => {
-    expect(() => assertCompanionJsonProjection({ ...projection(), conversations: new Map() }))
+    expect(() => { assertCompanionJsonProjection({ ...projection(), conversations: new Map() }) })
       .toThrow('must contain only JSON-compatible values')
     expect(() => parseMobileConversationProjection({
       ...projection().conversations[0],

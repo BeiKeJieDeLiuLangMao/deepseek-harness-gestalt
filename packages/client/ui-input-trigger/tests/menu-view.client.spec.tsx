@@ -132,7 +132,7 @@ describe('MenuView', () => {
     expect(screen.queryByRole('status')).toBeNull()
   })
 
-  it('keeps an opted-out source title hidden while its candidates are pending', () => {
+  it('keeps an opted-out source title hidden while pending text is shown', () => {
     mount(openState({
       groups: [{ source: 'reference', showGroupTitle: false, status: 'pending', items: [] }],
       highlight: null,
@@ -200,7 +200,7 @@ describe('MenuView', () => {
     expect(onPick).toHaveBeenCalledWith('reference', 0)
   })
 
-  it('renders contiguous candidate sections once without changing option indexes', () => {
+  it('preserves custom section labels and candidate option indexes', () => {
     const { onPick } = mount(openState({
       groups: [{
         source: 'reference',

@@ -1,4 +1,5 @@
 /** Black-box helpers for the built Desktop Host Sub2API journey. */
+import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { execFile } from 'node:child_process'
 import { join } from 'node:path'
@@ -811,14 +812,15 @@ async function gatewayModels(): Promise<Array<Record<string, unknown> | undefine
 export async function connectTemporaryWorkspace(): Promise<void> {
   const workspace = join(requiredEnv('DSH_SUB2API_E2E_RUN_ROOT'), 'workspace')
   await mkdir(workspace, { recursive: true, mode: 0o700 })
-  await browser.execute(async (path: string) => {
+  await browser.execute(async (path: string, requestPrefix: string) => {
+    let requestIndex = 0
     const call = async (method: string, payload: unknown): Promise<unknown> => {
       const response = await fetch(`${location.origin}/api/${method}`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           type: 'client-request',
-          rpcId: crypto.randomUUID(),
+          rpcId: `${requestPrefix}-${String(++requestIndex)}`,
           method,
           payload,
         }),
@@ -836,7 +838,7 @@ export async function connectTemporaryWorkspace(): Promise<void> {
     if (typeof workspaceId !== 'string') throw new Error(`workspace.create omitted workspaceId: ${JSON.stringify(value)}`)
     const session = await call('session.create', { workspaceId }) as { sessionId?: string }
     if (typeof session.sessionId !== 'string') throw new Error(`session.create omitted sessionId: ${JSON.stringify(session)}`)
-  }, workspace)
+  }, workspace, randomUUID())
   await browser.refresh()
   await browser.$('textarea:enabled').waitForDisplayed({ timeout: 30_000 })
 }

@@ -128,7 +128,7 @@ describe('version-1 Schedule decoding and folding', () => {
     expect(foldScheduleEvents([first, second, removed])).toEqual({
       active: [expect.objectContaining({ id: 'second' })],
       paused: [],
-      schedules: [{ record: expect.objectContaining({ id: 'second' }), paused: false }],
+      schedules: [{ record: expect.objectContaining({ id: 'second' }) as unknown, paused: false }],
       seenIds: ['first', 'second'],
     })
     expect(() => foldScheduleEvents([
@@ -149,7 +149,7 @@ describe('version-1 Schedule decoding and folding', () => {
     expect(foldScheduleEvents([parentCreate, childCreate], SessionLogOffset(1))).toEqual({
       active: [expect.objectContaining({ id: 'child' })],
       paused: [],
-      schedules: [{ record: expect.objectContaining({ id: 'child' }), paused: false }],
+      schedules: [{ record: expect.objectContaining({ id: 'child' }) as unknown, paused: false }],
       seenIds: ['child'],
     })
     expect(() => foldScheduleEvents([], -1 as never)).toThrow(/inheritedEventCount/)
@@ -171,10 +171,10 @@ describe('version-1 Schedule decoding and folding', () => {
       })],
       schedules: [
         {
-          record: expect.objectContaining({ id: 'first', scheduledAt: '2026-08-05T12:00:00.000Z' }),
+          record: expect.objectContaining({ id: 'first', scheduledAt: '2026-08-05T12:00:00.000Z' }) as unknown,
           paused: true,
         },
-        { record: expect.objectContaining({ id: 'second' }), paused: false },
+        { record: expect.objectContaining({ id: 'second' }) as unknown, paused: false },
       ],
       seenIds: ['first', 'second'],
     })
@@ -185,7 +185,7 @@ describe('version-1 Schedule decoding and folding', () => {
     const foldedResumed = foldScheduleEvents([first, second, paused, resumed])
     expect(foldedResumed.schedules.map(item => item.record.id)).toEqual(['first', 'second'])
     expect(foldedResumed.schedules[0]).toEqual({
-      record: expect.objectContaining({ id: 'first', scheduledAt: '2026-08-05T12:00:00.000Z' }),
+      record: expect.objectContaining({ id: 'first', scheduledAt: '2026-08-05T12:00:00.000Z' }) as unknown,
       paused: false,
     })
     expect(foldedResumed.active[0]).toEqual(expect.objectContaining({

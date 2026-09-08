@@ -114,8 +114,8 @@ function bench(options: {
     book,
     snapshot: snapshotCall,
     settle,
-    setSnapshot(next: MemberQuestionReceiverSnapshot) { current = next },
-    emitChanged(change: { revision: number; questionId: string; state: string }) {
+    setSnapshot: (next: MemberQuestionReceiverSnapshot) => { current = next },
+    emitChanged: (change: { revision: number; questionId: string; state: string }) => {
       for (const listener of [...(listeners.get('member-question-receiver/changed') ?? [])]) {
         listener(change as never)
       }

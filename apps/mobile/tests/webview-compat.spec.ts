@@ -23,6 +23,7 @@ describe('Android System WebView compatibility', () => {
 
     installMobileWebViewCompatibility()
 
+    // oxlint-disable-next-line no-restricted-properties -- Exercise the WebView compatibility shim's global UUID API.
     expect(crypto.randomUUID()).toBe('00010203-0405-4607-8809-0a0b0c0d0e0f')
     class InheritedOnly {
       get inherited(): boolean { return true }

@@ -24,7 +24,7 @@ function createToolResultMessage(
   if (input.loadedTools === undefined) return base
   const block = base.content[0]
   if (block?.type !== 'tool-result') throw new Error('expected canonical tool result block')
-  return { ...base, content: [{ ...block, loadedTools: input.loadedTools }] } as ReturnType<typeof createBaseToolResultMessage>
+  return { ...base, content: [{ ...block, loadedTools: input.loadedTools }] }
 }
 
 function tool(name: string, description: string, deferLoading = false): ToolDefinition {

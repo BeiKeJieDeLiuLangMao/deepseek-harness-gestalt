@@ -1084,12 +1084,12 @@ describe('WebSearchShell', () => {
     const deepseek = stubSettingsScope<WebSearchSettings>()
     const credentials = credentialsApi(true)
     const gate = deferred<undefined>()
-    deepseek.set.mockImplementation(async (field: string, value: unknown) => {
+    vi.mocked(deepseek.scope).set.mockImplementation(async (field: string, value: unknown) => {
       await gate.promise
       deepseek.publish({
         status: 'ready',
         writable: true,
-        value: { ...(deepseek.scope.getSnapshot().value ?? {}), [field]: value } as WebSearchSettings,
+        value: { ...(deepseek.scope.getSnapshot().value ?? {}), [field]: value },
         user: { [field]: value },
       })
     })

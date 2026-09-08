@@ -989,7 +989,7 @@ function projection(id: string, title: string, pending = false): ValidatedDeskto
       pending: pending
         ? [{
           kind: 'approval', interactionId: 'approval-rpc', sessionId: id,
-          payload: { approvalId: 'approval-id' as never, toolName: 'write', reason: 'Allow write' },
+          payload: { approvalId: 'approval-id', toolName: 'write', reason: 'Allow write' },
         }, {
           kind: 'question', interactionId: 'question-rpc', sessionId: id,
           payload: { questions: [{ id: 'q1', question: 'Continue?', options: [{ label: 'Yes' }] }] },

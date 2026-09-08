@@ -530,7 +530,7 @@ describe.skipIf(MODE === 'record')('web e2e: Side Chat provisional model authori
       childId,
       text: 'Use the selected alternate route for this first Side Chat prompt.',
       selection: { provider: ALTERNATE_PROVIDER, model: ALTERNATE_MODEL },
-      requestId: expect.any(String),
+      requestId: expect.any(String) as unknown,
     }])
     expect(adapter.requests).toHaveLength(1)
     expect(adapter.requests[0]).toMatchObject({

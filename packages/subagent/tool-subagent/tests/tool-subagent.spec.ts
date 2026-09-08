@@ -142,8 +142,8 @@ describe('dsh-tool-subagent', () => {
     expect(reads).toEqual(['/workspace/first.png', '/workspace/second.png'])
     expect(received?.prompt).toEqual([
       { type: 'text', text: 'compare' },
-      { type: 'image', attachment: expect.objectContaining({ id: 'image-0', name: 'first.png' }) },
-      { type: 'image', attachment: expect.objectContaining({ id: 'image-1', name: 'second.png' }) },
+      { type: 'image', attachment: expect.objectContaining({ id: 'image-0', name: 'first.png' }) as unknown },
+      { type: 'image', attachment: expect.objectContaining({ id: 'image-1', name: 'second.png' }) as unknown },
     ])
   })
 
@@ -200,7 +200,7 @@ describe('dsh-tool-subagent', () => {
     })
     expect(result).toMatchObject({ isError: true })
     expect(fsReads).toBe(0)
-    expect(result.content).toEqual([{ type: 'text', text: expect.stringContaining('images are disabled') }])
+    expect(result.content).toEqual([{ type: 'text', text: expect.stringContaining('images are disabled') as unknown }])
   })
 
   it('refuses a forced run_in_background at execution time when the instance disables it', async () => {

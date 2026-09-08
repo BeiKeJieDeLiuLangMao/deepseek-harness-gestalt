@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
 import type { AccountProof, PlatformAccountView } from '@deepseek-ai/dsh-platform-account'
@@ -2634,7 +2635,7 @@ describe('PersonalPairingProvider', () => {
       ownsAuthority: true,
       clock: { now: () => NOW },
       randomBytes: size => new Uint8Array(size),
-      randomId: kind => kind === 'challenge' ? crypto.randomUUID() : `${kind}-collision`,
+      randomId: kind => kind === 'challenge' ? randomUUID() : `${kind}-collision`,
       pairingLinkOrigin: 'https://platform.example.com/pair',
     })
     const desktop = authentication('desktop-installation')
@@ -2661,7 +2662,7 @@ describe('PersonalPairingProvider', () => {
       authority: new MemoryPersonalPairingAuthorityStore(),
       clock: { now: () => NOW },
       randomBytes: size => new Uint8Array(size),
-      randomId: kind => kind === 'challenge' ? crypto.randomUUID() : `${kind}-collision`,
+      randomId: kind => kind === 'challenge' ? randomUUID() : `${kind}-collision`,
       pairingLinkOrigin: 'https://platform.example.com/pair',
     })
     const desktop = authentication('desktop-installation')

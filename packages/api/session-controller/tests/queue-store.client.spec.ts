@@ -167,7 +167,7 @@ describe('Session queue snapshot intake', () => {
       data: message,
     } satisfies SessionEvent
 
-    await api.pushFollow(SID, { type: 'event', event: durable as never })
+    await api.pushFollow(SID, { type: 'event', event: durable })
     await vi.waitFor(() => {
       expect(session.getSnapshot().queue.map(item => item.id)).toEqual(['s-second'])
     })
@@ -175,7 +175,7 @@ describe('Session queue snapshot intake', () => {
     session.handleControlFrame(queueFrame([
       { id: 's-later', body: '', placement: 'steering', message },
     ]))
-    await api.pushFollow(SID, { type: 'event', event: durable as never })
+    await api.pushFollow(SID, { type: 'event', event: durable })
     await vi.waitFor(() => {
       expect(session.getSnapshot().queue.map(item => item.id)).toEqual(['s-later'])
     })

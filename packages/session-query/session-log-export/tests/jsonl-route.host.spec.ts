@@ -169,7 +169,10 @@ describe('Session log export over JSONL persistence', () => {
       expect(status).toBe(401)
     } finally {
       await new Promise<void>((resolve, reject) => {
-        server.close(error => error === undefined || error === null ? resolve() : reject(error))
+        server.close((error) => {
+          if (error === undefined || error === null) resolve()
+          else reject(error)
+        })
       })
       await fiber.dispose()
     }
