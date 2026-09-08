@@ -211,6 +211,7 @@ flowchart TD
   subgraph group_examples["packages/examples"]
     pkg_acp_demo["acp-demo"]
     pkg_agent_spine_demo["agent-spine-demo"]
+    pkg_phone_capture_wire_demo["phone-capture-wire-demo"]
     pkg_sdk_jsonrpc_demo["sdk-jsonrpc-demo"]
   end
   subgraph group_experimental["packages/experimental"]
@@ -400,6 +401,7 @@ flowchart TD
   pkg_code_runtime --> pkg_invariants
   pkg_code_runtime_python --> pkg_invariants
   pkg_e2b --> pkg_invariants
+  pkg_phone_capture_wire_demo --> pkg_invariants
   pkg_sdk_jsonrpc_demo --> pkg_invariants
   pkg_host_directory_picker --> pkg_invariants
   pkg_host_directory_picker_browse --> pkg_invariants
@@ -1751,6 +1753,7 @@ flowchart TD
 | [`code-runtime`](../packages/code-runtime/code-runtime) | `code-runtime` | [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`code-runtime-python`](../packages/code-runtime/code-runtime-python) | `code-runtime` | [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`e2b`](../packages/e2b/e2b) | `e2b` | [`invariants`](../packages/runtime-diagnostics/invariants) |
+| [`phone-capture-wire-demo`](../packages/examples/phone-capture-wire-demo) | `examples` | [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`sdk-jsonrpc-demo`](../packages/examples/jsonrpc-demo) | `examples` | [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`host-directory-picker`](../packages/host/directory-picker) | `host` | [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`host-directory-picker-browse`](../packages/host/directory-picker-browse) | `host` | [`invariants`](../packages/runtime-diagnostics/invariants) |

@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/testing/2026-09-05-android-capture-wire-expected.md
-2026-09-05-android-capture-wire-expected.md: 80891a9c826bb438b5d76f607548321aff7c9a71
-2026-09-05-android-capture-wire-expected.zh.md: 11a06be57cabf386aba155ba9ae022c9d548433f
+2026-09-05-android-capture-wire-expected.md: 998c7282688160709425e38d33ebb26a484174c3
+2026-09-05-android-capture-wire-expected.zh.md: e295df5ad3b821ce686434feabe8ec15bd614ff0
