@@ -199,8 +199,6 @@ export function apply(ctx: ClientContext): void {
         'sidebar.right.tab.menu.item': { kind: 'list', scope: 'session' },
         'sidebar.right.tab.icon': { kind: 'keyed', scope: 'session' },
         'sidebar.right.viewer.icon': { kind: 'keyed', scope: 'session' },
-        'sidebar.right.tab.settings': { kind: 'keyed', scope: 'session' },
-        'sidebar.right.viewer.settings': { kind: 'keyed', scope: 'session' },
       },
       store,
       inject: (_sessionId): SidebarRightInjected => ({
@@ -220,7 +218,11 @@ export function apply(ctx: ClientContext): void {
     // Stage two for the guide: it declares the chain child it hosts and reads
     // the registry's entry boxes, which an ordinary type has no reason to do.
     const guideInjected: GuideInjected = {
-      hooks: { guideEntries: { subscribe: listener => tabs.subscribe(listener), getSnapshot: () => tabs.guide() } },
+      hooks: {
+        guideEntries: { subscribe: listener => tabs.subscribe(listener), getSnapshot: () => tabs.guide() },
+        guideWorkbench: controller,
+        guidePreferences: preferences,
+      },
     }
     const disposeGuide = ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
       name: 'sidebar.right.pane.tab',

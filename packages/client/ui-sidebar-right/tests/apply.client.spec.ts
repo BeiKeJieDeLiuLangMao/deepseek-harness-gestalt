@@ -123,7 +123,6 @@ describe('ui-sidebar-right apply', () => {
     expect(Object.keys(seat('workbench').children as object)).toEqual([
       'sidebar.right.pane.tab', 'sidebar.right.pane.tab.title', 'sidebar.right.tab.menu.item',
       'sidebar.right.tab.icon', 'sidebar.right.viewer.icon',
-      'sidebar.right.tab.settings', 'sidebar.right.viewer.settings',
     ])
     expect(seat('sidebar.right.pane.tab').children).toMatchObject({ 'sidebar.right.tab.guide': { kind: 'chain', scope: 'session' } })
     // Both seats read one store: the button only needs to know whether the panel is expanded.

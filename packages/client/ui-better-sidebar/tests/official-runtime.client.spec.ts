@@ -22,7 +22,7 @@ import {
 } from '../src/client/official-runtime/terminal-runtime.ts'
 import {
   OFFICIAL_RUNTIME_INJECT, OFFICIAL_SIDECHAT_DEFINITION_ID, OFFICIAL_TERMINAL_DEFINITION_ID,
-  registerOfficialRuntimeTabs,
+  registerOfficialRuntimeTabs, subscribeOfficialBottomTerminal,
 } from '../src/client/official-runtime/index.ts'
 
 type OfficialTabId = SidebarRightTabCloseContext['tab']['id']
@@ -51,7 +51,12 @@ function tabProjection(
   } as unknown as SidebarRightProjection['sessions'][number]['tabs'][number]
 }
 
-function projection(sessionId: string, tabs: ReturnType<typeof tabProjection>[], data: Record<string, unknown> = {}) {
+function projection(
+  sessionId: string,
+  tabs: ReturnType<typeof tabProjection>[],
+  data: Record<string, unknown> = {},
+  bottomOpenedOnce = false,
+) {
   return {
     mountedSessionId: SessionId(sessionId),
     sessions: [{
@@ -59,6 +64,7 @@ function projection(sessionId: string, tabs: ReturnType<typeof tabProjection>[],
       rightExpanded: true,
       bottomExpanded: false,
       bottomHeight: 300,
+      bottomOpenedOnce,
       tabs,
       data,
     }],
@@ -384,6 +390,55 @@ describe('official Side Chat occurrence owner', () => {
 })
 
 describe('official Terminal occurrence owner', () => {
+  it('opens the first bottom Terminal once when preferences, enablement, and capacity allow it', async () => {
+    const listeners = new Set<() => void>()
+    const openTab = vi.fn(() => Promise.resolve('bottom-tab' as OfficialTabId))
+    let workbench = projection('session-a', [])
+    let autoOpen = true
+    let enabled = true
+    const ctx = {
+      sidebarRight: {
+        getSnapshot: () => workbench,
+        subscribe: (listener: () => void) => {
+          listeners.add(listener)
+          return () => { listeners.delete(listener) }
+        },
+        forSession: vi.fn(() => ({ openTab })),
+      },
+      sidebarRightPreferences: {
+        getSnapshot: () => ({ preferences: { bottomPanelAutoTerminal: autoOpen } }),
+      },
+      sidebarRightTabs: { isTabEnabled: () => enabled },
+    } as unknown as Parameters<typeof subscribeOfficialBottomTerminal>[0]
+
+    const dispose = subscribeOfficialBottomTerminal(ctx)
+    workbench = projection('session-a', [], {}, true)
+    listeners.forEach(listener => { listener() })
+    await Promise.resolve()
+    expect(ctx.sidebarRight.forSession).toHaveBeenCalledWith('session-a')
+    expect(openTab).toHaveBeenCalledWith('terminal', { surface: 'bottom' })
+
+    listeners.forEach(listener => { listener() })
+    expect(openTab).toHaveBeenCalledOnce()
+
+    for (const condition of ['preference', 'enabled', 'capacity'] as const) {
+      workbench = projection('session-a', [], {}, false)
+      listeners.forEach(listener => { listener() })
+      autoOpen = condition !== 'preference'
+      enabled = condition !== 'enabled'
+      const tabs = condition === 'capacity'
+        ? ['one', 'two', 'three'].map(id => tabProjection(
+          'session-a', id, 'terminal', createOfficialUiTerminalPayload(id),
+        ))
+        : []
+      workbench = projection('session-a', tabs, {}, true)
+      listeners.forEach(listener => { listener() })
+    }
+    expect(openTab).toHaveBeenCalledOnce()
+    dispose()
+    expect(listeners.size).toBe(0)
+  })
+
   it('counts only UI runtimes across every official surface', () => {
     const workbench = projection('session-a', [
       tabProjection('session-a', 'ui-right', 'terminal', createOfficialUiTerminalPayload('right')),

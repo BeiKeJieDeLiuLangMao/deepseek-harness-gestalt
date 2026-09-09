@@ -90,6 +90,8 @@ export interface SidebarRightGuideEntry {
 /** A guide entry as the registry lists it: with the kind of the type that contributed it, which is what picking it opens. */
 export interface SidebarRightGuideBox extends SidebarRightGuideEntry {
   readonly kind: string
+  /** Page availability evaluated by the Session-scoped guide presentation. */
+  readonly available?: (context: SidebarRightDescriptorContext) => boolean
 }
 
 /** Why an official occurrence is being asked to release its runtime owner. */
@@ -753,7 +755,11 @@ export class SidebarRightTabRegistry {
       .map(entry => entry.definition)
     this.guideEntries = this.cached
       .filter(definition => this.settings.isTabEnabled(definition.id))
-      .flatMap(definition => (definition.guide ?? []).map(entry => ({ ...entry, kind: definition.kind })))
+      .flatMap(definition => (definition.guide ?? []).map(entry => ({
+        ...entry,
+        kind: definition.kind,
+        ...(definition.available === undefined ? {} : { available: definition.available }),
+      })))
       .sort((left, right) => left.order - right.order)
     notifySubscribers(this.listeners, '[ui-sidebar-right] tab registry')
   }

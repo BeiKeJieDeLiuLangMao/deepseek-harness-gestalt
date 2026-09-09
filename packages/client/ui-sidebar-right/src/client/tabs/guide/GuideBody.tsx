@@ -15,13 +15,21 @@
 import type { ReactNode } from 'react'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type { ChainRenderOpts, HookContextOf, InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import type { SidebarRightGuideBox } from '../../tab-registry.ts'
+import type { SidebarRightProjection } from '../../service.ts'
+import type {
+  SidebarRightDescriptorContext, SidebarRightDescriptorTab, SidebarRightGuideBox,
+} from '../../tab-registry.ts'
+import type { SidebarRightPreferencesSnapshot } from '../../preferences.ts'
 import css from './GuideBody.module.css'
 
 /** What the guide body needs from its host beyond the framework shares. */
 export interface GuideInjected {
   /** The registry's guide entries in `order`; observable, so a type registering later appears. */
-  readonly hooks: { readonly guideEntries: ObservableSnapshot<readonly SidebarRightGuideBox[]> }
+  readonly hooks: {
+    readonly guideEntries: ObservableSnapshot<readonly SidebarRightGuideBox[]>
+    readonly guideWorkbench: ObservableSnapshot<SidebarRightProjection>
+    readonly guidePreferences: ObservableSnapshot<SidebarRightPreferencesSnapshot>
+  }
 }
 
 /** The guide body's composed props: the tab it draws, its chain child, its copy, and the entries. */
@@ -70,14 +78,53 @@ function ShippedGuide({ entries, onPick, t }: {
   )
 }
 
+function descriptorTabsOf(projection: SidebarRightProjection, sessionId: string): SidebarRightDescriptorTab[] {
+  const session = projection.sessions.find(candidate => candidate.sessionId === sessionId)
+  return session?.tabs.map(tab => ({
+    id: tab.record.id,
+    kind: tab.record.kind,
+    contentId: tab.record.contentId,
+    title: tab.record.title,
+    surface: tab.surface,
+    floating: tab.floating,
+    payload: tab.state.payload,
+    pin: tab.state.pin,
+  })) ?? []
+}
+
+/** Filter guide entries through each descriptor's Session-aware availability hint. */
+export function availableGuideEntries(
+  entries: readonly SidebarRightGuideBox[],
+  context: SidebarRightDescriptorContext,
+): readonly SidebarRightGuideBox[] {
+  return entries.filter((entry) => {
+    if (entry.available === undefined) return true
+    try {
+      return entry.available(context)
+    } catch (error: unknown) {
+      console.error(`sidebarRight: available failed for guide kind "${entry.kind}"`, error)
+      return false
+    }
+  })
+}
+
 /** The guide tab's body, replaceable through its chain child. */
-export function GuideBody({ useTabInfo, useGuideEntries, renderSlotChain, t }: GuideBodyProps): ReactNode {
+export function GuideBody({
+  useTabInfo, useGuideEntries, useGuideWorkbench, useGuidePreferences, renderSlotChain, t,
+}: GuideBodyProps): ReactNode {
   const { tab } = useTabInfo()
   const entries = useGuideEntries(entries => entries)
+  const projection = useGuideWorkbench(value => value)
+  const preferences = useGuidePreferences(value => value.preferences)
+  const available = availableGuideEntries(entries, {
+    sessionId: tab.sessionId,
+    preferences,
+    tabs: descriptorTabsOf(projection, tab.sessionId),
+  })
   const options = {
     hookContext: useTabInfo,
     fallback: (
-      <ShippedGuide entries={entries} onPick={(entry) => { tab.actions.openTab(entry.kind, { replaceTab: true }) }} t={t} />
+      <ShippedGuide entries={available} onPick={(entry) => { tab.actions.openTab(entry.kind, { replaceTab: true }) }} t={t} />
     ),
   } satisfies ChainRenderOpts & { hookContext: HookContextOf<'sidebar.right.tab.guide'> }
   return renderSlotChain('sidebar.right.tab.guide', {}, options)

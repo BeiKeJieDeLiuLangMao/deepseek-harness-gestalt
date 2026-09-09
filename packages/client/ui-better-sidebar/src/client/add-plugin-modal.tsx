@@ -2,7 +2,7 @@
  * The "add plugin" modals (Side card settings → the dashed cards at the
  * end of the 侧边栏内容 / 文件预览 grids): declare that the sidebar's
  * extension points — tab pages and file previewers — are open to plugins
- * (registered through `ctx.betterSidebar`), point at the GitHub topic page
+ * (registered through `ctx.sidebarRightTabs`), point at the GitHub topic page
  * for discovery, and show the repo's recommended plugin catalog of the
  * matching kind (name / url / description / install script).
  *
@@ -21,7 +21,6 @@
  */
 import { useState, type ReactNode } from 'react'
 import { Modal, writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { BetterSidebarService } from './service.ts'
 import { PLUGIN_TOPIC_URL, type PluginEntry } from './plugins-shared.ts'
 import { builtinTabPlugins } from './plugins-tabs.ts'
 import { builtinViewerPlugins } from './plugins-viewers.ts'
@@ -42,7 +41,7 @@ const COPIED_FEEDBACK_MS = 1500
 
 /** The modal body: the GitHub topic button + the recommended plugin list
  *  with per-entry jump/copy buttons (extracted for direct testing). */
-export function PluginListBody(props: { service: BetterSidebarService; kind: PluginKind }) {
+export function PluginListBody(props: { kind: PluginKind }) {
   const { kind } = props
   // Which entry's copy button currently shows the "已复制" feedback.
   const [copiedId, setCopiedId] = useState<string | null>(null)
@@ -183,8 +182,8 @@ export function PluginListBody(props: { service: BetterSidebarService; kind: Plu
 }
 
 /** The modal itself (mounted only while open — see the module comment). */
-export function AddPluginModal(props: { service: BetterSidebarService; onClose: () => void; kind: PluginKind }) {
-  const { service, onClose, kind } = props
+export function AddPluginModal(props: { onClose: () => void; kind: PluginKind }) {
+  const { onClose, kind } = props
   return (
     <Modal
       open
@@ -199,7 +198,7 @@ export function AddPluginModal(props: { service: BetterSidebarService; onClose: 
         </button>
       )}
     >
-      <PluginListBody service={service} kind={kind} />
+      <PluginListBody kind={kind} />
     </Modal>
   )
 }

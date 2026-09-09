@@ -188,6 +188,8 @@ export interface SidebarRightSessionProjection {
   readonly sessionId: SessionId
   readonly rightExpanded: boolean
   readonly bottomExpanded: boolean
+  /** Whether this Session has committed its first bottom-surface expansion. */
+  readonly bottomOpenedOnce: boolean
   readonly bottomHeight: number
   readonly tabs: readonly SidebarRightTabProjection[]
   readonly data: Readonly<Record<string, JsonValue>>
@@ -268,6 +270,7 @@ function projectSession(sessionId: SessionId, surface: SurfaceState): SidebarRig
     sessionId,
     rightExpanded: surface.layout.expanded,
     bottomExpanded: surface.bottom.layout.expanded,
+    bottomOpenedOnce: surface.bottomOpenedOnce,
     bottomHeight: surface.bottomHeight,
     tabs: [
       ...projectLayout(sessionId, 'right', surface.layout, surface),

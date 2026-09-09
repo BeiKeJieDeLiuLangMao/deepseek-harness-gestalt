@@ -22,7 +22,8 @@ import {
 import { OfficialTerminalBody } from './TerminalBody.tsx'
 import { OfficialTerminalPinMenuItem } from './TerminalPinMenuItem.tsx'
 import {
-  closeOfficialTerminal, OFFICIAL_UI_TERMINAL_LIMIT, officialUiTerminalCount, subscribeOfficialAgentTerminals,
+  canOpenOfficialUiTerminal, closeOfficialTerminal, OFFICIAL_UI_TERMINAL_LIMIT, officialUiTerminalCount,
+  subscribeOfficialAgentTerminals,
 } from './terminal-runtime.ts'
 
 /** Stable official definition ids used by keyed body registrations and preference maps. */
@@ -183,6 +184,32 @@ function terminalDefinition(
   }
 }
 
+function bottomOpenedBySession(ctx: OfficialRuntimeContext): ReadonlyMap<SessionId, boolean> {
+  return new Map(ctx.sidebarRight.getSnapshot().sessions.map(session => [session.sessionId, session.bottomOpenedOnce]))
+}
+
+/** Open one UI Terminal when a Session commits its first bottom-panel expansion. */
+export function subscribeOfficialBottomTerminal(ctx: OfficialRuntimeContext): () => void {
+  let previous = bottomOpenedBySession(ctx)
+  return ctx.sidebarRight.subscribe(() => {
+    const projection = ctx.sidebarRight.getSnapshot()
+    const next = new Map(projection.sessions.map(session => [session.sessionId, session.bottomOpenedOnce]))
+    const opened = projection.sessions.filter(session => previous.get(session.sessionId) === false
+      && session.bottomOpenedOnce)
+    previous = next
+    for (const session of opened) {
+      const preferences = ctx.sidebarRightPreferences.getSnapshot().preferences
+      if (!preferences.bottomPanelAutoTerminal) continue
+      if (!ctx.sidebarRightTabs.isTabEnabled(OFFICIAL_TERMINAL_DEFINITION_ID)) continue
+      if (!canOpenOfficialUiTerminal(projection, session.sessionId)) continue
+      void ctx.sidebarRight.forSession(session.sessionId).openTab(OFFICIAL_TERMINAL_KIND, { surface: 'bottom' })
+        .catch((error: unknown) => {
+          console.error('[dsh-better-sidebar] open first bottom Terminal failed:', error)
+        })
+    }
+  })
+}
+
 /**
  * Register Side Chat, UI Terminal, model Terminal feed, and Terminal pins on
  * the official workbench.
@@ -219,6 +246,7 @@ export function registerOfficialRuntimeTabs(ctx: OfficialRuntimeContext): () => 
     }, OfficialTerminalPinMenuItem)),
     subscribeOfficialSidechatRuntime(ctx),
     subscribeOfficialAgentTerminals(ctx),
+    subscribeOfficialBottomTerminal(ctx),
   ]
   return () => {
     for (let index = disposers.length - 1; index >= 0; index -= 1) disposers[index]?.()

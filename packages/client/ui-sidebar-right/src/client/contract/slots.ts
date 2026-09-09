@@ -104,13 +104,13 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     /** Custom tab settings body, dispatched with the tab definition id. */
     'sidebar.right.tab.settings': {
       kind: 'keyed'
-      scope: 'session'
+      scope: 'root'
       owner: SidebarRightDescriptorSettingsOwnerProps
     }
     /** Custom viewer settings body, dispatched with the viewer definition id. */
     'sidebar.right.viewer.settings': {
       kind: 'keyed'
-      scope: 'session'
+      scope: 'root'
       owner: SidebarRightDescriptorSettingsOwnerProps
     }
   }
