@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import { agentEvents } from '@deepseek-ai/dsh-agent'
@@ -13,6 +13,7 @@ import {
   SessionPersistenceRevision,
 } from '@deepseek-ai/dsh-session-persistence'
 import type { SessionAccess, SessionHandle, SessionPersistenceSnapshot } from '@deepseek-ai/dsh-session-persistence'
+import { remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
 import * as toolSchedule from '../src/index.ts'
 
 interface StoredProbeSession {
@@ -117,6 +118,34 @@ describe('Schedule plugin composition', () => {
     expect(created.isError).toBe(false)
     if (created.isError) throw new Error('expected Schedule create value')
     expect(created.value).toMatchObject({ id: 'schedule-1', deliveryMode: 'session-local' })
+    const schedules = ctx.schedules
+    expect(remoteMethods(schedules).map(method => method.exportName ?? method.method))
+      .toEqual(['pause', 'resume', 'delete'])
+    await expect(schedules.pause(root.agent, toolSchedule.ScheduleId('schedule-1')))
+      .resolves.toMatchObject({ state: 'paused' })
+    await expect(schedules.pause(root.agent, toolSchedule.ScheduleId('schedule-1')))
+      .rejects.toMatchObject({ code: 'invalid_transition' })
+    await expect(schedules.resume(root.agent, toolSchedule.ScheduleId('schedule-1')))
+      .resolves.toMatchObject({ state: 'scheduled' })
+    await expect(schedules.resume(root.agent, toolSchedule.ScheduleId('schedule-1')))
+      .rejects.toMatchObject({ code: 'invalid_transition' })
+    await expect(schedules.pause(root.agent, toolSchedule.ScheduleId('')))
+      .rejects.toMatchObject({ code: 'schedule_not_found' })
+    await expect(schedules.delete(root.agent, toolSchedule.ScheduleId('schedule-1')))
+      .resolves.toEqual({ id: 'schedule-1', deleted: true })
+    await expect(schedules.delete(root.agent, toolSchedule.ScheduleId('schedule-1')))
+      .rejects.toMatchObject({ code: 'schedule_not_found' })
+    await expect(schedules.pause(root.agent, toolSchedule.ScheduleId('schedule-1')))
+      .rejects.toMatchObject({ code: 'schedule_not_found' })
+
+    const ownEvents = vi.spyOn(root.agent.session, 'ownEvents')
+    ownEvents.mockImplementationOnce(() => { throw new toolSchedule.ScheduleLogError('corrupt') })
+    await expect(schedules.pause(root.agent, toolSchedule.ScheduleId('schedule-1')))
+      .rejects.toMatchObject({ code: 'corrupt_schedule_log' })
+    ownEvents.mockImplementationOnce(() => { throw new Error('unexpected fold failure') })
+    await expect(schedules.pause(root.agent, toolSchedule.ScheduleId('schedule-1')))
+      .rejects.toThrow('unexpected fold failure')
+    ownEvents.mockRestore()
     agentEvents(ctx, root.agent).emit('agent/status', { status: 'running' })
     agentEvents(ctx, root.agent).emit('agent/status', { status: 'idle' })
 
@@ -126,6 +155,8 @@ describe('Schedule plugin composition', () => {
     })
     expect(ctx.agents.roots()).toEqual([existing.agent, root.agent])
     expect(ctx.tools.get('schedule_create', child.agent)).toBeUndefined()
+    await expect(schedules.pause(child.agent, toolSchedule.ScheduleId('schedule-1')))
+      .rejects.toMatchObject({ code: 'schedule_not_found' })
 
     const departing = await ctx.agents.create({ sessionId: SessionId('schedule-departing') })
     expect(ctx.tools.get('schedule_create', departing.agent)).toBeDefined()
@@ -133,6 +164,7 @@ describe('Schedule plugin composition', () => {
     expect(ctx.tools.get('schedule_create', departing.agent)).toBeUndefined()
 
     await plugin.dispose()
+    expect(ctx.get('schedules')).toBeUndefined()
     expect(ctx.tools.get('schedule_create', root.agent)).toBeUndefined()
     expect(ctx.tools.get('schedule_list', root.agent)).toBeUndefined()
     expect(ctx.tools.get('schedule_delete', root.agent)).toBeUndefined()

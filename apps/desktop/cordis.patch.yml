@@ -15,6 +15,9 @@
         baseUrl: !!js process.env.DSH_DESKTOP_PROJECT_MEMBERSHIP_ORIGIN
         tokenFile: !!js process.env.DSH_DESKTOP_PROJECT_MEMBERSHIP_TOKEN_FILE
 
+- id: ui-schedule
+  disabled: false
+
 # Phone fleet: Desktop always composes environment, stable fleet, stream, and
 # tool Consumers. The explicit executable env remains the operator override;
 # otherwise the environment selects managed current before system discovery.

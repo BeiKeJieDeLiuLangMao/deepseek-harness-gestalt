@@ -81,6 +81,6 @@ Package tests pin strict replay, pause and resume without target drift, paused l
 - Reminder state survives restart through ordinary Session persistence without a new database or public service.
 - Cold Sessions do no work and send no external notification; reopening one may deliver overdue work.
 - Absolute input is deterministic without persistent Session-zone state or a dependency from Schedule to time-context.
-- Users see reminder output in normal conversation. Host tools list retained paused state; the management board is not mounted, and neither dispatch nor the board decision overstates model success or acknowledgement.
+- Users see reminder output in normal conversation. Host tools and the management board expose retained paused state; neither dispatch nor the board overstates model success or acknowledgement.
 - Each live root adds only fold-derived timers, an optional idle wait, and one in-flight operation.
 - Fixed-rate recurrence is bounded by a five-minute minimum, latest-only catch-up, and one batched occurrence per overdue record; calendar recurrence remains outside this product boundary.

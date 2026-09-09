@@ -5,11 +5,12 @@ export const NS = 'schedule.catalog'
 
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh = {
-  'trigger.one': '{count} 个提醒',
-  'trigger.other': '{count} 个提醒',
-  'list.aria': '活动提醒',
+  'trigger.one': '{count} 个定时任务等待执行',
+  'trigger.other': '{count} 个定时任务等待执行',
+  'list.aria': '定时任务',
   'status.scheduled': '等待中',
   'status.overdue': '已逾期',
+  'status.paused': '已暂停',
   'frequency.once': '单次',
   'frequency.every': '{value}{unit}一次',
   'unit.day.one': '天',
@@ -23,15 +24,25 @@ export const zh = {
   'relative.now': '现在到期',
   'relative.future': '{value}{unit}后',
   'relative.overdue': '已逾期 {value}{unit}',
+  'action.pause': '暂停 {prompt}',
+  'action.resume': '恢复 {prompt}',
+  'action.delete': '删除 {prompt}',
+  'action.confirmDelete': '确认删除 {prompt}',
+  'action.cancelDelete': '取消删除 {prompt}',
+  'delete.confirm': '确认删除此任务？',
+  'delete.yes': '删除',
+  'delete.no': '取消',
+  'error.fallback': '操作失败',
 } as const
 
 /** English dictionary, key-identical to the Chinese source of truth. */
 export const en: Record<ScheduleCatalogKey, string> = {
-  'trigger.one': '{count} reminder',
-  'trigger.other': '{count} reminders',
-  'list.aria': 'Active reminders',
+  'trigger.one': '{count} scheduled task waiting',
+  'trigger.other': '{count} scheduled tasks waiting',
+  'list.aria': 'Scheduled tasks',
   'status.scheduled': 'Scheduled',
   'status.overdue': 'Overdue',
+  'status.paused': 'Paused',
   'frequency.once': 'Once',
   'frequency.every': 'Every {value} {unit}',
   'unit.day.one': 'day',
@@ -45,6 +56,15 @@ export const en: Record<ScheduleCatalogKey, string> = {
   'relative.now': 'Due now',
   'relative.future': 'in {value} {unit}',
   'relative.overdue': '{value} {unit} overdue',
+  'action.pause': 'Pause {prompt}',
+  'action.resume': 'Resume {prompt}',
+  'action.delete': 'Delete {prompt}',
+  'action.confirmDelete': 'Confirm deleting {prompt}',
+  'action.cancelDelete': 'Cancel deleting {prompt}',
+  'delete.confirm': 'Delete this task?',
+  'delete.yes': 'Delete',
+  'delete.no': 'Cancel',
+  'error.fallback': 'Action failed',
 }
 
 /** Key domain of the Schedule catalog namespace. */

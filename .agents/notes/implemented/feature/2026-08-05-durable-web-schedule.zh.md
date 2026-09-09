@@ -81,6 +81,6 @@ dispatch 记录的是队列准入，而不是模型完成或用户收到提醒�
 - 提醒状态通过普通 Session persistence 跨重启存活，无需新数据库或公开 service。
 - cold Session 不工作、不发送外部通知；重新打开后可能交付 overdue 工作。
 - 无需持久 Session 时区状态或从 Schedule 到 time-context 的依赖，绝对时间输入仍然具有确定性。
-- 用户在普通对话中看到提醒输出。Host 工具列出保留的暂停状态；管理任务板尚未挂载，dispatch 与任务板决策都绝不会夸大模型成功或 acknowledgement。
+- 用户在普通对话中看到提醒输出。Host 工具与管理任务板会公开保留的暂停状态；dispatch 与任务板都绝不会夸大模型成功或 acknowledgement。
 - 每个 live 根只增加从 fold 派生的 timer、可选 idle wait 与一个 in-flight operation。
 - 固定速率周期性受到至少 5 分钟、只追赶最新一次，以及每条逾期记录只在一个批次中贡献一个发生时点的约束；日历周期性仍在此产品边界之外。

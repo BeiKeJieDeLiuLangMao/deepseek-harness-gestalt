@@ -456,6 +456,13 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Folds revisioned objective state from the session log and keeps live continuation activation process-local.',
   },
   {
+    key: 'schedules',
+    pkg: 'schedule',
+    title: 'Same-session Schedule domain',
+    mode: 'core',
+    note: 'Owns durable reminder mutations, shared per-session serialization, generated human Remote methods, and live due delivery.',
+  },
+  {
     key: 'e2b',
     pkg: 'e2b',
     title: 'E2B sandbox lifecycle owner',

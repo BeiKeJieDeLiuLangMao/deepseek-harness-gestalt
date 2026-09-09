@@ -80,6 +80,7 @@
     "@deepseek-ai/dsh-llm": "workspace:^",
     "@deepseek-ai/dsh-member-question-receiver": "workspace:^",
     "@deepseek-ai/dsh-message-feedback": "workspace:^",
+    "@deepseek-ai/dsh-schedule": "workspace:^",
     "@deepseek-ai/dsh-scope": "workspace:^",
     "@deepseek-ai/dsh-session-projection": "workspace:^",
     "@deepseek-ai/dsh-session-reference": "workspace:^",

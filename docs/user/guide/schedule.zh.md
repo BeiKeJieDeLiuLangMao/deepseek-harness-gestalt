@@ -2,7 +2,7 @@
 
 [English](schedule.md) | 中文
 
-此 overlay 让一个 `dsh web` 进程显式启用 Schedule 提醒，同时不改变交付的默认 Web 组合：
+DeepSeek Gestalt Desktop 默认启用 Schedule。此 overlay 让一个纯浏览器 `dsh web` 进程显式启用同样的提醒与任务板，同时不改变交付的默认 Web 组合：
 
 ```sh
 dsh web --patch apps/cli/config/examples/schedule/cordis.yml
@@ -10,7 +10,7 @@ dsh web --patch apps/cli/config/examples/schedule/cordis.yml
 
 当前 overlay 支持使用正整数 `after_seconds`、绝对时间 `at` 目标，或至少 300 秒的固定速率 `every_seconds` 间隔创建提醒。模型通过 `schedule_create`、`schedule_list` 和 `schedule_delete` 管理它们；每个结果都会把交付标为 `session-local`。
 
-启用此 overlay 后，成功打开且存在活动提醒的 Session 会在对话 header 中显示只读目录。目录列出完整 prompt、等待中或已逾期状态、单次或精确重复周期、浏览器本地目标时间与相对时间。侧边栏还会在 grouped、flat 与 search 行当前可用的 projection 值非空时，于标题后显示不可交互的闹钟。这些界面不会创建、编辑、删除或确认提醒；cold Session 的缓存闹钟允许短暂漏显或残留。
+启用 Schedule 后，成功打开且存在保留提醒的 Session 会在对话 header 中显示任务板。任务板列出完整 prompt、等待中、已逾期或已暂停状态、单次或精确重复周期、浏览器本地目标时间与相对时间。它可以暂停、恢复与删除提醒；删除需要确认，每项成功变更都会通过 Session 日志跨 reload 保留。任务板不创建或编辑提醒，也绝不确认提醒已交付。侧边栏会另外在 grouped、flat 与 search 行当前可用的 projection 值非空时，于标题后显示不可交互的闹钟；cold Session 的缓存闹钟允许短暂漏显或残留。
 
 浏览器会为每条提示词附加其 IANA 时区。Time-context 会告诉模型，把未明确限定时区的日期和时间解释为该请求的浏览器时区。此假设仅用于自然语言解释：`schedule_create.at` 必须是带 `Z` 或数值偏移量且严格符合 RFC 3339 的日期时间，或是带显式 `UTC` 或 IANA Area/Location 时区的 `{ date, time, time_zone }`。Schedule 不保留或推断 Session 默认时区。夏令时缺口会被拒绝，重叠时段选择第一个时刻；成功创建的记录只保留所得的 UTC 目标。
 

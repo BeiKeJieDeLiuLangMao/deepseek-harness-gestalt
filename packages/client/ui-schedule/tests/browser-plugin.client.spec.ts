@@ -1,11 +1,14 @@
 import { Context } from '@deepseek-ai/cordis'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
 import { apply as applyLocale, inject as localeInject } from '@deepseek-ai/dsh-client-locale/client'
+import { ScheduleId } from '@deepseek-ai/dsh-schedule'
+import { SessionId } from '@deepseek-ai/dsh-session'
 import { apply, inject } from '../src/client/index.ts'
 import { apply as applyNode } from '../src/index.ts'
 import { en, NS, zh } from '../src/client/locales.ts'
+import type { ScheduleActions } from '../src/client/slots.ts'
 
 const Empty = () => null
 
@@ -19,7 +22,13 @@ async function baseContext(): Promise<Context> {
   const ctx = new Context()
   await ctx.plugin(SlotRegistry).await()
   ctx.provide('connection', { api: { settings: {} }, isLoopback: false } as never)
-  ctx.provide('remote', { $on: () => () => {} } as never)
+  const schedules = {
+    pause: vi.fn(async () => ({ ok: true, value: {} })),
+    resume: vi.fn(async () => ({ ok: true, value: {} })),
+    delete: vi.fn(async () => ({ ok: true, value: {} })),
+  }
+  ctx.provide('remote', { $on: () => () => {}, schedules } as never)
+  ctx.provide('remote.schedules', schedules as never)
   ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
   await ctx.plugin({ inject: localeInject, apply: applyLocale }).await()
   return ctx
@@ -36,7 +45,7 @@ function declareHeader(ctx: Context): () => void {
 
 describe('ui-schedule browser half', () => {
   it('declares only the services used by registration', () => {
-    expect(inject).toEqual(['slots', 'locale'])
+    expect(inject).toEqual(['slots', 'remote', 'remote.schedules', 'locale'])
   })
 
   it('waits for the header declaration, orders between static context and Jobs, and tears down', async () => {
@@ -53,6 +62,16 @@ describe('ui-schedule browser half', () => {
       name: 'conversation.session.header.actions', id: 'job-list', order: 20,
     }, Empty)
     expect(headerEntryIds(ctx)).toEqual(['agent-preset', 'schedule-catalog', 'job-list'])
+    const entry = ctx.slots.entries('conversation.session.header.actions')[1]
+    expect(entry?.inject).toBeTypeOf('function')
+    const injectActions = entry?.inject as unknown as (sessionId: SessionId) => ScheduleActions
+    const actions = injectActions(SessionId('schedule-session'))
+    await actions.onPause(ScheduleId('schedule-1'))
+    await actions.onResume(ScheduleId('schedule-1'))
+    await actions.onDelete(ScheduleId('schedule-1'))
+    expect(ctx.remote.schedules.pause).toHaveBeenCalledWith('schedule-session', 'schedule-1')
+    expect(ctx.remote.schedules.resume).toHaveBeenCalledWith('schedule-session', 'schedule-1')
+    expect(ctx.remote.schedules.delete).toHaveBeenCalledWith('schedule-session', 'schedule-1')
 
     await fiber.dispose()
     expect(headerEntryIds(ctx)).toEqual(['agent-preset', 'job-list'])

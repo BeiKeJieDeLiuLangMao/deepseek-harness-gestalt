@@ -78,6 +78,18 @@
   background: var(--dsw-alias-state-warn-tertiary);
 }
 
+.rowPaused {
+  opacity: 0.72;
+}
+
+.rowHeader {
+  display: flex;
+  min-height: 26px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 .status {
   display: inline-flex;
   align-items: center;
@@ -104,6 +116,10 @@
   background: var(--dsw-alias-state-warn-primary);
 }
 
+.rowPaused .statusDot {
+  background: var(--dsw-alias-label-tertiary);
+}
+
 .prompt {
   font-size: 13px;
   line-height: 18px;
@@ -124,4 +140,65 @@
 
 .relativeOverdue {
   color: var(--dsw-alias-state-warn-label);
+}
+
+.actions,
+.confirm {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.iconButton,
+.confirm button {
+  display: inline-grid;
+  height: 26px;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  font: inherit;
+  cursor: pointer;
+}
+
+.iconButton {
+  width: 26px;
+}
+
+.iconButton:hover,
+.iconButton:focus-visible,
+.confirm button:hover,
+.confirm button:focus-visible {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.iconButton:disabled,
+.confirm button:disabled {
+  cursor: wait;
+  opacity: 0.45;
+}
+
+.deleteButton:hover,
+.deleteButton:focus-visible,
+.confirm button:first-of-type {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.confirm {
+  justify-content: flex-end;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+}
+
+.confirm button {
+  padding: 0 7px;
+  font-size: 11px;
+}
+
+.error {
+  color: var(--dsw-alias-state-error-primary);
+  font-size: 11px;
+  font-style: normal;
 }

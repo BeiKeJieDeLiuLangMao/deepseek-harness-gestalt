@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
+import { makeTranslate, RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
 import type { SessionSnapshot, UseProjection } from '@deepseek-ai/dsh-api-session-controller/client'
-import type { ScheduleRecord } from '@deepseek-ai/dsh-schedule/client'
+import type { ScheduleProjectionItem, ScheduleRecord } from '@deepseek-ai/dsh-schedule/client'
 import { ScheduleId } from '@deepseek-ai/dsh-schedule'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import {
@@ -36,12 +36,13 @@ function record(
   kind: ScheduleRecord['kind'],
   scheduledAt: number,
   options: { prompt?: string; everySeconds?: number } = {},
-): ScheduleRecord {
+): ScheduleProjectionItem {
   const common = {
     id: ScheduleId(id),
     kind,
     prompt: options.prompt ?? id,
     scheduledAt: new Date(scheduledAt).toISOString(),
+    paused: false,
   }
   if (kind === 'after') return { ...common, kind, afterSeconds: 30 }
   if (kind === 'every') return { ...common, kind, everySeconds: options.everySeconds ?? 300 }
@@ -70,7 +71,7 @@ function sessionSnapshot(openState: SessionSnapshot['openState']): SessionSnapsh
 }
 
 function props(
-  records: readonly ScheduleRecord[] | undefined,
+  records: readonly ScheduleProjectionItem[] | undefined,
   openState: SessionSnapshot['openState'] = 'open',
   dictionary: typeof zh | typeof en = en,
 ): ScheduleCatalogActionProps {
@@ -84,6 +85,9 @@ function props(
     sessionId: SESSION,
     useSession,
     useProjection,
+    onPause: async () => ({ ok: true, value: {} }),
+    onResume: async () => ({ ok: true, value: {} }),
+    onDelete: async () => ({ ok: true, value: {} }),
     t: makeTranslate(dictionary),
   } as unknown as ScheduleCatalogActionProps
 }
@@ -108,19 +112,19 @@ describe('ScheduleCatalogAction visibility', () => {
     }
 
     view.rerender(<ScheduleCatalogAction {...props(active)} />)
-    expect(screen.getByRole('button', { name: '1 reminder' })).toBeDefined()
+    expect(screen.getByRole('button', { name: '1 scheduled task waiting' })).toBeDefined()
   })
 
   it('closes and removes the trigger when the last live record disappears', () => {
     const active = [record('active', 'after', START + 60_000)]
     const view = render(<><button type="button">Neighbor</button><ScheduleCatalogAction {...props(active)} /></>)
-    const trigger = screen.getByRole('button', { name: '1 reminder' })
+    const trigger = screen.getByRole('button', { name: '1 scheduled task waiting' })
     fireEvent.click(trigger)
     trigger.focus()
     expect(screen.getByRole('list', { name: en['list.aria'] })).toBeDefined()
 
     view.rerender(<><button type="button">Neighbor</button><ScheduleCatalogAction {...props([])} /></>)
-    expect(screen.queryByRole('button', { name: '1 reminder' })).toBeNull()
+    expect(screen.queryByRole('button', { name: '1 scheduled task waiting' })).toBeNull()
     expect(document.activeElement).toBe(document.body)
     expect(screen.getByRole('button', { name: 'Neighbor' })).not.toBe(document.activeElement)
   })
@@ -130,7 +134,7 @@ describe('ScheduleCatalogAction positioning', () => {
   it('portals the catalog to the body and left-aligns it when space is available', () => {
     const active = [record('active', 'after', START + 60_000)]
     const view = render(<ScheduleCatalogAction {...props(active)} />)
-    const trigger = screen.getByRole('button', { name: '1 reminder' })
+    const trigger = screen.getByRole('button', { name: '1 scheduled task waiting' })
     vi.spyOn(trigger, 'getBoundingClientRect').mockReturnValue({
       x: 240,
       y: 20,
@@ -155,7 +159,114 @@ describe('ScheduleCatalogAction positioning', () => {
 })
 
 describe('ScheduleCatalogAction rows', () => {
-  it('shows only prompt and the three derived metadata fields, with overdue records first', () => {
+  it('pauses, resumes, and deletes through injected human actions', async () => {
+    const active = record('active', 'after', START + 60_000, { prompt: 'Audit CI' })
+    const paused = { ...record('paused', 'at', START + 120_000, { prompt: 'Paused review' }), paused: true }
+    const onPause = vi.fn(async () => ({ ok: true as const, value: {} }))
+    const onResume = vi.fn(async () => ({ ok: true as const, value: {} }))
+    const onDelete = vi.fn(async () => ({ ok: true as const, value: {} }))
+    render(<ScheduleCatalogAction {...{
+      ...props([active, paused]),
+      onPause,
+      onResume,
+      onDelete,
+    }} />)
+    fireEvent.click(screen.getByRole('button', { name: '1 scheduled task waiting' }))
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Pause Audit CI' }))
+    })
+    expect(onPause).toHaveBeenCalledWith(active.id)
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Resume Paused review' }))
+    })
+    expect(onResume).toHaveBeenCalledWith(paused.id)
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Paused review' }))
+    expect(screen.getByText('Delete this task?')).toBeDefined()
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Confirm deleting Paused review' }))
+    })
+    expect(onDelete).toHaveBeenCalledWith(paused.id)
+  })
+
+  it('keeps a failed mutation on its row and cancels delete confirmation', async () => {
+    const item = record('failure', 'after', START + 60_000, { prompt: 'Retry audit' })
+    const view = render(<ScheduleCatalogAction {...{
+      ...props([item]),
+      onPause: async () => ({
+        ok: false as const,
+        error: new RemoteError('gateway/internal', 'Host rejected pause', {}),
+      }),
+    }} />)
+    fireEvent.click(screen.getByRole('button', { name: '1 scheduled task waiting' }))
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Pause Retry audit' }))
+    })
+    expect(screen.getByRole('alert').textContent).toBe('Host rejected pause')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Retry audit' }))
+    expect(screen.getByText('Delete this task?')).toBeDefined()
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel deleting Retry audit' }))
+    expect(screen.queryByText('Delete this task?')).toBeNull()
+
+    view.rerender(<ScheduleCatalogAction {...props([])} />)
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('clears confirmation when the confirmed record leaves the projection', () => {
+    const item = record('leaving', 'at', START + 60_000, { prompt: 'Leaving task' })
+    const view = render(<ScheduleCatalogAction {...props([item])} />)
+    fireEvent.click(screen.getByRole('button', { name: '1 scheduled task waiting' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Delete Leaving task' }))
+    expect(screen.getByText('Delete this task?')).toBeDefined()
+
+    view.rerender(<ScheduleCatalogAction {...props([])} />)
+    expect(screen.queryByText('Delete this task?')).toBeNull()
+  })
+
+  it('uses the localized fallback when a Remote failure has no message', async () => {
+    const item = record('failure', 'at', START + 60_000, { prompt: 'Empty failure' })
+    render(<ScheduleCatalogAction {...{
+      ...props([item]),
+      onPause: async () => ({
+        ok: false as const,
+        error: new RemoteError('gateway/internal', '', {}),
+      }),
+    }} />)
+    fireEvent.click(screen.getByRole('button', { name: '1 scheduled task waiting' }))
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Pause Empty failure' }))
+    })
+    expect(screen.getByRole('alert').textContent).toBe('Action failed')
+  })
+
+  it('shows the message from a rejected Error', async () => {
+    const item = record('failure', 'at', START + 60_000, { prompt: 'Rejected action' })
+    render(<ScheduleCatalogAction {...{
+      ...props([item]),
+      onPause: async () => { throw new Error('Connection closed') },
+    }} />)
+    fireEvent.click(screen.getByRole('button', { name: '1 scheduled task waiting' }))
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Pause Rejected action' }))
+    })
+    expect(screen.getByRole('alert').textContent).toBe('Connection closed')
+  })
+
+  it('uses the localized fallback when a mutation rejects without an Error', async () => {
+    const item = record('failure', 'at', START + 60_000, { prompt: 'Fallback audit' })
+    render(<ScheduleCatalogAction {...{
+      ...props([item]),
+      onPause: async () => { throw 'offline' },
+    }} />)
+    fireEvent.click(screen.getByRole('button', { name: '1 scheduled task waiting' }))
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Pause Fallback audit' }))
+    })
+    expect(screen.getByRole('alert').textContent).toBe('Action failed')
+  })
+
+  it('shows prompt, derived metadata, and management actions, with overdue records first', () => {
     const rawPrompt = '<img src=x onerror=alert(1)> Keep the complete long reminder prompt visible without truncation.'
     const overdue = record('hidden-id', 'after', START - 60_000, { prompt: rawPrompt })
     const every = record('every-id', 'every', START + 300_000, { prompt: 'Check metrics', everySeconds: 300 })
@@ -178,8 +289,8 @@ describe('ScheduleCatalogAction rows', () => {
     const text = screen.getByRole('list').textContent ?? ''
     expect(text).not.toContain('hidden-id')
     expect(text).not.toContain(overdue.scheduledAt)
-    expect(text).not.toMatch(/Delete|Retry|Details/)
-    expect(within(screen.getByRole('list')).queryAllByRole('button')).toHaveLength(0)
+    expect(text).not.toMatch(/Retry|Details/)
+    expect(within(screen.getByRole('list')).queryAllByRole('button')).toHaveLength(6)
     expect(rows.every(row => row.tabIndex === -1)).toBe(true)
   })
 
@@ -249,7 +360,7 @@ describe('ScheduleCatalogAction dismissal', () => {
 
   it('closes on Escape inside the catalog and restores trigger focus', () => {
     render(<ScheduleCatalogAction {...props(active)} />)
-    const trigger = screen.getByRole('button', { name: '1 reminder' })
+    const trigger = screen.getByRole('button', { name: '1 scheduled task waiting' })
     fireEvent.click(trigger)
     expect(trigger.getAttribute('aria-expanded')).toBe('true')
     fireEvent.keyDown(screen.getByRole('list', { name: en['list.aria'] }), { key: 'Escape' })
@@ -259,7 +370,7 @@ describe('ScheduleCatalogAction dismissal', () => {
 
   it('leaves the catalog open when Escape belongs to a sibling control', () => {
     render(<><ScheduleCatalogAction {...props(active)} /><button type="button">Sibling</button></>)
-    const trigger = screen.getByRole('button', { name: '1 reminder' })
+    const trigger = screen.getByRole('button', { name: '1 scheduled task waiting' })
     const sibling = screen.getByRole('button', { name: 'Sibling' })
     fireEvent.click(trigger)
     sibling.focus()
@@ -291,7 +402,7 @@ describe('ScheduleCatalogAction dismissal', () => {
         <button type="button">After</button>
       </>,
     )
-    const trigger = screen.getByRole('button', { name: '1 reminder' })
+    const trigger = screen.getByRole('button', { name: '1 scheduled task waiting' })
     const before = screen.getByRole('button', { name: 'Before' })
     const after = screen.getByRole('button', { name: 'After' })
 

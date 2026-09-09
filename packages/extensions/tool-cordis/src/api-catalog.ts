@@ -2420,6 +2420,31 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'schedules',
+    summary: 'Durable Schedule owner, human Remote namespace, and live Agent runtime installer.',
+    description: 'Durable Schedule owner, human Remote namespace, and live Agent runtime installer.',
+    methods: [
+      {
+        signature: '@Remote(\'pause\') pause(agent: Agent, id: ScheduleId): Promise<ScheduleView>',
+        description: 'Pause one retained deliverable reminder.',
+        parameters: [{ name: 'agent', description: 'Exact live root Agent resolved from the Session wire identity.' }, { name: 'id', description: 'Session-local reminder identity.' }],
+        returns: 'The paused durable view after its persistence barrier.',
+      },
+      {
+        signature: '@Remote(\'resume\') resume(agent: Agent, id: ScheduleId): Promise<ScheduleView>',
+        description: 'Resume one paused reminder without changing its target.',
+        parameters: [{ name: 'agent', description: 'Exact live root Agent resolved from the Session wire identity.' }, { name: 'id', description: 'Session-local reminder identity.' }],
+        returns: 'The resumed timing view after its persistence barrier.',
+      },
+      {
+        signature: '@Remote(\'delete\') async delete(agent: Agent, id: ScheduleId): Promise<ScheduleDeleteResult>',
+        description: 'Delete one retained reminder, including a paused reminder.',
+        parameters: [{ name: 'agent', description: 'Exact live root Agent resolved from the Session wire identity.' }, { name: 'id', description: 'Session-local reminder identity.' }],
+        returns: 'The deleted identity after its persistence barrier.',
+      },
+    ],
+  },
+  {
     key: 'sessionController',
     summary: 'Host service backing the generated `ctx.remote.session` namespace.',
     description: 'Host service backing the generated `ctx.remote.session` namespace.',
@@ -4653,6 +4678,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type AdmittedPromptContentPart = {\n    readonly type: \'text\';\n    readonly text: string;\n} | {\n    readonly type: \'image\';\n    readonly attachment: ImageAttachmentRef;\n} | {\n    readonly type: \'file\';\n    readonly attachment: FileAttachmentRef;\n};',
   },
   {
+    name: 'AfterScheduleRecord',
+    declaration: 'export interface AfterScheduleRecord {\n    readonly id: ScheduleId;\n    readonly kind: \'after\';\n    readonly prompt: string;\n    readonly afterSeconds: number;\n    readonly scheduledAt: string;\n}',
+  },
+  {
     name: 'Agent',
     declaration: 'export interface Agent {\n    readonly id: SessionId;\n}',
   },
@@ -4823,6 +4852,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'AssistantStreamRecord',
     declaration: 'export type AssistantStreamRecord = {\n    readonly type: \'text-chunks\';\n    readonly time0: number;\n    readonly index: number;\n    readonly dt: readonly number[];\n    readonly texts: readonly string[];\n} | {\n    readonly type: \'reasoning-chunks\';\n    readonly time0: number;\n    readonly index: number;\n    readonly dt: readonly number[];\n    readonly texts: readonly string[];\n} | {\n    readonly type: \'tool-call-chunks\';\n    readonly time0: number;\n    readonly index: number;\n    readonly dt: readonly number[];\n    readonly id: ToolCallId;\n    readonly name?: string;\n    readonly args: readonly string[];\n} | {\n    readonly type: \'chunk\';\n    readonly time: number;\n    readonly chunk: StreamChunk;\n};',
+  },
+  {
+    name: 'AtScheduleRecord',
+    declaration: 'export interface AtScheduleRecord {\n    readonly id: ScheduleId;\n    readonly kind: \'at\';\n    readonly prompt: string;\n    readonly scheduledAt: string;\n}',
   },
   {
     name: 'AttachmentAdmissionPart',
@@ -5573,6 +5606,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface EpochHeader {\n    config: LlmCallConfig;\n    adapterDefaults?: LlmCallConfigAdapterDefaults;\n    tools?: ToolSchema[];\n}',
   },
   {
+    name: 'EveryScheduleRecord',
+    declaration: 'export interface EveryScheduleRecord {\n    readonly id: ScheduleId;\n    readonly kind: \'every\';\n    readonly prompt: string;\n    readonly everySeconds: number;\n    readonly scheduledAt: string;\n}',
+  },
+  {
     name: 'FiberState',
     declaration: 'export type FiberState = FiberStateEnum;',
   },
@@ -6317,6 +6354,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type ObjectJsonSchema = JsonSchemaNode & {\n    type: \'object\';\n};',
   },
   {
+    name: 'OneShotScheduleRecord',
+    declaration: 'export type OneShotScheduleRecord = AfterScheduleRecord | AtScheduleRecord;',
+  },
+  {
     name: 'OneShotSubagentDescriptorData',
     declaration: 'export interface OneShotSubagentDescriptorData extends SubagentDescriptorBase {\n    readonly mode: \'one-shot\';\n    readonly label?: string;\n}',
   },
@@ -6845,12 +6886,36 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface SaveTextSpill {\n    owner: SpillOwner;\n    source: SpillSource;\n    suggestedName: string;\n    content: string;\n}',
   },
   {
+    name: 'ScheduleDeleteResult',
+    declaration: 'export type ScheduleDeleteResult = {\n    readonly id: ScheduleId;\n    readonly deleted: true;\n} | {\n    readonly id: ScheduleId;\n    readonly deleted: false;\n    readonly code: \'schedule_not_found\';\n};',
+  },
+  {
+    name: 'ScheduleDeliveryMode',
+    declaration: 'export type ScheduleDeliveryMode = \'session-local\';',
+  },
+  {
     name: 'ScheduledToolDispatch',
     declaration: 'export type ScheduledToolDispatch = {\n    kind: \'post-result\';\n    result: ToolExecutionResult;\n} | {\n    kind: \'final-result\';\n    result: ToolExecutionResult;\n};',
   },
   {
     name: 'ScheduledToolPreparation',
     declaration: 'export type ScheduledToolPreparation = {\n    kind: \'dispatch\';\n    exec: ToolRunContext;\n} | {\n    kind: \'post-result\';\n    exec: ToolRunContext;\n    result: ToolExecutionResult;\n} | {\n    kind: \'final-result\';\n    exec: ToolRunContext;\n    result: ToolExecutionResult;\n};',
+  },
+  {
+    name: 'ScheduleId',
+    declaration: 'export type ScheduleId = Branded<\'ScheduleId\'>;',
+  },
+  {
+    name: 'ScheduleRecord',
+    declaration: 'export type ScheduleRecord = OneShotScheduleRecord | EveryScheduleRecord;',
+  },
+  {
+    name: 'ScheduleState',
+    declaration: 'export type ScheduleState = \'scheduled\' | \'overdue\' | \'paused\';',
+  },
+  {
+    name: 'ScheduleView',
+    declaration: 'export type ScheduleView = ScheduleRecord & {\n    readonly state: ScheduleState;\n    readonly deliveryMode: ScheduleDeliveryMode;\n};',
   },
   {
     name: 'Scoped',

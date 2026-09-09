@@ -26,7 +26,7 @@ kind: "package-reference"
 <a id="package-contract"></a>
 ## 包约定
 
-`dsh-schedule` 为你的会话提供持久的提醒：让模型稍后提醒你，提醒会作为同一会话中的普通 follow-up 消息返回。你可以安排延时后的一次性提醒、绝对时间的一次性提醒，或固定间隔的重复提醒，也可以列出或取消保留提醒，包括暂停的提醒。提醒在重启后依然存在：已经 live 且空闲的 agent 可以立即交付到期工作，而已关闭或 cold 的会话会让提醒保持逾期，直到未来的 live 根 agent 恢复会话。交付只发生在会话内部，没有电子邮件、短信或推送通知。它是可选的 Web 能力；加载 Schedule overlay 即可启用提醒工具。`schedule_list` 按创建顺序返回保留提醒，包括暂停行。会话头目录尚未挂载。普通与搜索侧边栏行可能在尽力而为的列表 projection 明确非空时显示不可交互的闹钟；该闹钟不保证 live runtime，也不表示已挂载会话头目录。
+`dsh-schedule` 为你的会话提供持久的提醒：让模型稍后提醒你，提醒会作为同一会话中的普通 follow-up 消息返回。你可以安排延时后的一次性提醒、绝对时间的一次性提醒，或固定间隔的重复提醒，也可以列出或取消保留提醒，包括暂停的提醒。提醒在重启后依然存在：已经 live 且空闲的 agent 可以立即交付到期工作，而已关闭或 cold 的会话会让提醒保持逾期，直到未来的 live 根 agent 恢复会话。交付只发生在会话内部，没有电子邮件、短信或推送通知。DeepSeek Gestalt Desktop 默认加载 Schedule 与会话头任务板；浏览器 Web 仍通过 Schedule overlay 显式启用。`schedule_list` 按创建顺序返回保留提醒，包括暂停行。任务板使用仅供人工调用的 Remote 方法暂停、恢复与删除。普通与搜索侧边栏行可能在尽力而为的列表 projection 明确非空时显示不可交互的闹钟；该闹钟不保证 live runtime。
 
 <a id="use-this-package"></a>
 ## 使用本包
@@ -59,7 +59,7 @@ dsh web --patch apps/cli/config/examples/schedule/cordis.yml
 
 ### 提醒何时触发
 
-到期提醒会在会话空闲后作为普通 follow-up 消息出现；agent 绝不会中断正在运行的轮次。已经 live 且空闲的 agent 可以认领 maintenance 并立即交付，无需再次恢复。一次性提醒先于任何重复批次触发；同时到期的多条重复提醒会按时间顺序合并为一条消息。如果会话在提醒到期时已关闭或 cold，提醒会保持逾期，直到未来的 live 根 agent 恢复会话——会话之外不会发送任何内容。错过若干间隔的重复提醒只展示最新一个到期发生时点，不展示积压。Host 工具会列出保留的暂停记录。可选 Web 会话头目录与人工 pause/resume 控件尚未挂载。dispatch 表示 follow-up 已入队并被记录，不表示模型成功或用户已读取回答。
+到期提醒会在会话空闲后作为普通 follow-up 消息出现；agent 绝不会中断正在运行的轮次。已经 live 且空闲的 agent 可以认领 maintenance 并立即交付，无需再次恢复。一次性提醒先于任何重复批次触发；同时到期的多条重复提醒会按时间顺序合并为一条消息。如果会话在提醒到期时已关闭或 cold，提醒会保持逾期，直到未来的 live 根 agent 恢复会话——会话之外不会发送任何内容。错过若干间隔的重复提醒只展示最新一个到期发生时点，不展示积压。Host 工具会列出保留的暂停记录。Desktop 会话头任务板允许用户通过同一个持久 owner 暂停、恢复或删除保留记录；浏览器 Web 只有在启用 Schedule overlay 后才获得这些控制。dispatch 表示 follow-up 已入队并被记录，不表示模型成功或用户已读取回答。
 
 -----
 
@@ -77,7 +77,7 @@ dsh web --patch apps/cli/config/examples/schedule/cordis.yml
 
 Time-context 不是 Schedule 的依赖。官方 Web overlay 挂载 `@deepseek-ai/dsh-time-context`，让模型能够按浏览器请求本地时区解释自然语言；但模型仍必须向 `schedule_create` 传入显式偏移量或 `time_zone`；Schedule 绝不会从模型上下文导入或推断该值。
 
-Session projection 是可选能力。`ctx.sessionProjections` 存在时，插件会注册 key 为 `schedule` 的单元并公开保留的 `ScheduleProjectionItem[]`（含暂停）。apply 会跳过 `Session.inheritedEventCount` 之前的事件；定义没有 `eventScope` 字段。不带注册表的 headless 组合仍保留相同工具与 runtime。浏览器安全的记录词汇由纯类型出口 `@deepseek-ai/dsh-schedule/client` 提供。overlay 加载 Host 工具；会话头目录与人工 pause/resume 控件尚未挂载。
+Session projection 是可选能力。`ctx.sessionProjections` 存在时，插件会注册 key 为 `schedule` 的单元并公开保留的 `ScheduleProjectionItem[]`（含暂停）。apply 会跳过 `Session.inheritedEventCount` 之前的事件；定义没有 `eventScope` 字段。不带注册表的 headless 组合仍保留相同工具与 runtime。浏览器安全的记录词汇由纯类型出口 `@deepseek-ai/dsh-schedule/client` 提供。Desktop overlay 会启用既有 `ui-schedule` row；纯浏览器部署可以显式启用同一个 row。
 
 ### 设计理念
 
@@ -110,7 +110,7 @@ Session projection 是可选能力。`ctx.sessionProjections` 存在时，插件
 
 可选的 `schedule` projection 将 `{ inheritedEventCount, active, paused, schedules, seenIds }` 作为严格的纯 JSON 检查点，并按创建顺序发布保留的 `{ ...record, paused }` 项。apply 会忽略 `seq` 小于 `Session.inheritedEventCount` 的 `schedule/change` 事件。其 schema 复用持久 Schedule decoder，拒绝重复或不一致的已解码记录，并让损坏的持久事件通过既有 Session 读取失败传播，而不是发布部分目录。
 
-projection 携带持久记录与 paused 标志。它不持久化或传输 scheduled／overdue 状态、本地化文本、相对时间、浏览器本地时间、排序状态、popover 状态、runtime 存活或交付回执。Host 工具列出该保留集合。人工 pause/resume Remote 传输与 Desktop 任务板仍是保留的设计义务，尚未挂载。[`dsh-client-ui-workspace`](../../client/ui-workspace/README.zh.md) 只派生列表值是否为非空数组，因此持久 projection cache 缺失或陈旧时，普通行与搜索结果的闹钟可能短暂漏显或残留。
+projection 携带持久记录与 paused 标志。它不持久化或传输 scheduled／overdue 状态、本地化文本、相对时间、浏览器本地时间、排序状态、popover 状态、runtime 存活或交付回执。Host 工具与 `schedules` Remote namespace 使用同一个保留集合和事务 owner。[`dsh-client-ui-workspace`](../../client/ui-workspace/README.zh.md) 只派生列表值是否为非空数组，因此持久 projection cache 缺失或陈旧时，普通行与搜索结果的闹钟可能短暂漏显或残留。
 
 ### 时间校验
 
@@ -224,7 +224,7 @@ reminders_json: <JSON.stringify(reminders)>
 - **只追赶最新一次**——逾期 Every 记录只贡献其最新一个到期发生时点，因此 Schedule 绝不会回放因错过间隔而形成的积压。
 - **存在狭窄的崩溃重复窗口**——同步 follow-up 获得准入后、dispatch 检查点完成前发生崩溃，可能使提醒重复；本包不承诺模型完成、用户确认或副作用恰好执行一次。
 - **加载顺序边界**——插件不会扫描或接管加载时已经 live 的 agent。
-- **人工 pause/resume Remote 与任务板 UI 尚未挂载**——Host fold 与工具接受暂停 list/delete。已接受的任务板决策仍拥有人工 Remote 变更与会话头目录；本包不安装 `ctx.schedules` 或任务板。
+- **人工控制需要 Remote 装配**——headless 组合保留模型工具与 runtime；会话头任务板还需要生成的 `schedules` Remote 贡献和 `ui-schedule` 客户端 row。
 
 <a id="dev-note"></a>
 ### 开发备注
