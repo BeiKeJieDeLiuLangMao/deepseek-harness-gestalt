@@ -33,7 +33,7 @@ describe('workbench apply on the overlay document', () => {
     ctx.provide('sessions', { list: { subscribe: subscribeSessions } })
     ctx.provide('remote', { browserWorkspace: { create } })
     apply(ctx)
-    expect(ctx.get('workbenchBrowser')).toEqual({ reveal: expect.any(Function) })
+    expect(typeof ctx.workbenchBrowser.reveal).toBe('function')
     ctx.workbenchBrowser.reveal('s1')
     expect(register).not.toHaveBeenCalled()
     expect(subscribeSidebar).not.toHaveBeenCalled()

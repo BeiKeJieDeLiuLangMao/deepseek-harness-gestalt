@@ -177,6 +177,8 @@ function failureStatus(error: BrowserRuntimeError): number {
     case 'BROWSER_PROFILE_BUSY':
     case 'BROWSER_REVISION_CONFLICT':
       return 409
+    case 'BROWSER_RUNTIME_UNAVAILABLE':
+      return 503
     default:
       return 500
   }
@@ -405,6 +407,9 @@ export async function listenElectronBrowserHttp(options: {
       }
       const state = await options.runtime.observe({ target: found.tab.target })
       if (state.status !== 'open') {
+        if (state.status === 'unavailable') {
+          throw new BrowserRuntimeError('tab runtime is unavailable', 'BROWSER_RUNTIME_UNAVAILABLE')
+        }
         json(response, 404, { error: 'tab is not open' })
         return
       }

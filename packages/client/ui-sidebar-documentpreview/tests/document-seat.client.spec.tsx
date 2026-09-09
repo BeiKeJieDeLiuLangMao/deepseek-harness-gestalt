@@ -90,8 +90,10 @@ async function boot() {
     seedRightbarWidth: vi.fn(),
   })
   const view = { ...rendered, container: hostRoot }
-  const open = (name: string): void => {
-    act(() => { rt.ctx.sidebarRight.openResource('dsh-resource://file/session/documents/' + name) })
+  const open = async (name: string): Promise<void> => {
+    await act(async () => {
+      await rt.ctx.sidebarRight.openResource('dsh-resource://file/session/documents/' + name)
+    })
   }
   const register = (id: string, loading: DocumentLoadMode, priority: 'builtin' | 'extension') => rt.ctx.effect(() => {
     const removeDefinition = rt.ctx.documentPreviews.register({ id, extensions: ['md'], priority, title: () => id, loading, wrap: loading === 'text-pages' })
@@ -123,7 +125,9 @@ describe('document extension seat', () => {
     'reads %s through its addressed Session rather than the mounted Tab Session',
     async (path) => {
       const h = await boot()
-      act(() => { h.rt.ctx.sidebarRight.openResource(sessionFileAddress('address-session', path)) })
+      await act(async () => {
+        await h.rt.ctx.sidebarRight.openResource(sessionFileAddress('address-session', path))
+      })
       await waitFor(() => { expect(h.view.container.querySelectorAll('[data-textpreview-line]')).toHaveLength(2) })
       expect(h.read).toHaveBeenCalledExactlyOnceWith('address-session', path, { offset: 1 }, expect.any(AbortSignal))
       expect(h.bytes).not.toHaveBeenCalled()
@@ -135,10 +139,10 @@ describe('document extension seat', () => {
     const address = absoluteFileAddress('/other/notes.unknown')
     expect(h.rt.ctx.sidebarRightTabs.candidates(address)).toEqual([])
     expect(() => {
-      act(() => { h.rt.ctx.sidebarRight.openResource(address) })
+      act(() => { void h.rt.ctx.sidebarRight.openResource(address) })
     }).toThrow('no registered tab type claims')
     expect(() => {
-      act(() => { h.rt.ctx.sidebarRight.openResource(address, { kind: 'text' }) })
+      act(() => { void h.rt.ctx.sidebarRight.openResource(address, { kind: 'text' }) })
     }).toThrow('tab type "text" refuses')
     expect(h.read).not.toHaveBeenCalled()
     expect(h.bytes).not.toHaveBeenCalled()
@@ -147,7 +151,7 @@ describe('document extension seat', () => {
 
   it('uses the plain-text body for an unknown extension and loads another page at the scroll edge', async () => {
     const h = await boot()
-    h.open('notes.unknown')
+    await h.open('notes.unknown')
     await waitFor(() => { expect(h.view.container.querySelectorAll('[data-textpreview-line]')).toHaveLength(2) })
     expect(h.view.container.querySelector('[data-document-preview]')?.getAttribute('data-document-preview')).toBe(PLAIN_BODY_ID)
     const body = h.view.container.querySelector<HTMLElement>('[data-textpreview-body]')!
@@ -163,7 +167,7 @@ describe('document extension seat', () => {
       h.register('builtin-reader', 'text-pages', 'builtin')
       h.register('extension-reader', 'bytes-complete', 'extension')
     })
-    h.open('notes.md')
+    await h.open('notes.md')
     await waitFor(() => {
       const body = h.view.container.querySelector('[data-renderer="extension-reader"]')
       expect(body?.textContent).toBe('all')
@@ -188,7 +192,7 @@ describe('document extension seat', () => {
       h.register('builtin-reader', 'text-pages', 'builtin')
       remove = h.register('extension-reader', 'text-pages', 'extension')
     })
-    h.open('notes.md')
+    await h.open('notes.md')
     await waitFor(() => {
       expect(h.view.container.querySelector('[data-renderer="extension-reader"]')?.getAttribute('data-renderer-version')).toBe('v1')
     })

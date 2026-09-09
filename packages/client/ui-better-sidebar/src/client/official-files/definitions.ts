@@ -13,12 +13,15 @@ export const OFFICIAL_FILE_KIND = 'file'
 /** Registration identity and keyed body seat of the official file tab. */
 export const OFFICIAL_FILE_ID = '@deepseek-ai/dsh-client-ui-better-sidebar/file'
 
+/** Whole-address glob over the canonical encoder alphabet, including literal dot path components. */
+const OFFICIAL_FILE_PATTERN = "dsh-resource://file/session/+([/A-Za-z0-9%._~!:'()*-])"
+
 /** Built-in file type registered over the plain-text fallback. */
 export function officialFileDefinition(runtime: OfficialFileRuntime): SidebarRightTabDefinition {
   return {
     id: OFFICIAL_FILE_ID,
     kind: OFFICIAL_FILE_KIND,
-    patterns: ['dsh-resource://file/**'],
+    patterns: [OFFICIAL_FILE_PATTERN],
     priority: 'builtin',
     canOpen: address => parseOfficialFileAddress(address)?.scope === 'session',
     title: officialFileTitle,

@@ -3,6 +3,7 @@ import type { SidebarRightTabCloseContext } from '@deepseek-ai/dsh-client-ui-sid
 import type { TabId } from '@deepseek-ai/dsh-client-ui-dockkit'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { OfficialFileRuntime } from '../src/client/official-files/runtime.ts'
+import { officialFileAddress } from '../src/client/official-files/address.ts'
 
 const SID = 'session' as SessionId
 const TAB = 'tab' as TabId
@@ -11,7 +12,7 @@ function closeContext(): SidebarRightTabCloseContext {
   return {
     sessionId: SID,
     surface: 'right',
-    tab: { id: TAB, kind: 'file', contentId: 'dsh-resource://file/session/session/a.md', title: 'a.md' },
+    tab: { id: TAB, kind: 'file', contentId: officialFileAddress(SID, undefined, 'a.md'), title: 'a.md' },
     payload: undefined,
     pin: undefined,
     signal: new AbortController().signal,

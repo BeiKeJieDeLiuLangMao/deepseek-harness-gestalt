@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-10-terminal-single-scroll-owner.md
-2026-09-10-terminal-single-scroll-owner.md: 80232e06f0bb7444b47b98b24917062dd3b35f76
-2026-09-10-terminal-single-scroll-owner.zh.md: d034fdefa7d1197535b58496f0c8e98bfb625592
+2026-09-10-terminal-single-scroll-owner.md: b96b89e6c5203d657a7d77ccc1ee0ce633dc5e80
+2026-09-10-terminal-single-scroll-owner.zh.md: 2667655b43d3c695a85033347d9e710db06f903f

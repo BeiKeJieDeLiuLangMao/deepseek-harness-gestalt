@@ -58,7 +58,7 @@ function equalBreadcrumbs(left: readonly Breadcrumb[], right: readonly Breadcrum
  */
 export function ConversationSessionHeader({
   sessionId, useSession, useSessions, useConversation, useConversationViews, useStore,
-  renderSlot, open, selectView, renderMode, openSession, t,
+  renderSlot, open, selectView, renderMode, openSession, displayHostSessionId, t,
 }: ConversationSessionHeaderProps) {
   const tabs = useConversationViews(value => value)
   const selectedId = useStore(s => s.view)
@@ -72,6 +72,7 @@ export function ConversationSessionHeader({
   const actionOwner = {
     ...(renderMode !== undefined ? { renderMode } : {}),
     ...(openSession !== undefined ? { openSession } : {}),
+    ...(displayHostSessionId !== undefined ? { displayHostSessionId } : {}),
   }
 
   return (

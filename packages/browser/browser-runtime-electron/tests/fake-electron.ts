@@ -22,6 +22,8 @@ interface FakePage {
 
 interface FakeOptions {
   readonly loadDelayMs?: number
+  /** Keep the pending load alive when stop is called. */
+  readonly stopDoesNotSettleLoad?: boolean
   readonly captureDelayMs?: number
   readonly captureEmpty?: boolean
   readonly captureFailures?: number
@@ -109,7 +111,7 @@ class FakeWebContents implements ElectronWebContents {
   }
   stop(): void {
     this.stopped = true
-    this.loadWait?.()
+    if (this.options.stopDoesNotSettleLoad !== true) this.loadWait?.()
   }
   async loadURL(url: string): Promise<void> {
     if (this.options.failLoad === true) throw new Error('load failed')
@@ -266,7 +268,7 @@ class FakeBrowserWindow implements ElectronBrowserWindow {
   }
   destroy(): void {
     this.destroyed = true
-    this.webContents.destroyed = true
+    this.webContents.close()
   }
 }
 

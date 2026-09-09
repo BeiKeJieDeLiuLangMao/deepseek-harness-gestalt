@@ -621,6 +621,8 @@ describe('text annotation mechanics', () => {
       fireEvent.keyDown(editor, { key: 'Enter' })
       expect(save).not.toHaveBeenCalled()
       vi.advanceTimersByTime(20)
+      fireEvent.keyDown(editor, { key: 'Enter', keyCode: 229 })
+      expect(save).not.toHaveBeenCalled()
       fireEvent.keyDown(editor, { key: 'Enter' })
       expect(save).toHaveBeenCalledTimes(1)
     } finally {
