@@ -87,13 +87,10 @@ export const imWorkspaceSimulationConfigSchema = z.object({
 })
 
 /**
- * Root state for the IM domain ensuring atomic coherence of configuration state.
+ * Root state for the IM domain metadata.
  */
 export const imDomainStateSchema = z.object({
   initialized: z.boolean(),
-  accountIds: z.array(imAccountIdSchema),
-  ruleIds: z.array(imRouteRuleIdSchema),
-  simulationWorkspaceIds: z.array(workspaceIdSchema).default([]),
 })
 
 export type ImDomainState = z.infer<typeof imDomainStateSchema>
@@ -108,9 +105,6 @@ export const imDomainSpec = defineDomain({
     schema: imDomainStateSchema,
     initial: {
       initialized: false,
-      accountIds: [],
-      ruleIds: [],
-      simulationWorkspaceIds: [],
     },
   },
   tables: {

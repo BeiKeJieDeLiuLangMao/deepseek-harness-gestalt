@@ -120,9 +120,10 @@ export class ImConfigService extends Service {
    * @returns Array of registered account metadata records.
    */
   async listAccounts(): Promise<ImAccountMetadata[]> {
-    const { accountsTable, globalHandle } = this.requireDomain()
-    const state = globalHandle.get()
-    return state.accountIds.map(id => accountsTable.get(id) as ImAccountMetadata)
+    const { accountsTable } = this.requireDomain()
+    return [...accountsTable.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([, account]) => account)
   }
 
   /**
@@ -131,32 +132,39 @@ export class ImConfigService extends Service {
    * @returns The saved account metadata.
    */
   async upsertAccount(options: CreateImAccountOptions): Promise<ImAccountMetadata> {
-    const { accountsTable, globalHandle } = this.requireDomain()
+    const { accountsTable } = this.requireDomain()
     const existing = accountsTable.get(options.id)
     const now = new Date().toISOString()
-    const metadata: ImAccountMetadata = {
-      id: options.id,
-      platform: options.platform,
-      displayName: options.displayName,
-      ...(options.credentialRef !== undefined ? { credentialRef: options.credentialRef } : {}),
-      status: options.status ?? existing?.status ?? 'connected',
-      paused: options.paused ?? existing?.paused ?? false,
-      ...(options.platformMetadata !== undefined ? { platformMetadata: options.platformMetadata } : {}),
-      createdAt: existing?.createdAt ?? now,
-      updatedAt: now,
-    }
-
-    await accountsTable.put(options.id, metadata)
 
     if (!existing) {
-      const state = globalHandle.get()
-      await globalHandle.set({
-        ...state,
-        accountIds: [...state.accountIds, options.id],
-      })
+      const metadata: ImAccountMetadata = {
+        id: options.id,
+        platform: options.platform,
+        displayName: options.displayName,
+        ...(options.credentialRef !== undefined ? { credentialRef: options.credentialRef } : {}),
+        status: options.status ?? 'connected',
+        paused: options.paused ?? false,
+        ...(options.platformMetadata !== undefined ? { platformMetadata: options.platformMetadata } : {}),
+        createdAt: now,
+        updatedAt: now,
+      }
+      await accountsTable.put(options.id, metadata)
+      return metadata
     }
 
-    return metadata
+    return accountsTable.update(options.id, (current) => {
+      const updateNow = new Date().toISOString()
+      return {
+        ...current,
+        platform: options.platform,
+        displayName: options.displayName,
+        ...(options.credentialRef !== undefined ? { credentialRef: options.credentialRef } : {}),
+        status: options.status ?? current.status,
+        paused: options.paused ?? current.paused,
+        ...(options.platformMetadata !== undefined ? { platformMetadata: options.platformMetadata } : {}),
+        updatedAt: updateNow,
+      }
+    })
   }
 
   /**
@@ -171,13 +179,11 @@ export class ImConfigService extends Service {
     if (!account) {
       throw new Error(`IM account not found: ${id}`)
     }
-    const updated: ImAccountMetadata = {
-      ...account,
+    return accountsTable.update(id, current => ({
+      ...current,
       paused,
       updatedAt: new Date().toISOString(),
-    }
-    await accountsTable.put(id, updated)
-    return updated
+    }))
   }
 
   /**
@@ -186,28 +192,18 @@ export class ImConfigService extends Service {
    * @returns True if deleted, false if the account did not exist.
    */
   async deleteAccount(id: ImAccountId): Promise<boolean> {
-    const { accountsTable, rulesTable, globalHandle } = this.requireDomain()
+    const { accountsTable, rulesTable } = this.requireDomain()
     const existing = accountsTable.get(id)
     if (!existing) return false
 
     // Cascade remove route rules associated with this account
-    const state = globalHandle.get()
-    const remainingRuleIds: ImRouteRuleId[] = []
-    for (const ruleId of state.ruleIds) {
-      const rule = rulesTable.get(ruleId)
-      if (rule && rule.accountId === id) {
+    for (const [ruleId, rule] of rulesTable.entries()) {
+      if (rule.accountId === id) {
         await rulesTable.delete(ruleId)
-      } else {
-        remainingRuleIds.push(ruleId)
       }
     }
 
     await accountsTable.delete(id)
-    await globalHandle.set({
-      ...state,
-      accountIds: (state.accountIds as ImAccountId[]).filter(aId => aId !== id),
-      ruleIds: remainingRuleIds,
-    })
     return true
   }
 
@@ -229,12 +225,10 @@ export class ImConfigService extends Service {
    * @returns Array of matching route rules.
    */
   async listRouteRules(workspaceId?: WorkspaceId): Promise<ImRouteRule[]> {
-    const { rulesTable, globalHandle } = this.requireDomain()
-    const state = globalHandle.get()
+    const { rulesTable } = this.requireDomain()
     const rules: ImRouteRule[] = []
-    for (const id of state.ruleIds) {
-      const rule = rulesTable.get(id)
-      if (rule && (!workspaceId || rule.workspaceId === workspaceId)) {
+    for (const [, rule] of [...rulesTable.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+      if (!workspaceId || rule.workspaceId === workspaceId) {
         rules.push(rule)
       }
     }
@@ -247,7 +241,7 @@ export class ImConfigService extends Service {
    * @returns The created route rule.
    */
   async createRouteRule(options: CreateImRouteRuleOptions): Promise<ImRouteRule> {
-    const { accountsTable, rulesTable, globalHandle } = this.requireDomain()
+    const { accountsTable, rulesTable } = this.requireDomain()
     // Validate account exists
     const account = accountsTable.get(options.accountId)
     if (!account) {
@@ -300,13 +294,6 @@ export class ImConfigService extends Service {
     }
 
     await rulesTable.put(options.id, rule)
-
-    const state = globalHandle.get()
-    await globalHandle.set({
-      ...state,
-      ruleIds: [...state.ruleIds, options.id],
-    })
-
     return rule
   }
 
@@ -332,16 +319,13 @@ export class ImConfigService extends Service {
       }
     }
 
-    const updated: ImRouteRule = {
-      ...existing,
+    return rulesTable.update(id, current => ({
+      ...current,
       ...(updates.workspaceId !== undefined ? { workspaceId: updates.workspaceId } : {}),
       ...(updates.enabled !== undefined ? { enabled: updates.enabled } : {}),
       ...(updates.groupTrigger !== undefined ? { groupTrigger: updates.groupTrigger } : {}),
       updatedAt: new Date().toISOString(),
-    }
-
-    await rulesTable.put(id, updated)
-    return updated
+    }))
   }
 
   /**
@@ -350,16 +334,11 @@ export class ImConfigService extends Service {
    * @returns True if deleted, false if the rule did not exist.
    */
   async deleteRouteRule(id: ImRouteRuleId): Promise<boolean> {
-    const { rulesTable, globalHandle } = this.requireDomain()
+    const { rulesTable } = this.requireDomain()
     const existing = rulesTable.get(id)
     if (!existing) return false
 
     await rulesTable.delete(id)
-    const state = globalHandle.get()
-    await globalHandle.set({
-      ...state,
-      ruleIds: (state.ruleIds as ImRouteRuleId[]).filter(rId => rId !== id),
-    })
     return true
   }
 
@@ -472,16 +451,38 @@ export class ImConfigService extends Service {
 
   /**
    * Configure the IM simulation target for a workspace.
-   * Target account must exist.
+   * Target account must exist, and a configured route rule must cover the target conversation.
+   *
+   * Note: The route rule may belong to any workspace (e.g. testing an agent in another workspace).
+   * Disabled or account-paused route rules still permit simulation testing.
    * @param options - Target account and conversation options.
    * @returns The saved simulation configuration.
    */
   async setSimulationConfig(options: SetWorkspaceSimulationTargetOptions): Promise<ImWorkspaceSimulationConfig> {
-    const { accountsTable, simulationsTable, globalHandle } = this.requireDomain()
+    const { accountsTable, rulesTable, simulationsTable } = this.requireDomain()
     // Invariant: Simulation target must refer to an already configured account
     const account = accountsTable.get(options.targetAccountId)
     if (!account) {
       throw new Error(`Cannot configure simulation target: account ${options.targetAccountId} does not exist`)
+    }
+
+    // Invariant: Simulation target must match a configured route rule (specific or all) for the target account and conversationKind.
+    // The route rule may belong to another workspace (e.g. testing a bot workspace).
+    // Disabled or account-paused rules remain valid simulation targets.
+    const allRules = [...rulesTable.entries()].map(([, rule]) => rule)
+    const matchingRules = allRules.filter(
+      r => r.accountId === options.targetAccountId && r.conversationKind === options.conversationKind,
+    )
+
+    const matchesSpecific = options.targetConversationId
+      ? matchingRules.some(r => r.target.kind === 'specific' && r.target.conversationId === options.targetConversationId)
+      : false
+    const matchesAll = matchingRules.some(r => r.target.kind === 'all')
+
+    if (!matchesSpecific && !matchesAll) {
+      throw new Error(
+        `Cannot configure simulation target: no matching route rule found for account ${options.targetAccountId}, kind ${options.conversationKind}${options.targetConversationId ? ` and conversation ${options.targetConversationId}` : ''}`,
+      )
     }
 
     const config: ImWorkspaceSimulationConfig = {
@@ -493,19 +494,6 @@ export class ImConfigService extends Service {
     }
 
     await simulationsTable.put(options.workspaceId, config)
-
-    const state = globalHandle.get()
-    if (!state.simulationWorkspaceIds.includes(options.workspaceId)) {
-      await globalHandle.set({
-        ...state,
-        simulationWorkspaceIds: [...state.simulationWorkspaceIds, options.workspaceId],
-      })
-    } else {
-      await globalHandle.set({
-        ...state,
-      })
-    }
-
     return config
   }
 
@@ -515,16 +503,11 @@ export class ImConfigService extends Service {
    * @returns True if deleted, false if none existed.
    */
   async deleteSimulationConfig(workspaceId: WorkspaceId): Promise<boolean> {
-    const { simulationsTable, globalHandle } = this.requireDomain()
+    const { simulationsTable } = this.requireDomain()
     const existing = simulationsTable.get(workspaceId)
     if (!existing) return false
 
     await simulationsTable.delete(workspaceId)
-    const state = globalHandle.get()
-    await globalHandle.set({
-      ...state,
-      simulationWorkspaceIds: (state.simulationWorkspaceIds as WorkspaceId[]).filter(wsId => wsId !== workspaceId),
-    })
     return true
   }
 }

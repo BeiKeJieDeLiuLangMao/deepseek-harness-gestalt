@@ -37,5 +37,5 @@ Mounted at `ctx.imConfig`.
 - **Single Workspace per Conversation**: A specific conversation ID cannot be bound to multiple workspaces simultaneously without an explicit rebind.
 - **Unconfigured No-Trigger**: Unmatched conversations resolve to `unconfigured` to prevent accidental access.
 - **Group Trigger Invariant**: Group routes require at least one trigger condition (mention, everyN, or fixedIntervalSeconds) with positive numbers.
-- **Simulation Target Restriction**: Workspace simulation targets must reference existing configured accounts.
+- **Simulation Target Restriction**: Workspace simulation targets must reference existing configured accounts and match a configured route rule for that target conversation. Route rules may belong to another workspace, and paused accounts or disabled rules still permit simulation.
 - **No Invariant Companion Needed**: `im-core` manages state through `StorageDomain`, which owns atomic record and change guarantees. There are no divergent observations or separate process bridges requiring an independent `./invariant` companion.

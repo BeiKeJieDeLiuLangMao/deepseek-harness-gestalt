@@ -8,6 +8,7 @@ import type { KvFacet, KvUnit, KvUnitDescriptor, StorageBackend } from '@deepsee
 export class TestMemoryStorageBackend implements StorageBackend {
   private readonly units = new Map<string, Map<string, Map<string, unknown>>>()
   private readonly globals = new Map<string, unknown>()
+  putDelayMs = 0
 
   readonly kv: KvFacet = {
     open: async (descriptor: KvUnitDescriptor): Promise<KvUnit> => {
@@ -31,6 +32,9 @@ export class TestMemoryStorageBackend implements StorageBackend {
           }
         },
         putRecord: async (table: string, key: string, value: unknown) => {
+          if (this.putDelayMs > 0) {
+            await new Promise(resolve => setTimeout(resolve, this.putDelayMs))
+          }
           if (!unitMap.has(table)) {
             unitMap.set(table, new Map())
           }
@@ -43,6 +47,9 @@ export class TestMemoryStorageBackend implements StorageBackend {
           }
         },
         setGlobal: async (value: unknown) => {
+          if (this.putDelayMs > 0) {
+            await new Promise(resolve => setTimeout(resolve, this.putDelayMs))
+          }
           this.globals.set(descriptor.name, value)
         },
         close: async () => {},

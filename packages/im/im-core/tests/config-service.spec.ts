@@ -66,14 +66,18 @@ describe('ImConfigService Seam CRUD & resolveRoute', () => {
       platformMetadata: { corpId: 'corp-123' },
     })
 
-    // Update existing account
+    // Update existing account with credentialRef and platformMetadata
     await service.upsertAccount({
       id: accountId,
       platform: 'dingtalk',
       displayName: 'Test DingTalk Updated',
+      credentialRef: brandString<CredentialRef>('CRED_DINGTALK_NEW'),
+      platformMetadata: { newKey: 'newVal' },
     })
     const updatedAcc = await service.getAccount(accountId)
     expect(updatedAcc?.displayName).toBe('Test DingTalk Updated')
+    expect(updatedAcc?.credentialRef).toBe('CRED_DINGTALK_NEW')
+    expect(updatedAcc?.platformMetadata).toEqual({ newKey: 'newVal' })
 
     // List accounts
     const list = await service.listAccounts()
@@ -546,7 +550,7 @@ describe('ImConfigService Seam CRUD & resolveRoute', () => {
       }),
     ).rejects.toThrow(/does not exist/)
 
-    // Once account is configured, simulation target is allowed
+    // Once account and route rule are configured, simulation target is allowed
     const validAccount = brandString<ImAccountId>('acc-sim-valid')
     await service.upsertAccount({
       id: validAccount,
@@ -554,6 +558,23 @@ describe('ImConfigService Seam CRUD & resolveRoute', () => {
       displayName: 'Sim Account',
       status: 'connected',
       paused: false,
+    })
+
+    // Configure route rules to satisfy simulation target requirement
+    await service.createRouteRule({
+      id: brandString<ImRouteRuleId>('rule-sim-group'),
+      accountId: validAccount,
+      conversationKind: 'group',
+      target: { kind: 'specific', conversationId: 'group-sim-99' },
+      workspaceId: wsSim,
+      groupTrigger: { mention: true },
+    })
+    await service.createRouteRule({
+      id: brandString<ImRouteRuleId>('rule-sim-direct'),
+      accountId: validAccount,
+      conversationKind: 'direct',
+      target: { kind: 'all' },
+      workspaceId: wsSim,
     })
 
     const simConfig = await service.setSimulationConfig({
@@ -697,5 +718,217 @@ describe('ImConfigService Seam CRUD & resolveRoute', () => {
       conversationKind: 'direct' as const,
     }
     expect(imRouteRuleRecordSchema.safeParse(invalidDirect).success).toBe(false)
+  })
+
+  it('F1: prevents lost updates during concurrent mutations via atomic read-modify-write', async () => {
+    const accountId = brandString<ImAccountId>('acc-concurrent')
+    await service.upsertAccount({
+      id: accountId,
+      platform: 'dingtalk',
+      displayName: 'Initial Name',
+      paused: false,
+    })
+
+    const ruleId = brandString<ImRouteRuleId>('rule-concurrent')
+    const wsId1 = brandString<WorkspaceId>('ws-1')
+    const wsId2 = brandString<WorkspaceId>('ws-2')
+
+    await service.createRouteRule({
+      id: ruleId,
+      accountId,
+      conversationKind: 'direct',
+      target: { kind: 'all' },
+      workspaceId: wsId1,
+      enabled: true,
+    })
+
+    // Simulate backend latency to trigger race condition if read-modify-write is not atomic on the table
+    backend.putDelayMs = 20
+
+    // Concurrently update route rule: patch enabled to false and patch workspaceId to wsId2
+    await Promise.all([
+      service.updateRouteRule(ruleId, { enabled: false }),
+      service.updateRouteRule(ruleId, { workspaceId: wsId2 }),
+    ])
+
+    const finalRule = await service.getRouteRule(ruleId)
+    // Both patches must be preserved: enabled === false AND workspaceId === wsId2
+    expect(finalRule?.enabled).toBe(false)
+    expect(finalRule?.workspaceId).toBe(wsId2)
+
+    // Concurrently pause account and update account displayName via upsertAccount
+    await Promise.all([
+      service.pauseAccount(accountId, true),
+      service.upsertAccount({
+        id: accountId,
+        platform: 'dingtalk',
+        displayName: 'Concurrent Updated Name',
+      }),
+    ])
+
+    const finalAccount = await service.getAccount(accountId)
+    // Both updates must be preserved: paused === true AND displayName === 'Concurrent Updated Name'
+    expect(finalAccount?.paused).toBe(true)
+    expect(finalAccount?.displayName).toBe('Concurrent Updated Name')
+
+    backend.putDelayMs = 0
+  })
+
+  it('F2: concurrent creation of accounts and rules does not orphan records, derives lists from KvTable', async () => {
+    const acc1 = brandString<ImAccountId>('acc-race-1')
+    const acc2 = brandString<ImAccountId>('acc-race-2')
+
+    backend.putDelayMs = 20
+
+    // Concurrently create two distinct accounts
+    await Promise.all([
+      service.upsertAccount({ id: acc1, platform: 'dingtalk', displayName: 'Account 1' }),
+      service.upsertAccount({ id: acc2, platform: 'wangwang', displayName: 'Account 2' }),
+    ])
+
+    const accounts = await service.listAccounts()
+    // Both accounts must be listed, neither orphaned due to globalHandle race
+    const accountIds = accounts.map(a => a.id).sort()
+    expect(accountIds).toEqual([acc1, acc2].sort())
+
+    const rule1 = brandString<ImRouteRuleId>('rule-race-1')
+    const rule2 = brandString<ImRouteRuleId>('rule-race-2')
+    const ws1 = brandString<WorkspaceId>('ws-race-1')
+    const ws2 = brandString<WorkspaceId>('ws-race-2')
+
+    // Concurrently create two distinct rules
+    await Promise.all([
+      service.createRouteRule({
+        id: rule1,
+        accountId: acc1,
+        conversationKind: 'direct',
+        target: { kind: 'all' },
+        workspaceId: ws1,
+      }),
+      service.createRouteRule({
+        id: rule2,
+        accountId: acc2,
+        conversationKind: 'direct',
+        target: { kind: 'all' },
+        workspaceId: ws2,
+      }),
+    ])
+
+    const rules = await service.listRouteRules()
+    const ruleIds = rules.map(r => r.id).sort()
+    expect(ruleIds).toEqual([rule1, rule2].sort())
+
+    // Also reload across context to verify persistence reload reflects both
+    backend.putDelayMs = 0
+    await ctx.fiber.dispose()
+
+    const ctxReload = new Context()
+    await ctxReload.plugin(Storage)
+    ctxReload.storage.backend.register('memory', backend)
+    const facility = new DomainFacility(ctxReload, { backend: 'memory', routes: {} })
+    ctxReload.storage.mount('domain', facility)
+    ctxReload.provide('storageDomain', facility)
+    await ctxReload.plugin(ImConfigService)
+    const serviceReload = ctxReload.imConfig
+
+    const reloadedAccounts = await serviceReload.listAccounts()
+    expect(reloadedAccounts.map(a => a.id).sort()).toEqual([acc1, acc2].sort())
+
+    const reloadedRules = await serviceReload.listRouteRules()
+    expect(reloadedRules.map(r => r.id).sort()).toEqual([rule1, rule2].sort())
+
+    await ctxReload.fiber.dispose()
+  })
+
+  it('F3: rejects simulation target when no matching route rule exists, allows across workspaces and for disabled/paused rules', async () => {
+    const wsSim = brandString<WorkspaceId>('ws-sim-user')
+    const wsTarget = brandString<WorkspaceId>('ws-target-bot')
+    const accountId = brandString<ImAccountId>('acc-sim-test')
+
+    await service.upsertAccount({
+      id: accountId,
+      platform: 'dingtalk',
+      displayName: 'Sim Account',
+      paused: false,
+    })
+
+    // Case 1: Account exists, but NO route rule configured for direct conversation
+    await expect(
+      service.setSimulationConfig({
+        workspaceId: wsSim,
+        targetAccountId: accountId,
+        conversationKind: 'direct',
+        targetConversationId: 'conv-direct-1',
+      }),
+    ).rejects.toThrow(/route/i)
+
+    // Subcase 1b: No targetConversationId specified and no 'all' rule configured
+    await expect(
+      service.setSimulationConfig({
+        workspaceId: wsSim,
+        targetAccountId: accountId,
+        conversationKind: 'direct',
+      }),
+    ).rejects.toThrow(/route/i)
+
+    // Configure a specific route rule for direct conversation on wsTarget (another workspace!)
+    const ruleDirect = brandString<ImRouteRuleId>('rule-direct-specific')
+    await service.createRouteRule({
+      id: ruleDirect,
+      accountId,
+      conversationKind: 'direct',
+      target: { kind: 'specific', conversationId: 'conv-direct-1' },
+      workspaceId: wsTarget,
+      enabled: false, // disabled rule is STILL valid for simulation according to spec
+    })
+
+    // Case 2: Specific route rule matches conversationKind & targetConversationId (even though wsTarget != wsSim and rule is disabled)
+    const simConfig1 = await service.setSimulationConfig({
+      workspaceId: wsSim,
+      targetAccountId: accountId,
+      conversationKind: 'direct',
+      targetConversationId: 'conv-direct-1',
+    })
+    expect(simConfig1).toMatchObject({
+      workspaceId: wsSim,
+      targetAccountId: accountId,
+      conversationKind: 'direct',
+      targetConversationId: 'conv-direct-1',
+    })
+
+    // Case 3: Setting target to a different specific conversation that has no rule -> rejected
+    await expect(
+      service.setSimulationConfig({
+        workspaceId: wsSim,
+        targetAccountId: accountId,
+        conversationKind: 'direct',
+        targetConversationId: 'conv-unmatched-2',
+      }),
+    ).rejects.toThrow(/route/i)
+
+    // Case 4: Group conversation with 'all' rule configured for account
+    const ruleGroupAll = brandString<ImRouteRuleId>('rule-group-all')
+    await service.createRouteRule({
+      id: ruleGroupAll,
+      accountId,
+      conversationKind: 'group',
+      target: { kind: 'all' },
+      workspaceId: wsTarget,
+      groupTrigger: { mention: true },
+      enabled: true,
+    })
+
+    // Pause the account to verify paused account rule still allows simulation
+    await service.pauseAccount(accountId, true)
+
+    // With 'all' rule, any group conversation matches
+    const simConfig2 = await service.setSimulationConfig({
+      workspaceId: wsSim,
+      targetAccountId: accountId,
+      conversationKind: 'group',
+      targetConversationId: 'group-any-123',
+    })
+    expect(simConfig2.conversationKind).toBe('group')
+    expect(simConfig2.targetConversationId).toBe('group-any-123')
   })
 })
