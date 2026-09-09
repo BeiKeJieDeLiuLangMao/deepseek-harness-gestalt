@@ -54,7 +54,7 @@ Anthropic、Codex 与 Antigravity 默认启动 PKCE redirect 流程。Kimi 与 x
 
 集成将为 CLIProxyAPI 发布一个稳定的 DSH provider route，而不是按账号来源创建多个 route 或保留替代性的 Composite 概念。Kimi、Codex、Anthropic、Antigravity、xAI 与拟议 GLM 订阅都是该 route 背后的账号池来源。CLIProxyAPI 负责为模型请求选择符合条件的账号。
 
-适配器将从本机核心的 `/v1/models` 响应取得模型目录，并通过 `ctx.llm` 原子注册、替换或撤回这一条 route。提供方拓扑通知将让 Models 与 Composer 消费方重新读取现有提供方和模型目录。空账号池、核心不可用，或无法证明存在可用模型的目录，都不会发布虚假的可用 route。最终 route id 与冲突策略必须在实现前固定；当前推荐稳定 id `cliproxyapi`，且不得接管无关的用户自有 route。
+适配器将从本机核心的 `/v1/models` 响应取得模型目录，并通过 `ctx.llm` 原子注册、替换或撤回这一条 route。提供方拓扑通知将让 Models 与 Composer 消费方重新读取现有提供方和模型目录。空账号池、核心不可用，或无法证明存在可用模型的目录，都不会发布虚假的可用 route。产品自有 route id 固定为 `gestalt-cliproxyapi`；它与用户常用的自配置 `cliproxyapi` id 分离，若同一产品 id 已存在则明确失败，而不是替换已有 route。
 
 Management 与 inference 即使指向同一个本机进程，也保持独立 authority。适配器取得有效端点和 key 后，普通 inference 不应依赖 UI 账号变更操作；inference 消费方也不能因拥有请求配置而获得管理操作。
 
@@ -70,7 +70,7 @@ CLIProxyAPI 没有统一的主动额度端点。迁入的 manager 源码包含 p
 
 GLM 额度优先采用 `TOKENS_LIMIT`，只有完全没有 token limit 时才使用 `CREDIT_LIMIT`。Unit `3` 表示五小时窗口，unit `6` 表示每周窗口。投影保留 `used_percent`、`reset_at` 与 `updated_at`；它依据已验证的使用百分比推导剩余额度，并且仅在窗口时长与重置位置成立时绘制时间对比。订阅 base 的 `/models` 响应是 GLM 模型可用性的权威来源，因此集成不会虚构静态 GLM 目录。
 
-Manager 实现确定了 provider 矩阵和解析依据，但本次交付尚未用真实服务验证。首期产品因此会把未经验证、失败或过期的观测标为 unknown 或 stale，在鉴权或传输失败时保留最后有效 snapshot，也不会宣称每个账号当前都会返回全部已记录字段。刷新节奏与缓存寿命将由有界 Host 策略决定，以避免重复上游调用；实现票会用 provider 专用测试固定数值，而不是暴露 renderer 轮询间隔。UI 原型可以为各状态使用明确标注的 fixture，但不能暗示某个 fixture 字段已经通过真实服务验证。
+Manager 实现确定了 provider 矩阵和解析依据，但本次交付尚未用真实服务验证。首期产品因此会把未经验证、失败或过期的观测标为 unknown 或 stale，在鉴权或传输失败时保留最后有效 snapshot，也不会宣称每个账号当前都会返回全部已记录字段。刷新节奏与缓存寿命将由有界 Host 策略决定，以避免重复上游调用；实现票会用 provider 专用测试固定数值，而不是暴露 renderer 轮询间隔。额度观测只用于展示与诊断：Gestalt 不会自创剩余百分比阈值来停用账号或改变路由，CLIProxyAPI 标准的资格、cooldown 与 scheduler 行为保持权威。UI 原型可以为各状态使用明确标注的 fixture，但不能暗示某个 fixture 字段已经通过真实服务验证。
 
 ## GLM subscription status
 
@@ -78,7 +78,7 @@ Manager 实现确定了 provider 矩阵和解析依据，但本次交付尚未�
 
 因此 Gestalt UI 将提供专用 GLM Coding Plan key 入口，而不会把 GLM 加入五个 OAuth 登录动作。该入口会明确选择区域（中国或国际）与账号范围（个人或团队），不会从 key 猜测，也不会静默降级成按量付费。团队账号还必须填写组织 id，并可选填写项目 id。Host 将通过拥有凭据的路径存储这些值，只把产生的 authority 交给核心。除非经过验证的协议约束要求独立 route，GLM 将保持为单一 CLIProxyAPI provider 背后的账号来源。其 OpenAI-compatible effort 归一化把普通 `low`、`medium`、`high` 请求映射到 GLM `high`，把 `xhigh` 或 `max` 映射到 GLM `max`；精确模型 `glm-5.3` 会保留显式 `low`。Anthropic-compatible GLM 5.3 请求同样保留对应的 `low`、`high` 与 `max` 档位，而不会透传上游不支持的拼写。
 
-产品推荐支持四种官方 Coding Plan 组合：中国个人、中国团队、国际个人与国际团队。已验证的中国 Chat Completions base 是 `https://open.bigmodel.cn/api/coding/paas/v4`；普通 `https://open.bigmodel.cn/api/paas/v4` 是不同的按量付费产品，不能替代。已验证的中国 Anthropic-compatible base 是 `https://open.bigmodel.cn/api/anthropic`。国际额度使用 `api.z.ai` origin，但准确的国际 inference 与 Anthropic-compatible base 仍是启用该区域前必须记录的协议事实。缺少区域端点会阻止该组合，而不是把它重定向到中国或按量付费。
+首期产品路径优先支持中国个人与国际个人 Coding Plan key。相同凭据模型会在用户提供既有组织 id 和可选项目 id 字段时支持中国团队与国际团队；产品不新增订阅购买、组织发现、项目发现、邀请或账单管理。已验证的中国 Chat Completions base 是 `https://open.bigmodel.cn/api/coding/paas/v4`；普通 `https://open.bigmodel.cn/api/paas/v4` 是不同的按量付费产品，不能替代。已验证的中国 Anthropic-compatible base 是 `https://open.bigmodel.cn/api/anthropic`。国际额度使用 `api.z.ai` origin，但准确的国际 inference 与 Anthropic-compatible base 仍是启用该区域前必须记录的协议事实。缺少区域端点会阻止该组合，而不是把它重定向到中国或按量付费。
 
 来源当前识别为 LGPL-3.0，目标核心使用 MIT。推荐实现把官方 Sub2API 行为作为协议事实，并基于 CLIProxyAPI 现有 MIT executor、translator、auth 与 model 扩展点独立实现 Coding Plan；不复制 Sub2API 源代码、注释、测试或表达结构。在该路径下，GLM 仍是必需产品范围。
 
@@ -109,7 +109,7 @@ Manager 实现确定了 provider 矩阵和解析依据，但本次交付尚未�
 - 一个 Desktop 实例拥有一个 loopback CLIProxyAPI 进程和动态端口；ready 状态、有界崩溃恢复、关闭与清理均可观察，且一个实例绝不终止另一实例的进程。
 - Renderer 不会收到 management secret、inference API key、auth-file secret 或原始管理逃生口；凭据类值不会进入日志、Session 数据、截图与保留产物。
 - 第一方 Settings UI 会渲染已接受的全局管理/额度切换与单卡翻面；Anthropic、Codex 与 Antigravity 的 PKCE 登录；Kimi 与 xAI 的设备授权；以及带明确中国/国际和个人/团队选择的独立 GLM Coding Plan key 入口。它会渲染真实授权状态与额度 unknown、partial、stale 和 failure 状态，且不使用 iframe 或运行时 UI 下载。
-- LLM 集成会根据实时本机模型目录发布一条 provider route，在核心无法服务模型时撤回或标为不可用，不接管用户自有冲突 route，并能完成一项单独授权的真实模型请求。
+- LLM 集成只会根据实时本机模型目录发布 `gestalt-cliproxyapi`，在核心无法服务模型时撤回或标为不可用，保持用户自有 `cliproxyapi` route 不变，并能完成一项单独授权的真实模型请求。
 - 替代路径不会读取或转换 Sub2API 数据。若之后授权删除旧文件，该行为会作为独立操作验证。
 - fork 同步会保留可审计的上游基线与已接受 Gestalt delta；Harness 钉住点仅在 fork、打包、确定性 UI 和必需原生证据通过后移动。
 - 冻结 UI 稿与体验路线覆盖空状态、登录取消/成功/失败、全局切换、单卡翻面、额度新鲜度差异、provider 目录变化、核心故障与重启恢复。
