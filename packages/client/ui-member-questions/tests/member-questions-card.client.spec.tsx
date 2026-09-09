@@ -570,7 +570,7 @@ describe('MemberQuestionCard', () => {
     )
 
     setReferenceView({
-      sessionId: 'another-session',
+      sessionId: 'another-session' as SessionId,
       paths: ['/bound-workspace/.dsh/member-questions/question-1/roster.md'],
     })
     expect(container.querySelector('[data-folded]')).toBeNull()
