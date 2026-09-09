@@ -93,6 +93,28 @@ export async function ensureEcsRamRoleOssLifecycle(
   await ensureAttachmentLifecycle(client, validated.bucket, `${validated.objectPrefix}/`)
 }
 
+/**
+ * Require the operated one-day lifecycle rule and an empty prefix without changing either.
+ * @param config - Operated bucket, prefix, RAM role and bounded request timeout.
+ * @param fetchImpl - ECS metadata transport.
+ */
+export async function verifyEmptyEcsRamRoleOssPrefix(
+  config: OperatedOssConfig,
+  fetchImpl: typeof fetch = fetch,
+): Promise<void> {
+  const validated = validateOperatedOssConfig(config)
+  const client = await createAliOssClient(validated, fetchImpl)
+  const lifecycle = await client.getBucketLifecycle(validated.bucket)
+  const rule = lifecycle.rules.find(rule => rule.id === ATTACHMENT_LIFECYCLE_RULE_ID)
+  if (!lifecycleRuleMatches(rule, `${validated.objectPrefix}/`)) {
+    throw new Error('Attachment lifecycle changed; review it before membership cutover')
+  }
+  const objects = await client.listV2({ prefix: `${validated.objectPrefix}/`, 'max-keys': 1 })
+  if (objects.isTruncated || !Array.isArray(objects.objects) || objects.objects.length !== 0) {
+    throw new Error('Attachment objects changed; review ownership before membership cutover')
+  }
+}
+
 async function createAliOssClient(
   validated: ReturnType<typeof validateOperatedOssConfig>,
   fetchImpl: typeof fetch,

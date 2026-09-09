@@ -4,6 +4,10 @@ Status: implemented
 
 English | [中文](2026-09-09-mobile-account-deletion.zh.md)
 
+The first operated cutover uses an explicit Platform Deploy mode with the existing release candidate, Environment, OIDC and Cloud Assistant checks. A stable private record binds the candidate, approved source, ordered instances and finite phase; private host records additionally bind predecessor container generations, restart policies and runtime configuration digests. Both file writers stop before capture or import. A changeset or nonempty second source rejects instead of selecting an arbitrary corpus. The imported PostgreSQL document is text, so the independent source marker and current UTF-8 bytes match the approved source before any Platform boot. Once PostgreSQL writers can run, resumption retains that authority and never restores the initial file snapshot. Global maintenance deadlines also bound interrupted runs; expired or foreign transactions remain inspectable without automatic file rollback.
+
+A timed-out Docker client does not stop a daemon-owned CLI. Maintenance commands therefore retain their own container identity before startup and prove exit before disposal; unresolved cleanup blocks continuation. SQL deadlines are transaction-local and refreshed from the absolute deadline before each statement, including commit, so a blocked import cannot continue writing after the operator budget. Re-entry verifies both live file sources before any first import; once PostgreSQL execution is possible, failure retains that authority instead of reviving old file writers.
+
 ## Problem
 
 Current-installation sign-out and selected Personal Pairing revocation leave a durable Platform Account and associated personal records. Account deletion also crosses PostgreSQL, attachment object storage, shared membership authority and installation-local storage, whose failures cannot share one atomic commit. [Issue #636](https://github.com/gestaltrun/deepseek-harness-gestalt/issues/636) owns this feature.
@@ -23,6 +27,8 @@ Operated account deletion requires the dedicated PostgreSQL Project Membership d
 Owner transactions acquire their document lock before shared locks on newly referenced Account rows, in sorted Account-id order. Login locks the Account row before checking deletion and creating its Session; acceptance either revokes that committed Session or prevents its creation. Acceptance holds only Account and Session rows and commits before entering any owner. This prevents account deletion from reversing the owner-to-account lock order. PostgreSQL rejects new references to absent or deleting Accounts at commit, including requests authenticated before acceptance. Per-instance deletion execution is serialized so held cross-instance advisory leases do not consume the pool connections needed by cleanup.
 
 Membership import accepts only an approved immutable snapshot into an uninitialized target. A separate source-digest marker makes identical re-import a no-op after subsequent writes; startup never imports. [The cutover procedure](../../../../docs/cookbook/platform-account-deletion-cutover.md) owns all-writer fencing, source reconciliation, backup, activation and current-authority rollback export.
+
+Deployment configuration carries the membership backend and deletion budgets explicitly from the protected Environment to every container. Readiness binds the selected membership authority to account-deletion availability. Ordinary rolling deployment cannot establish a shared membership authority: it refuses authority changes before candidate startup, because concurrent file and PostgreSQL writers would split project state and image rollback could restore deleted references. The separate all-writer maintenance procedure owns source approval, import and current-state export.
 
 ## Attachment ownership
 

@@ -11,9 +11,18 @@ if (command.kind === 'capture') {
   process.stdout.write(`${snapshot.digest}\n`)
 } else {
   const config = loadOperatedPlatformConfig()
-  const pool = new pg.Pool(config.postgres)
+  const deadline = process.env.DSH_MEMBERSHIP_DEADLINE === undefined ? undefined : Number(process.env.DSH_MEMBERSHIP_DEADLINE) * 1000
+  const remainingMs = deadline === undefined ? undefined : deadline - Date.now()
+  if (remainingMs !== undefined && (!Number.isSafeInteger(remainingMs) || remainingMs <= 0)) {
+    throw new Error('Membership maintenance SQL deadline expired')
+  }
+  const pool = new pg.Pool({ ...config.postgres,
+    ...(remainingMs === undefined ? {} : {
+      connectionTimeoutMillis: remainingMs, statement_timeout: remainingMs, lock_timeout: remainingMs,
+    }),
+  })
   try {
-    const store = new PostgresProjectMembershipPersistence(pool, config.environment.identityNamespace)
+    const store = new PostgresProjectMembershipPersistence(pool, config.environment.identityNamespace, undefined, deadline)
     await store.migrate()
     if (command.kind === 'import') {
       const snapshot = await readMembershipCutoverSnapshot(command.source)

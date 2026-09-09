@@ -26,7 +26,11 @@ docker build -f apps/platform/Dockerfile -t dsh-platform .
 
 `PLATFORM_MEMBERSHIP_BACKEND=postgres` 选择共享成员文档，并且只有附件权威达到 `bridge` 或 `oss` 后才启用账号删除。必须提供正整数 `PLATFORM_ACCOUNT_DELETION_RETRY_INTERVAL_MS` 与 `PLATFORM_ACCOUNT_DELETION_RECEIPT_LIFETIME_MS`。PostgreSQL owner 事务拒绝指向正在删除账号的新引用；已接受的会话撤销先于配对、Relay、成员及附件清理。解除配对后，附件归属和失败的对象/配额清理仍持久保留。文件模式不提供账号删除。[显式切换流程](../../docs/cookbook/platform-account-deletion-cutover.zh.md)负责不可变源导入、停止全部写入者、历史对象预检与回滚；启动不会导入本地文件。
 
+Platform Deploy 通过独立的 `membership_cutover` 模式执行首次双实例 file 到 PostgreSQL 切换。它要求 `deploy=true`、`publish_release=false`、PostgreSQL 成员关系、OSS 附件、已批准的 `membership_source_sha256`、匹配的 `membership_predecessor_image` 和 `membership_predecessor_sha`，以及不超出六小时凭据和签名 URL 剩余寿命的正数 `membership_deadline_seconds` 预算。排序后的首台实例提供批准源，第二台必须为空。控制器保留私有源备份和前驱容器，记录阶段，只允许同一绑定事务恢复。普通恢复不会从未完成的成员关系切换中启动文件写入方。[切换流程](../../docs/cookbook/platform-account-deletion-cutover.zh.md)负责维护准备、失败检查与后续 GUI 验收。
+
 ## 证书续期
+
+Platform Deploy 从 Environment `production` 读取 `PLATFORM_MEMBERSHIP_BACKEND`（默认 `file`）。选择 `postgres` 时，还必须将 `PLATFORM_ACCOUNT_DELETION_RETRY_INTERVAL_MS` 和 `PLATFORM_ACCOUNT_DELETION_RECEIPT_LIFETIME_MS` 配置为正的安全整数。加密运行配置将这三个值传递到每个候选实例。候选实例、服务实例与公网就绪检查必须报告所选成员关系存储和对应的账号删除状态。普通滚动部署拒绝变更成员关系权威；首次启用与回滚由[停止全部写入方的切换流程](../../docs/cookbook/platform-account-deletion-cutover.zh.md)负责。
 
 `.github/workflows/platform-certificate-renew.yml` 支持按需校验实际运行的证书，并每日检查是否进入续期窗口。它通过 GitHub OIDC 承担既有的生产阿里云角色；不使用阿里云 AccessKey、可复用 GitHub secret 或本地 OAuth 状态。workflow 在执行前校验不可变 acme.sh 源码归档，在仅属主可访问的临时 home 中运行，并把 ACME 账号与证书状态存入既有私有部署 OSS bucket 的精确 key。bucket 使用 OSS 托管的 AES256 服务端加密，上传还会显式请求同一种加密。
 

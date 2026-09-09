@@ -4,6 +4,31 @@ name: Platform Deploy
 on:
   workflow_call:
     inputs:
+      membership_cutover:
+        description: First writer-fenced file-to-PostgreSQL membership activation; never publishes a release.
+        required: false
+        type: boolean
+        default: false
+      membership_source_sha256:
+        description: Approved full SHA-256 of the first instance source; the second must be empty.
+        required: false
+        type: string
+        default: ''
+      membership_predecessor_image:
+        description: Approved full immutable image identity of both file-backed predecessors.
+        required: false
+        type: string
+        default: ''
+      membership_predecessor_sha:
+        description: Approved full source revision of both predecessors.
+        required: false
+        type: string
+        default: ''
+      membership_deadline_seconds:
+        description: Total maintenance budget, positive seconds below the six-hour credential and signed-URL lifetime.
+        required: false
+        type: string
+        default: '3600'
       candidate_sha:
         description: Exact Product Release Plan commit whose image is promoted.
         required: true
@@ -73,6 +98,31 @@ on:
         value: ${{ jobs.publish.outputs.workflow_run }}
   workflow_dispatch:
     inputs:
+      membership_cutover:
+        description: First writer-fenced file-to-PostgreSQL membership activation; never publishes a release.
+        required: false
+        type: boolean
+        default: false
+      membership_source_sha256:
+        description: Approved full SHA-256 of the first instance source; the second must be empty.
+        required: false
+        type: string
+        default: ''
+      membership_predecessor_image:
+        description: Approved full immutable image identity of both file-backed predecessors.
+        required: false
+        type: string
+        default: ''
+      membership_predecessor_sha:
+        description: Approved full source revision of both predecessors.
+        required: false
+        type: string
+        default: ''
+      membership_deadline_seconds:
+        description: Total maintenance budget, positive seconds below the six-hour credential and signed-URL lifetime.
+        required: false
+        type: string
+        default: '3600'
       candidate_sha:
         description: Exact master commit whose image is promoted; optional for recovery.
         required: false
@@ -195,6 +245,9 @@ jobs:
           PLATFORM_APSARADB_CA_BASE64: ${{ secrets.PLATFORM_APSARADB_CA_BASE64 }}
           PLATFORM_POSTGRES_DATABASE: ${{ vars.PLATFORM_POSTGRES_DATABASE }}
           PLATFORM_IDENTITY_NAMESPACE: ${{ vars.PLATFORM_IDENTITY_NAMESPACE }}
+          PLATFORM_MEMBERSHIP_BACKEND: ${{ vars.PLATFORM_MEMBERSHIP_BACKEND || 'file' }}
+          PLATFORM_ACCOUNT_DELETION_RETRY_INTERVAL_MS: ${{ vars.PLATFORM_ACCOUNT_DELETION_RETRY_INTERVAL_MS }}
+          PLATFORM_ACCOUNT_DELETION_RECEIPT_LIFETIME_MS: ${{ vars.PLATFORM_ACCOUNT_DELETION_RECEIPT_LIFETIME_MS }}
           PLATFORM_REDIS_HOST: ${{ vars.PLATFORM_REDIS_HOST }}
           PLATFORM_REDIS_USER: ${{ secrets.PLATFORM_REDIS_USER }}
           PLATFORM_REDIS_PASSWORD: ${{ secrets.PLATFORM_REDIS_PASSWORD }}
@@ -241,7 +294,26 @@ jobs:
           PUBLISH_RELEASE: ${{ inputs.publish_release }}
           PUBLISH_ONLY: ${{ inputs.publish_only }}
           DEPLOYMENT_RUN_ID: ${{ inputs.deployment_run_id }}
+          MEMBERSHIP_CUTOVER: ${{ inputs.membership_cutover }}
+          PLATFORM_MEMBERSHIP_BACKEND: ${{ vars.PLATFORM_MEMBERSHIP_BACKEND || 'file' }}
+          PLATFORM_REMOTE_ATTACHMENT_STORAGE: ${{ inputs.attachment_storage }}
+          MEMBERSHIP_SOURCE_SHA256: ${{ inputs.membership_source_sha256 }}
+          MEMBERSHIP_PREDECESSOR_IMAGE: ${{ inputs.membership_predecessor_image }}
+          MEMBERSHIP_PREDECESSOR_SHA: ${{ inputs.membership_predecessor_sha }}
+          MEMBERSHIP_DEADLINE_SECONDS: ${{ inputs.membership_deadline_seconds }}
         run: |
+          if [[ "$MEMBERSHIP_CUTOVER" == true ]]; then
+            if [[ "$DEPLOY" != true || "$RECOVER" == true || "$BOOTSTRAP" == true || "$PUBLISH_ONLY" == true || "$PUBLISH_RELEASE" == true \
+              || "$PLATFORM_MEMBERSHIP_BACKEND" != postgres || "$PLATFORM_REMOTE_ATTACHMENT_STORAGE" != oss ]]; then
+              echo 'platform: membership cutover requires deploy, PostgreSQL membership and OSS, without bootstrap, recovery or publication' >&2
+              exit 1
+            fi
+            [[ "$MEMBERSHIP_SOURCE_SHA256" =~ ^[0-9a-f]{64}$ ]]
+            [[ "$MEMBERSHIP_PREDECESSOR_SHA" =~ ^[0-9a-f]{40}$ ]]
+            [[ "$MEMBERSHIP_PREDECESSOR_IMAGE" =~ ^ghcr.io/[a-z0-9._/-]+/platform@sha256:[0-9a-f]{64}$ ]]
+            [[ "$MEMBERSHIP_DEADLINE_SECONDS" =~ ^[1-9][0-9]{0,4}$ ]]
+            (( MEMBERSHIP_DEADLINE_SECONDS > 60 && MEMBERSHIP_DEADLINE_SECONDS < 21600 ))
+          fi
           selected=0
           for mode in "$DEPLOY" "$RECOVER" "$PUBLISH_ONLY"; do
             if [[ "$mode" == true ]]; then selected=$((selected + 1)); fi
@@ -330,6 +402,7 @@ jobs:
           PLATFORM_ALB_LISTENER_ID: ${{ vars.PLATFORM_ALB_LISTENER_ID }}
           PLATFORM_RELAY_HEARTBEAT_TIMEOUT_MS: '45000'
           PLATFORM_BOOTSTRAP: ${{ inputs.bootstrap }}
+          PLATFORM_MEMBERSHIP_CUTOVER: ${{ inputs.membership_cutover }}
         run: |
           set -euo pipefail
           IFS=',' read -r -a instance_ids <<< "$PLATFORM_ECS_INSTANCE_IDS"
@@ -341,8 +414,8 @@ jobs:
             <<< "$response" >/dev/null
           server_group=$(aliyun alb ListServerGroupServers --region "$PLATFORM_ALIYUN_REGION" \
             --ServerGroupId "$PLATFORM_ALB_SERVER_GROUP_ID")
-          jq -e --arg first "${instance_ids[0]// /}" --arg second "${instance_ids[1]// /}" --argjson bootstrap "$PLATFORM_BOOTSTRAP" \
-            '.TotalCount == 2 and (.Servers | length) == 2 and ([.Servers[] | select(.Port == 80 and ($bootstrap or .Status == "Available")) | .ServerId] | sort == ([$first, $second] | sort))' \
+          jq -e --arg first "${instance_ids[0]// /}" --arg second "${instance_ids[1]// /}" --argjson bootstrap "$PLATFORM_BOOTSTRAP" --argjson membership_cutover "$PLATFORM_MEMBERSHIP_CUTOVER" \
+            '.TotalCount == 2 and (.Servers | length) == 2 and ([.Servers[] | select(.Port == 80 and ($bootstrap or $membership_cutover or .Status == "Available")) | .ServerId] | sort == ([$first, $second] | sort))' \
             <<< "$server_group" >/dev/null
           listener=$(aliyun alb GetListenerAttribute --region "$PLATFORM_ALIYUN_REGION" \
             --ListenerId "$PLATFORM_ALB_LISTENER_ID")
@@ -408,6 +481,9 @@ jobs:
           PLATFORM_POSTGRES_SSL: require
           PLATFORM_POSTGRES_DATABASE: ${{ vars.PLATFORM_POSTGRES_DATABASE }}
           PLATFORM_IDENTITY_NAMESPACE: ${{ vars.PLATFORM_IDENTITY_NAMESPACE }}
+          PLATFORM_MEMBERSHIP_BACKEND: ${{ vars.PLATFORM_MEMBERSHIP_BACKEND || 'file' }}
+          PLATFORM_ACCOUNT_DELETION_RETRY_INTERVAL_MS: ${{ vars.PLATFORM_ACCOUNT_DELETION_RETRY_INTERVAL_MS }}
+          PLATFORM_ACCOUNT_DELETION_RECEIPT_LIFETIME_MS: ${{ vars.PLATFORM_ACCOUNT_DELETION_RECEIPT_LIFETIME_MS }}
           PLATFORM_REDIS_HOST: ${{ vars.PLATFORM_REDIS_HOST }}
           PLATFORM_REDIS_USER: ${{ secrets.PLATFORM_REDIS_USER }}
           PLATFORM_REDIS_PASSWORD: ${{ secrets.PLATFORM_REDIS_PASSWORD }}
@@ -453,6 +529,8 @@ jobs:
             -e PLATFORM_POSTGRES_USER -e PLATFORM_POSTGRES_PASSWORD \
             -e PLATFORM_APSARADB_CA_BASE64 -e PLATFORM_POSTGRES_SSL \
             -e PLATFORM_POSTGRES_DATABASE -e PLATFORM_IDENTITY_NAMESPACE -e PLATFORM_REDIS_HOST \
+            -e PLATFORM_MEMBERSHIP_BACKEND -e PLATFORM_ACCOUNT_DELETION_RETRY_INTERVAL_MS \
+            -e PLATFORM_ACCOUNT_DELETION_RECEIPT_LIFETIME_MS \
             -e PLATFORM_REDIS_USER -e PLATFORM_REDIS_PASSWORD -e PLATFORM_REDIS_TLS \
             -e PLATFORM_OSS_ENDPOINT -e PLATFORM_OSS_BUCKET -e PLATFORM_OSS_AUTH \
             -e PLATFORM_OSS_OBJECT_PREFIX -e PLATFORM_OSS_TIMEOUT_MS \
@@ -484,6 +562,9 @@ jobs:
             printf 'SCRIPT_SHA256=%s\n' "$(sha256sum "$DEPLOY_DIR/platform-host-deploy.sh" | cut -d ' ' -f 1)"
           } >> "$GITHUB_ENV"
 
+      - name: Bound maintenance by the requested credential lifetime
+        run: echo "PLATFORM_CREDENTIALS_EXPIRE_AT=$(($(date +%s) + 21600))" >> "$GITHUB_ENV"
+
       - name: Configure fresh Alibaba Cloud OIDC credentials
         uses: aliyun/configure-aliyun-credentials-action@1e5248c8d5d93a8781ac344a68e19a43341e79e6
         with:
@@ -504,12 +585,20 @@ jobs:
           PLATFORM_DEPLOY_OSS_UPLOAD_ENDPOINT: ${{ vars.PLATFORM_DEPLOY_OSS_UPLOAD_ENDPOINT }}
           PLATFORM_DEPLOY_OSS_OBJECT_PREFIX: ${{ vars.PLATFORM_DEPLOY_OSS_OBJECT_PREFIX }}
           PLATFORM_REMOTE_ATTACHMENT_STORAGE: ${{ inputs.attachment_storage }}
+          PLATFORM_MEMBERSHIP_BACKEND: ${{ vars.PLATFORM_MEMBERSHIP_BACKEND || 'file' }}
           PLATFORM_BOOTSTRAP: ${{ inputs.bootstrap }}
+          PLATFORM_MEMBERSHIP_CUTOVER: ${{ inputs.membership_cutover }}
           PLATFORM_BOOTSTRAP_EIP_ADDRESSES: ${{ inputs.bootstrap_eip_addresses }}
+          PLATFORM_CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          PLATFORM_MEMBERSHIP_SOURCE_SHA256: ${{ inputs.membership_source_sha256 }}
+          PLATFORM_MEMBERSHIP_PREDECESSOR_IMAGE: ${{ inputs.membership_predecessor_image }}
+          PLATFORM_MEMBERSHIP_PREDECESSOR_SHA: ${{ inputs.membership_predecessor_sha }}
+          PLATFORM_MEMBERSHIP_DEADLINE_SECONDS: ${{ inputs.membership_deadline_seconds }}
         run: |
           set -eEuo pipefail
           source apps/platform/scripts/platform-cloud-assistant.sh
           source apps/platform/scripts/platform-public-readiness.sh
+          source apps/platform/scripts/platform-membership-cutover.sh
           IFS=',' read -r -a instance_ids <<< "$PLATFORM_ECS_INSTANCE_IDS"
           for index in "${!instance_ids[@]}"; do
             instance_ids[index]="${instance_ids[index]// /}"
@@ -535,10 +624,10 @@ jobs:
           state_probe=$(aliyun oss cat "$state_object" --region "$PLATFORM_ALIYUN_REGION" --endpoint "$PLATFORM_DEPLOY_OSS_UPLOAD_ENDPOINT" 2>&1)
           state_probe_status=$?
           set -e
-          if [ "$state_probe_status" = 0 ]; then
+          if [ "$state_probe_status" = 0 ] && [ "$PLATFORM_MEMBERSHIP_CUTOVER" != true ]; then
             echo 'platform: an unresolved deployment exists; dispatch recover before deploying again' >&2
             exit 1
-          elif ! grep -Fq 'StatusCode=404' <<< "$state_probe"; then
+          elif [ "$state_probe_status" != 0 ] && ! grep -Fq 'StatusCode=404' <<< "$state_probe"; then
             echo 'platform: failed to determine whether an unresolved deployment exists' >&2
             exit 1
           fi
@@ -548,6 +637,7 @@ jobs:
             --region "$PLATFORM_ALIYUN_REGION" --endpoint "$PLATFORM_DEPLOY_OSS_UPLOAD_ENDPOINT" --force
           aliyun oss cp "$DEPLOY_DIR/platform-host-deploy.sh" "$script_object" \
             --region "$PLATFORM_ALIYUN_REGION" --endpoint "$PLATFORM_DEPLOY_OSS_UPLOAD_ENDPOINT" --force
+          PLATFORM_SIGNED_URLS_EXPIRE_AT=$(($(date +%s) + 21600))
           image_url=$(aliyun oss sign "$image_object" --region "$PLATFORM_ALIYUN_REGION" --endpoint "$PLATFORM_OSS_ENDPOINT" --timeout 21600 | head -1)
           env_url=$(aliyun oss sign "$env_object" --region "$PLATFORM_ALIYUN_REGION" --endpoint "$PLATFORM_OSS_ENDPOINT" --timeout 21600 | head -1)
           script_url=$(aliyun oss sign "$script_object" --region "$PLATFORM_ALIYUN_REGION" --endpoint "$PLATFORM_OSS_ENDPOINT" --timeout 21600 | head -1)
@@ -565,11 +655,20 @@ jobs:
             aliyun oss cp "$state_file" "$state_object" \
               --region "$PLATFORM_ALIYUN_REGION" --endpoint "$PLATFORM_DEPLOY_OSS_UPLOAD_ENDPOINT" --force >/dev/null
           }
-          write_deploy_state rollbackable
+          if [ "$PLATFORM_MEMBERSHIP_CUTOVER" != true ]; then write_deploy_state rollbackable; fi
 
           remote_action() {
-            local instance_id="$1" relay_instance="$2" action="$3"
+            local instance_id="$1" relay_instance="$2" action="$3" output_file="${4:-}"
             local wrapper="$DEPLOY_DIR/cloud-command.sh"
+            local timeout=300
+            if [[ "$action" == membership-* ]]; then
+              local remaining=$((DSH_MEMBERSHIP_DEADLINE - $(date +%s)))
+              test "$remaining" -gt 60
+              if [ "$action" = membership-stage ]; then timeout=1800; fi
+              if [ "$remaining" -lt "$timeout" ]; then timeout="$remaining"; fi
+              local action_deadline
+              action_deadline=$(($(date +%s) + timeout))
+            fi
             install -m 600 /dev/null "$wrapper"
             {
               echo 'set -eEuo pipefail'
@@ -583,7 +682,7 @@ jobs:
               # shellcheck disable=SC2016
               printf 'curl --proto "=https" --tlsv1.2 -fsS %q -o "$workdir/platform-host-deploy.sh"\n' "$script_url"
               # shellcheck disable=SC2016
-              printf 'printf "%%s  %%s\\n" %q "$workdir/platform-host-deploy.sh" | sha256sum -c -\n' "$SCRIPT_SHA256"
+              printf 'printf "%%s  %%s\\n" %q "$workdir/platform-host-deploy.sh" | sha256sum -c - >/dev/null\n' "$SCRIPT_SHA256"
               printf 'export DSH_DEPLOY_IMAGE_URL=%q\n' "$image_url"
               printf 'export DSH_DEPLOY_IMAGE_SHA256=%q\n' "$IMAGE_SHA256"
               printf 'export DSH_DEPLOY_ENV_URL=%q\n' "$env_url"
@@ -592,11 +691,24 @@ jobs:
               printf 'export DSH_DEPLOY_IMAGE=%q\n' "$IMAGE"
               printf 'export DSH_DEPLOY_CANDIDATE=%q\n' "${{ inputs.candidate_sha }}"
               printf 'export DSH_DEPLOY_STORAGE=%q\n' "$PLATFORM_REMOTE_ATTACHMENT_STORAGE"
+              printf 'export DSH_DEPLOY_MEMBERSHIP=%q\n' "$PLATFORM_MEMBERSHIP_BACKEND"
               printf 'export DSH_RELAY_INSTANCE_ID=%q\n' "$relay_instance"
+              if [ "$PLATFORM_MEMBERSHIP_CUTOVER" = true ]; then
+                printf 'export DSH_MEMBERSHIP_TRANSACTION=%q\n' "$DSH_MEMBERSHIP_TRANSACTION"
+                printf 'export DSH_MEMBERSHIP_DEADLINE=%q\n' "$DSH_MEMBERSHIP_DEADLINE"
+                printf 'export DSH_MEMBERSHIP_ACTION_DEADLINE=%q\n' "$action_deadline"
+                printf 'export DSH_MEMBERSHIP_COORDINATOR_PHASE=%q\n' "$DSH_MEMBERSHIP_COORDINATOR_PHASE"
+                printf 'export DSH_MEMBERSHIP_SOURCE_SHA256=%q\n' "$PLATFORM_MEMBERSHIP_SOURCE_SHA256"
+                printf 'export DSH_MEMBERSHIP_PREDECESSOR_IMAGE=%q\n' "$PLATFORM_MEMBERSHIP_PREDECESSOR_IMAGE"
+                printf 'export DSH_MEMBERSHIP_PREDECESSOR_SHA=%q\n' "$PLATFORM_MEMBERSHIP_PREDECESSOR_SHA"
+                printf 'export DSH_MEMBERSHIP_INSTANCE_ID=%q\n' "$instance_id"
+              fi
               # shellcheck disable=SC2016
               printf 'bash "$workdir/platform-host-deploy.sh" %q\n' "$action"
             } > "$wrapper"
-            if [ "$action" = prepare ]; then
+            if [[ "$action" == membership-* ]]; then
+              platform_cloud_run "$instance_id" "$wrapper" "$timeout" "$output_file"
+            elif [ "$action" = prepare ]; then
               platform_cloud_run "$instance_id" "$wrapper" 1800
             elif [ "$action" = rollback ] || [ "$action" = bootstrap-rollback ]; then
               platform_cloud_run "$instance_id" "$wrapper" 2100
@@ -634,6 +746,10 @@ jobs:
             fi
             exit "$status"
           }
+          if [ "$PLATFORM_MEMBERSHIP_CUTOVER" = true ]; then
+            platform_membership_cutover
+            exit 0
+          fi
           trap on_deploy_error ERR
           trap 'on_deploy_interrupt 130' INT
           trap 'on_deploy_interrupt 143' TERM
@@ -641,6 +757,10 @@ jobs:
           if [ "$PLATFORM_BOOTSTRAP" = true ]; then
             for index in "${!instance_ids[@]}"; do
               remote_action "${instance_ids[$index]}" "relay-$((index + 1))" verify-bootstrap-bare
+            done
+          else
+            for index in "${!instance_ids[@]}"; do
+              remote_action "${instance_ids[$index]}" "relay-$((index + 1))" verify-membership-authority
             done
           fi
           for index in "${!instance_ids[@]}"; do

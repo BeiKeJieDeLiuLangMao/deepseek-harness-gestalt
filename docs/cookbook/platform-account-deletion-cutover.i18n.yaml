@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/cookbook/platform-account-deletion-cutover.md
-platform-account-deletion-cutover.md: f11c1acbf90b3e04c3ca4254c221f136abba41d8
-platform-account-deletion-cutover.zh.md: c725d1db92e468d55e28252476dcebca967b0b1d
+platform-account-deletion-cutover.md: ceb8ccba155d585264506a84507062f71fd6b0c7
+platform-account-deletion-cutover.zh.md: 9a53c406e1da28ae7e3259f780f1071986727bd8

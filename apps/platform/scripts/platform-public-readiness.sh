@@ -61,6 +61,15 @@ try {
 NODE
 }
 
+platform_membership_ready() {
+  node --eval '
+    const body = JSON.parse(process.argv[1])
+    const expected = process.argv[2]
+    process.exit(body.ok === true && body.membershipStorage === expected
+      && body.accountDeletion === (expected === "postgres") ? 0 : 1)
+  ' "$1" "${PLATFORM_MEMBERSHIP_BACKEND:-file}"
+}
+
 platform_public_readiness() {
   local attempts="$1" bootstrap_eips="${2:-}" public_ready=0 expected_index expected_instance body attempt
   local ready_instances='|' ready_instance_count=0
@@ -95,7 +104,8 @@ platform_public_readiness() {
         if body=$(platform_https_get_address "${PLATFORM_ORIGIN}/readyz" "${readiness_eips[$expected_index]}") \
           && printf '%s' "$body" | grep -Fq '"ok":true' \
           && printf '%s' "$body" | grep -Fq '"attachmentStorage":"oss"' \
-          && printf '%s' "$body" | grep -Fq '"instanceId":"'"$expected_instance"'"'; then
+          && printf '%s' "$body" | grep -Fq '"instanceId":"'"$expected_instance"'"' \
+          && platform_membership_ready "$body"; then
           public_ready=1
           break
         fi
@@ -108,7 +118,9 @@ platform_public_readiness() {
   echo 'public readiness through the production HTTPS origin'
   for ((attempt = 1; attempt <= attempts; attempt += 1)); do
     if body=$(platform_https_get "${PLATFORM_ORIGIN}/readyz") \
-      && printf '%s' "$body" | grep -Fq '"attachmentStorage":"'"$PLATFORM_REMOTE_ATTACHMENT_STORAGE"'"'; then
+      && printf '%s' "$body" | grep -Fq '"attachmentStorage":"'"$PLATFORM_REMOTE_ATTACHMENT_STORAGE"'"' \
+      && printf '%s' "$body" | grep -Fq '"ok":true' \
+      && platform_membership_ready "$body"; then
       for expected_instance in "${expected_instances[@]}"; do
         if printf '%s' "$body" | grep -Fq '"instanceId":"'"$expected_instance"'"'; then
           case "$ready_instances" in

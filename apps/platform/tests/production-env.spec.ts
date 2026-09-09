@@ -118,6 +118,28 @@ function spawnCli(env: NodeJS.Dict<string>) {
   })
 }
 
+
+const deletionEnv = {
+  PLATFORM_MEMBERSHIP_BACKEND: 'postgres',
+  PLATFORM_ACCOUNT_DELETION_RETRY_INTERVAL_MS: '1500',
+  PLATFORM_ACCOUNT_DELETION_RECEIPT_LIFETIME_MS: '604800000',
+}
+
+function runMembershipCheck(body: string, backend: string, check: 'host' | 'public' | 'authority') {
+  const functions = check === 'public'
+    ? publicReadinessSource.slice(publicReadinessSource.indexOf('platform_membership_ready()'), publicReadinessSource.indexOf('platform_public_readiness()'))
+    : hostDeploySource.slice(hostDeploySource.indexOf('membership_ready()'), hostDeploySource.indexOf('wait_for_storage()'))
+  return spawnSync('bash', ['-c', [
+    'set -euo pipefail',
+    'curl() { printf \'%s\' "$BODY"; }',
+    functions,
+    check === 'authority' ? 'require_membership_authority'
+      : `${check === 'public' ? 'platform_membership_ready' : 'membership_ready'} "$BODY"`,
+  ].join('\n')], { encoding: 'utf8', env: {
+    PATH: process.env.PATH, BODY: body, DSH_DEPLOY_MEMBERSHIP: backend, PLATFORM_MEMBERSHIP_BACKEND: backend,
+  } })
+}
+
 function runPublicReadinessHarness(
   result: 'success' | 'one-backend' | 'redirect' | 'unreachable' | 'wrong-storage',
   bootstrapEips = '',
@@ -127,6 +149,7 @@ function runPublicReadinessHarness(
     'instance_ids=(i-first123 i-second456)',
     'READINESS_COUNTER=$(mktemp)',
     'node() {',
+    '  if [ "$1" = --eval ]; then command node "$@"; return; fi',
     '  endpoint="${@: -1}"',
     '  [ "$READINESS_RESULT" != unreachable ] && [ "$READINESS_RESULT" != redirect ] || return 22',
     '  if [ -n "$BOOTSTRAP_EIPS" ]; then printf \'ENDPOINT:%s\\n\' "$endpoint" >&2; fi',
@@ -134,11 +157,11 @@ function runPublicReadinessHarness(
     '  count=$((count + 1))',
     '  printf \'%s\' "$count" > "$READINESS_COUNTER"',
     '  if [ "$READINESS_RESULT" = wrong-storage ]; then',
-    '    printf \'{"ok":true,"attachmentStorage":"postgres","instanceId":"relay-1"}\'',
+    '    printf \'{"ok":true,"membershipStorage":"file","accountDeletion":false,"attachmentStorage":"postgres","instanceId":"relay-1"}\'',
     '  elif [ "$READINESS_RESULT" = one-backend ] || [ "$count" = 1 ]; then',
-    '    printf \'{"ok":true,"attachmentStorage":"oss","instanceId":"relay-1"}\'',
+    '    printf \'{"ok":true,"membershipStorage":"file","accountDeletion":false,"attachmentStorage":"oss","instanceId":"relay-1"}\'',
     '  else',
-    '    printf \'{"ok":true,"attachmentStorage":"oss","instanceId":"relay-2"}\'',
+    '    printf \'{"ok":true,"membershipStorage":"file","accountDeletion":false,"attachmentStorage":"oss","instanceId":"relay-2"}\'',
     '  fi',
     '}',
     'sleep() { :; }',
@@ -534,7 +557,7 @@ function runCollectorPrepareHarness(
     '  case "$args" in',
     '    *latest/api/token*) printf token ;;',
     '    *owner-account-id*) printf 1279431675399365 ;;',
-    '    */readyz*) printf \'{"ok":true,"attachmentStorage":"postgres"}\' ;;',
+    '    */readyz*) printf \'{"ok":true,"membershipStorage":"file","accountDeletion":false,"attachmentStorage":"postgres","instanceId":"relay-1"}\' ;;',
     '  esac',
     '}',
     'docker() {',
@@ -622,6 +645,96 @@ describe('production and deploy names', () => {
         'PLATFORM_DEPLOY_OSS_UPLOAD_ENDPOINT',
         'PLATFORM_DEPLOY_OSS_OBJECT_PREFIX',
       ])
+  })
+
+
+  it('keeps file membership until PostgreSQL activation is explicitly configured', () => {
+    expect(loadOperatedPlatformConfig(completeDeployEnv())).toMatchObject({ membershipBackend: 'file' })
+    expect(loadOperatedPlatformConfig(completeDeployEnv()).accountDeletion).toBeUndefined()
+    expect(loadOperatedPlatformConfig({ ...completeDeployEnv(), ...deletionEnv })).toMatchObject({
+      membershipBackend: 'postgres', accountDeletion: { retryIntervalMs: 1500, completedReceiptLifetimeMs: 604800000 },
+    })
+  })
+
+  it.each(['PLATFORM_ACCOUNT_DELETION_RETRY_INTERVAL_MS', 'PLATFORM_ACCOUNT_DELETION_RECEIPT_LIFETIME_MS'])(
+    'rejects missing or invalid PostgreSQL deletion budget %s before deployment', (name) => {
+      for (const value of [undefined, '', '0', '-1', '1.5', '9007199254740992', 'invalid']) {
+        expect(() => loadOperatedPlatformConfig({ ...completeDeployEnv(), ...deletionEnv, [name]: value })).toThrow(name)
+      }
+    },
+  )
+
+  it.each(['host', 'public'] as const)('requires the selected membership authority and deletion state at %s readiness', (check) => {
+    for (const body of [
+      { ok: true },
+      { membershipStorage: 'file', accountDeletion: true },
+      { membershipStorage: 'postgres', accountDeletion: false },
+      { membershipStorage: 'postgres' },
+    ]) expect(runMembershipCheck(JSON.stringify(body), 'postgres', check).status).not.toBe(0)
+    expect(runMembershipCheck(JSON.stringify({ ok: true, membershipStorage: 'postgres', accountDeletion: true }), 'postgres', check).status).toBe(0)
+    expect(runMembershipCheck(JSON.stringify({ ok: true, membershipStorage: 'file', accountDeletion: false }), 'file', check).status).toBe(0)
+    expect(runMembershipCheck(JSON.stringify({ membershipStorage: 'file', accountDeletion: true }), 'file', check).status).not.toBe(0)
+  })
+
+  it('requires a completed writer-fenced membership cutover before ordinary rolling deployment', () => {
+    const old = JSON.stringify({ ok: true, attachmentStorage: 'oss' })
+    const file = JSON.stringify({ ok: true, membershipStorage: 'file', accountDeletion: false })
+    const postgres = JSON.stringify({ ok: true, membershipStorage: 'postgres', accountDeletion: true })
+    for (const body of [old, file]) {
+      const result = runMembershipCheck(body, 'postgres', 'authority')
+      expect(result.status).not.toBe(0)
+      expect(result.stderr).toContain('completed all-writer cutover')
+    }
+    expect(runMembershipCheck(postgres, 'postgres', 'authority').status).toBe(0)
+    expect(runMembershipCheck(old, 'file', 'authority').status).toBe(0)
+    const rollback = runMembershipCheck(postgres, 'file', 'authority')
+    expect(rollback.status).not.toBe(0)
+    expect(rollback.stderr).toContain('writer-fenced current export')
+  })
+
+  it('transports explicit deletion settings through the deployment configuration container and host env file', () => {
+    const workflow = loadWorkflow('.github/workflows/platform-deploy.yml')
+    const validate = steps(job(workflow, 'validate')).find(step => String(step.run).includes('production-env-cli.ts'))
+    const prepare = steps(job(workflow, 'deploy')).find(step => String(step.run).includes('config_container=$(docker create'))
+    if (prepare === undefined || validate === undefined) throw new Error('operated environment steps are required')
+    for (const step of [validate, prepare]) {
+      expect(step.env).toMatchObject({
+        PLATFORM_MEMBERSHIP_BACKEND: "${{ vars.PLATFORM_MEMBERSHIP_BACKEND || 'file' }}",
+        PLATFORM_ACCOUNT_DELETION_RETRY_INTERVAL_MS: '${{ vars.PLATFORM_ACCOUNT_DELETION_RETRY_INTERVAL_MS }}',
+        PLATFORM_ACCOUNT_DELETION_RECEIPT_LIFETIME_MS: '${{ vars.PLATFORM_ACCOUNT_DELETION_RECEIPT_LIFETIME_MS }}',
+      })
+    }
+    const create = shellLogicalLines(String(prepare.run)).find(line => line.includes('config_container=$(docker create'))
+    const launch = shellLogicalLines(hostDeploySource).find(line => line.includes('-p 127.0.0.1:18080:8080'))
+    if (create === undefined || launch === undefined) throw new Error('configuration and host container commands are required')
+    const temp = mkdtempSync(join(tmpdir(), 'dsh-deletion-env-'))
+    try {
+      const result = spawnSync('bash', ['-c', [
+        'set -euo pipefail',
+        'docker() {',
+        '  if [ "$1" = create ]; then',
+        '    shift',
+        '    while [ "$#" -gt 0 ]; do',
+        '      if [ "$1" = -e ]; then',
+        '        shift; case "$1" in PLATFORM_MEMBERSHIP_BACKEND|PLATFORM_ACCOUNT_DELETION_*) printf \'%s=%s\\n\' "$1" "${!1}" >> "$candidate_env" ;; esac',
+        '      fi',
+        '      shift',
+        '    done',
+        '    printf config-id',
+        '  else',
+        '    while [ "$#" -gt 0 ]; do if [ "$1" = --env-file ]; then cat "$2"; return; fi; shift; done',
+        '    return 1',
+        '  fi',
+        '}',
+        create,
+        launch,
+      ].join('\n')], { encoding: 'utf8', env: {
+        PATH: process.env.PATH, ...deletionEnv, image: 'immutable-candidate', DSH_DEPLOY_IMAGE: 'immutable-candidate',
+        candidate_env: join(temp, 'candidate.env'),
+      } })
+      expect(result.status, result.stderr).toBe(0)
+      expect(result.stdout.trim().split('\n')).toEqual(Object.entries(deletionEnv).map(([key, value]) => `${key}=${value}`))
+    } finally { rmSync(temp, { recursive: true, force: true }) }
   })
 
   it('parses the complete operated identity and verified durable-store configuration before traffic', () => {
@@ -990,7 +1103,7 @@ describe('Platform release workflows', () => {
     const targetCheck = steps(validate).find(step => typeof step.run === 'string'
       && step.run.includes('ListServerGroupServers'))
     expect(String(targetCheck?.run)).toContain('.TotalCount == 2 and (.Servers | length) == 2')
-    expect(String(targetCheck?.run)).toContain('.Port == 80 and ($bootstrap or .Status == "Available")')
+    expect(String(targetCheck?.run)).toContain('.Port == 80 and ($bootstrap or $membership_cutover or .Status == "Available")')
     const recoverWorkflowSource = String(steps(recover).find(step => typeof step.run === 'string'
       && step.run.includes('platform-recover.sh'))?.run)
     expect(recoverWorkflowSource.trim()).toBe('bash apps/platform/scripts/platform-recover.sh')
