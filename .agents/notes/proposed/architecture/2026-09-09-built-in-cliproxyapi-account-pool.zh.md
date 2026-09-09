@@ -62,13 +62,19 @@ CLIProxyAPI 当前没有统一的主动额度端点。部分账号类型暴露�
 
 额度值将区分 known、partial、probing、stale、unknown、unsupported 与 failed 状态。Unknown 或 unsupported 数据绝不会渲染为零、满额或虚构余额。只有来源提供所需分子与分母时，额度线才可以展示剩余容量。只有来源提供足够信息确定窗口时长和重置位置时，才可以计算叠加的时间窗口百分比；只有 reset timestamp 而没有时长时，不生成时间百分比。
 
-Provider 探测矩阵、刷新节奏、缓存寿命、rate limit 与副作用仍等待额度调查。这些细节必须在提案冻结前记录。UI 原型可以为各状态使用明确标注的 fixture，但不能暗示上游存在某个 fixture 字段。
+对于 GLM Coding Plan，inference 与 `/models` 使用 `Authorization: Bearer <key>`，额度请求则在 `Authorization` 中使用裸 key。个人额度读取 `{open.bigmodel.cn|api.z.ai}/api/monitor/usage/quota/limit`。团队额度增加 `?type=2` 与 `bigmodel-organization` header；账号填写项目时再增加 `bigmodel-project`。401 或 403 会报告凭据失败，但不会覆盖最后一份有效额度 snapshot。
+
+GLM 额度优先采用 `TOKENS_LIMIT`，只有完全没有 token limit 时才使用 `CREDIT_LIMIT`。Unit `3` 表示五小时窗口，unit `6` 表示每周窗口。投影保留 `used_percent`、`reset_at` 与 `updated_at`；它依据已验证的使用百分比推导剩余额度，并且仅在窗口时长与重置位置成立时绘制时间对比。订阅 base 的 `/models` 响应是 GLM 模型可用性的权威来源，因此集成不会虚构静态 GLM 目录。
+
+其余 provider 探测矩阵、刷新节奏、缓存寿命、rate limit 与副作用必须在提案冻结前记录。UI 原型可以为各状态使用明确标注的 fixture，但不能暗示上游存在某个 fixture 字段。
 
 ## GLM subscription status
 
 候选 GLM Coding Plan 行为来自官方 `Wei-Shaw/sub2api` 源码的提交 `98d86915becae9fe9491a91ffc6defd5235c8d2b`。它使用用户提供的订阅数据面 API key，并通过 `account_mode=coding` 选择 Coding Plan 专用端点与额度语义。它没有 OAuth token provider、浏览器登录或 refresh-token 流程。
 
-因此 Gestalt UI 将提供专用 GLM Coding Plan key 入口，而不会把 GLM 加入五个 OAuth 登录动作。Host 将通过拥有凭据的路径存储 key，只把产生的 authority 交给核心。除非经过验证的协议约束要求独立 route，GLM 将保持为单一 CLIProxyAPI provider 背后的账号来源。
+因此 Gestalt UI 将提供专用 GLM Coding Plan key 入口，而不会把 GLM 加入五个 OAuth 登录动作。该入口会明确选择区域（中国或国际）与账号范围（个人或团队），不会从 key 猜测，也不会静默降级成按量付费。团队账号还必须填写组织 id，并可选填写项目 id。Host 将通过拥有凭据的路径存储这些值，只把产生的 authority 交给核心。除非经过验证的协议约束要求独立 route，GLM 将保持为单一 CLIProxyAPI provider 背后的账号来源。其 OpenAI-compatible effort 归一化把普通 `low`、`medium`、`high` 请求映射到 GLM `high`，把 `xhigh` 或 `max` 映射到 GLM `max`；精确模型 `glm-5.3` 会保留显式 `low`。Anthropic-compatible GLM 5.3 请求同样保留对应的 `low`、`high` 与 `max` 档位，而不会透传上游不支持的拼写。
+
+产品推荐支持四种官方 Coding Plan 组合：中国个人、中国团队、国际个人与国际团队。已验证的中国 Chat Completions base 是 `https://open.bigmodel.cn/api/coding/paas/v4`；普通 `https://open.bigmodel.cn/api/paas/v4` 是不同的按量付费产品，不能替代。已验证的中国 Anthropic-compatible base 是 `https://open.bigmodel.cn/api/anthropic`。国际额度使用 `api.z.ai` origin，但准确的国际 inference 与 Anthropic-compatible base 仍是启用该区域前必须记录的协议事实。缺少区域端点会阻止该组合，而不是把它重定向到中国或按量付费。
 
 来源当前识别为 LGPL-3.0，目标核心使用 MIT。推荐实现把官方 Sub2API 行为作为协议事实，并基于 CLIProxyAPI 现有 MIT executor、translator、auth 与 model 扩展点独立实现 Coding Plan；不复制 Sub2API 源代码、注释、测试或表达结构。在该路径下，GLM 仍是必需产品范围。
 
@@ -98,7 +104,7 @@ Provider 探测矩阵、刷新节奏、缓存寿命、rate limit 与副作用仍
 - 每个受支持 Desktop 包含从记录钉住点构建的二进制，能从全新隔离 home 启动且不需要 Go 工具链、数据库服务或核心下载，并拒绝缺失、不匹配或无法识别的二进制。
 - 一个 Desktop 实例拥有一个 loopback CLIProxyAPI 进程和动态端口；ready 状态、有界崩溃恢复、关闭与清理均可观察，且一个实例绝不终止另一实例的进程。
 - Renderer 不会收到 management secret、inference API key、auth-file secret 或原始管理逃生口；凭据类值不会进入日志、Session 数据、截图与保留产物。
-- 第一方 Settings UI 会渲染已接受的全局管理/额度切换与单卡翻面、五个已验证 OAuth 登录入口、独立 GLM Coding Plan key 入口、真实授权状态，以及额度 unknown、partial、stale 和 failure 状态，且不使用 iframe 或运行时 UI 下载。
+- 第一方 Settings UI 会渲染已接受的全局管理/额度切换与单卡翻面、五个已验证 OAuth 登录入口，以及带明确中国/国际和个人/团队选择的独立 GLM Coding Plan key 入口。它会渲染真实授权状态与额度 unknown、partial、stale 和 failure 状态，且不使用 iframe 或运行时 UI 下载。
 - LLM 集成会根据实时本机模型目录发布一条 provider route，在核心无法服务模型时撤回或标为不可用，不接管用户自有冲突 route，并能完成一项单独授权的真实模型请求。
 - 替代路径不会读取或转换 Sub2API 数据。若之后授权删除旧文件，该行为会作为独立操作验证。
 - fork 同步会保留可审计的上游基线与已接受 Gestalt delta；Harness 钉住点仅在 fork、打包、确定性 UI 和必需原生证据通过后移动。
