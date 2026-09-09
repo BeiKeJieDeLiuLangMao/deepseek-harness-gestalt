@@ -58,7 +58,7 @@ A tab's `kind` is an opaque string. Seeded tabs are factories (`DockControllerOp
 
 `DockSurface` is the docked area. Chrome around it — a rail, a collapsed presentation, any history controls — belongs to the embedder, which reads `state.expanded` and decides; the kit ships no undo/redo control of its own. Surface-wide controls the embedder does want on the surface go through the `chrome` prop, which the kit places at the far end of the top-right pane's tab strip (the last child of every row split, the first of every column split), so a surface needs no header row of its own. `FloatLayer` owns its own gestures and positions panels in viewport coordinates, so it may be mounted anywhere, including a portal.
 
-A tab body that fills the available height and provides its own vertical scroller marks its direct root with `data-dockkit-scroll-owner`. `DockSurface` then makes the pane body a clipped flex column, leaving the tab component as the only vertical scroll owner. Bodies without the marker retain the pane body's generic scrolling.
+A tab body that fills the available height and provides its own vertical scroller marks its root with `data-dockkit-scroll-owner`. `DockSurface` finds that marker through any Slot wrappers and makes the pane body a clipped flex column, leaving the tab component as the only vertical scroll owner. Bodies without the marker retain the pane body's generic scrolling.
 
 <a id="interaction-rules-worth-keeping"></a>
 ## Interaction rules worth keeping

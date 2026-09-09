@@ -58,7 +58,7 @@ tab 的 `kind` 是不透明字符串。种子 tab 是工厂（`DockControllerOpt
 
 `DockSurface` 是停靠区。它周围的 chrome——轨道、折叠形态、任何历史控件——属于嵌入方，由嵌入方读取 `state.expanded` 后自行决定；套件不自带撤销/重做控件。嵌入方确实想放到面上的整面控件通过 `chrome` prop 传入，套件把它放在右上格 tab 条的最末端（每个横向分裂的最后一个子节点、每个纵向分裂的第一个子节点），因此停靠面不需要自己的标题行。`FloatLayer` 拥有自己的手势并以视口坐标定位浮窗，因此可以挂在任何位置，包括 portal 里。
 
-占满可用高度并提供自身纵向滚动容器的标签正文，会在直接根节点上标记 `data-dockkit-scroll-owner`。`DockSurface` 随后把格正文变成裁切溢出的 flex 列，让标签组件成为唯一的纵向滚动 owner。没有该标记的正文仍使用格正文的通用滚动。
+占满可用高度并提供自身纵向滚动容器的标签正文，会在根节点上标记 `data-dockkit-scroll-owner`。`DockSurface` 穿过 Slot 包装层查找该标记，随后把格正文变成裁切溢出的 flex 列，让标签组件成为唯一的纵向滚动 owner。没有该标记的正文仍使用格正文的通用滚动。
 
 <a id="interaction-rules-worth-keeping"></a>
 ## 值得保留的交互规则
