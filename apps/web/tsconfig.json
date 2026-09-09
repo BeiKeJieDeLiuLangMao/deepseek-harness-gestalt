@@ -126,6 +126,7 @@
     "tests/desktop-schedule.snapshot.ts",
     "tests/schedule-board.e2e.ts",
     "tests/text-annotation.e2e.ts",
+    "tests/sidechat-layout.e2e.ts",
     "tests/sidechat-round.e2e.ts",
     "tests/member-question-receiving.e2e.ts",
     "tests/member-question-receiving.snapshot.ts"
