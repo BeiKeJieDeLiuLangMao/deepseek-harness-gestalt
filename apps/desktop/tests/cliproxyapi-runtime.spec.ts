@@ -64,6 +64,40 @@ describe('CLIProxyAPI supervisor', () => {
     await new Promise<void>(resolve => competitor?.close(() => resolve()))
   })
 
+  it('does not inherit external dotenv or storage configuration', async () => {
+    const root = await scratch()
+    const external = join(root, 'external-workspace')
+    await mkdir(external)
+    await writeFile(join(external, '.env'), 'CLIPROXY_SENTINEL_DOTENV=outside\n')
+    const observed = join(root, 'observed.json')
+    const executable = join(root, 'environment-fixture.mjs')
+    await writeFile(executable, environmentFixtureSource(observed))
+    await chmod(executable, 0o755)
+    const previousCwd = process.cwd()
+    const previous = Object.fromEntries(['PGSTORE_DSN', 'GITSTORE_REPO', 'OBJECTSTORE_URL', 'PROVIDER_CONFIG']
+      .map(name => [name, process.env[name]]))
+    process.chdir(external)
+    process.env.PGSTORE_DSN = 'postgres://external-sentinel'
+    process.env.GITSTORE_REPO = 'external-git-sentinel'
+    process.env.OBJECTSTORE_URL = 'https://external.invalid/sentinel'
+    process.env.PROVIDER_CONFIG = 'external-provider-sentinel'
+    try {
+      const supervisor = new CLIProxyAPISupervisor({
+        binary: executable, stateRoot: join(root, 'state'), startupTimeoutMs: 5_000, restartLimit: 0,
+      })
+      await supervisor.start()
+      const childObservation = JSON.parse(await readFile(observed, 'utf8')) as Record<string, unknown>
+      expect(childObservation).toEqual({ cwdHasDotenv: false })
+      await supervisor.shutdown()
+    } finally {
+      process.chdir(previousCwd)
+      restoreEnvironment('PGSTORE_DSN', previous.PGSTORE_DSN)
+      restoreEnvironment('GITSTORE_REPO', previous.GITSTORE_REPO)
+      restoreEnvironment('OBJECTSTORE_URL', previous.OBJECTSTORE_URL)
+      restoreEnvironment('PROVIDER_CONFIG', previous.PROVIDER_CONFIG)
+    }
+  })
+
   it('uses isolated state, proves authenticated readiness, and reaches quiescence', async () => {
     const root = await scratch()
     const executable = join(root, 'fixture.mjs')
@@ -85,6 +119,11 @@ describe('CLIProxyAPI supervisor', () => {
   })
 })
 
+function restoreEnvironment(name: string, value: string | undefined): void {
+  if (value === undefined) Reflect.deleteProperty(process.env, name)
+  else process.env[name] = value
+}
+
 async function scratch(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'dsh-cliproxyapi-'))
   roots.push(root)
@@ -98,10 +137,23 @@ async function findConfig(stateRoot: string): Promise<string> {
   return join(stateRoot, generation, 'config.yaml')
 }
 
-function fixtureSource(delayMs = 0): string {
+function environmentFixtureSource(observed: string): string {
+  return fixtureSource(0, `
+import { existsSync, writeFileSync } from 'node:fs'
+writeFileSync(${JSON.stringify(observed)}, JSON.stringify({
+  cwdHasDotenv: existsSync('.env'),
+  PGSTORE_DSN: process.env.PGSTORE_DSN,
+  GITSTORE_REPO: process.env.GITSTORE_REPO,
+  OBJECTSTORE_URL: process.env.OBJECTSTORE_URL,
+  PROVIDER_CONFIG: process.env.PROVIDER_CONFIG,
+}))`)
+}
+
+function fixtureSource(delayMs = 0, prelude = ''): string {
   return `#!/usr/bin/env node
 import { readFileSync } from 'node:fs'
 import { createServer } from 'node:http'
+${prelude}
 const path = process.argv[process.argv.indexOf('--config') + 1]
 const config = readFileSync(path, 'utf8')
 const port = Number(config.match(/port: (\\d+)/)[1])

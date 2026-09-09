@@ -217,7 +217,10 @@ function coreConfig(port: number, authDir: string, logDir: string, managementKey
 }
 
 function credentialSafeEnvironment(environment: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  return Object.fromEntries(Object.entries(environment).filter(([name]) => !/(?:KEY|SECRET|TOKEN|PASSWORD|CREDENTIAL)/iu.test(name)))
+  const allowed = process.platform === 'win32'
+    ? ['SystemRoot', 'WINDIR', 'COMSPEC', 'PATHEXT', 'TEMP', 'TMP']
+    : ['PATH', 'HOME', 'USER', 'TMPDIR', 'LANG', 'LC_ALL', 'SSL_CERT_FILE', 'SSL_CERT_DIR']
+  return Object.fromEntries(allowed.flatMap(name => environment[name] === undefined ? [] : [[name, environment[name]]]))
 }
 
 async function reserveLoopbackPort(): Promise<number> {
