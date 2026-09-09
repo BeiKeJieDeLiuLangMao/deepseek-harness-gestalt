@@ -42,6 +42,10 @@ export interface CLIProxyAPISupervisorOptions {
   readonly startupTimeoutMs: number
   readonly restartLimit: number
   readonly fetch?: typeof globalThis.fetch
+  /** Test-only race injection after the reservation closes and before spawn. */
+  readonly afterPortReservation?: (port: number) => void | Promise<void>
+  /** Resolve OS listener owners; omission uses the supported platform inspector. */
+  readonly listenerOwners?: (port: number) => Promise<ReadonlySet<number>>
 }
 
 /** Resolve and verify one packaged CLIProxyAPI resource. */
@@ -140,6 +144,7 @@ export class CLIProxyAPISupervisor {
   private async spawnGeneration(): Promise<RunningCLIProxyAPI> {
     if (this.controller.signal.aborted) throw new Error('CLIProxyAPI startup aborted')
     const port = await reserveLoopbackPort()
+    await this.options.afterPortReservation?.(port)
     const generation = randomBytes(12).toString('hex')
     const root = join(this.options.stateRoot, generation)
     const authDir = join(root, 'auth')
@@ -167,6 +172,7 @@ export class CLIProxyAPISupervisor {
     try {
       await waitForReady({
         child, exited, stop, port, inferenceKey,
+        listenerOwners: this.options.listenerOwners ?? listenerOwners,
         timeoutMs: this.options.startupTimeoutMs,
         signal: this.controller.signal,
         fetch: this.options.fetch ?? globalThis.fetch,
@@ -235,6 +241,7 @@ async function waitForReady(options: {
   stop: () => Promise<void>
   port: number
   inferenceKey: string
+  listenerOwners: (port: number) => Promise<ReadonlySet<number>>
   timeoutMs: number
   signal: AbortSignal
   fetch: typeof globalThis.fetch
@@ -246,6 +253,13 @@ async function waitForReady(options: {
     if (options.signal.aborted) throw new Error('CLIProxyAPI startup aborted')
     if (options.child.exitCode !== null || options.child.signalCode !== null) throw new Error('CLIProxyAPI exited before readiness')
     if (failed) throw new Error('CLIProxyAPI failed before readiness')
+    const pid = options.child.pid
+    if (pid === undefined) throw new Error('CLIProxyAPI child has no process id')
+    const owners = await options.listenerOwners(options.port)
+    if (!owners.has(pid)) {
+      await new Promise(resolve => setTimeout(resolve, READINESS_INTERVAL_MS))
+      continue
+    }
     try {
       const response = await options.fetch(`http://127.0.0.1:${String(options.port)}/v1/models`, {
         headers: { Authorization: `Bearer ${options.inferenceKey}` }, signal: AbortSignal.timeout(500),
@@ -257,6 +271,30 @@ async function waitForReady(options: {
     await new Promise(resolve => setTimeout(resolve, READINESS_INTERVAL_MS))
   }
   throw new Error(`CLIProxyAPI did not become ready within ${String(options.timeoutMs)}ms`)
+}
+
+async function listenerOwners(port: number): Promise<ReadonlySet<number>> {
+  if (process.platform === 'win32') {
+    const { stdout } = await execFileAsync('powershell.exe', [
+      '-NoProfile', '-NonInteractive', '-Command',
+      `(Get-NetTCPConnection -State Listen -LocalPort ${String(port)} -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess) -join '\n'`,
+    ])
+    return numericLines(stdout)
+  }
+  const { stdout } = await execFileAsync('/usr/sbin/lsof', ['-nP', '-t', `-iTCP:${String(port)}`, '-sTCP:LISTEN'])
+    .catch((error: unknown) => {
+      const code = (error as { code?: unknown }).code
+      if (code === 1) return { stdout: '', stderr: '' }
+      throw error
+    })
+  return numericLines(stdout)
+}
+
+function numericLines(output: string): ReadonlySet<number> {
+  return new Set(output.split(/\s+/u).flatMap((value) => {
+    const pid = Number(value)
+    return Number.isSafeInteger(pid) && pid > 0 ? [pid] : []
+  }))
 }
 
 async function stopProcessTree(

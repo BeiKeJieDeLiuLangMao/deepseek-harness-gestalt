@@ -14,7 +14,7 @@ Desktop packages a native CLIProxyAPI executable built from the `catalog/cliprox
 
 Each Desktop instance generates one private runtime generation below its own `userData`. The generation contains its config, auth directory, logs, management key, and inference key. The config binds IPv4 loopback on a Host-selected ephemeral port, disables the management control panel, and carries no reference to Sub2API or the user's CLIProxyAPI home.
 
-The supervisor proves readiness through the authenticated `/v1/models` endpoint before it exports an inference capability. Management and inference keys remain separate. Only the inference endpoint and key enter the Web Host child environment; renderer protocol, settings, diagnostics, and model metadata receive neither value.
+The supervisor first verifies through the operating system's listener table that the spawned child PID owns the selected port, then proves application readiness through the authenticated `/v1/models` endpoint before it exports an inference capability. It never sends the inference key to a listener that is not owned by that child. Management and inference keys remain separate. Only the inference endpoint and key enter the Web Host child environment; renderer protocol, settings, diagnostics, and model metadata receive neither value.
 
 The Web Host plugin owns the stable route `gestalt-account-pool`. It registers no route for an empty or unavailable catalog, atomically publishes or withdraws the route when the live model list changes, and lets the LLM registry reject collisions. Disposal stops catalog refresh and removes the registration.
 
@@ -32,7 +32,7 @@ The Host reserves an ephemeral loopback port before spawn because the pinned cor
 
 - The packaged executable matches the manifest source SHA, platform, architecture, path, and SHA-256; development requires an explicit fixture path.
 - Config, auth files, logs, management key, and inference key remain below the Desktop instance's private state root and never read external CLIProxyAPI or Sub2API state.
-- Authenticated readiness precedes capability publication; shutdown cancels recovery, joins the exact process group, removes generated state, and leaves unrelated listeners untouched.
+- OS listener ownership by the spawned child PID and authenticated readiness both precede capability publication; shutdown cancels recovery, joins the exact process group, removes generated state, and leaves unrelated listeners untouched.
 - `gestalt-account-pool` appears only for a non-empty live model catalog, updates through the LLM notification mechanism, withdraws on failure or empty results, rejects collisions, and disappears on disposal.
 - Native macOS arm64 builds from the pinned submodule and runs keylessly through the real supervisor; native macOS x64 and Windows x64 release runners build their own target binaries before packaging.
 

@@ -1,5 +1,6 @@
 import { chmod, mkdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
+import { createServer } from 'node:http'
 import { join } from 'node:path'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -31,6 +32,38 @@ describe('CLIProxyAPI packaged resource', () => {
 })
 
 describe('CLIProxyAPI supervisor', () => {
+  it('refuses a reservation race without sending the inference key to the competing listener', async () => {
+    const root = await scratch()
+    const executable = join(root, 'delayed-fixture.mjs')
+    await writeFile(executable, fixtureSource(300))
+    await chmod(executable, 0o755)
+    let receivedAuthorization: string | undefined
+    let competitor: ReturnType<typeof createServer> | undefined
+    const supervisor = new CLIProxyAPISupervisor({
+      binary: executable,
+      stateRoot: join(root, 'state'),
+      startupTimeoutMs: 1_000,
+      restartLimit: 0,
+      afterPortReservation: async (port) => {
+        competitor = createServer((request, response) => {
+          receivedAuthorization = request.headers.authorization
+          response.setHeader('content-type', 'application/json')
+          response.end('{"data":[]}')
+        })
+        await new Promise<void>((resolve, reject) => {
+          competitor?.once('error', reject)
+          competitor?.listen(port, '127.0.0.1', resolve)
+        })
+      },
+    })
+    await expect(supervisor.start()).rejects.toThrow(/before readiness|did not become ready/)
+    expect(receivedAuthorization).toBeUndefined()
+    expect(competitor?.listening).toBe(true)
+    await supervisor.shutdown()
+    expect(competitor?.listening).toBe(true)
+    await new Promise<void>(resolve => competitor?.close(() => resolve()))
+  })
+
   it('uses isolated state, proves authenticated readiness, and reaches quiescence', async () => {
     const root = await scratch()
     const executable = join(root, 'fixture.mjs')
@@ -65,7 +98,7 @@ async function findConfig(stateRoot: string): Promise<string> {
   return join(stateRoot, generation, 'config.yaml')
 }
 
-function fixtureSource(): string {
+function fixtureSource(delayMs = 0): string {
   return `#!/usr/bin/env node
 import { readFileSync } from 'node:fs'
 import { createServer } from 'node:http'
@@ -77,7 +110,7 @@ const server = createServer((request, response) => {
   if (request.url !== '/v1/models' || request.headers.authorization !== 'Bearer ' + key) { response.statusCode = 401; response.end(); return }
   response.setHeader('content-type', 'application/json'); response.end(JSON.stringify({ data: [] }))
 })
-server.listen(port, '127.0.0.1')
+setTimeout(() => server.listen(port, '127.0.0.1'), ${String(delayMs)})
 process.on('SIGTERM', () => server.close(() => process.exit(0)))
 `
 }
