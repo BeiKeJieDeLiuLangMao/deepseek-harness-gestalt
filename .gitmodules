@@ -1,3 +1,6 @@
 [submodule "plugins/dsh-sub2api-sidecar"]
 	path = plugins/dsh-sub2api-sidecar
 	url = https://github.com/gestaltrun/dsh-sub2api-sidecar.git
+[submodule "catalog/cliproxyapi"]
+	path = catalog/cliproxyapi
+	url = https://github.com/gestaltrun/CLIProxyAPI.git

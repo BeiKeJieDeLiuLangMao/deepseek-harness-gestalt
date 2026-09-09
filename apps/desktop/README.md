@@ -93,6 +93,8 @@ The hoisted deploy includes workspace packages without pnpm's linked virtual dep
 ## Known Limitations and Deferred Work
 
 - **Packaged extraResources Node + dsh snapshot is assembled by the release workflow** — `gestalt:dev` runs the workspace source tree.
+- **Built-in CLIProxyAPI is package-owned** — release jobs initialize `catalog/cliproxyapi`, build its exact gitlink for the native target, and package the binary with a source SHA/platform/architecture/SHA-256 manifest. Packaged startup accepts only that verified resource. Development starts no core unless `DSH_DESKTOP_CLIPROXYAPI_FIXTURE` names an explicit fixture executable.
+- **Account-pool state is isolated** — Desktop generates a private runtime root under its own `userData`, with separate management and inference keys, config, auth files, and logs. Shutdown stops and joins only the child process group it spawned, removes that runtime root, and never reads `~/.cli-proxy-api`, Sub2API data, or an external service configuration.
 - **Windows Authenticode is absent** — SmartScreen warns; the updater still runs.
 - **Companion release evidence is repository-owned** — Node 22 and 24 plus iOS Simulator WKWebView and Android Emulator WebView execute the exact checked-in Snow JS/WASM package and its bounded attack cases. The assembled Desktop/Mobile product flow remains the acceptance surface; local Vite, test certificates, and `prototype-companion` are not product acceptance.
 - **Project Members three-installation Electron acceptance is source-only** — `pnpm run test:e2e-project-members-electron` rebuilds current source, boots A1/B1/B2 against one local keyless Platform, and requires a visible `DISPLAY` on Linux. Packaged Desktop never accepts `--dsh-e2e-profile`.

@@ -17,6 +17,8 @@ export interface DesktopRuntimePaths {
   readonly relayHelper: string
   /** Bundled one-request system-Node HTTPS worker. */
   readonly fetchHelper: string
+  /** Packaged CLIProxyAPI resource directory; dev requires an explicit fixture path instead. */
+  readonly cliProxyAPI?: string
   /**
    * Unpackaged source-launch cwd (the repo root). Packaged runs use the
    * Launch Directory instead so `tsx` is not required.
@@ -55,7 +57,10 @@ export function resolveDesktopRuntime(options: {
     const patch = join(options.resourcesPath, 'cordis.patch.yml')
     const relayHelper = join(options.resourcesPath, 'relay-node-helper.cjs')
     const fetchHelper = join(options.resourcesPath, 'system-node-fetch-helper.cjs')
-    return { node, args: [dsh, ...webHostArgs(patch)], patch, relayHelper, fetchHelper }
+    return {
+      node, args: [dsh, ...webHostArgs(patch)], patch, relayHelper, fetchHelper,
+      cliProxyAPI: join(options.resourcesPath, 'cliproxyapi'),
+    }
   }
   const here = dirname(fileURLToPath(options.moduleUrl))
   const repoRoot = join(here, '..', '..', '..')
