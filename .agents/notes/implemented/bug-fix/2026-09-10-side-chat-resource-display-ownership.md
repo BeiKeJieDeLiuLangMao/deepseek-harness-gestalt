@@ -14,6 +14,8 @@ Side Chat mounted a layout-level conversation entry inside the workbench, so the
 
 File routing treats the rendered child as the resource Session and the parent as the display-host Session. Chat file links and produced-file actions build a `dsh-resource://file/session/<resource>/...` address from the child's working directory, then open that address through the parent's `sidebarRight` navigator. The official file host derives reads, writes, viewer loads, tree operations, references, and conversation insertion from the resource Session encoded in the address. Tab occurrence state, editor retention, and rename or removal reconciliation remain on the parent workbench. Official file definitions reject ownerless absolute addresses.
 
+The Better Sidebar bundle imports the shared Client `INLINE_SAFE` policy. Its browser-safe Workspace path helpers therefore use the same no-runtime-identity rule as official Client bundles instead of a separate allowlist.
+
 Side Chat creation passes only the captured parent prefix as the constructor seed and sets `inheritedEventCount` to that exact length. Setup appends `subagent/descriptor` as the first child-owned event before other Agent setup and before the first prompt is admitted.
 
 ## Alternatives considered
@@ -30,4 +32,4 @@ Side Chat reuses the complete Conversation content tree without nesting applicat
 
 ## Testing
 
-Focused Client tests cover content-slot mounting, blank Side Chat phase, constructor seed length, descriptor append ordering, child-address and parent-navigator routing, line parameters, produced-file and folder gestures, editor read/write/insertion ownership, and unchanged main-conversation routing.
+Focused Client tests cover content-slot mounting, blank Side Chat phase, constructor seed length, descriptor append ordering, child-address and parent-navigator routing, line parameters, produced-file and folder gestures, editor read/write/insertion ownership, and unchanged main-conversation routing. The Better Sidebar bundle and complete Client build exercise the shared Workspace path helper under the Client purity policy.

@@ -47,6 +47,7 @@ import { builtinModules, createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import type { UserConfig } from 'tsdown'
 import { transform } from 'lightningcss'
+import { INLINE_SAFE } from '../tsdown.client.ts'
 
 const require = createRequire(import.meta.url)
 
@@ -79,14 +80,6 @@ const REACT_ICONS_ESM_ALIAS = {
   'react-icons/si': join(reactIconsRoot, 'si/index.mjs'),
   'react-icons/vsc': join(reactIconsRoot, 'vsc/index.mjs'),
 }
-
-/**
- * Wire/type layers a client bundle may inline (mirror of the official
- * INLINE_SAFE list): browser-safe contract surfaces with no runtime identity
- * to share. Everything else under @deepseek-ai/* is either a module-table
- * entry (external) or a leak the purity gate rejects.
- */
-const INLINE_SAFE = /^@deepseek-ai\/dsh-(session|llm|tools|brand)(\/|$)/
 
 /** Virtual-id wrapper keeping module CSS away from tsdown's own css pipeline. */
 const CSS_VIRTUAL_PREFIX = '\0dsh-css:'

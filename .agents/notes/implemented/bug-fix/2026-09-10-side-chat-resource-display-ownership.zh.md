@@ -14,6 +14,8 @@ Side Chat 曾在 workbench 内挂载布局层级的 conversation entry，因此�
 
 文件路由把被渲染的 child 视为资源 Session，把 parent 视为显示宿主 Session。Chat 文件链接与 produced-file 操作根据 child 工作目录构造 `dsh-resource://file/session/<resource>/...` 地址，再通过 parent 的 `sidebarRight` navigator 打开该地址。官方文件宿主根据地址中编码的资源 Session 执行读取、写入、viewer 加载、文件树操作、引用与对话插入。标签 occurrence 状态、编辑器保留状态，以及重命名或删除后的协调仍归 parent workbench 所有。官方文件 definition 拒绝没有 owner 的绝对地址。
 
+Better Sidebar bundle 导入共享 Client `INLINE_SAFE` 策略。因此，其浏览器安全 Workspace path helper 与官方 Client bundle 使用相同的无运行时身份规则，而不维护另一份 allowlist。
+
 Side Chat 创建只把捕获的 parent 前缀传给 constructor seed，并把 `inheritedEventCount` 设为该前缀的准确长度。Setup 会先把 `subagent/descriptor` 追加为第一条 child-owned 事件，再执行其他 Agent setup，并在首次 prompt 准入之前完成。
 
 ## 考虑过的替代方案
@@ -30,4 +32,4 @@ Side Chat 会复用完整 Conversation 内容树而不嵌套应用 chrome，空�
 
 ## 测试
 
-聚焦 Client 测试覆盖内容 slot 挂载、空白 Side Chat phase、constructor seed 长度、descriptor 追加顺序、child 地址与 parent navigator 路由、行参数、produced-file 与文件夹操作、编辑器读取/写入/插入归属，以及主 conversation 路由保持不变。
+聚焦 Client 测试覆盖内容 slot 挂载、空白 Side Chat phase、constructor seed 长度、descriptor 追加顺序、child 地址与 parent navigator 路由、行参数、produced-file 与文件夹操作、编辑器读取/写入/插入归属，以及主 conversation 路由保持不变。Better Sidebar bundle 与完整 Client build 会在 Client purity 策略下执行共享 Workspace path helper。
