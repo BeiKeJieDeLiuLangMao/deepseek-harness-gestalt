@@ -97,6 +97,36 @@ describe('file-backed project membership', () => {
     expect(await store.pendingInvitationsFor(carol)).toEqual([])
   })
 
+  it('removes sole-account cloud projects and frees their indexes', async () => {
+    const { store, projectId } = await foundProject(alice, 'Personal project')
+    await store.invite(alice, { projectId, inviteeAccountId: bob, grantedRole: 'member' })
+    expect(await store.accountDeletionProjects(alice)).toEqual([])
+    expect(await store.deleteAccountMemberships(alice, [])).toEqual([])
+    expect(await store.pendingInvitationsFor(bob)).toEqual([])
+    expect(await store.projectByRemote(alice, 'git@github.com:Org/repo.git')).toBeUndefined()
+    await expect(store.roster(alice, projectId)).rejects.toMatchObject({ code: 'PROJECT_NOT_FOUND' })
+    await expect(store.createProject(bob, { name: 'Personal project', remoteUrl: 'git@github.com:Org/repo.git' })).resolves.toBeDefined()
+  })
+
+  it.each(['co-owner', 'member'] as const)('preserves other owners and unrelated invitations when deleting a %s', async (role) => {
+    const { store, projectId } = await foundProject(alice, 'Shared project')
+    const joined = await joinWith(store, projectId, bob, 'Bob local workspace')
+    if (role === 'co-owner') await store.changeRole(alice, { membershipId: joined.id, role: 'owner' })
+    const deleting = role === 'co-owner' ? alice : bob
+    const remaining = role === 'co-owner' ? bob : alice
+    const unrelated = await store.createProject(carol, { name: 'Other project', remoteUrl: 'https://example.com/other.git' })
+    await store.invite(carol, { projectId: unrelated.id, inviteeAccountId: deleting, grantedRole: 'member' })
+    await store.invite(carol, { projectId: unrelated.id, inviteeAccountId: dave, grantedRole: 'member' })
+    const before = await store.roster(carol, unrelated.id)
+    expect(await store.accountDeletionProjects(deleting)).toEqual([])
+    expect(await store.deleteAccountMemberships(deleting, [])).toEqual([])
+    expect((await store.roster(remaining, projectId)).members).toHaveLength(1)
+    expect(await store.roster(carol, unrelated.id)).toEqual(before)
+    expect(await store.pendingInvitationsFor(deleting)).toEqual([])
+    expect(await store.pendingInvitationsFor(dave)).toHaveLength(1)
+    expect(await store.deleteAccountMemberships(deleting, [])).toEqual([])
+  })
+
   it('creates a project whose creator is the founding owner with the remote bound normalized', async () => {
     const store = makeStoreAt(freshRoot(), 'development')
     const project = await store.createProject(alice, {

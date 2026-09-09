@@ -104,6 +104,22 @@ describe('Platform Account HTTP consumer', () => {
     expect(account.signOut).toHaveBeenCalledOnce()
   })
 
+  it.each([
+    { operationId: null, recoveryToken: 'a'.repeat(43) },
+    { operationId: 'delete-one', recoveryToken: 'short' },
+  ])('rejects malformed deletion receipts before calling the Account owner', async (receipt) => {
+    const account = accountService()
+    const server = await start(account)
+    const result = await post(server.origin, '/v1/account/deletion/recovery', {
+      ...receipt, proof: { jti: 'recovery-proof', issuedAt: 1, signature: 'signature' },
+    })
+    expect(result.status).toBe(400)
+    const body: unknown = await result.json()
+    expect(body).toMatchObject({ error: { code: 'INVALID_REQUEST' } })
+    expect(body).toHaveProperty('error.message', expect.stringContaining('Account deletion'))
+    expect(account.recoverAccountDeletion).not.toHaveBeenCalled()
+  })
+
   it('accepts deletion recovery without a revoked session and rejects malformed successor choices', async () => {
     const account = accountService()
     const server = await start(account)
