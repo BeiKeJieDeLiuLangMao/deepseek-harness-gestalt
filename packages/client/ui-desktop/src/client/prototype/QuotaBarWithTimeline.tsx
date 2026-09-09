@@ -1,6 +1,6 @@
 /**
  * QuotaBarWithTimeline:
- * Dual-track visual comparison matching User Screenshot 3 & 4.
+ * Dual-track visual comparison matching User Screenshot 3 & 4 and Manager QuotaTimeline logic.
  * Tracks quota remaining % and overlays a time remaining % marker/range.
  */
 
@@ -33,12 +33,14 @@ export function QuotaBarWithTimeline({
     ? Math.max(0, Math.min(100, timeRemainingPercent))
     : undefined
 
-  // Color gradient/tone depending on health
+  // Match manager CPAMC QuotaMeter threshold rules (≥70 green, ≥30 amber, <30 red)
   const quotaColor = isExceeded || boundedQuota === 0
     ? 'var(--dsw-alias-state-error-primary, #ef4444)'
-    : boundedQuota < 20
-      ? 'var(--dsw-alias-state-warning-primary, #f59e0b)'
-      : 'var(--dsw-alias-state-success-primary, #10b981)'
+    : boundedQuota < 30
+      ? 'var(--dsw-alias-state-error-primary, #ef4444)'
+      : boundedQuota < 70
+        ? 'var(--dsw-alias-state-warning-primary, #f59e0b)'
+        : 'var(--dsw-alias-state-success-primary, #10b981)'
 
   return (
     <div className={css.container}>
@@ -65,7 +67,7 @@ export function QuotaBarWithTimeline({
           }}
         />
 
-        {/* Time comparison overlay */}
+        {/* Time comparison overlay: Needle marker (Figure 4) */}
         {boundedTime !== undefined && styleVariant === 'needle' && (
           <div
             className={css.timelineMarker}
@@ -77,6 +79,7 @@ export function QuotaBarWithTimeline({
           </div>
         )}
 
+        {/* Time comparison overlay: Band range */}
         {boundedTime !== undefined && styleVariant === 'band' && (
           <div
             className={css.timelineBand}

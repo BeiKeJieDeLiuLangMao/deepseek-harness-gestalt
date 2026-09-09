@@ -1,6 +1,7 @@
 /**
- * Mock data fixture for CLIProxyAPI Account Pool prototype.
- * Pure in-memory fixture; no live network or real credential leakage.
+ * Mock data fixture based on actual manager upstream schema (/tmp/cpamc-repo SHA ed5f1c48e11b).
+ * Provides active quota metrics across all providers (Claude, Codex, Antigravity, Kimi, xAI, GLM)
+ * using the official multi-vendor detection fields and window models.
  */
 
 export type ProviderType = 'kimi' | 'codex' | 'anthropic' | 'antigravity' | 'xai' | 'glm'
@@ -9,11 +10,11 @@ export interface QuotaWindowMetric {
   key: string
   name: string
   percentRemaining: number // 0 - 100
-  timeRemainingPercent?: number // 0 - 100 (optional comparison timeline)
+  timeRemainingPercent?: number | undefined // 0 - 100
   windowLabel: string
   resetText: string
   isReliable: boolean
-  isExceeded?: boolean
+  isExceeded?: boolean | undefined
 }
 
 export interface AccountPoolItem {
@@ -27,7 +28,7 @@ export interface AccountPoolItem {
   statusMessage?: string | undefined
   successCount: number
   failCount: number
-  healthHistory: boolean[] // 20-slot activity ticks (true=success, false=fail, null/empty for idle)
+  healthHistory: boolean[]
   createdAt: string
   metrics: QuotaWindowMetric[]
 }
@@ -62,26 +63,26 @@ export const MOCK_ACCOUNTS: AccountPoolItem[] = [
     createdAt: '2026/9/10 01:26:35',
     metrics: [
       {
-        key: '5h',
+        key: 'gemini-5h',
         name: 'Five Hour Limit Remaining',
         percentRemaining: 93,
-        timeRemainingPercent: 46, // 2h 17m out of 5h
+        timeRemainingPercent: 46, // 2h 17m of 5h
         windowLabel: '5h',
         resetText: '剩余 93% · 2 小时 17 分钟 后刷新',
         isReliable: true,
       },
       {
-        key: '7d',
+        key: 'gemini-weekly',
         name: 'Weekly Limit Remaining',
         percentRemaining: 59,
-        timeRemainingPercent: 20, // ~1d 9h out of 7d
+        timeRemainingPercent: 20, // ~1d 9h of 7d
         windowLabel: '周限额',
         resetText: '剩余 59% · 1 天 9 小时 后刷新',
         isReliable: true,
       },
       {
         key: 'claude-5h',
-        name: 'Claude / GPT 5h Limit',
+        name: 'Claude 和 GPT 模型 5h 限额',
         percentRemaining: 100,
         timeRemainingPercent: 95,
         windowLabel: '5h',
@@ -89,8 +90,8 @@ export const MOCK_ACCOUNTS: AccountPoolItem[] = [
         isReliable: true,
       },
       {
-        key: 'claude-7d',
-        name: 'Claude / GPT Weekly Limit',
+        key: 'claude-weekly',
+        name: 'Claude 和 GPT 模型 周限额',
         percentRemaining: 100,
         timeRemainingPercent: 98,
         windowLabel: '周限额',
@@ -116,8 +117,8 @@ export const MOCK_ACCOUNTS: AccountPoolItem[] = [
         key: 'weekly',
         name: '周限额',
         percentRemaining: 77,
-        timeRemainingPercent: 71, // 5 days out of 7 days (~71%)
-        windowLabel: '7d 窗口',
+        timeRemainingPercent: 71, // 5 days remaining of 7d
+        windowLabel: '周限额',
         resetText: '77% · 09/15 02:32 · 5天后',
         isReliable: true,
       },
@@ -126,7 +127,7 @@ export const MOCK_ACCOUNTS: AccountPoolItem[] = [
         name: 'GPT-5.3-Codex-Spark 5h',
         percentRemaining: 100,
         timeRemainingPercent: 80,
-        windowLabel: '5h 窗口',
+        windowLabel: '5h',
         resetText: '100% · 09/10 06:25 · 4小时后',
         isReliable: true,
       },
@@ -135,7 +136,7 @@ export const MOCK_ACCOUNTS: AccountPoolItem[] = [
         name: 'GPT-5.3-Codex-Spark 周限额',
         percentRemaining: 100,
         timeRemainingPercent: 85,
-        windowLabel: '7d 窗口',
+        windowLabel: '周限额',
         resetText: '100% · 09/17 01:25 · 6天后',
         isReliable: true,
       },
@@ -144,7 +145,7 @@ export const MOCK_ACCOUNTS: AccountPoolItem[] = [
         name: 'gpt-reserve 周限额',
         percentRemaining: 100,
         timeRemainingPercent: 85,
-        windowLabel: '7d 窗口',
+        windowLabel: '周限额',
         resetText: '100% · 09/17 01:25 · 6天后',
         isReliable: true,
       },
@@ -154,8 +155,8 @@ export const MOCK_ACCOUNTS: AccountPoolItem[] = [
     id: 'kimi-1',
     filename: 'kimi-1788455448854.json',
     provider: 'kimi',
-    label: 'Kimi Research Seat',
-    accountEmail: 'kimi-account-01@domain.com',
+    label: 'Kimi Research Account',
+    accountEmail: 'kimi-account@moonshot.cn',
     tier: 'Standard',
     status: 'active',
     successCount: 1443,
@@ -165,10 +166,10 @@ export const MOCK_ACCOUNTS: AccountPoolItem[] = [
     metrics: [
       {
         key: '5h-window',
-        name: '5h 限额',
+        name: '5h 限额 (已探测)',
         percentRemaining: 100,
         timeRemainingPercent: 40,
-        windowLabel: '5h 窗口',
+        windowLabel: '5h',
         resetText: '100% · 09/10 02:17',
         isReliable: true,
       },
@@ -190,9 +191,9 @@ export const MOCK_ACCOUNTS: AccountPoolItem[] = [
     metrics: [
       {
         key: 'xai-weekly',
-        name: '周限额',
+        name: '周限额 (月度账单探测)',
         percentRemaining: 0,
-        timeRemainingPercent: 9, // 重置时间 13小时后 (~8%)
+        timeRemainingPercent: 9, // ~13h remaining
         windowLabel: '周限额',
         resetText: '已用 100% · 重置 09/10 15:00 · 13小时后',
         isReliable: true,
@@ -215,7 +216,7 @@ export const MOCK_ACCOUNTS: AccountPoolItem[] = [
     metrics: [
       {
         key: 'claude-sonnet',
-        name: 'Claude 3.5 Sonnet / Opus 窗口',
+        name: 'Claude 3.5 Sonnet / Opus 窗口 (被动响应头)',
         percentRemaining: 68,
         timeRemainingPercent: 55,
         windowLabel: '5h 窗口',
@@ -241,7 +242,7 @@ export const MOCK_ACCOUNTS: AccountPoolItem[] = [
         key: 'glm-5h',
         name: 'GLM Coding 5h 限额 (已用 16%)',
         percentRemaining: 84, // 100 - used_percent (16%)
-        timeRemainingPercent: 54, // ~2.7h remaining of 5h window
+        timeRemainingPercent: 54, // ~2.7h remaining
         windowLabel: '5h 窗口',
         resetText: '剩余 84% (已用 16%) · 2 小时 42 分钟后重置',
         isReliable: true,
@@ -250,7 +251,7 @@ export const MOCK_ACCOUNTS: AccountPoolItem[] = [
         key: 'glm-weekly',
         name: 'GLM Coding 周限额 (已用 35%)',
         percentRemaining: 65, // 100 - used_percent (35%)
-        timeRemainingPercent: 71, // 5 days remaining of 7d
+        timeRemainingPercent: 71, // 5 days remaining
         windowLabel: '周限额',
         resetText: '剩余 65% (已用 35%) · 5 天后重置',
         isReliable: true,
