@@ -34,13 +34,14 @@ function harness() {
   const sync = (): void => {
     const committed = layout()
     if (committed === undefined) throw new Error('expected the layout to commit')
-    domain.sync(SESSION, committed)
+    domain.sync(SESSION, [committed])
   }
   const bind = (tabId: TabId): UseSidebarRightTabInfo => {
     const occurrence = domain.occurrence(SESSION, { id: tabId })
     navigationSources.set(tabId, occurrence.navigation)
     return tabInfoFactory(standard, {
-      tabId, title: false, fullscreen: false, signal: occurrence.signal, actions: occurrence.tabActions, useStore, useTabNavigation,
+      tabId, surface: 'right', title: false, fullscreen: false, signal: occurrence.signal,
+      actions: occurrence.tabActions, useStore, useTabNavigation,
     })
   }
   const open = (beforeCommit?: (tabId: TabId) => void): TabId => {

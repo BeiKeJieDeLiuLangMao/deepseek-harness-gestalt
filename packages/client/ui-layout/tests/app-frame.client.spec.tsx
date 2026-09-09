@@ -6,7 +6,7 @@ import { act, cleanup, render } from '@testing-library/react'
 import { useSyncExternalStore } from 'react'
 import { AppFrame } from '../src/client/AppFrame.tsx'
 import type { AppFrameProps } from '../src/client/AppFrame.tsx'
-import type { RightbarOwnerProps, SidebarOwnerProps } from '../src/client/index.ts'
+import type { WorkbenchOwnerProps, SidebarOwnerProps } from '../src/client/index.ts'
 import { createLayoutStore } from '../src/client/stores.ts'
 import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { WorkspaceSnapshot } from '@deepseek-ai/dsh-api-workspace-controller/client'
@@ -109,7 +109,7 @@ function mountFrame(windowWidth = frameWidth) {
   return {
     ...utils, instance, frame, slotCalls,
     rerenderFrame: () => { utils.rerender(element()) },
-    rightOwner: () => slotCalls.findLast(c => c.key === 'rightbar')!.props as RightbarOwnerProps,
+    rightOwner: () => slotCalls.findLast(c => c.key === 'workbench')!.props as WorkbenchOwnerProps,
     sidebarOwner: () => slotCalls.findLast(c => c.key === 'sidebar')!.props as SidebarOwnerProps,
   }
 }
@@ -189,7 +189,7 @@ describe('AppFrame', () => {
       { key: 'shell.overlay', props: {} },
     ])
     expect(container.querySelector('[data-testid="conversation-content"]')).toBeNull()
-    expect(container.querySelector('[data-testid="rightbar-content"]')).toBeNull()
+    expect(container.querySelector('[data-testid="workbench-content"]')).toBeNull()
   })
 
   it('localizes the product title without a configured build title', () => {
@@ -214,8 +214,28 @@ describe('AppFrame', () => {
     const { frame, rightOwner, sidebarOwner, slotCalls } = mountFrame()
     expect(tracks(frame)).toEqual([280, 0])
     expect(sidebarOwner()).toEqual({ collapsed: false, width: 280 })
-    expect(rightOwner()).toEqual({ width: 864, viewportWidth: 1920, canShow: true })
+    expect(rightOwner()).toMatchObject({
+      rightPanelWidth: 864,
+      rightbarWidth: 0,
+      centerWidth: 1640,
+      viewportWidth: 1920,
+      viewportHeight: 1080,
+      canShowRight: true,
+    })
+    expect(document.getElementById(rightOwner().rightHostId)).toBe(frame.querySelector('[data-rightbar-col]'))
+    expect(document.getElementById(rightOwner().bottomHostId)).toBe(frame.querySelector('[data-bottombar-host]'))
     expect(slotCalls.find(c => c.key === 'conversation')!.props).toEqual({})
+  })
+
+  it('reserves bottom height only for a visible non-fullscreen surface', () => {
+    const { frame, instance } = mountFrame()
+    const bottomHost = frame.querySelector<HTMLElement>('[data-bottombar-host]')!
+    act(() => { instance.actions.openBottombar(260, false) })
+    expect(bottomHost.parentElement!.style.gridTemplateRows).toBe('minmax(0, 1fr) 260px')
+    act(() => { instance.actions.openBottombar(260, true) })
+    expect(bottomHost.parentElement!.style.gridTemplateRows).toBe('minmax(0, 1fr) 0px')
+    act(() => { instance.actions.closeBottombar() })
+    expect(bottomHost.parentElement!.style.gridTemplateRows).toBe('minmax(0, 1fr) 0px')
   })
 
   it('retains conversation and sidebar content without a current Session', () => {
@@ -223,7 +243,7 @@ describe('AppFrame', () => {
     const { frame, getByTestId, queryByTestId } = mountFrame()
     expect(getByTestId('conversation-content')).toBeTruthy()
     expect(getByTestId('sidebar-content')).toBeTruthy()
-    expect(queryByTestId('rightbar-content')).toBeNull()
+    expect(queryByTestId('workbench-content')).toBeNull()
     expect(tracks(frame)).toEqual([280, 0])
   })
 
@@ -231,7 +251,7 @@ describe('AppFrame', () => {
     workspacesReady = false
     const { getByTestId } = mountFrame()
     expect(getByTestId('conversation-content')).toBeTruthy()
-    expect(getByTestId('rightbar-content')).toBeTruthy()
+    expect(getByTestId('workbench-content')).toBeTruthy()
   })
 
   it('keeps the closed sidebar mounted at its 56px rail without a handle', () => {
@@ -249,11 +269,11 @@ describe('AppFrame normal width concessions', () => {
     frameWidth = 1000
     const { instance, rightOwner } = mountFrame(1920)
     expect(instance.getSnapshot().viewportWidth).toBe(1000)
-    expect(rightOwner()).toEqual({ width: 450, viewportWidth: 1000, canShow: true })
+    expect(rightOwner()).toMatchObject({ rightPanelWidth: 450, viewportWidth: 1000, canShowRight: true })
     act(() => { instance.actions.openRightbar(true, false) })
     expect(instance.getSnapshot().rightbar).toBe(450)
     resize(1920)
-    expect(rightOwner().width).toBe(450)
+    expect(rightOwner().rightPanelWidth).toBe(450)
   })
 
   it('shrinks the right panel to 300px, drops its track, and only then squeezes center', () => {
@@ -261,12 +281,12 @@ describe('AppFrame normal width concessions', () => {
     act(() => { instance.actions.setSidebar(420); instance.actions.openRightbar(true, false) })
     resize(1200)
     expect(tracks(frame)).toEqual([420, 380])
-    expect(rightOwner()).toEqual({ width: 380, viewportWidth: 1200, canShow: true })
+    expect(rightOwner()).toMatchObject({ rightPanelWidth: 380, viewportWidth: 1200, canShowRight: true })
     resize(1120)
     expect(tracks(frame)).toEqual([420, 300])
     resize(1119)
     expect(tracks(frame)).toEqual([420, 0])
-    expect(rightOwner()).toEqual({ width: 0, viewportWidth: 1119, canShow: false })
+    expect(rightOwner()).toMatchObject({ rightPanelWidth: 0, viewportWidth: 1119, canShowRight: false })
     expect(frame.querySelector('[data-side="rightbar"]')).toBeNull()
     expect(instance.getSnapshot()).toMatchObject({ rightbarShown: true, rightbar: 864 })
     act(() => { instance.actions.closeRightbar() })
@@ -281,25 +301,25 @@ describe('AppFrame normal width concessions', () => {
     const { frame, instance, rightOwner } = mountFrame()
     act(() => { instance.actions.toggleSidebar() })
     expect(tracks(frame)).toEqual([280, 0])
-    expect(rightOwner()).toEqual({ width: 344, viewportWidth: 800, canShow: true })
+    expect(rightOwner()).toMatchObject({ rightPanelWidth: 344, viewportWidth: 800, canShowRight: true })
     act(() => { instance.actions.openRightbar(true, false) })
     expect(tracks(frame)).toEqual([56, 344])
     expect(instance.getSnapshot()).toMatchObject({ narrowExpanded: false, rightbar: 360 })
-    expect(rightOwner().canShow).toBe(true)
+    expect(rightOwner().canShowRight).toBe(true)
   })
 
   it.each([[756, 300, true], [755, 0, false]] as const)('reports eligibility at %ipx', (width, rightbar, canShow) => {
     frameWidth = width
     const { instance, rightOwner } = mountFrame()
     act(() => { instance.actions.toggleSidebar() })
-    expect(rightOwner()).toEqual({ width: rightbar, viewportWidth: width, canShow })
+    expect(rightOwner()).toMatchObject({ rightPanelWidth: rightbar, viewportWidth: width, canShowRight: canShow })
   })
 
   it('does not anticipate another left collapse after the right panel is already shown', () => {
     frameWidth = 800
     const { instance, rightOwner } = mountFrame()
     act(() => { instance.actions.openRightbar(true, false); instance.actions.toggleSidebar() })
-    expect(rightOwner().canShow).toBe(false)
+    expect(rightOwner().canShowRight).toBe(false)
   })
 
   it('auto-collapses only below 1024px and preserves the wide sidebar preference', () => {
@@ -385,7 +405,7 @@ describe('AppFrame right panel presentation', () => {
     expect(handleFor(frame, 'rightbar').style.left).toBe('1056px')
     act(() => { instance.actions.openRightbar(true, true) })
     expect(tracks(frame)).toEqual([280, 864])
-    expect(rightOwner().width).toBe(864)
+    expect(rightOwner().rightPanelWidth).toBe(864)
     expect(frame.dataset.rightbarFullscreen).toBe('true')
     expect(frame.querySelector('[data-side="rightbar"]')).toBeNull()
     act(() => { instance.actions.openRightbar(true, false) })
@@ -416,7 +436,7 @@ describe('AppFrame right panel presentation', () => {
     const { frame, instance, rightOwner } = mountFrame()
     act(() => { instance.actions.openRightbar(false, true) })
     expect(tracks(frame)).toEqual([56, 0])
-    expect(rightOwner()).toEqual({ width: 0, viewportWidth: 700, canShow: false })
+    expect(rightOwner()).toMatchObject({ rightPanelWidth: 0, viewportWidth: 700, canShowRight: false })
     expect(instance.getSnapshot().rightbarShown).toBe(true)
     expect(frame.querySelector('[data-side="rightbar"]')).toBeNull()
   })
@@ -426,10 +446,10 @@ describe('AppFrame right panel presentation', () => {
     act(() => { instance.actions.openRightbar(false, false) })
     resize(1100)
     expect(tracks(frame)).toEqual([280, 0])
-    expect(rightOwner().width).toBe(420)
+    expect(rightOwner().rightPanelWidth).toBe(420)
     drag(handleFor(frame, 'rightbar'), 680, 690)
     expect(instance.getSnapshot().rightbar).toBe(410)
-    expect(rightOwner().width).toBe(410)
+    expect(rightOwner().rightPanelWidth).toBe(410)
     expect(tracks(frame)[1]).toBe(0)
   })
 })
@@ -459,12 +479,12 @@ describe('AppFrame pointer resizing', () => {
     act(() => { instance.actions.openRightbar(true, false) })
     resize(1100)
     const handle = handleFor(frame, 'rightbar')
-    expect(rightOwner().width).toBe(420)
+    expect(rightOwner().rightPanelWidth).toBe(420)
     expect(tracks(frame)[1]).toBe(420)
     expect(handle.style.left).toBe('680px')
     drag(handle, 680, 690)
     expect(instance.getSnapshot().rightbar).toBe(410)
-    expect(rightOwner().width).toBe(410)
+    expect(rightOwner().rightPanelWidth).toBe(410)
     expect(tracks(frame)[1]).toBe(410)
     expect(handle.style.left).toBe('690px')
   })
@@ -474,10 +494,10 @@ describe('AppFrame pointer resizing', () => {
     const { frame, instance, rightOwner } = mountFrame()
     act(() => { instance.actions.toggleSidebar(); instance.actions.openRightbar(true, false) })
     drag(handleFor(frame, 'rightbar'), 1650, 0)
-    expect(rightOwner().width).toBe(2100)
+    expect(rightOwner().rightPanelWidth).toBe(2100)
     expect(tracks(frame)[1]).toBe(2100)
     drag(handleFor(frame, 'rightbar'), 900, 3000)
-    expect(rightOwner().width).toBe(300)
+    expect(rightOwner().rightPanelWidth).toBe(300)
     expect(tracks(frame)[1]).toBe(300)
   })
 

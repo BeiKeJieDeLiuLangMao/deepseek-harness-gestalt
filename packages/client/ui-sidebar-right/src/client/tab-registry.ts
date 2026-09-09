@@ -26,8 +26,12 @@
  */
 import type { ComponentType } from 'react'
 import type { Context } from '@deepseek-ai/cordis'
+import type { TabRecord } from '@deepseek-ai/dsh-client-ui-dockkit'
 import type { IconProps } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { notifySubscribers } from '@deepseek-ai/dsh-client-store'
+import type { SidebarRightTabPayload, SidebarRightTabPin } from './contract/payload.ts'
+import type { SidebarWorkbenchSurface } from './stores.ts'
 // The POSIX build: the browser bundle must not reach for node's `path`, and
 // addresses are `/`-separated regardless of the host platform.
 import picomatch from 'picomatch/posix'
@@ -80,6 +84,20 @@ export interface SidebarRightGuideBox extends SidebarRightGuideEntry {
   readonly kind: string
 }
 
+/** Why an official occurrence is being asked to release its runtime owner. */
+export type SidebarRightCloseReason = 'close' | 'replace' | 'reset' | 'undo' | 'redo'
+
+/** Stable occurrence facts passed to close admission and release hooks. */
+export interface SidebarRightTabCloseContext {
+  readonly sessionId: SessionId
+  readonly surface: SidebarWorkbenchSurface
+  readonly tab: TabRecord
+  readonly payload: SidebarRightTabPayload | undefined
+  readonly pin: SidebarRightTabPin | undefined
+  readonly signal: AbortSignal
+  readonly reason: SidebarRightCloseReason
+}
+
 
 /** One registered tab type: its static face, and nothing else. */
 export interface SidebarRightTabDefinition {
@@ -123,6 +141,16 @@ export interface SidebarRightTabDefinition {
   readonly title: (address: string) => string
   /** Entry boxes for the guide page. Omit to stay off it. */
   readonly guide?: readonly SidebarRightGuideEntry[]
+  /**
+   * Admit a true occurrence close before any layout or runtime mutation.
+   * Returning `false` or rejecting cancels the whole requested batch.
+   */
+  readonly beforeClose?: (context: SidebarRightTabCloseContext) => boolean | void | Promise<boolean | void>
+  /**
+   * Release the runtime owner after every batch member was admitted. A record
+   * is removed only when this hook fulfils; a failed record remains visible.
+   */
+  readonly close?: (context: SidebarRightTabCloseContext) => void | Promise<void>
 }
 
 /** What a routing decision settles on: who draws the address, and as what. */

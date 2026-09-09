@@ -33,6 +33,14 @@ export interface ILayout {
   openRightbar(track: boolean, fullscreen: boolean): void
   /** Report the right panel as hidden: no track, no handle. */
   closeRightbar(): void
+  /**
+   * Report the bottom workbench surface and its requested height.
+   * @param height - desired push-mode height in CSS pixels.
+   * @param fullscreen - whether the surface covers the frame and reserves no row.
+   */
+  openBottombar(height: number, fullscreen: boolean): void
+  /** Report the bottom workbench surface as hidden. */
+  closeBottombar(): void
 }
 
 /** Cross-plugin panel-action face (ctx.layout). */
@@ -63,6 +71,16 @@ export class LayoutController implements ILayout {
   /** Report the right panel as hidden: no track, no handle. */
   closeRightbar(): void {
     this.#require().closeRightbar()
+  }
+
+  /** Report the bottom workbench surface's height and presentation. */
+  openBottombar(height: number, fullscreen: boolean): void {
+    this.#require().openBottombar(height, fullscreen)
+  }
+
+  /** Report the bottom workbench surface as hidden. */
+  closeBottombar(): void {
+    this.#require().closeBottombar()
   }
 
   #require(): PanelActions {

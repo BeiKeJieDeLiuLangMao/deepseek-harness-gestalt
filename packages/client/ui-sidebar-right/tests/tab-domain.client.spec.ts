@@ -35,7 +35,10 @@ function layouts() {
 }
 
 function harness() {
-  const navigator = { openResourceIn: vi.fn(), openTabIn: vi.fn(), closeIn: vi.fn() } satisfies
+  const result = Promise.resolve('tab-result' as TabId)
+  const navigator = {
+    openResourceIn: vi.fn(() => result), openTabIn: vi.fn(() => result), closeIn: vi.fn(() => Promise.resolve()),
+  } satisfies
     SidebarRightNavigator & Record<string, ReturnType<typeof vi.fn>>
   const pin = vi.fn<(address: string, signal: AbortSignal) => void>()
   const domain = new TabDomain(navigator, pin)
@@ -53,7 +56,7 @@ describe('TabDomain — occurrences follow records', () => {
   it('pins a record\'s address when it first appears, with the occurrence\'s signal', () => {
     const { domain, pin, controller, current } = harness()
     const tabId = controller.openContent({ kind: 'text', contentId: 'dsh-resource://file/session/s-one/a.txt', title: 'a' })
-    domain.sync(SESSION, current())
+    domain.sync(SESSION, [current()])
     const occurrence = domain.occurrence(SESSION, recordOf(current(), tabId))
     expect(pin).toHaveBeenCalledWith('dsh-resource://file/session/s-one/a.txt', occurrence.signal)
     expect(occurrence.signal.aborted).toBe(false)
@@ -65,22 +68,22 @@ describe('TabDomain — occurrences follow records', () => {
   it('pins once per occurrence, however many times the layout commits', () => {
     const { domain, pin, controller, current } = harness()
     controller.openContent({ kind: 'text', contentId: 'dsh-resource://file/session/s-one/a.txt', title: 'a' })
-    domain.sync(SESSION, current())
+    domain.sync(SESSION, [current()])
     controller.setExpanded(true)
-    domain.sync(SESSION, current())
+    domain.sync(SESSION, [current()])
     expect(pin).toHaveBeenCalledTimes(2)
   })
 
   it('aborts the occurrence when its record vanishes, and builds a new one when undo restores it', () => {
     const { domain, pin, controller, current } = harness()
     const tabId = controller.openContent({ kind: 'text', contentId: 'dsh-resource://file/session/s-one/a.txt', title: 'a' })
-    domain.sync(SESSION, current())
+    domain.sync(SESSION, [current()])
     const first = domain.occurrence(SESSION, recordOf(current(), tabId))
     controller.closeTab(tabId)
-    domain.sync(SESSION, current())
+    domain.sync(SESSION, [current()])
     expect(first.signal.aborted).toBe(true)
     controller.undo()
-    domain.sync(SESSION, current())
+    domain.sync(SESSION, [current()])
     const second = domain.occurrence(SESSION, recordOf(current(), tabId))
     expect(second).not.toBe(first)
     expect(second.signal.aborted).toBe(false)
@@ -91,18 +94,18 @@ describe('TabDomain — occurrences follow records', () => {
   it('leaves another session\'s occurrences alone when a session is synced', () => {
     const { domain, controller, current } = harness()
     const tabId = controller.openContent({ kind: 'text', contentId: 'dsh-resource://file/session/s-one/a.txt', title: 'a' })
-    domain.sync(SESSION, current())
+    domain.sync(SESSION, [current()])
     const held = domain.occurrence(SESSION, recordOf(current(), tabId))
     const other = layouts()
-    domain.sync(OTHER, other.current())
+    domain.sync(OTHER, [other.current()])
     expect(held.signal.aborted).toBe(false)
   })
 
   it('aborts every occurrence of every session on dispose', () => {
     const { domain, controller, current } = harness()
     const tabId = controller.openContent({ kind: 'text', contentId: 'dsh-resource://file/session/s-one/a.txt', title: 'a' })
-    domain.sync(SESSION, current())
-    domain.sync(OTHER, layouts().current())
+    domain.sync(SESSION, [current()])
+    domain.sync(OTHER, [layouts().current()])
     const held = domain.occurrence(SESSION, recordOf(current(), tabId))
     domain.dispose()
     expect(held.signal.aborted).toBe(true)
@@ -117,7 +120,7 @@ describe('TabDomain — navigation', () => {
     expect(pin).not.toHaveBeenCalled()
     const occurrence = domain.occurrence(SESSION, recordOf(current(), tabId))
     expect(occurrence.navigation.getSnapshot()).toEqual({ address: 'dsh-resource://file/session/s-one/a.txt', params: { line: 7 }, revision: 1 })
-    domain.sync(SESSION, current())
+    domain.sync(SESSION, [current()])
     expect(domain.occurrence(SESSION, recordOf(current(), tabId))).toBe(occurrence)
     expect(pin).toHaveBeenCalledWith('dsh-resource://file/session/s-one/a.txt', occurrence.signal)
   })
@@ -125,7 +128,7 @@ describe('TabDomain — navigation', () => {
   it('steps the revision on every navigation, params changed or not, and notifies', () => {
     const { domain, controller, current } = harness()
     const tabId = controller.openContent({ kind: 'text', contentId: 'dsh-resource://file/session/s-one/a.txt', title: 'a' })
-    domain.sync(SESSION, current())
+    domain.sync(SESSION, [current()])
     const occurrence = domain.occurrence(SESSION, recordOf(current(), tabId))
     const seen = vi.fn()
     occurrence.navigation.subscribe(seen)
@@ -140,12 +143,12 @@ describe('TabDomain — navigation', () => {
     const tabId = controller.openContent({ kind: 'text', contentId: 'dsh-resource://file/session/s-one/a.txt', title: 'a' })
     expect(() => domain.occurrence(SESSION, { id: tabId })).toThrow('has no committed occurrence')
     expect(pin).not.toHaveBeenCalled()
-    domain.sync(SESSION, current())
+    domain.sync(SESSION, [current()])
     const occurrence = domain.occurrence(SESSION, { id: tabId })
     expect(domain.occurrence(SESSION, { id: tabId })).toBe(occurrence)
     expect(pin).toHaveBeenCalledWith('dsh-resource://file/session/s-one/a.txt', occurrence.signal)
     controller.closeTab(tabId)
-    domain.sync(SESSION, current())
+    domain.sync(SESSION, [current()])
     expect(() => domain.occurrence(SESSION, { id: tabId })).toThrow('has no committed occurrence')
   })
 })
@@ -156,7 +159,7 @@ describe('TabDomain — a tab\'s own actions', () => {
     controller.setExpanded(true)
     const tabId = controller.openContent({ kind: 'text', contentId: 'dsh-resource://file/session/s-one/a.txt', title: 'a' })
     controller.splitPane()
-    domain.sync(SESSION, current())
+    domain.sync(SESSION, [current()])
     const occurrence = domain.occurrence(SESSION, recordOf(current(), tabId))
     const home = current().nodes[current().rootId]
     if (home?.kind !== 'split') throw new Error('expected a split root')
@@ -167,7 +170,7 @@ describe('TabDomain — a tab\'s own actions', () => {
     occurrence.tabActions.openResource('dsh-resource://file/session/s-one/b.txt')
     expect(navigator.openResourceIn).toHaveBeenLastCalledWith(SESSION, 'dsh-resource://file/session/s-one/b.txt', { paneId: leftPane })
     controller.placeTab(tabId, rightPane, 0)
-    domain.sync(SESSION, current())
+    domain.sync(SESSION, [current()])
     occurrence.tabActions.openResource('dsh-resource://file/session/s-one/b.txt', { params: { line: 1 } })
     expect(navigator.openResourceIn).toHaveBeenLastCalledWith(SESSION, 'dsh-resource://file/session/s-one/b.txt', { paneId: rightPane, params: { line: 1 } })
     // The caller's pane wins over the default.
@@ -179,7 +182,7 @@ describe('TabDomain — a tab\'s own actions', () => {
     const { domain, navigator, controller, current } = harness()
     const tabId = controller.openContent({ kind: 'text', contentId: 'dsh-resource://file/session/s-one/a.txt', title: 'a' })
     controller.floatTab(tabId)
-    domain.sync(SESSION, current())
+    domain.sync(SESSION, [current()])
     domain.occurrence(SESSION, recordOf(current(), tabId)).tabActions.openResource('dsh-resource://file/session/s-one/b.txt')
     expect(navigator.openResourceIn).toHaveBeenLastCalledWith(SESSION, 'dsh-resource://file/session/s-one/b.txt', {})
   })
@@ -187,7 +190,7 @@ describe('TabDomain — a tab\'s own actions', () => {
   it('replaces itself and closes itself through the navigator', () => {
     const { domain, navigator, controller, current } = harness()
     const tabId = controller.openContent({ kind: 'text', contentId: 'dsh-resource://file/session/s-one/a.txt', title: 'a' })
-    domain.sync(SESSION, current())
+    domain.sync(SESSION, [current()])
     const { tabActions } = domain.occurrence(SESSION, recordOf(current(), tabId))
     tabActions.openTab('files', { replaceTab: true })
     expect(navigator.openTabIn).toHaveBeenLastCalledWith(SESSION, 'files', { replaceTab: tabId })
@@ -198,7 +201,7 @@ describe('TabDomain — a tab\'s own actions', () => {
   it('passes revealIfOpened through, so a tab may open a second copy beside itself', () => {
     const { domain, navigator, controller, current } = harness()
     const tabId = controller.openContent({ kind: 'text', contentId: 'dsh-resource://file/session/s-one/a.txt', title: 'a' })
-    domain.sync(SESSION, current())
+    domain.sync(SESSION, [current()])
     const { tabActions } = domain.occurrence(SESSION, recordOf(current(), tabId))
     tabActions.openResource('dsh-resource://file/session/s-one/a.txt', { revealIfOpened: false })
     expect(navigator.openResourceIn).toHaveBeenLastCalledWith(
@@ -206,5 +209,39 @@ describe('TabDomain — a tab\'s own actions', () => {
       'dsh-resource://file/session/s-one/a.txt',
       { paneId: current().rootId, revealIfOpened: false },
     )
+  })
+
+  it('passes instance metadata to another surface without carrying the current pane', () => {
+    const { domain, navigator, controller, current } = harness()
+    const tabId = controller.openContent({ kind: 'text', contentId: 'dsh-resource://file/session/s-one/a.txt', title: 'a' })
+    domain.sync(SESSION, [current()])
+    domain.occurrence(SESSION, recordOf(current(), tabId)).tabActions.openTab('terminal', {
+      surface: 'bottom',
+      instanceId: 'pty-one',
+      title: 'zsh',
+      payload: { terminalId: 'pty-one' },
+      pin: { scope: 'global', homeSessionId: SESSION },
+    })
+    expect(navigator.openTabIn).toHaveBeenLastCalledWith(SESSION, 'terminal', {
+      surface: 'bottom',
+      instanceId: 'pty-one',
+      title: 'zsh',
+      payload: { terminalId: 'pty-one' },
+      pin: { scope: 'global', homeSessionId: SESSION },
+    })
+  })
+
+  it('reports a rejected tab action without leaving an unhandled promise', async () => {
+    const { domain, navigator, controller, current } = harness()
+    const failure = new Error('replacement refused')
+    navigator.openTabIn.mockRejectedValueOnce(failure)
+    const report = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const tabId = controller.openContent({ kind: 'text', contentId: 'dsh-resource://file/session/s-one/a.txt', title: 'a' })
+    domain.sync(SESSION, [current()])
+    domain.occurrence(SESSION, recordOf(current(), tabId)).tabActions.openTab('files', { replaceTab: true })
+    await vi.waitFor(() => {
+      expect(report).toHaveBeenCalledWith('sidebarRight: tab action failed:', failure)
+    })
+    report.mockRestore()
   })
 })

@@ -15,7 +15,7 @@
  * track but hides the outer resize handle. Everything arrives through the framework
  * shares — zero cordis or framework imports, zero self-made hooks.
  */
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type {
   PropsLocale, PropsRenderSlots, PropsRuntime, PropsStore,
@@ -33,13 +33,18 @@ function isDesktopOverlayDocument(): boolean {
 /** Full composed props: runtime share + child-slot render share + store share. */
 export type AppFrameProps =
   & PropsRuntime<'root'>
-  & PropsRenderSlots<'sidebar' | 'conversation' | 'rightbar' | 'shell.overlay'>
+  & PropsRenderSlots<'sidebar' | 'conversation' | 'workbench' | 'shell.overlay'>
   & PropsStore<ReturnType<typeof createLayoutStore>>
   & PropsLocale<'common'>
 
 /** Center column grid item (session-body building block). */
-function CenterColumn(props: { children?: ReactNode }) {
-  return <div className={css.centerCol}>{props.children}</div>
+function CenterColumn(props: { bottomHostId: string; bottomHeight: number; children?: ReactNode }) {
+  return (
+    <div className={css.centerCol} style={{ gridTemplateRows: `minmax(0, 1fr) ${props.bottomHeight}px` }}>
+      <div className={css.conversationHost}>{props.children}</div>
+      <div id={props.bottomHostId} className={css.bottomHost} data-bottombar-host />
+    </div>
+  )
 }
 
 /**
@@ -47,8 +52,8 @@ function CenterColumn(props: { children?: ReactNode }) {
  * occupant's panel is positioned against the column's right edge, which never
  * moves, so it can hang over the centre when there is no track.
  */
-function RightbarColumn(props: { children?: ReactNode }) {
-  return <div className={css.rightbarCol} data-rightbar-col>{props.children}</div>
+function RightbarColumn(props: { hostId: string }) {
+  return <div id={props.hostId} className={css.rightbarCol} data-rightbar-col />
 }
 
 /**
@@ -146,6 +151,8 @@ export function AppFrame({
     return current === undefined ? undefined : s.byId[current]?.title
   })
   const frameRef = useRef<HTMLDivElement | null>(null)
+  const rightHostId = `dsh-workbench-right-${useId()}`
+  const bottomHostId = `dsh-workbench-bottom-${useId()}`
   const viewport = panels.viewportWidth
 
   // Track the frame's own box (not the window): rAF-throttled ResizeObserver.
@@ -156,8 +163,9 @@ export function AppFrame({
     let raf: number | null = null
     let disposed = false
     const measure = () => {
-      const width = el.getBoundingClientRect().width
+      const { width, height } = el.getBoundingClientRect()
       if (width > 0) actions.setViewportWidth(width)
+      if (height > 0) actions.setViewportHeight(height)
     }
     measure()
     const observer = new ResizeObserver(() => {
@@ -208,6 +216,9 @@ export function AppFrame({
     actions.setRightbar(rightbarBase.current - dx)
   }, [actions])
   const productTitle = process.env.DSH_CLIENT_TITLE ?? t('brand.localBuild')
+  const bottomHeight = panels.bottombarShown && !panels.bottombarFullscreen
+    ? Math.min(panels.bottombar, panels.viewportHeight)
+    : 0
 
   return (
     <div
@@ -244,15 +255,25 @@ export function AppFrame({
             the shell's own pending rendering. The conversation is
             session-maybe; SessionProvider withholds the strict right-column
             entry while no session is current. */}
-        <CenterColumn>{renderSlot('conversation', {})}</CenterColumn>
-        <RightbarColumn>
-          {/* Strict session entry: with no session there is no surface, and the
-              column is an empty zero-width track. The occupant receives the
-              panel width it should draw at; the track is the frame's business. */}
-          <SessionProvider>
-            {renderSlot('rightbar', { width: normal.rightbar, viewportWidth: viewport, canShow: normal.rightbar > 0 })}
-          </SessionProvider>
-        </RightbarColumn>
+        <CenterColumn bottomHostId={bottomHostId} bottomHeight={bottomHeight}>
+          {renderSlot('conversation', {})}
+        </CenterColumn>
+        <RightbarColumn hostId={rightHostId} />
+        {/* One Session-owned workbench resolves these stable frame hosts and
+            portals both surfaces from one React/store tree. */}
+        <SessionProvider>
+          {renderSlot('workbench', {
+            rightHostId,
+            bottomHostId,
+            viewportWidth: viewport,
+            viewportHeight: panels.viewportHeight,
+            centerWidth: cols.center,
+            rightPanelWidth: normal.rightbar,
+            rightbarWidth: cols.rightbar,
+            canShowRight: normal.rightbar > 0,
+            setRightbarWidth: actions.setRightbar,
+          })}
+        </SessionProvider>
       </>
       <div className={css.overlayLayer} data-shell-overlay>
         {renderSlot('shell.overlay', {})}

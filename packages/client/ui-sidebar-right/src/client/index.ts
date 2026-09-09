@@ -31,27 +31,39 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from './contract/slots.ts'
 import { GuideBody, type GuideInjected } from './tabs/guide/GuideBody.tsx'
 import { ExpandButton } from './shell/ExpandButton.tsx'
-import { RightbarSeat, type SidebarRightInjected } from './shell/SidebarRight.tsx'
+import { WorkbenchSeat, type SidebarRightInjected } from './shell/SidebarRight.tsx'
 import { createSidebarRightController, type SidebarRightController } from './service.ts'
 import { SidebarRightTabRegistry } from './tab-registry.ts'
 import { createSidebarRightStore } from './stores.ts'
+import { createLocalSidebarWorkbenchPersistence } from './persistence.ts'
 import { en, zh } from './locales.ts'
 import { GUIDE_ID, guideDefinition } from './tabs/guide/definition.ts'
 import { guideTabInfoFactory, tabInfoFactory } from './tab-info.ts'
 import type { TabId } from '@deepseek-ai/dsh-client-ui-dockkit'
 
-export type { RightbarSeatProps, SidebarRightInjected, SidebarRightPresentation } from './shell/SidebarRight.tsx'
+export type {
+  SidebarBottomPresentation, SidebarRightInjected, SidebarRightPresentation, WorkbenchSeatProps,
+} from './shell/SidebarRight.tsx'
 export type { GuideBodyProps, GuideInjected } from './tabs/guide/GuideBody.tsx'
 export type { ExpandButtonProps } from './shell/ExpandButton.tsx'
-export type { SidebarRightState, SurfaceState } from './stores.ts'
+export type {
+  DockSurfaceState, LocatedTab, SidebarRightActions, SidebarRightState, SidebarWorkbenchSurface,
+  SurfaceState, UpdateTabIntent,
+} from './stores.ts'
 export type {
   ISidebarRight, SidebarRightBinding, SidebarRightOpenResourceOptions, SidebarRightOpenTabOptions,
-  SidebarRightPlacement, SurfaceActions,
+  SidebarRightPlacement, SidebarRightProjection, SidebarRightSessionNavigator, SidebarRightSessionProjection,
+  SidebarRightTabProjection, SidebarRightUpdateTabOptions, SurfaceActions,
 } from './service.ts'
 export type {
   SidebarRightGuideBox, SidebarRightGuideEntry, SidebarRightTabClaim, SidebarRightTabDefinition,
-  SidebarRightTabPriority,
+  SidebarRightTabCloseContext, SidebarRightCloseReason, SidebarRightTabPriority,
 } from './tab-registry.ts'
+export type {
+  SidebarRightTabPayload, SidebarRightTabPayloadFor, SidebarRightTabPayloadMap, SidebarRightTabPin,
+  SidebarRightTabState,
+} from './contract/payload.ts'
+export type { SidebarRightCloseFailure, SidebarRightCloseOutcome } from './close-coordinator.ts'
 export type {
   SidebarRightTabInfo, SidebarRightTabInjected, UseSidebarRightTabInfo, SidebarRightTabActions,
   SidebarRightTabMenuOwnerProps, SidebarRightTabNavigation, SidebarRightTabPlacement,
@@ -65,6 +77,7 @@ export type { FloatRect, PaneId, TabId, TabRecord } from '@deepseek-ai/dsh-clien
 export type { PinResource, SidebarRightNavigator, TabOccurrence } from './tab-domain.ts'
 export type { SidebarRightKey } from './locales.ts'
 export type { OpenContentIntent } from './stores.ts'
+export type { SidebarWorkbenchPersistence, SidebarWorkbenchStorage } from './persistence.ts'
 
 /** This package's copy namespace. */
 const NS = 'sidebarRight'
@@ -98,7 +111,7 @@ export function apply(ctx: ClientContext): void {
   // its own apply top level for the same reason.
   const t = ctx.locale.bind(NS)
   const tabs = new SidebarRightTabRegistry(ctx)
-  const { controller, adopt } = createSidebarRightController(
+  const { controller, adopt, materializeWith } = createSidebarRightController(
     tabs,
     (address, signal) => { ctx.resources.pin(address, signal) },
   )
@@ -117,34 +130,36 @@ export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-sidebar-right: dictionaries')
 
   ctx.effect(() => {
-    const handle = createSidebarRightStore(() => t('tab.guide.title'))
-    // The runtime mints one instance of this handle per session (the scope key
-    // is the session id) and caches it per key. Each is adopted as it is minted,
-    // so a tab's own action reaches its session's store while another session
-    // is on screen, and that store's commits sync the Tab domain themselves.
-    const adoptions: Array<() => void> = []
-    const store: typeof handle = {
-      ...handle,
-      create: (scopeKey) => {
-        const instance = handle.create(scopeKey)
-        if (scopeKey !== undefined) adoptions.push(adopt(scopeKey as SessionId, instance))
-        return instance
+    const adoptions = new Map<SessionId, () => void>()
+    const store = createSidebarRightStore(
+      () => t('tab.guide.title'),
+      createLocalSidebarWorkbenchPersistence(),
+      (scopeKey, instance) => {
+        const sessionId = scopeKey as SessionId
+        adoptions.get(sessionId)?.()
+        adoptions.set(sessionId, adopt(sessionId, instance))
       },
-    }
+    )
+    materializeWith(sessionId => store.create(sessionId))
     const layout: ILayout = ctx.layout
     const injected: Omit<SidebarRightInjected, 'keyedHooks' | 'occurrence'> = {
       syncPresentation({ shown, track, fullscreen }) {
         if (shown) layout.openRightbar(track, fullscreen)
         else layout.closeRightbar()
       },
+      syncBottomPresentation({ shown, height, fullscreen }) {
+        if (shown) layout.openBottombar(height, fullscreen)
+        else layout.closeBottombar()
+      },
       bindService: binding => controller.bind(binding),
-      openTab: (kind, options) => { controller.openTab(kind, options) },
+      openTab: (kind, options) => { void controller.openTab(kind, options) },
+      closeTab: (tabId) => { void controller.close(tabId) },
       hooks: { tabTypes: { subscribe: listener => tabs.subscribe(listener), getSnapshot: () => tabs.entries() } },
     }
 
     const disposeTypes = [tabs.register(guideDefinition(t))]
-    const disposeSeat = ctx.slots.inject('rightbar', () => ctx.slots.register({
-      name: 'rightbar',
+    const disposeSeat = ctx.slots.inject('workbench', () => ctx.slots.register({
+      name: 'workbench',
       locale: NS,
       children: {
         'sidebar.right.pane.tab': { kind: 'keyed', scope: 'session', inject: { hooks: { tabInfo: tabInfoFactory } } },
@@ -157,7 +172,7 @@ export function apply(ctx: ClientContext): void {
         keyedHooks: { tabNavigation: key => controller.tabDomain.occurrence(sessionId, { id: key as TabId }).navigation },
         occurrence: tab => controller.tabDomain.occurrence(sessionId, tab),
       }),
-    }, RightbarSeat))
+    }, WorkbenchSeat))
     // The expand button shares the panel's store: it only needs to know whether
     // the panel is expanded, and to ask for it to be. The header's corner seat
     // is its own place, past the utilities, so showing and hiding it moves
@@ -188,7 +203,7 @@ export function apply(ctx: ClientContext): void {
       disposeExpand()
       disposeSeat()
       for (const dispose of disposeTypes.reverse()) dispose()
-      for (const release of adoptions) release()
+      for (const release of adoptions.values()) release()
     }
   }, 'ui-sidebar-right: seats and shipped tab type')
 }

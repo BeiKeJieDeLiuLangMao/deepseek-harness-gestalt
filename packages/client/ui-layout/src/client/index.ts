@@ -77,7 +77,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * not this column's: it is a button in the conversation header. With no
      * current session nothing is mounted here.
      */
-    'rightbar': { kind: 'single'; scope: 'session'; owner: RightbarOwnerProps }
+    'workbench': { kind: 'single'; scope: 'session'; owner: WorkbenchOwnerProps }
     /**
      * Frame-wide floating layer, above every column and outside their scroll
      * containers. Deliberately generic and unowned by any feature: a badge, a
@@ -115,16 +115,28 @@ export interface ConvOwnerProps {
 }
 
 /** Right column owner share: resolved normal geometry and opening eligibility. */
-export interface RightbarOwnerProps {
-  /** Resolved normal panel width in px, not the saved preference; zero if it cannot fit. */
-  width: number
+export interface WorkbenchOwnerProps {
+  /** Stable DOM id of the frame-owned full-height right host. */
+  rightHostId: string
+  /** Stable DOM id of the frame-owned bottom host inside the center column. */
+  bottomHostId: string
   /** Current frame width in px. */
   viewportWidth: number
+  /** Current frame height in px. */
+  viewportHeight: number
+  /** Current center-column width after every reserved track. */
+  centerWidth: number
+  /** Resolved normal width available to draw the right surface. */
+  rightPanelWidth: number
+  /** Width currently reserved by the right track; zero while the occupant requests no track. */
+  rightbarWidth: number
   /**
    * Whether a normal right panel can retain 300px beside a 400px center.
    * Before a narrow opening, includes the space from collapsing the left sidebar.
    */
-  canShow: boolean
+  canShowRight: boolean
+  /** Persist a user-selected right surface width through the frame's clamp. */
+  setRightbarWidth: (width: number) => void
 }
 
 /** Required services (cordis fiber inject — the loader passes all module exports as an object plugin). */
@@ -146,7 +158,7 @@ export function apply(ctx: ClientContext): void {
       children: {
         'sidebar': { kind: 'single', scope: 'root' },
         'conversation': { kind: 'single', scope: 'session-maybe' },
-        'rightbar': { kind: 'single', scope: 'session' },
+        'workbench': { kind: 'single', scope: 'session' },
         'shell.overlay': { kind: 'list', scope: 'root' },
       },
       // Exclusive store: the factory itself — the framework instantiates per

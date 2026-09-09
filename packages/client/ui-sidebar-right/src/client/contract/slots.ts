@@ -29,6 +29,8 @@ import type { SlotHookFactory } from '@deepseek-ai/dsh-client-ui-slots'
 import type { TabHookContext } from '../tab-info.ts'
 import type { SidebarRightKey } from '../locales.ts'
 import type { SidebarRightNavigationParams, SidebarRightResourceParams, SidebarRightTabParamsFor } from './params.ts'
+import type { SidebarRightTabPayload, SidebarRightTabPayloadFor, SidebarRightTabPin } from './payload.ts'
+import type { SidebarWorkbenchSurface } from '../stores.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -100,6 +102,8 @@ export interface SidebarRightTabNavigation {
 
 /** Where an open from a tab lands. Without any of these it lands in the pane holding the tab at call time. */
 export interface SidebarRightTabPlacement {
+  /** Land in this official surface; without it the current tab's surface is retained. */
+  readonly surface?: SidebarWorkbenchSurface
   /** Land a new tab in this pane instead. */
   readonly paneId?: PaneId
   /** Defaults to `true`: a tab already showing the same content is focused instead of a second one opening. */
@@ -115,19 +119,31 @@ export interface SidebarRightTabActions {
    * @param address - a `dsh-resource://` address.
    * @param options - placement and the resource's navigation parameters.
    */
-  openResource(address: string, options?: SidebarRightTabPlacement & { readonly params?: SidebarRightResourceParams }): void
+  openResource<K extends string = string>(address: string, options?: SidebarRightTabPlacement & {
+    readonly kind?: K
+    readonly params?: SidebarRightResourceParams
+    readonly payload?: SidebarRightTabPayloadFor<K>
+    readonly pin?: SidebarRightTabPin
+  }): void
   /**
    * Open a page type from this tab; see `ISidebarRight.openTab`.
    * @param kind - the page type's kind.
    * @param options - placement and that kind's navigation parameters.
    */
-  openTab<K extends string>(kind: K, options?: SidebarRightTabPlacement & { readonly params?: SidebarRightTabParamsFor<K> }): void
+  openTab<K extends string>(kind: K, options?: SidebarRightTabPlacement & {
+    readonly instanceId?: string
+    readonly title?: string
+    readonly params?: SidebarRightTabParamsFor<K>
+    readonly payload?: SidebarRightTabPayloadFor<K>
+    readonly pin?: SidebarRightTabPin
+  }): void
   /** Close this tab. */
   close(): void
 }
 
 /** Live information shared by a tab's body, title, and guide replacement. */
 export interface SidebarRightTabInfo {
+  readonly workbench: { readonly surface: SidebarWorkbenchSurface }
   readonly sidebar: {
     readonly expanded: boolean
     /** Presentation selected by manual mode or viewport width; preserved while collapsed. */
@@ -138,6 +154,10 @@ export interface SidebarRightTabInfo {
     /** Docked bodies need an expanded sidebar and an active tab; expanded titles include inactive tabs. Floats stay visible. */
     readonly visible: boolean
     readonly navigation: SidebarRightTabNavigation
+    /** Extension-owned persistent JSON, absent when the kind opened without one. */
+    readonly payload: SidebarRightTabPayload | undefined
+    /** Cross-Session projection ownership; the record itself remains in its home Session. */
+    readonly pin: SidebarRightTabPin | undefined
     /** Aborted only when the record disappears or this plugin unloads, not on hide or session switch. */
     readonly signal: AbortSignal
     readonly actions: SidebarRightTabActions

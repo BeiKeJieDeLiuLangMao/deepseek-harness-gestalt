@@ -16,6 +16,8 @@ type LayoutState = {
   sidebar: number
   /** Last positive frame measurement; window width bootstraps the first render. */
   viewportWidth: number
+  /** Last positive frame height; window height bootstraps the first render. */
+  viewportHeight: number
   narrowExpanded: boolean
   /**
    * Saved right panel width in px, or null before its first opening. Resizing
@@ -40,6 +42,12 @@ type LayoutState = {
   rightbarFullscreen: boolean
   /** Suppress transitions for a fullscreen exit until another geometry action. */
   rightbarInstant: boolean
+  /** Height reported by the bottom workbench surface. */
+  bottombar: number
+  /** Whether the bottom workbench surface is visible. */
+  bottombarShown: boolean
+  /** Whether the bottom workbench surface covers the frame. */
+  bottombarFullscreen: boolean
 }
 
 /**
@@ -50,9 +58,12 @@ type LayoutActions = {
   setSidebar: (draft: LayoutState, px: number) => void
   toggleSidebar: (draft: LayoutState) => void
   setViewportWidth: (draft: LayoutState, width: number) => void
+  setViewportHeight: (draft: LayoutState, height: number) => void
   setRightbar: (draft: LayoutState, px: number) => void
   openRightbar: (draft: LayoutState, track: boolean, fullscreen: boolean) => void
   closeRightbar: (draft: LayoutState) => void
+  openBottombar: (draft: LayoutState, height: number, fullscreen: boolean) => void
+  closeBottombar: (draft: LayoutState) => void
 }
 
 /**
@@ -69,12 +80,16 @@ export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutAction
     init: (): LayoutState => ({
       sidebar: SIDEBAR_DEFAULT,
       viewportWidth: window.innerWidth,
+      viewportHeight: window.innerHeight,
       narrowExpanded: false,
       rightbar: null,
       rightbarShown: false,
       rightbarTrack: false,
       rightbarFullscreen: false,
       rightbarInstant: false,
+      bottombar: 320,
+      bottombarShown: false,
+      bottombarFullscreen: false,
     }),
     actions: {
       setSidebar: (d, px: number) => {
@@ -98,6 +113,11 @@ export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutAction
         }
         d.viewportWidth = width
       },
+      setViewportHeight: (d, height: number) => {
+        if (d.viewportHeight === height) return
+        d.rightbarInstant = false
+        d.viewportHeight = height
+      },
       setRightbar: (d, px: number) => {
         d.rightbarInstant = false
         d.rightbar = clampWidth(px, RIGHTBAR_MIN, Math.max(RIGHTBAR_MIN, d.viewportWidth * RIGHTBAR_MAX_RATIO))
@@ -117,6 +137,15 @@ export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutAction
         d.rightbarShown = false
         d.rightbarTrack = false
         d.rightbarFullscreen = false
+      },
+      openBottombar: (d, height: number, fullscreen: boolean) => {
+        d.bottombar = Math.max(0, Math.round(height))
+        d.bottombarShown = true
+        d.bottombarFullscreen = fullscreen
+      },
+      closeBottombar: (d) => {
+        d.bottombarShown = false
+        d.bottombarFullscreen = false
       },
     },
   })

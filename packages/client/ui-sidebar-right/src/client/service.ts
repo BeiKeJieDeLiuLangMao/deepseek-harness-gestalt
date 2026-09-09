@@ -27,14 +27,23 @@
  * Wiring follows `LayoutController.attachPanels`: the registration hands the
  * service its store actions, and the service is the face other plugins hold.
  */
-import type { FloatRect, PaneId, TabId, TabRecord } from '@deepseek-ai/dsh-client-ui-dockkit'
-import { activeDockPaneId, canSplit, dockPaneIds, findTabPane, getPane } from '@deepseek-ai/dsh-client-ui-dockkit'
+import type { FloatRect, LayoutState, PaneId, TabId, TabRecord } from '@deepseek-ai/dsh-client-ui-dockkit'
+import { activeDockPaneId, canSplit, dockPaneIds, findTabPane, getPane, stepBack, stepForward } from '@deepseek-ai/dsh-client-ui-dockkit'
 import type { BoundActions } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { notifySubscribers } from '@deepseek-ai/dsh-client-store'
+import { snapshotJsonValue, type JsonValue } from '@deepseek-ai/dsh-util-values'
 import type { SidebarRightNavigationParams, SidebarRightResourceParams, SidebarRightTabParamsFor } from './contract/params.ts'
-import { pageAddress } from './contract/seed.ts'
-import type { SidebarRightTabClaim, SidebarRightTabRegistry } from './tab-registry.ts'
-import type { SidebarRightState, SurfaceState } from './stores.ts'
+import type {
+  SidebarRightTabPayload, SidebarRightTabPayloadFor, SidebarRightTabPin, SidebarRightTabState,
+} from './contract/payload.ts'
+import { pageAddress, pageInstanceAddress } from './contract/seed.ts'
+import type {
+  SidebarRightCloseReason, SidebarRightTabClaim, SidebarRightTabCloseContext, SidebarRightTabRegistry,
+} from './tab-registry.ts'
+import { SidebarRightCloseCoordinator, type SidebarRightCloseOutcome } from './close-coordinator.ts'
+import type { SidebarRightState, SidebarWorkbenchSurface, SurfaceState, UpdateTabIntent } from './stores.ts'
+import { locateTab, workbenchTabs } from './stores.ts'
 import type { createSidebarRightStore } from './stores.ts'
 import { TabDomain, type PinResource } from './tab-domain.ts'
 
@@ -64,6 +73,7 @@ interface Adoption {
 export function createSidebarRightController(tabs: SidebarRightTabRegistry, pin: PinResource): {
   controller: SidebarRightController
   adopt: (sessionId: SessionId, store: SidebarRightSurfaceStore) => () => void
+  materializeWith: (factory: (sessionId: SessionId) => SidebarRightSurfaceStore) => void
 } {
   const adopted = new Map<SessionId, Adoption>()
   const controller = new SidebarRightController(tabs, pin, adopted)
@@ -73,15 +83,17 @@ export function createSidebarRightController(tabs: SidebarRightTabRegistry, pin:
       adopted.get(sessionId)?.unsubscribe()
       const sync = (): void => {
         const surface = store.getSnapshot().bySession[sessionId]
-        if (surface !== undefined) controller.tabDomain.sync(sessionId, surface.layout)
+        if (surface !== undefined) controller.syncSession(sessionId, surface)
       }
       const adoption: Adoption = { store, unsubscribe: store.subscribe(sync) }
       adopted.set(sessionId, adoption)
+      sync()
       return () => {
         adoption.unsubscribe()
         if (adopted.get(sessionId) === adoption) adopted.delete(sessionId)
       }
     },
+    materializeWith(factory) { controller.installMaterializer(factory) },
   }
 }
 
@@ -106,6 +118,8 @@ export interface SidebarRightBinding {
 
 /** Where an open lands; every field is optional and the defaults are the common case. */
 export interface SidebarRightPlacement {
+  /** Official surface to open into; inferred from `paneId`/`replaceTab`, otherwise right. */
+  readonly surface?: SidebarWorkbenchSurface
   /** Land a new tab in this pane instead of the active docked one. */
   readonly paneId?: PaneId
   /** Take this tab's place — its pane and its strip slot — and close it in the same step. */
@@ -118,21 +132,147 @@ export interface SidebarRightPlacement {
 }
 
 /** How a caller wants a resource opened. */
-export interface SidebarRightOpenResourceOptions extends SidebarRightPlacement {
+export interface SidebarRightOpenResourceOptions<K extends string = string> extends SidebarRightPlacement {
   /** Name the opening type instead of letting the registry rank claims; its `canOpen` still applies. */
-  readonly kind?: string
+  readonly kind?: K
   /** The resource's navigation parameters, typed by resource type; delivered as `navigation.params`. */
   readonly params?: SidebarRightResourceParams
+  /** Persistent viewer state captured with the occurrence. */
+  readonly payload?: SidebarRightTabPayloadFor<K>
+  /** Optional cross-Session projection owned by this occurrence. */
+  readonly pin?: SidebarRightTabPin
 }
 
 /** How a caller wants a page type opened. */
 export interface SidebarRightOpenTabOptions<K extends string = string> extends SidebarRightPlacement {
   /** That kind's navigation parameters, typed by kind; delivered as `navigation.params`. */
   readonly params?: SidebarRightTabParamsFor<K>
+  /** Stable caller-owned identity for a multi-instance page. Omit for a singleton page. */
+  readonly instanceId?: string
+  /** Persistent kind-owned JSON restored with this occurrence. */
+  readonly payload?: SidebarRightTabPayloadFor<K>
+  /** Override the definition's initial title for this instance. */
+  readonly title?: string
+  /** Optional cross-Session projection owned by this occurrence. */
+  readonly pin?: SidebarRightTabPin
+}
+
+/** Patch accepted by `update`; absent fields stay unchanged. */
+export interface SidebarRightUpdateTabOptions<K extends string = string> {
+  readonly title?: string
+  readonly payload?: SidebarRightTabPayloadFor<K> | undefined
+  readonly pin?: SidebarRightTabPin | undefined
 }
 
 /** The scheme every resource address carries; anything else is not a resource this face opens. */
 const RESOURCE_SCHEME = 'dsh-resource://'
+
+/** Read-only occurrence projection independent of DockKit's internal tree. */
+export interface SidebarRightTabProjection {
+  readonly sessionId: SessionId
+  readonly surface: SidebarWorkbenchSurface
+  readonly paneId: PaneId
+  readonly floating: boolean
+  readonly active: boolean
+  /** Whether this record is the visible tab in its pane when its Session is mounted. */
+  readonly visible: boolean
+  readonly record: TabRecord
+  readonly state: SidebarRightTabState
+}
+
+/** One materialized Session in the official workbench projection. */
+export interface SidebarRightSessionProjection {
+  readonly sessionId: SessionId
+  readonly rightExpanded: boolean
+  readonly bottomExpanded: boolean
+  readonly bottomHeight: number
+  readonly tabs: readonly SidebarRightTabProjection[]
+  readonly data: Readonly<Record<string, JsonValue>>
+}
+
+/** Stable public read model, replaced after a materialized Session commits. */
+export interface SidebarRightProjection {
+  /** Session currently bound to the rendered workbench, if any. */
+  readonly mountedSessionId?: SessionId
+  readonly sessions: readonly SidebarRightSessionProjection[]
+  readonly pinned: readonly SidebarRightTabProjection[]
+}
+
+/** Navigation and state operations explicitly aimed at one Session. */
+export interface SidebarRightSessionNavigator {
+  /**
+   * Open a resource in this Session.
+   * @param address - a `dsh-resource://<type>/…` address.
+   * @param options - routing, placement, navigation, and persistent metadata.
+   * @returns the opened or revealed occurrence identity.
+   */
+  openResource<K extends string = string>(address: string, options?: SidebarRightOpenResourceOptions<K>): Promise<TabId>
+  /**
+   * Open a page kind in this Session.
+   * @param kind - registered page kind.
+   * @param options - identity, placement, navigation, and persistent metadata.
+   * @returns the opened or revealed occurrence identity.
+   */
+  openTab<K extends string>(kind: K, options?: SidebarRightOpenTabOptions<K>): Promise<TabId>
+  /**
+   * Close one occurrence through admission and owner release.
+   * @param tabId - occurrence identity.
+   * @returns admission, committed closes, and release failures.
+   */
+  close(tabId: TabId): Promise<SidebarRightCloseOutcome>
+  /**
+   * Update persistent state on one mounted-Session occurrence.
+   * @param tabId - occurrence identity.
+   * @param patch - title, JSON payload, or pin changes.
+   */
+  update<K extends string>(tabId: TabId, patch: SidebarRightUpdateTabOptions<K>): void
+  /**
+   * Set or delete namespaced Session-level extension data.
+   * @param key - non-empty extension-owned namespace key.
+   * @param value - durable JSON, or `undefined` to delete the key.
+   */
+  setData(key: string, value: JsonValue | undefined): void
+  /**
+   * Close all occurrences and restore fresh surfaces.
+   * @returns admission, committed closes, and release failures.
+   */
+  reset(): Promise<SidebarRightCloseOutcome>
+}
+
+function projectLayout(
+  sessionId: SessionId,
+  surface: SidebarWorkbenchSurface,
+  layout: LayoutState,
+  state: SurfaceState,
+): SidebarRightTabProjection[] {
+  return Object.values(layout.tabs).map((record) => {
+    const pane = findTabPane(layout, record.id)
+    return {
+      sessionId,
+      surface,
+      paneId: pane.id,
+      floating: pane.host === 'float',
+      active: pane.activeTabId === record.id && layout.activePaneId === pane.id,
+      visible: pane.activeTabId === record.id && (pane.host === 'float' || layout.expanded),
+      record,
+      state: state.tabs[record.id] ?? {},
+    }
+  })
+}
+
+function projectSession(sessionId: SessionId, surface: SurfaceState): SidebarRightSessionProjection {
+  return {
+    sessionId,
+    rightExpanded: surface.layout.expanded,
+    bottomExpanded: surface.bottom.layout.expanded,
+    bottomHeight: surface.bottomHeight,
+    tabs: [
+      ...projectLayout(sessionId, 'right', surface.layout, surface),
+      ...projectLayout(sessionId, 'bottom', surface.bottom.layout, surface),
+    ],
+    data: surface.data,
+  }
+}
 
 /** The outward right-Sidebar face (`ctx.sidebarRight`). */
 export interface ISidebarRight {
@@ -147,20 +287,52 @@ export interface ISidebarRight {
    * because content the user cannot see is not opened.
    * @param address - a `dsh-resource://<type>/…` address.
    * @param options - placement, the opening type, and navigation parameters.
+   * @returns the opened or revealed occurrence identity.
    */
-  openResource(address: string, options?: SidebarRightOpenResourceOptions): void
+  openResource<K extends string = string>(address: string, options?: SidebarRightOpenResourceOptions<K>): Promise<TabId>
   /**
    * Open a page type by kind: the type in force for it, at the address this
    * package records pages under. A kind nothing registered throws.
    * @param kind - the page type's kind.
    * @param options - placement and that kind's navigation parameters.
+   * @returns the opened or revealed occurrence identity.
    */
-  openTab<K extends string>(kind: K, options?: SidebarRightOpenTabOptions<K>): void
+  openTab<K extends string>(kind: K, options?: SidebarRightOpenTabOptions<K>): Promise<TabId>
   /**
    * Close one tab of the mounted session.
    * @param tabId - the tab to close.
+   * @returns admission, committed closes, and release failures.
    */
-  close(tabId: TabId): void
+  close(tabId: TabId): Promise<SidebarRightCloseOutcome>
+  /**
+   * Update persistent state on one mounted-Session occurrence.
+   * @param tabId - occurrence identity.
+   * @param patch - title, JSON payload, or pin changes.
+   */
+  update<K extends string>(tabId: TabId, patch: SidebarRightUpdateTabOptions<K>): void
+  /**
+   * Set or delete namespaced Session-level extension data.
+   * @param key - non-empty extension-owned namespace key.
+   * @param value - durable JSON, or `undefined` to delete the key.
+   */
+  setData(key: string, value: JsonValue | undefined): void
+  /**
+   * Address a Session even before the Slot renderer has visited it.
+   * @param sessionId - target Session identity.
+   * @returns the stable Session-targeted face.
+   */
+  forSession(sessionId: SessionId): SidebarRightSessionNavigator
+  /**
+   * Read the stable official workbench projection.
+   * @returns the current materialized Sessions and mounted Session identity.
+   */
+  getSnapshot(): SidebarRightProjection
+  /**
+   * Subscribe to projection replacement.
+   * @param listener - callback invoked after a projection commit.
+   * @returns an unsubscribe callback.
+   */
+  subscribe(listener: () => void): () => void
   /**
    * The active tab of the active pane.
    * @returns the record, or `undefined` when no seat is mounted.
@@ -203,6 +375,11 @@ export interface ISidebarRight {
 /** Cross-plugin right-Sidebar face (ctx.sidebarRight). */
 export class SidebarRightController implements ISidebarRight {
   private binding: SidebarRightBinding | undefined
+  private materialize: ((sessionId: SessionId) => SidebarRightSurfaceStore) | undefined
+  private readonly closeQueues = new Map<SessionId, SidebarRightCloseCoordinator>()
+  private readonly projectionListeners = new Set<() => void>()
+  private projection: SidebarRightProjection = { sessions: [], pinned: [] }
+  private readonly sessionProjections = new Map<SessionId, SidebarRightSessionProjection>()
 
   /**
    * The Tab domain this controller navigates into; synced from each adopted
@@ -224,6 +401,36 @@ export class SidebarRightController implements ISidebarRight {
   }
 
   /**
+   * Install the shared store handle's Session materializer.
+   * @param factory - returns the scoped store instance for a target Session.
+   */
+  installMaterializer(factory: (sessionId: SessionId) => SidebarRightSurfaceStore): void {
+    if (this.materialize !== undefined) throw new Error('sidebarRight: Session materializer is already installed')
+    this.materialize = factory
+  }
+
+  /**
+   * Reconcile occurrence lifetime and public projection from one atomic store snapshot.
+   * @param sessionId - Session whose state committed.
+   * @param surface - complete committed workbench state.
+   */
+  syncSession(sessionId: SessionId, surface: SurfaceState): void {
+    this.tabDomain.sync(sessionId, [surface.layout, surface.bottom.layout])
+    this.sessionProjections.set(sessionId, projectSession(sessionId, surface))
+    this.publishProjection()
+  }
+
+  private publishProjection(): void {
+    const sessions = [...this.sessionProjections.values()]
+    this.projection = {
+      ...this.binding === undefined ? {} : { mountedSessionId: this.binding.sessionId },
+      sessions,
+      pinned: sessions.flatMap(session => session.tabs.filter(tab => tab.state.pin !== undefined)),
+    }
+    notifySubscribers(this.projectionListeners, '[sidebarRight]')
+  }
+
+  /**
    * Adopt the mounted seat's binding, replacing any previous one.
    *
    * Called from the seat while it is mounted, and released when it leaves.
@@ -232,10 +439,14 @@ export class SidebarRightController implements ISidebarRight {
    */
   bind(binding: SidebarRightBinding): () => void {
     this.binding = binding
+    this.publishProjection()
     return () => {
       // A newer seat may already have taken over; only the binding that is
       // still ours may be cleared.
-      if (this.binding === binding) this.binding = undefined
+      if (this.binding === binding) {
+        this.binding = undefined
+        this.publishProjection()
+      }
     }
   }
 
@@ -243,58 +454,64 @@ export class SidebarRightController implements ISidebarRight {
    * Open a resource: claim it, place it, reveal the column, record the navigation.
    * @param address - a `dsh-resource://<type>/…` address.
    * @param options - placement, the opening type, and navigation parameters.
+   * @returns the opened or revealed occurrence identity.
    */
-  openResource(address: string, options: SidebarRightOpenResourceOptions = {}): void {
+  openResource<K extends string = string>(address: string, options: SidebarRightOpenResourceOptions<K> = {}): Promise<TabId> {
     const { sessionId, actions } = this.require()
-    this.placeResource(sessionId, actions, address, options)
+    return this.placeResource(sessionId, actions, address, options)
   }
 
   /**
    * Open a page type by kind at the address this package records pages under.
    * @param kind - the page type's kind.
    * @param options - placement and that kind's navigation parameters.
+   * @returns the opened or revealed occurrence identity.
    */
-  openTab<K extends string>(kind: K, options: SidebarRightOpenTabOptions<K> = {}): void {
+  openTab<K extends string>(kind: K, options: SidebarRightOpenTabOptions<K> = {}): Promise<TabId> {
     const { sessionId, actions } = this.require()
-    this.placeTab(sessionId, actions, kind, options)
+    return this.placeTab(sessionId, actions, kind, options)
   }
 
   /**
-   * Open a resource in one session, for a tab's own action; nothing happens
-   * for a session whose store was never adopted or whose adoption was released.
+   * Open a resource in one Session for a tab's own action, materializing its
+   * store when the renderer has not visited it.
    * Not part of `ISidebarRight`: the Tab domain's path.
    * @param sessionId - the session the acting tab is in.
    * @param address - a `dsh-resource://<type>/…` address.
    * @param options - placement, the opening type, and navigation parameters.
+   * @returns the opened or revealed occurrence identity.
    */
-  openResourceIn(sessionId: SessionId, address: string, options: SidebarRightOpenResourceOptions = {}): void {
-    const actions = this.actionsFor(sessionId)
-    if (actions !== undefined) this.placeResource(sessionId, actions, address, options)
+  openResourceIn<K extends string = string>(
+    sessionId: SessionId,
+    address: string,
+    options: SidebarRightOpenResourceOptions<K> = {},
+  ): Promise<TabId> {
+    return this.placeResource(sessionId, this.actionsFor(sessionId), address, options)
   }
 
   /**
-   * Open a page type in one session, for a tab's own action; nothing happens
-   * for a session whose store was never adopted or whose adoption was released.
+   * Open a page type in one Session for a tab's own action, materializing its
+   * store when the renderer has not visited it.
    * Not part of `ISidebarRight`: the Tab domain's path.
    * @param sessionId - the session the acting tab is in.
    * @param kind - the page type's kind.
    * @param options - placement and that kind's navigation parameters.
+   * @returns the opened or revealed occurrence identity.
    */
-  openTabIn<K extends string>(sessionId: SessionId, kind: K, options: SidebarRightOpenTabOptions<K> = {}): void {
-    const actions = this.actionsFor(sessionId)
-    if (actions !== undefined) this.placeTab(sessionId, actions, kind, options)
+  openTabIn<K extends string>(sessionId: SessionId, kind: K, options: SidebarRightOpenTabOptions<K> = {}): Promise<TabId> {
+    return this.placeTab(sessionId, this.actionsFor(sessionId), kind, options)
   }
 
   /**
-   * Close a tab of one session, for the tab's own action; nothing happens
-   * for a session whose store was never adopted or whose adoption was released.
+   * Close a tab of one Session for the tab's own action, materializing its
+   * store when the renderer has not visited it.
    * Not part of `ISidebarRight`: the Tab domain's path.
    * @param sessionId - the session the tab is in.
    * @param tabId - the tab to close.
+   * @returns admission, committed closes, and release failures.
    */
-  closeIn(sessionId: SessionId, tabId: TabId): void {
-    const actions = this.actionsFor(sessionId)
-    if (actions !== undefined) actions.closeTab(sessionId, tabId)
+  closeIn(sessionId: SessionId, tabId: TabId): Promise<SidebarRightCloseOutcome> {
+    return this.closeMany(sessionId, [tabId], 'close')
   }
 
   /** Claim a resource and place it in one session; an address outside the scheme or one no type claims throws. */
@@ -303,11 +520,12 @@ export class SidebarRightController implements ISidebarRight {
     actions: SurfaceActions,
     address: string,
     options: SidebarRightOpenResourceOptions,
-  ): void {
+  ): Promise<TabId> {
     if (!address.startsWith(RESOURCE_SCHEME)) {
       throw new Error(`sidebarRight: no registered tab type claims "${address}"`)
     }
-    this.place(sessionId, actions, this.tabs.claim(address, options.kind), address, options, options.params)
+    const claim = this.tabs.claim(address, options.kind)
+    return this.place(sessionId, actions, claim, address, options, options.params, options.payload, options.pin)
   }
 
   /** Place a page type in one session at the address pages are recorded under; an unregistered kind throws. */
@@ -316,39 +534,210 @@ export class SidebarRightController implements ISidebarRight {
     actions: SurfaceActions,
     kind: K,
     options: SidebarRightOpenTabOptions<K>,
-  ): void {
+  ): Promise<TabId> {
     const definition = this.tabs.get(kind)
     if (definition === undefined) throw new Error(`sidebarRight: no tab type is registered as "${kind}"`)
-    const address = pageAddress(kind)
-    this.place(sessionId, actions, { kind, contentId: address, title: definition.title(address) }, address, options, options.params)
+    const address = options.instanceId === undefined ? pageAddress(kind) : pageInstanceAddress(kind, options.instanceId)
+    return this.place(
+      sessionId,
+      actions,
+      { kind, contentId: address, title: options.title ?? definition.title(address) },
+      address,
+      options,
+      options.params,
+      options.payload,
+      options.pin,
+    )
   }
 
   /** The steps both opens share: one store intent, and the navigation record for the tab it settles on. */
-  private place(
+  private async place(
     sessionId: SessionId,
     actions: SurfaceActions,
     claim: SidebarRightTabClaim,
     address: string,
     placement: SidebarRightPlacement,
     params: SidebarRightNavigationParams,
-  ): void {
+    payload: SidebarRightTabPayload | undefined,
+    pin: SidebarRightTabPin | undefined,
+  ): Promise<TabId> {
+    let paneId = placement.paneId
+    let index: number | undefined
+    const replacement = { checkpoint: false }
+    if (placement.replaceTab !== undefined) {
+      const existing = this.surfaceFor(sessionId)
+      const found = existing === undefined ? undefined : locateTab(existing, placement.replaceTab)
+      if (found !== undefined && existing !== undefined) {
+        const pane = findTabPane(
+          found.surface === 'right' ? existing.layout : existing.bottom.layout,
+          placement.replaceTab,
+        )
+        if (pane.host === 'dock' && (placement.surface === undefined || placement.surface === found.surface)) {
+          paneId = pane.id
+          index = pane.tabs.indexOf(placement.replaceTab)
+        }
+        const outcome = await this.closeMany(sessionId, [placement.replaceTab], 'replace', (_closed, checkpoint) => {
+          replacement.checkpoint = checkpoint
+        })
+        if (!outcome.closed.includes(placement.replaceTab)) {
+          throw new Error(`sidebarRight: replacement tab "${placement.replaceTab}" could not close`)
+        }
+      }
+    }
+    const payloadSnapshot = payload === undefined
+      ? undefined
+      : snapshotJsonValue(payload)
+    if (payload !== undefined && payloadSnapshot === undefined) {
+      throw new Error(`sidebarRight: tab kind "${claim.kind}" carries a non-JSON payload`)
+    }
+    const definition = this.tabs.get(claim.kind)
+    let settled: TabId | undefined
     actions.openContent(sessionId, {
       kind: claim.kind,
       contentId: claim.contentId,
       title: claim.title,
-      ...placement.paneId === undefined ? {} : { paneId: placement.paneId },
+      ...placement.surface === undefined ? {} : { surface: placement.surface },
+      ...paneId === undefined ? {} : { paneId },
+      ...index === undefined ? {} : { index },
       ...placement.replaceTab === undefined ? {} : { replaceTab: placement.replaceTab },
       ...placement.revealIfOpened === undefined ? {} : { revealIfOpened: placement.revealIfOpened },
-    }, (tabId) => { this.tabDomain.navigate(sessionId, tabId, { address, params }) })
+      ...payloadSnapshot === undefined ? {} : { payload: payloadSnapshot },
+      ...pin === undefined ? {} : { pin },
+      checkpoint: replacement.checkpoint || definition?.beforeClose !== undefined || definition?.close !== undefined,
+    }, (tabId) => {
+      settled = tabId
+      this.tabDomain.navigate(sessionId, tabId, { address, params })
+    })
+    if (settled === undefined) throw new Error(`sidebarRight: open of "${address}" did not settle`)
+    return settled
   }
 
   /**
    * Close one tab of the mounted session.
    * @param tabId - the tab to close.
    */
-  close(tabId: TabId): void {
-    const { sessionId, actions } = this.require()
-    actions.closeTab(sessionId, tabId)
+  close(tabId: TabId): Promise<SidebarRightCloseOutcome> {
+    const { sessionId } = this.require()
+    return this.closeIn(sessionId, tabId)
+  }
+
+  /** Target one Session, materializing its official store on first use. */
+  forSession(sessionId: SessionId): SidebarRightSessionNavigator {
+    this.actionsFor(sessionId)
+    return {
+      openResource: (address, options = {}) => this.openResourceIn(sessionId, address, options),
+      openTab: (kind, options = {}) => this.openTabIn(sessionId, kind, options),
+      close: tabId => this.closeIn(sessionId, tabId),
+      update: (tabId, patch) => { this.updateIn(sessionId, tabId, patch) },
+      setData: (key, value) => { this.setDataIn(sessionId, key, value) },
+      reset: () => this.resetIn(sessionId),
+    }
+  }
+
+  /** Current stable official workbench projection. */
+  getSnapshot(): SidebarRightProjection {
+    return this.projection
+  }
+
+  /** Subscribe to official workbench projection replacement. */
+  subscribe(listener: () => void): () => void {
+    this.projectionListeners.add(listener)
+    return () => { this.projectionListeners.delete(listener) }
+  }
+
+  /** Update one occurrence without changing its identity or navigation revision. */
+  update<K extends string>(tabId: TabId, patch: SidebarRightUpdateTabOptions<K>): void {
+    const { sessionId } = this.require()
+    this.updateIn(sessionId, tabId, patch)
+  }
+
+  /**
+   * Update one occurrence in an explicitly targeted Session.
+   * @param sessionId - target Session.
+   * @param tabId - occurrence identity.
+   * @param patch - persistent fields to replace or remove.
+   */
+  updateIn<K extends string>(sessionId: SessionId, tabId: TabId, patch: SidebarRightUpdateTabOptions<K>): void {
+    const next: UpdateTabIntent = { ...patch }
+    if (Object.hasOwn(patch, 'payload') && patch.payload !== undefined) {
+      const payload = snapshotJsonValue(patch.payload)
+      if (payload === undefined) throw new Error('sidebarRight: tab update carries a non-JSON payload')
+      ;(next as { payload?: SidebarRightTabPayload }).payload = payload
+    }
+    this.actionsFor(sessionId).updateTab(sessionId, tabId, next)
+  }
+
+  /**
+   * Set or delete namespaced extension data in an explicitly targeted Session.
+   * @param sessionId - target Session.
+   * @param key - non-empty extension-owned namespace key.
+   * @param value - durable JSON, or `undefined` to delete the key.
+   */
+  setDataIn(sessionId: SessionId, key: string, value: JsonValue | undefined): void {
+    if (key.length === 0) throw new Error('sidebarRight: extension data key must not be empty')
+    const snapshot = value === undefined ? undefined : snapshotJsonValue(value)
+    if (value !== undefined && snapshot === undefined) throw new Error('sidebarRight: extension data is not JSON')
+    this.actionsFor(sessionId).updateData(sessionId, key, snapshot)
+  }
+
+  /** Set or delete namespaced extension data in the mounted Session. */
+  setData(key: string, value: JsonValue | undefined): void {
+    this.setDataIn(this.require().sessionId, key, value)
+  }
+
+  /**
+   * Close every current record and restore a fresh official workbench.
+   * @param sessionId - target Session.
+   * @returns admission, committed closes, and release failures.
+   */
+  async resetIn(sessionId: SessionId): Promise<SidebarRightCloseOutcome> {
+    const before = this.surfaceFor(sessionId)
+    const ids = before === undefined ? [] : workbenchTabs(before).map(tab => tab.id)
+    const outcome = await this.closeMany(sessionId, ids, 'reset')
+    if (outcome.admitted && outcome.failed.length === 0) this.actionsFor(sessionId).reset(sessionId)
+    return outcome
+  }
+
+  private closeMany(
+    sessionId: SessionId,
+    tabIds: readonly TabId[],
+    reason: SidebarRightCloseReason,
+    commit?: (closed: readonly TabId[], checkpoint: boolean) => void,
+  ): Promise<SidebarRightCloseOutcome> {
+    const actions = this.actionsFor(sessionId)
+    let queue = this.closeQueues.get(sessionId)
+    if (queue === undefined) {
+      queue = new SidebarRightCloseCoordinator()
+      this.closeQueues.set(sessionId, queue)
+    }
+    return queue.run(
+      () => this.closeCandidates(sessionId, tabIds, reason),
+      commit ?? ((closed, checkpoint) => { actions.closeTabs(sessionId, closed, checkpoint) }),
+    )
+  }
+
+  private closeCandidates(
+    sessionId: SessionId,
+    tabIds: readonly TabId[],
+    reason: SidebarRightCloseReason,
+  ) {
+    const surface = this.surfaceFor(sessionId)
+    if (surface === undefined) return []
+    return tabIds.flatMap((id) => {
+      const found = locateTab(surface, id)
+      if (found === undefined) return []
+      const occurrence = this.tabDomain.occurrence(sessionId, found.record)
+      const context: SidebarRightTabCloseContext = {
+        sessionId,
+        surface: found.surface,
+        tab: found.record,
+        payload: surface.tabs[id]?.payload,
+        pin: surface.tabs[id]?.pin,
+        signal: occurrence.signal,
+        reason,
+      }
+      return [{ context, definition: this.tabs.get(found.record.kind) }]
+    })
   }
 
   /**
@@ -433,20 +822,76 @@ export class SidebarRightController implements ISidebarRight {
    *
    * @internal Not part of the product: the sequence is an architectural fact
    * with no user-facing control yet. Kept reachable for tests.
+   * @param surface - workbench surface to step; defaults to right.
+   * @returns admission and any occurrence-release failures.
    */
-  _undo(): void {
-    const { sessionId, actions } = this.require()
-    actions.undo(sessionId)
+  _undo(surface: SidebarWorkbenchSurface = 'right'): Promise<SidebarRightCloseOutcome> {
+    return this.stepHistory(this.require().sessionId, surface, 'undo', stepBack)
   }
 
   /**
    * Step the mounted session's surface forward one intent.
    *
    * @internal See `_undo`.
+   * @param surface - workbench surface to step; defaults to right.
+   * @returns admission and any occurrence-release failures.
    */
-  _redo(): void {
-    const { sessionId, actions } = this.require()
-    actions.redo(sessionId)
+  _redo(surface: SidebarWorkbenchSurface = 'right'): Promise<SidebarRightCloseOutcome> {
+    return this.stepHistory(this.require().sessionId, surface, 'redo', stepForward)
+  }
+
+  private stepHistory(
+    sessionId: SessionId,
+    target: SidebarWorkbenchSurface,
+    reason: 'undo' | 'redo',
+    step: typeof stepBack,
+  ): Promise<SidebarRightCloseOutcome> {
+    const actions = this.actionsFor(sessionId)
+    const currentSurface = this.surfaceFor(sessionId)
+    const current = currentSurface === undefined
+      ? undefined
+      : target === 'right'
+        ? { layout: currentSurface.layout, history: currentSurface.history }
+        : currentSurface.bottom
+    const preview = current === undefined ? undefined : step(current.history, current.layout)
+    if (current === undefined || preview === undefined) {
+      return Promise.resolve({ admitted: true, closed: [], failed: [] })
+    }
+    const removed = Object.values(current.layout.tabs)
+      .filter(tab => preview.state.tabs[tab.id] === undefined)
+      .map(tab => tab.id)
+    if (removed.length === 0) {
+      actions.replaceDock(sessionId, target, { layout: preview.state, history: preview.history })
+      return Promise.resolve({ admitted: true, closed: [], failed: [] })
+    }
+    let planned = { ...preview, removed }
+    let queue = this.closeQueues.get(sessionId)
+    if (queue === undefined) {
+      queue = new SidebarRightCloseCoordinator()
+      this.closeQueues.set(sessionId, queue)
+    }
+    return queue.run(() => {
+      const surface = this.surfaceFor(sessionId)
+      const live = surface === undefined ? undefined : target === 'right'
+        ? { layout: surface.layout, history: surface.history }
+        : surface.bottom
+      const moved = live === undefined ? undefined : step(live.history, live.layout)
+      if (live === undefined || moved === undefined) {
+        planned = { state: live?.layout ?? preview.state, history: live?.history ?? preview.history, removed: [] }
+        return []
+      }
+      const ids = Object.values(live.layout.tabs)
+        .filter(tab => moved.state.tabs[tab.id] === undefined)
+        .map(tab => tab.id)
+      planned = { ...moved, removed: ids }
+      return this.closeCandidates(sessionId, ids, reason)
+    }, (closed) => {
+      if (closed.length === planned.removed.length) {
+        actions.replaceDock(sessionId, target, { layout: planned.state, history: planned.history })
+      } else if (closed.length > 0) {
+        actions.closeTabs(sessionId, closed, true)
+      }
+    })
   }
 
   /** The mounted session's surface; `undefined` without a seat or before its first open. */
@@ -460,8 +905,19 @@ export class SidebarRightController implements ISidebarRight {
    * session's adopted store. `undefined` — nothing to act on — for a session
    * whose store was never minted or whose adoption was released.
    */
-  private actionsFor(sessionId: SessionId): SurfaceActions | undefined {
-    return this.adopted.get(sessionId)?.store.actions
+  private actionsFor(sessionId: SessionId): SurfaceActions {
+    let adoption = this.adopted.get(sessionId)
+    if (adoption === undefined) {
+      this.materialize?.(sessionId)
+      adoption = this.adopted.get(sessionId)
+    }
+    if (adoption === undefined) throw new Error(`sidebarRight: session "${sessionId}" cannot be materialized`)
+    return adoption.store.actions
+  }
+
+  private surfaceFor(sessionId: SessionId): SurfaceState | undefined {
+    const adoption = this.adopted.get(sessionId)
+    return adoption?.store.getSnapshot().bySession[sessionId]
   }
 
   private require(): SidebarRightBinding {

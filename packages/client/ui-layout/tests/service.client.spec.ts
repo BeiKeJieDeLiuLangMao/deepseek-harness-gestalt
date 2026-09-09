@@ -7,9 +7,12 @@ function fakePanels(): PanelActions {
     setSidebar: vi.fn(),
     toggleSidebar: vi.fn(),
     setViewportWidth: vi.fn(),
+    setViewportHeight: vi.fn(),
     setRightbar: vi.fn(),
     openRightbar: vi.fn(),
     closeRightbar: vi.fn(),
+    openBottombar: vi.fn(),
+    closeBottombar: vi.fn(),
   }
 }
 
@@ -23,11 +26,15 @@ describe('LayoutController', () => {
     service.openRightbar(true, true)
     service.openRightbar(false, true)
     service.closeRightbar()
+    service.openBottombar(240, false)
+    service.closeBottombar()
 
     expect(panels.openRightbar).toHaveBeenNthCalledWith(1, true, false)
     expect(panels.openRightbar).toHaveBeenNthCalledWith(2, true, true)
     expect(panels.openRightbar).toHaveBeenNthCalledWith(3, false, true)
     expect(panels.closeRightbar).toHaveBeenCalledTimes(1)
+    expect(panels.openBottombar).toHaveBeenCalledWith(240, false)
+    expect(panels.closeBottombar).toHaveBeenCalledTimes(1)
     // The drag width stays the frame's own business, never the caller's.
     expect(panels.setRightbar).not.toHaveBeenCalled()
   })

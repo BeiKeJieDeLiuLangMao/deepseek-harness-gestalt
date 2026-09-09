@@ -27,6 +27,17 @@ export function pageAddress(kind: string): string {
 }
 
 /**
+ * The stable address of one page instance.
+ * @param kind - registered page kind.
+ * @param instanceId - caller-owned identity restored across reloads.
+ * @returns an opaque page address used as the DockKit content identity.
+ */
+export function pageInstanceAddress(kind: string, instanceId: string): string {
+  if (instanceId.length === 0) throw new Error('sidebarRight: page instance id must not be empty')
+  return `${pageAddress(kind)}/${encodeURIComponent(instanceId)}`
+}
+
+/**
  * Build the guide tab a new pane is seeded with.
  *
  * The title is captured at mint time because it goes into the surface's

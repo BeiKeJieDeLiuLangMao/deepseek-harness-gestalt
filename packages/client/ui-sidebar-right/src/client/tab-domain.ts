@@ -25,16 +25,24 @@ import type { SidebarRightTabActions, SidebarRightTabNavigation, SidebarRightTab
 import type { SidebarRightOpenResourceOptions, SidebarRightOpenTabOptions, SidebarRightPlacement } from './service.ts'
 
 /**
- * The navigation face a tab's actions call back into, aimed at the session the
- * tab is in; nothing happens for a session whose store is not adopted.
+ * The navigation face a tab's actions call back into, aimed at the Session the
+ * tab owns. The controller materializes a cold Session or rejects the request.
  */
 export interface SidebarRightNavigator {
   /** Open a resource in one session; see `ISidebarRight.openResource`. */
-  openResourceIn(sessionId: SessionId, address: string, options?: SidebarRightOpenResourceOptions): void
+  openResourceIn<K extends string = string>(
+    sessionId: SessionId, address: string, options?: SidebarRightOpenResourceOptions<K>,
+  ): Promise<TabId>
   /** Open a page type in one session; see `ISidebarRight.openTab`. */
-  openTabIn(sessionId: SessionId, kind: string, options?: SidebarRightOpenTabOptions): void
+  openTabIn(sessionId: SessionId, kind: string, options?: SidebarRightOpenTabOptions): Promise<TabId>
   /** Close a tab of one session. */
-  closeIn(sessionId: SessionId, tabId: TabId): void
+  closeIn(sessionId: SessionId, tabId: TabId): Promise<unknown>
+}
+
+function runTabAction(action: Promise<unknown>): void {
+  void action.catch((error: unknown) => {
+    console.error('sidebarRight: tab action failed:', error)
+  })
 }
 
 /** `ctx.resources.pin`: hold an address's content open for as long as `signal` lives. */
@@ -75,24 +83,31 @@ export class TabDomain {
   ) {}
 
   /**
-   * Reconcile one session's occurrences with its committed layout.
+   * Reconcile one session's occurrences with every committed workbench layout.
    *
    * Called by the seat after every commit, and only then: aborting a vanished
    * record runs the types' cleanup, which writes their stores.
    * @param sessionId - the session whose layout committed.
-   * @param layout - that session's layout as committed.
+   * @param layouts - right and bottom layouts from the same committed snapshot.
    */
-  sync(sessionId: SessionId, layout: LayoutState): void {
+  sync(sessionId: SessionId, layouts: readonly LayoutState[]): void {
     const held = this.session(sessionId)
+    const records = new Map<TabId, { tab: TabRecord; paneId: PaneId | undefined }>()
+    for (const layout of layouts) {
+      for (const tab of Object.values(layout.tabs)) {
+        if (records.has(tab.id)) throw new Error(`sidebarRight: duplicate tab "${tab.id}" across workbench surfaces`)
+        const pane = findTabPane(layout, tab.id)
+        records.set(tab.id, { tab, paneId: pane.host === 'dock' ? pane.id : undefined })
+      }
+    }
     for (const [tabId, occurrence] of held) {
-      if (layout.tabs[tabId] !== undefined) continue
+      if (records.has(tabId)) continue
       held.delete(tabId)
       occurrence.controller.abort()
     }
-    for (const tab of Object.values(layout.tabs)) {
+    for (const { tab, paneId } of records.values()) {
       const occurrence = held.get(tab.id) ?? this.hold(sessionId, tab.id, { address: tab.contentId, params: undefined, revision: 0 })
-      const pane = findTabPane(layout, tab.id)
-      occurrence.paneId = pane.host === 'dock' ? pane.id : undefined
+      occurrence.paneId = paneId
       if (occurrence.pinned) continue
       occurrence.pinned = true
       this.pin(occurrence.navigation.getSnapshot().address, occurrence.signal)
@@ -156,7 +171,8 @@ export class TabDomain {
     const place = (placement: SidebarRightTabPlacement): SidebarRightPlacement => ({
       ...placement.replaceTab === true
         ? { replaceTab: tabId }
-        : held.paneId === undefined ? {} : { paneId: held.paneId },
+        : placement.surface !== undefined || held.paneId === undefined ? {} : { paneId: held.paneId },
+      ...placement.surface === undefined ? {} : { surface: placement.surface },
       ...placement.paneId === undefined ? {} : { paneId: placement.paneId },
       ...placement.revealIfOpened === undefined ? {} : { revealIfOpened: placement.revealIfOpened },
     })
@@ -170,12 +186,18 @@ export class TabDomain {
       pinned: false,
       tabActions: {
         openResource: (address, options = {}) => {
-          navigator.openResourceIn(sessionId, address, { ...place(options), params: options.params })
+          if (controller.signal.aborted) return
+          const { replaceTab: _replaceTab, ...details } = options
+          runTabAction(navigator.openResourceIn(sessionId, address, { ...details, ...place(options) }))
         },
         openTab: (kind, options = {}) => {
-          navigator.openTabIn(sessionId, kind, { ...place(options), params: options.params })
+          if (controller.signal.aborted) return
+          const { replaceTab: _replaceTab, ...details } = options
+          runTabAction(navigator.openTabIn(sessionId, kind, { ...details, ...place(options) }))
         },
-        close: () => { navigator.closeIn(sessionId, tabId) },
+        close: () => {
+          if (!controller.signal.aborted) runTabAction(navigator.closeIn(sessionId, tabId))
+        },
       },
     }
     this.session(sessionId).set(tabId, held)

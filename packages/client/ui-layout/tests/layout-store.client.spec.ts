@@ -3,7 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createLayoutStore } from '../src/client/stores.ts'
 
-beforeEach(() => { vi.stubGlobal('innerWidth', 1920) })
+beforeEach(() => { vi.stubGlobal('innerWidth', 1920); vi.stubGlobal('innerHeight', 1080) })
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
 describe('createLayoutStore', () => {
@@ -12,12 +12,16 @@ describe('createLayoutStore', () => {
     expect(store.getSnapshot()).toEqual({
       sidebar: 280,
       viewportWidth: 1920,
+      viewportHeight: 1080,
       narrowExpanded: false,
       rightbar: null,
       rightbarShown: false,
       rightbarTrack: false,
       rightbarFullscreen: false,
       rightbarInstant: false,
+      bottombar: 320,
+      bottombarShown: false,
+      bottombarFullscreen: false,
     })
   })
 
@@ -70,6 +74,21 @@ describe('createLayoutStore', () => {
     expect(store.getSnapshot().narrowExpanded).toBe(false)
     actions.setViewportWidth(980)
     expect(store.getSnapshot().narrowExpanded).toBe(false)
+  })
+})
+
+describe('bottom panel', () => {
+  it('tracks height and removes its track in fullscreen or while closed', () => {
+    const { store, actions } = createLayoutStore().create()
+    actions.setViewportHeight(900)
+    actions.openBottombar(260.4, false)
+    expect(store.getSnapshot()).toMatchObject({
+      viewportHeight: 900, bottombar: 260, bottombarShown: true, bottombarFullscreen: false,
+    })
+    actions.openBottombar(260, true)
+    expect(store.getSnapshot()).toMatchObject({ bottombarShown: true, bottombarFullscreen: true })
+    actions.closeBottombar()
+    expect(store.getSnapshot()).toMatchObject({ bottombar: 260, bottombarShown: false, bottombarFullscreen: false })
   })
 })
 

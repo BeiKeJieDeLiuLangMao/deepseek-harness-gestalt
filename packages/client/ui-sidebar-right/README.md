@@ -1,5 +1,5 @@
 ---
-description: "The right Sidebar of the dsh web client: one docking surface per session, two presentations, the navigation controller ctx.sidebarRight, the tab-type registry ctx.sidebarRightTabs, and the Tab domain."
+description: "The official Session workbench: right and bottom DockKit surfaces, persistence, navigation, typed tab payloads, close lifecycle, and extension slots."
 kind: "package-reference"
 ---
 
@@ -9,100 +9,79 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-The right Sidebar: where the docking kit meets this product. It holds one docking surface per session, draws it as one edge-anchored panel in the frame's right column in either of two presentations, puts the expand button in the conversation header, and owns the navigation controller (`ctx.sidebarRight`), the tab-type registry (`ctx.sidebarRightTabs`), and the Tab domain that tells each open tab how it was navigated to and how long it lives.
+This package owns the official per-Session workbench. One session-scoped `workbench` seat holds right and bottom DockKit layouts, floating panes, persistent tab payloads and pins, occurrence lifetimes, navigation, and close coordination. It portals both dock surfaces into stable hosts supplied by `ui-layout`, while the conversation header's corner seat provides the right-surface expand button.
 
 ## Table of Contents
 
-- [What lives here, and what does not](#what-lives-here-and-what-does-not)
-- [Presentations](#presentations)
-- [The expand button](#the-expand-button)
-- [State](#state)
+- [Ownership and presentation](#ownership-and-presentation)
+- [State and persistence](#state-and-persistence)
 - [Extension seats](#extension-seats)
 - [`ctx.sidebarRight`](#ctxsidebarright)
+- [Close lifecycle](#close-lifecycle)
 - [The Tab domain](#the-tab-domain)
-- [The guide](#the-guide)
-- [Copy](#copy)
 - [Model Experience](#model-experience)
 - [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
 - [Dev Note](#dev-note)
 
 -----
 
-<a id="what-lives-here-and-what-does-not"></a>
-## What lives here, and what does not
+<a id="ownership-and-presentation"></a>
+## Ownership and presentation
 
-The layout itself — the split tree, its operations, the drag gestures, the floating panels — belongs to `@deepseek-ai/dsh-client-ui-dockkit` and stays host-agnostic. This package supplies everything that kit refuses to know: the product's copy, what a tab's `kind` means, which tab a fresh pane is seeded with, where the surface is mounted, and how other plugins reach it.
+`ui-dockkit` remains the pure layout engine. This package assigns product meaning to tab kinds, seeds empty panes with the guide, renders tab bodies through keyed slots, and owns the state that survives component remounts. Right, bottom, and floating presentations share one id cursor and one occurrence domain, so a record has one identity across the complete Session workbench.
 
-<a id="presentations"></a>
-## Presentations
+The workbench resolves `rightHostId` and `bottomHostId` after the frame mounts, then portals both surfaces from one React and store tree. The right surface supports push, wide fullscreen with an underlying track, automatic fullscreen below 768px, two horizontal panes, and floating panels. The bottom surface has an independent split tree, height, open state, and fullscreen mode. Its push presentation consumes only the center column; fullscreen consumes no center-row height. The bottom surface owns its top-edge height drag and the shared corner gesture that can change bottom height and right width together. Bottom tabs never create floats.
 
-Normal and fullscreen presentations share the same content tree, so switching does not remount tabs. The normal panel anchors to the right column; fullscreen covers the viewport while retaining the wide-screen columns underneath. Opening below 768px uses fullscreen automatically; leaving fullscreen on a narrow viewport closes the panel, and widening does not reopen a closed panel. A fullscreen opening keeps the underlying columns unchanged until its slide finishes, then prepares the normal track without a column transition. Before a fullscreen panel retreats, closing prepares a full-width conversation and restoring prepares the normal right track; the background does not animate during the retreat.
+The right surface stays mounted while collapsed. Its expand control lives in `conversation.session.header.corner` and shares the Session store. Without a current Session, neither surface mounts.
 
-| Mode | The track | The panel |
-|---|---|---|
-| `push` (default) | Panel width: the conversation makes room | In the track; its left edge and the conversation's right edge travel together, on the frame's own curve |
-| `fullscreen` | Retains the wide-screen normal track; automatic narrow-screen fullscreen takes no track | Covers the entire viewport |
+<a id="state-and-persistence"></a>
+## State and persistence
 
-The seat reports presentation through `ctx.layout.openRightbar(track, fullscreen)` / `closeRightbar()`; the frame does not inject this package. Switching fullscreen on a wide viewport leaves the center width unchanged, and the width handle appears only in expanded normal mode. Independent floating panels and `float`/`dock` operations remain available.
+Each Session owns two `DockSurfaceState` values, a shared minted-id cursor, bottom height and first-open marker, per-tab payload and pin metadata, and namespaced JSON data. Store actions use DockKit planners and commit both surfaces atomically to the Tab domain. A duplicate tab id across the surfaces is rejected instead of publishing a partial occurrence set.
 
-The panel has no header row. Its two controls — the presentation switch and the collapse button — ride the kit's chrome seat at the far end of the top-right pane's tab strip, so the strip is the panel's whole top edge. Each strip reads, left to right: the tabs as capsules with their own close, the add control (drawn only while that pane holds no guide tab; it opens the guide there through `ctx.sidebarRight.openTab`), the pane's split control, and in the top-right pane the two panel controls. Only the chips give way in a narrow pane; the controls after them never shrink or clip.
+The browser adapter stores `dsh-sidebar-workbench:v1:<sessionId>`. The versioned codec validates the complete layout graph, tab metadata, bottom geometry, and JSON data. Reversible layout history remains process-local. An unknown or malformed official version is preserved and blocks automatic overwrite so recovery remains possible.
 
-<a id="the-expand-button"></a>
-## The expand button
-
-While the panel is hidden, one button in the conversation header's corner seat (`conversation.session.header.corner`, past the utilities' right edge and level with the Session log control) is the way back in. Its glyph is the left sidebar's collapse icon mirrored. It shares the panel's store (the slot runtime allows one handle across two same-scope seats); while the panel is shown it renders a same-size placeholder, so the corner keeps its width and nothing in the header row moves. A collapsed Sidebar therefore costs the conversation nothing: no rail, no width, and the transcript's scrollbar stays at the column's edge. Without a session there is no button and no panel.
-
-The panel takes the conversation's ground colour and content font sizes rather than a raised layer of its own: it is a column of the page, not a card over it.
-
-<a id="state"></a>
-## State
-
-One `SurfaceState` per session id — the layout, its recorded sequence, and how many ids it has minted — held in a store declared at the registration. Every action follows the same shape: mint the ids the intent needs, ask a kit planner which operations carry it out, record them, then assign the session's whole surface back. No action edits a layout in place, which is what keeps the kit's pure functions the only thing that computes one.
-
-Carrying the mint counter in the surface is what makes a recorded sequence replayable: operations embed the ids they create, so replaying from the same initial state reproduces the same tree. Every action records one history entry, however many operations it needed. Expanding, collapsing, and switching presentation are recorded too.
-
-After every action the kit's settle planner keeps the surface populated: a docked pane whose last tab was closed, moved out, or floated is merged away, and when only the root pane is left and it is empty, the guide tab is reseeded. There is always at least one tab, and never an empty pane — so there is no separate "close pane" gesture.
-
-State is memory-only. A reload returns every session to the collapsed default; switching sessions keeps each surface where it was.
+When no official document exists, the adapter can adopt `dsh-sidebar:v1:<sessionId>` from Better Sidebar. Conversion remints unique ids across right, bottom, and floats, retains unknown tab kinds and JSON metadata, converts terminal pins, and keeps selected legacy tombstone and counter data under `legacy.ui-better-sidebar`. The official document is written before it is selected. The legacy key remains byte-for-byte available for rollback. A failed write selects the fresh default and leaves the legacy document unchanged.
 
 <a id="extension-seats"></a>
 ## Extension seats
 
-A tab type registers in two stages, and the shipped guide type goes through exactly the same public path a type from another package does (`ui-sidebar-textpreview` is the live proof). Both stages sit inside the type's own `ctx.effect`, so the registration lives exactly as long as the plugin that made it.
+A tab type registers in two stages inside one effect:
 
-1. **The type** — `ctx.sidebarRightTabs.register({ id, kind, patterns?, priority?, canOpen?, title, guide? })`, a static declaration with no runtime hook, returning a disposer. `id` is this implementation's identity in the tab system, unique across every registration (a package name is the natural value; the shipped guide is `@deepseek-ai/dsh-client-ui-sidebar-right/guide`): a kind is not unique once an extension may take a builtin's over, so the implementation names itself, and a second registration of an `id` throws. A resource type names `patterns`, globs over `dsh-resource://` addresses: one containing `:` matches the whole address (`dsh-resource://file/**`); one without matches the URI's path at any depth, ignoring case (`*.md`), and an address that is not a URI matches no such pattern. A page type — the guide, a file tree — names none and is opened by kind. `canOpen(address)` vetoes a match. `title(address)` is the tab chip's text, captured when the tab opens. `guide` lists entry boxes for the guide page; picking one opens the contributing type as a page. A `kind` carries at most one `builtin` and one `extension` registration (the extension is in force; the builtin resumes when it leaves); any other collision on a kind throws. The `id` is also the key the type's body and title register under, so an extension and the builtin it takes over hold distinct cells and the seat renders the one in force.
-2. **The body** — `ctx.slots.register({ name: 'sidebar.right.pane.tab', key: definition.id }, Body)` reads `{ sidebar, panel, tab }` through the framework-injected `useTabInfo()`. `sidebar` supplies expansion and fullscreen information; `panel.id` identifies its pane; `tab` contains the record fields, `visible`, `navigation`, `signal`, and `actions`. These are not parallel owner props; the type's own store still uses `useStore`/`actions`. Optional title registrations and guide replacements share this hook; an absent title registration uses the text captured at open time.
+1. `ctx.sidebarRightTabs.register({ id, kind, patterns?, priority?, canOpen?, title, guide?, beforeClose?, close? })` declares routing, initial title, guide entries, and optional true-close lifecycle. `id` identifies the implementation and keys its body registration. One builtin and one extension may share a kind; the extension is in force until it unregisters.
+2. `ctx.slots.register({ name: 'sidebar.right.pane.tab', key: definition.id }, Body)` supplies the body. The optional `.title` seat supplies a live chip title. `props.useTabInfo()` returns the workbench surface, sidebar presentation, pane, record, persistent payload and pin, navigation revision, visibility, occurrence signal, and tab-bound actions.
 
-Which type opens a resource follows the editor-resolver convention: the types whose `patterns` match are ranked by `priority` band — `extension` (a type from outside the product, the highest, and the default when none is named), `builtin`, `fallback` (plain viewers anything more specific should beat) — then by the length of the matched pattern, then by registration order; `canOpen` removes a candidate. The bands are string literals so a type in another package needs no runtime import from here. `candidates(address)` returns the ranking, `claim(address, kind?)` the decision; naming a `kind` skips its globs but keeps its `canOpen`.
+A resource type declares address globs. Patterns containing `:` match the complete URI; other patterns match the URI path. Candidates are ranked by priority band, matched-pattern length, and registration order. A page type omits patterns and opens by kind. Unknown persisted kinds remain visible through the unavailable fallback and can recover when their definition registers again.
 
-Two more seats extend what is already there: `sidebar.right.tab.guide` (chain) replaces the guide tab's body without replacing the tab, and `sidebar.right.tab.menu.item` (list) appends content-level actions to a tab's menu after the kit's own layout actions. No seat exists for pane-level actions or for collapsed-state controls yet, because nothing needs one.
+`SidebarRightTabPayloadMap` is declaration-merged by kind. `openTab<K>` and `update<K>` infer that kind's payload type. The workbench snapshots payloads as lossless JSON before storing them and validates them again when loading.
 
 <a id="ctxsidebarright"></a>
 ## `ctx.sidebarRight`
 
-`openResource(address, options?)` and `openTab(kind, options?)` are the navigation controller, and every way into the column calls one of them: the conversation's file links and a tool row's line reference (`openResource(fileAddress, { params: { line } })`), the strip's add control and a guide entry box (`openTab`), a file tree's rows (`tab.actions.openResource`). A resource address is a `dsh-resource://<type>/…` URI; without `options.kind` the registry claims it (globs and `canOpen`, best band wins), with it that kind's type in force opens it. A page is named by kind; the tab is recorded under an address this package composes and nobody else spells (`contract/seed.ts`). Both run the same steps as one history entry: a tab already showing the same (kind, contentId) is focused unless `revealIfOpened: false`; otherwise a new tab lands in `options.replaceTab`'s pane and slot (closing that tab), else `options.paneId`, else the active docked pane; the panel expands, because content the user cannot see is not opened. Then the Tab domain records the navigation — `params` reach the body as `navigation.params`, with `revision` stepped — outside the layout history. `params` is typed by what is opened: a viewer for a resource type merges its entry into `SidebarRightResourceParamsMap` (the text preview declares `{ line?: number }`); a page type that takes parameters merges into `SidebarRightTabParamsMap` under its kind; values are JSON-shaped by convention, unchecked at run time. An address outside `dsh-resource://`, one no type claims, or a kind nothing registered throws: that is a wiring mistake, not a user error.
+`openResource(address, options?)` claims a `dsh-resource://` address and returns `Promise<TabId>`. `openTab(kind, options?)` opens a registered page type and also returns its settled identity. Placement supports `surface`, `paneId`, `replaceTab`, and `revealIfOpened`. Page opens additionally accept `instanceId`, `title`, typed `payload`, and `pin`; resource opens accept typed navigation `params`, payload, pin, and an explicit claiming kind. A stable instance id makes a page address repeatable, while omitting it keeps singleton page behavior.
 
-`close(tabId)` closes a tab; `active()` reads the active tab. `isExpanded()` and `toggleExpanded()` read and drive the column's expansion; the presentation switch is the panel's own control and not part of this face. Layout operations, for callers that arrange the column programmatically, each recorded like the gesture it stands in for: `focus(tabId)` focuses a tab and its pane; `split(paneId?)` splits a docked pane (the active one by default) under the same pane budget and room rule as the strip's control and returns the new pane's id, or `undefined` — recording nothing — when it cannot; `float(tabId, rect?)` takes a docked tab out into a panel; `dock(paneId)` returns a floating panel to the active docked pane. A tab or pane that does not exist, or already is where the call would put it, is left alone. The face exposes operations only: no layout snapshot, no operation log, no lookup by address. `_undo()` / `_redo()` step the mounted surface's history; they are `@internal` — the sequence has no user-facing control, and these exist for tests. Commands need a mounted session surface; with none, they throw rather than write into a surface nobody draws.
+`forSession(sessionId)` returns a stable targeted navigator and materializes the Session store even before the slot renderer visits it. It exposes open, close, update, namespaced data, and reset operations. This is the path for background delivery and inactive-Session actions.
+
+`getSnapshot()` and `subscribe()` expose a stable product projection of materialized Sessions, the mounted Session id, right and bottom expansion, bottom height, tab placement, pane visibility and focused state, persistent metadata, namespaced data, and pins. A consumer combines `mountedSessionId` with `tab.visible` to find every active tab currently drawn across split panes; `tab.active` identifies the focused pane. DockKit nodes and operation history remain internal. Mounted-Session helpers retain right-surface compatibility for focus, split, float, dock, expansion, and active-tab commands.
+
+<a id="close-lifecycle"></a>
+## Close lifecycle
+
+Every true close runs through one serialized coordinator per Session. A batch calls every `beforeClose(context)` before changing layout. A returned `false` or rejection cancels the complete batch. After admission, every `close(context)` settles independently: fulfilled records are removed together, failed records remain, and the outcome reports both sets. Replace, reset, undo, and redo use the same path when they would remove occurrences. Runtime-owned opens and closes checkpoint reversible history.
+
+The close context fixes the original Session, surface, record, payload, pin, signal, and reason. A Session switch during asynchronous cleanup cannot retarget it. Duplicate close requests serialize and observe the latest committed records, so an owner releases once. Component unmount and tab-type unregister are not true closes and do not invoke these hooks.
 
 <a id="the-tab-domain"></a>
 ## The Tab domain
 
-The Tab domain retains navigation, an abort signal, and bound actions per (Session, tab id). A private assembly callback adopts each Session's store and reconciles records on its commits. Only record removal or plugin unload aborts the signal; closing the sidebar and switching Sessions retain records, while undo restores a new occurrence. `useTabInfo()` composes framework-bound store and navigation hooks without manual component subscriptions or render-time record creation. `tab.actions` always target their own Session; `tab.visible` distinguishes bodies from titles, and floating tabs remain visible when the sidebar closes. `adopt` is absent from the public controller.
+The Tab domain retains navigation, an abort signal, and bound actions per `(Session, tab id)`. Store adoption reconciles both layouts on every commit, including Sessions that are not visible. Record removal or plugin unload aborts the occurrence. Hiding a surface, switching Sessions, changing presentation, and body remounts preserve it. A restored record is a new occurrence.
 
-<a id="the-guide"></a>
-## The guide
-
-The guide tab is a centred title, one line under it, and one entry box per `guide` entry the registered types contributed, in `order`. Picking a box calls `tab.actions.openTab(entry.kind, { replaceTab: true })`, so the guide gives way to the page it opened. A pane holds at most one guide tab. The strip's add control is drawn only while its pane holds none and opens one there with `openTab('guide', { paneId, revealIfOpened: false })`, so a guide in another pane does not capture the click; opening the guide into a pane that already has one focuses it instead; a guide dragged, dropped, or docked into such a pane merges into it — the arriving guide closes and the pane's own is focused; `duplicateTab` on the guide records nothing. A split or an emptied root pane seeds a guide through the kit's factory, one per new pane. A plain `openTab('guide')` keeps the tree-wide reveal every open has. The product allows two horizontal panes, initially equal, with divider ratios limited to 20%–80%. Insufficient width blocks a new split; with two panes already present, a body drop moves the tab between panes instead of creating a third. At the two-pane limit, split controls are hidden; closing back to one pane restores them.
-
-<a id="copy"></a>
-## Copy
-
-Every string in the column comes from the `sidebarRight` locale namespace, including the kit's accessible names. A tab's title is fixed when the tab is minted; a type's display name follows the current language.
+`tab.actions` always target the record's own Session and surface. `tab.visible` is true for the active tab on an expanded dock surface and for visible right-side floats. Navigation revisions change independently from layout history, so reopening an existing address can deliver new parameters without remounting the body.
 
 <a id="model-experience"></a>
 ## Model Experience
 
-None, as the package is a browser-side UI plugin layer that registers nothing model-facing.
+None, as the package is a browser UI capability and registers no model-facing tool or prompt.
 
 #### KV Cache effect
 
@@ -112,13 +91,10 @@ None; this package neither assembles nor sends a provider request.
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **Memory-only.** Nothing is persisted; a reload starts every session collapsed.
-- **No surface without a session.** State is keyed by session id, so the hero screen shows nothing on the right.
-- **Hard-coded stacking.** The panel and the float host use fixed z-index values because the client has no z-index token layer yet.
-- **Undo is not exposed.** The recorded sequence is stepped only through the `@internal` service methods; product controls are deliberately absent.
-- **Guide copy is a draft** awaiting product review; the words live in `locales.ts`.
-- **Titles are fixed at open time.** A type's `title(address)` is captured into the record; a live title comes only from the optional title seat.
-- **No content navigation stack.** Stepping back replays layout operations; an editor-style back/forward over visited content is not built.
+- **Feature migration is incomplete.** Better Sidebar still mounts a second product workbench until its viewers, runtime tabs, settings, and consumers move to these interfaces.
+- **Official persistence is best effort.** Browser storage failure keeps the current in-memory Session usable but does not provide a user-facing export command.
+- **Bottom chrome uses the shared Sidebar vocabulary.** Product-specific bottom labels and first-open Terminal behavior remain with the feature migration.
+- **Undo controls are internal.** The close-aware history methods exist for tests and future product controls.
 
 <a id="dev-note"></a>
 ### Dev Note
@@ -126,8 +102,8 @@ None; this package neither assembles nor sends a provider request.
 <details>
 <summary>Working context for maintainers — click to expand</summary>
 
-None.
+The delivery decision and remaining capability matrix are recorded in [Unify Sidebar capabilities on the official workbench](../../../.agents/notes/proposed/architecture/2026-09-09-official-sidebar-capability-fusion.md).
 
 </details>
 
-**Runtime invariant:** No companion is published. The two services (`sidebarRight`, `sidebarRightTabs`) are provided through `ctx.reflect.provide` inside one effect and torn down with it; the seat's binding and the Tab domain's occurrence lifetimes are asserted directly by this package's specs, and no independent observation exists to diverge from them.
+**Runtime invariant:** No companion is published. The registry and controller are provided in one plugin lifetime. Store adoption is the authoritative event stream for occurrence and projection reconciliation; package tests assert off-screen materialization, dual-surface atomicity, persistence selection, and close outcomes.

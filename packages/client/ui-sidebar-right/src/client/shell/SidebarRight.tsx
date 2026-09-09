@@ -27,7 +27,7 @@
  * signal, actions — is read through the slot-owned useTabInfo hook. The Tab
  * domain follows each session's store commits, including sessions off screen.
  */
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode, RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import type {
@@ -43,7 +43,9 @@ import { GUIDE_KIND, pageAddress } from '../contract/seed.ts'
 import { dockLabels } from '../labels.ts'
 import type { SidebarRightOpenTabOptions } from '../service.ts'
 import type { SidebarRightTabDefinition } from '../tab-registry.ts'
-import type { createSidebarRightStore, SurfaceState } from '../stores.ts'
+import type {
+  createSidebarRightStore, DockSurfaceState, SidebarWorkbenchSurface, SurfaceState,
+} from '../stores.ts'
 import type { TabOccurrence } from '../tab-domain.ts'
 import type { SidebarRightTabNavigation } from '../contract/slots.ts'
 import type { TabHookContext } from '../tab-info.ts'
@@ -65,6 +67,13 @@ export interface SidebarRightPresentation {
   readonly fullscreen: boolean
 }
 
+/** Bottom surface geometry reported to the frame that owns its center-column track. */
+export interface SidebarBottomPresentation {
+  readonly shown: boolean
+  readonly height: number
+  readonly fullscreen: boolean
+}
+
 /** What this package needs from its host beyond the framework shares. */
 export interface SidebarRightInjected {
   /**
@@ -75,6 +84,8 @@ export interface SidebarRightInjected {
    * composition changes.
    */
   readonly syncPresentation: (presentation: SidebarRightPresentation) => void
+  /** Report the bottom surface's visibility, requested height, and fullscreen state. */
+  readonly syncBottomPresentation: (presentation: SidebarBottomPresentation) => void
   /**
    * Publish this seat's session, actions, and the store's surfaces to `ctx.sidebarRight`.
    *
@@ -96,6 +107,8 @@ export interface SidebarRightInjected {
    * the guide opened by kind, through the same path as every other open.
    */
   readonly openTab: (kind: string, options?: SidebarRightOpenTabOptions) => void
+  /** Route true closes through the official admission coordinator. */
+  readonly closeTab: (tabId: TabId) => void
   readonly hooks: {
     readonly tabTypes: HostObservable<readonly SidebarRightTabDefinition[]>
   }
@@ -107,8 +120,8 @@ export interface SidebarRightInjected {
 }
 
 /** The column seat's props: session scope, so the session arrives as a standard prop. */
-export type RightbarSeatProps =
-  & PropsRuntime<'rightbar'>
+export type WorkbenchSeatProps =
+  & PropsRuntime<'workbench'>
   & Children
   & Store
   & PropsLocale<'sidebarRight'>
@@ -117,13 +130,15 @@ export type RightbarSeatProps =
 /** Everything the panel needs, already bound to one session. */
 interface PanelProps {
   readonly sessionId: SessionId
-  readonly surface: SurfaceState
+  readonly workbenchSurface: SidebarWorkbenchSurface
+  readonly surface: DockSurfaceState
   readonly actions: Store['actions']
-  readonly t: RightbarSeatProps['t']
+  readonly t: WorkbenchSeatProps['t']
   readonly renderSlot: Children['renderSlot']
   readonly openTab: SidebarRightInjected['openTab']
-  readonly useTabTypes: RightbarSeatProps['useTabTypes']
-  readonly useTabNavigation: RightbarSeatProps['useTabNavigation']
+  readonly closeTab: SidebarRightInjected['closeTab']
+  readonly useTabTypes: WorkbenchSeatProps['useTabTypes']
+  readonly useTabNavigation: WorkbenchSeatProps['useTabNavigation']
   readonly useStore: Store['useStore']
   readonly occurrence: SidebarRightInjected['occurrence']
   readonly fullscreen: boolean
@@ -144,17 +159,23 @@ function guideIn(layout: LayoutState, paneId: PaneId): TabId | undefined {
  * @param openTab - the navigation face's `openTab`, which the strip's add control asks for a guide through.
  * @returns the intents the kit reports gestures to.
  */
-export function intentsFor(sessionId: SessionId, actions: Store['actions'], openTab: PanelProps['openTab']): DockIntents {
+export function intentsFor(
+  sessionId: SessionId,
+  actions: Store['actions'],
+  openTab: PanelProps['openTab'],
+  closeTab: PanelProps['closeTab'],
+  surface: SidebarWorkbenchSurface = 'right',
+): DockIntents {
   return {
     focusTab: (tabId) => { actions.focusTab(sessionId, tabId) },
     focusPane: (paneId) => { actions.focusPane(sessionId, paneId) },
-    splitPane: (paneId) => { actions.splitPane(sessionId, paneId) },
+    splitPane: (paneId) => { actions.splitSurfacePane(sessionId, surface, paneId) },
     // The guide is unique per pane: the control is drawn only while its pane
     // holds none (`canAddTab` below) and asks for one there without regard to
     // guides in other panes; the store settles the open on a guide the pane
     // already holds, so the ask is idempotent all the same.
-    addTab: (paneId) => { openTab(GUIDE_KIND, { paneId, revealIfOpened: false }) },
-    closeTab: (tabId) => { actions.closeTab(sessionId, tabId) },
+    addTab: (paneId) => { openTab(GUIDE_KIND, { surface, paneId, revealIfOpened: false }) },
+    closeTab,
     duplicateTab: (tabId) => { actions.duplicateTab(sessionId, tabId) },
     floatTab: (tabId, rect?: FloatRect) => { actions.floatTab(sessionId, tabId, rect) },
     unfloatPane: (paneId) => { actions.unfloatPane(sessionId, paneId) },
@@ -167,7 +188,7 @@ export function intentsFor(sessionId: SessionId, actions: Store['actions'], open
 }
 
 /** One tab's slot dispatch: which seat, and what to render when no type registered. */
-interface TabSlotProps extends Pick<PanelProps, 'renderSlot' | 'occurrence' | 'useTabTypes' | 'useTabNavigation' | 'useStore' | 'fullscreen'> {
+interface TabSlotProps extends Pick<PanelProps, 'renderSlot' | 'occurrence' | 'useTabTypes' | 'useTabNavigation' | 'useStore' | 'fullscreen' | 'workbenchSurface'> {
   readonly tab: TabRecord
   readonly seat: 'sidebar.right.pane.tab' | 'sidebar.right.pane.tab.title'
   readonly fallback: ReactNode
@@ -177,19 +198,20 @@ interface TabSlotProps extends Pick<PanelProps, 'renderSlot' | 'occurrence' | 'u
  * Dispatch one tab's body or title with stable framework hooks and record lifetime.
  */
 function TabSlot({
-  renderSlot, occurrence, useTabTypes, useTabNavigation, useStore, fullscreen, tab, seat, fallback,
+  renderSlot, occurrence, useTabTypes, useTabNavigation, useStore, fullscreen, workbenchSurface, tab, seat, fallback,
 }: TabSlotProps): ReactNode {
   const { signal, tabActions } = occurrence(tab)
   const definition = useTabTypes(types => types.find(definition => definition.kind === tab.kind))
   const hookContext = useMemo((): TabHookContext => ({
     tabId: tab.id,
+    surface: workbenchSurface,
     title: seat === 'sidebar.right.pane.tab.title',
     fullscreen,
     signal,
     actions: tabActions,
     useStore,
     useTabNavigation,
-  }), [tab.id, seat, fullscreen, signal, tabActions, useStore, useTabNavigation])
+  }), [tab.id, workbenchSurface, seat, fullscreen, signal, tabActions, useStore, useTabNavigation])
   return renderSlot(seat, {}, { entryKey: definition?.id ?? tab.kind, fallback, hookContext })
 }
 
@@ -249,7 +271,7 @@ function CloseGlyph(): ReactNode {
 }
 
 /** The panel's two controls, placed by the kit at the top-right pane's strip end. */
-function PanelChrome({ sessionId, fullscreen, autoFullscreen, actions, t }: Pick<PanelProps, 'sessionId' | 'actions' | 't' | 'fullscreen' | 'autoFullscreen'>): ReactNode {
+function PanelChrome({ sessionId, workbenchSurface, fullscreen, autoFullscreen, actions, t }: Pick<PanelProps, 'sessionId' | 'workbenchSurface' | 'actions' | 't' | 'fullscreen' | 'autoFullscreen'>): ReactNode {
   const next: DockMode = fullscreen ? 'push' : 'fullscreen'
   return (
     <>
@@ -260,8 +282,8 @@ function PanelChrome({ sessionId, fullscreen, autoFullscreen, actions, t }: Pick
         title={fullscreen ? t('chrome.exitFullscreen') : t('chrome.toFullscreen')}
         data-sidebar-right-mode={next}
         onClick={() => {
-          if (fullscreen && autoFullscreen) actions.setExpanded(sessionId, false)
-          actions.setMode(sessionId, next)
+          if (fullscreen && autoFullscreen) actions.setSurfaceExpanded(sessionId, workbenchSurface, false)
+          actions.setSurfaceMode(sessionId, workbenchSurface, next)
         }}
       >
         {fullscreen ? <ExitFullscreenGlyph /> : <FullscreenGlyph />}
@@ -272,7 +294,7 @@ function PanelChrome({ sessionId, fullscreen, autoFullscreen, actions, t }: Pick
         aria-label={t('chrome.collapse')}
         title={t('chrome.collapse')}
         data-sidebar-right-toggle
-        onClick={() => { actions.toggleExpanded(sessionId) }}
+        onClick={() => { actions.setSurfaceExpanded(sessionId, workbenchSurface, false) }}
       >
         <CloseGlyph />
       </button>
@@ -307,13 +329,22 @@ function SidebarPanel(panel: PanelProps & { width: number; panelRef: RefObject<H
           dropZones="horizontal"
           minPaneFraction={0.2}
           canAddTab={paneId => guideIn(surface.layout, paneId) === undefined}
-          intents={intentsFor(sessionId, actions, openTab)}
+          intents={intentsFor(sessionId, actions, openTab, panel.closeTab, panel.workbenchSurface)}
           labels={dockLabels(t)}
           renderTab={bodiesFor(panel)}
           renderTabTitle={titlesFor(panel)}
           renderTabMenuItems={(tab, dismiss) =>
             renderSlot('sidebar.right.tab.menu.item', { tab, dismiss })}
-          chrome={<PanelChrome sessionId={sessionId} fullscreen={fullscreen} autoFullscreen={autoFullscreen} actions={actions} t={t} />}
+          chrome={(
+            <PanelChrome
+              sessionId={sessionId}
+              workbenchSurface={panel.workbenchSurface}
+              fullscreen={fullscreen}
+              autoFullscreen={autoFullscreen}
+              actions={actions}
+              t={t}
+            />
+          )}
           onRoom={reportRoom}
         />
       </div>
@@ -329,7 +360,7 @@ function Floats(panel: PanelProps): ReactNode {
     <div className={css.floatHost} data-sidebar-right-float-host>
       <FloatLayer
         state={surface.layout}
-        intents={intentsFor(sessionId, actions, openTab)}
+        intents={intentsFor(sessionId, actions, openTab, panel.closeTab, panel.workbenchSurface)}
         labels={dockLabels(t)}
         renderTab={bodiesFor(panel)}
         renderTabTitle={titlesFor(panel)}
@@ -340,38 +371,176 @@ function Floats(panel: PanelProps): ReactNode {
 }
 
 /**
- * The right column's occupant: the panel, anchored to the column's edge and
- * shown or hidden by sliding, plus the floating layer. It is also where the
- * frame learns the panel's presentation, and where `ctx.sidebarRight` learns
- * which session it is acting on, because this is the seat that knows both.
+ * Resize the bottom surface from its top edge. The corner also changes the
+ * right surface width because this component owns both surfaces.
  */
-export function RightbarSeat({
-  sessionId, width, viewportWidth, canShow, useStore, actions, t, renderSlot, syncPresentation, bindService, openTab,
-  useTabTypes, useTabNavigation, occurrence,
-}: RightbarSeatProps): ReactNode {
+function BottomResizeHandle({
+  height, viewportHeight, rightShown, rightWidth, setHeight, setRightWidth,
+}: {
+  readonly height: number
+  readonly viewportHeight: number
+  readonly rightShown: boolean
+  readonly rightWidth: number
+  readonly setHeight: (height: number) => void
+  readonly setRightWidth: (width: number) => void
+}): ReactNode {
+  const active = useRef<{ id: number; x: number; y: number; height: number; rightWidth: number; corner: boolean } | null>(null)
+  const finish = useCallback((element: HTMLDivElement, pointerId: number) => {
+    if (active.current?.id !== pointerId) return
+    active.current = null
+    if (element.hasPointerCapture(pointerId)) element.releasePointerCapture(pointerId)
+  }, [])
+  const start = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0 || active.current !== null) return
+    event.preventDefault()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    active.current = {
+      id: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+      height,
+      rightWidth,
+      corner: event.currentTarget.dataset.workbenchResizeCorner === 'true',
+    }
+  }, [height, rightWidth])
+  const move = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    const drag = active.current
+    if (drag?.id !== event.pointerId) return
+    setHeight(Math.min(viewportHeight, drag.height - (event.clientY - drag.y)))
+    if (drag.corner && rightShown) setRightWidth(drag.rightWidth - (event.clientX - drag.x))
+  }, [rightShown, setHeight, setRightWidth, viewportHeight])
+  const end = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    move(event)
+    finish(event.currentTarget, event.pointerId)
+  }, [finish, move])
+  const cancel = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    finish(event.currentTarget, event.pointerId)
+  }, [finish])
+  return (
+    <>
+      <div
+        className={css.bottomHandle}
+        data-side="bottombar"
+        onPointerDown={start}
+        onPointerMove={move}
+        onPointerUp={end}
+        onPointerCancel={cancel}
+        onLostPointerCapture={cancel}
+      />
+      {rightShown && (
+        <div
+          className={css.cornerHandle}
+          data-workbench-resize-corner="true"
+          onPointerDown={start}
+          onPointerMove={move}
+          onPointerUp={end}
+          onPointerCancel={cancel}
+          onLostPointerCapture={cancel}
+        />
+      )}
+    </>
+  )
+}
+
+/** Bottom workbench surface, contained by the frame's center column. */
+function BottomPanel(panel: PanelProps & {
+  readonly height: number
+  readonly viewportHeight: number
+  readonly rightShown: boolean
+  readonly rightWidth: number
+  readonly setHeight: (height: number) => void
+  readonly setRightWidth: (width: number) => void
+}): ReactNode {
+  const {
+    sessionId, surface, actions, t, renderSlot, openTab, fullscreen, autoFullscreen,
+    height, viewportHeight, rightShown, rightWidth, setHeight, setRightWidth, reportRoom,
+  } = panel
+  const { expanded } = surface.layout
+  return (
+    <div
+      className={css.bottomPanel}
+      style={{ height: fullscreen ? '100%' : height }}
+      data-sidebar-bottom-panel={fullscreen ? 'fullscreen' : 'push'}
+      data-sidebar-bottom-open={expanded || undefined}
+      aria-hidden={!expanded || undefined}
+    >
+      {!fullscreen && (
+        <BottomResizeHandle
+          height={height}
+          viewportHeight={viewportHeight}
+          rightShown={rightShown}
+          rightWidth={rightWidth}
+          setHeight={setHeight}
+          setRightWidth={setRightWidth}
+        />
+      )}
+      <div className={css.panelBody}>
+        <DockSurface
+          state={surface.layout}
+          canSplit={canSplit(surface.layout) && dockPaneIds(surface.layout).length < 2}
+          hideSplitAtCapacity
+          minPaneFraction={0.2}
+          canAddTab={paneId => guideIn(surface.layout, paneId) === undefined}
+          intents={intentsFor(sessionId, actions, openTab, panel.closeTab, 'bottom')}
+          labels={dockLabels(t)}
+          renderTab={bodiesFor(panel)}
+          renderTabTitle={titlesFor(panel)}
+          renderTabMenuItems={(tab, dismiss) => renderSlot('sidebar.right.tab.menu.item', { tab, dismiss })}
+          chrome={<PanelChrome {...{ sessionId, actions, t, fullscreen, autoFullscreen }} workbenchSurface="bottom" />}
+          onRoom={reportRoom}
+        />
+      </div>
+    </div>
+  )
+}
+
+const NARROW_WORKBENCH_WIDTH = 768
+
+/**
+ * One Session workbench owns both official dock surfaces and portals them into
+ * the frame's stable hosts without crossing the slot or store boundary.
+ */
+export function WorkbenchSeat({
+  sessionId, rightHostId, bottomHostId, viewportWidth, viewportHeight, rightPanelWidth, rightbarWidth, canShowRight,
+  setRightbarWidth, useStore, actions, t, renderSlot, syncPresentation, syncBottomPresentation,
+  bindService, openTab, closeTab, useTabTypes, useTabNavigation, occurrence,
+}: WorkbenchSeatProps): ReactNode {
+  const [hosts, setHosts] = useState<{ right: HTMLElement; bottom: HTMLElement } | null>(null)
   // One store instance per session, so this map holds this session's surface.
   // The binding published below serves the public face's commands on the
   // mounted session; a tab's own actions route through the controller's
   // adopted stores instead.
   const surfaces = useStore(state => state.bySession)
+  const surfacesRef = useRef(surfaces)
+  surfacesRef.current = surfaces
   const surface = surfaces[sessionId]
-  const shown = surface !== undefined && surface.layout.expanded
-  const autoFullscreen = viewportWidth < 768
-  const fullscreen = autoFullscreen || surface?.layout.mode === 'fullscreen'
+  const rightShown = surface !== undefined && surface.layout.expanded
+  const bottomShown = surface !== undefined && surface.bottom.layout.expanded
+  const autoFullscreen = viewportWidth < NARROW_WORKBENCH_WIDTH
+  const rightFullscreen = autoFullscreen || surface?.layout.mode === 'fullscreen'
+  const bottomFullscreen = autoFullscreen || surface?.bottom.layout.mode === 'fullscreen'
   const panelRef = useRef<HTMLDivElement | null>(null)
   // The kit's room-rule readings, kept in a ref: the service reads them at
   // call time through the binding, and a reading never re-renders anything.
-  const room = useRef<ReadonlyMap<PaneId, HalvesFit>>(new Map())
-  const reportRoom = useCallback((fits: ReadonlyMap<PaneId, HalvesFit>): void => { room.current = fits }, [])
-  const track = shown && !autoFullscreen
+  const room = useRef<Record<SidebarWorkbenchSurface, ReadonlyMap<PaneId, HalvesFit>>>({ right: new Map(), bottom: new Map() })
+  const reportRightRoom = useCallback((fits: ReadonlyMap<PaneId, HalvesFit>): void => { room.current.right = fits }, [])
+  const reportBottomRoom = useCallback((fits: ReadonlyMap<PaneId, HalvesFit>): void => { room.current.bottom = fits }, [])
+  const track = rightShown && !autoFullscreen
+
+  useLayoutEffect(() => {
+    const right = document.getElementById(rightHostId)
+    const bottom = document.getElementById(bottomHostId)
+    if (right === null || bottom === null) throw new Error('sidebar workbench: frame hosts not mounted')
+    setHosts({ right, bottom })
+  }, [rightHostId, bottomHostId])
 
   useEffect(() => {
     if (surface === undefined) actions.open(sessionId)
   }, [actions, sessionId, surface])
 
   useLayoutEffect(() => {
-    if (shown && !fullscreen && !canShow) actions.setExpanded(sessionId, false)
-  }, [actions, sessionId, shown, fullscreen, canShow])
+    if (rightShown && !rightFullscreen && !canShowRight) actions.setExpanded(sessionId, false)
+  }, [actions, sessionId, rightShown, rightFullscreen, canShowRight])
 
   // Fullscreen leaves the previous column report in force until its own slide
   // completes. Normal presentation and zero-duration transitions report before paint.
@@ -379,14 +548,14 @@ export function RightbarSeat({
     let disposed = false
     const reportWhenCovered = (): void => {
       if (disposed) return
-      // A shown panel renders unconditionally and attaches its ref before this effect.
-      const entering = shown && fullscreen
-        ? (panelRef.current as HTMLDivElement).getAnimations().filter(animation =>
+      const panel = panelRef.current
+      const entering = rightShown && rightFullscreen && panel !== null
+        ? panel.getAnimations().filter(animation =>
           'transitionProperty' in animation && animation.transitionProperty === 'transform'
           && animation.playState !== 'finished' && animation.playState !== 'idle')
         : []
       if (entering.length === 0) {
-        syncPresentation({ shown, track, fullscreen })
+        syncPresentation({ shown: rightShown, track, fullscreen: rightFullscreen })
         return
       }
       // Cancellation can replace the transition or remove it for reduced motion.
@@ -394,30 +563,76 @@ export function RightbarSeat({
     }
     reportWhenCovered()
     return () => { disposed = true }
-  }, [sessionId, shown, track, fullscreen, syncPresentation])
+  }, [sessionId, rightShown, track, rightFullscreen, syncPresentation])
   // Leaving is part of that report: a seat that unmounts with its session must
   // hand the track back rather than leave one sized for a surface nobody draws.
   useLayoutEffect(() => () => { syncPresentation({ shown: false, track: false, fullscreen: false }) }, [syncPresentation])
 
-  // Republished on every committed change: the service's readers answer from the
-  // last commit, and its commands act on the session actually on screen.
+  useLayoutEffect(() => {
+    syncBottomPresentation({
+      shown: bottomShown,
+      height: surface?.bottomHeight ?? 0,
+      fullscreen: bottomFullscreen,
+    })
+  }, [bottomShown, bottomFullscreen, surface?.bottomHeight, syncBottomPresentation])
+  useLayoutEffect(() => () => {
+    syncBottomPresentation({ shown: false, height: 0, fullscreen: false })
+  }, [syncBottomPresentation])
+
+  useEffect(() => {
+    if (bottomShown && !surface.bottomOpenedOnce) actions.markBottomOpened(sessionId)
+  }, [actions, bottomShown, sessionId, surface])
+
+  // The binding reads committed surfaces through a stable getter, so ordinary
+  // store commits do not transiently publish an unmounted Session.
   useEffect(
-    () => bindService({ sessionId, actions, surfaces, canSplitPane: paneId => room.current.get(paneId)?.row !== false }),
-    [bindService, sessionId, actions, surfaces],
+    () => bindService({
+      sessionId,
+      actions,
+      get surfaces() { return surfacesRef.current },
+      canSplitPane: paneId => room.current.right.get(paneId)?.row !== false
+        && room.current.bottom.get(paneId)?.row !== false,
+    }),
+    [bindService, sessionId, actions],
   )
   // The Tab domain is not synced here: the controller adopted this session's
   // store as the runtime minted it and reconciles on the store's own commits,
   // on screen or not.
 
-  if (surface === undefined) return null
-  const panel: PanelProps = {
-    sessionId, actions, t, renderSlot, surface, openTab, useTabTypes, useTabNavigation, useStore, occurrence,
-    fullscreen, autoFullscreen, reportRoom,
+  if (surface === undefined || hosts === null) return null
+  const shared = { sessionId, actions, t, renderSlot, openTab, closeTab, useTabTypes, useTabNavigation, useStore, occurrence }
+  const rightPanel: PanelProps = {
+    ...shared,
+    workbenchSurface: 'right',
+    surface: { layout: surface.layout, history: surface.history },
+    fullscreen: rightFullscreen,
+    autoFullscreen,
+    reportRoom: reportRightRoom,
+  }
+  const bottomPanel: PanelProps = {
+    ...shared,
+    workbenchSurface: 'bottom',
+    surface: surface.bottom,
+    fullscreen: bottomFullscreen,
+    autoFullscreen,
+    reportRoom: reportBottomRoom,
   }
   return (
     <>
-      <SidebarPanel {...panel} width={width} panelRef={panelRef} />
-      <Floats {...panel} />
+      {createPortal(<SidebarPanel {...rightPanel} width={rightPanelWidth} panelRef={panelRef} />, hosts.right)}
+      {createPortal(
+        <BottomPanel
+          {...bottomPanel}
+          height={surface.bottomHeight}
+          viewportHeight={viewportHeight}
+          rightShown={rightbarWidth > 0}
+          rightWidth={rightbarWidth}
+          setHeight={(height) => { actions.setBottomHeight(sessionId, height, viewportHeight) }}
+          setRightWidth={setRightbarWidth}
+        />,
+        hosts.bottom,
+      )}
+      <Floats {...rightPanel} />
     </>
   )
 }

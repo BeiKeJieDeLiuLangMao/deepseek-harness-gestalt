@@ -17,7 +17,7 @@ import { apply as hostApply } from '../src/index.ts'
 import { SidebarRightController } from '../src/client/service.ts'
 import { SidebarRightTabRegistry } from '../src/client/tab-registry.ts'
 import type { createSidebarRightStore } from '../src/client/stores.ts'
-import { RightbarSeat } from '../src/client/shell/SidebarRight.tsx'
+import { WorkbenchSeat } from '../src/client/shell/SidebarRight.tsx'
 import { ExpandButton } from '../src/client/shell/ExpandButton.tsx'
 import { GuideBody } from '../src/client/tabs/guide/GuideBody.tsx'
 import { GUIDE_ID } from '../src/client/tabs/guide/definition.ts'
@@ -55,7 +55,9 @@ async function boot() {
       return () => { dictionaries.delete(ns) }
     }),
   }
-  const layout = { openRightbar: vi.fn(), closeRightbar: vi.fn() }
+  const layout = {
+    openRightbar: vi.fn(), closeRightbar: vi.fn(), openBottombar: vi.fn(), closeBottombar: vi.fn(),
+  }
   const resources = { pin: vi.fn<(address: string, signal: AbortSignal) => void>() }
   ctx.provide('slots', slots as never)
   ctx.provide('locale', locale as never)
@@ -93,23 +95,23 @@ describe('ui-sidebar-right apply', () => {
     // Three registrations: the panel seat, the header's corner seat, and the
     // guide body under the guide implementation's id.
     expect(registered.map(entry => [entry.name, entry.key, entry.locale, entry.component])).toEqual([
-      ['rightbar', undefined, 'sidebarRight', RightbarSeat],
+      ['workbench', undefined, 'sidebarRight', WorkbenchSeat],
       ['conversation.session.header.corner', undefined, 'sidebarRight', ExpandButton],
       ['sidebar.right.pane.tab', GUIDE_ID, 'sidebarRight', GuideBody],
     ])
     // The panel declares the extension seats; the guide declares its chain child.
-    expect(Object.keys(seat('rightbar').children as object)).toEqual([
+    expect(Object.keys(seat('workbench').children as object)).toEqual([
       'sidebar.right.pane.tab', 'sidebar.right.pane.tab.title', 'sidebar.right.tab.menu.item',
     ])
     expect(seat('sidebar.right.pane.tab').children).toMatchObject({ 'sidebar.right.tab.guide': { kind: 'chain', scope: 'session' } })
     // Both seats read one store: the button only needs to know whether the panel is expanded.
-    expect(seat('rightbar').store).toBeDefined()
-    expect(seat('conversation.session.header.corner').store).toBe(seat('rightbar').store)
+    expect(seat('workbench').store).toBeDefined()
+    expect(seat('conversation.session.header.corner').store).toBe(seat('workbench').store)
   })
 
   it('hands the panel seat the frame report, the service binding, the opens, the observable registry, and the Tab domain', async () => {
     const { ctx, layout, resources, seat, injectedOf } = await boot()
-    const injected = injectedOf(seat('rightbar')) as SidebarRightInjected
+    const injected = injectedOf(seat('workbench')) as SidebarRightInjected
     // The frame learns the composition of expanded and presentation, nothing else.
     injected.syncPresentation({ shown: true, track: true, fullscreen: false })
     expect(layout.openRightbar).toHaveBeenLastCalledWith(true, false)
@@ -119,6 +121,12 @@ describe('ui-sidebar-right apply', () => {
     expect(layout.openRightbar).toHaveBeenLastCalledWith(false, true)
     injected.syncPresentation({ shown: false, track: false, fullscreen: false })
     expect(layout.closeRightbar).toHaveBeenCalledOnce()
+    injected.syncBottomPresentation({ shown: true, height: 260, fullscreen: false })
+    expect(layout.openBottombar).toHaveBeenCalledWith(260, false)
+    injected.syncBottomPresentation({ shown: true, height: 260, fullscreen: true })
+    expect(layout.openBottombar).toHaveBeenLastCalledWith(260, true)
+    injected.syncBottomPresentation({ shown: false, height: 0, fullscreen: false })
+    expect(layout.closeBottombar).toHaveBeenCalledOnce()
     // The registry, observable: what the seat dispatches a kind to.
     expect(injected.hooks.tabTypes.getSnapshot().find(type => type.kind === 'guide')?.id).toBe(GUIDE_ID)
     const seen = vi.fn()
@@ -128,7 +136,7 @@ describe('ui-sidebar-right apply', () => {
     unsubscribe()
     // The binding makes the service act on this seat's session; the seat's
     // store instance is minted here from the handle the registration declared.
-    const handle = seat('rightbar').store as ReturnType<typeof createSidebarRightStore>
+    const handle = seat('workbench').store as ReturnType<typeof createSidebarRightStore>
     const instance = handle.create()
     const release = injected.bindService({ sessionId: SESSION, actions: instance.actions, surfaces: {}, canSplitPane: () => true })
     injected.openTab('guide', { revealIfOpened: false })
@@ -137,7 +145,7 @@ describe('ui-sidebar-right apply', () => {
     expect(Object.values(surface?.layout.tabs ?? {}).map(tab => tab.kind)).toEqual(['guide'])
     // Holding a record pins its address through the resource model.
     if (surface === undefined) throw new Error('expected a surface')
-    ctx.sidebarRight.tabDomain.sync(SESSION, surface.layout)
+    ctx.sidebarRight.tabDomain.sync(SESSION, [surface.layout, surface.bottom.layout])
     expect(resources.pin).toHaveBeenCalledWith('sidebar://guide', expect.any(AbortSignal))
     release()
     expect(() => { ctx.sidebarRight.toggleExpanded() }).toThrow('no session surface is mounted')
@@ -145,7 +153,7 @@ describe('ui-sidebar-right apply', () => {
 
   it('adopts each session\'s store instance as the runtime mints it, so a tab\'s own actions land with no seat bound', async () => {
     const { ctx, resources, seat } = await boot()
-    const handle = seat('rightbar').store as ReturnType<typeof createSidebarRightStore>
+    const handle = seat('workbench').store as ReturnType<typeof createSidebarRightStore>
     // Both seats declare the same wrapped handle, so either minting adopts.
     expect(seat('conversation.session.header.corner').store).toBe(handle)
     const instance = handle.create(SESSION)
@@ -156,7 +164,9 @@ describe('ui-sidebar-right apply', () => {
     const occurrence = ctx.sidebarRight.tabDomain.occurrence(SESSION, guide)
     expect(resources.pin).toHaveBeenCalledWith('sidebar://guide', occurrence.signal)
     occurrence.tabActions.close()
-    expect(instance.getSnapshot().bySession[SESSION]?.layout.tabs[guide.id]).toBeUndefined()
+    await vi.waitFor(() => {
+      expect(instance.getSnapshot().bySession[SESSION]?.layout.tabs[guide.id]).toBeUndefined()
+    })
     expect(occurrence.signal.aborted).toBe(true)
   })
 
@@ -178,8 +188,8 @@ describe('ui-sidebar-right apply', () => {
 
   it('takes every registration and both faces back when disposed, aborting the open records, so a reload registers again', async () => {
     const { ctx, registered, dictionaries, fiber, seat, injectedOf } = await boot()
-    const injected = injectedOf(seat('rightbar')) as SidebarRightInjected
-    const handle = seat('rightbar').store as ReturnType<typeof createSidebarRightStore>
+    const injected = injectedOf(seat('workbench')) as SidebarRightInjected
+    const handle = seat('workbench').store as ReturnType<typeof createSidebarRightStore>
     // Minted under the session key, so the instance is adopted and the teardown releases it.
     const instance = handle.create(SESSION)
     injected.bindService({ sessionId: SESSION, actions: instance.actions, surfaces: {}, canSplitPane: () => true })
