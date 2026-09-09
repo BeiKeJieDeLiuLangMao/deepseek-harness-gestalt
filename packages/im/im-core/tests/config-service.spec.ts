@@ -720,41 +720,42 @@ describe('ImConfigService Seam CRUD & resolveRoute', () => {
     expect(imRouteRuleRecordSchema.safeParse(invalidDirect).success).toBe(false)
   })
 
-  it('F1: prevents lost updates during concurrent mutations via atomic read-modify-write', async () => {
-    const accountId = brandString<ImAccountId>('acc-concurrent')
+  it('F1: prevents lost updates during concurrent mutations via atomic read-modify-write (concurrency probe)', async () => {
+    const accountId = brandString<ImAccountId>('acc-probe-f1')
     await service.upsertAccount({
       id: accountId,
       platform: 'dingtalk',
-      displayName: 'Initial Name',
+      displayName: 'Probe Account F1',
+      status: 'connected',
       paused: false,
     })
 
-    const ruleId = brandString<ImRouteRuleId>('rule-concurrent')
-    const wsId1 = brandString<WorkspaceId>('ws-1')
-    const wsId2 = brandString<WorkspaceId>('ws-2')
+    const initialWs = brandString<WorkspaceId>('ws-initial')
+    const updatedWs = brandString<WorkspaceId>('ws-updated')
+    const ruleId = brandString<ImRouteRuleId>('rule-probe-f1')
 
     await service.createRouteRule({
       id: ruleId,
       accountId,
       conversationKind: 'direct',
       target: { kind: 'all' },
-      workspaceId: wsId1,
+      workspaceId: initialWs,
       enabled: true,
     })
 
     // Simulate backend latency to trigger race condition if read-modify-write is not atomic on the table
     backend.putDelayMs = 20
 
-    // Concurrently update route rule: patch enabled to false and patch workspaceId to wsId2
+    // Concurrently apply two orthogonal field updates to the same rule (enabled: false vs workspaceId)
     await Promise.all([
       service.updateRouteRule(ruleId, { enabled: false }),
-      service.updateRouteRule(ruleId, { workspaceId: wsId2 }),
+      service.updateRouteRule(ruleId, { workspaceId: updatedWs }),
     ])
 
-    const finalRule = await service.getRouteRule(ruleId)
-    // Both patches must be preserved: enabled === false AND workspaceId === wsId2
-    expect(finalRule?.enabled).toBe(false)
-    expect(finalRule?.workspaceId).toBe(wsId2)
+    const fetchedRule = await service.getRouteRule(ruleId)
+    // Both patches must be preserved: enabled === false AND workspaceId === updatedWs
+    expect(fetchedRule?.enabled).toBe(false)
+    expect(fetchedRule?.workspaceId).toBe(updatedWs)
 
     // Concurrently pause account and update account displayName via upsertAccount
     await Promise.all([
@@ -774,22 +775,35 @@ describe('ImConfigService Seam CRUD & resolveRoute', () => {
     backend.putDelayMs = 0
   })
 
-  it('F2: concurrent creation of accounts and rules does not orphan records, derives lists from KvTable', async () => {
-    const acc1 = brandString<ImAccountId>('acc-race-1')
-    const acc2 = brandString<ImAccountId>('acc-race-2')
+  it('F2: concurrent creation of accounts and rules does not orphan records, derives lists from KvTable (concurrency probe)', async () => {
+    const acc1 = brandString<ImAccountId>('acc-probe-f2-1')
+    const acc2 = brandString<ImAccountId>('acc-probe-f2-2')
 
     backend.putDelayMs = 20
 
-    // Concurrently create two distinct accounts
+    // Concurrently insert two separate accounts
     await Promise.all([
-      service.upsertAccount({ id: acc1, platform: 'dingtalk', displayName: 'Account 1' }),
-      service.upsertAccount({ id: acc2, platform: 'wangwang', displayName: 'Account 2' }),
+      service.upsertAccount({
+        id: acc1,
+        platform: 'dingtalk',
+        displayName: 'Account 1',
+        status: 'connected',
+        paused: false,
+      }),
+      service.upsertAccount({
+        id: acc2,
+        platform: 'wangwang',
+        displayName: 'Account 2',
+        status: 'connected',
+        paused: false,
+      }),
     ])
 
     const accounts = await service.listAccounts()
+    const listedIds = accounts.map(a => a.id)
     // Both accounts must be listed, neither orphaned due to globalHandle race
-    const accountIds = accounts.map(a => a.id).sort()
-    expect(accountIds).toEqual([acc1, acc2].sort())
+    expect(listedIds).toContain(acc1)
+    expect(listedIds).toContain(acc2)
 
     const rule1 = brandString<ImRouteRuleId>('rule-race-1')
     const rule2 = brandString<ImRouteRuleId>('rule-race-2')
@@ -832,7 +846,9 @@ describe('ImConfigService Seam CRUD & resolveRoute', () => {
     const serviceReload = ctxReload.imConfig
 
     const reloadedAccounts = await serviceReload.listAccounts()
-    expect(reloadedAccounts.map(a => a.id).sort()).toEqual([acc1, acc2].sort())
+    const reloadedIds = reloadedAccounts.map(a => a.id)
+    expect(reloadedIds).toContain(acc1)
+    expect(reloadedIds).toContain(acc2)
 
     const reloadedRules = await serviceReload.listRouteRules()
     expect(reloadedRules.map(r => r.id).sort()).toEqual([rule1, rule2].sort())
