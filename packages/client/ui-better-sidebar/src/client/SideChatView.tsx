@@ -57,8 +57,8 @@ export function SideChatSessionView(props: {
   }, [ctx.uiRenderer, displayHostSessionId, openSession, threadId])
 
   return (
-    <div className={css.sidechat}>
-      <div ref={conversationHost} className={css.sidechatCanonical} />
+    <div className={css.sidechat} data-sidechat-content="">
+      <div ref={conversationHost} className={css.sidechatCanonical} data-sidechat-conversation="" />
     </div>
   )
 }

@@ -10,7 +10,7 @@ Side Chat mounted a layout-level conversation entry inside the workbench, so the
 
 ## Decision
 
-`main.conversation` is the reusable Conversation content entry. `ConversationPresentationOwnerProps` carries compact presentation, descendant navigation, and an optional display-host Session. The shell passes the display host through `conversation.session`, the selected View, Chat nodes, and Turn tails without changing the rendered Session binding. A blank Side Chat remains in the active layout and its composer consumes remaining vertical space before sticking to the bottom.
+`main.conversation` is the reusable Conversation content entry. `ConversationPresentationOwnerProps` carries compact presentation, descendant navigation, and an optional display-host Session. The shell passes the display host through `conversation.session`, the selected View, Chat nodes, and Turn tails without changing the rendered Session binding. Compact presentation omits hierarchy and workbench controls because the enclosing occurrence owns navigation and panel chrome. A blank Side Chat remains in the active layout and its composer consumes remaining vertical space before sticking to the bottom.
 
 File routing treats the rendered child as the resource Session and the parent as the display-host Session. Chat file links and produced-file actions build a `dsh-resource://file/session/<resource>/...` address from the child's working directory, then open that address through the parent's `sidebarRight` navigator. The official file host derives reads, writes, viewer loads, tree operations, references, and conversation insertion from the resource Session encoded in the address. Tab occurrence state, editor retention, and rename or removal reconciliation remain on the parent workbench. Official file definitions reject ownerless absolute addresses.
 
@@ -28,7 +28,7 @@ Side Chat creation passes only the captured parent prefix as the constructor see
 
 ## Consequences
 
-Side Chat reuses the complete Conversation content tree without nesting application chrome, and an empty draft keeps its composer at the bottom. Main conversations omit the optional display-host value and retain their existing routing. Side Chat file links, line navigation, produced-file chips, folder reveals, editor writes, and “Add to conversation” gestures act on child resources while displaying tabs in the parent's visible workbench. The resource Session remains explicit in every official file address, including paths outside its working directory. Child logs retain an exact inherited prefix followed by a child-owned descriptor.
+Side Chat reuses the complete Conversation content tree without nesting application chrome or exposing child workbench controls, and an empty draft keeps its composer at the bottom. Main conversations omit the optional display-host value and retain their existing routing. Side Chat file links, line navigation, produced-file chips, folder reveals, editor writes, and “Add to conversation” gestures act on child resources while displaying tabs in the parent's visible workbench. The resource Session remains explicit in every official file address, including paths outside its working directory. Child logs retain an exact inherited prefix followed by a child-owned descriptor.
 
 ## Testing
 

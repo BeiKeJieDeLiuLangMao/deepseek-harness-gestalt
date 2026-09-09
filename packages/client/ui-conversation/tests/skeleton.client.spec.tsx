@@ -439,6 +439,7 @@ describe('ConversationRoot resident composer', () => {
     expect(b.view.queryByRole('navigation')).toBeNull()
     expect(b.view.queryByRole('button', { name: 'Root' })).toBeNull()
     expect(b.slotCalls).toContain('conversation.session.header.actions')
+    expect(b.slotCalls).not.toContain('conversation.session.header.corner')
   })
 
   it('keeps intermediate subagent breadcrumbs at the compact title size', () => {

@@ -1,21 +1,46 @@
 /** Browser-safe file-address helpers used by the official file tab. */
-import {
-  fileAddressFor,
-  parseFileAddress,
-  type FileAddress,
-} from '@deepseek-ai/dsh-util-workspace-path'
 
-/** Parsed `dsh-resource://file` identity. */
-export type OfficialFileAddress = FileAddress
+/** Parsed `dsh-resource://file` identity with an explicit authorizing Session. */
+export type OfficialFileAddress = {
+  readonly scope: 'session'
+  readonly sessionId: string
+  readonly path: string
+}
 
 /** Decode one official file address. */
 export function parseOfficialFileAddress(address: string): OfficialFileAddress | undefined {
-  return parseFileAddress(address)
+  try {
+    const url = new URL(address)
+    if (url.protocol !== 'dsh-resource:' || url.host !== 'file') return undefined
+    const [, scope, sessionId, ...segments] = url.pathname.split('/')
+    if (scope !== 'session' || sessionId === undefined || sessionId === '' || segments.length === 0) {
+      return undefined
+    }
+    return {
+      scope,
+      sessionId: decodeURIComponent(sessionId),
+      path: segments.map(decodeURIComponent).join('/'),
+    }
+  } catch {
+    return undefined
+  }
+}
+
+function encodeSegment(segment: string): string {
+  return encodeURIComponent(segment).replace(/%3A/giu, ':')
 }
 
 /** Address one path under the Session that authorizes its filesystem access. */
 export function officialFileAddress(sessionId: string, cwd: string | undefined, path: string): string {
-  return fileAddressFor(sessionId, cwd, path)
+  const normalized = path.replace(/\\/g, '/')
+  const root = cwd?.replace(/\\/g, '/').replace(/\/+$/, '') ?? ''
+  const absolute = normalized.startsWith('/') || /^[A-Za-z]:\//u.test(normalized) || normalized.startsWith('//')
+  const ownedPath = !absolute
+    ? normalized.replace(/^\.\//, '')
+    : normalized === root || (root !== '' && normalized.startsWith(`${root}/`))
+      ? normalized.slice(root.length).replace(/^\/+/, '')
+      : normalized
+  return `dsh-resource://file/session/${encodeSegment(sessionId)}/${ownedPath.split('/').map(encodeSegment).join('/')}`
 }
 
 /** Final path segment shown on the tab chip. */
