@@ -54,17 +54,13 @@ describe('buildKimiWindows', () => {
     }
   })
 
-  it('derives period from source label keywords only when no duration exists', () => {
-    const cases: Array<[string, number]> = [
-      ['daily quota', 24],
-      ['Weekly plan', 168],
-      ['Monthly cap', 720],
-      ['5h burst', 5],
-      ['hourly refill', 5],
-    ]
-    for (const [label, expectedHours] of cases) {
+  it('never derives a period from label keywords, keeping labels but null durations', () => {
+    const cases = ['daily quota', 'Weekly plan', 'Monthly cap', '5h burst', 'hourly refill']
+    for (const label of cases) {
       const payload = { limits: [{ title: label, used: 1, limit: 2 }] }
-      expect(buildKimiWindows(payload, NOW)[0]?.periodHours, label).toBe(expectedHours)
+      const window = buildKimiWindows(payload, NOW)[0]
+      expect(window?.label, label).toBe(label)
+      expect(window?.periodHours, label).toBeNull()
     }
     const unlabeled = { limits: [{ used: 1, limit: 2, scope: 'compute' }] }
     const windows = buildKimiWindows(unlabeled, NOW)

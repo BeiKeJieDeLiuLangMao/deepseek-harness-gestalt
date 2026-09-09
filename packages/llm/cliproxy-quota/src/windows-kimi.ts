@@ -1,9 +1,10 @@
 /**
  * Kimi usage-row extraction ported from the official CLIProxyAPI management
  * center (`src/utils/quota/builders.ts` `buildKimiQuotaRows` at ed5f1c48, MIT).
- * Window length comes from explicit `duration`+`timeUnit` metadata first and
- * from the source's own label keywords (`daily`/`weekly`/`monthly`/`5h`) as
- * fallback; neither path fabricates a duration for an unlabeled window.
+ * Window length comes only from explicit `duration`+`timeUnit` metadata:
+ * the management center's label-keyword fallback (`daily`/`weekly`/…)
+ * fabricates a time basis from display text, so this port drops it and
+ * reports `periodHours: null` instead. Labels and row order are unaffected.
  * Unlike the management center's display rows, missing counters stay absent —
  * they are never defaulted to zero.
  * @module @deepseek-ai/dsh-cliproxy-quota/windows-kimi
@@ -52,27 +53,15 @@ function kimiResetMs(data: Record<string, unknown>, now: number): number | null 
   return null
 }
 
-function kimiPeriodHours(
-  label: string | undefined,
-  duration: number | null,
-  rawTimeUnit: unknown,
-): number | null {
-  if (duration !== null && duration > 0) {
-    const unit = normalizeKimiTimeUnit(rawTimeUnit)
-    if (unit === 'second') return duration / 3600
-    if (unit === 'hour') return duration
-    if (unit === 'day') return duration * 24
-    if (unit === 'week') return duration * 7 * 24
-    // Matches the upstream fallback: an absent or unknown unit reads as minutes.
-    return duration / 60
-  }
-
-  const text = (label ?? '').toLowerCase()
-  if (text.includes('daily') || text.includes('day')) return 24
-  if (text.includes('weekly') || text.includes('week')) return 24 * 7
-  if (text.includes('monthly') || text.includes('month')) return 24 * 30
-  if (text.includes('5h') || text.includes('hour')) return 5
-  return null
+function kimiPeriodHours(duration: number | null, rawTimeUnit: unknown): number | null {
+  if (duration === null || duration <= 0) return null
+  const unit = normalizeKimiTimeUnit(rawTimeUnit)
+  if (unit === 'second') return duration / 3600
+  if (unit === 'hour') return duration
+  if (unit === 'day') return duration * 24
+  if (unit === 'week') return duration * 7 * 24
+  // Matches the upstream fallback: an absent or unknown unit reads as minutes.
+  return duration / 60
 }
 
 function toKimiWindow(
@@ -104,7 +93,7 @@ function toKimiWindow(
     ...(remaining === null ? {} : { remaining }),
     ...(usedPercent === null ? {} : { usedPercent }),
     resetAtMs: kimiResetMs(data, now),
-    periodHours: kimiPeriodHours(label, duration, rawTimeUnit),
+    periodHours: kimiPeriodHours(duration, rawTimeUnit),
   }
 }
 

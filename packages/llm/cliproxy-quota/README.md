@@ -25,7 +25,7 @@ Observations are display and diagnostic facts only. They never disable an accoun
 | Claude | `GET api.anthropic.com/api/oauth/usage` | named windows (`five_hour`, `seven_day*`) with `utilization` + `resets_at`; a `weekly_scoped` Fable limit replaces `iguana_necktie` |
 | Codex | `GET chatgpt.com/backend-api/wham/usage`, `GET …/rate-limit-reset-credits` | `primary`/`secondary` windows classified by `limit_window_seconds` (5h / weekly / monthly), `plan_type`, read-only reset-credit counts |
 | Antigravity | `POST cloudcode-pa…/v1internal:retrieveUserQuotaSummary` (daily, sandbox, prod fallback chain) | buckets with `remainingFraction`, explicit `window`, `resetTime`; requires the auth-file `projectId` metadata |
-| Kimi | `GET api.kimi.com/coding/v1/usages` | `usage` summary plus `limits[]` rows with counters, explicit `duration`+`timeUnit` or label-keyword periods |
+| Kimi | `GET api.kimi.com/coding/v1/usages` | `usage` summary plus `limits[]` rows with counters; period only from explicit `duration`+`timeUnit` (never label keywords) |
 | xAI | `GET cli-chat-proxy.grok.com/v1/billing[?format=credits]` | weekly credit percent and monthly cent counters; period length from the payload's own start→end span |
 | GLM | none — parses the fork core's passive quota envelope (`observed_at` + `signals`) supplied as probe input | `GLM-Quota-Status` (`ready`→known, `stale`→partial, `error`→failure), 5h/weekly percent+reset windows, `GLM-Plan-Level`; the core polls, this package never re-requests |
 
@@ -38,4 +38,4 @@ Probe construction and payload normalization are ported from the official CLIPro
 - The Kimi, xAI, and Antigravity provider payload shapes are taken from the upstream management center's parsers and have not been re-verified against live endpoints in this repository; drift surfaces as `failure` or `partial`, never as fabricated numbers.
 - The Antigravity probe depends on the auth-file carrying a GCP project id; accounts without one report `failure` (`antigravity account metadata lacks a project id`) until the roster supplies that metadata.
 - Codex window classification keeps the upstream primary/secondary ordering fallback for payloads without `limit_window_seconds`; a future upstream that emits more than one unclassified pair collapses into the same two keys.
-- Kimi `periodHours` falls back to label keywords (`daily`/`weekly`/`monthly`/`5h`) when explicit duration metadata is absent, matching upstream behavior; an unlabeled window yields `null`.
+- Kimi `periodHours` comes only from explicit `duration`+`timeUnit` metadata; the upstream label-keyword fallback is deliberately dropped because a display label is not a time basis, so keyword-only windows report `periodHours: null` (labels and row order are unaffected). Codex windows classified by the legacy primary/secondary ordering fallback likewise carry `periodHours: null` until the payload states `limit_window_seconds`.
