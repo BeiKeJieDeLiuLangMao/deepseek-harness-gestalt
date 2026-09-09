@@ -31,6 +31,9 @@ export const zh = {
   'dock.drop.bottom': '下分栏',
   'tab.guide.title': '开始',
   'tab.unavailable': '这类内容还没有可用的查看方式。',
+  'guide.lead': '侧栏用来放你想一直看着的东西。',
+  'guide.body': '会话里的文件和产物会开在这一栏，也可以从下面的入口打开。',
+  'guide.unavailable': '当前会话暂不可用。',
 } satisfies Record<string, string>
 
 /** Right-Sidebar dictionary key union. */
@@ -61,4 +64,7 @@ export const en = {
   'dock.drop.bottom': 'Add bottom split',
   'tab.guide.title': 'Start',
   'tab.unavailable': 'Nothing here can view this kind of content yet.',
+  'guide.lead': 'The sidebar holds what you want to keep looking at.',
+  'guide.body': 'Files and artifacts from the conversation open in this column; the entries below open more.',
+  'guide.unavailable': 'Unavailable in this session.',
 } satisfies Record<SidebarRightKey, string>

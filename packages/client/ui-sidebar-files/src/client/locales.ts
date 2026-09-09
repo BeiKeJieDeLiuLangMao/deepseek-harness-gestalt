@@ -22,6 +22,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 export const zh = {
   'type.label': '文件',
   'guide.title': '工作区文件',
+  'guide.description': '浏览这个会话工作区里的文件，点开就能查看。',
   loading: '正在读取…',
   empty: '空目录',
   truncated: '条目太多，只显示了一部分。',
@@ -41,6 +42,7 @@ export type SidebarFilesKey = keyof typeof zh
 export const en = {
   'type.label': 'Files',
   'guide.title': 'Workspace files',
+  'guide.description': 'Browse the files in this session\'s workspace and open any of them.',
   loading: 'Reading…',
   empty: 'Empty directory',
   truncated: 'Too many entries, showing only some of them.',

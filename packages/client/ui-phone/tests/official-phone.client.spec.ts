@@ -17,8 +17,10 @@ describe('official Phone occurrence', () => {
       source,
       title: () => 'Phone',
       occupiedTitle: name => `Phone · ${name}`,
+      guideDescription: () => 'Connect a device',
     })
     expect(definition.single).toBe(true)
+    expect(definition.guide?.[0]?.description()).toBe('Connect a device')
     expect(definition.badge?.({} as never, {} as never)).toBe(2)
     expect(definition.create?.({ payload: undefined } as never)).toEqual({ title: 'Phone', payload: {} })
     expect(definition.create?.({

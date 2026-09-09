@@ -3,7 +3,7 @@
  *
  * A registration is purely static — which addresses the type recognizes, how it
  * ranks against other types that recognize the same one, what the tab chip says,
- * and whether the type offers an entry box on the guide page. Nothing here is
+ * and how its page card appears on the guide. Nothing here is
  * per-tab, per-session, or a runtime hook: stage two is the keyed
  * `sidebar.right.pane.tab` registration that supplies the body under the same
  * `kind`, and everything a body needs at runtime arrives in its props.
@@ -24,10 +24,8 @@
  * Thunked copy (`title`, `guide[].title`) is read again on every use, so a
  * language change needs no re-registration.
  */
-import type { ComponentType } from 'react'
 import type { Context } from '@deepseek-ai/cordis'
 import type { TabRecord } from '@deepseek-ai/dsh-client-ui-dockkit'
-import type { IconProps } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { notifySubscribers } from '@deepseek-ai/dsh-client-store'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
@@ -69,24 +67,35 @@ const RANKS: Readonly<Record<SidebarRightTabPriority, number>> = {
 /** The band a definition that names none is in. */
 const DEFAULT_BAND: SidebarRightTabPriority = 'extension'
 
-/** One entry capsule the guide page offers, contributed by the type it opens (picking it opens that type as a page). */
+/** One entry box the guide page offers, contributed by the type it opens (picking it opens that type as a page). */
 export interface SidebarRightGuideEntry {
-  /** Ascending position among every registered type's entries. */
-  readonly order: number
+  /** Ascending position among every registered type's entries; the definition order is the default. */
+  readonly order?: number
   /**
-   * The capsule's title, its only words.
-   * @returns the title in the current language.
+   * The box's heading.
+   * @returns the heading in the current language.
    */
-  readonly title: () => string
-  /** Optional glyph, drawn before the title. */
-  readonly icon?: ComponentType<IconProps>
+  readonly title?: () => string
+  /**
+   * One line under the heading.
+   * @returns the line in the current language.
+   */
+  readonly description: () => string
+  /** Optional descriptor icon override; the definition icon is the default. */
+  readonly icon?: SidebarRightDescriptorIcon
 }
 
 /** A guide entry as the registry lists it: with the kind of the type that contributed it, which is what picking it opens. */
-export interface SidebarRightGuideBox extends SidebarRightGuideEntry {
+export interface SidebarRightGuideBox {
   readonly kind: string
+  readonly order: number
+  readonly title: () => string
+  readonly description: () => string
+  readonly icon?: SidebarRightDescriptorIcon
   /** Page availability evaluated by the Session-scoped guide presentation. */
   readonly available?: (context: SidebarRightDescriptorContext) => boolean
+  /** Explain why a currently unavailable page cannot open. */
+  readonly unavailableReason?: (context: SidebarRightDescriptorContext) => string
 }
 
 /** Why an official occurrence is being asked to release its runtime owner. */
@@ -272,6 +281,8 @@ export interface SidebarRightTabDefinition {
   readonly title: (address: string) => string
   /** Whether the add action is currently available. Direct navigation does not consult this hint. */
   readonly available?: (context: SidebarRightDescriptorContext) => boolean
+  /** Explain a false or failed availability result in add menus and the guide. */
+  readonly unavailableReason?: (context: SidebarRightDescriptorContext) => string
   /** Single-instance shorthand for a descriptor-wide dedupe key. */
   readonly single?: boolean
   /** Stable instance key over pure occurrence facts; `undefined` permits another instance. */
@@ -297,7 +308,10 @@ export interface SidebarRightTabDefinition {
   readonly settings?: SidebarRightSettingsDeclaration
   /** Claim an external URL before the built-in Browser fallback. */
   readonly urlTarget?: (url: URL) => boolean
-  /** Entry boxes for the guide page. Omit to stay off it. */
+  /**
+   * Copy overrides for guide boxes. Every visible page definition contributes
+   * one default box; provide entries to customize its descriptions or add more.
+   */
   readonly guide?: readonly SidebarRightGuideEntry[]
   /**
    * Admit a true occurrence close before any layout or runtime mutation.
@@ -749,11 +763,18 @@ export class SidebarRightTabRegistry {
       .sort((left, right) => left.order - right.order)
       .map(entry => entry.definition)
     this.guideEntries = this.cached
-      .filter(definition => this.settings.isTabEnabled(definition.id))
-      .flatMap(definition => (definition.guide ?? []).map(entry => ({
-        ...entry,
+      .filter(definition =>
+        this.settings.isTabEnabled(definition.id)
+        && definition.patterns === undefined
+        && definition.hidden !== true)
+      .flatMap(definition => (definition.guide ?? [{ description: () => '' }]).map(entry => ({
         kind: definition.kind,
+        order: entry.order ?? definition.order ?? 100,
+        title: entry.title ?? (() => definition.title('')),
+        description: entry.description,
+        ...((entry.icon ?? definition.icon) === undefined ? {} : { icon: entry.icon ?? definition.icon }),
         ...(definition.available === undefined ? {} : { available: definition.available }),
+        ...(definition.unavailableReason === undefined ? {} : { unavailableReason: definition.unavailableReason }),
       })))
       .sort((left, right) => left.order - right.order)
     notifySubscribers(this.listeners, '[ui-sidebar-right] tab registry')

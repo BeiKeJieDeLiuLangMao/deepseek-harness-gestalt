@@ -535,7 +535,7 @@ describe('slot-owned useTabInfo', () => {
     await act(async () => {
       h.runtime.ctx.sidebarRightTabs.register({
         id: 'test/files', kind: 'files', title: () => 'Files',
-        guide: [{ order: 1, title: () => 'Files' }],
+        guide: [{ order: 1, title: () => 'Files', description: () => 'Browse' }],
       })
     })
     expect(h.view.container.querySelector('[data-sidebar-right-guide-entry="files"]')).not.toBeNull()
@@ -665,8 +665,8 @@ describe('slot-owned useTabInfo', () => {
       requestId: request.requestId,
       items: [
         { id: 'files', label: 'Files', icon: 'editor' },
-        { id: 'broken', label: 'Broken', disabled: true },
-        { id: 'terminal', label: 'Terminal', disabled: true, icon: 'terminal' },
+        { id: 'broken', label: 'Broken — Unavailable in this session.', disabled: true },
+        { id: 'terminal', label: 'Terminal — Unavailable in this session.', disabled: true, icon: 'terminal' },
       ],
       anchor: { x: 101, y: 31, width: 18, height: 18 },
       align: 'end',

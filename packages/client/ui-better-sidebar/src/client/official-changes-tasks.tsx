@@ -119,6 +119,7 @@ function changesDefinition(): SidebarRightTabDefinition {
     order: 20,
     icon: 'diff',
     title: () => t('changes'),
+    guide: [{ description: () => t('changesGuide') }],
     single: true,
     create: request => ({ payload: officialChangesPayloadOf(request.payload) }),
     badge: (_tab, context) => {
@@ -155,6 +156,7 @@ function tasksDefinition(): SidebarRightTabDefinition {
     order: 30,
     icon: 'tasks',
     title: () => t('subagent'),
+    guide: [{ description: () => t('subagentGuide') }],
     single: true,
     settings: {
       settingsId: OFFICIAL_TASKS_KIND,

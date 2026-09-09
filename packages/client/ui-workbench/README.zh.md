@@ -23,7 +23,7 @@ kind: "package-reference"
 <a id="package-contract"></a>
 ## 包约定
 
-本仓适配层与保留的 [`better-sidebar` Host provider](../ui-better-sidebar/README.zh.md)配合。Host apply 会观察 Loader 与 Cordis 生命周期转换，直到命名空间 `dsh-better-sidebar` 完成注册，再通过 `settings.get` / `settings.update` 写入 `tabsEnabled.browser: true` 并打开链接接管（`browserInterceptLinks` / `browserInterceptHttps`）；dispose 会取消未完成的等待且不会产生延迟写入。Client 注册优先级更高的官方 `browser` definition 与 keyed 正文，发布 `workbenchBrowser`，并依赖 ui-browser 发布的 `browserUi` 服务。`+ → 浏览器` 再建页面时，由 Browser Workspace 决定是否复用 Profile 匹配的实例。带 seed URL 打开的 occurrence 会在建页后立即导航；创建被拒绝会保留在官方 payload 中，chrome 因此提供重试。Runtime 重启使投影 target 失效时，适配层保留 occurrence 与 Profile 身份，由 Browser Workspace 替换缺失页面。真正关闭 occurrence 会关闭 Runtime 页面；revision 过期时先 observe 再重试，临时失败时保留关闭意图。每个 Session 的位置与可见性由官方 Sidebar 持有。Desktop overlay 文档发布该 face，但不调和官方页面。
+本仓适配层与保留的 [`better-sidebar` Host provider](../ui-better-sidebar/README.zh.md)配合。Host apply 会观察 Loader 与 Cordis 生命周期转换，直到命名空间 `dsh-better-sidebar` 完成注册，再通过 `settings.get` / `settings.update` 写入 `tabsEnabled.browser: true` 并打开链接接管（`browserInterceptLinks` / `browserInterceptHttps`）；dispose 会取消未完成的等待且不会产生延迟写入。Client 注册优先级更高的官方 `browser` definition 与 keyed 正文，其中的图标、标题、顺序和引导描述由引导页与 `+` 菜单共同使用；随后发布 `workbenchBrowser`，并依赖 ui-browser 发布的 `browserUi` 服务。`+ → 浏览器` 再建页面时，由 Browser Workspace 决定是否复用 Profile 匹配的实例。带 seed URL 打开的 occurrence 会在建页后立即导航；创建被拒绝会保留在官方 payload 中，chrome 因此提供重试。Runtime 重启使投影 target 失效时，适配层保留 occurrence 与 Profile 身份，由 Browser Workspace 替换缺失页面。真正关闭 occurrence 会关闭 Runtime 页面；revision 过期时先 observe 再重试，临时失败时保留关闭意图。每个 Session 的位置与可见性由官方 Sidebar 持有。Desktop overlay 文档发布该 face，但不调和官方页面。
 
 Browser UI provider 卸载时，工作台停止新的 bridge 操作并等待已接受的 Remote 操作完成。晚到的回复不能更新侧栏标签或启动排队的调和。渲染使用工作台激活时捕获的 provider 回调。
 

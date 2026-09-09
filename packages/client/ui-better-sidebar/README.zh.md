@@ -31,7 +31,7 @@ kind: "package-reference"
 
 六个与渲染器无关的 viewer definition 分别选择图片、PDF、Markdown、HTML、代码与二进制下载正文。图片与 PDF 使用有界媒体路由；文本 viewer 使用受围栏约束的文件读取路由；二进制结果会先用头字节重新匹配，再进入代码回退。HTML 通过 Host 预览路由在 opaque-origin sandbox 中加载，除非官方警告设置允许该 occurrence 使用不安全模式。Viewer 启用状态、HTML 安全设置、打开方式数据、编辑器布局与工作空间围栏均使用官方 Sidebar 偏好 owner。
 
-新 Session 打开官方指南，并通过官方 `+` 菜单提供已启用的 definition。选择「文件」会打开资源导航使用的同一个官方 `file` 类型。成员提问材料芯片会用 receiving Session id 与 receiver 所有的隐藏 Workspace path，通过 `ctx.sidebarRight.forSession(sessionId)` 打开 `fileAddressFor` 资源；Markdown 与沙箱 HTML 使用官方文件宿主，组合中没有文件类型时回退到 Host 系统打开器（[决策](../../../.agents/notes/implemented/architecture/2026-09-03-member-question-files-sidebar.zh.md)）。
+新 Session 打开官方指南；保留的文件变动、任务管理、侧边对话、终端与浏览器 definition 会为引导卡提供描述，这些卡与官方 `+` 菜单来自同一份 definition 清单。选择「文件」会打开资源导航使用的同一个官方 `file` 类型。成员提问材料芯片会用 receiving Session id 与 receiver 所有的隐藏 Workspace path，通过 `ctx.sidebarRight.forSession(sessionId)` 打开 `fileAddressFor` 资源；Markdown 与沙箱 HTML 使用官方文件宿主，组合中没有文件类型时回退到 Host 系统打开器（[决策](../../../.agents/notes/implemented/architecture/2026-09-03-member-question-files-sidebar.zh.md)）。
 
 Session 工作目录、Changes 工具事件视图及 Side Chat preset 或模型恢复所需的冷 Host 读取使用正式 Session Persistence `open(id, 'read')` 句柄，并在继续执行路由专属工作前释放句柄。Side Chat 只从 `inheritedEventCount` 标出的精确 child-owned 后缀折叠持久模型状态，在为冷身份保留模型选择前使用 `stat` 检查其存在性，并仅在关闭时使用 `list` 报告持久化发布状态。Changes 视图把缺失或不可读的冷日志映射为空窗口；工作目录与 Side Chat 失败仍是明确的 API 错误（[决策](../../../.agents/notes/implemented/bug-fix/2026-09-08-better-sidebar-session-persistence-read-handles.zh.md)）。
 

@@ -118,7 +118,7 @@ describe('ui-sidebar-right apply', () => {
     expect(registered.map(entry => [entry.name, entry.key, entry.locale, entry.component])).toEqual([
       ['workbench', undefined, 'sidebarRight', WorkbenchSeat],
       ['conversation.session.header.corner', undefined, 'sidebarRight', ExpandButton],
-      ['sidebar.right.pane.tab', GUIDE_ID, undefined, GuideBody],
+      ['sidebar.right.pane.tab', GUIDE_ID, 'sidebarRight', GuideBody],
       ['sidebar.right.pane.tab.title', GUIDE_ID, undefined, GuideTitle],
     ])
     // The panel declares the extension seats; the guide declares its chain child.
@@ -207,7 +207,7 @@ describe('ui-sidebar-right apply', () => {
       id: 'spec/files',
       kind: 'files',
       title: () => 'Files',
-      guide: [{ order: 10, title: () => 'Files' }],
+      guide: [{ order: 10, title: () => 'Files', description: () => 'Browse' }],
     })
     expect(seen).toHaveBeenCalledOnce()
     expect(guideEntries.getSnapshot().map(entry => entry.kind)).toEqual(['files'])

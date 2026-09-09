@@ -71,6 +71,7 @@ function sidechatDefinition(ctx: OfficialRuntimeContext): SidebarRightTabDefinit
     order: 35,
     icon: 'sidechat',
     title: () => t('sideChat'),
+    guide: [{ description: () => t('sideChatGuide') }],
     create: (request: SidebarRightTabCreateRequest) => {
       if (request.payload !== undefined) {
         const payload = officialSidechatPayloadOf(request.payload)
@@ -110,6 +111,8 @@ function terminalDefinition(
     icon: 'terminal',
     title: fallbackTitle,
     available: withinLimit,
+    unavailableReason: () => t('terminalUnavailable'),
+    guide: [{ description: () => t('terminalGuide') }],
     create: (request: SidebarRightTabCreateRequest) => {
       if (request.payload !== undefined) {
         const payload = officialTerminalPayloadOf(request.payload)

@@ -3,7 +3,6 @@ import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type { DeviceId } from '@deepseek-ai/dsh-phone-runtime'
 import type {
   SidebarRightDescriptorTab, SidebarRightTabDefinition, SidebarRightTabProjection,
-  TabId,
 } from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type { PhoneConnectionController } from './phone-connection.ts'
 import { phoneDeviceIdOf } from './phone-device-id.ts'
@@ -178,6 +177,7 @@ export interface OfficialPhoneDefinitionOptions {
   readonly source: PhoneListingSource
   readonly title: () => string
   readonly occupiedTitle: (name: string) => string
+  readonly guideDescription?: () => string
 }
 
 /** Build the official singleton Phone descriptor. */
@@ -189,6 +189,7 @@ export function buildOfficialPhoneDefinition(options: OfficialPhoneDefinitionOpt
     order: PHONE_TAB_ORDER,
     icon: 'phone',
     title: options.title,
+    guide: [{ description: options.guideDescription ?? options.title }],
     single: true,
     create: (request) => {
       if (request.payload === undefined) return { title: options.title(), payload: {} }
@@ -211,7 +212,7 @@ export async function openPhoneDevicePanel(
 ): Promise<void> {
   if (!isEnabled()) return
   const tabId = await sidebar.openTab(PHONE_TAB_ID)
-  sidebar.update(tabId as TabId, {
+  sidebar.update(tabId, {
     title: occupiedTitle(name),
     payload: { kind: 'device', serial, name },
   })

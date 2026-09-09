@@ -2,6 +2,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
+import type { SidebarRightTabDefinition } from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import { apply, inject } from '../src/client/index.ts'
 
 const PAGE = {
@@ -32,7 +33,7 @@ async function base() {
     subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener) } },
     forSession: () => ({ update, openTab }),
   })
-  const register = vi.fn(() => () => {})
+  const register = vi.fn((_definition: SidebarRightTabDefinition) => () => {})
   ctx.provide('sidebarRightTabs', { register })
   ctx.provide('sidebarRightPreferences', { getSnapshot: () => ({ preferences: {} }), subscribe: () => () => {} })
   ctx.provide('sessions', {
@@ -62,8 +63,10 @@ describe('ui-workbench client apply', () => {
     const { ctx, update, register } = await base()
     await ctx.plugin({ inject: [...inject], apply }).await()
     await vi.waitFor(() => { expect(update).toHaveBeenCalled() })
-    expect(register).toHaveBeenCalledWith(expect.objectContaining({ kind: 'browser', priority: 'extension' }))
-    expect(ctx.get('workbenchBrowser')).toEqual({ reveal: expect.any(Function) })
+    const definition = register.mock.calls[0]?.[0]
+    expect(definition).toMatchObject({ kind: 'browser', priority: 'extension', order: 50, icon: 'browser' })
+    expect(typeof definition?.guide?.[0]?.description).toBe('function')
+    expect(typeof ctx.get('workbenchBrowser')?.reveal).toBe('function')
   })
 
   it('reveals the projected page through its Session navigator', async () => {

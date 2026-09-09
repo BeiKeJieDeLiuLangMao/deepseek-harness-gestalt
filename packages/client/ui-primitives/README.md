@@ -55,6 +55,7 @@ Check this table before writing a control in a feature package. A plugin cannot 
 | `JsonTree`, `JsonBlock` | Read-only JSON inspection. |
 | `MarkdownText`, `CodeBlock` | Untrusted GFM with TeX math, and highlighted code. `CodeBlock` accepts opt-in `lineNumbers`; copied source excludes the gutter. |
 | `TerminalBlock`, `ReadBlock`, `DiffBlock`, `SearchBlock`, `WebBlock` | The agent-output card matching each tool-result intent. |
+| `sidebarTabIcon` | Shared renderer for the descriptor icon tokens used by Sidebar guide cards and native menus. |
 | `icons/*`, `FishLogo`, `BrandWordmark`, `ReferenceIcon`, `LinkIcon` | Glyphs and brand marks. Use `LinkIcon` for 14px clickable-link categories. |
 | `FileTypeIcon`, `classifyFileType`, `fileExtension` | A category-colored 28px file or folder glyph and the shared case-insensitive filename mapping behind it. Code and configuration files use detailed full-color technology glyphs; use `LinkIcon` for link-leading glyphs and image previews for image content. |
 

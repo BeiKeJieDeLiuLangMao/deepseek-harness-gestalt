@@ -229,6 +229,7 @@ function descriptorTabsOf(
 function desktopAddTabItems(
   definitions: readonly SidebarRightTabDefinition[],
   context: SidebarRightDescriptorContext,
+  unavailableFallback: string,
 ): readonly DesktopAddTabMenuItem[] {
   return definitions
     .filter(definition => definition.patterns === undefined && definition.kind !== GUIDE_KIND && definition.hidden !== true)
@@ -241,9 +242,18 @@ function desktopAddTabItems(
         console.error(`sidebarRight: available failed for add-menu kind "${definition.kind}"`, error)
         disabled = true
       }
+      let reason: string | undefined
+      if (disabled) {
+        try {
+          reason = definition.unavailableReason?.(context) ?? unavailableFallback
+        } catch (error: unknown) {
+          console.error(`sidebarRight: unavailableReason failed for add-menu kind "${definition.kind}"`, error)
+          reason = unavailableFallback
+        }
+      }
       return {
         id: definition.kind,
-        label: definition.title(''),
+        label: `${definition.title('')}${reason === undefined ? '' : ` — ${reason}`}`,
         ...(disabled ? { disabled: true } : {}),
         ...(definition.icon === undefined ? {} : { icon: definition.icon }),
       }
@@ -256,6 +266,7 @@ function useDesktopAddTabMenu(
   preferences: SidebarRightPreferencesSnapshot['preferences'],
   projection: SidebarRightProjection,
   openTab: SidebarRightInjected['openTab'],
+  unavailableFallback: string,
 ): DesktopAddTabMenu {
   const bridge = useMemo(
     () => desktopAddTabOverlayOf((globalThis as { dshDesktop?: unknown }).dshDesktop),
@@ -265,7 +276,7 @@ function useDesktopAddTabMenu(
     sessionId,
     preferences,
     tabs: descriptorTabsOf(projection, sessionId),
-  }), [definitions, preferences, projection, sessionId])
+  }, unavailableFallback), [definitions, preferences, projection, sessionId, unavailableFallback])
   const pending = useRef<{
     readonly requestId: string
     readonly paneId: PaneId
@@ -770,6 +781,7 @@ export function WorkbenchSeat({
     preferenceSnapshot.preferences,
     workbenchProjection,
     openTab,
+    t('guide.unavailable'),
   )
   const viewerCwd = useSessions(snapshot => snapshot.byId[sessionId]?.cwd)
   const [requestedVirtualId, setRequestedVirtualId] = useState<TabId | undefined>()

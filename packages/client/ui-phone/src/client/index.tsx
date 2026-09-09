@@ -213,7 +213,12 @@ export function apply(ctx: ClientContext, config: Config): void {
   ctx.effect(() => {
     const sync = (): void => { occurrenceRuntime.sync() }
     const disposers = [
-      ctx.sidebarRightTabs.register(buildOfficialPhoneDefinition({ source: listing, title, occupiedTitle })),
+      ctx.sidebarRightTabs.register(buildOfficialPhoneDefinition({
+        source: listing,
+        title,
+        occupiedTitle,
+        guideDescription: () => t('guide'),
+      })),
       ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
         name: 'sidebar.right.pane.tab',
         key: PHONE_DEFINITION_ID,

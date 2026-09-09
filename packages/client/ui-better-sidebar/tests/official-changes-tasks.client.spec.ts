@@ -114,6 +114,12 @@ describe('official Changes and Tasks registration', () => {
     expect(definitions[0]?.single).toBe(true)
     expect(definitions[1]?.single).toBe(true)
     expect(definitions[2]).toMatchObject({ hidden: true, kind: 'diff' })
+    expect(definitions.slice(0, 2).map(definition => [
+      definition.kind, definition.order, definition.icon, definition.guide?.[0]?.description(),
+    ])).toEqual([
+      ['git', 20, 'diff', 'Review and manage file changes from this session and Git worktree.'],
+      ['subagent', 30, 'tasks', 'Track subagents and background tasks started from this session.'],
+    ])
 
     dispose()
     expect(definitions).toEqual([])

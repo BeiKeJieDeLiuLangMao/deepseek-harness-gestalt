@@ -22,10 +22,16 @@ import {
 /** A type recognizing `patterns`, titled by its kind. */
 function typeFor(
   kind: string,
-  patterns: readonly string[],
+  patterns: readonly string[] | undefined,
   extra: Partial<Omit<SidebarRightTabDefinition, 'kind' | 'patterns'>> = {},
 ): SidebarRightTabDefinition {
-  return { id: `test/${kind}`, kind, patterns, title: address => `${kind}:${address}`, ...extra }
+  return {
+    id: `test/${kind}`,
+    kind,
+    ...(patterns === undefined ? {} : { patterns }),
+    title: address => `${kind}:${address}`,
+    ...extra,
+  }
 }
 
 /** Kinds of the ranked candidates, best first. */
@@ -204,18 +210,28 @@ describe('SidebarRightTabRegistry — ids and page types', () => {
     expect(registry.get('text')).toBeUndefined()
   })
 
-  it('lets a page type omit patterns: it claims no address but is found by kind, and its guide entries carry its kind', () => {
+  it('projects every visible page type into the guide from the same descriptor inventory', () => {
     const registry = new SidebarRightTabRegistry(new Context())
     registry.register({
       id: 'shipped/files',
       kind: 'files',
       priority: 'builtin',
+      order: 10,
+      icon: 'files',
       title: () => 'Files',
-      guide: [{ order: 10, title: () => 'Files' }],
+      guide: [{ description: () => 'Browse' }],
     })
-    expect(ranked(registry, 'dsh-resource://file/session/s/a.txt')).toEqual([])
+    registry.register({ id: 'shipped/tasks', kind: 'tasks', order: 20, icon: 'tasks', title: () => 'Tasks' })
+    registry.register({ id: 'shipped/hidden', kind: 'hidden', hidden: true, title: () => 'Hidden' })
+    registry.register({ id: 'shipped/resource', kind: 'resource', patterns: ['*.txt'], title: () => 'Resource' })
+    expect(ranked(registry, 'dsh-resource://file/session/s/a.md')).toEqual([])
     expect(registry.get('files')?.title('x')).toBe('Files')
-    expect(registry.guide().map(entry => [entry.kind, entry.order])).toEqual([['files', 10]])
+    expect(registry.guide().map(entry => [
+      entry.kind, entry.order, entry.title(), entry.description(), entry.icon,
+    ])).toEqual([
+      ['files', 10, 'Files', 'Browse', 'files'],
+      ['tasks', 20, 'Tasks', '', 'tasks'],
+    ])
   })
 })
 
@@ -259,11 +275,11 @@ describe('SidebarRightTabRegistry — lifetime', () => {
 
   it('collects every type\'s guide entries in order, reference-stable between changes', () => {
     const registry = new SidebarRightTabRegistry(new Context())
-    const entry = (order: number) => ({ order, title: () => `#${order}` })
-    registry.register(typeFor('files', [], { guide: [entry(10)] }))
+    const entry = (order: number) => ({ order, title: () => `#${order}`, description: () => '' })
+    registry.register(typeFor('files', undefined, { guide: [entry(10)] }))
     const first = registry.guide()
     expect(registry.guide()).toBe(first)
-    registry.register(typeFor('artifacts', [], { guide: [entry(5)] }))
+    registry.register(typeFor('artifacts', undefined, { guide: [entry(5)] }))
     registry.register(typeFor('text', ['dsh-resource://file/**']))
     expect(registry.guide().map(item => item.kind)).toEqual(['artifacts', 'files'])
     expect(registry.guide()).not.toBe(first)
@@ -371,7 +387,7 @@ describe('SidebarRightTabRegistry — official descriptor inventory', () => {
       kind: 'files',
       patterns: ['dsh-resource://file/**'],
       title: () => 'Files',
-      guide: [{ order: 1, title: () => 'Files' }],
+      guide: [{ order: 1, title: () => 'Files', description: () => 'Browse' }],
     })
     expect(registry.claim('dsh-resource://file/session/s/a.txt').kind).toBe('files')
     settings.set({ tabsEnabled: { 'test/files': false } })

@@ -23,7 +23,7 @@ kind: "package-reference"
 <a id="package-contract"></a>
 ## 包约定
 
-「手机」tab 插件通过 `ctx.sidebarRightTabs` 注册一个内置单例 Phone definition（id `@deepseek-ai/dsh-client-ui-phone/phone`、kind `phone`、+ 菜单标题 手机 / Phone，来自 `settings.phone-devices`、单色图标、`order: 55`）。JSON payload 保留已选设备，occurrence runtime 在正文重挂载期间保留 controller，直到官方记录消失。入口恒可达，因此零设备的部署同样能打开选择器实例，落到已锁稿的未连接空态：Android/iOS 平台分段选择、分组设备清单（模拟器 / USB 真机）、USB 占位行与「重新检测环境」控件。
+「手机」tab 插件通过 `ctx.sidebarRightTabs` 注册一个内置单例 Phone definition（id `@deepseek-ai/dsh-client-ui-phone/phone`、kind `phone`、+ 菜单与引导页标题 手机 / Phone，来自 `settings.phone-devices`，另带引导描述、单色图标与 `order: 55`）。JSON payload 保留已选设备，occurrence runtime 在正文重挂载期间保留 controller，直到官方记录消失。入口恒可达，因此零设备的部署同样能打开选择器实例，落到已锁稿的未连接空态：Android/iOS 平台分段选择、分组设备清单（模拟器 / USB 真机）、USB 占位行与「重新检测环境」控件。
 
 条上只保留一个「手机」tab（`single: true`）。内容按 `meta` 分流：无 serial 是空态；`{ kind: 'device', serial, name }` 占用同一 tab，标题为 `手机·<name>` / `Phone · <name>`。locale 变化会按该持久化 `meta` 就地重标已打开的选择器或占用 Phone tab；更新只改 `title`，不重新打开、不 remount，也不改写 `meta`。「打开」与设备下拉经 `updateTab` 就地切换（决策矩阵轴 1：单例就地切换）。关闭部署会拒绝切换：检测关闭时无法铸造任何流会话。清单行读取 listing wire（`online` 为推导值，`state` 按 #421 `PhoneDeviceRefWire` 契约原样透传）：空态清单与已连接下拉只列在线设备；`state === 'unauthorized'` 的真机仍在空态渲染设计稿警示臂——「真机未授权调试」+ 下一步动作「重新检测」——且不进入下拉。Android USB 引导说明 USB 调试；iOS 引导说明解锁、信任、Developer Mode 与设备控制代理。在线行带「打开」按钮；`PHONE_UNRESOLVED` 的清单拉取会引导用户前往「设置 → 手机设备」使用托管 mobilecli 准备，不提供全局安装命令。选择器内容经 gate source 响应式跟随持久化开关：在设置卡拨动开关，已挂载的「手机连接未启用」说明条同 tick 刷新（并武装首次清单拉取）。
 

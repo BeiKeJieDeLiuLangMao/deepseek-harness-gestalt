@@ -8,7 +8,6 @@
 import type { SidebarRightTabDefinition } from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import type {} from './locales.ts'
-import { IconFolderClose16 } from '@deepseek-ai/dsh-client-ui-primitives'
 
 /** The tab kind this package owns. */
 export const FILES_KIND = 'files'
@@ -26,11 +25,11 @@ export function filesDefinition(t: TranslateNS<'sidebarFiles'>): SidebarRightTab
     id: FILES_ID,
     kind: FILES_KIND,
     priority: 'builtin',
+    order: 10,
+    icon: 'files',
     title: () => t('type.label'),
     guide: [{
-      order: 10,
-      title: () => t('guide.title'),
-      icon: IconFolderClose16,
+      description: () => t('guide.description'),
     }],
   }
 }

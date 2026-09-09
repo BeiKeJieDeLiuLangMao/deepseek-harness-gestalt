@@ -2,7 +2,7 @@
 /**
  * The guide tab's body: the chain seam, and the shipped guide behind it.
  *
- * The contract a type relies on is the entry capsule: one per guide entry every
+ * The contract a type relies on is the entry box: one per guide entry every
  * registered type contributed, in the registry's order, and picking one opens
  * that type as a page in the guide's own tab. The chain is asserted through
  * what the body hands it — the tab and the shipped guide as the fallback.
@@ -11,11 +11,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
-import type { IconProps } from '@deepseek-ai/dsh-client-ui-primitives'
 import { SessionId } from '@deepseek-ai/dsh-session/types'
 import { GuideBody } from '../src/client/tabs/guide/GuideBody.tsx'
 import type { GuideBodyProps } from '../src/client/tabs/guide/GuideBody.tsx'
-import type { SidebarRightGuideBox } from '../src/client/tab-registry.ts'
+import type { SidebarRightDescriptorContext, SidebarRightGuideBox } from '../src/client/tab-registry.ts'
 import type { SidebarRightProjection } from '../src/client/service.ts'
 import { SIDEBAR_RIGHT_PREFERENCES_DEFAULTS } from '../src/client/preferences.ts'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
@@ -28,17 +27,13 @@ afterEach(() => {
 const SESSION = SessionId('session-a')
 const TAB = { sessionId: SESSION, id: 'tab-1', kind: 'guide', contentId: 'sidebar://guide', title: 'Start' }
 
-/** A glyph that marks its box, so a spec can tell an entry with an icon from one without. */
-function Glyph({ size }: IconProps): ReactNode {
-  return <span data-guide-glyph={size} />
-}
-
-/** One entry capsule as the registry lists it. */
+/** One entry box as the registry lists it. */
 function box(kind: string, order: number, icon?: SidebarRightGuideBox['icon']): SidebarRightGuideBox {
   return {
     kind,
     order,
     title: () => `${kind} title`,
+    description: () => `${kind} description`,
     ...icon === undefined ? {} : { icon },
   }
 }
@@ -93,6 +88,8 @@ function mountGuide(entries: readonly SidebarRightGuideBox[], tabs: readonly Ret
     useGuideWorkbench: bindSnapshotSelector(guideWorkbench),
     useGuidePreferences: bindSnapshotSelector(guidePreferences),
     renderSlotChain: renderSlot,
+    // Copy is the dictionary's contract; the key stands in for the translation.
+    t: (key: string) => key,
   } as unknown as GuideBodyProps
   const view = render(<GuideBody {...props} />)
   const boxes = (): string[] =>
@@ -102,19 +99,19 @@ function mountGuide(entries: readonly SidebarRightGuideBox[], tabs: readonly Ret
 
 describe('GuideBody', () => {
   it('renders the chain with the same tab hook, and the shipped guide as its fallback', () => {
-    const { view, renderSlot, boxes, useTabInfo } = mountGuide([box('files', 10, Glyph), box('terminal', 20)])
+    const { view, renderSlot, boxes, useTabInfo } = mountGuide([box('files', 10, 'files'), box('terminal', 20)])
     expect(renderSlot).toHaveBeenCalledWith('sidebar.right.tab.guide', {}, {
       hookContext: useTabInfo, fallback: expect.anything() as ReactNode,
     })
-    // The guide says nothing of its own: its words are the capsules'.
     const guide = view.container.querySelector('[data-sidebar-right-guide]')
-    expect(guide?.textContent).toBe('files titleterminal title')
-    // One capsule per entry, in the registry's order, each with its own title; only the first brought a glyph.
+    expect(guide?.textContent).toContain('guide.lead')
+    expect(guide?.textContent).toContain('guide.body')
+    // One box per entry, in the registry's order, each with its own words; only the first brought a glyph.
     expect(boxes()).toEqual(['files', 'terminal'])
     const [files, terminal] = [...view.container.querySelectorAll('[data-sidebar-right-guide-entry]')]
-    expect(files?.textContent).toBe('files title')
-    expect(files?.querySelector('[data-guide-glyph]')?.getAttribute('data-guide-glyph')).toBe('16')
-    expect(terminal?.querySelector('[data-guide-glyph]')).toBeNull()
+    expect(files?.textContent).toBe('files titlefiles description')
+    expect(files?.querySelector('svg')).not.toBeNull()
+    expect(terminal?.querySelector('svg')).toBeNull()
     cleanup()
   })
 
@@ -127,7 +124,7 @@ describe('GuideBody', () => {
     cleanup()
   })
 
-  it('draws an empty guide while no type contributed an entry, and follows the registry when one does', () => {
+  it('draws the words alone while no type contributed an entry, and follows the registry when one does', () => {
     const { view, guideEntries, boxes } = mountGuide([])
     expect(view.container.querySelector('[data-sidebar-right-guide]')).not.toBeNull()
     expect(boxes()).toEqual([])
@@ -136,20 +133,22 @@ describe('GuideBody', () => {
     cleanup()
   })
 
-  it('evaluates availability against the current Session and contains callback failures', () => {
-    const available = vi.fn(({ sessionId, preferences, tabs }) => {
+  it('keeps unavailable entries visible and disabled with a reason', () => {
+    const available = vi.fn(({ sessionId, preferences, tabs }: SidebarRightDescriptorContext) => {
       expect(sessionId).toBe(SESSION)
       expect(preferences).toBe(SIDEBAR_RIGHT_PREFERENCES_DEFAULTS)
       return tabs.length < 3
     })
     const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
     const entries: SidebarRightGuideBox[] = [
-      { ...box('terminal', 10), available },
+      { ...box('terminal', 10), available, unavailableReason: () => 'Terminal limit reached' },
       { ...box('broken', 20), available: () => { throw new Error('broken availability') } },
     ]
-    const { guideWorkbench, boxes } = mountGuide(entries, [projectedTab('one'), projectedTab('two')])
+    const { view, guideWorkbench, boxes } = mountGuide(entries, [projectedTab('one'), projectedTab('two')])
 
-    expect(boxes()).toEqual(['terminal'])
+    expect(boxes()).toEqual(['terminal', 'broken'])
+    expect(view.container.querySelector('[data-sidebar-right-guide-entry="terminal"]')?.hasAttribute('disabled')).toBe(false)
+    expect(view.container.querySelector('[data-sidebar-right-guide-entry="broken"]')?.getAttribute('title')).toBe('guide.unavailable')
     expect(available).toHaveBeenLastCalledWith(expect.objectContaining({
       sessionId: SESSION,
       tabs: expect.arrayContaining([
@@ -163,7 +162,9 @@ describe('GuideBody', () => {
     )
 
     act(() => { guideWorkbench.set(projection([projectedTab('one'), projectedTab('two'), projectedTab('three')])) })
-    expect(boxes()).toEqual([])
+    expect(boxes()).toEqual(['terminal', 'broken'])
+    expect(view.container.querySelector('[data-sidebar-right-guide-entry="terminal"]')?.getAttribute('title')).toBe('Terminal limit reached')
+    expect(view.container.querySelectorAll('[data-sidebar-right-guide-entry]:disabled')).toHaveLength(2)
     cleanup()
   })
 

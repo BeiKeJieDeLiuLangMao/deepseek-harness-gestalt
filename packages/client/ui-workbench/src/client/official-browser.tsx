@@ -334,6 +334,7 @@ export function workbenchBrowserDefinition(
     order: 50,
     icon: 'browser',
     title: () => copy('browser'),
+    guide: [{ description: () => copy('browserGuide') }],
     create: (request) => {
       const payload = officialBrowserPayloadOf(request.payload)
       return payload === undefined ? false : { title: request.title, payload }

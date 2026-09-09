@@ -22,6 +22,7 @@ export function guideDefinition(t: TranslateNS<'sidebarRight'>): SidebarRightTab
     id: GUIDE_ID,
     kind: GUIDE_KIND,
     priority: 'builtin',
+    hidden: true,
     title: () => t('tab.guide.title'),
   }
 }

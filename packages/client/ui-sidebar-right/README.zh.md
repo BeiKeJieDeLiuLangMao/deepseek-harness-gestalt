@@ -35,7 +35,7 @@ workbench 在框架挂载后解析 `rightHostId` 与 `bottomHostId`，随后从�
 
 右侧表面收起后仍保持挂载。它的展开控件位于 `conversation.session.header.corner` 并共享 Session store。没有当前 Session 时，两个表面均不挂载。frame 只接受一次初始宽度：若保留的 `dsh-sidebar:v1:width` 存在则优先采用，否则由 `defaultWidthPercent` 提供。读取这个旧值不会修改或删除回滚 key。
 
-Dock 添加控件在 Web 模式下打开引导页。在 Desktop 中，它把可观察的官方页面 definition 发送给原生 overlay 菜单，并排除引导页、隐藏类型与资源类型；不可用条目保持可见但处于禁用状态。用户选择后，系统通过 `ctx.sidebarRight` 在提供锚点的控件所属 pane 中打开页面。
+Dock 添加控件在 Web 模式下打开引导页。内置引导页与 Desktop 原生 overlay 菜单投影同一组可观察页面 definition，并排除引导页、隐藏类型与资源类型。每张引导卡默认从对应 definition 读取顺序、标题与图标；可选引导元数据提供描述或额外卡片。不可用条目保持可见并禁用，同时显示原因。用户选择后，系统通过 `ctx.sidebarRight` 在提供锚点的控件所属 pane 中打开页面。
 
 <a id="state-and-persistence"></a>
 ## 状态与持久化

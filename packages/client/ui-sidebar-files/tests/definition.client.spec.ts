@@ -30,13 +30,16 @@ describe('filesDefinition', () => {
     expect(rest).toEqual([])
     expect(entry?.order).toBe(10)
     expect(entry?.kind).toBe(FILES_KIND)
-    expect(entry?.title()).toBe(zh['guide.title'])
-    expect(entry?.icon).toBeDefined()
+    expect(entry?.title()).toBe(zh['type.label'])
+    expect(entry?.description()).toBe(zh['guide.description'])
+    expect(entry?.icon).toBe('files')
   })
 
   it('sits in the builtin band and titles itself from the dictionary', () => {
     const definition = filesDefinition(t)
     expect(definition.priority).toBe('builtin')
+    expect(definition.order).toBe(10)
+    expect(definition.icon).toBe('files')
     expect(definition.patterns).toBeUndefined()
     expect(definition.title('')).toBe(zh['type.label'])
   })

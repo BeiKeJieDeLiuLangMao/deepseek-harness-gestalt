@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {
-  SidebarRightProjection, SidebarRightTabCloseContext,
+  SidebarRightProjection, SidebarRightTabCloseContext, SidebarRightTabDefinition,
 } from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type { SidebarSessionList } from '../src/context-types.ts'
 import { api } from '../src/client/api.ts'
@@ -124,7 +124,7 @@ describe('official runtime registration', () => {
     }
     vi.stubGlobal('WebSocket', FakeWebSocket)
     vi.spyOn(api, 'shellGet').mockResolvedValue({ shell: '/bin/zsh', name: 'zsh' })
-    const definitions: Array<{ id: string; create?: (request: never) => unknown; available?: (context: never) => boolean }> = []
+    const definitions: SidebarRightTabDefinition[] = []
     const slotEntries: Array<{ name: string; key?: string; id?: string; component: unknown }> = []
     const sessionListeners = new Set<() => void>()
     const sidebarListeners = new Set<() => void>()
@@ -192,6 +192,12 @@ describe('official runtime registration', () => {
       ['sidebar.right.tab.menu.item', `${OFFICIAL_TERMINAL_DEFINITION_ID}/pin`],
     ])
     const terminal = definitions[1]!
+    expect(definitions.map(definition => [
+      definition.kind, definition.order, definition.icon, definition.guide?.[0]?.description(),
+    ])).toEqual([
+      ['sidechat', 35, 'sidechat', 'Start a separate conversation in the sidebar.'],
+      ['terminal', 40, 'terminal', 'Open an interactive terminal in the current workspace.'],
+    ])
     const base = {
       sessionId: SessionId('session-a'),
       preferences: {},
