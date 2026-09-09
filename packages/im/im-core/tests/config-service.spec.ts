@@ -3,7 +3,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import Storage from '@deepseek-ai/dsh-storage'
 import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
-import { MemoryStorageBackend, MemoryMediaPool } from '../../../storage/storage-domain/tests/helpers/memory-backend.ts'
+import { TestMemoryStorageBackend } from './memory-backend.ts'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 import type { ImAccountId, ImRouteRuleId } from '../src/types.ts'
@@ -16,14 +16,13 @@ import {
 
 describe('ImConfigService Seam CRUD & resolveRoute', () => {
   let ctx: Context
-  let pool: MemoryMediaPool
+  let backend: TestMemoryStorageBackend
   let service: ImConfigService
 
   beforeEach(async () => {
-    pool = new MemoryMediaPool()
+    backend = new TestMemoryStorageBackend()
     ctx = new Context()
     await ctx.plugin(Storage)
-    const backend = new MemoryStorageBackend(pool)
     ctx.storage.backend.register('memory', backend)
     const facility = new DomainFacility(ctx, { backend: 'memory', routes: {} })
     ctx.storage.mount('domain', facility)
@@ -620,11 +619,10 @@ describe('ImConfigService Seam CRUD & resolveRoute', () => {
     // Teardown first context and service
     await ctx.fiber.dispose()
 
-    // Boot fresh second context using the same pool
+    // Boot fresh second context using the same backend instance to verify durable reload
     const ctx2 = new Context()
     await ctx2.plugin(Storage)
-    const backend2 = new MemoryStorageBackend(pool)
-    ctx2.storage.backend.register('memory', backend2)
+    ctx2.storage.backend.register('memory', backend)
     const facility2 = new DomainFacility(ctx2, { backend: 'memory', routes: {} })
     ctx2.storage.mount('domain', facility2)
     ctx2.provide('storageDomain', facility2)
