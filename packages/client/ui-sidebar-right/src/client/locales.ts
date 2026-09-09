@@ -24,6 +24,11 @@ export const zh = {
   'dock.addTab': '新标签页',
   'dock.dockFloat': '收回到侧边栏',
   'dock.closeFloat': '关闭',
+  'dock.drop.center': '移到这里',
+  'dock.drop.left': '左分栏',
+  'dock.drop.right': '右分栏',
+  'dock.drop.top': '上分栏',
+  'dock.drop.bottom': '下分栏',
   'tab.guide.title': '开始',
   'tab.unavailable': '这类内容还没有可用的查看方式。',
 } satisfies Record<string, string>
@@ -49,6 +54,11 @@ export const en = {
   'dock.addTab': 'New tab',
   'dock.dockFloat': 'Send back to the sidebar',
   'dock.closeFloat': 'Close',
+  'dock.drop.center': 'Move here',
+  'dock.drop.left': 'Add left split',
+  'dock.drop.right': 'Add right split',
+  'dock.drop.top': 'Add top split',
+  'dock.drop.bottom': 'Add bottom split',
   'tab.guide.title': 'Start',
   'tab.unavailable': 'Nothing here can view this kind of content yet.',
 } satisfies Record<SidebarRightKey, string>

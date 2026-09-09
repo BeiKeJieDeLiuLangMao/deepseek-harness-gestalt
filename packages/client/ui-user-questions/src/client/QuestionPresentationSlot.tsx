@@ -35,6 +35,7 @@ export function QuestionPresentationSlot(props: QuestionPresentationSlotProps) {
     pendingInteraction: props.useSessionPendingInteraction(interactions => interactions.get(props.sessionId)),
     useSession: props.useSession,
     useSessions: props.useSessions,
+    usePanelInfo: props.usePanelInfo,
     useSessionPendingInteraction: props.useSessionPendingInteraction,
     useWorkspaces: props.useWorkspaces,
     useConversation: props.useConversation,
