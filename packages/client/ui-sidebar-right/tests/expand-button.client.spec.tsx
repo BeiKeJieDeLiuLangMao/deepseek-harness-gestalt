@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 /**
- * The way back into a hidden panel: the header's corner button exists exactly
- * while the panel is collapsed, asks for it to expand, and leaves a same-size
- * footprint while the panel is shown so the header row never moves.
+ * Header controls keep both official dock surfaces reachable. The right
+ * control leaves a same-size footprint while shown, and the bottom control
+ * toggles without discarding its tabs.
  */
 import { describe, expect, it } from 'vitest'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
@@ -37,8 +37,9 @@ function mountButton() {
   } as unknown as ExpandButtonProps
   const view = render(<ExpandButton {...props} />)
   const control = (): HTMLElement | null => view.container.querySelector('[data-sidebar-right-expand]')
+  const bottomControl = (): HTMLElement | null => view.container.querySelector('[data-sidebar-bottom-toggle]')
   const placeholder = (): HTMLElement | null => view.container.querySelector('[data-sidebar-right-expand-placeholder]')
-  return { instance, view, control, placeholder }
+  return { instance, view, control, bottomControl, placeholder }
 }
 
 describe('ExpandButton', () => {
@@ -63,6 +64,37 @@ describe('ExpandButton', () => {
     act(() => { instance.actions.setExpanded(SESSION, false) })
     expect(control()).not.toBeNull()
     expect(placeholder()).toBeNull()
+    cleanup()
+  })
+
+  it('toggles the bottom surface without changing the right surface or releasing its Terminal', () => {
+    const { instance, bottomControl } = mountButton()
+    const open = bottomControl()
+    if (open === null) throw new Error('expected the bottom-panel toggle')
+    expect(open.getAttribute('aria-label')).toBe('chrome.expandBottom')
+    fireEvent.click(open)
+
+    const opened = instance.getSnapshot().bySession[SESSION]
+    expect(opened?.layout.expanded).toBe(false)
+    expect(opened?.bottom.layout.expanded).toBe(true)
+    let terminalId: string | undefined
+    act(() => {
+      instance.actions.openContent(SESSION, {
+        kind: 'terminal',
+        contentId: 'sidebar://terminal/spec',
+        title: 'Terminal',
+        surface: 'bottom',
+      }, (id) => { terminalId = id })
+    })
+
+    const close = bottomControl()
+    if (close === null) throw new Error('expected the bottom-panel toggle')
+    expect(close.getAttribute('aria-label')).toBe('chrome.collapseBottom')
+    fireEvent.click(close)
+    const collapsed = instance.getSnapshot().bySession[SESSION]
+    expect(collapsed?.layout.expanded).toBe(false)
+    expect(collapsed?.bottom.layout.expanded).toBe(false)
+    expect(Object.values(collapsed?.bottom.layout.tabs ?? {}).some(tab => tab.id === terminalId)).toBe(true)
     cleanup()
   })
 })

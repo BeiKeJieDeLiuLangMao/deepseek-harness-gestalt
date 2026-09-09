@@ -10,6 +10,8 @@
 export const zh = {
   'chrome.expand': '展开侧栏',
   'chrome.collapse': '收起侧栏',
+  'chrome.expandBottom': '展开底栏',
+  'chrome.collapseBottom': '收起底栏',
   'chrome.toFullscreen': '全屏显示侧栏',
   'chrome.exitFullscreen': '退出侧栏全屏',
   'dock.emptyPane': '空面板',
@@ -33,6 +35,8 @@ export type SidebarRightKey = keyof typeof zh
 export const en = {
   'chrome.expand': 'Open the sidebar',
   'chrome.collapse': 'Close the sidebar',
+  'chrome.expandBottom': 'Open the bottom panel',
+  'chrome.collapseBottom': 'Close the bottom panel',
   'chrome.toFullscreen': 'Show the sidebar fullscreen',
   'chrome.exitFullscreen': 'Exit sidebar fullscreen',
   'dock.emptyPane': 'Empty pane',

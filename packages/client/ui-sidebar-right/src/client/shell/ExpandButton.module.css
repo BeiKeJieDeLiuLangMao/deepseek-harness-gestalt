@@ -3,8 +3,13 @@
  * control, so it takes that row's 32px height and the same hover fill; square
  * with the header's corner radius rather than a pill, because it is an icon
  * button, not a labelled one. The placeholder is the same box with nothing in
- * it, so the seat's width holds while the panel is shown.
+ * it, so the bottom toggle keeps its position while the right panel is shown.
  */
+.controls {
+  display: inline-flex;
+  flex: none;
+}
+
 .placeholder {
   display: inline-block;
   flex: none;
@@ -35,4 +40,9 @@
 /* The left sidebar's panel icon, mirrored: the divider moves to the right side. */
 .icon {
   transform: scaleX(-1);
+}
+
+/* Rotate the same panel glyph so its divider marks the bottom edge. */
+.bottomIcon {
+  transform: rotate(-90deg);
 }
