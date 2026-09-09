@@ -10,12 +10,9 @@ kind: "package-reference"
 
 渲染 Session 对话，包括图片、本地化操作与滚动位置恢复。紧凑显示会收起已完成轮次的过程行，同时保留最终答案与有用上下文；已打包的历史 Assistant 连续消息保持收起。本地 transcript 与 steering 提交会立即显示，并在权威记录到达时退休；queued 提交始终不进入 Chat。已定稿的 assistant Markdown 提供带稳定消息与块锚点的选区注释。本包不组装模型请求。Chat view 可以在右侧留白渲染 browser-preview 轨道，并在宽度低于 240px 时隐藏它。
 
-文件引用提供方同时接收当前查看的 Session ID 与收尾 turn 的 owner，因此继承历史中的链接可以指向 fork。
-
-Chat 的 `openFile` inject 始终把当前查看的 Session 编码为资源 owner。嵌入式 Conversation 还可提供显示宿主 Session；该值只选择文件标签所在的右侧 Sidebar navigator，不会改变授权并解析 path 的 Session。
-
 ## 目录
 
+- [文件归属](#file-ownership)
 - [系统提示词行](#system-prompt-row)
 - [轮次 token 用量](#turn-token-usage)
 - [轮次过程折叠](#turn-process-folding)
@@ -23,6 +20,13 @@ Chat 的 `openFile` inject 始终把当前查看的 Session 编码为资源 owne
 - [模型体验](#model-experience)
 - [已知限制与暂缓事项](#known-limitations-and-deferred-work)
 - [开发备注](#dev-note)
+
+-----
+
+<a id="file-ownership"></a>
+## 文件归属
+
+文件引用提供方同时接收当前查看的 Session ID 与收尾 turn 的 owner，因此继承历史中的链接可以指向 fork。Chat 的 `openFile` inject 会把当前查看的 Session 编码为资源 owner。嵌入式 Conversation 还可提供显示宿主 Session；该值只选择标签所在的右侧 Sidebar navigator，不会改变授权并解析 path 的 Session。
 
 -----
 
