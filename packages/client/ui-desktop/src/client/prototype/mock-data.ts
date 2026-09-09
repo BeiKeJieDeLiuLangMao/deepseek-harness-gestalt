@@ -226,11 +226,11 @@ export const MOCK_ACCOUNTS: AccountPoolItem[] = [
   },
   {
     id: 'glm-1',
-    filename: 'glm-pro-subscription.json',
+    filename: 'glm-coding-plan-cn.json',
     provider: 'glm',
-    label: 'GLM 编码订阅 (移植验证)',
-    accountEmail: 'glm-subscriber@work.cn',
-    tier: 'Coding Pro',
+    label: 'GLM Coding Plan (CN个人订阅)',
+    accountEmail: 'glm-coding-user@bigmodel.cn',
+    tier: 'Coding Plan (CN)',
     status: 'active',
     successCount: 450,
     failCount: 0,
@@ -238,12 +238,21 @@ export const MOCK_ACCOUNTS: AccountPoolItem[] = [
     createdAt: '2026/9/10 03:00:00',
     metrics: [
       {
-        key: 'glm-token',
-        name: 'GLM-4 / GLM-5.3 周期额度',
-        percentRemaining: 84,
-        timeRemainingPercent: 62,
-        windowLabel: '月限额',
-        resetText: '剩余 84% · 18天后重置',
+        key: 'glm-5h',
+        name: 'GLM Coding 5h 限额 (已用 16%)',
+        percentRemaining: 84, // 100 - used_percent (16%)
+        timeRemainingPercent: 54, // ~2.7h remaining of 5h window
+        windowLabel: '5h 窗口',
+        resetText: '剩余 84% (已用 16%) · 2 小时 42 分钟后重置',
+        isReliable: true,
+      },
+      {
+        key: 'glm-weekly',
+        name: 'GLM Coding 周限额 (已用 35%)',
+        percentRemaining: 65, // 100 - used_percent (35%)
+        timeRemainingPercent: 71, // 5 days remaining of 7d
+        windowLabel: '周限额',
+        resetText: '剩余 65% (已用 35%) · 5 天后重置',
         isReliable: true,
       },
     ],

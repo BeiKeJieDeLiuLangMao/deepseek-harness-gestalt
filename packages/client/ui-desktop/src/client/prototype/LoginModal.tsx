@@ -24,9 +24,9 @@ export function LoginModal({ initialProvider = 'codex', onClose, onSuccess }: Lo
   const [authUrl] = useState('https://auth.openai.com/oauth/authorize?response_type=code&client_id=cliproxy...')
   const [deviceCode] = useState('ABCD-EFGH')
 
-  // GLM Coding Plan fixture form state (no hardcoded unverified tiers or real endpoints)
+  // GLM Coding Plan fixture form state (verified official Coding Chat endpoint)
   const [glmApiKey, setGlmApiKey] = useState('')
-  const [glmEndpoint, setGlmEndpoint] = useState('')
+  const [glmEndpoint, setGlmEndpoint] = useState('https://open.bigmodel.cn/api/coding/paas/v4')
 
   const isGlm = provider === 'glm'
 
@@ -49,8 +49,8 @@ export function LoginModal({ initialProvider = 'codex', onClose, onSuccess }: Lo
   const handleFinish = () => {
     onSuccess({
       provider,
-      email: isGlm ? 'glm-coding-plan@user-domain.cn' : `new-${provider}-user@domain.com`,
-      tier: isGlm ? 'Coding Plan' : undefined,
+      email: isGlm ? 'glm-coding-user@bigmodel.cn' : `new-${provider}-user@domain.com`,
+      tier: isGlm ? 'Coding Plan (CN)' : undefined,
     })
     onClose()
   }
@@ -123,7 +123,7 @@ export function LoginModal({ initialProvider = 'codex', onClose, onSuccess }: Lo
                 >
                   <span className={css.providerIcon}>◈</span>
                   <strong>GLM Coding Plan</strong>
-                  <span>订阅专用 API Key 表单接入 (非 OAuth 网页回调)</span>
+                  <span>CN个人订阅 · 专用 API Key 表单接入 (非 OAuth)</span>
                 </button>
               </div>
             </div>
@@ -150,9 +150,9 @@ export function LoginModal({ initialProvider = 'codex', onClose, onSuccess }: Lo
           {step === 'apiKeyForm' && (
             <div className={css.formStep}>
               <div className={css.formBadge}>Sub2API Coding Plan 订阅模式</div>
-              <h4 className={css.formTitle}>输入智谱 GLM Coding 订阅凭据</h4>
+              <h4 className={css.formTitle}>输入智谱 GLM Coding 订阅凭据 (CN个人订阅)</h4>
               <p className={css.formDesc}>
-                基于 Sub2API 移植实现，GLM 订阅采用专属 API Key 与 Coding 端点，无需 OAuth 网页回调。
+                基于 Sub2API Coding Plan 移植实现，GLM 订阅采用用户 Coding Plan key 与专属 coding 端点，无需 OAuth 网页回调。
               </p>
 
               <div className={css.fieldGroup}>
@@ -174,10 +174,10 @@ export function LoginModal({ initialProvider = 'codex', onClose, onSuccess }: Lo
                   className={css.textInput}
                   value={glmEndpoint}
                   onChange={e => { setGlmEndpoint(e.target.value) }}
-                  placeholder="订阅端点待独立调查确定，留空使用核心默认"
+                  placeholder="https://open.bigmodel.cn/api/coding/paas/v4"
                 />
                 <span className={css.fieldTip}>
-                  端点地址待 Sub2API 来源事实核验给出，不预置未经证实的普通通用 API 地址。
+                  已对齐官方 Coding Plan 端点；普通 /api/paas/v4 为按量 PayG 模式不可用。
                 </span>
               </div>
             </div>
