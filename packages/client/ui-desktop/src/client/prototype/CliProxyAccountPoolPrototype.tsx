@@ -43,14 +43,14 @@ export function CliProxyAccountPoolPrototype() {
     glm: accounts.filter(a => a.provider === 'glm').length,
   }
 
-  const handleCreateAccount = (newAcc: { provider: ProviderType; email: string }) => {
+  const handleCreateAccount = (newAcc: { provider: ProviderType; email: string; tier?: string }) => {
     const item: AccountPoolItem = {
       id: `${newAcc.provider}-${String(Date.now())}`,
       filename: `${newAcc.provider}-${newAcc.email}.json`,
       provider: newAcc.provider,
-      label: `${newAcc.provider.toUpperCase()} 新凭据`,
+      label: newAcc.provider === 'glm' ? `GLM ${newAcc.tier ?? 'Coding Plan'}` : `${newAcc.provider.toUpperCase()} 新凭据`,
       accountEmail: newAcc.email,
-      tier: 'Standard',
+      tier: newAcc.tier ?? 'Standard',
       status: 'active',
       successCount: 0,
       failCount: 0,
@@ -59,10 +59,10 @@ export function CliProxyAccountPoolPrototype() {
       metrics: [
         {
           key: '5h',
-          name: '5h 初始额度',
+          name: newAcc.provider === 'glm' ? 'GLM-4 / 5.3 订阅周期额度' : '5h 初始额度',
           percentRemaining: 100,
           timeRemainingPercent: 100,
-          windowLabel: '5h',
+          windowLabel: newAcc.provider === 'glm' ? '周期额度' : '5h',
           resetText: '100% · 刚刚添加',
           isReliable: true,
         },
@@ -205,7 +205,7 @@ export function CliProxyAccountPoolPrototype() {
                   className={css.dropdownItem}
                   onClick={() => { setSelectedAddProvider('glm'); setShowDropdown(false); setShowLoginModal(true) }}
                 >
-                  <span className={css.dropIcon}>◈</span> GLM 订阅凭据 (移植)
+                  <span className={css.dropIcon}>◈</span> GLM Coding Plan (订阅密钥表单)
                 </button>
               </div>
             )}

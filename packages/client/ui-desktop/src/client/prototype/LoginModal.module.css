@@ -97,6 +97,10 @@
   box-shadow: 0 0 0 1px #10b981;
 }
 
+.glmCard {
+  border-style: dashed;
+}
+
 .providerIcon {
   font-size: 16px;
   font-weight: 700;
@@ -173,6 +177,86 @@
   justify-content: center;
   font-size: 20px;
   font-weight: bold;
+}
+
+/* GLM API Key & Endpoint Form Step */
+.formStep {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 8px 0;
+}
+
+.formBadge {
+  align-self: flex-start;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(16, 185, 129, 0.15);
+  color: #065f46;
+}
+
+.formTitle {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary, #0f172a);
+}
+
+.formDesc {
+  margin: -8px 0 4px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary, #64748b);
+  line-height: 1.5;
+}
+
+.fieldGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.fieldLabel {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-primary, #334155);
+}
+
+.tierRadioGroup {
+  display: flex;
+  gap: 16px;
+  font-size: 13px;
+}
+
+.radioItem {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.textInput {
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.15));
+  background: var(--dsw-alias-bg-layer-1, #f8fafc);
+  font-size: 13px;
+  color: var(--dsw-alias-label-primary, #0f172a);
+  font-family: inherit;
+  box-sizing: border-box;
+}
+
+.textInput:focus {
+  outline: none;
+  border-color: #10b981;
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
+}
+
+.fieldTip {
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary, #94a3b8);
 }
 
 .footer {

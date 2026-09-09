@@ -1,6 +1,7 @@
 /**
  * Modal dialog for creating an account via CLIProxyAPI login flow.
- * Supports Kimi, Codex, Anthropic, Antigravity, xAI, and GLM.
+ * Accurately distinguishes the five OAuth providers (Kimi, Codex, Anthropic, Antigravity, xAI)
+ * from the 'GLM Coding Plan' API-key/endpoint subscription form (fixture mode, no real key saved).
  */
 
 import { useState } from 'react'
@@ -11,27 +12,43 @@ import css from './LoginModal.module.css'
 export interface LoginModalProps {
   initialProvider?: ProviderType
   onClose: () => void
-  onSuccess: (newAccount: { provider: ProviderType; email: string }) => void
+  onSuccess: (newAccount: { provider: ProviderType; email: string; tier?: string }) => void
 }
 
 export function LoginModal({ initialProvider = 'codex', onClose, onSuccess }: LoginModalProps) {
   const [provider, setProvider] = useState<ProviderType>(initialProvider)
-  const [step, setStep] = useState<'select' | 'authorizing' | 'success' | 'failed'>('select')
+  const [step, setStep] = useState<'select' | 'authorizing' | 'apiKeyForm' | 'success' | 'failed'>('select')
   const [authUrl] = useState('https://auth.openai.com/oauth/authorize?response_type=code&client_id=cliproxy...')
   const [deviceCode] = useState('ABCD-EFGH')
 
-  const startLogin = () => {
-    setStep('authorizing')
-    // Simulate async polling result
-    setTimeout(() => {
-      setStep('success')
-    }, 2400)
+  // GLM Coding Plan fixture form state
+  const [glmApiKey, setGlmApiKey] = useState('glm-sub-fixture-key-xxxx')
+  const [glmEndpoint, setGlmEndpoint] = useState('https://open.bigmodel.cn/api/paas/v4')
+  const [glmTier, setGlmTier] = useState<'Coding Plus' | 'Coding Pro'>('Coding Pro')
+
+  const isGlm = provider === 'glm'
+
+  const handleStart = () => {
+    if (isGlm) {
+      setStep('apiKeyForm')
+    } else {
+      setStep('authorizing')
+      // Simulate OAuth polling result
+      setTimeout(() => {
+        setStep('success')
+      }, 2400)
+    }
+  }
+
+  const handleGlmSubmit = () => {
+    setStep('success')
   }
 
   const handleFinish = () => {
     onSuccess({
       provider,
-      email: `new-${provider}-user@domain.com`,
+      email: isGlm ? 'glm-coding-plan@bigmodel.cn' : `new-${provider}-user@domain.com`,
+      tier: isGlm ? glmTier : undefined,
     })
     onClose()
   }
@@ -42,7 +59,7 @@ export function LoginModal({ initialProvider = 'codex', onClose, onSuccess }: Lo
         <header className={css.header}>
           <div className={css.headerTitle}>
             <h3>添加账号凭证 · CLIProxyAPI</h3>
-            <p>选择认证类型并通过 CLIProxyAPI 原生流程完成快速授权。</p>
+            <p>选择认证类型并通过 CLIProxyAPI 原生流程完成快速授权或凭据接入。</p>
           </div>
           <button type="button" className={css.closeBtn} onClick={onClose}>✕</button>
         </header>
@@ -50,7 +67,7 @@ export function LoginModal({ initialProvider = 'codex', onClose, onSuccess }: Lo
         <div className={css.body}>
           {step === 'select' && (
             <div className={css.providerList}>
-              <label className={css.label}>选择平台认证类型：</label>
+              <label className={css.label}>选择平台认证类型（五家 OAuth 与 GLM 订阅）：</label>
               <div className={css.grid}>
                 <button
                   type="button"
@@ -59,7 +76,7 @@ export function LoginModal({ initialProvider = 'codex', onClose, onSuccess }: Lo
                 >
                   <span className={css.providerIcon}>K</span>
                   <strong>Kimi OAuth</strong>
-                  <span>设备授权快速登录</span>
+                  <span>设备授权快速登录流</span>
                 </button>
                 <button
                   type="button"
@@ -77,7 +94,7 @@ export function LoginModal({ initialProvider = 'codex', onClose, onSuccess }: Lo
                 >
                   <span className={css.providerIcon}>✳</span>
                   <strong>Anthropic OAuth</strong>
-                  <span>Claude 服务凭据</span>
+                  <span>Claude 服务官方回调</span>
                 </button>
                 <button
                   type="button"
@@ -94,17 +111,17 @@ export function LoginModal({ initialProvider = 'codex', onClose, onSuccess }: Lo
                   onClick={() => { setProvider('xai') }}
                 >
                   <span className={css.providerIcon}>Ø</span>
-                  <strong>xAI OAuth</strong>
+                  <strong>xAI Grok OAuth</strong>
                   <span>Grok 服务认证文件</span>
                 </button>
                 <button
                   type="button"
-                  className={`${css.providerCard} ${provider === 'glm' ? css.selected : ''}`}
+                  className={`${css.providerCard} ${provider === 'glm' ? css.selected : ''} ${css.glmCard}`}
                   onClick={() => { setProvider('glm') }}
                 >
                   <span className={css.providerIcon}>◈</span>
-                  <strong>GLM 订阅凭据</strong>
-                  <span>Sub2API 移植订阅流</span>
+                  <strong>GLM Coding Plan</strong>
+                  <span>订阅专用 API Key + Coding 端点 (非 OAuth)</span>
                 </button>
               </div>
             </div>
@@ -113,7 +130,7 @@ export function LoginModal({ initialProvider = 'codex', onClose, onSuccess }: Lo
           {step === 'authorizing' && (
             <div className={css.authStep}>
               <div className={css.spinner} />
-              <h4>正在等待 {provider.toUpperCase()} 登录完成…</h4>
+              <h4>正在等待 {provider.toUpperCase()} OAuth 流程完成…</h4>
               <p>请在系统浏览器中完成授权页面操作：</p>
               <div className={css.urlBox}>{authUrl}</div>
               {provider === 'kimi' && (
@@ -126,11 +143,72 @@ export function LoginModal({ initialProvider = 'codex', onClose, onSuccess }: Lo
             </div>
           )}
 
+          {step === 'apiKeyForm' && (
+            <div className={css.formStep}>
+              <div className={css.formBadge}>Sub2API Coding Plan 订阅模式</div>
+              <h4 className={css.formTitle}>输入智谱 GLM Coding 订阅凭据</h4>
+              <p className={css.formDesc}>
+                基于 Sub2API 移植实现，GLM 订阅采用专属 API Key 与代码端点，无需 OAuth 网页回调。
+              </p>
+
+              <div className={css.fieldGroup}>
+                <label className={css.fieldLabel}>订阅类型：</label>
+                <div className={css.tierRadioGroup}>
+                  <label className={css.radioItem}>
+                    <input
+                      type="radio"
+                      name="tier"
+                      checked={glmTier === 'Coding Pro'}
+                      onChange={() => { setGlmTier('Coding Pro') }}
+                    />
+                    <span>Coding Pro (专业版)</span>
+                  </label>
+                  <label className={css.radioItem}>
+                    <input
+                      type="radio"
+                      name="tier"
+                      checked={glmTier === 'Coding Plus'}
+                      onChange={() => { setGlmTier('Coding Plus') }}
+                    />
+                    <span>Coding Plus</span>
+                  </label>
+                </div>
+              </div>
+
+              <div className={css.fieldGroup}>
+                <label className={css.fieldLabel}>订阅 API Key：</label>
+                <input
+                  type="text"
+                  className={css.textInput}
+                  value={glmApiKey}
+                  onChange={e => { setGlmApiKey(e.target.value) }}
+                  placeholder="请输入 GLM 订阅专有 API 密钥 (fixture 模式)"
+                />
+                <span className={css.fieldTip}>原型演示环境不会持久化或保存真实密钥。</span>
+              </div>
+
+              <div className={css.fieldGroup}>
+                <label className={css.fieldLabel}>Coding 专属网关端点：</label>
+                <input
+                  type="text"
+                  className={css.textInput}
+                  value={glmEndpoint}
+                  onChange={e => { setGlmEndpoint(e.target.value) }}
+                  placeholder="https://open.bigmodel.cn/api/paas/v4"
+                />
+              </div>
+            </div>
+          )}
+
           {step === 'success' && (
             <div className={css.resultStep}>
               <div className={css.successIcon}>✓</div>
-              <h4>授权成功并已保存认证文件！</h4>
-              <p>账号凭证已由 CLIProxyAPI 加密暂存，模型目录已就绪。</p>
+              <h4>{isGlm ? 'GLM 订阅凭据接入成功！' : 'OAuth 授权成功并已保存认证文件！'}</h4>
+              <p>
+                {isGlm
+                  ? '已将 GLM Coding Plan 注入 CLIProxyAPI 路由池，GLM-4 / GLM-5.3 模型已就绪。'
+                  : '账号凭证已由 CLIProxyAPI 加密暂存，模型目录已就绪。'}
+              </p>
             </div>
           )}
         </div>
@@ -139,11 +217,19 @@ export function LoginModal({ initialProvider = 'codex', onClose, onSuccess }: Lo
           {step === 'select' && (
             <>
               <Button variant="ghost" onClick={onClose}>取消</Button>
-              <Button variant="primary" onClick={startLogin}>开始 {provider.toUpperCase()} 登录</Button>
+              <Button variant="primary" onClick={handleStart}>
+                {isGlm ? '配置 GLM 订阅密钥' : `开始 ${provider.toUpperCase()} 登录`}
+              </Button>
             </>
           )}
           {step === 'authorizing' && (
             <Button variant="outline" onClick={() => { setStep('select') }}>返回选择</Button>
+          )}
+          {step === 'apiKeyForm' && (
+            <>
+              <Button variant="ghost" onClick={() => { setStep('select') }}>返回</Button>
+              <Button variant="primary" onClick={handleGlmSubmit}>保存并接入账号池</Button>
+            </>
           )}
           {step === 'success' && (
             <Button variant="primary" onClick={handleFinish}>完成并进入账号池</Button>
