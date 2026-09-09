@@ -1,6 +1,7 @@
 # Agent Note: 项目成员只在持久化提交点发布状态
 
 Status: implemented
+Archived: 2026-09-09
 
 [English](2026-08-27-project-membership-commit-point-rollback.md) | 中文
 

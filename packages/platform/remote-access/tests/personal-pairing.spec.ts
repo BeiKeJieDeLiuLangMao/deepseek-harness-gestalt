@@ -44,6 +44,22 @@ describe('PersonalPairingProvider', () => {
     })).rejects.toMatchObject({ code: 'PAIRING_PENDING_INVALID' })
   })
 
+  it('revokes Desktop pairing access through the trusted deletion owner after sessions are gone', async () => {
+    const currentInstallation = vi.fn(async ({ accessToken }: { accessToken: string }) => authenticated(accessToken))
+    const authority = new MemoryPersonalPairingAuthorityStore()
+    const composition = PersonalPairingProvider.compose(new Context(), {
+      account: { currentInstallation }, handshake: handshakeProvider(), authority, ownsAuthority: true,
+      pairingLinkOrigin: 'https://platform.example.com/pair',
+    })
+    await composition.provider.setMobileAccess({ desktop: authentication('desktop-installation'), enabled: true })
+    currentInstallation.mockRejectedValue(new Error('Account Session revoked'))
+    await composition.accountDeletion.revoke(account('account-one').id, [parseInstallationId('desktop-installation')])
+    await expect(authority.getDesktop(account('account-one').id, parseInstallationId('desktop-installation')))
+      .resolves.toMatchObject({ enabled: false })
+    await composition.accountDeletion.cleanup(account('account-one').id, [parseInstallationId('desktop-installation')])
+    await composition.provider.dispose()
+  })
+
   it('authenticates one Mobile Access disable request exactly once', async () => {
     const currentInstallation = vi.fn(async ({ accessToken }: { accessToken: string }) => authenticated(accessToken))
     const provider = new PersonalPairingProvider(new Context(), {

@@ -104,6 +104,22 @@ describe('Platform Account HTTP consumer', () => {
     expect(account.signOut).toHaveBeenCalledOnce()
   })
 
+  it('accepts deletion recovery without a revoked session and rejects malformed successor choices', async () => {
+    const account = accountService()
+    const server = await start(account)
+    const receipt = { operationId: 'delete-one', recoveryToken: 'a'.repeat(43),
+      proof: { jti: 'recovery-proof', issuedAt: 1, signature: 'signature' } }
+    const recovery = await post(server.origin, '/v1/account/deletion/recovery', receipt)
+    expect(recovery.status).toBe(200)
+    expect(await recovery.json()).toMatchObject({ status: 'complete' })
+    expect(account.recoverAccountDeletion).toHaveBeenCalledWith(receipt)
+    const rejected = await post(server.origin, '/v1/account/deletion/recovery', {
+      ...receipt, successors: [{ projectId: 'project-one' }],
+    })
+    expect(rejected.status).toBe(400)
+    expect(account.recoverAccountDeletion).toHaveBeenCalledTimes(1)
+  })
+
   it('binds validated Mobile Installation presentation to the Login Attempt', async () => {
     const account = accountService()
     const server = await start(account)
@@ -326,6 +342,9 @@ interface MockAccountService {
   refresh: Mock<AccountService['refresh']>
   current: Mock<AccountService['current']>
   signOut: Mock<AccountService['signOut']>
+  planAccountDeletion: Mock<AccountService['planAccountDeletion']>
+  deleteAccount: Mock<AccountService['deleteAccount']>
+  recoverAccountDeletion: Mock<AccountService['recoverAccountDeletion']>
   trackConnection: Mock<AccountService['trackConnection']>
 }
 
@@ -341,6 +360,9 @@ function accountService(): MockAccountService {
     refresh: vi.fn<AccountService['refresh']>().mockResolvedValue(session()),
     current: vi.fn<AccountService['current']>().mockResolvedValue(session().account),
     signOut: vi.fn<AccountService['signOut']>().mockResolvedValue(undefined),
+    planAccountDeletion: vi.fn<AccountService['planAccountDeletion']>().mockResolvedValue([]),
+    deleteAccount: vi.fn<AccountService['deleteAccount']>().mockResolvedValue({ operationId: 'delete-one' as never, status: 'deleting', projects: [] }),
+    recoverAccountDeletion: vi.fn<AccountService['recoverAccountDeletion']>().mockResolvedValue({ operationId: 'delete-one' as never, status: 'complete', projects: [] }),
     trackConnection: vi.fn<AccountService['trackConnection']>(),
   }
 }

@@ -83,6 +83,20 @@ async function ownMembershipOf(
 }
 
 describe('file-backed project membership', () => {
+  it('requires a joined successor and preserves shared project data while deleting an account', async () => {
+    const { store, projectId } = await foundProject(alice, 'Deletion shared project')
+    const successor = await joinWith(store, projectId, bob, 'Bob workspace')
+    await store.invite(alice, { projectId, inviteeAccountId: carol, grantedRole: 'member' })
+    const projects = await store.accountDeletionProjects(alice)
+    expect(projects).toMatchObject([{ projectId, candidates: [{ membershipId: successor.id, accountId: bob }] }])
+    expect(await store.deleteAccountMemberships(alice, [])).toHaveLength(1)
+    await expect(store.deleteAccountMemberships(alice, [{ projectId, successorMembershipId: successor.id }])).resolves.toEqual([])
+    const roster = await store.roster(bob, projectId)
+    expect(roster.members).toMatchObject([{ id: successor.id, role: 'owner', link: { workspaceName: 'Bob workspace' } }])
+    expect(roster.members).toHaveLength(1)
+    expect(await store.pendingInvitationsFor(carol)).toEqual([])
+  })
+
   it('creates a project whose creator is the founding owner with the remote bound normalized', async () => {
     const store = makeStoreAt(freshRoot(), 'development')
     const project = await store.createProject(alice, {
@@ -472,9 +486,9 @@ describe('failed durable writes commit nothing', () => {
     await rmdir(storageFile)
     await store.changeRole(alice, { membershipId: bobMember.id, role: 'admin' })
     expect(await store.rosterVersion(projectId)).toBe(3)
-    // Durability precedes publication, so the document carries the version as of commit time.
+    // The committed document and the invalidation share the same roster version.
     const document = parse(await readFile(storageFile, 'utf8'))
-    expect(document.projects[0]).toMatchObject({ id: projectId, rosterVersion: 2 })
+    expect(document.projects[0]).toMatchObject({ id: projectId, rosterVersion: 3 })
     expect(document.memberships.map(row => [row.accountId, row.role, row.tags]))
       .toEqual([[alice, 'owner', []], [bob, 'admin', []]])
     expect(document.invitations.map(row => [row.inviteeAccountId, row.state]))

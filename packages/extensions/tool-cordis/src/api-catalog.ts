@@ -1719,13 +1719,31 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the matching public Account identity, or undefined when absent or ambiguous.',
       },
       {
+        signature: 'abstract planAccountDeletion(input: { accessToken: string; proof: AccountProof }): Promise<readonly AccountDeletionProject[]>',
+        description: 'Inspect shared projects requiring explicit ownership successors.',
+        parameters: [{ name: 'input', description: 'Current Installation authorization.' }],
+        returns: 'Projects requiring a successor selected from joined members.',
+      },
+      {
+        signature: 'abstract recoverAccountDeletion(input: AccountDeletionRecovery): Promise<AccountDeletionView>',
+        description: 'Resume the initiating Installation\'s deletion without an Account Session.',
+        parameters: [{ name: 'input', description: 'Restricted recovery receipt and optional replacement choices.' }],
+        returns: 'Durable progress or an explicit successor-selection requirement.',
+      },
+      {
+        signature: 'abstract deleteAccount(input: AccountDeletionRequest): Promise<AccountDeletionView>',
+        description: 'Delete this Account and invalidate every Installation.',
+        parameters: [{ name: 'input', description: 'Confirmed operation, recovery material and Installation proof.' }],
+        returns: 'Durable deletion progress.',
+      },
+      {
         signature: 'abstract signOut(input: { accessToken: string; proof: AccountProof }): Promise<void>',
         description: 'Revoke only the current installation Account Session.',
         parameters: [{ name: 'input', description: 'access token and installation proof.' }],
       },
       {
         signature: 'abstract trackConnection(sessionId: AccountSessionId, close: () => void | Promise<void>): Promise<() => void>',
-        description: 'Track a Platform connection so cross-instance session invalidation closes it. Unbound session ids are resolved through the Account backend; missing or inactive sessions are rejected.',
+        description: 'Track a Platform connection so cross-instance session invalidation closes it. Every admission checks durable session activity, including ids already cached for connection counting.',
         parameters: [{ name: 'sessionId', description: 'Account Session owning the connection.' }, { name: 'close', description: 'idempotent close callback.' }],
         returns: 'disposer removing the tracked connection.',
         throws: ['AccountError `QUOTA` with a 60-second `retryAfter` when the Account already has twenty tracked closers.', 'AccountError `SESSION_REVOKED` when the session is missing or inactive.'],
@@ -1737,6 +1755,18 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     summary: 'Project-membership capability.',
     description: 'Project-membership capability. Every mutation executes its role gate inside the operation itself: schema omission or listener order never substitutes for the check that decides the outcome.',
     methods: [
+      {
+        signature: 'abstract accountDeletionProjects(accountId: PlatformAccountId): Promise<readonly AccountDeletionProject[]>',
+        description: 'List shared projects requiring an explicit successor for account deletion.',
+        parameters: [{ name: 'accountId', description: 'Account authenticated by the Account deletion owner.' }],
+        returns: 'Sole-owner projects and their other joined members.',
+      },
+      {
+        signature: 'abstract deleteAccountMemberships( accountId: PlatformAccountId, successors: readonly AccountDeletionSuccessor[], ): Promise<readonly AccountDeletionProject[]>',
+        description: 'Remove one deleting Account\'s personal membership records without deleting other members\' data.',
+        parameters: [{ name: 'accountId', description: 'Account whose durable deletion has already revoked ordinary authorization.' }, { name: 'successors', description: 'Explicit, proof-bound choices for sole-owner shared projects.' }],
+        returns: 'Projects requiring replacement choices; an empty list means cleanup completed.',
+      },
       {
         signature: 'abstract createProject(actor: PlatformAccountId, input: CreateProjectInput): Promise<ProjectView>',
         description: 'Create one project; the actor becomes its first owner.',
@@ -3986,6 +4016,46 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'AcceptInvitationInput',
     declaration: 'export interface AcceptInvitationInput {\n    readonly invitationId: InvitationId;\n    readonly link: WorkspaceLink;\n}',
+  },
+  {
+    name: 'AccountDeletionCandidate',
+    declaration: 'export interface AccountDeletionCandidate {\n    membershipId: AccountDeletionMembershipId;\n    accountId: import(\'./types.ts\').PlatformAccountId;\n    label: string;\n}',
+  },
+  {
+    name: 'AccountDeletionId',
+    declaration: 'export type AccountDeletionId = Branded<\'AccountDeletionId\'>;',
+  },
+  {
+    name: 'AccountDeletionMembershipId',
+    declaration: 'export type AccountDeletionMembershipId = Branded<\'MembershipId\'>;',
+  },
+  {
+    name: 'AccountDeletionProject',
+    declaration: 'export interface AccountDeletionProject {\n    projectId: AccountDeletionProjectId;\n    name: string;\n    candidates: readonly AccountDeletionCandidate[];\n}',
+  },
+  {
+    name: 'AccountDeletionProjectId',
+    declaration: 'export type AccountDeletionProjectId = Branded<\'ProjectId\'>;',
+  },
+  {
+    name: 'AccountDeletionReceipt',
+    declaration: 'export interface AccountDeletionReceipt {\n    operationId: AccountDeletionId;\n    recoveryToken: string;\n}',
+  },
+  {
+    name: 'AccountDeletionRecovery',
+    declaration: 'export interface AccountDeletionRecovery extends AccountDeletionReceipt {\n    proof: AccountProof;\n    successors?: readonly AccountDeletionSuccessor[];\n}',
+  },
+  {
+    name: 'AccountDeletionRequest',
+    declaration: 'export interface AccountDeletionRequest extends AccountDeletionReceipt {\n    accessToken: string;\n    successors: readonly AccountDeletionSuccessor[];\n    proof: AccountProof;\n}',
+  },
+  {
+    name: 'AccountDeletionSuccessor',
+    declaration: 'export interface AccountDeletionSuccessor {\n    projectId: AccountDeletionProjectId;\n    successorMembershipId: AccountDeletionMembershipId;\n}',
+  },
+  {
+    name: 'AccountDeletionView',
+    declaration: 'export interface AccountDeletionView {\n    operationId: AccountDeletionId;\n    status: \'deleting\' | \'action-required\' | \'complete\';\n    projects: readonly AccountDeletionProject[];\n}',
   },
   {
     name: 'AccountProof',

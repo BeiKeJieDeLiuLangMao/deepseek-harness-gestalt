@@ -10,9 +10,9 @@ Desktop Cloud Projects 会在生产 origin 上调用创建与 presence heartbeat
 
 ## 决策
 
-`launchOperatedPlatform` 在 Account HTTP 之后立即挂载 `@deepseek-ai/dsh-project-membership-core`，再挂载 `@deepseek-ai/dsh-project-membership-http`，origin 与 Account 相同（`environment.origin`、`https://localhost`、`capacitor://localhost`）。文件持久化 Provider 使用运营身份中的 `environment: 'production'`，`storagePath` 来自 `PLATFORM_MEMBERSHIP_STORAGE`，缺省为 `/var/lib/dsh/projects`。仅空白字符的覆盖会大声失败。持久状态位于 `<storagePath>/production/project-membership.json`。镜像为 uid 10001 创建该目录并声明为 `VOLUME`；host script 只在长期运行的 `dsh-platform` 容器上挂载 named volume `dsh-platform-membership`，因此 loopback candidate 不共享 writer。镜像内默认路径可写，故 `PLATFORM_MEMBERSHIP_STORAGE` 保持可选。
+`launchOperatedPlatform` 在 Account HTTP 之后立即挂载 `@deepseek-ai/dsh-project-membership-core`，再挂载 `@deepseek-ai/dsh-project-membership-http`，origin 与 Account 相同（`environment.origin`、`https://localhost`、`capacitor://localhost`）。`PLATFORM_MEMBERSHIP_BACKEND=file` 模式的文件持久化 Provider 使用运营身份中的 `environment: 'production'`，`storagePath` 来自 `PLATFORM_MEMBERSHIP_STORAGE`，缺省为 `/var/lib/dsh/projects`。仅空白字符的覆盖会大声失败。持久状态位于 `<storagePath>/production/project-membership.json`。镜像为 uid 10001 创建该目录并声明为 `VOLUME`；host script 只在长期运行的 `dsh-platform` 容器上挂载 named volume `dsh-platform-membership`，因此 loopback candidate 不共享 writer。镜像内默认路径可写，故 `PLATFORM_MEMBERSHIP_STORAGE` 保持可选。
 
-放置、角色门与单进程 writer 仍由[成员权威决策](2026-08-27-project-membership-core.zh.md)拥有。本变更只把该 Provider 及其 HTTP Consumer 接到运营监听进程。
+放置与角色检查仍由[成员权威决策](2026-08-27-project-membership-core.zh.md)拥有。[删除决策](2026-09-09-mobile-account-deletion.zh.md)在显式切换后选择共享 PostgreSQL 权威；两种模式使用相同的 HTTP Consumer。
 
 ## 备选方案
 
@@ -26,4 +26,4 @@ Desktop Cloud Projects 会在生产 origin 上调用创建与 presence heartbeat
 
 ## 后果
 
-未认证的 `POST /v1/projects` 与 `POST /v1/projects/presence/heartbeat` 返回 Account `401 AUTH_REQUIRED`，而不再是 404/405。presence 在共享 `PresenceStore` 出现前仍是进程本地，与 [HTTP Consumer](../../../../packages/platform/project-membership-http/README.zh.md) 一致。两台 ECS 实例不共享 membership 写入；扩容仍需 core 包记录的后端替换。无密钥覆盖用假 PostgreSQL/Redis adapter 与临时存储启动 `launchOperatedPlatform`；不访问实际 ECS。
+未认证的 `POST /v1/projects` 与 `POST /v1/projects/presence/heartbeat` 返回 Account `401 AUTH_REQUIRED`，而不再是 404/405。presence 在共享 `PresenceStore` 出现前仍是进程本地，与 [HTTP Consumer](../../../../packages/platform/project-membership-http/README.zh.md) 一致。文件模式不在 ECS 实例间共享成员写入，PostgreSQL 模式要求显式统一切换全部实例。无密钥覆盖用假 PostgreSQL/Redis adapter 与临时存储启动 `launchOperatedPlatform`；不访问实际 ECS。

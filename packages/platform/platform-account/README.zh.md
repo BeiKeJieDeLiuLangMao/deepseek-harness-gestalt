@@ -8,6 +8,8 @@
 
 `loadOperatedPlatformEnvironment` 是产品入口 parser：它只接受一套完整生产身份，并拒绝本地 origin。`loadPlatformEnvironment` 仅供 example 与测试等范围受限的 composition 校验并选择开发／生产身份对。产品客户端通过部署所有的构建产物取得实际运行身份，不提供运行时开发 selector。
 
+`planAccountDeletion`、`deleteAccount` 和 `recoverAccountDeletion` 定义独立且绑定 Installation 证明的删除生命周期。确认的操作撤销全部会话，保留明确的接任成员选择，并返回 `deleting`、`action-required` 或 `complete`。恢复令牌不授予普通 Account 访问。[提供方](../platform-account-core/README.zh.md)负责持久化和重试，[Mobile](../../../apps/mobile/README.zh.md)负责确认与本地清理。
+
 ## 模型体验
 
 无。Platform 账号状态不对模型可见，不增加消息、工具或提示词文本。
@@ -18,5 +20,5 @@
 
 ## 已知限制与暂缓事项
 
-- 账号删除、会话列表、远程退出、全部退出、恢复和身份关联不属于本服务。
+- 会话列表、独立远程退出、退出全部安装和身份关联不属于此服务。
 - 个人配对是独立能力，`signOut` 永远不会删除它。

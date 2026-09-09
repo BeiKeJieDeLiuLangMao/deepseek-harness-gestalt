@@ -8,6 +8,8 @@ The public types brand Account, Login Attempt, Account Session, Installation, an
 
 `loadOperatedPlatformEnvironment` is the product-entry parser: it accepts one complete production identity and rejects local origins. `loadPlatformEnvironment` validates and selects a development/production pair only for bounded compositions such as examples and tests. Product clients supply the operated identity through deployment-owned build artifacts and have no runtime development selector.
 
+`planAccountDeletion`, `deleteAccount` and `recoverAccountDeletion` define a distinct, Installation-proof-bound deletion lifecycle. A confirmed operation revokes every session, preserves explicit successor choices and exposes `deleting`, `action-required` or `complete`. Its recovery token grants no ordinary Account access. [The provider](../platform-account-core/README.md) owns durability and retry; [Mobile](../../../apps/mobile/README.md) owns confirmation and local cleanup.
+
 ## Model Experience
 
 None, as Platform Account state adds no messages, tools, or prompt text.
@@ -18,5 +20,5 @@ None.
 
 ## Known Limitations and Deferred Work
 
-- Account deletion, session lists, remote sign-out, sign-out-all, recovery, and identity linking are not part of this service.
+- Session lists, independent remote sign-out, sign-out-all and identity linking are outside this service.
 - Personal Pairings are a separate capability and are never deleted by `signOut`.

@@ -54,6 +54,15 @@ export function parseAccountProofJti(value: unknown): AccountProofJti {
 }
 
 /**
+ * Parse an Account Session id at a wire or durable boundary.
+ * @param value - Untrusted session identifier.
+ * @returns Branded non-empty session id.
+ */
+export function parseAccountSessionId(value: unknown): AccountSessionId {
+  return nonEmptyString(value, 'Account Session id') as AccountSessionId
+}
+
+/**
  * Parse an installation id at a wire or durable-data boundary.
  * @param value - untrusted identifier value.
  * @returns branded non-empty Installation id.

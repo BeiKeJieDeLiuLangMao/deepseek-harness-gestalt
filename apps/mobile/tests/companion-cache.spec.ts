@@ -616,3 +616,21 @@ function recordingTransport(onSend: (() => void) | undefined, outcome: Companion
   }
   return transport
 }
+
+
+it('clears all deleted-account Desktop caches and receipts without touching a different account', async () => {
+  const deleted = namespacedStore('account-deletion-cache')
+  const retained = namespacedStore('account-retained-cache')
+  const cipher = await cipherFor({})
+  const content = await cipher.seal(desktopA, 'transcript', new TextEncoder().encode('cached'))
+  await deleted.saveContent(desktopA, 'transcript', content)
+  await retained.saveContent(desktopA, 'transcript', content)
+  await deleted.saveReceipt(desktopA, { operationId: parseCompanionOperationId('first-receipt'), status: 'unknown' })
+  await deleted.saveReceipt(desktopB, { operationId: parseCompanionOperationId('second-receipt'), status: 'unknown' })
+  await deleted.clearAccount()
+  const reopened = namespacedStore('account-deletion-cache')
+  expect(await reopened.loadContent(desktopA, 'transcript')).toBeUndefined()
+  expect(await reopened.loadReceipts(desktopA)).toEqual([])
+  expect(await reopened.loadReceipts(desktopB)).toEqual([])
+  expect(await retained.loadContent(desktopA, 'transcript')).toBeDefined()
+})
