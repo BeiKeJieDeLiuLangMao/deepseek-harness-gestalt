@@ -12,6 +12,8 @@ DeepSeek Gestalt 当前提供仅限 Desktop 的 Sub2API 组件，用户需要在
 
 ## Proposal
 
+远程协调记录是 [gestaltrun/deepseek-harness-gestalt#649](https://github.com/gestaltrun/deepseek-harness-gestalt/issues/649)。它跟踪本提案及其交付图，但仍是未冻结、未标记 `ready-for-agent` 的 `enhancement`；规划 PR 关联该议题不表示 GUI 稿或体验路线已经冻结。
+
 DeepSeek Gestalt 将 CLIProxyAPI 作为内置 Desktop 组件交付。首个上游基线是 lightweight tag `v7.2.155`，解析到提交 `7fac6b15bcfe5ea55c18c9eaec8e5b7e6457d974`。Desktop Bundle 将包含基于 [`gestaltrun/CLIProxyAPI`](https://github.com/gestaltrun/CLIProxyAPI) 精确提交构建的平台二进制；该 GitHub fork 的 parent 与 source 保持为 [`router-for-me/CLIProxyAPI`](https://github.com/router-for-me/CLIProxyAPI)。Harness 仓库将用 Git submodule 记录核心钉住点。应用启动时不会下载、安装或启用核心，Settings 也不会保留 Offer 卡。
 
 Manager UI 源码将从 `router-for-me/Cli-Proxy-API-Management-Center` 提交 `ed5f1c48e11ba7335f1e8f676f228c280196af85` 迁入本仓库的第一方 client 包，之后作为 Gestalt 源码独立演化。该来源使用 MIT，并带有已核实的 `Copyright (c) 2026 Router-For.ME` 声明；迁入时将保留适用的版权与许可声明。它将使用现有 Desktop Settings 外壳、slot、组件、locale 与主题。它不会成为 UI submodule、运行时下载、iframe 或远程管理页面。原型结论与体验路线将另行确定最终展示；本提案固定所有权和信任边界，而不固定视觉布局。
