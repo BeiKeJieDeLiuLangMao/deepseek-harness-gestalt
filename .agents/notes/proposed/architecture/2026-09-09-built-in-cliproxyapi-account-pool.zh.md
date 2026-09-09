@@ -12,9 +12,9 @@ DeepSeek Gestalt 当前提供仅限 Desktop 的 Sub2API 组件，用户需要在
 
 ## Proposal
 
-DeepSeek Gestalt 将 CLIProxyAPI 作为内置 Desktop 组件交付。Desktop Bundle 将包含基于 [`gestaltrun/CLIProxyAPI`](https://github.com/gestaltrun/CLIProxyAPI) 精确提交构建的平台二进制；该 GitHub fork 的 parent 与 source 保持为 [`router-for-me/CLIProxyAPI`](https://github.com/router-for-me/CLIProxyAPI)。Harness 仓库将用 Git submodule 记录核心钉住点。应用启动时不会下载、安装或启用核心，Settings 也不会保留 Offer 卡。
+DeepSeek Gestalt 将 CLIProxyAPI 作为内置 Desktop 组件交付。首个上游基线是 lightweight tag `v7.2.155`，解析到提交 `7fac6b15bcfe5ea55c18c9eaec8e5b7e6457d974`。Desktop Bundle 将包含基于 [`gestaltrun/CLIProxyAPI`](https://github.com/gestaltrun/CLIProxyAPI) 精确提交构建的平台二进制；该 GitHub fork 的 parent 与 source 保持为 [`router-for-me/CLIProxyAPI`](https://github.com/router-for-me/CLIProxyAPI)。Harness 仓库将用 Git submodule 记录核心钉住点。应用启动时不会下载、安装或启用核心，Settings 也不会保留 Offer 卡。
 
-官方 manager UI 将迁入本仓库的第一方 client 包，之后作为 Gestalt 源码独立演化。它将使用现有 Desktop Settings 外壳、slot、组件、locale 与主题。它不会成为 UI submodule、运行时下载、iframe 或远程管理页面。原型结论与体验路线将另行确定最终展示；本提案固定所有权和信任边界，而不固定视觉布局。
+Manager UI 源码将从 `router-for-me/Cli-Proxy-API-Management-Center` 提交 `ed5f1c48e11ba7335f1e8f676f228c280196af85` 迁入本仓库的第一方 client 包，之后作为 Gestalt 源码独立演化。该来源使用 MIT，并带有已核实的 `Copyright (c) 2026 Router-For.ME` 声明；迁入时将保留适用的版权与许可声明。它将使用现有 Desktop Settings 外壳、slot、组件、locale 与主题。它不会成为 UI submodule、运行时下载、iframe 或远程管理页面。原型结论与体验路线将另行确定最终展示；本提案固定所有权和信任边界，而不固定视觉布局。
 
 替代方案从空白 CLIProxyAPI home 开始。它不会读取、转换、导入或兼容 Sub2API 账号、凭据、统计、额度历史、Composite 分组、路由或数据格式。删除旧用户数据是独立的破坏性操作，本提案不隐含该操作。
 
@@ -42,7 +42,9 @@ Desktop Bundle 将携带每个受支持打包目标的二进制。首批要求�
 
 Desktop Host 将为 management 与 inference 创建并保留相互独立的 CLIProxyAPI authority。Management secret 只供 Host 管理网关使用。Inference API key 只供需要调用 OpenAI-compatible 推理端点的本机 LLM 集成使用。两者都不会进入 renderer props、浏览器存储、Session 日志、截图、诊断或保留产物。
 
-管理网关只暴露产品操作：读取已脱敏账号目录、开始受支持的登录、观察登录状态、取消 OAuth session、执行受支持的 auth-file 变更，以及在存在已验证 provider 探测时请求刷新额度。它不会向 renderer 暴露 CLIProxyAPI 的通用管理请求能力。登录 URL 与设备授权数据只会以 Desktop Host 或 UI 完成该 provider 已验证流程所需的最小形式返回。
+管理网关只暴露产品操作：读取已脱敏账号目录、开始受支持的登录、观察登录状态、取消 OAuth session、执行受支持的 auth-file 变更，以及在存在已验证 provider 探测时请求刷新额度。它不会向 renderer 暴露 CLIProxyAPI 的通用管理请求能力。主动额度探测会使用由 Host 拥有、从迁入 manager 逻辑适配而来的固定 provider endpoint 策略；renderer 只选择账号并请求刷新，不能提供任意 URL、method、header 或 management payload。
+
+Anthropic、Codex 与 Antigravity 默认启动 PKCE redirect 流程。Kimi 与 xAI 使用设备授权：auth start 返回 `flow=device`、`user_code`、`expires_in`、`url` 与 `state`。登录 URL、user code、到期时间与 state 只会以 Desktop Host 和 UI 完成已验证流程所需的最小形式返回。UI 会展示等待、成功、失败、到期、取消与重试，不会把设备流程当成嵌入式 redirect。
 
 一份由 Host 拥有的不可变 snapshot 将投影组件健康状态、已脱敏账号身份、登录操作、额度观测、新鲜度与可操作失败。外部变化只在操作提交后发布。组件通过 client slot 注入机制消费 snapshot，并通过窄回调发送意图；组件不会轮询 CLIProxyAPI、镜像 secret 或成为第二个账号 authority。
 
@@ -58,7 +60,9 @@ Management 与 inference 即使指向同一个本机进程，也保持独立 aut
 
 ## Quota observations
 
-CLIProxyAPI 当前没有统一的主动额度端点。部分账号类型暴露被动 rate-limit header，而 provider 专用主动检查可能需要 management API 的请求能力。Host 只会归一化已验证观测，并保留来源与采集时间。
+CLIProxyAPI 没有统一的主动额度端点。迁入的 manager 源码包含 provider 专用主动额度实现；其中 React-free data 模块与共享额度工具将适配为 Host 自有策略：`src/features/quota/providers/*/data.ts`、`src/utils/quota/{constants,parsers,builders,resetInstants}` 与 `src/types/quota.ts`。`QuotaTimeline`、`quotaTimelineModel`、`QuotaMeter` 与 `AuthFileQuotaSection` 是迁入第一方账号卡的直接 UI 基础，但不证明原 manager 由浏览器直连 management 的架构应保留。
+
+首批主动矩阵覆盖全部五个登录 provider。Anthropic 读取 OAuth usage window，包括 `five_hour`、`seven_day` utilization 与 `resets_at`。Codex 读取 wham usage 的 `used_percent`、`limit_window_seconds` 与 reset。Antigravity 读取 `retrieveUserQuotaSummary` bucket 的 `remainingFraction`、window 与 `resetTime`。Kimi 读取 `/coding/v1/usages` 的 usage 与 `limits.window` duration/time unit。xAI 从 `cli-chat-proxy.grok.com/v1/billing` 读取周期 usage。Host 只会归一化已验证响应字段，并保留 provider、来源、采集时间与最后成功观测。
 
 额度值将区分 known、partial、probing、stale、unknown、unsupported 与 failed 状态。Unknown 或 unsupported 数据绝不会渲染为零、满额或虚构余额。只有来源提供所需分子与分母时，额度线才可以展示剩余容量。只有来源提供足够信息确定窗口时长和重置位置时，才可以计算叠加的时间窗口百分比；只有 reset timestamp 而没有时长时，不生成时间百分比。
 
@@ -66,7 +70,7 @@ CLIProxyAPI 当前没有统一的主动额度端点。部分账号类型暴露�
 
 GLM 额度优先采用 `TOKENS_LIMIT`，只有完全没有 token limit 时才使用 `CREDIT_LIMIT`。Unit `3` 表示五小时窗口，unit `6` 表示每周窗口。投影保留 `used_percent`、`reset_at` 与 `updated_at`；它依据已验证的使用百分比推导剩余额度，并且仅在窗口时长与重置位置成立时绘制时间对比。订阅 base 的 `/models` 响应是 GLM 模型可用性的权威来源，因此集成不会虚构静态 GLM 目录。
 
-其余 provider 探测矩阵、刷新节奏、缓存寿命、rate limit 与副作用必须在提案冻结前记录。UI 原型可以为各状态使用明确标注的 fixture，但不能暗示上游存在某个 fixture 字段。
+Manager 实现确定了 provider 矩阵和解析依据，但本次交付尚未用真实服务验证。首期产品因此会把未经验证、失败或过期的观测标为 unknown 或 stale，在鉴权或传输失败时保留最后有效 snapshot，也不会宣称每个账号当前都会返回全部已记录字段。刷新节奏与缓存寿命将由有界 Host 策略决定，以避免重复上游调用；实现票会用 provider 专用测试固定数值，而不是暴露 renderer 轮询间隔。UI 原型可以为各状态使用明确标注的 fixture，但不能暗示某个 fixture 字段已经通过真实服务验证。
 
 ## GLM subscription status
 
@@ -104,7 +108,7 @@ GLM 额度优先采用 `TOKENS_LIMIT`，只有完全没有 token limit 时才使
 - 每个受支持 Desktop 包含从记录钉住点构建的二进制，能从全新隔离 home 启动且不需要 Go 工具链、数据库服务或核心下载，并拒绝缺失、不匹配或无法识别的二进制。
 - 一个 Desktop 实例拥有一个 loopback CLIProxyAPI 进程和动态端口；ready 状态、有界崩溃恢复、关闭与清理均可观察，且一个实例绝不终止另一实例的进程。
 - Renderer 不会收到 management secret、inference API key、auth-file secret 或原始管理逃生口；凭据类值不会进入日志、Session 数据、截图与保留产物。
-- 第一方 Settings UI 会渲染已接受的全局管理/额度切换与单卡翻面、五个已验证 OAuth 登录入口，以及带明确中国/国际和个人/团队选择的独立 GLM Coding Plan key 入口。它会渲染真实授权状态与额度 unknown、partial、stale 和 failure 状态，且不使用 iframe 或运行时 UI 下载。
+- 第一方 Settings UI 会渲染已接受的全局管理/额度切换与单卡翻面；Anthropic、Codex 与 Antigravity 的 PKCE 登录；Kimi 与 xAI 的设备授权；以及带明确中国/国际和个人/团队选择的独立 GLM Coding Plan key 入口。它会渲染真实授权状态与额度 unknown、partial、stale 和 failure 状态，且不使用 iframe 或运行时 UI 下载。
 - LLM 集成会根据实时本机模型目录发布一条 provider route，在核心无法服务模型时撤回或标为不可用，不接管用户自有冲突 route，并能完成一项单独授权的真实模型请求。
 - 替代路径不会读取或转换 Sub2API 数据。若之后授权删除旧文件，该行为会作为独立操作验证。
 - fork 同步会保留可审计的上游基线与已接受 Gestalt delta；Harness 钉住点仅在 fork、打包、确定性 UI 和必需原生证据通过后移动。
