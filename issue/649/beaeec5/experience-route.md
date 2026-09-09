@@ -9,7 +9,12 @@
 - Application: unsigned arm64 packaged `DeepSeek Gestalt.app`, version `0.1.17`.
 - Driver: WebdriverIO Electron service against a real isolated Electron application.
 - Data mode: in-memory account-pool prototype fixture; no real CLIProxyAPI service, account, key, OAuth, or model call.
-- State: fresh scratch DSH Home and Electron user-data; both removed after the route.
+
+## Evidence runs
+
+The main coherent route evidence currently retained in `wdio-fixture/` is the latest completed run after bash39. That directory was reused by later coherent reruns, so the earlier bash36 and bash39 file hashes survive only in their issued reports; they no longer identify the bytes currently at those paths. Do not cite those historical hashes as current files.
+
+The quota supplement belongs to job `bash-44` and is copied to `quota-supplement-bash44/` with its own `launch-identity.json`, `runner.log`, `main-smoke.log`, `cleanup.json`, and `SHA256SUMS`. Job bash44 used the same source and unsigned application in a fresh scratch, passed the complete route, removed the scratch, and closed its CDP port. It is supplemental PNG evidence, not a final GIF and not a splice claiming one capture session.
 
 ## Demonstrated route
 
@@ -25,12 +30,12 @@
 
 ## Frozen draft PNG set
 
-- `01-variant-a-management.png`: A management-card overview. The visible `PROTOTYPE DRAFT` scaffold identifies this as planning evidence.
-- `05-unknown-empty-quota.png`: full quota view. The right card shows multiple reliable windows with quota bars, red time-comparison markers, and numeric remaining ratios; the left card shows the empty/unknown state without fabricated graphics.
-- `07-kimi-device-consistency.png`: Kimi device fixture URI and code consistency; the URI is display text, not a link.
-- `08a-glm-empty-key-form.png`: GLM form before input, with no fixture value visible.
+- `01-a-management.png`: A management-card overview. The visible `PROTOTYPE DRAFT` scaffold identifies this as planning evidence.
+- `02-quota-and-unknown.png`: full quota view. The right card shows multiple reliable windows with quota bars, red time-comparison markers, and numeric remaining ratios; the left card shows the empty/unknown state without fabricated graphics.
+- `03-kimi-device.png`: Kimi device fixture URI and code consistency; the URI is display text, not a link.
+- `04-glm-empty-form.png`: GLM form before input, with no fixture value visible.
 
-The available `08-glm-local-key-form.png` contains the literal non-secret test value `issue649-local-only-fixture-value`. It remains local test evidence and is intentionally excluded from publication so a field value cannot be mistaken for a credential. A coherent supplemental run at the same source and unsigned artifact captured the empty GLM form, reran the complete fixture route, and passed cleanup. The focused Codex card crop from that run is retained locally but not published because the floating prototype switcher obscures part of the crop; the full quota screenshot communicates the time/quota comparison more clearly.
+The bash44 supplement also captured `04a-codex-reliable-quota-windows.png`, a real Codex card crop with quota/time ratios and a needle. It remains local because the floating prototype switcher obscures part of the card; the published full quota view is clearer and shows four reliable time/quota comparisons. The literal-value GLM screenshot remains local and is excluded so a non-secret fixture value cannot be mistaken for a credential.
 
 ## Required production adjustments
 
