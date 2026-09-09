@@ -20,33 +20,17 @@ export type VariantKey = 'A' | 'B' | 'C'
 export function CliProxyAccountPoolPrototype() {
   const [variant, setVariant] = useState<VariantKey>('A')
   const [accounts, setAccounts] = useState<AccountPoolItem[]>(MOCK_ACCOUNTS)
-  // Per-card face mapping to allow global commands while preserving single-card independence
-  const [cardFaces, setCardFaces] = useState<Record<string, 'A' | 'B'>>({})
-  const [globalFaceState, setGlobalFaceState] = useState<'A' | 'B'>('A')
+  const [globalFace, setGlobalFace] = useState<'A' | 'B'>('A')
+  const [globalEpoch, setGlobalEpoch] = useState<number>(0)
   const [filterProvider, setFilterProvider] = useState<string>('all')
   const [showLoginModal, setShowLoginModal] = useState(false)
   const [selectedAddProvider, setSelectedAddProvider] = useState<ProviderType>('codex')
   const [showDropdown, setShowDropdown] = useState(false)
 
-  // Global face command: sets all cards simultaneously
+  // Global face command: sets all cards simultaneously and bumps epoch to reset local overrides
   const handleGlobalFaceCommand = (target: 'A' | 'B') => {
-    setGlobalFaceState(target)
-    const nextMap: Record<string, 'A' | 'B'> = {}
-    accounts.forEach(acc => {
-      nextMap[acc.id] = target
-    })
-    setCardFaces(nextMap)
-  }
-
-  // Single-card flip: flips only the targeted card without resetting others
-  const handleCardFlip = (id: string) => {
-    setCardFaces(prev => {
-      const current = prev[id] ?? globalFaceState
-      return {
-        ...prev,
-        [id]: current === 'A' ? 'B' : 'A',
-      }
-    })
+    setGlobalFace(target)
+    setGlobalEpoch(e => e + 1)
   }
 
   // Filtered accounts
@@ -163,15 +147,17 @@ export function CliProxyAccountPoolPrototype() {
             <div className={css.switchGroup}>
               <button
                 type="button"
-                className={`${css.faceBtn} ${globalFaceState === 'A' ? css.faceBtnActive : ''}`}
+                className={`${css.faceBtn} ${globalFace === 'A' ? css.faceBtnActive : ''}`}
                 onClick={() => { handleGlobalFaceCommand('A') }}
+                data-testid="global-face-btn-a"
               >
                 📋 管理面 (A面)
               </button>
               <button
                 type="button"
-                className={`${css.faceBtn} ${globalFaceState === 'B' ? css.faceBtnActive : ''}`}
+                className={`${css.faceBtn} ${globalFace === 'B' ? css.faceBtnActive : ''}`}
                 onClick={() => { handleGlobalFaceCommand('B') }}
+                data-testid="global-face-btn-b"
               >
                 📊 额度面 (B面)
               </button>
@@ -199,6 +185,13 @@ export function CliProxyAccountPoolPrototype() {
                 <button
                   type="button"
                   className={css.dropdownItem}
+                  onClick={() => { setSelectedAddProvider('xai'); setShowDropdown(false); setShowLoginModal(true) }}
+                >
+                  <span className={css.dropIcon}>Ø</span> xAI Grok OAuth (设备授权)
+                </button>
+                <button
+                  type="button"
+                  className={css.dropdownItem}
                   onClick={() => { setSelectedAddProvider('codex'); setShowDropdown(false); setShowLoginModal(true) }}
                 >
                   <span className={css.dropIcon}>⚡</span> Codex OAuth
@@ -216,13 +209,6 @@ export function CliProxyAccountPoolPrototype() {
                   onClick={() => { setSelectedAddProvider('antigravity'); setShowDropdown(false); setShowLoginModal(true) }}
                 >
                   <span className={css.dropIcon}>▲</span> Antigravity OAuth
-                </button>
-                <button
-                  type="button"
-                  className={css.dropdownItem}
-                  onClick={() => { setSelectedAddProvider('xai'); setShowDropdown(false); setShowLoginModal(true) }}
-                >
-                  <span className={css.dropIcon}>Ø</span> xAI Grok OAuth
                 </button>
                 <button
                   type="button"
@@ -270,9 +256,9 @@ export function CliProxyAccountPoolPrototype() {
               <AccountCard
                 key={acc.id}
                 item={acc}
-                currentFace={cardFaces[acc.id] ?? globalFaceState}
+                globalFace={globalFace}
+                globalEpoch={globalEpoch}
                 styleVariant="needle"
-                onFlipFace={handleCardFlip}
                 onDelete={handleDelete}
                 onRefreshQuota={handleRefreshQuota}
               />
@@ -288,9 +274,9 @@ export function CliProxyAccountPoolPrototype() {
               <AccountCard
                 key={acc.id}
                 item={acc}
-                currentFace={cardFaces[acc.id] ?? globalFaceState}
+                globalFace={globalFace}
+                globalEpoch={globalEpoch}
                 styleVariant="band"
-                onFlipFace={handleCardFlip}
                 onDelete={handleDelete}
                 onRefreshQuota={handleRefreshQuota}
               />
@@ -320,9 +306,9 @@ export function CliProxyAccountPoolPrototype() {
               <AccountCard
                 key={acc.id}
                 item={acc}
-                currentFace={cardFaces[acc.id] ?? globalFaceState}
+                globalFace={globalFace}
+                globalEpoch={globalEpoch}
                 styleVariant="compact"
-                onFlipFace={handleCardFlip}
                 onDelete={handleDelete}
                 onRefreshQuota={handleRefreshQuota}
               />

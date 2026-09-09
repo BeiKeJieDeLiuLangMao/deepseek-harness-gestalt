@@ -1,11 +1,17 @@
 /**
  * AccountCard:
  * High-fidelity representation of a credential item with A/B face flipping.
- * Face A: Management (Status, success/fail counts, health history, actions, toggle)
- * Face B: Quota (Window metrics, percent remaining, timeline comparison marker)
+ *
+ * Face state architecture (R2 rule):
+ * - Maintains an internal state `localFaceOverride` which starts at null.
+ * - When `localFaceOverride` is null, the card follows `globalFace` (A or B).
+ * - Clicking the card's individual flip button toggles its own face into an explicit
+ *   override (A or B), becoming independent of the parent until a global command resets it.
+ * - When parent issues a new global command (detected via `globalCommandEpoch` or direct reset),
+ *   card clears its local override to align with all cards.
  */
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { AccountPoolItem } from './mock-data.ts'
 import { QuotaBarWithTimeline } from './QuotaBarWithTimeline.tsx'
@@ -14,9 +20,9 @@ import css from './AccountCard.module.css'
 export interface AccountCardProps {
   key?: string
   item: AccountPoolItem
-  currentFace?: 'A' | 'B' | undefined
+  globalFace?: 'A' | 'B' | undefined
+  globalEpoch?: number | undefined
   styleVariant?: 'needle' | 'band' | 'compact' | undefined
-  onFlipFace?: ((id: string) => void) | undefined
   onToggleStatus?: ((id: string) => void) | undefined
   onRefreshQuota?: ((id: string) => void) | undefined
   onDelete?: ((id: string) => void) | undefined
@@ -24,17 +30,29 @@ export interface AccountCardProps {
 
 export function AccountCard({
   item,
-  currentFace = 'A',
+  globalFace = 'A',
+  globalEpoch = 0,
   styleVariant = 'needle',
-  onFlipFace,
   onToggleStatus,
   onRefreshQuota,
   onDelete,
 }: AccountCardProps) {
+  // Individual override state: null means strictly follow globalFace
+  const [localOverride, setLocalOverride] = useState<'A' | 'B' | null>(null)
   const [enabled, setEnabled] = useState(item.status !== 'expired' && item.status !== 'error')
 
+  // When parent executes a global command (epoch bumps), clear local override to reset all cards
+  useEffect(() => {
+    setLocalOverride(null)
+  }, [globalEpoch])
+
+  // Current active face: explicit local override wins; otherwise follows global command
+  const currentFace = localOverride !== null ? localOverride : globalFace
+
   const flipFace = () => {
-    onFlipFace?.(item.id)
+    // Toggle between A and B independently from global
+    const nextFace = currentFace === 'A' ? 'B' : 'A'
+    setLocalOverride(nextFace)
   }
 
   const handleToggle = () => {
@@ -44,7 +62,11 @@ export function AccountCard({
   }
 
   return (
-    <div className={`${css.card} ${!enabled ? css.cardDisabled : ''}`}>
+    <div
+      className={`${css.card} ${!enabled ? css.cardDisabled : ''}`}
+      data-testid={`account-card-${item.id}`}
+      data-current-face={currentFace}
+    >
       {/* Top bar: Provider Icon, filename, and face flip button */}
       <div className={css.cardTop}>
         <div className={css.providerBadge}>
@@ -60,6 +82,7 @@ export function AccountCard({
             type="button"
             className={css.faceFlipBtn}
             onClick={flipFace}
+            data-testid={`card-flip-btn-${item.id}`}
             title={currentFace === 'A' ? '切换到配额面 (B面)' : '切换到管理面 (A面)'}
           >
             {currentFace === 'A' ? '⇄ 额度面' : '⇄ 管理面'}
@@ -72,7 +95,7 @@ export function AccountCard({
 
       {/* CARD BODY: A FACE (Management) */}
       {currentFace === 'A' && (
-        <div className={css.faceA}>
+        <div className={css.faceA} data-testid="card-face-a">
           {item.statusMessage && (
             <div className={css.alertBanner}>
               {item.statusMessage}
@@ -138,7 +161,7 @@ export function AccountCard({
 
       {/* CARD BODY: B FACE (Quota & Timeline Comparison) */}
       {currentFace === 'B' && (
-        <div className={css.faceB}>
+        <div className={css.faceB} data-testid="card-face-b">
           {item.metrics.length === 0 ? (
             <div className={css.emptyQuota}>
               <p>暂未获取到该账号配额数据，或该提供商不提供主动额度查询。</p>

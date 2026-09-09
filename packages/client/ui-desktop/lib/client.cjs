@@ -2080,13 +2080,24 @@ window.__ModuleLoader__.load({
 		/**
 		* AccountCard:
 		* High-fidelity representation of a credential item with A/B face flipping.
-		* Face A: Management (Status, success/fail counts, health history, actions, toggle)
-		* Face B: Quota (Window metrics, percent remaining, timeline comparison marker)
+		*
+		* Face state architecture (R2 rule):
+		* - Maintains an internal state `localFaceOverride` which starts at null.
+		* - When `localFaceOverride` is null, the card follows `globalFace` (A or B).
+		* - Clicking the card's individual flip button toggles its own face into an explicit
+		*   override (A or B), becoming independent of the parent until a global command resets it.
+		* - When parent issues a new global command (detected via `globalCommandEpoch` or direct reset),
+		*   card clears its local override to align with all cards.
 		*/
-		function AccountCard({ item, currentFace = "A", styleVariant = "needle", onFlipFace, onToggleStatus, onRefreshQuota, onDelete }) {
+		function AccountCard({ item, globalFace = "A", globalEpoch = 0, styleVariant = "needle", onToggleStatus, onRefreshQuota, onDelete }) {
+			const [localOverride, setLocalOverride] = (0, react.useState)(null);
 			const [enabled, setEnabled] = (0, react.useState)(item.status !== "expired" && item.status !== "error");
+			(0, react.useEffect)(() => {
+				setLocalOverride(null);
+			}, [globalEpoch]);
+			const currentFace = localOverride !== null ? localOverride : globalFace;
 			const flipFace = () => {
-				onFlipFace?.(item.id);
+				setLocalOverride(currentFace === "A" ? "B" : "A");
 			};
 			const handleToggle = () => {
 				setEnabled(!enabled);
@@ -2094,6 +2105,8 @@ window.__ModuleLoader__.load({
 			};
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 				className: `${AccountCard_module_css_default.card} ${!enabled ? AccountCard_module_css_default.cardDisabled : ""}`,
+				"data-testid": `account-card-${item.id}`,
+				"data-current-face": currentFace,
 				children: [
 					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						className: AccountCard_module_css_default.cardTop,
@@ -2123,6 +2136,7 @@ window.__ModuleLoader__.load({
 								type: "button",
 								className: AccountCard_module_css_default.faceFlipBtn,
 								onClick: flipFace,
+								"data-testid": `card-flip-btn-${item.id}`,
 								title: currentFace === "A" ? "切换到配额面 (B面)" : "切换到管理面 (A面)",
 								children: currentFace === "A" ? "⇄ 额度面" : "⇄ 管理面"
 							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
@@ -2133,6 +2147,7 @@ window.__ModuleLoader__.load({
 					}),
 					currentFace === "A" && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						className: AccountCard_module_css_default.faceA,
+						"data-testid": "card-face-a",
 						children: [
 							item.statusMessage && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 								className: AccountCard_module_css_default.alertBanner,
@@ -2220,6 +2235,7 @@ window.__ModuleLoader__.load({
 					}),
 					currentFace === "B" && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						className: AccountCard_module_css_default.faceB,
+						"data-testid": "card-face-b",
 						children: [item.metrics.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 							className: AccountCard_module_css_default.emptyQuota,
 							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", { children: "暂未获取到该账号配额数据，或该提供商不提供主动额度查询。" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(_deepseek_ai_dsh_client_ui_primitives.Button, {
@@ -2823,28 +2839,15 @@ window.__ModuleLoader__.load({
 		function CliProxyAccountPoolPrototype() {
 			const [variant, setVariant] = (0, react.useState)("A");
 			const [accounts, setAccounts] = (0, react.useState)(MOCK_ACCOUNTS);
-			const [cardFaces, setCardFaces] = (0, react.useState)({});
-			const [globalFaceState, setGlobalFaceState] = (0, react.useState)("A");
+			const [globalFace, setGlobalFace] = (0, react.useState)("A");
+			const [globalEpoch, setGlobalEpoch] = (0, react.useState)(0);
 			const [filterProvider, setFilterProvider] = (0, react.useState)("all");
 			const [showLoginModal, setShowLoginModal] = (0, react.useState)(false);
 			const [selectedAddProvider, setSelectedAddProvider] = (0, react.useState)("codex");
 			const [showDropdown, setShowDropdown] = (0, react.useState)(false);
 			const handleGlobalFaceCommand = (target) => {
-				setGlobalFaceState(target);
-				const nextMap = {};
-				accounts.forEach((acc) => {
-					nextMap[acc.id] = target;
-				});
-				setCardFaces(nextMap);
-			};
-			const handleCardFlip = (id) => {
-				setCardFaces((prev) => {
-					const current = prev[id] ?? globalFaceState;
-					return {
-						...prev,
-						[id]: current === "A" ? "B" : "A"
-					};
-				});
+				setGlobalFace(target);
+				setGlobalEpoch((e) => e + 1);
 			};
 			const filtered = accounts.filter((acc) => {
 				if (filterProvider === "all") return true;
@@ -2973,17 +2976,19 @@ window.__ModuleLoader__.load({
 									className: CliProxyAccountPoolPrototype_module_css_default.switchGroup,
 									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 										type: "button",
-										className: `${CliProxyAccountPoolPrototype_module_css_default.faceBtn} ${globalFaceState === "A" ? CliProxyAccountPoolPrototype_module_css_default.faceBtnActive : ""}`,
+										className: `${CliProxyAccountPoolPrototype_module_css_default.faceBtn} ${globalFace === "A" ? CliProxyAccountPoolPrototype_module_css_default.faceBtnActive : ""}`,
 										onClick: () => {
 											handleGlobalFaceCommand("A");
 										},
+										"data-testid": "global-face-btn-a",
 										children: "📋 管理面 (A面)"
 									}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 										type: "button",
-										className: `${CliProxyAccountPoolPrototype_module_css_default.faceBtn} ${globalFaceState === "B" ? CliProxyAccountPoolPrototype_module_css_default.faceBtnActive : ""}`,
+										className: `${CliProxyAccountPoolPrototype_module_css_default.faceBtn} ${globalFace === "B" ? CliProxyAccountPoolPrototype_module_css_default.faceBtnActive : ""}`,
 										onClick: () => {
 											handleGlobalFaceCommand("B");
 										},
+										"data-testid": "global-face-btn-b",
 										children: "📊 额度面 (B面)"
 									})]
 								})]
@@ -3014,6 +3019,19 @@ window.__ModuleLoader__.load({
 												className: CliProxyAccountPoolPrototype_module_css_default.dropIcon,
 												children: "K"
 											}), " Kimi OAuth (设备授权)"]
+										}),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
+											type: "button",
+											className: CliProxyAccountPoolPrototype_module_css_default.dropdownItem,
+											onClick: () => {
+												setSelectedAddProvider("xai");
+												setShowDropdown(false);
+												setShowLoginModal(true);
+											},
+											children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+												className: CliProxyAccountPoolPrototype_module_css_default.dropIcon,
+												children: "Ø"
+											}), " xAI Grok OAuth (设备授权)"]
 										}),
 										/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
 											type: "button",
@@ -3053,19 +3071,6 @@ window.__ModuleLoader__.load({
 												className: CliProxyAccountPoolPrototype_module_css_default.dropIcon,
 												children: "▲"
 											}), " Antigravity OAuth"]
-										}),
-										/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
-											type: "button",
-											className: CliProxyAccountPoolPrototype_module_css_default.dropdownItem,
-											onClick: () => {
-												setSelectedAddProvider("xai");
-												setShowDropdown(false);
-												setShowLoginModal(true);
-											},
-											children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-												className: CliProxyAccountPoolPrototype_module_css_default.dropIcon,
-												children: "Ø"
-											}), " xAI Grok OAuth"]
 										}),
 										/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
 											type: "button",
@@ -3173,9 +3178,9 @@ window.__ModuleLoader__.load({
 							className: CliProxyAccountPoolPrototype_module_css_default.cardsGrid,
 							children: filtered.map((acc) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)(AccountCard, {
 								item: acc,
-								currentFace: cardFaces[acc.id] ?? globalFaceState,
+								globalFace,
+								globalEpoch,
 								styleVariant: "needle",
-								onFlipFace: handleCardFlip,
 								onDelete: handleDelete,
 								onRefreshQuota: handleRefreshQuota
 							}, acc.id))
@@ -3187,9 +3192,9 @@ window.__ModuleLoader__.load({
 							className: CliProxyAccountPoolPrototype_module_css_default.cardsGridDense,
 							children: filtered.map((acc) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)(AccountCard, {
 								item: acc,
-								currentFace: cardFaces[acc.id] ?? globalFaceState,
+								globalFace,
+								globalEpoch,
 								styleVariant: "band",
-								onFlipFace: handleCardFlip,
 								onDelete: handleDelete,
 								onRefreshQuota: handleRefreshQuota
 							}, acc.id))
@@ -3229,9 +3234,9 @@ window.__ModuleLoader__.load({
 							className: CliProxyAccountPoolPrototype_module_css_default.cardsGrid,
 							children: filtered.map((acc) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)(AccountCard, {
 								item: acc,
-								currentFace: cardFaces[acc.id] ?? globalFaceState,
+								globalFace,
+								globalEpoch,
 								styleVariant: "compact",
-								onFlipFace: handleCardFlip,
 								onDelete: handleDelete,
 								onRefreshQuota: handleRefreshQuota
 							}, acc.id))
