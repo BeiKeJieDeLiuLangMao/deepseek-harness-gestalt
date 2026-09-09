@@ -415,8 +415,8 @@ export interface SidebarSessionInput {
   state: {
     getSnapshot(): { draft: string; draftRev?: number }
   }
-  /** Replace the draft text (the input machine's single public write path). */
-  setDraft(text: string): void
+  /** Insert plain text over the live editor selection, or at the document end before first focus. */
+  paste(text: string): void
 }
 
 /** The composer draft face the sidebar reaches through `ctx.get('conversation')`. */

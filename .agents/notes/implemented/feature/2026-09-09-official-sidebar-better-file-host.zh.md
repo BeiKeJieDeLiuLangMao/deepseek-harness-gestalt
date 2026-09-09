@@ -10,7 +10,7 @@ Status: implemented
 
 ## Decision
 
-Better Sidebar 注册一个官方内置 tab definition：kind 为 `file`，id 为 `@deepseek-ai/dsh-client-ui-better-sidebar/file`，pattern 为 `dsh-resource://file/**`。Keyed `sidebar.right.pane.tab` 正文依据标签所属 Session 解析每个地址，并且只使用官方 tab info、occurrence signal、导航、payload、替换与分栏 action。它嵌入现有 path 输入框与文件树，保留搜索、显露、重命名、删除、上传、打开方式、对话引用与工作空间围栏行为。`editorExplorer` 偏好选择合并替换或独立文件 occurrence。
+Better Sidebar 注册一个官方内置 tab definition：kind 为 `file`，id 为 `@deepseek-ai/dsh-client-ui-better-sidebar/file`，pattern 为 `dsh-resource://file/**`。Keyed `sidebar.right.pane.tab` 正文依据标签所属 Session 解析每个地址，并且只使用官方 tab info、occurrence signal、导航、payload、替换与分栏 action。它嵌入现有 path 输入框与文件树，保留搜索、显露、重命名、删除、上传、打开方式、对话引用与工作空间围栏行为。普通对话引用文本通过目标 Session 的 input facade 输入，因此由 Lexical 事务替换实时选区，无需查询 sidebar DOM。`editorExplorer` 偏好选择合并替换或独立文件 occurrence。
 
 本包还通过 `ctx.sidebarRightTabs.registerViewer` 注册与渲染器无关的图片、PDF、Markdown、HTML、代码与二进制下载 definition。组件仍是 keyed `sidebar.right.file.viewer` contribution。媒体 viewer 使用有界 Host 路由，文本 viewer 使用受围栏约束的 `fs.read` 路由；文本读取返回二进制结果时，会先用头字节重新匹配，再进入代码回退。HTML 内容默认通过 Host 路由在 opaque-origin sandbox 中加载。官方偏好持有 viewer 启用状态、HTML 安全、打开方式设置、编辑器布局与工作空间围栏。
 
@@ -32,4 +32,4 @@ Better Sidebar 注册一个官方内置 tab definition：kind 为 `file`，id �
 
 官方资源打开保留 Better 文件体验，同时由官方工作台持有身份、位置、导航、偏好状态与关闭准入。文件 occurrence 可以重挂载或移动而不丢失脏草稿，二进制数据经过头字节检测后不会进入代码编辑器。
 
-无密钥组装 Member Question 路径覆盖 Markdown 读取、沙箱 HTML 渲染、receiver-owned path、viewer 可用性与折叠/展开行为。Definition 测试覆盖全部六个注册与二进制重匹配；runtime 测试覆盖脏状态保留与关闭准入；open-routing 测试覆盖非活动 Session 定址、文件夹 payload、文件树显露参数、Host 请求校验与 URL 委托。图片、PDF、代码编辑、二进制下载、文件树变更、分栏位置、打开方式、保存快捷键与布局重挂载保留不在该组装场景内。已有 Better 组件测试会运行共享 viewer、编辑器和文件树实现，但不能据此确认这些路径在官方 occurrence 中验收通过。
+无密钥组装 Member Question 路径覆盖 Markdown 读取、沙箱 HTML 渲染、receiver-owned path、viewer 可用性与折叠/展开行为。Definition 测试覆盖全部六个注册与二进制重匹配；runtime 测试覆盖脏状态保留与关闭准入；open-routing 测试覆盖非活动 Session 定址、文件夹 payload、文件树显露参数、Host 请求校验与 URL 委托。一项聚焦 input-shell 测试证明对话文本会替换目标 Lexical 选区。图片、PDF、代码编辑、二进制下载、文件树变更、分栏位置、打开方式、保存快捷键与布局重挂载保留不在该组装场景内。已有 Better 组件测试会运行共享 viewer、编辑器和文件树实现，但不能据此确认这些路径在官方 occurrence 中验收通过。
