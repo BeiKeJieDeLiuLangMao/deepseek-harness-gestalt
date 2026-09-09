@@ -12,7 +12,7 @@ DeepSeek Harness needs to receive IM messages with a real authorized account, ro
 
 Add an IM domain whose small interfaces hide platform differences, routing, cursor progress, reliable outbound delivery, and simulated delivery. Real and simulated channels are adapters behind the same message input and outbound tool path. The first platforms are DingTalk through DWS and Wangwang through the reviewed internal OpenAPI. Feishu is out of scope: no placeholder driver, no settings flow, and no UI promise.
 
-Implementation is planned against the fixed synchronization snapshot `96d33581128676a469a1587ea85e0339e4853cf0`; specification review starts from `master` at `5e55fbc0f9e699fa005028d2a591517fc72ba09e`. The snapshot's source interfaces have not been reviewed in a safe readable checkout, so this proposal names conceptual roles and records that review as the first blocker instead of presenting installed-version APIs as verified facts.
+Implementation is planned against the dual-parent combined base `d4fd51ceb546b20e7d579bffffb3d4d0f7b3fcca` (ancestors: `4797d94e8d` + `005b49be71`) with verified candidate milestone `0d8d0faa5451bf13960e4d585cb267f0d408a43a`; specification review starts from `origin/master`. Predecessor `54a56df8ca` provides frozen prototype design evidence. Interface review (B0) is performed directly in the candidate worktree under authorized implementation.
 
 The full scheme source and review pack live in [the durable design archive](../../../design/im-takeover/README.md). The accepted high-fidelity prototype and selected example-only screenshots are archived there without private GUI reference captures.
 

@@ -6,7 +6,7 @@
 
 ## 内容
 
-- `scheme-source.md` 是方向已批准的技术方案源稿。规格 PR 的审阅基线为 `origin/master`；实施基线为固定快照 `96d33581128676a469a1587ea85e0339e4853cf0`（非审阅分支祖先，可经前序 head `c2914ed9a5b3a8d51b2c0800d383376705e0da81` 获取）。固定 SHA 接口复核仍未完成。
+- `scheme-source.md` 是方向已批准的技术方案源稿。规格 PR 的审阅基线为 `origin/master`；实施基线为双亲合成基准 `d4fd51ceb5`（融合同步主线 `4797d94e8d` 与 master `005b49be71`）及已验证候选里程碑 `0d8d0faa54`。前序 `54a56df8ca` 仅作为冻结的设计与原型证据保留。
 - `review-pack.html` 是自包含的人工评审图解。
 - `prototype/` 包含已认可的高保真 React 原型源码、fixtures、theme token 快照和 package 元数据；运行方式见 `prototype/README.md`。
 - `screenshots/` 包含精选纯示例设计截图。
@@ -14,7 +14,7 @@
 ## 版本来源
 
 - 审阅基线：`origin/master`（`5e55fbc0f9e699fa005028d2a591517fc72ba09e`）——规格 PR 从它分出，固定快照不是其祖先。
-- 实施基线：固定快照 `96d33581128676a469a1587ea85e0339e4853cf0`，不在审阅分支内。
+- 实施基线：双亲合成基线 `d4fd51ceb5`（`4797d94e8d` + `005b49be71`），候选里程碑 `0d8d0faa54`。
 - 已发布旧 head `c2914ed9a5b3a8d51b2c0800d383376705e0da81` 的祖先链曾包含固定快照；lease 更新后该提交已无分支引用，仅为临时获取路径。本地保留 ref `codex/im-takeover-spec-fixedbase-preserved` 与 `codex/im-takeover-preserved-6d911d` 持有重写前的 head。固定基线的正式发布归同步项目，先于实施完成。
 
 ## 后续决策覆盖

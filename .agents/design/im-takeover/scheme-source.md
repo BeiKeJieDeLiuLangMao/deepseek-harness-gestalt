@@ -14,7 +14,7 @@ DSH 需要以真实授权账号接管 IM 会话（首期：钉钉经 DWS、旺�
 ## 基线与并行策略
 
 - **审阅基线**：规格 PR 从 `origin/master`（`5e55fbc0f9e699fa005028d2a591517fc72ba09e`）分出，纯规格内容。
-- **实施候选基线**：`96d33581128676a469a1587ea85e0339e4853cf0`（用户指定的同步 staging 快照；固定 SHA 的源码接口与检查复核未完成）。96d 不是审阅分支的祖先；当前可经已推送旧提交 `c2914ed9a5b3a8d51b2c0800d383376705e0da81` 的祖先链或本地保留 ref `codex/im-takeover-preserved-6d911d` 获取。注意：lease 更新后 c291 已失去分支引用，GitHub 不保证永久保留未引用提交——正式实施前须由同步项目方正式发布固定基线；这是实施前置条件，不阻塞当前规格交付。
+- **实施候选基线**：双亲合成基准 `d4fd51ceb546b20e7d579bffffb3d4d0f7b3fcca`（融合同步主线 `4797d94e8d` 与 master `005b49be71`），验证候选里程碑为 `0d8d0faa5451bf13960e4d585cb267f0d408a43a`。前序 `54a56df8ca` 仅保留作为冻结的原型设计证据。
 - **本方案的接口依据**：已安装版本 0.1.1-rc.2 的静态证据 + 平台侧事实。**固定 SHA 的源码接口复核尚未完成**，本方案不定最终方法签名，不承诺可直接编译实现。
 - **并行策略**：IM 规格分支已从固定 SHA 建立并发布为 `codex/feature-im-takeover`；同步项目后续推进由**单一集成者**周期性合入该分支，每次合入后重跑受影响检查。不能声称“最后只 merge 一下就完”，Session/tools/subagent/Sidebar 语义差异需逐项复核。
 - 不无限追最新 upstream；是否再 merge-forward 由集成者按同步项目目标决定。
@@ -131,7 +131,7 @@ Agent 发信 → 权限检查 → outbox → adapter 发送 → 记录回执
 
 ## Risks / 待核验
 
-1. 固定 SHA `96d3358112…` 的源码接口复核未完成：Session 事件扩展、steer/inbox、tools eligibility、subagent、settings/workspace/Sidebar 装配均待读该 SHA 源码确认；本方案接口为概念级。
+1. 实施基线接口复核（B0）：基于合成基底 `d4fd51ceb5` 与候选代码开展源码接口对齐，已确认单泛型 Branded、事件 required-on-read、StorageDomain 串行单 Key、`createUserMessage` 结构纯度及 merchantId 目录提取。
 2. DWS 真实收发、本人消息证据、回执语义未实测（仅 dry-run/mock 级证据）。
 3. 旺旺商家身份绑定验证路径未知（无 whoami）。
 4. 群触发组合语义（OR/去重/计数窗口/周期边界）为本轮方案采用，未获逐字确认。

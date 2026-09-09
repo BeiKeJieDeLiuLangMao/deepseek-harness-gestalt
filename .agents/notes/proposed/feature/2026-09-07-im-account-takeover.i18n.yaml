@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/proposed/feature/2026-09-07-im-account-takeover.md
-2026-09-07-im-account-takeover.md: a4e0e6da4748ac0c888ac2b4ed5370ab50facee2
-2026-09-07-im-account-takeover.zh.md: f0d93e9d99646ac35e0218088dbc58652f2fdccf
+2026-09-07-im-account-takeover.md: fc02fb6dfa6ecb1025f7aed4fb19b22475cfca01
+2026-09-07-im-account-takeover.zh.md: 66cca7143cb33565b9c851314424efba5aec56f0
