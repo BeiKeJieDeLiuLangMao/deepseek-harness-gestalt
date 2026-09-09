@@ -10,7 +10,7 @@ Desktop Platform Account 与 Remote Access HTTP 使用 Node 全局 Fetch，Relay
 
 ## 决策
 
-Desktop 持有的 Platform Account、Remote Access 与附件 HTTP 使用会跟随当前 Electron session 网络策略的 Electron `net.fetch`。每次新的 Relay WSS 建连都会针对实际运行的 WSS URL 调用 `Session.resolveProxy`，并受 attachment deadline 与 Relay cancellation 约束。有序结果会保留每个 `PROXY`、`HTTPS` 与 `DIRECT` candidate。只有同一结果还提供受支持 candidate 时，解析才会跳过不支持的指令；非空结果若全部不受支持，会明确失败，不会产生隐式直连 route。Connection-refused、reset、unreachable、broken-pipe 与 timeout failure 会进入下一个 candidate；certificate、protocol 与其他 failure 会停止，不会绕过所选 route。
+Desktop 持有的 Platform Account、Remote Access 与附件 HTTP 使用单请求官方 Node helper，Relay WSS 使用另一个官方 Node helper。每次请求或新的 WSS 建连前，Desktop 都会在所属操作的 deadline 与 cancellation 内，针对实际运行 URL 调用 `Session.resolveProxy`。两个 helper 使用同一份有序 `PROXY`、`HTTPS` 与 `DIRECT` candidate。只有同一结果还提供受支持 candidate 时，解析才会跳过不支持的指令；非空结果若全部不受支持，会明确失败，不会产生隐式直连 route。Connection-refused、reset、unreachable、broken-pipe 与 timeout failure 会进入下一个 candidate；certificate、protocol 与其他 failure 会停止，不会绕过所选 route。
 
 ## 考虑过的替代方案
 

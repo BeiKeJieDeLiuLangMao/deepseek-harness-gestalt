@@ -10,7 +10,7 @@ Desktop Platform Account and Remote Access HTTP used Node global Fetch, and Rela
 
 ## Decision
 
-Desktop-owned Platform Account, Remote Access, and attachment HTTP use Electron `net.fetch`, which follows the current Electron session network policy. Each fresh Relay WSS acquisition asks `Session.resolveProxy` for the operated WSS URL, bounded by the attachment deadline and Relay cancellation. The ordered result retains every `PROXY`, `HTTPS`, and `DIRECT` candidate. Unsupported directives are skipped only while the same result supplies a supported candidate; a non-empty all-unsupported result fails visibly instead of creating an implicit direct route. Connection-refused, reset, unreachable, broken-pipe, and timeout failures advance to the next candidate; certificate, protocol, and other failures stop without bypassing the selected route.
+Desktop-owned Platform Account, Remote Access, and attachment HTTP use a one-request official Node helper, while Relay WSS uses a separate official Node helper. Before each request or fresh WSS acquisition, Desktop asks `Session.resolveProxy` for the operated URL within the owning operation's deadline and cancellation. Both helpers consume the same ordered `PROXY`, `HTTPS`, and `DIRECT` candidates. Unsupported directives are skipped only while the same result supplies a supported candidate; a non-empty all-unsupported result fails visibly instead of creating an implicit direct route. Connection-refused, reset, unreachable, broken-pipe, and timeout failures advance to the next candidate; certificate, protocol, and other failures stop without bypassing the selected route.
 
 ## Alternatives considered
 
