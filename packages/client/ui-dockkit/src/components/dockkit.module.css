@@ -487,6 +487,15 @@
   --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
 }
 
+/* A tab body that owns its vertical scrolling fills the pane and keeps the
+   generic body from becoming a second scroll owner. The opt-in is narrow so
+   ordinary documents retain the pane's scroll behavior. */
+.paneBody:has(> [data-dockkit-scroll-owner]) {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
 .empty {
   margin: 0;
   padding: 12px;

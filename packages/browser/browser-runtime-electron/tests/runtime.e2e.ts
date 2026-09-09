@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { isElectronProcess } from '@deepseek-ai/dsh-browser-runtime-electron'
-import { driveRealPage, isolateCookiesAcrossPartitions } from './runtime.e2e.cases.ts'
+import {
+  driveRealPage,
+  isolateCookiesAcrossPartitions,
+  recoverAfterStalledNavigation,
+} from './runtime.e2e.cases.ts'
 
 // Real-runtime check against this process's Electron. Self-skips on Node
 // because the declared launcher is `pnpm run test:electron-runtime-e2e`;
@@ -17,6 +21,10 @@ const electronAvailable = isElectronProcess()
 describe.skipIf(!electronAvailable)('Electron Browser Runtime real-runtime e2e', () => {
   it('drives one real page through in-process Electron webContents', async () => {
     await driveRealPage()
+  }, 120_000)
+
+  it('recovers after a stalled navigation and loads a later page', async () => {
+    await recoverAfterStalledNavigation()
   }, 120_000)
 
   it('types a newline and a non-BMP character and isolates cookies across partitions', async () => {

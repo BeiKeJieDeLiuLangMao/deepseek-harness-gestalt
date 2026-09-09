@@ -586,6 +586,17 @@ describe('Electron Browser Runtime protocol and recovery', () => {
       expectedRevision: 0,
       url: 'https://example.test/',
     })).rejects.toMatchObject({ code: 'BROWSER_RUNTIME_UNAVAILABLE' })
+    await expect(ctx.browserRuntime.observe({ target: created.target })).resolves.toMatchObject({
+      status: 'open',
+      target: created.target,
+      revision: 2,
+      url: 'about:blank',
+    })
+    await expect(ctx.browserRuntime.create({ profile: 'temporary' })).resolves.toMatchObject({
+      status: 'open',
+      revision: 0,
+      url: 'about:blank',
+    })
   })
 
   it('rejects a non-PNG screenshot and a non-string page text', async () => {

@@ -428,7 +428,7 @@ export function TerminalView(props: {
   }, [scope.sessionId, scope.cwd, tabId, store, preferences, lifecycle])
 
   return (
-    <div className={css.terminalWrap}>
+    <div className={css.terminalWrap} data-dockkit-scroll-owner>
       {depsFatal !== null && (
         <TerminalDepsBanner deps={depsFatal} onRetry={() => { setDepsFatal(null); connectRef.current?.() }} />
       )}

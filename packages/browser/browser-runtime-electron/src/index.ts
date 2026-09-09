@@ -733,12 +733,19 @@ export class ElectronBrowserRuntime extends BrowserRuntime {
       assertBrowserNotAborted(request.signal)
       const state = this.openPage(request.target)
       this.expectRevision(state, request.expectedRevision)
-      await this.load(this.openTab(request.target).window, request.url, request.signal)
-      const page = await this.page(state, request.signal, request.url)
-      return this.commit({
-        ...page,
-        revision: state.revision + 1,
-      })
+      try {
+        await this.load(this.openTab(request.target).window, request.url, request.signal)
+        const page = await this.page(state, request.signal, request.url)
+        return this.commit({
+          ...page,
+          revision: state.revision + 1,
+        })
+      } catch (error) {
+        if (error instanceof BrowserRuntimeError && error.code === 'BROWSER_RUNTIME_UNAVAILABLE') {
+          this.scheduleRecovery(request.target, 'unhealthy', true)
+        }
+        throw error
+      }
     })
   }
 

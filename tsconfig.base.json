@@ -43,6 +43,7 @@
       "@deepseek-ai/dsh-tool-call-timeout-policy": ["./packages/guard/timeout-policy/src"],
       "@deepseek-ai/dsh-browser-runtime": ["./packages/browser/browser-runtime/src"],
       "@deepseek-ai/dsh-browser-runtime-deterministic": ["./packages/browser/browser-runtime-deterministic/src"],
+      "@deepseek-ai/dsh-browser-runtime-electron/testing": ["./packages/browser/browser-runtime-electron/src/testing.ts"],
       "@deepseek-ai/dsh-browser-workspace": ["./packages/browser/browser-workspace/src"],
       "@deepseek-ai/dsh-tool-browser": ["./packages/browser/tool-browser/src"],
       "@deepseek-ai/dsh-tool-project-members": ["./packages/interaction/tool-project-members/src"],

@@ -40,9 +40,9 @@ kind: "package-reference"
 
 时长与视口尺寸必须是正安全整数。所有操作进入同一个串行队列。写操作要求调用方提供最后观察到的 `expectedRevision`。Agent 合成 `input` 走单一路径：聚焦 input、textarea 或 contentEditable 时使用插入脚本，否则发送 `char` 输入事件。换行在聚焦可编辑控件中是 U+000A；没有聚焦可编辑控件时，每个换行是 keyCode 为 `\\n` 的 `char` 事件。HTTP 适配器会拒绝没有非空 URL 或文本的输入。同一命名 Profile 的第二个打开写入方会以 `BROWSER_PROFILE_BUSY` 拒绝。共享 create 复用共享 partition，且不占用 `BROWSER_PROFILE_BUSY`。释放开始后的操作会以 `BROWSER_DISPOSED` 拒绝。释放阶段排空队列并销毁剩余隐藏窗口。
 
-渲染进程崩溃会提交 reason 为 `crashed` 的 `BrowserUnavailableState`，并为同一 target 重建隐藏窗口。恢复耗尽则提交 `reason: 'reconnect-failed'`。格式错误的 Chromium 结果会以 `BROWSER_PROTOCOL` 拒绝。
+渲染进程崩溃会提交 reason 为 `crashed` 的 `BrowserUnavailableState`，并为同一 target 重建隐藏窗口。导航或页面观察丢失 Electron runtime 时，会提交 reason 为 `unhealthy` 的状态、释放串行操作队列，并在最后提交的 URL 上重建隐藏窗口。恢复耗尽则提交 `reason: 'reconnect-failed'`。格式错误的 Chromium 结果会以 `BROWSER_PROTOCOL` 拒绝。
 
-`listenElectronBrowserHttp` 绑定一个 loopback HTTP 服务器，复制 Tandem 的 session、tab、navigate、input、page-content、screenshot、focus 与 destroy 操作，使 Web Host 可以驱动该引擎，而不嵌入第二个 Electron 应用。navigate、input 与 focus 会把客户端的 `expectedRevision` 与引擎修订号比较，不匹配时以 409 `BROWSER_REVISION_CONFLICT` 拒绝，并返回引擎已提交的修订号。
+`listenElectronBrowserHttp` 绑定一个 loopback HTTP 服务器，复制 Tandem 的 session、tab、navigate、input、page-content、screenshot、focus 与 destroy 操作，使 Web Host 可以驱动该引擎，而不嵌入第二个 Electron 应用。navigate、input 与 focus 会把客户端的 `expectedRevision` 与引擎修订号比较，不匹配时以 409 `BROWSER_REVISION_CONFLICT` 拒绝，并返回引擎已提交的修订号。无需认证的 `/status` 路由通过 `browser/runtime-state` 同步的已提交标签回执报告服务就绪状态；它绝不观察 Chromium，因此卡住的页面无法阻塞启动健康检查。`/tabs/list` 与 `/page-content` 仍执行实时页面观察。
 
 <a id="model-experience"></a>
 ## 模型体验
