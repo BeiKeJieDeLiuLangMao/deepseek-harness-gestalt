@@ -17,9 +17,12 @@ export interface DesktopRelayProxyCandidate {
  * Preserve the ordered connection candidates from Electron proxy resolution rules.
  * @param rules - Semicolon-delimited result from `Session.resolveProxy`.
  * @returns ordered CONNECT and direct candidates.
+ * @throws {TypeError} when a non-empty result has no supported candidate, or a
+ * supported proxy directive is invalid.
  */
 export function desktopRelayProxyCandidates(rules: string): readonly DesktopRelayProxyCandidate[] {
   const candidates: DesktopRelayProxyCandidate[] = []
+  let firstUnsupported: string | undefined
   for (const rawDirective of rules.split(';')) {
     const directive = rawDirective.trim()
     if (directive === '') continue
@@ -27,10 +30,13 @@ export function desktopRelayProxyCandidates(rules: string): readonly DesktopRela
       candidates.push({ directive: 'DIRECT' })
       continue
     }
-    const match = /^(PROXY|HTTPS)\s+(\S+)$/u.exec(directive)
-    if (match === null) {
-      throw new TypeError(`Desktop Relay system proxy directive is unsupported: ${directive.split(/\s+/u)[0]}`)
+    const proxyType = /^(PROXY|HTTPS)(?:\s|$)/u.exec(directive)?.[1]
+    if (proxyType === undefined) {
+      firstUnsupported ??= directive.split(/\s+/u)[0]
+      continue
     }
+    const match = /^(PROXY|HTTPS)\s+(\S+)$/u.exec(directive)
+    if (match === null) throw new TypeError('Desktop Relay system proxy is invalid')
     const protocol = match[1] === 'HTTPS' ? 'https:' : 'http:'
     const authority = match[2]
     if (authority === undefined) throw new TypeError('Desktop Relay system proxy has no authority')
@@ -40,10 +46,14 @@ export function desktopRelayProxyCandidates(rules: string): readonly DesktopRela
       throw new TypeError('Desktop Relay system proxy must not contain credentials')
     }
     candidates.push({
-      directive: match[1] as 'PROXY' | 'HTTPS',
+      directive: proxyType as 'PROXY' | 'HTTPS',
       agent: new HttpsProxyAgent(url),
       proxyUrl: url.href,
     })
   }
-  return candidates.length === 0 ? [{ directive: 'DIRECT' }] : candidates
+  if (candidates.length > 0) return candidates
+  if (firstUnsupported !== undefined) {
+    throw new TypeError(`Desktop Relay system proxy directive is unsupported: ${firstUnsupported}`)
+  }
+  return [{ directive: 'DIRECT' }]
 }
