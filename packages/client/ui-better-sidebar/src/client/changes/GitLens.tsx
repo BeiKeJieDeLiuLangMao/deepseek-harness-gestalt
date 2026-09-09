@@ -21,7 +21,7 @@ import { usePolling } from '../use-polling.ts'
 import { baseName, isWithinWorkspace, relativeTo } from '../paths.ts'
 import { resolveSidebarPath } from '../produced-files.ts'
 import { relativeTime, t } from '../locales.ts'
-import type { SidebarDiffRef, SidebarStore } from '../state.ts'
+import type { SidebarDiffRef } from '../state.ts'
 import css from './changes.module.css'
 
 /** The XY status letters a row badge shows (X = index, Y = worktree). */
@@ -92,8 +92,8 @@ const WORKTREE_RECHECK_TICKS = 15
 
 export interface GitLensProps {
   scope: SessionScope
-  /** The sidebar store: reads the `workspaceFence` pref (see the open guard below). */
-  store: SidebarStore
+  /** Whether file opens remain confined to the Session workspace. */
+  workspaceFence: boolean
   onOpenFile: (path: string) => void
   /** Preview one change in the shared bottom pane (worktree or commit ref). */
   onPreview: (ref: SidebarDiffRef) => void
@@ -104,7 +104,7 @@ export interface GitLensProps {
 }
 
 export function GitLens(props: GitLensProps) {
-  const { scope, store, onOpenFile, onPreview, selectedRef, visible } = props
+  const { scope, workspaceFence, onOpenFile, onPreview, selectedRef, visible } = props
   const [status, setStatus] = useState<GitStatusResult | null>(null)
   const [worktrees, setWorktrees] = useState<GitWorktree[]>([])
   const [selectedWorktree, setSelectedWorktree] = useState<string | undefined>()
@@ -623,7 +623,7 @@ export function GitLens(props: GitLensProps) {
               // action for that checkout so the menu does not offer a no-op
               // that confuses the user; with the fence disarmed (the
               // `workspaceFence` pref) the open is allowed through.
-              ...(fileMenu !== null && (store.getPrefs().workspaceFence === false || isWithinWorkspace(scope.cwd ?? '', resolveSidebarPath(repoRoot ?? selectedWorktree ?? scope.cwd, fileMenu.entry.path)))
+              ...(fileMenu !== null && (!workspaceFence || isWithinWorkspace(scope.cwd ?? '', resolveSidebarPath(repoRoot ?? selectedWorktree ?? scope.cwd, fileMenu.entry.path)))
                 ? [{ id: 'open', label: t('openEditor'), icon: <IconCodeOutline16 size={14} /> }]
                 : []),
               fileMenu?.staged === true
@@ -647,7 +647,7 @@ export function GitLens(props: GitLensProps) {
                 // racing repo switch could still reach here with a path
                 // the host would reject. No-op in that case — unless the
                 // workspace fence is disarmed by pref.
-                if (store.getPrefs().workspaceFence !== false && !isWithinWorkspace(scope.cwd ?? '', resolved)) return
+                if (workspaceFence && !isWithinWorkspace(scope.cwd ?? '', resolved)) return
                 onOpenFile(resolved)
                 return
               }

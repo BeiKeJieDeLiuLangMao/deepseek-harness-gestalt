@@ -15,11 +15,11 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { SidebarSessionEvent } from '../../context-types.ts'
-import type { TabComponentProps } from '../service.ts'
+import type { SessionScope } from '../api.ts'
 import { t } from '../locales.ts'
 import { api } from '../api.ts'
 import { usePolling } from '../use-polling.ts'
-import { floatTab, type SidebarDiffRef } from '../state.ts'
+import type { SidebarDiffRef, SidebarTab } from '../state.ts'
 import { GitLens } from './GitLens.tsx'
 import { SessionLens } from './SessionLens.tsx'
 import { DiffPane, diffTabOf, type ChangesPreview } from './DiffPane.tsx'
@@ -43,17 +43,30 @@ export function opCountOf(sessionId: string): number | undefined {
   return opCounts.get(sessionId)
 }
 
-type Lens = 'git' | 'session'
+export type ChangesLens = 'git' | 'session'
 
 /** The persisted tab meta (JSON-serializable; rides the layout). */
-interface ChangesMeta {
-  lens?: Lens
+export type ChangesTabPayload = {
+  lens?: ChangesLens
   previewH?: number
 }
 
-export function ChangesTab({ ctx, store, scope, tab, visible, onOpenFile, onOpenDiff }: TabComponentProps) {
-  const meta = (tab.meta ?? {}) as ChangesMeta
-  const [lens, setLens] = useState<Lens>(meta.lens === 'session' ? 'session' : 'git')
+/** Framework-independent inputs shared by the legacy and official tab adapters. */
+export interface ChangesTabProps {
+  scope: SessionScope
+  payload?: ChangesTabPayload
+  visible: boolean
+  workspaceFence: boolean
+  onPayloadChange: (payload: ChangesTabPayload) => void
+  onOpenFile: (path: string) => void
+  onOpenDiff?: (tab: SidebarTab) => void
+}
+
+export function ChangesTab({
+  scope, payload, visible, workspaceFence, onPayloadChange, onOpenFile, onOpenDiff,
+}: ChangesTabProps) {
+  const meta = payload ?? {}
+  const [lens, setLens] = useState<ChangesLens>(meta.lens === 'session' ? 'session' : 'git')
   const [preview, setPreview] = useState<ChangesPreview | null>(null)
   const [paneHeight, setPaneHeight] = useState<number>(
     typeof meta.previewH === 'number' && meta.previewH >= 140 ? meta.previewH : PANE_HEIGHT_DEFAULT,
@@ -115,13 +128,11 @@ export function ChangesTab({ ctx, store, scope, tab, visible, onOpenFile, onOpen
   const ops = opsRef.current
 
   /** Persist a meta patch onto the tab (lens choice, pane height). */
-  const patchMeta = (patch: ChangesMeta): void => {
-    ctx.get('betterSidebar')?.updateTab(tab.id, {
-      meta: { ...(tab.meta as ChangesMeta | undefined ?? {}), ...patch },
-    })
+  const patchMeta = (patch: ChangesTabPayload): void => {
+    onPayloadChange({ ...meta, ...patch })
   }
 
-  const chooseLens = (next: Lens): void => {
+  const chooseLens = (next: ChangesLens): void => {
     if (next === lens) return
     setLens(next)
     patchMeta({ lens: next })
@@ -144,11 +155,6 @@ export function ChangesTab({ ctx, store, scope, tab, visible, onOpenFile, onOpen
     if (preview?.kind !== 'git') return
     const diffTab = diffTabOf(preview.ref)
     onOpenDiff?.(diffTab)
-    if (store.getPrefs().changesDiffFloat !== false) {
-      const x = Math.round(window.innerWidth / 2)
-      const y = Math.round(window.innerHeight / 2)
-      store.reduce(state => floatTab(state, diffTab.id, x, y))
-    }
   }
 
   const previewKey = (target: ChangesPreview): string => target.kind === 'git'
@@ -185,7 +191,7 @@ export function ChangesTab({ ctx, store, scope, tab, visible, onOpenFile, onOpen
         ? (
           <GitLens
             scope={scope}
-            store={store}
+            workspaceFence={workspaceFence}
             visible={visible}
             onOpenFile={onOpenFile ?? (() => { /* no-op */ })}
             onPreview={previewGit}

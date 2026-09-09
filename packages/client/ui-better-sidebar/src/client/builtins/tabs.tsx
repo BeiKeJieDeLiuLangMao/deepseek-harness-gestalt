@@ -11,7 +11,7 @@
 import { IconBranchOutline16, IconCodeOutline16, IconFolderOpen16, IconNewChatOutline16, IconPanelLeftOutline16, IconThinkOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
 import type { SidebarContext } from '../../context-types.ts'
-import { allLeaves, isAgentTabId, type SidebarState } from '../state.ts'
+import { allLeaves, floatTab, isAgentTabId, type SidebarState } from '../state.ts'
 import { t } from '../locales.ts'
 import { openSidebarFile } from '../intercept.tsx'
 import { EditorHost } from '../EditorHost.tsx'
@@ -183,13 +183,22 @@ export function builtinTabs(ctx: SidebarContext, options: BuiltinTabOptions = {}
       },
       component: ({ ctx, store, scope, tab, visible, onOpenDiff }) => (
         <ChangesTab
-          ctx={ctx}
-          store={store}
           scope={scope}
-          tab={tab}
+          payload={(tab.meta ?? {}) as import('../changes/ChangesTab.tsx').ChangesTabPayload}
           visible={visible}
+          workspaceFence={store.getPrefs().workspaceFence !== false}
+          onPayloadChange={(payload) => {
+            ctx.get('betterSidebar')?.updateTab(tab.id, { meta: payload })
+          }}
           onOpenFile={(path) => { openSidebarFile(ctx, store, scope.sessionId, path) }}
-          onOpenDiff={onOpenDiff}
+          onOpenDiff={(diffTab) => {
+            onOpenDiff?.(diffTab)
+            if (store.getPrefs().changesDiffFloat !== false) {
+              const x = Math.round(window.innerWidth / 2)
+              const y = Math.round(window.innerHeight / 2)
+              store.reduce(state => floatTab(state, diffTab.id, x, y))
+            }
+          }}
         />
       ),
     },
@@ -215,7 +224,7 @@ export function builtinTabs(ctx: SidebarContext, options: BuiltinTabOptions = {}
       component: ({ ctx, scope, visible, onSubagentJump }) => (
         <SubagentView
           sessionId={scope.sessionId}
-          ctx={ctx}
+          sessions={ctx.sessions}
           active={visible}
           onOpenChild={(address) => { onSubagentJump?.(address.childSessionId) }}
         />

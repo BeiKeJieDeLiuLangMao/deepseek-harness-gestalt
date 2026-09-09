@@ -26,7 +26,7 @@ import {
   IconRefreshOutline14, StateDot,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
-  SidebarContext,
+  SidebarSessionsService,
   SidebarSessionList,
   SidebarSessionSummary,
   SidebarSubagentAddress,
@@ -619,7 +619,7 @@ function JobsSection(props: {
 /**
  * The sidebar's Subagent topology page.
  * @param props - current session id, whether the page is actually visible
- *   (active tab + open panel), the client context, and an optional
+ *   (active tab + open panel), the Sessions face, and an optional
  *   jump-notify hook fired right before `openSubagent` (lets the sidebar
  *   shell re-open the Subagent page after the conversation switch lands on
  *   the child session).
@@ -628,11 +628,10 @@ function JobsSection(props: {
 export function SubagentView(props: {
   sessionId: string
   active: boolean
-  ctx: SidebarContext
+  sessions: SidebarSessionsService
   onOpenChild?: (address: SidebarSubagentAddress) => void
 }) {
-  const { sessionId, active, ctx, onOpenChild } = props
-  const sessions = ctx.sessions
+  const { sessionId, active, sessions, onOpenChild } = props
 
   // The same list feed the official catalog consumes (byId lineage + the
   // lazy per-parent catalogs). Older DSH snapshots without the subagent seam
