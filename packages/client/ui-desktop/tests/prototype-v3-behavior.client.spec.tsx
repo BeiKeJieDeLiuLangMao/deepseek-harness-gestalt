@@ -64,21 +64,21 @@ describe('v3 Core Behavior & Integrity Tests (Final Strict Gate)', () => {
   })
 
   // Test 4: LoginModal uses provider-specific .example.test/verify and prominent simulation notices
-  it('v3-4: LoginModal renders non-operational provider-specific .example.test/verify URIs with simulation warning', () => {
-    // Kimi Device Flow
+  it('v3-4: LoginModal renders non-operational provider-specific .example.test/verify URIs with simulation warning and consistent device code', () => {
+    // Kimi Device Flow: verify URI contains KIMI-1234 device code matching display
     const { getByText, getByTestId, unmount } = render(
       <LoginModal initialProvider="kimi" onClose={() => {}} onSuccess={() => {}} />
     )
     fireEvent.click(getByText('开始 KIMI 登录'))
-    expect(getByTestId('auth-fixture-url').textContent).toBe('https://kimi.example.test/verify')
-    expect(getByText(/模拟授权.*不可真实登录/)).toBeDefined()
+    expect(getByTestId('auth-fixture-url').textContent).toBe('https://kimi.example.test/verify?code=KIMI-1234')
     expect(getByText('KIMI-1234')).toBeDefined()
+    expect(getByText(/模拟授权.*不可真实登录.*不向任何第三方发起外部网络请求/)).toBeDefined()
     unmount()
 
     // xAI Device Flow
     const xai = render(<LoginModal initialProvider="xai" onClose={() => {}} onSuccess={() => {}} />)
     fireEvent.click(xai.getByText('开始 XAI 登录'))
-    expect(xai.getByTestId('auth-fixture-url').textContent).toBe('https://xai.example.test/verify')
+    expect(xai.getByTestId('auth-fixture-url').textContent).toBe('https://xai.example.test/verify?code=GROK-7890')
     expect(xai.getByText('GROK-7890')).toBeDefined()
     xai.unmount()
 

@@ -7,8 +7,8 @@
  * - GLM: Coding Plan Dedicated API Key + Coding endpoint form (no OAuth)
  *
  * All URLs strictly use explicit non-operational https://<provider>.example.test/verify
- * fixture links. Prominently labeled as simulated authorization; clicking only advances
- * the fixture simulation without navigating to real third-party endpoints (resolving R5).
+ * fixture links. Prominently labeled as simulated authorization; buttons only advance
+ * the local fixture simulation without navigating to real third-party endpoints (resolving R5).
  */
 
 import { useState } from 'react'
@@ -22,12 +22,17 @@ export interface LoginModalProps {
   onSuccess: (newAccount: { provider: ProviderType; email: string; tier?: string | undefined }) => void
 }
 
+function getProviderDeviceCode(p: ProviderType): string {
+  if (p === 'xai') return 'GROK-7890'
+  return 'KIMI-1234'
+}
+
 function getProviderFixtureAuthUri(p: ProviderType): string {
   switch (p) {
     case 'kimi':
-      return 'https://kimi.example.test/verify'
+      return `https://kimi.example.test/verify?code=${getProviderDeviceCode('kimi')}`
     case 'xai':
-      return 'https://xai.example.test/verify'
+      return `https://xai.example.test/verify?code=${getProviderDeviceCode('xai')}`
     case 'codex':
       return 'https://codex.example.test/verify'
     case 'anthropic':
@@ -37,11 +42,6 @@ function getProviderFixtureAuthUri(p: ProviderType): string {
     case 'glm':
       return 'https://open.bigmodel.cn/api/coding/paas/v4'
   }
-}
-
-function getProviderDeviceCode(p: ProviderType): string {
-  if (p === 'xai') return 'GROK-7890'
-  return 'KIMI-1234'
 }
 
 export function LoginModal({ initialProvider = 'codex', onClose, onSuccess }: LoginModalProps) {
@@ -65,7 +65,7 @@ export function LoginModal({ initialProvider = 'codex', onClose, onSuccess }: Lo
       setStep('apiKeyForm')
     } else {
       setStep('authorizing')
-      // Simulate polling result
+      // Advance fixture step locally without external navigation
       setTimeout(() => {
         setStep('success')
       }, 2400)
@@ -167,12 +167,12 @@ export function LoginModal({ initialProvider = 'codex', onClose, onSuccess }: Lo
               </h4>
 
               <div className={css.simNotice}>
-                ⚠️ 【模拟授权】本界面为原型演示环境，不可真实登录，不会向第三方发起外部网络请求。
+                ⚠️ 【模拟授权】本界面为原型演示环境，不可真实登录，按钮仅推进本地模拟步骤，不向任何第三方发起外部网络请求。
               </div>
 
               {isDeviceFlow ? (
                 <>
-                  <p>模拟验证网址（不可导航，点击仅用于展示原型）：</p>
+                  <p>模拟验证网址（不可导航，展示 fixture 统一参数）：</p>
                   <div className={css.urlBox} data-testid="auth-fixture-url">{authUri}</div>
                   <div className={css.deviceCodeBox}>
                     <span>设备用户码：</span>
