@@ -70,7 +70,9 @@ Provider 探测矩阵、刷新节奏、缓存寿命、rate limit 与副作用仍
 
 因此 Gestalt UI 将提供专用 GLM Coding Plan key 入口，而不会把 GLM 加入五个 OAuth 登录动作。Host 将通过拥有凭据的路径存储 key，只把产生的 authority 交给核心。除非经过验证的协议约束要求独立 route，GLM 将保持为单一 CLIProxyAPI provider 背后的账号来源。
 
-来源使用 LGPL-3.0，目标核心使用 MIT。完整字段清单、复用代码边界、署名义务、链接或衍生作品分析与再分发结论仍未解决。在完整许可报告确认一种获许可的设计前，不得实施 GLM 或分发二进制；若直接复制会引入预期分发无法满足的条款，本提案必须调整。
+来源当前识别为 LGPL-3.0，目标核心使用 MIT。推荐实现把官方 Sub2API 行为作为协议事实，并基于 CLIProxyAPI 现有 MIT executor、translator、auth 与 model 扩展点独立实现 Coding Plan；不复制 Sub2API 源代码、注释、测试或表达结构。在该路径下，GLM 仍是必需产品范围。
+
+静态移植 Go 实现仍是获许可的备选，而不是放弃该功能。它会要求分发满足适用的 Combined Work 重新组合与伴随材料义务，并给核心 fork 增加混合许可维护负担。完整字段与许可报告必须在任一路径冻结前核实准确许可声明及义务；本提案不推断来源授权是 LGPL-3.0-only 还是 LGPL-3.0-or-later。仓库 README 与 LICENSE 文本只能陈述已核实的授权和所选实现承担的义务。
 
 ## Alternatives considered
 
@@ -85,6 +87,8 @@ Provider 探测矩阵、刷新节奏、缓存寿命、rate limit 与副作用仍
 **按账号厂商注册多个 DSH provider，或保留 Composite。** 未采用，因为 CLIProxyAPI 暴露一个推理网关和一个模型目录。账号来源是核心内部的路由输入，不是 Harness 中独立的适配器 authority。
 
 **向 browser client 暴露通用管理 API。** 未采用，因为这会把 renderer 从产品 UI 扩大成任意核心操作的管理员，并让 management 凭据进入浏览器代码可达范围。
+
+**把 LGPL Go 实现静态移植进 MIT fork。** 保留为成本更高的备选。该路径可以满足 GLM 需求，但发布必须承担适用的 Combined Work 重新组合与伴随材料义务，每次上游同步也要维护混合许可边界。若完整字段报告证明可行，则优先依据协议事实独立实现。
 
 **为每个 provider 合成一个统一额度百分比。** 未采用，因为上游证据并不一致。统一数字会抹掉缺失字段，并误报未知容量或时间窗口。
 
@@ -106,7 +110,7 @@ Provider 探测矩阵、刷新节奏、缓存寿命、rate limit 与副作用仍
 
 上游 management 端点和 auth-file 字段可能比 Gestalt UI 变化更快。窄 Host 网关会限制受影响代码，但每次 fork 更新仍需要协议与脱敏评审。
 
-Fork 承载的 GLM 实现会增加上游同步冲突，也可能无法按预期条款分发。未解决的许可与协议调查是冻结阻塞，不是实现细节。
+Fork 承载的 GLM 实现会增加上游同步冲突。独立实现会减少混合许可负担，但仍要求准确协议事实和洁净实现纪律；静态移植仍可选，只是需要承担核实后的 LGPL 分发义务。最终字段与许可报告是冻结输入，不是把 GLM 移出范围的理由。
 
 Provider 专用额度探测可能消耗上游请求、触发 rate limit，或只提供近似数据。在调查固定矩阵与节奏前，产品必须优先展示明确 unknown，而不是激进刷新。
 

@@ -70,7 +70,9 @@ The candidate GLM Coding Plan behavior comes from the official `Wei-Shaw/sub2api
 
 The Gestalt UI will therefore offer a dedicated GLM Coding Plan key entry rather than adding GLM to the five OAuth login actions. The Host will store the key through the credential-owning path and will pass only the resulting authority to the core. GLM will remain an account source behind the single CLIProxyAPI provider unless verified protocol constraints require a separate route.
 
-The source is LGPL-3.0 while the target core is MIT. The complete field inventory, copied-code boundary, attribution duties, linking or derivative-work analysis, and redistribution conclusion remain unresolved. No GLM implementation or binary distribution may proceed until the full license report confirms a permitted design; the proposal must change if direct copying would impose terms the intended distribution cannot satisfy.
+The source is identified as LGPL-3.0 while the target core is MIT. The recommended implementation will treat the official Sub2API behavior as protocol evidence and independently implement Coding Plan on CLIProxyAPI's existing MIT executor, translator, auth, and model extension points. It will not copy Sub2API source code, comments, tests, or expressive structure. GLM remains required product scope under this approach.
+
+A static port of the Go implementation remains a permitted alternative rather than a dismissal of the feature. It would require the distribution to satisfy the applicable combined-work relinking and accompanying-material obligations and would add a mixed-license maintenance burden to the core fork. The complete field inventory and license report must verify the exact license notice and obligations before either path freezes; this proposal does not infer whether the source grant is LGPL-3.0-only or LGPL-3.0-or-later. Repository README and LICENSE text must state only the verified grant and the obligations of the chosen implementation.
 
 ## Alternatives considered
 
@@ -85,6 +87,8 @@ The source is LGPL-3.0 while the target core is MIT. The complete field inventor
 **Register one DSH provider per account vendor or retain Composite.** Rejected because CLIProxyAPI exposes one inference gateway and one model catalog. Account sources are routing inputs inside the core, not independent adapter authorities in Harness.
 
 **Expose the generic management API to the browser client.** Rejected because it would widen the renderer from a product UI into an administrator for arbitrary core operations and would make management credentials reachable from browser code.
+
+**Statically port the LGPL Go implementation into the MIT fork.** Kept as a higher-cost alternative. It can satisfy the GLM requirement, but the release must carry the applicable combined-work relinking and accompanying-material obligations, and every upstream sync must maintain the mixed-license boundary. Independent implementation from protocol facts is preferred when the complete field report shows that path is practical.
 
 **Synthesize a single quota percentage for every provider.** Rejected because the upstream evidence is heterogeneous. A uniform number would erase missing fields and misrepresent unknown capacity or time windows.
 
@@ -106,7 +110,7 @@ A built-in binary increases Desktop Bundle size and makes each supported platfor
 
 Upstream management endpoints and auth-file fields may change faster than the Gestalt UI. The narrow Host gateway limits the affected code, but every fork update still needs protocol and redaction review.
 
-A fork-carried GLM implementation can make upstream synchronization conflict-prone and may be impossible to distribute under the intended terms. The unresolved license and protocol investigation is a freeze blocker, not an implementation detail.
+A fork-carried GLM implementation can make upstream synchronization conflict-prone. Independent implementation reduces the mixed-license burden but still requires accurate protocol facts and clean-room discipline; static porting remains available at the cost of the verified LGPL distribution obligations. The final field and license report is a freeze input, not grounds to remove GLM from scope.
 
 Provider-specific quota probes may consume upstream requests, trigger rate limits, or expose only approximate data. Until the investigation fixes the matrix and cadence, the product must prefer an explicit unknown state over aggressive refresh.
 
