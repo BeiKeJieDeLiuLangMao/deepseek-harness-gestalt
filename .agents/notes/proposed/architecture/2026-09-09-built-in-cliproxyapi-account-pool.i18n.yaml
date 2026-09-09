@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/proposed/architecture/2026-09-09-built-in-cliproxyapi-account-pool.md
-2026-09-09-built-in-cliproxyapi-account-pool.md: e7edffc3a3df4d1a826cc37e60fe2806f0f6cd1d
-2026-09-09-built-in-cliproxyapi-account-pool.zh.md: ff37ed69202caf60e796103c7545604bd5765a69
+2026-09-09-built-in-cliproxyapi-account-pool.md: ac73714e91ac7e07d23f103694e62daf284c84c8
+2026-09-09-built-in-cliproxyapi-account-pool.zh.md: 2b90a104f057736a79fbdfa9480ad801a57b41c6
