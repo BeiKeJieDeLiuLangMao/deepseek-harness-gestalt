@@ -36,6 +36,7 @@ import { createFrameBatcher } from './frame-batcher.ts'
 import { openSidebarFile } from './intercept.tsx'
 import { openWithSshActive, openWithUrl, parseOpenWithConfig, resolveOpenWithTargets } from './open-with.ts'
 import { updatePluginSettings } from './plugin-settings.ts'
+import { parsePrefs } from './prefs.ts'
 import { TreePanel } from './TreePanel.tsx'
 import { saveShortcutTitle, t } from './locales.ts'
 import { relativeTo } from './paths.ts'
@@ -115,6 +116,10 @@ export function EditorHost(props: {
   // Manual refresh (issue #167): bumping the sequence re-runs the load effect
   // with the same path/scope — the only reload entry besides open/close.
   const [reloadSeq, setReloadSeq] = useState(0)
+  const disableWorkspaceFence = async (): Promise<void> => {
+    const view = await api.settingsUpdate({ workspaceFence: false })
+    store.setPrefs(parsePrefs(view.value))
+  }
 
   // Manual refresh (issue #167 + PR #228): a dirty draft is dropped by the
   // reload (the editor instance remounts), so confirm before discarding it.
@@ -385,7 +390,7 @@ export function EditorHost(props: {
       <div className={css.editor}>
         <TreePanel
           full
-          store={store}
+          disableWorkspaceFence={disableWorkspaceFence}
           sessionId={scope.sessionId}
           cwd={folderRoot ?? scope.cwd}
           expanded={expanded}
@@ -480,7 +485,7 @@ export function EditorHost(props: {
           {showEmpty && <div className={css.editorPlaceholder}>{t('editorEmptyHint')}</div>}
           {!showEmpty && load.status === 'loading' && <div className={css.editorPlaceholder}>{t('loading')}</div>}
           {!showEmpty && load.status === 'error' && (isOutsideWorkspaceMessage(load.message)
-            ? <FenceErrorNotice store={store} onDisabled={() => { setReloadSeq(sequence => sequence + 1) }} />
+            ? <FenceErrorNotice disable={disableWorkspaceFence} onDisabled={() => { setReloadSeq(sequence => sequence + 1) }} />
             : <div className={css.editorError}>{load.message}</div>)}
           {!showEmpty && load.status === 'binary' && <BinaryDownload scope={scope} path={path} />}
           {!showEmpty && load.status === 'ready' && createElement(load.viewer.component, {
@@ -509,7 +514,7 @@ export function EditorHost(props: {
               onPointerCancel={onResizeEnd}
             />
             <TreePanel
-              store={store}
+              disableWorkspaceFence={disableWorkspaceFence}
               sessionId={scope.sessionId}
               cwd={scope.cwd}
               expanded={expanded}

@@ -37,7 +37,8 @@ import { MdToc } from './md-toc.tsx'
 import { splitMermaidBlocks } from './mermaid-blocks.ts'
 import { saveShortcutTitle, t } from './locales.ts'
 import { HTML_IFRAME_SANDBOX } from './html-preview.ts'
-import type { EditorToolbarState, FileViewerProps } from './service.ts'
+import type { EditorToolbarControls, EditorToolbarState, FileViewerProps } from './service.ts'
+import type { SessionScope } from './api.ts'
 import css from './sidebar.module.css'
 
 /** Previewable files (rendered output vs source editing). */
@@ -51,12 +52,64 @@ type ViewMode = 'preview' | 'edit'
 const previewScrollMemory = new Map<string, number>()
 const previewScrollKey = (scope: { sessionId: string }, path: string): string => `${scope.sessionId}::${path}`
 
+/** Editor state retained by the tab occurrence while its body is not mounted. */
+export interface RetainedEditorState {
+  readonly content: string
+  readonly dirty: boolean
+  readonly mode: ViewMode
+  readonly localUnlock: boolean
+  readonly previewScroll: number
+  readonly editorScroll: number
+}
+
+/** Props of the context-free editor used by the official file tab. */
+export interface TextEditorCoreProps {
+  readonly scope: SessionScope
+  readonly path: string
+  readonly title: string
+  readonly viewerId: string
+  readonly content?: string
+  readonly truncated?: boolean
+  readonly toolbar?: 'self' | 'host'
+  readonly onToolbarState?: (state: EditorToolbarState) => void
+  readonly onToolbarControls?: (controls: EditorToolbarControls | null) => void
+  readonly writeFile: (content: string) => Promise<void>
+  readonly insertIntoConversation: (text: string) => void
+  readonly htmlSafety: { readonly forceUnsandboxed: boolean; readonly defaultUnsandboxed: boolean }
+  readonly retained?: RetainedEditorState
+  readonly onRetain?: (state: RetainedEditorState) => void
+  readonly onDirtyChange?: (dirty: boolean) => void
+  readonly line?: number
+  readonly navigationRevision?: number
+}
+
+/** Legacy Better Sidebar adapter; the editor core itself receives only capabilities. */
 export function TextEditor(props: FileViewerProps) {
-  const { ctx, scope, path, viewerId, content, truncated } = props
-  const [mode, setMode] = useState<ViewMode>('preview')
+  const { ctx, store, ...editor } = props
+  return (
+    <TextEditorCore
+      {...editor}
+      writeFile={content => api.fsWrite(props.scope, props.path, content).then(() => undefined)}
+      insertIntoConversation={text => { appendToDraft(ctx, props.scope.sessionId, text) }}
+      htmlSafety={{
+        forceUnsandboxed: store?.getPrefs().htmlViewerNoSandbox === true,
+        defaultUnsandboxed: store?.getPrefs().htmlViewerDefaultUnsafe === true,
+      }}
+    />
+  )
+}
+
+/** CodeMirror-backed code, Markdown, and HTML viewer. */
+export function TextEditorCore(props: TextEditorCoreProps) {
+  const { scope, path, viewerId, content, truncated } = props
+  const [mode, setMode] = useState<ViewMode>(() => props.retained?.mode ?? 'preview')
+  const [localUnlock, setLocalUnlock] = useState(() => props.retained?.localUnlock ?? props.htmlSafety.defaultUnsandboxed)
   /** The editor's current text (null while clean); preview renders this. */
   const [draft, setDraft] = useState<string | null>(null)
-  const [dirty, setDirty] = useState(false)
+  const [dirty, setDirty] = useState(() => props.retained?.dirty ?? false)
+  const dirtyRef = useRef(dirty)
+  const modeRef = useRef(mode)
+  const localUnlockRef = useRef(localUnlock)
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'failed'>('idle')
   const hostRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<CodeMirrorView | null>(null)
@@ -74,7 +127,9 @@ export function TextEditor(props: FileViewerProps) {
    *  element, so capture it on scroll and restore after each remount. Seeded
    *  from the module-level per-file memory so a full viewer rebuild
    *  (save-then-switch-to-preview reload) also keeps the position. */
-  const previewScrollRef = useRef(previewScrollMemory.get(previewScrollKey(scope, path)) ?? 0)
+  const previewScrollRef = useRef(
+    props.retained?.previewScroll ?? previewScrollMemory.get(previewScrollKey(scope, path)) ?? 0,
+  )
   /** True while a programmatic restore is in flight; raw scroll events caused
    *  by the restore (or by the browser clamping a collapsed reload container
    *  to 0) must not overwrite the remembered position. */
@@ -86,6 +141,10 @@ export function TextEditor(props: FileViewerProps) {
   const previewSyncRef = useRef<{ text: string | null; ratio: number }>({ text: null, ratio: 0 })
   const anchorThrottleRef = useRef(false)
 
+  dirtyRef.current = dirty
+  modeRef.current = mode
+  localUnlockRef.current = localUnlock
+
   /**
    * The floating "add to conversation" popup (viewport-anchored; null =
    * hidden). The hook owns show/hide/commit plus the global dismissal
@@ -93,7 +152,7 @@ export function TextEditor(props: FileViewerProps) {
    * leaving the viewport) — see selection-popup.ts.
    */
   const selectionPopup = useSelectionPopup({
-    onCommit: (insert) => { appendToDraft(ctx, scope.sessionId, insert) },
+    onCommit: props.insertIntoConversation,
     // The surface that must stay on screen: the markdown preview container
     // in preview mode, the CodeMirror host otherwise.
     getSurface: () => (markdown && mode === 'preview' ? mdRef.current : hostRef.current),
@@ -101,22 +160,12 @@ export function TextEditor(props: FileViewerProps) {
 
   useEffect(() => subscribeColorScheme(() => { setDark(isDarkScheme()) }), [])
 
-  // A new file (tab switch) starts clean: fresh preview mode, no draft.
-  useEffect(() => {
-    setMode('preview')
-    setDraft(null)
-    setDirty(false)
-    setSaveState('idle')
-    selectionPopup.hide()
-    // hide() reads a live ref; the reset must fire only on a content (file)
-    // swap, and the hook object's identity churns on every render.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [content])
-
   // A different file switches the remembered preview scroll position to that
   // file's own entry (first open: none, so the preview starts at the top).
   useEffect(() => {
-    previewScrollRef.current = previewScrollMemory.get(previewScrollKey(scope, path)) ?? 0
+    previewScrollRef.current = props.retained?.previewScroll
+      ?? previewScrollMemory.get(previewScrollKey(scope, path))
+      ?? 0
   }, [scope, path])
 
   // Create the CodeMirror editor once the content is loaded. The view owns
@@ -135,7 +184,7 @@ export function TextEditor(props: FileViewerProps) {
     const themeComp = new CmThemeCompartment()
     themeCompRef.current = themeComp
     const state = EditorState.create({
-      doc: content,
+      doc: props.retained?.dirty === true ? props.retained.content : content,
       extensions: [
         CodeMirrorView.lineWrapping,
         lineNumbers(),
@@ -147,7 +196,9 @@ export function TextEditor(props: FileViewerProps) {
         ...(language !== null ? [language] : []),
         CodeMirrorView.updateListener.of((update) => {
           if (update.docChanged) {
+            dirtyRef.current = true
             setDirty(true)
+            props.onDirtyChange?.(true)
           }
         }),
         keymap.of([
@@ -206,7 +257,22 @@ export function TextEditor(props: FileViewerProps) {
     })
     const view = new CodeMirrorView({ state, parent: host })
     viewRef.current = view
+    const retainedScroll = props.retained?.editorScroll ?? 0
+    if (retainedScroll > 0) {
+      requestAnimationFrame(() => {
+        view.scrollDOM.scrollTop = retainedScroll
+        view.requestMeasure()
+      })
+    }
     return () => {
+      props.onRetain?.({
+        content: view.state.doc.toString(),
+        dirty: dirtyRef.current,
+        mode: modeRef.current,
+        localUnlock: localUnlockRef.current,
+        previewScroll: previewScrollRef.current,
+        editorScroll: view.scrollDOM.scrollTop,
+      })
       view.destroy()
       viewRef.current = null
       themeCompRef.current = null
@@ -216,6 +282,23 @@ export function TextEditor(props: FileViewerProps) {
     // effect below (recreating the view here would drop the draft).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [content, path])
+
+  // Address navigation may arrive while this occurrence is already open.
+  // A source line selects edit mode and positions only CodeMirror's scroller.
+  useEffect(() => {
+    if (props.line === undefined) return
+    const view = viewRef.current
+    if (view === null) return
+    modeRef.current = 'edit'
+    setMode('edit')
+    const target = view.state.doc.line(Math.min(Math.max(1, props.line), view.state.doc.lines)).from
+    view.dispatch({ selection: { anchor: target } })
+    requestAnimationFrame(() => {
+      const block = view.lineBlockAt(target)
+      view.scrollDOM.scrollTop = Math.max(0, block.top - 8)
+      view.requestMeasure()
+    })
+  }, [props.line, props.navigationRevision, content])
 
   // Scheme flip: re-theme in place (the compartment holds only the
   // scheme-dependent extensions; everything else is untouched).
@@ -292,10 +375,12 @@ export function TextEditor(props: FileViewerProps) {
     if (view === null || savingRef.current) return
     savingRef.current = true
     setSaveState('saving')
-    api.fsWrite(scope, path, view.state.doc.toString()).then(() => {
+    props.writeFile(view.state.doc.toString()).then(() => {
       savingRef.current = false
       setDraft(null)
+      dirtyRef.current = false
       setDirty(false)
+      props.onDirtyChange?.(false)
       setSaveState('saved')
     }).catch(() => {
       savingRef.current = false
@@ -406,8 +491,7 @@ export function TextEditor(props: FileViewerProps) {
   // sandbox OFF the preview iframe drops its sandbox attribute entirely —
   // the previewed page then runs on the GUI's own origin with full session
   // access.
-  const [localUnlock, setLocalUnlock] = useState(() => props.store?.getPrefs().htmlViewerDefaultUnsafe === true)
-  const htmlNoSandbox = props.store?.getPrefs().htmlViewerNoSandbox === true || localUnlock
+  const htmlNoSandbox = props.htmlSafety.forceUnsandboxed || localUnlock
 
   // Host-toolbar mode (the merged editor header renders the controls): skip
   // the own toolbar row, report the state after every relevant render (the
@@ -424,9 +508,12 @@ export function TextEditor(props: FileViewerProps) {
   })
   useEffect(() => {
     if (!hostToolbar) return
-    // `save` reads live refs only, and `setMode` is the stable state setter —
-    // registering this render's closures is safe for the mount's lifetime.
-    props.onToolbarControls?.({ setMode, save })
+    // `save` reads live refs; the wrapper synchronizes retention before React
+    // schedules the matching mode render.
+    props.onToolbarControls?.({
+      setMode: next => { modeRef.current = next; setMode(next) },
+      save,
+    })
     return () => { props.onToolbarControls?.(null) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hostToolbar])
@@ -440,14 +527,14 @@ export function TextEditor(props: FileViewerProps) {
               <button
                 type="button"
                 className={clsx(css.editorModeButton, mode === 'preview' && css.editorModeActive)}
-                onClick={() => { setMode('preview') }}
+                onClick={() => { modeRef.current = 'preview'; setMode('preview') }}
               >
                 {t('preview')}
               </button>
               <button
                 type="button"
                 className={clsx(css.editorModeButton, mode === 'edit' && css.editorModeActive)}
-                onClick={() => { setMode('edit') }}
+                onClick={() => { modeRef.current = 'edit'; setMode('edit') }}
               >
                 {t('edit')}
               </button>
@@ -542,8 +629,8 @@ export function TextEditor(props: FileViewerProps) {
             sandboxed={!htmlNoSandbox}
             local={localUnlock}
             dangerCopy={t('htmlNoSandboxWarning')}
-            onUnlock={() => { setLocalUnlock(true) }}
-            onRestore={() => { setLocalUnlock(false) }}
+            onUnlock={() => { localUnlockRef.current = true; setLocalUnlock(true) }}
+            onRestore={() => { localUnlockRef.current = false; setLocalUnlock(false) }}
           />
           {/* Route-src (never srcdoc — a srcdoc frame inherits the parent
               origin when unsandboxed; the route URL keeps the frame

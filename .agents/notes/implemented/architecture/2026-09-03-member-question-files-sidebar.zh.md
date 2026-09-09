@@ -14,7 +14,7 @@ Host Session materializer 把传输文档 bytes 写到 receiver 所有的隐藏 
 
 点击材料芯片只会用 `fileAddressFor` 转换 receiving Session id 与缓存 path，再通过 `ctx.sidebarRight.forSession(sessionId).openResource` 打开该资源。没有 `cachedPath` 的芯片是 no-op：提问 Session path 与同名 Workspace 文件都不会被打开。markdown、HTML 与其他扩展名复用普通 Files viewer registry。HTML 初始运行在 opaque-origin sandbox 中；Files settings 拥有带警告的退出选项。文件地址没有已注册的 viewer 时，芯片调用 `ctx.remote.session.openWorkspacePath({ path: absolute })` 与 Host 系统打开器。导航失败显示在材料卡片上；已注册 viewer 的失败不会改用系统打开器重试。详情面板文档席位不属于产品路径。
 
-卡片订阅 官方 Sidebar projection，并且仅在同一 receiving Session 的可见 pane 或 free window 中，其某个缓存参考 path 是 active editor 时折叠。隐藏该 viewer、激活其他标签或切换 Session 会恢复卡片并清除本次本地 reveal；重新打开参考文件会再次折叠。订阅跟随晚注册的 provider、viewer 与 receiving Workspace root 变化。卸载时释放 state、registry、Session list 与 Cordis service listener。
+卡片订阅官方 Sidebar projection，并且仅在同一 receiving Session 的可见 pane 或 free window 中，其某个缓存参考 path 是 active editor 时折叠。隐藏该 viewer、激活无关标签或切换 Session 会恢复卡片并清除本次本地 reveal。选择另一份被引用文件会清除 reveal 并围绕该文件折叠；重新打开隐藏的参考文件也会再次折叠。订阅跟随晚注册的 provider、viewer 与 receiving Workspace root 变化。卸载时释放 state、registry、Session list 与 Cordis service listener。
 
 [receiving Session 物化记录](2026-09-02-receiving-session-arrival-materialization.zh.md) 仍拥有 Host Session 创建与 brief 注入。[Host receiver ledger](2026-08-31-host-owned-member-question-receiver-ledger.zh.md) 仍拥有 persistence、first claim 与 human-turn reservation。
 
@@ -36,4 +36,4 @@ Host Session materializer 把传输文档 bytes 写到 receiver 所有的隐藏 
 
 ## Testing
 
-聚焦 cache 测试钉死隐藏目录写入、同名隔离，以及拒绝预埋符号链接。receiver ingest 测试钉死 materializer 上的传输 bytes，且 ledger 不含正文。Client 插件测试钉死带 receiving Session id 的 文件资源导航、系统打开器回退、晚注册 provider subscription 的清理，以及缺少 `cachedPath` 时的 no-op。卡片测试钉死精确 Session 与 path 匹配、viewer 消失时恢复，以及再次出现时重新折叠。keyless Web assembled coverage 打开传输后的 Files path，观察卡片折叠，在可见 viewer 旁恢复卡片，并证明未读取 Workspace 同名文件；所属 snapshot 钉死 durable receiving events。
+聚焦 cache 测试钉死隐藏目录写入、同名隔离，以及拒绝预埋符号链接。receiver ingest 测试钉死 materializer 上的传输 bytes，且 ledger 不含正文。Client 插件测试钉死带 receiving Session id 的文件资源导航、系统打开器回退、晚注册 provider subscription 的清理，以及缺少 `cachedPath` 时的 no-op。卡片测试钉死精确 Session 与 path 匹配、viewer 消失时恢复，以及隐藏或另一份被引用文件变为可见时重新折叠。keyless Web assembled coverage 打开传输后的 Markdown 与沙箱 HTML path，观察每次卡片折叠，在每个可见 viewer 旁恢复卡片，并证明未读取 Workspace 同名文件；所属 snapshot 钉死 durable receiving events。

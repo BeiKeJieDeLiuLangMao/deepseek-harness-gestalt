@@ -125,16 +125,15 @@ export function MemberQuestionCard(props: MemberQuestionComposerProps) {
       ? []
       : [props.referencePath(props.sessionId, reference.cachedPath)])),
   [brief.references, props.referencePath, props.sessionId])
-  const referenceOpen = props.useReferenceView(view =>
-    view.sessionId === props.sessionId && view.paths.some(path => referencePaths.has(path)))
+  const openedReference = props.useReferenceView(view =>
+    view.sessionId === props.sessionId ? view.paths.find(path => referencePaths.has(path)) : undefined)
+  const referenceOpen = openedReference !== undefined
 
   useEffect(() => {
     if (!innerCollapsed) setInnerRevealed(false)
   }, [innerCollapsed])
 
-  useEffect(() => {
-    if (!referenceOpen) setReferenceRevealed(false)
-  }, [referenceOpen])
+  useEffect(() => { setReferenceRevealed(false) }, [openedReference])
 
   const folded = (innerCollapsed && !innerRevealed) || (referenceOpen && !referenceRevealed)
   const askerName = brief.origin?.askerDisplayName ?? props.t('origin.fallback')

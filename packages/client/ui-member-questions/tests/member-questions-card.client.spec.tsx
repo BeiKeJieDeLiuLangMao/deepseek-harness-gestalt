@@ -587,6 +587,14 @@ describe('MemberQuestionCard', () => {
     await waitFor(() => { expect(container.querySelector('[data-folded]')).toBeNull() })
     expect(screen.getByText('将王小明移出项目吗？')).toBeTruthy()
 
+    setReferenceView({
+      sessionId: SID,
+      paths: ['/bound-workspace/.dsh/member-questions/question-1/activity.csv'],
+    })
+    await waitFor(() => { expect(container.querySelector('[data-folded]')).toBeTruthy() })
+    fireEvent.click(screen.getByRole('button', { name: '远端 · 王小明' }))
+    await waitFor(() => { expect(container.querySelector('[data-folded]')).toBeNull() })
+
     setReferenceView({ sessionId: SID, paths: [] })
     setReferenceView({
       sessionId: SID,

@@ -37,7 +37,6 @@ import { useSubmenuFlip } from './menu-flip.ts'
 import type { OpenWithTarget } from './open-with.ts'
 import { relativeTo } from './paths.ts'
 import { t } from './locales.ts'
-import type { SidebarStore } from './state.ts'
 import { uploadItemsFromDrop, uploadItemsFromFiles, type UploadItem } from './upload.ts'
 import css from './sidebar.module.css'
 
@@ -109,8 +108,8 @@ const ChatDropIllustration = () => (
 export function FileTree(props: {
   sessionId: string
   cwd: string | undefined
-  /** The sidebar store: the fence-refusal notice writes the `workspaceFence` pref through it. */
-  store: SidebarStore
+  /** Disable the workspace fence before retrying an outside-workspace listing. */
+  disableWorkspaceFence: () => Promise<void>
   expanded: string[]
   /** Files highlighted by a "Show in folder" reveal (absolute paths). */
   revealed: string[]
@@ -146,7 +145,7 @@ export function FileTree(props: {
   /** True while an upload is in flight (drops are ignored). */
   busy: boolean
 }) {
-  const { sessionId, cwd, store, expanded, revealed, onToggle, onOpenFile, onOpenFileNewTab, onOpenFileSide, openWithTargets, openWithPinned, openWithSsh, onOpenWith, onToggleOpenWithPin, onReferenceFile, onPathRenamed, onPathDeleted, refreshTick, onUploadRequest, busy } = props
+  const { sessionId, cwd, disableWorkspaceFence, expanded, revealed, onToggle, onOpenFile, onOpenFileNewTab, onOpenFileSide, openWithTargets, openWithPinned, openWithSsh, onOpenWith, onToggleOpenWithPin, onReferenceFile, onPathRenamed, onPathDeleted, refreshTick, onUploadRequest, busy } = props
   const [data, setData] = useState<Record<string, LevelData>>({})
   const dataRef = useRef(data)
   /** The row whose path was just copied ("copied" label replaces its button). */
@@ -584,7 +583,7 @@ export function FileTree(props: {
       if (isOutsideWorkspaceMessage(level.error)) {
         return (
           <div style={{ paddingLeft: depth * 22 + 6 }}>
-            <FenceErrorNotice store={store} onDisabled={() => { retryDir(dir) }} />
+            <FenceErrorNotice disable={disableWorkspaceFence} onDisabled={() => { retryDir(dir) }} />
           </div>
         )
       }

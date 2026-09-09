@@ -22,7 +22,7 @@ import { t } from './locales.ts'
 import css from './SideCardSection.module.css'
 
 export function OpenWithSettings(props: {
-  pluginSettings: Record<string, unknown>
+  pluginSettings: Readonly<Record<string, unknown>>
   updatePluginSetting: (key: string, value: unknown) => void
 }) {
   const { pluginSettings, updatePluginSetting } = props

@@ -19,7 +19,6 @@ import { useEffect, useRef, useState, type InputHTMLAttributes } from 'react'
 import clsx from 'clsx'
 import { IconFolderOpen16, IconRefreshOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { api } from './api.ts'
-import type { SidebarStore } from './state.ts'
 import { FileTree } from './FileTree.tsx'
 import { IconUploadOutline16 } from './icons.tsx'
 import type { OpenWithTarget } from './open-with.ts'
@@ -45,8 +44,8 @@ interface UploadSession {
 export function TreePanel(props: {
   sessionId: string
   cwd: string | undefined
-  /** The sidebar store (passed through to the tree's fence-refusal notice). */
-  store: SidebarStore
+  /** Disable the workspace fence before retrying an outside-workspace listing. */
+  disableWorkspaceFence: () => Promise<void>
   expanded: string[]
   revealed: string[]
   onToggle: (path: string) => void
@@ -71,7 +70,7 @@ export function TreePanel(props: {
    *  at a fixed width. */
   full?: boolean
 }) {
-  const { sessionId, cwd, store, expanded, revealed, onToggle, onOpenFile, onOpenFileNewTab, onOpenFileSide, openWithTargets, openWithPinned, openWithSsh, onOpenWith, onToggleOpenWithPin, onReferenceFile, onPathRenamed, onPathDeleted, full } = props
+  const { sessionId, cwd, disableWorkspaceFence, expanded, revealed, onToggle, onOpenFile, onOpenFileNewTab, onOpenFileSide, openWithTargets, openWithPinned, openWithSsh, onOpenWith, onToggleOpenWithPin, onReferenceFile, onPathRenamed, onPathDeleted, full } = props
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<{ matches: string[]; truncated: boolean } | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -243,7 +242,7 @@ export function TreePanel(props: {
         <FileTree
           sessionId={sessionId}
           cwd={cwd}
-          store={store}
+          disableWorkspaceFence={disableWorkspaceFence}
           expanded={expanded}
           revealed={revealed}
           onToggle={onToggle}

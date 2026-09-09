@@ -27,6 +27,7 @@ import { registerSettingsNavIcon } from './settings-nav-icon.ts'
 import { loadBootDecision } from './prefs.ts'
 import { SideCardSection } from './SideCardSection.tsx'
 import { api } from './api.ts'
+import { registerOfficialFiles } from './official-files/index.ts'
 import { LOCALE_NS, attachLocale, attachBetterLocale, t, zh, en } from './locales.ts'
 import css from './sidebar.module.css'
 import './layout.css'
@@ -37,7 +38,10 @@ export type { BetterSidebarService } from './context.ts'
  *  locale service backs the sidebar's copy — see locales.ts). `modules`
  *  (rc.8+) is the client module system the chunk loader resolves its
  *  externals through — Cordis guards service access without inject. */
-export const inject = ['connection', 'remote', 'slots', 'sessions', 'workspaces', 'locale', 'modules', 'uiRenderer']
+export const inject = [
+  'connection', 'remote', 'slots', 'sessions', 'workspaces', 'locale', 'modules', 'uiRenderer',
+  'sidebarRight', 'sidebarRightTabs', 'sidebarRightPreferences',
+]
 
 /**
  * Error boundary over the sidebar tree (root scope): a render error in the
@@ -60,6 +64,7 @@ function isDesktopOverlayDocument(): boolean {
  * @param ctx - the client cordis context (slots, sessions).
  */
 export function apply(ctx: SidebarContext): void {
+  registerOfficialFiles(ctx)
   ctx.effect(
     () => installSidechatAdmission(ctx),
     'dsh-better-sidebar: Side Chat Session admission',

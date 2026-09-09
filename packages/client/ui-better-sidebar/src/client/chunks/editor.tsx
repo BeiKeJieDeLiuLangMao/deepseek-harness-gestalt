@@ -6,4 +6,4 @@
  * Never import this module from the core bundle: it pulls CodeMirror into
  * the startup path.
  */
-export { TextEditor } from '../TextEditor.tsx'
+export { TextEditor, TextEditorCore } from '../TextEditor.tsx'
