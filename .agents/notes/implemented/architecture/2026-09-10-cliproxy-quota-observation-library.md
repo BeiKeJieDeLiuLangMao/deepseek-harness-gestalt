@@ -20,6 +20,8 @@ Observation truth semantics follow the proposal: `known` / `partial` / `unsuppor
 
 GLM joins the provider union without a probe: the fork core polls GLM quota itself and records it on the auth file's passive quota envelope, so the observer's `glm` path only parses the `quotaSignals` envelope supplied as probe input (`GLM-Quota-Status` ready→known, stale→partial with the last good windows, error→failure with the sanitized upstream detail; 5h/weekly percent+reset windows; `GLM-Plan-Level` as plan marker) and never touches the transport. The signal keys follow the fork implementation at `gestaltrun/CLIProxyAPI` head `68278c54` and remain provisional until the reviewed final pin lands.
 
+Quota observations are display and diagnostic facts only, per the core ruling that usage quota never drives scheduling: no probe outcome disables an auth, changes `Quota.Exceeded`, or alters routing, and a credential-validity signal reports the quota interface's current observation rather than the inference key's overall health. Consumers distinguish stale from failed through `status` plus `observedAt` and may retain the last known-good observation.
+
 ## Alternatives considered
 
 **Register a cordis service so consumers discover the observer through `ctx`.** Rejected because no second consumer exists to justify a Service Definition / Provider / Consumer seam, and the transport must stay Host-owned regardless of the observer's packaging.

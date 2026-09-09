@@ -88,7 +88,7 @@ export function parseGlmQuotaSignals(envelope: GlmQuotaEnvelope, now: number): G
       windows: [],
       ...(planType === undefined ? {} : { planType }),
       observedAt,
-      error: 'glm credential is marked invalid by the core poll',
+      error: 'glm quota poll marks the credential invalid; a quota-interface observation, not an inference-key verdict',
     }
   }
 

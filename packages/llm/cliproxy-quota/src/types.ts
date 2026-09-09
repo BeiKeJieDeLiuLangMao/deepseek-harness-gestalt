@@ -89,6 +89,12 @@ export interface CodexResetCreditsObservation {
 /**
  * One sanitized observation. `error` carries a bounded, credential-free
  * message on `unsupported` and `failure`, and may accompany `partial`.
+ *
+ * Observations are display and diagnostic facts only: they never disable an
+ * account, alter routing, or mark exhaustion. A credential-validity signal
+ * reflects the quota interface's current observation, not the inference
+ * key's overall health. Consumers distinguish `stale` from `failed` through
+ * `status` plus `observedAt` and may retain the last known-good observation.
  */
 export interface QuotaObservation {
   /** Probed provider. */

@@ -20,6 +20,8 @@ Status: implemented
 
 GLM 不带探测地加入 provider 联合：fork 核心自行轮询 GLM 额度并记录在 auth-file 的被动额度信封上，因此 observer 的 `glm` 路径只解析作为探测输入提供的 `quotaSignals` 信封（`GLM-Quota-Status` ready→known、stale→partial 保留最后良好窗口、error→failure 带脱敏上游细节；5h/weekly 百分比+重置窗口；`GLM-Plan-Level` 作套餐标记），绝不触碰 transport。信号键跟随 `gestaltrun/CLIProxyAPI` head `68278c54` 的实现，在评审后的最终 pin 落定前保持暂定。
 
+按核心裁决，额度观测仅是展示与诊断事实，usage quota 绝不驱动调度：任何探测结果都不会停用 auth、改变 `Quota.Exceeded` 或改变路由；凭据有效性信号报告的是额度接口的当前观察，而非推理 key 的整体健康状况。消费方通过 `status` 加 `observedAt` 区分过期与失败，并可保留最近一次已知良好的观测。
+
 ## Alternatives considered
 
 **注册 cordis 服务让消费方经 `ctx` 发现 observer。** 不采用：不存在第二个消费方为 Service Definition / Provider / Consumer seam 提供正当性，且 transport 无论如何都必须归 Host 持有。

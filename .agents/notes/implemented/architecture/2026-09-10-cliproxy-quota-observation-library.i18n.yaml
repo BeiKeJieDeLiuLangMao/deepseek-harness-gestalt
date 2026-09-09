@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-10-cliproxy-quota-observation-library.md
-2026-09-10-cliproxy-quota-observation-library.md: de03312d06eea9eac56e1a91d8f29c52c2f9390d
-2026-09-10-cliproxy-quota-observation-library.zh.md: 345e7debd8d911b1f52d585bd3af008dc94dd393
+2026-09-10-cliproxy-quota-observation-library.md: 4417896b4b04ddfd58bf1c96eae9d2b9110aa6b0
+2026-09-10-cliproxy-quota-observation-library.zh.md: 2563c63095f28bb2e8d162e1072244b769d359c9

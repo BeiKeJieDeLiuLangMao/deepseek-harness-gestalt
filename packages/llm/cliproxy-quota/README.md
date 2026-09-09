@@ -16,6 +16,8 @@ Window fields the source did not supply stay absent — nothing reads as zero, f
 
 `known` means every fact the provider's probe expects arrived; `partial` means some did (a missing Claude named window, a failed Codex reset-credits listing, one of two xAI billing periods); `failure` means no usable fact (the error is bounded and credential-redacted); `unsupported` means no read-only probe exists for that account state.
 
+Observations are display and diagnostic facts only. They never disable an account, alter routing, or set exhaustion state, and a credential-validity signal reflects the quota interface's current observation — not the inference key's overall health. Consumers distinguish stale from failed through `status` plus `observedAt` and may retain the last known-good observation across refreshes.
+
 ## Provider probes
 
 | Provider | Endpoint(s) | Window facts |

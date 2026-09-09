@@ -16,6 +16,8 @@ CLIProxyAPI 账号池凭据的只读额度观测。唯一入口 `createQuotaObse
 
 `known` 表示该 provider 探测期望的事实全部到达；`partial` 表示部分到达（Claude 命名窗口缺失、Codex reset-credits 列表失败、xAI 两个 billing 周期只得其一）；`failure` 表示无可用事实（错误信息有界且经凭据脱敏）；`unsupported` 表示该账号状态没有只读探测。
 
+观测仅是展示与诊断事实。它们绝不停用账号、改变路由或设置耗尽状态；凭据有效性信号反映的是额度接口的当前观察，而非推理 key 的整体健康状况。消费方通过 `status` 加 `observedAt` 区分过期与失败，并可跨刷新保留最近一次已知良好的观测。
+
 ## Provider 探测
 
 | Provider | 端点 | 窗口事实 |
