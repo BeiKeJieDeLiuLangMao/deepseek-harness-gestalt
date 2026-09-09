@@ -9,6 +9,14 @@ import type { BrowserTarget } from '@deepseek-ai/dsh-browser-workspace/client'
 /** Query parameter the Desktop Host adds to the overlay `WebContentsView` URL. */
 const DESKTOP_OVERLAY_PARAM = 'dsh-desktop-overlay'
 
+/** Renderer popups that must paint without a native page view above them. */
+const RENDERER_POPUP_SELECTOR = '[role="menu"], [role="listbox"]'
+
+function hasOpenRendererPopup(): boolean {
+  return [...document.querySelectorAll<HTMLElement>(RENDERER_POPUP_SELECTOR)]
+    .some(node => !node.hidden && node.getAttribute('aria-hidden') !== 'true')
+}
+
 /**
  * True when this renderer is the Desktop native overlay document.
  * Overlay must not present or conceal official pages.
@@ -71,6 +79,7 @@ export function presentablePageBounds(hole: DOMRectReadOnly): PageSurfaceBounds 
 /**
  * Keep one official Runtime page aligned with a chrome viewport element.
  * Settings and the sidebar + menu paint in a native overlay view above this page.
+ * Renderer menus and listboxes conceal it until their DOM entries unmount.
  * @param target - Session-owned tab, or undefined while create is in flight.
  * @param enabled - False when the snapshot tab is hidden.
  * @returns a ref for the viewport element.
@@ -95,6 +104,13 @@ export function useDesktopPageSurface(
     if (node === null) return
     let last = ''
     const send = (): void => {
+      if (hasOpenRendererPopup()) {
+        if (last !== '') {
+          last = ''
+          void surface.browserConceal(current)
+        }
+        return
+      }
       const bounds = presentablePageBounds(node.getBoundingClientRect())
       if (bounds === undefined) {
         last = ''
@@ -110,9 +126,17 @@ export function useDesktopPageSurface(
     const Observer = globalThis.ResizeObserver
     const observer = typeof Observer === 'function' ? new Observer(send) : undefined
     observer?.observe(node)
+    const popupObserver = new MutationObserver(send)
+    popupObserver.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['role', 'hidden', 'aria-hidden'],
+    })
     window.addEventListener('resize', send)
     return () => {
       observer?.disconnect()
+      popupObserver.disconnect()
       window.removeEventListener('resize', send)
       void surface.browserConceal(current)
     }

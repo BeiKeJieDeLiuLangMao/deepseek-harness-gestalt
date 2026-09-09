@@ -35,7 +35,9 @@ export type AppFrameProps =
 function CenterColumn(props: { bottomHostId: string; bottomHeight: number; children?: ReactNode }) {
   return (
     <div className={css.centerCol} style={{ gridTemplateRows: `minmax(0, 1fr) ${props.bottomHeight}px` }}>
-      <div className={css.conversationHost}>{props.children}</div>
+      <div className={css.conversationHost}>
+        <div className={css.conversationSlotHost} data-conversation-slot-host>{props.children}</div>
+      </div>
       <div id={props.bottomHostId} className={css.bottomHost} data-bottombar-host />
     </div>
   )

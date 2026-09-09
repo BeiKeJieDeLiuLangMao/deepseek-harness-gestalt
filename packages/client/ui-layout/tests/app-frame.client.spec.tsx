@@ -230,6 +230,14 @@ describe('AppFrame', () => {
     expect(slotCalls.find(c => c.key === 'main')).toEqual({ key: 'main', props: {}, options: { entryKey: 'conversation' } })
   })
 
+  it('stretches the Conversation entry through its production Slot anchor', () => {
+    const { getByTestId } = mountFrame()
+    const conversation = getByTestId('main-content')
+    const host = conversation.closest<HTMLElement>('[data-conversation-slot-host]')
+    expect(host).not.toBeNull()
+    expect(host?.parentElement?.className).toMatch(/conversationHost/)
+  })
+
   it('reserves bottom height only for a visible non-fullscreen surface', () => {
     const { frame, instance } = mountFrame()
     const bottomHost = frame.querySelector<HTMLElement>('[data-bottombar-host]')!

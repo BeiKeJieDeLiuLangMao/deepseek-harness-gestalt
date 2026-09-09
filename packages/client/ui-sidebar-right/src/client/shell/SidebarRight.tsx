@@ -39,10 +39,13 @@ import type { DockIntents, DockMode, FloatRect, TabId, TabRecord, TabRenderer } 
 import { canSplit, dockPaneIds, DockSurface, findPaneContentTab, FloatLayer } from '@deepseek-ai/dsh-client-ui-dockkit'
 import type { HalvesFit, LayoutState, PaneId } from '@deepseek-ai/dsh-client-ui-dockkit'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
 import { GUIDE_KIND, pageAddress } from '../contract/seed.ts'
 import { dockLabels } from '../labels.ts'
 import type { SidebarRightOpenTabOptions, SidebarRightProjection, SidebarRightTabProjection } from '../service.ts'
-import type { SidebarRightTabDefinition } from '../tab-registry.ts'
+import type {
+  SidebarRightDescriptorContext, SidebarRightDescriptorTab, SidebarRightTabDefinition,
+} from '../tab-registry.ts'
 import type {
   createSidebarRightStore, DockSurfaceState, SidebarWorkbenchSurface, SurfaceState,
 } from '../stores.ts'
@@ -153,6 +156,7 @@ interface PanelProps {
   readonly t: WorkbenchSeatProps['t']
   readonly renderSlot: Children['renderSlot']
   readonly openTab: SidebarRightInjected['openTab']
+  readonly openAddTabMenu: DesktopAddTabMenu
   readonly activateTab: SidebarRightInjected['activateTab']
   readonly closeTab: SidebarRightInjected['closeTab']
   readonly useTabTypes: WorkbenchSeatProps['useTabTypes']
@@ -165,6 +169,159 @@ interface PanelProps {
   readonly autoFullscreen: boolean
   /** Receives the kit's room-rule readings for the service's `split`. */
   readonly reportRoom: (fits: ReadonlyMap<PaneId, HalvesFit>) => void
+}
+
+interface DesktopAddTabMenuItem {
+  readonly id: string
+  readonly label: string
+  readonly disabled?: boolean
+  readonly icon?: string
+}
+
+interface DesktopAddTabOverlay {
+  readonly chromeOverlayShow: (request: {
+    readonly kind: 'menu'
+    readonly requestId: string
+    readonly items: readonly DesktopAddTabMenuItem[]
+    readonly anchor: { readonly x: number; readonly y: number; readonly width: number; readonly height: number }
+    readonly align: 'end'
+    readonly side: 'bottom'
+  }) => void | Promise<void>
+  readonly chromeOverlayHide: () => void | Promise<void>
+  readonly onChromeOverlayResult: (
+    listener: (result: { readonly type: string; readonly requestId: string; readonly id?: string }) => void,
+  ) => () => void
+}
+
+type DesktopAddTabMenu = (
+  surface: SidebarWorkbenchSurface,
+  paneId: PaneId,
+  anchor: HTMLElement | undefined,
+) => boolean
+
+function desktopAddTabOverlayOf(value: unknown): DesktopAddTabOverlay | undefined {
+  if (typeof value !== 'object' || value === null) return undefined
+  const bridge = value as Record<string, unknown>
+  if (
+    typeof bridge.chromeOverlayShow !== 'function'
+    || typeof bridge.chromeOverlayHide !== 'function'
+    || typeof bridge.onChromeOverlayResult !== 'function'
+  ) return undefined
+  return bridge as unknown as DesktopAddTabOverlay
+}
+
+function descriptorTabsOf(
+  projection: SidebarRightProjection,
+  sessionId: SessionId,
+): readonly SidebarRightDescriptorTab[] {
+  return projection.sessions.find(candidate => candidate.sessionId === sessionId)?.tabs.map(tab => ({
+    id: tab.record.id,
+    kind: tab.record.kind,
+    contentId: tab.record.contentId,
+    title: tab.record.title,
+    surface: tab.surface,
+    floating: tab.floating,
+    payload: tab.state.payload,
+    pin: tab.state.pin,
+  })) ?? []
+}
+
+function desktopAddTabItems(
+  definitions: readonly SidebarRightTabDefinition[],
+  context: SidebarRightDescriptorContext,
+): readonly DesktopAddTabMenuItem[] {
+  return definitions
+    .filter(definition => definition.patterns === undefined && definition.kind !== GUIDE_KIND && definition.hidden !== true)
+    .toSorted((left, right) => (left.order ?? 100) - (right.order ?? 100))
+    .map((definition) => {
+      let disabled = false
+      try {
+        disabled = definition.available?.(context) === false
+      } catch (error: unknown) {
+        console.error(`sidebarRight: available failed for add-menu kind "${definition.kind}"`, error)
+        disabled = true
+      }
+      return {
+        id: definition.kind,
+        label: definition.title(''),
+        ...(disabled ? { disabled: true } : {}),
+        ...(definition.icon === undefined ? {} : { icon: definition.icon }),
+      }
+    })
+}
+
+function useDesktopAddTabMenu(
+  sessionId: SessionId,
+  definitions: readonly SidebarRightTabDefinition[],
+  preferences: SidebarRightPreferencesSnapshot['preferences'],
+  projection: SidebarRightProjection,
+  openTab: SidebarRightInjected['openTab'],
+): DesktopAddTabMenu {
+  const bridge = useMemo(
+    () => desktopAddTabOverlayOf((globalThis as { dshDesktop?: unknown }).dshDesktop),
+    [],
+  )
+  const items = useMemo(() => desktopAddTabItems(definitions, {
+    sessionId,
+    preferences,
+    tabs: descriptorTabsOf(projection, sessionId),
+  }), [definitions, preferences, projection, sessionId])
+  const pending = useRef<{
+    readonly requestId: string
+    readonly paneId: PaneId
+    readonly surface: SidebarWorkbenchSurface
+    readonly enabledKinds: ReadonlySet<string>
+  }>()
+  const openTabRef = useRef(openTab)
+  useEffect(() => { openTabRef.current = openTab }, [openTab])
+  useEffect(() => {
+    if (bridge === undefined) return
+    const unsubscribe = bridge.onChromeOverlayResult((result) => {
+      const request = pending.current
+      if (request === undefined || result.requestId !== request.requestId) return
+      pending.current = undefined
+      if (result.type !== 'select' || result.id === undefined || !request.enabledKinds.has(result.id)) return
+      openTabRef.current(result.id, {
+        surface: request.surface,
+        paneId: request.paneId,
+        revealIfOpened: false,
+      })
+    })
+    return () => {
+      unsubscribe()
+      if (pending.current !== undefined) {
+        pending.current = undefined
+        void bridge.chromeOverlayHide()
+      }
+    }
+  }, [bridge])
+  return useCallback((surface, paneId, anchor) => {
+    if (bridge === undefined) return false
+    if (pending.current !== undefined) {
+      pending.current = undefined
+      void bridge.chromeOverlayHide()
+      return true
+    }
+    const rect = anchor?.getBoundingClientRect()
+    const requestId = randomUUID()
+    pending.current = {
+      requestId,
+      paneId,
+      surface,
+      enabledKinds: new Set(items.filter(item => item.disabled !== true).map(item => item.id)),
+    }
+    void bridge.chromeOverlayShow({
+      kind: 'menu',
+      requestId,
+      items,
+      anchor: rect === undefined
+        ? { x: 0, y: 0, width: 0, height: 0 }
+        : { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+      align: 'end',
+      side: 'bottom',
+    })
+    return true
+  }, [bridge, items])
 }
 
 /** The guide tab one pane holds, if any: a pane holds at most one. */
@@ -186,6 +343,7 @@ export function intentsFor(
   activateTab: PanelProps['activateTab'],
   closeTab: PanelProps['closeTab'],
   surface: SidebarWorkbenchSurface = 'right',
+  openAddTabMenu?: DesktopAddTabMenu,
 ): DockIntents {
   return {
     focusTab: activateTab,
@@ -195,7 +353,10 @@ export function intentsFor(
     // holds none (`canAddTab` below) and asks for one there without regard to
     // guides in other panes; the store settles the open on a guide the pane
     // already holds, so the ask is idempotent all the same.
-    addTab: (paneId) => { openTab(GUIDE_KIND, { surface, paneId, revealIfOpened: false }) },
+    addTab: (paneId: PaneId, anchor?: HTMLElement) => {
+      if (openAddTabMenu?.(surface, paneId, anchor) === true) return
+      openTab(GUIDE_KIND, { surface, paneId, revealIfOpened: false })
+    },
     closeTab,
     duplicateTab: (tabId) => {
       if (!isSidebarRightPinnedViewId(tabId)) actions.duplicateTab(sessionId, tabId)
@@ -387,7 +548,10 @@ function SidebarPanel(panel: PanelProps & { width: number; panelRef: RefObject<H
           minPaneFraction={0.2}
           canAddTab={paneId => guideIn(surface.layout, paneId) === undefined}
           canCloseTab={tabId => canCloseTab(surface, tabId)}
-          intents={intentsFor(sessionId, actions, openTab, panel.activateTab, panel.closeTab, panel.workbenchSurface)}
+          intents={intentsFor(
+            sessionId, actions, openTab, panel.activateTab, panel.closeTab,
+            panel.workbenchSurface, panel.openAddTabMenu,
+          )}
           labels={dockLabels(t)}
           renderTab={bodiesFor(panel)}
           renderTabTitle={titlesFor(panel)}
@@ -419,7 +583,10 @@ function Floats(panel: PanelProps): ReactNode {
       <FloatLayer
         state={surface.layout}
         canCloseTab={tabId => canCloseTab(surface, tabId)}
-        intents={intentsFor(sessionId, actions, openTab, panel.activateTab, panel.closeTab, panel.workbenchSurface)}
+        intents={intentsFor(
+          sessionId, actions, openTab, panel.activateTab, panel.closeTab,
+          panel.workbenchSurface, panel.openAddTabMenu,
+        )}
         labels={dockLabels(t)}
         renderTab={bodiesFor(panel)}
         renderTabTitle={titlesFor(panel)}
@@ -541,7 +708,10 @@ function BottomPanel(panel: PanelProps & {
           minPaneFraction={0.2}
           canAddTab={paneId => guideIn(surface.layout, paneId) === undefined}
           canCloseTab={tabId => canCloseTab(surface, tabId)}
-          intents={intentsFor(sessionId, actions, openTab, panel.activateTab, panel.closeTab, 'bottom')}
+          intents={intentsFor(
+            sessionId, actions, openTab, panel.activateTab, panel.closeTab,
+            'bottom', panel.openAddTabMenu,
+          )}
           labels={dockLabels(t)}
           renderTab={bodiesFor(panel)}
           renderTabTitle={titlesFor(panel)}
@@ -593,6 +763,14 @@ export function WorkbenchSeat({
   const track = rightShown && !autoFullscreen
   const preferenceSnapshot = usePreferences(snapshot => snapshot)
   const workbenchProjection = useWorkbench(snapshot => snapshot)
+  const tabTypes = useTabTypes(types => types)
+  const openAddTabMenu = useDesktopAddTabMenu(
+    sessionId,
+    tabTypes,
+    preferenceSnapshot.preferences,
+    workbenchProjection,
+    openTab,
+  )
   const viewerCwd = useSessions(snapshot => snapshot.byId[sessionId]?.cwd)
   const [requestedVirtualId, setRequestedVirtualId] = useState<TabId | undefined>()
   const pinnedRight = useMemo(
@@ -726,7 +904,7 @@ export function WorkbenchSeat({
     }
   }
   const shared = {
-    sessionId, actions, t, renderSlot, openTab, useTabTypes, useStore, occurrence,
+    sessionId, actions, t, renderSlot, openTab, openAddTabMenu, useTabTypes, useStore, occurrence,
   }
   const rightPanel: PanelProps = {
     ...shared,

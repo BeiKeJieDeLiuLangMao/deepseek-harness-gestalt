@@ -37,6 +37,7 @@ afterEach(async () => {
     for (const runtime of runtimes.splice(0)) await runtime.dispose()
     document.querySelectorAll('[data-test-workbench-host-root]').forEach((node) => { node.remove() })
   } finally {
+    Reflect.deleteProperty(globalThis, 'dshDesktop')
     vi.restoreAllMocks()
     if (getAnimationsDescriptor === undefined) Reflect.deleteProperty(Element.prototype, 'getAnimations')
     else Object.defineProperty(Element.prototype, 'getAnimations', getAnimationsDescriptor)
@@ -617,6 +618,66 @@ describe('slot-owned useTabInfo', () => {
     expect(dockPaneIds(h.layout())).toHaveLength(1)
     expect(splitButtons()).toHaveLength(1)
     expect(splitButtons()[0]?.disabled).toBe(false)
+  })
+
+  it('opens the Desktop add menu from the official page registry and places its selection', async () => {
+    let result: ((value: { type: string; requestId: string; id?: string }) => void) | undefined
+    const chromeOverlayShow = vi.fn()
+    const report = vi.spyOn(console, 'error').mockImplementation(() => {})
+    Object.assign(globalThis, {
+      dshDesktop: {
+        chromeOverlayShow,
+        chromeOverlayHide: vi.fn(),
+        onChromeOverlayResult: (listener: typeof result) => {
+          result = listener
+          return () => { result = undefined }
+        },
+      },
+    })
+    const h = await mountSeat()
+    await act(async () => {
+      h.runtime.ctx.sidebarRightTabs.register({
+        id: 'test/files', kind: 'files', order: 20, icon: 'editor', title: () => 'Files',
+      })
+      h.runtime.ctx.sidebarRightTabs.register({
+        id: 'test/terminal', kind: 'terminal', order: 40, icon: 'terminal', title: () => 'Terminal',
+        available: () => false,
+      })
+      h.runtime.ctx.sidebarRightTabs.register({
+        id: 'test/broken', kind: 'broken', order: 30, title: () => 'Broken',
+        available: () => { throw new Error('listing failed') },
+      })
+      h.runtime.ctx.sidebarRightTabs.register({
+        id: 'test/hidden', kind: 'hidden', order: 10, hidden: true, title: () => 'Hidden',
+      })
+    })
+    const paneId = dockPaneIds(h.layout())[0]!
+    h.open('keeps-pane.txt', { paneId })
+    const guide = getPane(h.layout(), paneId).tabs.find(id => h.layout().tabs[id]?.kind === 'guide')!
+    act(() => { h.actions.closeTab(SESSION, guide) })
+    const add = element(h.view.container, '[data-dockkit-add-tab]')
+    vi.spyOn(add, 'getBoundingClientRect').mockReturnValue(new DOMRect(101, 31, 18, 18))
+    fireEvent.click(add)
+    const request = chromeOverlayShow.mock.calls[0]![0] as unknown as { requestId: string }
+    expect(request.requestId).toMatch(/^[0-9a-f-]{36}$/)
+    expect(chromeOverlayShow).toHaveBeenCalledWith({
+      kind: 'menu',
+      requestId: request.requestId,
+      items: [
+        { id: 'files', label: 'Files', icon: 'editor' },
+        { id: 'broken', label: 'Broken', disabled: true },
+        { id: 'terminal', label: 'Terminal', disabled: true, icon: 'terminal' },
+      ],
+      anchor: { x: 101, y: 31, width: 18, height: 18 },
+      align: 'end',
+      side: 'bottom',
+    })
+    expect(report).toHaveBeenCalledWith(
+      'sidebarRight: available failed for add-menu kind "broken"',
+      expect.any(Error),
+    )
+    act(() => { result?.({ type: 'select', requestId: request.requestId, id: 'files' }) })
+    expect(getPane(h.layout(), paneId).tabs.some(id => h.layout().tabs[id]?.kind === 'files')).toBe(true)
   })
 })
 

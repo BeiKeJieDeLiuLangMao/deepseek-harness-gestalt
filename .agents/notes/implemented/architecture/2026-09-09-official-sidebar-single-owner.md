@@ -14,7 +14,13 @@ The Better Client entry now registers Files and viewers, Changes, Tasks, Side Ch
 
 The Desktop settings overlay registers definitions, viewer inventory, custom settings seats, locale data, and the IME and settings-icon adapters. It does not subscribe to Side Chat, Terminal, Changes/Tasks automation, Browser link interception, or Host open delivery. Browser Workspace likewise publishes its overlay face without reconciling Runtime pages. These rules keep one active Session workbench and one external-owner subscription set while preserving the overlay settings inventory.
 
+The official workbench also owns the Dock add action. Web opens the guide; Desktop projects the observable official page definitions into the existing native overlay protocol and opens the selected kind in the originating pane. DockKit supplies the pressed control only as an optional menu anchor.
+
 The Better Host routes remain because official file, Git, PTY, jobs, Side Chat, Browser fallback, and model-open consumers still use their bounded transports. Removing the duplicate Client owner does not change those provider trust, Session, workspace-fence, or teardown rules. The existing Better layout keys remain untouched for rollback.
+
+## Alternatives considered
+
+Keeping the Dock add menu in the main renderer would let an Electron Browser `WebContentsView` paint above its rows. Hardcoding a separate Desktop type list would create a second inventory. The native overlay therefore receives the observable official registry, while renderer menus with React Slot actions temporarily conceal the native page and restore it after dismissal.
 
 ## Consequences
 

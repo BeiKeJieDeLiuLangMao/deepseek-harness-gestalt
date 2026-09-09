@@ -15,7 +15,7 @@ export interface PaneCallbacks {
   readonly onFocusTab: (tabId: TabId) => void
   readonly onFocusPane: (paneId: PaneId) => void
   readonly onSplitPane: (paneId: PaneId) => void
-  readonly onAddTab: (paneId: PaneId) => void
+  readonly onAddTab: (paneId: PaneId, anchor: HTMLElement) => void
   readonly onCloseTab: (tabId: TabId) => void
   /** Begin dragging a tab; the surface owns the gesture from here. */
   readonly onTabPressed: (tabId: TabId, event: ReactPointerEvent<HTMLElement>) => void

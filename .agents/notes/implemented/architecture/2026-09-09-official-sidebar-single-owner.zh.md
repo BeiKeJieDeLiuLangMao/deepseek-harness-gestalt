@@ -14,7 +14,13 @@ Better Client 入口现在通过官方 Sidebar service 与 keyed Slot 注册文�
 
 Desktop 设置 overlay 会注册 definition、viewer inventory、自定义设置 seat、locale 数据、IME 与设置图标 adapter。它不会订阅 Side Chat、终端、变更与任务自动化、Browser 链接拦截或 Host 打开投递。Browser Workspace 同样会在 overlay 发布 face，但不调和 Runtime 页面。这些规则在保留 overlay 设置 inventory 的同时，只留下一个活动 Session 工作台与一组外部 owner 订阅。
 
+官方 workbench 也拥有 Dock 添加 action。Web 打开引导页；Desktop 把可观察的官方页面 definition 投影到既有原生 overlay 协议，并在来源 pane 中打开用户选中的 kind。DockKit 只把被按下的控件作为可选菜单锚点传入。
+
 Better Host 路由继续保留，因为官方文件、Git、PTY、jobs、Side Chat、Browser 回退与模型打开 consumer 仍使用这些有界 transport。移除重复 Client owner 不会改变这些 provider 的信任、Session、工作空间围栏或拆除规则。现有 Better 布局 key 保持原字节不动，可供回退。
+
+## Alternatives considered
+
+若把 Dock 添加菜单留在主 renderer，Electron Browser `WebContentsView` 会覆盖其菜单行。硬编码一份独立的 Desktop 类型列表则会产生第二份清单。因此，原生 overlay 接收可观察的官方 registry；带 React Slot action 的 renderer 菜单打开时会暂时 conceal 原生页面，菜单关闭后再恢复页面。
 
 ## Consequences
 

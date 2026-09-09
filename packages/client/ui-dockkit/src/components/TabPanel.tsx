@@ -363,7 +363,7 @@ export function TabPanel({ state, pane, callbacks }: TabPanelProps): ReactNode {
               data-dockkit-add-tab={pane.id}
               onClick={(event) => {
                 event.stopPropagation()
-                callbacks.onAddTab(pane.id)
+                callbacks.onAddTab(pane.id, event.currentTarget)
               }}
             >
               <IconPlusOutline16 size={14} />

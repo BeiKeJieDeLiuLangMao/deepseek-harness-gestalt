@@ -587,12 +587,13 @@ describe('DockSurface', () => {
     }
   })
 
-  it('asks for the seeded tab from the strip\'s add control, naming the pane and nothing else', () => {
+  it('asks for the seeded tab from the strip\'s add control with its menu anchor', () => {
     const controller = seededController()
     const intents = spyIntents()
     renderSurface(controller, intents)
-    fireEvent.click(screen.getByRole('button', { name: TEST_LABELS.addTab }))
-    expect(intents.addTab).toHaveBeenCalledWith(controller.getSnapshot().state.rootId)
+    const add = screen.getByRole('button', { name: TEST_LABELS.addTab })
+    fireEvent.click(add)
+    expect(intents.addTab).toHaveBeenCalledWith(controller.getSnapshot().state.rootId, add)
     expect(intents.focusPane).not.toHaveBeenCalled()
   })
 

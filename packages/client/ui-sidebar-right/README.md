@@ -35,6 +35,8 @@ The workbench resolves `rightHostId` and `bottomHostId` after the frame mounts, 
 
 The right surface stays mounted while collapsed. Its expand control lives in `conversation.session.header.corner` and shares the Session store. Without a current Session, neither surface mounts. The frame accepts a first-width seed once: the retained `dsh-sidebar:v1:width` value wins when present, otherwise `defaultWidthPercent` supplies it. Reading that legacy value never changes or deletes the rollback key.
 
+The Dock add control opens the guide in Web mode. In Desktop, it sends the observable official page definitions to the native overlay menu, excluding the guide, hidden types, and resource types; unavailable entries remain visible but disabled. A selection opens through `ctx.sidebarRight` in the pane whose control supplied the anchor.
+
 <a id="state-and-persistence"></a>
 ## State and persistence
 

@@ -43,7 +43,7 @@ This package adds no stable request prefix; later browser tool results reflect p
 ## Known Limitations and Deferred Work
 <a id="known-limitations-and-deferred-work"></a>
 
-- **Desktop presents the Runtime window; `dsh web` stays screenshot-plus-text** — `window.dshDesktop.browserPresent` places the same official `webContents` over the chrome viewport. Settings and the sidebar `+` menu mount in a native overlay view above that page; that overlay document does not present or conceal pages. The refresh control spins while observe or navigate is in flight. A committed Chromium net error keeps the error document in that live view. Browser `dsh web` has no Host window and still paints observe/screenshot facts.
+- **Desktop presents the Runtime window; `dsh web` stays screenshot-plus-text** — `window.dshDesktop.browserPresent` places the same official `webContents` over the chrome viewport. Settings and the sidebar `+` menu mount in a native overlay view above that page; that overlay document does not present or conceal pages. Renderer menus and listboxes temporarily conceal the live page and restore its bounds when they close, so React Slot actions remain reachable. The refresh control spins while observe or navigate is in flight. A committed Chromium net error keeps the error document in that live view. Browser `dsh web` has no Host window and still paints observe/screenshot facts.
 - **Keyless web and headless Runtimes stay deterministic** — browser `dsh web` and headless keep `dsh-browser-runtime-deterministic`. Desktop Host owns in-process Electron `webContents` and points the overlay HTTP client at that loopback origin.
 - **Profile settings do not create tabs** — the Browser section writes the roster and default identity only.
 

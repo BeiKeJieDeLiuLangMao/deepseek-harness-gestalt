@@ -70,8 +70,8 @@ export interface DockIntents {
   readonly focusPane: (paneId: PaneId) => void
   /** Split a pane and seed the new one. */
   readonly splitPane: (paneId: PaneId) => void
-  /** Add the embedder's seeded tab to a pane (the strip's `+`). */
-  readonly addTab: (paneId: PaneId) => void
+  /** Add the embedder's seeded tab to a pane (the strip's `+`); the control is available as a menu anchor. */
+  readonly addTab: (paneId: PaneId, anchor?: HTMLElement) => void
   /** Destroy a tab. */
   readonly closeTab: (tabId: TabId) => void
   /** Copy a tab beside itself. No kit control drives this; embedders reach it through their own API. */
