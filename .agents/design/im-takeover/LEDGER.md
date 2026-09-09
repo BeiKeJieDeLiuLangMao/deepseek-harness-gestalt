@@ -67,7 +67,7 @@
 - **Observed Commit Head**: `cf820fb60e`
 - **Compiler Context**: TypeScript `v6.0.3` (`node_modules/typescript/bin/tsc`) via `pnpm run build` (`npm run build:lib:client` -> `tsc -b tsconfig.client.json`).
 - **Failure Summary**: Client facade Project Reference triggers `TS6059: File is not under 'rootDir'` and `TS6307` when resolving cross-package references from `apps/web/tsconfig.json`, plus `exactOptionalPropertyTypes` strict checks in vendored modules (`vendor/hmr/`, `vendor/include/`). Exit code: 2.
-- **Durable Log Artifact**: Preserved in candidate scratch path `.agents/scratch/2026-09-10-web-build-ts-error.log` (spill locator: `/var/folders/q7/p4kg4zfd5kn7jchgtwypt4ch0000gp/T/dsh-spill-nRpOWi/session-a776d549ebf6/5b937fcd15be-bash.txt`).
+- **Durable Log Artifact**: Preserved in candidate scratch path `/private/tmp/dsh-im-baseline-evidence/2026-09-10-web-build-ts-error.log` (spill locator: `/var/folders/q7/p4kg4zfd5kn7jchgtwypt4ch0000gp/T/dsh-spill-nRpOWi/session-a776d549ebf6/5b937fcd15be-bash.txt`).
 - **Synchronization Owner Diff Fact**: Read-only comparison of the synchronization worktree shows its two tracked dirty changes (`apps/web/tsconfig.json` and `tsconfig.host.json`) only add the `sidechat-layout.e2e.ts` test index and do NOT resolve the rootDir facade compilation error.
 - **Incident Boundary**: Identified as an upstream/synchronization project (#585) compilation boundary issue. Baseline writer refrains from out-of-scope vendor or client facade refactoring. B0 Web E2E remains **FAILED / RETAINED**.
 - **Role Standing**: Baseline owner remains on standby to merge verified T1 delivery branches upon Root assignment.
