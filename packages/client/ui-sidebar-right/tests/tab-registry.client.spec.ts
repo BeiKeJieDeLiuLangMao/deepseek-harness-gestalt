@@ -10,7 +10,9 @@
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { SidebarRightTabRegistry } from '../src/client/tab-registry.ts'
-import type { SidebarRightTabDefinition } from '../src/client/tab-registry.ts'
+import type {
+  SidebarRightTabDefinition, SidebarRightViewerMatchRequest,
+} from '../src/client/tab-registry.ts'
 import {
   SIDEBAR_RIGHT_PREFERENCES_DEFAULTS,
   type SidebarRightPreferences,
@@ -405,7 +407,11 @@ describe('SidebarRightTabRegistry — viewer matching', () => {
     registry.registerViewer({
       id: 'code', title: () => 'Code', extensions: [], priority: -100, fetchStrategy: 'fsRead',
     })
-    const file = (path: string, head?: Uint8Array) => ({ address: `dsh-resource://file/session/s/${path}`, path, head })
+    const file = (path: string, head?: Uint8Array): SidebarRightViewerMatchRequest => ({
+      address: `dsh-resource://file/session/s/${path}`,
+      path,
+      ...(head === undefined ? {} : { head }),
+    })
     expect(registry.matchViewer(file('shot.PNG'))?.id).toBe('image')
     expect(registry.matchViewer(file('unknown.bin'))?.id).toBe('code')
     expect(registry.matchViewer(file('unknown.bin', new Uint8Array([1, 0, 2])))?.id).toBe('binary')

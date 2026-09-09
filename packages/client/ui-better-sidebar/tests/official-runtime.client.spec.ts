@@ -349,15 +349,16 @@ describe('official Side Chat occurrence owner', () => {
     sidebarListeners.forEach(listener => { listener() })
     expect(stageProvisional).toHaveBeenCalledOnce()
 
+    const { provisional, ...publishedDraft } = sessions.byId['draft-child']!
+    expect(provisional).toBe(true)
     sessions = {
       ...sessions,
       byId: {
         ...sessions.byId,
         'draft-child': {
-          ...sessions.byId['draft-child']!,
+          ...publishedDraft,
           displayTitle: 'Side: Published answer',
           blank: false,
-          provisional: undefined,
         },
         restored: {
           id: SessionId('restored'), displayTitle: 'Restored answer', title: 'Side: Restored answer',
