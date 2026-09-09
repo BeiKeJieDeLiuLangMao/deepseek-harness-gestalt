@@ -198,13 +198,23 @@ function pageKind(state: LayoutState, tabId: TabId): string | undefined {
   return tab !== undefined && tab.contentId === pageAddress(tab.kind) ? tab.kind : undefined
 }
 
-/** Whether a tab stands alone on the docked part of one surface. */
+/**
+ * Whether a tab stands alone on the docked part of one surface.
+ * @param state - docked layout state.
+ * @param tabId - tab to inspect.
+ * @returns whether the tab is the only tab in the only docked pane.
+ */
 export function soleDockedTab(state: LayoutState, tabId: TabId): boolean {
   const pane = findTabPane(state, tabId)
   return pane.host === 'dock' && pane.tabs.length === 1 && dockPaneIds(state).length === 1
 }
 
-/** Whether an explicit close may remove a tab. */
+/**
+ * Whether an explicit close may remove a tab.
+ * @param surface - docked surface containing the tab.
+ * @param tabId - tab requested for close.
+ * @returns whether an explicit close may remove the tab.
+ */
 export function canCloseTab(surface: DockSurfaceState, tabId: TabId): boolean {
   const tab = surface.layout.tabs[tabId]
   return tab !== undefined && !(tab.kind === GUIDE_KIND && soleDockedTab(surface.layout, tabId))

@@ -18,7 +18,6 @@ dsh pack 与 publish 集合以及本地 baseline 发布器只会纳入这五个�
 
 通用的调用方预留 continuable child 身份和精确 direct-child drain 仍属于稳定 Subagent 服务。它们负责 Subagent 身份与 Activation 生命周期，不 import 或命名 Agent Teams；实验性 Team 服务沿允许的方向消费这些能力。
 
-实验性状态只改变发布与兼容性预期。这些包仍须满足仓库的一般文档、不变式、生命周期、安全、单元测试、真实组合测试和快照要求。promotion 前必须评审公开约定、限制、测试证据、发布 payload、运行时依赖方，并由一名具名 owner 接受稳定包义务。
 公开发布的 Host 侧 Agent Teams profile bundle 依赖 Team 包，并在 `dsh-base` 之后应用。它会插入 Team 配置行，并禁用模型可见名称与 Team 工具重叠的全局 continuable-child control。独立公开发布的 Web profile 在 `dsh-web-app` 与 Host profile 之后应用；它会插入 Team UI，后者挂载 Team package 生成的 Remote contribution。两个层都保持显式启用，不改变随附 base、CLI、Web 与 Python runtime 的依赖图。
 
 profile 安装通过自身 package manager 解析每个公开 bundle 及其依赖。通用 profile launcher 随后应用所选层，不会把它们加入任何随附 profile，也不会改变其他 profile 的解析结果。
@@ -37,7 +36,6 @@ profile 安装通过自身 package manager 解析每个公开 bundle 及其依�
 
 ## 后果
 
-Agent Teams 可以使用完整仓库依赖图与质量检查，而不进入正式 tarball，也不会成为受支持的运行时依赖。在 Team 包 promotion 前，发布包不能暴露 Team，因此 CLI 和 Web 实验使用显式示例或实验性组合，而不是已发布的基础组合包。
 Agent Teams 会作为 dsh 发布系列中的五个可安装 tarball 发布，同时保持包名不变，也不会在随附 profile 中启用 Team。公开可用不代表这些包稳定或默认受支持，稳定发布包也不能对其建立运行时依赖。
 
 发布系列需要维护显式命名的实验性例外。promotion 仍会按照实验性包规则产生路径和 npm 名改动。

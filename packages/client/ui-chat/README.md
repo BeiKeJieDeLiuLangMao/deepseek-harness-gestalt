@@ -8,9 +8,9 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Render recorded Session conversations with historical images, localized actions, and restored scroll position. Compact display folds completed-turn process rows while preserving final answers and independently useful context; packed historical Assistant runs remain collapsed. Local transcript and steering submissions appear immediately and retire atomically when authoritative records arrive; queued submissions stay outside Chat. Settled assistant Markdown exposes selection annotations with stable message and block anchors. The package does not assemble model requests. Its Chat view can render a browser-preview rail in the right gutter and hides it below 240px.
+Render Session conversations with images, localized actions, and restored scroll. Compact display folds completed-turn process rows while preserving final answers and useful context; packed historical Assistant runs remain collapsed. Local transcript and steering submissions appear immediately and retire when authoritative records arrive; queued submissions stay outside Chat. Settled assistant Markdown exposes selection annotations with stable message and block anchors. The package does not assemble model requests. Its Chat view can render a browser-preview rail in the right gutter and hides it below 240px.
 
-File-mention providers receive the viewed Session ID with the closing-turn owner, so links into inherited history can address the fork itself.
+File-mention providers receive the viewed Session ID and closing-turn owner, so inherited-history links can address the fork.
 
 ## Table of Contents
 

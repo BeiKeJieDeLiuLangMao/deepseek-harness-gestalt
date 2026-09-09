@@ -129,19 +129,6 @@ dsh plugin --profile sdk-minimal add file:C:/work/my-plugin-bundle
 
 另一个 `profile` 只有在包含 `@deepseek-ai/dsh-sdk-app` 或其他 JSON-RPC server 行时才有效。server 行缺失、插件无法解析和 patch 无效都会在启动时失败，而不会回退到另一个组合。
 
-## 了解最小 profile
-
-| 属性 | 值 |
-|---|---|
-| 系统提示词 | `DSH_SYSTEM_PROMPT`；未设置时使用 `You are a helpful software engineer assistant.` |
-| `minimal.py` 使用的模型 | `--model`，其次为 `DSH_MODEL`，最后为 `deepseek-v4-flash` |
-| 面向模型的工具 | Linux/macOS 上为持久 `bash`，Windows 上为 `pwsh`，另有 `str_replace_editor` |
-| Shell 超时 | 300 秒 |
-| 编辑器输出上限 | 16,000 个字符 |
-| 运行时上下文与压缩 | 不包含 |
-| 会话持久化 | `<dsh_home>/sessions` 下未压缩的 JSONL |
-
-该 profile 的唯一 bundle 会在空 root 上插入完整配置树，并且不包含 `dsh-base`；因此后续 base profile 的工具不会隐式出现。它包含 SDK 协议、一个由环境配置的 DeepSeek adapter、本地执行和持久化，但不包含设置、托管凭据、遥测、Web 工具、subagent、本地指令发现和压缩。它固定使用 `danger-full-access`，因此平台选择的持久 shell 和编辑器可以修改运行时可见的任何路径；请使用可丢弃的 checkout 或容器。
 <a id="opt-in-to-str_replace_editor"></a>
 ### 显式启用 `str_replace_editor`
 

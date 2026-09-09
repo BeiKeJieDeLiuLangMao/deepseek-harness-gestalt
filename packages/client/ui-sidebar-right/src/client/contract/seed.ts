@@ -19,7 +19,11 @@ export interface SidebarRightSeed {
   readonly title: string
 }
 
-/** Resolve the default page from the current registered guide entries. */
+/**
+ * Resolve the default page from the current registered guide entries.
+ * @param tabs - live tab-definition registry.
+ * @returns the page kind and title used to seed a new pane.
+ */
 export function defaultSeed(tabs: SidebarRightTabRegistry): SidebarRightSeed {
   const [only, ...others] = tabs.guide()
   const kind = only !== undefined && others.length === 0 ? only.kind : GUIDE_KIND

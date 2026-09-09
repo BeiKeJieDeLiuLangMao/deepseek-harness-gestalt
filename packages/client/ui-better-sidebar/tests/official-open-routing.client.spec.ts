@@ -50,9 +50,9 @@ afterEach(() => {
 describe('official open routing', () => {
   it('targets files, folders, and tree reveals at the initiating Session', async () => {
     const { ctx, forSession, openResource, update } = bench()
-    await openOfficialFile(ctx, SESSION, 'docs/a.md', 'Decision')
+    await openOfficialFile(ctx, SESSION, 'docs/a.txt', 'Decision')
     expect(forSession).toHaveBeenLastCalledWith(SESSION)
-    expect(openResource).toHaveBeenLastCalledWith('dsh-resource://file/session/inactive-session/docs/a.md')
+    expect(openResource).toHaveBeenLastCalledWith('dsh-resource://file/session/inactive-session/docs/a.txt')
     expect(update).toHaveBeenLastCalledWith(TAB, { title: 'Decision' })
 
     update.mockClear()
@@ -72,12 +72,12 @@ describe('official open routing', () => {
     await openOfficialFolder(ctx, SESSION, 'reports', '')
     expect(update).toHaveBeenLastCalledWith(TAB, { title: 'reports' })
 
-    await revealOfficialFiles(ctx, SESSION, ['src/a.ts', '/work/docs/b.md'])
+    await revealOfficialFiles(ctx, SESSION, ['src/a.ts', '/work/docs/b.txt'])
     expect(openResource).toHaveBeenLastCalledWith(
       'dsh-resource://file/session/inactive-session/',
       {
         kind: 'file',
-        params: { reveal: ['/work/src/a.ts', '/work/docs/b.md'] },
+        params: { reveal: ['/work/src/a.ts', '/work/docs/b.txt'] },
         payload: { dir: true },
       },
     )

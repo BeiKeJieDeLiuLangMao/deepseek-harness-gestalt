@@ -20,7 +20,6 @@
 | `canShowRight` | 普通右面板能否在受保护中栏旁保留最小宽度。 |
 | `setRightbarWidth(width)` | workbench 缩放手势使用的框架限制宽度写入。 |
 | `seedRightbarWidth(width)` | 一次性初始宽度；播种、打开或拖动后忽略。 |
-每个会话恰有一个停靠面，保存在会话作用域的 slot store 里、由 `rightbar.session` 绘制。root 作用域的 `rightbar` 控制器仅在选中 Conversation 时挂载该席位；刷新页面后每个会话回到折叠的默认态，切换会话时各自的面保持原状（[状态](../../packages/client/ui-sidebar-right/README.zh.md#state)）。面的每一次变化都是 kit 纯规划器算出的一条历史记录；停靠的 pane 从不空着，根 pane 为空时会加入根据已注册引导入口选出的默认页。
 
 一个 tab 类型是共用定义 `id` 的两次注册：在 `ctx.sidebarRightTabs` 里的静态定义说明其 `kind` 打开哪些地址，一次 keyed slot 注册提供它的正文。框架注入 `useTabInfo()` 以读取 Sidebar、窗格和标签的实时信息；各类型把自身状态放在 slot store 里。各包之间只以类型形式引用彼此的声明。
 
@@ -95,7 +94,8 @@ definition 的正文使用 `key: definition.id` 注册到 `sidebar.right.pane.ta
 
 `getSnapshot()` 与 `subscribe()` 暴露 `SidebarRightProjection`：已创建的 Session、`mountedSessionId`、右侧和底部展开状态、底部高度、命名空间数据、pin，以及每个 tab 的 Session、表面、pane、floating、visible 与 active 标志、record 和持久状态。`visible` 表示记录是其 pane 当前选中的 tab，并且所在表面已展开，或者它是右侧 float；consumer 将它与 `mountedSessionId` 结合以选择当前实际渲染内容。`active` 还要求该 pane 获得焦点。官方 seat 把可见的外部 Session pin 投影到 viewer 的第一个右侧 pane，但不存储另一条 record。`useTabInfo().tab` 暴露权威 home Session、occurrence 和 `virtual` 标记；global pin 出现在每个其他 Session，workspace pin 在 hydration 后按 viewer cwd 匹配。DockKit node 与 operation history 不公开。面向已挂载 Session 的兼容方法继续提供右侧 active、展开、focus、split、float 与 dock 行为。
 
-## 关闭与 occurrence 生命周期
+## Slot 与 owner props
+
 Sidebar 声明四个扩展 slot；其文档 tab 另行声明下表中的 keyed 文档正文 slot（[层级](slots.zh.md)）。
 
 | Slot | Cardinality | 用途 |
@@ -105,6 +105,8 @@ Sidebar 声明四个扩展 slot；其文档 tab 另行声明下表中的 keyed �
 | `sidebar.right.tab.guide` | chain，会话作用域 | 替换引导 tab 的内容而不替换 tab；第一个不拒绝的条目接管正文，否则渲染自带引导。 |
 | `sidebar.right.tab.menu.item` | list，会话作用域 | 追加在 kit 自身布局动作之后的内容级动作。执行了动作的条目必须调用 owner 的 `dismiss()`。 |
 | `sidebar.right.tab.document` | 按文档实现的 `id` keyed，会话作用域 | 文档 tab 内选中的文件渲染器；父组件拥有共享加载与工具栏控件。 |
+
+## 关闭与 occurrence 生命周期
 
 每个 Session 的一个串行 coordinator 拥有所有记录移除事务。它在状态变更前完成全部准入。准入成功后，owner 释放独立结算；成功记录一起提交，失败记录保留。Close、replace、reset、undo 与 redo 在移除记录时使用同一个 coordinator。运行时 owner 相关变更会建立 history checkpoint，因此可逆布局操作不会重放已释放的外部 owner。
 
@@ -117,6 +119,7 @@ store adoption 在每次提交后对账两个布局，包括尚未渲染的 Sess
 `ctx.sidebarRightPreferences` 是保留的 `dsh-better-sidebar` settings namespace 的唯一浏览器 owner。`getSnapshot()` 返回 `{ status, preferences, revision, writable }`；完整值包含 30 个已迁移字段。缺失的 tab/viewer enable 项表示启用。Preference、enablement、viewer safety 与 descriptor plugin 读取都使用这个 face，而 path mutation 会保留同级 map/blob 项。既有 blob 可以通过 `settings.settingsId` 继续保留在 `editor` 等旧 key 下。
 
 官方 workbench 也应用 frame preference。显式 Web 模式关闭适配；否则依次采用 Window Controls Overlay 几何、Desktop URL inset、选定的 DSH Desktop preset 或自定义 inset。自定义 CSS 与兼容 marker 只有一个 effect-scope owner。frame 只从只读旧值 `dsh-sidebar:v1:width` 或 `defaultWidthPercent` 播种一次宽度；旧值保持不变用于回滚。
+
 ## 文档渲染器
 
 `text` tab 是共享的 Document Preview 所有者。其[根注册](../../packages/client/ui-sidebar-documentpreview/src/client/index.ts)声明 `sidebar.right.tab.document` 并提供 `ctx.documentPreviews`。渲染器在自己的 effect 中注册 `DocumentPreviewDefinition` 元数据，再通过 `ctx.slots.inject('sidebar.right.tab.document', ...)` 等待 slot，以 `key: definition.id` 和自己的 locale 命名空间注册组件。切换渲染器不改变 tab 或资源地址；[扩展决议](../../.agents/notes/implemented/architecture/2026-09-08-document-preview-operations.zh.md)将预览策略与资源归属分开。
@@ -140,32 +143,28 @@ Preview 记录已载入版本和读取开始时的观察版本。刷新只重读
 官方文档 key 是 `dsh-sidebar-workbench:v1:<sessionId>`。codec 存储两个布局、float、共享生成计数、底部高度与首次打开标记、逐 tab payload 与 pin，以及命名空间 JSON。history 在进程启动时重置。未知版本或畸形官方文档保持原样，并阻止自动覆盖。
 
 官方 key 缺失时，适配器可以转换 `dsh-sidebar:v1:<sessionId>`。它在右侧、底部与 float 间重新生成 id，保留未知 kind 与 JSON 元数据，转换受支持的 pin，并把选定的 Better tombstone 与计数数据保存到命名空间 JSON key。它先写入官方文档再选用，并且绝不删除或改写旧 key。写入失败时，本进程使用全新状态并保持回滚数据不变。
+
+## Workspace Files
+
 Host 的 `ctx.workspaceFiles` 服务与生成的 `workspaceFiles` Remote 命名空间读取 Session 文件系统后端允许的文件：`stat(path)` 返回 `{ absolutePath, version, bytes? }`；`read(path, { offset?, limit? })` 返回一页行（`offset` 1 起，`limit` 受配置页长限制），形如 `{ …stat, offset, text, eof }`；`readBytes(path, { offset?, length? })` 返回一个原始字节窗口（`offset` 0 起，`length` 受配置字节上限限制），形如 base64 的 `{ …stat, offset, data, eof }`、不做文本解码。`list(path)` 仍限定在工作区根内，返回目录的直接子项（`name`、`type: 'file' | 'directory' | 'other'`、`size?`），按配置上限截断并置 `truncated`。`changes()` 同样限定于工作区，订阅就绪后产出 `{ kind: 'ready' }`，随后产出 `{ kind: 'change', change }` 帧，其载荷为 `{ absolutePath, version }` 或 `{ absolutePath, absent: true }`（[README](../../packages/api/workspace-files/README.zh.md#use-this-package)）。文件操作拒绝末端符号链接并执行传输上限；`read` 还要求 UTF-8 文本。失败使用 `workspace-file/*` 错误码（[失败](../../packages/api/workspace-files/README.zh.md)）。
 
 [`dsh-api-workspace-files`](../../packages/api/workspace-files/README.zh.md) 注册 `file` 提供方，`ResourceProtocolMap.file` 直接是 `WorkspaceFileStat`。Session 地址携带授权 Session 与相对或绝对路径，Host 原样接收并解析。提供方在 stat 前等待 Host 的 `ready` 帧，并按 `stat.absolutePath` 过滤变更。裸 `absolute` 地址没有授权 Session，以 `workspace-file/unknown-workspace` 失败，不借用当前或 Tab Session。任何 UI（包括 Global）访问同一完整地址都共享观察。Preview 的普通 Remote 回调使用地址中的 Session；Host `readAll` 和 `readRelated` 保留，字节结果由 Preview 的 `rpc.ts` 解码。
 
-## 相关包
+## 内置类型
 
-- [`ui-sidebar-textpreview`](../../packages/client/ui-sidebar-textpreview/README.zh.md) 注册 fallback `text` 资源类型。
-- [`ui-sidebar-files`](../../packages/client/ui-sidebar-files/README.zh.md) 注册 `files` 页面。
-- [`api/workspace-files`](../../packages/api/workspace-files/README.zh.md) 提供有界文件元数据、文本、字节、目录列表和变更流。
-- [`resources`](../../packages/client/resources/README.zh.md) 拥有资源 provider、缓存与持有者生命周期。
-- **`guide`**——`builtin`，以 `openTab('guide')` 打开。居中标题、一行说明，以及已注册类型贡献的每个 `guide` 入口一框、按 `order` 排列；点一框即在引导 tab 的位置把贡献它的类型作为页面打开。每个 pane 最多一个引导 tab，tab 条的新增控件只在本 pane 没有引导时出现。新 pane 使用已注册的默认页：只有一个引导入口时直接使用该入口，否则使用引导页（[引导](../../packages/client/ui-sidebar-right/README.zh.md#the-guide)）。
+- **`guide`**——`builtin`，以 `openTab('guide')` 打开。居中标题、一行说明，以及已注册类型贡献的每个 `guide` 入口一框、按 `order` 排列；点一框即在引导 tab 的位置把贡献它的类型作为页面打开。每个 pane 最多一个引导 tab，tab 条的新增控件只在本 pane 没有引导时出现。新 pane 使用已注册的默认页：只有一个引导入口时直接使用该入口，否则使用引导页（[引导](../../packages/client/ui-sidebar-right/README.zh.md#ownership-and-presentation)）。
 - **`text`**——`fallback`，`dsh-resource://file/**`，只认领 Session 地址。Document Preview 通过 `useResource<'file'>` 观察元数据，经 Remote 回调加载内容，并拥有渲染器选择、工具栏、逐 tab 刷新、滚动与源码定位；未知扩展名按纯文本渲染（[README](../../packages/client/ui-sidebar-documentpreview/README.zh.md)）。
 - **`files`**——`builtin`，以 `openTab('files')` 打开。工作区目录树，经 `list` 懒加载，用 `tab.actions.openResource(fileAddressFor(sessionId, root, path))` 在自己所在 pane 打开文件（[README](../../packages/client/ui-sidebar-files/README.zh.md)）。
 
 ## 当前限制
 
-- Better Sidebar 能力迁移尚未完成，因此其 consumer 与 runtime tab 迁移前，产品组合仍有第二个 workbench owner。
 - 官方文档使用浏览器本地 best-effort 持久化，尚无面向用户的 import/export 命令。
-- 底部专用文案、首次打开 Terminal 策略、descriptor 呈现、viewer 正文、settings UI 与 runtime tab consumer 留待能力迁移。
+- 底部表面复用右侧表面的文案，不提供独立的文案定制。
 - 关闭失败会返回调用方；尚未注册统一的面向用户错误呈现。
-- 持久化：布局状态只在内存里；刷新后每个会话从折叠开始，任何会话的 tab 都不会出现在另一个会话里。
-- `ctx.sidebarRight` 上的只读布局快照或订阅：服务只暴露操作，dockkit 的 `LayoutState`/`LayoutOp` 是内部的。
 - 服务上的能力探测数组（`features`）。
 - tab 类型的 `option` 优先级档：没有「只列出、不许认领」的 tab 类型。
 - 改写记录的标题：`title(address)` 只捕获一次；活的 chip 来自标题 slot，而不是记录。
 - 打开时点名某个 tab 实现：`openResource` 最多点名一个 kind；文档渲染器由文件 tab 的工具栏选择。
 - 服务上的地址查找（`find`）：调用方用 `revealIfOpened` 打开，由停靠面去重。
 - Sidebar 自身 `sidebar://<kind>` 记账之外的导航地址；其语法等导航控制器整体做时再定。
-- 面向用户的撤销、内容导航栈与 tab 图标（[暂缓](../../.agents/notes/implemented/feature/2026-09-04-right-sidebar-docking-infrastructure.zh.md#deferred)）。
+- 面向用户的撤销与内容导航栈（[暂缓](../../.agents/notes/implemented/feature/2026-09-04-right-sidebar-docking-infrastructure.zh.md#deferred)）。

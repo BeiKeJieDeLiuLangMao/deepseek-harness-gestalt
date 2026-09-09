@@ -10,7 +10,6 @@ kind: "package-reference"
 ## 概述
 
 `dsh-session-log-export` 让 Web 界面可以下载会话的完整历史：Trajectory 工具栏上的 `Session log` 按钮与 `/export` 斜杠命令都会把会话树——会话本身、其子会话与附件——作为 ZIP 交给浏览器下载。共用下载弹窗留在 Session Header。本包拥有 Host 归档流、经过认证的 Fetch 路由以及浏览器控制和反馈。下载目标位置由浏览器选择。设置与用法在前，随后说明实现细节。
-`dsh-session-log-export` 让 Web 界面可以下载会话的完整历史：Session Header 更多操作按钮下的 `下载 Session 日志` 菜单项与 `/export` 斜杠命令都会把会话树——会话本身、其子会话与附件——作为 ZIP 交给浏览器下载。本包拥有 Host 归档流、经过认证的 Fetch 路由以及浏览器控制和反馈。下载目标位置由浏览器选择。设置与用法在前，随后说明实现细节。
 
 ## 目录
 
@@ -27,7 +26,6 @@ kind: "package-reference"
 ## 使用本包
 
 当 Web bundle 需要让用户导出会话日志时使用本包。它需要 Connection、命令注册表、Session 查询与持久化以及附件服务。挂载插件，然后点击 Trajectory 工具栏（位于实时记录表搜索框右侧）上的 `Session log` 或输入 `/export`；浏览器会下载 `dsh-session-<id>.zip`。
-当 Web bundle 需要让用户导出会话日志时使用本包。它需要 Connection、命令注册表、Session 查询与持久化以及附件服务。挂载插件，然后在 Session Header 的更多操作菜单中选择 `下载 Session 日志` 或输入 `/export`；浏览器会下载 `dsh-session-<id>.zip`。
 
 ### 何时选择
 

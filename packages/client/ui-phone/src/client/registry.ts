@@ -17,6 +17,7 @@ export const PHONE_TAB_TITLE = '手机'
 export const PHONE_TAB_ORDER = 55
 /** Platforms shown by the picker. */
 export const PHONE_PLATFORMS = ['android', 'ios'] as const
+/** Platform families accepted by the Phone picker. */
 export type PhonePlatform = typeof PHONE_PLATFORMS[number]
 
 /** One platform device row. */
@@ -70,7 +71,11 @@ declare module '@deepseek-ai/dsh-client-ui-sidebar-right/client' {
   }
 }
 
-/** Read a valid device payload; every other JSON value renders the picker. */
+/**
+ * Read a valid device payload; every other JSON value renders the picker.
+ * @param meta - persisted tab payload to inspect.
+ * @returns the device selection, or `undefined` for picker state.
+ */
 export function phoneDeviceTabMetaOf(meta: unknown): PhoneDeviceTabMeta | undefined {
   if (typeof meta !== 'object' || meta === null || Array.isArray(meta)) return undefined
   const record = meta as Record<string, unknown>
@@ -80,13 +85,21 @@ export function phoneDeviceTabMetaOf(meta: unknown): PhoneDeviceTabMeta | undefi
   return { kind: 'device', serial: phoneDeviceIdOf(record.serial), name: record.name }
 }
 
-/** Strip badge value. */
+/**
+ * Project the online-device count for the tab strip.
+ * @param source - fleet listing source.
+ * @returns the positive online count, or `null` when the badge is hidden.
+ */
 export function phoneBadgeValue(source: PhoneListingSource): number | null {
   const count = source.getBadge().onlineCount
   return count > 0 ? count : null
 }
 
-/** zh occupied title fallback. */
+/**
+ * Build the Chinese fallback title for an occupied Phone tab.
+ * @param name - device display name.
+ * @returns the occupied tab title.
+ */
 export function phoneTabTitleOf(name: string): string {
   return `手机·${name}`
 }
@@ -131,6 +144,7 @@ export class PhoneOccurrenceRuntime {
     private readonly createController: (serial: DeviceId) => PhoneConnectionController,
   ) {}
 
+  /** Reconcile connection owners with the current official tab occurrences. */
   sync(): void {
     const seen = new Set<string>()
     for (const session of this.ctx.sidebarRight.getSnapshot().sessions) {
@@ -157,10 +171,17 @@ export class PhoneOccurrenceRuntime {
     }
   }
 
+  /**
+   * Read the controller owned by one official tab occurrence.
+   * @param sessionId - Session that owns the tab.
+   * @param tabId - tab occurrence id.
+   * @returns the live controller, or `undefined` while the tab shows the picker.
+   */
   controllerFor(sessionId: string, tabId: string): PhoneConnectionController | undefined {
     return this.owned.get(`${sessionId}\u0000${tabId}`)?.controller
   }
 
+  /** Dispose every occurrence-owned connection. */
   dispose(): void {
     for (const connection of this.owned.values()) connection.controller.dispose()
     this.owned.clear()
@@ -180,7 +201,11 @@ export interface OfficialPhoneDefinitionOptions {
   readonly guideDescription?: () => string
 }
 
-/** Build the official singleton Phone descriptor. */
+/**
+ * Build the official singleton Phone descriptor.
+ * @param options - listing and localized presentation providers.
+ * @returns the tab definition registered with the official Sidebar.
+ */
 export function buildOfficialPhoneDefinition(options: OfficialPhoneDefinitionOptions): SidebarRightTabDefinition {
   return {
     id: PHONE_DEFINITION_ID,
@@ -202,7 +227,14 @@ export function buildOfficialPhoneDefinition(options: OfficialPhoneDefinitionOpt
   }
 }
 
-/** Open or focus Phone and switch the singleton occurrence to one device. */
+/**
+ * Open or focus Phone and switch the singleton occurrence to one device.
+ * @param sidebar - Session-bound official Sidebar controller.
+ * @param isEnabled - current durable Phone enable gate.
+ * @param serial - selected device id.
+ * @param name - selected device display name.
+ * @param occupiedTitle - localized occupied-title formatter.
+ */
 export async function openPhoneDevicePanel(
   sidebar: ClientContext['sidebarRight'],
   isEnabled: () => boolean,
