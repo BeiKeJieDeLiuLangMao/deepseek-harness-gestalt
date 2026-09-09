@@ -15,7 +15,7 @@
    - Contract: Members of `SessionEventMap` are **required-on-read** by default. Builds refusing unknown events must not be bypassed with blanket `ignorable: true`. Only purely informational, display-only annotations may set `ignorable: true`.
 
 3. **StorageDomain Serial Single-Key Commit (No Cross-Log Transactions)**:
-   - Package: `packages/session/session-persistence/`, `packages/session/session-persistence-jsonl/`.
+   - Package: `packages/storage/storage-domain/`, `packages/session/session-persistence-jsonl/`.
    - Contract: `StorageDomain` guarantees serial single-key atomic unit commit resolved on disk, with **no multi-table or cross-log atomic transactions**.
    - Design Impact for T2: Outbound delivery status, inbound message deduplication, and cursor progress must be maintained under aggregate root records or idempotent single-key envelopes, rather than distributed multi-key updates.
 
