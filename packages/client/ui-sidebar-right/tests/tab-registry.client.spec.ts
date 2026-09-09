@@ -11,6 +11,11 @@ import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { SidebarRightTabRegistry } from '../src/client/tab-registry.ts'
 import type { SidebarRightTabDefinition } from '../src/client/tab-registry.ts'
+import {
+  SIDEBAR_RIGHT_PREFERENCES_DEFAULTS,
+  type SidebarRightPreferences,
+  type SidebarRightPreferencesReader,
+} from '../src/client/preferences.ts'
 
 /** A type recognizing `patterns`, titled by its kind. */
 function typeFor(
@@ -282,5 +287,165 @@ describe('SidebarRightTabRegistry — lifetime', () => {
     expect(registry.entries()).toBe(first)
     registry.register(typeFor('guide', ['sidebar://guide']))
     expect(registry.entries()).not.toBe(first)
+  })
+})
+
+/** Mutable preference reader for enablement and registry-invalidation specs. */
+function settingsReader(initial: Partial<SidebarRightPreferences> = {}): {
+  reader: SidebarRightPreferencesReader
+  set(patch: Partial<SidebarRightPreferences>): void
+} {
+  let preferences: SidebarRightPreferences = { ...SIDEBAR_RIGHT_PREFERENCES_DEFAULTS, ...initial }
+  const listeners = new Set<() => void>()
+  return {
+    reader: {
+      getSnapshot: () => ({ status: 'ready', preferences, revision: 1, writable: true }),
+      subscribe: (listener) => {
+        listeners.add(listener)
+        return () => { listeners.delete(listener) }
+      },
+      isTabEnabled: id => preferences.tabsEnabled[id] !== false,
+      isViewerEnabled: id => preferences.viewersEnabled[id] !== false,
+      pluginSettings: id => preferences.pluginSettings[id] ?? {},
+      htmlViewerSafety: () => ({
+        forceUnsandboxed: preferences.htmlViewerNoSandbox,
+        defaultUnsandboxed: preferences.htmlViewerNoSandbox || preferences.htmlViewerDefaultUnsafe,
+      }),
+    },
+    set(patch) {
+      preferences = { ...preferences, ...patch }
+      for (const listener of [...listeners]) listener()
+    },
+  }
+}
+
+describe('SidebarRightTabRegistry — official descriptor inventory', () => {
+  it('keeps pure presentation and behavior metadata in registration order', () => {
+    const registry = new SidebarRightTabRegistry(new Context())
+    const create = vi.fn(() => ({ contentId: 'sidebar://terminal/one' }))
+    registry.register({
+      id: 'test/terminal',
+      kind: 'terminal',
+      title: () => 'Terminal',
+      order: 40,
+      hidden: false,
+      icon: 'terminal',
+      single: true,
+      create,
+      settings: {
+        fields: [{ key: 'terminalFontSize', source: 'preference', control: 'number', title: () => 'Size' }],
+      },
+    })
+    expect(registry.entries()[0]).toMatchObject({
+      id: 'test/terminal', order: 40, hidden: false, icon: 'terminal', single: true,
+    })
+    expect(registry.entries()[0]?.settings?.fields[0]).toMatchObject({
+      key: 'terminalFontSize', source: 'preference', control: 'number',
+    })
+  })
+
+  it('rejects settings rows that cannot reach the official owner', () => {
+    const registry = new SidebarRightTabRegistry(new Context())
+    expect(() => registry.register({
+      id: 'test/bad-setting',
+      kind: 'bad-setting',
+      title: () => 'Bad',
+      settings: { fields: [{ key: 'invented', source: 'preference', title: () => 'Bad' }] },
+    })).toThrow('is not an official preference')
+    expect(() => registry.registerViewer({
+      id: 'bad-select',
+      title: () => 'Bad',
+      extensions: ['bad'],
+      fetchStrategy: 'fsRead',
+      settings: { fields: [{ key: 'mode', source: 'plugin', control: 'select', title: () => 'Mode' }] },
+    })).toThrow('has no options')
+  })
+
+  it('removes disabled definitions from claims and guide entries without removing their inventory record', () => {
+    const settings = settingsReader()
+    const registry = new SidebarRightTabRegistry(new Context(), settings.reader)
+    registry.register({
+      id: 'test/files',
+      kind: 'files',
+      patterns: ['dsh-resource://file/**'],
+      title: () => 'Files',
+      guide: [{ order: 1, title: () => 'Files', description: () => 'Browse' }],
+    })
+    expect(registry.claim('dsh-resource://file/session/s/a.txt').kind).toBe('files')
+    settings.set({ tabsEnabled: { 'test/files': false } })
+    expect(registry.entries()).toHaveLength(1)
+    expect(registry.guide()).toEqual([])
+    expect(() => registry.claim('dsh-resource://file/session/s/a.txt')).toThrow('no registered tab type claims')
+    expect(() => registry.claim('dsh-resource://file/session/s/a.txt', 'files')).toThrow('is disabled')
+  })
+
+  it('routes enabled URL claims in registration order and contains a throwing predicate', () => {
+    const settings = settingsReader({ tabsEnabled: { 'test/disabled': false } })
+    const registry = new SidebarRightTabRegistry(new Context(), settings.reader)
+    registry.register({ id: 'test/disabled', kind: 'disabled', title: () => '', urlTarget: () => true })
+    registry.register({ id: 'test/broken', kind: 'broken', title: () => '', urlTarget: () => { throw new Error('bad claim') } })
+    registry.register({ id: 'test/docs', kind: 'docs', title: () => '', urlTarget: url => url.hostname === 'docs.test' })
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    expect(registry.matchUrlTarget(new URL('https://docs.test/page'))?.kind).toBe('docs')
+    expect(error).toHaveBeenCalledOnce()
+    error.mockRestore()
+  })
+})
+
+describe('SidebarRightTabRegistry — viewer matching', () => {
+  it('matches by priority then registration order, with detection before suffixes and a final catch-all', () => {
+    const registry = new SidebarRightTabRegistry(new Context())
+    registry.registerViewer({
+      id: 'image', title: () => 'Image', icon: 'image', extensions: ['png'], fetchStrategy: 'mediaUrl',
+    })
+    registry.registerViewer({
+      id: 'binary', title: () => 'Binary', extensions: ['doc'], priority: -50,
+      fetchStrategy: 'binary-download', detect: ({ head }) => head.includes(0),
+    })
+    registry.registerViewer({
+      id: 'code', title: () => 'Code', extensions: [], priority: -100, fetchStrategy: 'fsRead',
+    })
+    const file = (path: string, head?: Uint8Array) => ({ address: `dsh-resource://file/session/s/${path}`, path, head })
+    expect(registry.matchViewer(file('shot.PNG'))?.id).toBe('image')
+    expect(registry.matchViewer(file('unknown.bin'))?.id).toBe('code')
+    expect(registry.matchViewer(file('unknown.bin', new Uint8Array([1, 0, 2])))?.id).toBe('binary')
+    expect(registry.viewers().map(viewer => viewer.id)).toEqual(['image', 'binary', 'code'])
+  })
+
+  it('lets a detect-only catch-all yield without bytes and skips disabled viewers', () => {
+    const settings = settingsReader({ viewersEnabled: { magic: false } })
+    const registry = new SidebarRightTabRegistry(new Context(), settings.reader)
+    registry.registerViewer({
+      id: 'magic', title: () => 'Magic', extensions: [], priority: 10,
+      fetchStrategy: 'binary-download', detect: ({ head }) => head[0] === 42,
+    })
+    registry.registerViewer({ id: 'text', title: () => 'Text', extensions: [], fetchStrategy: 'fsRead' })
+    const request = { address: 'dsh-resource://file/session/s/a', path: 'a', head: new Uint8Array([42]) }
+    expect(registry.matchViewer(request)?.id).toBe('text')
+    settings.set({ viewersEnabled: {} })
+    expect(registry.matchViewer({ address: request.address, path: request.path })?.id).toBe('text')
+    expect(registry.matchViewer(request)?.id).toBe('magic')
+  })
+
+  it('validates registrations and releases exactly the HMR-owned viewer', async () => {
+    const ctx = new Context()
+    const registry = new SidebarRightTabRegistry(ctx)
+    expect(() => registry.registerViewer({
+      id: 'bad', title: () => 'Bad', extensions: ['.PNG'], fetchStrategy: 'mediaUrl',
+    })).toThrow('lowercase without a leading dot')
+    expect(() => registry.registerViewer({
+      id: 'custom', title: () => 'Custom', extensions: ['x'], fetchStrategy: 'custom',
+    })).toThrow('must declare load')
+    const fiber = ctx.plugin({
+      apply(inner: Context) {
+        inner.effect(() => registry.registerViewer({
+          id: 'owned', title: () => 'Owned', extensions: ['x'], fetchStrategy: 'fsRead',
+        }), 'test: viewer')
+      },
+    })
+    await fiber.await()
+    expect(registry.viewers().map(viewer => viewer.id)).toEqual(['owned'])
+    await fiber.dispose()
+    expect(registry.viewers()).toEqual([])
   })
 })

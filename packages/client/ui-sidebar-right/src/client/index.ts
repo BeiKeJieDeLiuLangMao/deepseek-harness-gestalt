@@ -23,6 +23,7 @@
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-resources/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
+import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type { ILayout } from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
@@ -31,15 +32,19 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from './contract/slots.ts'
 import { GuideBody, type GuideInjected } from './tabs/guide/GuideBody.tsx'
 import { ExpandButton } from './shell/ExpandButton.tsx'
-import { WorkbenchSeat, type SidebarRightInjected } from './shell/SidebarRight.tsx'
+import { NARROW_WORKBENCH_WIDTH, WorkbenchSeat, type SidebarRightInjected } from './shell/SidebarRight.tsx'
 import { createSidebarRightController, type SidebarRightController } from './service.ts'
 import { SidebarRightTabRegistry } from './tab-registry.ts'
+import {
+  parseSidebarRightPreferences,
+  SIDEBAR_RIGHT_PREFERENCES_NAMESPACE,
+  SidebarRightPreferencesController,
+} from './preferences.ts'
 import { createSidebarRightStore } from './stores.ts'
 import { createLocalSidebarWorkbenchPersistence } from './persistence.ts'
 import { en, zh } from './locales.ts'
 import { GUIDE_ID, guideDefinition } from './tabs/guide/definition.ts'
 import { guideTabInfoFactory, tabInfoFactory } from './tab-info.ts'
-import type { TabId } from '@deepseek-ai/dsh-client-ui-dockkit'
 
 export type {
   SidebarBottomPresentation, SidebarRightInjected, SidebarRightPresentation, WorkbenchSeatProps,
@@ -57,8 +62,17 @@ export type {
 } from './service.ts'
 export type {
   SidebarRightGuideBox, SidebarRightGuideEntry, SidebarRightTabClaim, SidebarRightTabDefinition,
-  SidebarRightTabCloseContext, SidebarRightCloseReason, SidebarRightTabPriority,
+  SidebarRightTabCloseContext, SidebarRightCloseReason, SidebarRightDescriptorContext,
+  SidebarRightDescriptorIcon, SidebarRightDescriptorTab, SidebarRightSettingControl,
+  SidebarRightSettingDefinition, SidebarRightSettingOption, SidebarRightSettingsDeclaration,
+  SidebarRightTabCreateRequest, SidebarRightTabCreateResult, SidebarRightTabPriority,
+  SidebarRightViewerDefinition, SidebarRightViewerDetectRequest, SidebarRightViewerFetchStrategy,
+  SidebarRightViewerLoadRequest, SidebarRightViewerMatchRequest,
 } from './tab-registry.ts'
+export type {
+  SidebarRightHtmlViewerSafety, SidebarRightPreferences, SidebarRightPreferencesReader,
+  SidebarRightPreferencesSnapshot, SidebarRightTitleBarScheme,
+} from './preferences.ts'
 export type {
   SidebarRightTabPayload, SidebarRightTabPayloadFor, SidebarRightTabPayloadMap, SidebarRightTabPin,
   SidebarRightTabState,
@@ -66,6 +80,7 @@ export type {
 export type { SidebarRightCloseFailure, SidebarRightCloseOutcome } from './close-coordinator.ts'
 export type {
   SidebarRightTabInfo, SidebarRightTabInjected, UseSidebarRightTabInfo, SidebarRightTabActions,
+  SidebarRightDescriptorIconOwnerProps, SidebarRightDescriptorSettingsOwnerProps,
   SidebarRightTabMenuOwnerProps, SidebarRightTabNavigation, SidebarRightTabPlacement,
 } from './contract/slots.ts'
 export type {
@@ -83,7 +98,7 @@ export type { SidebarWorkbenchPersistence, SidebarWorkbenchStorage } from './per
 const NS = 'sidebarRight'
 
 /** Required browser services: the slot registry, the frame's panel actions, copy, and the resource model. */
-export const inject = ['slots', 'layout', 'locale', 'resources']
+export const inject = ['slots', 'layout', 'locale', 'resources', 'settingsScope']
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -91,6 +106,8 @@ declare module '@deepseek-ai/cordis' {
     sidebarRight: SidebarRightController
     /** Right-Sidebar tab-type registry (stage one of a tab type's registration). */
     sidebarRightTabs: SidebarRightTabRegistry
+    /** Sole browser owner of the global Sidebar preference document. */
+    sidebarRightPreferences: SidebarRightPreferencesController
   }
 }
 
@@ -110,12 +127,19 @@ export function apply(ctx: ClientContext): void {
   // template this follows (ui-conversation's definition registry) is built at
   // its own apply top level for the same reason.
   const t = ctx.locale.bind(NS)
-  const tabs = new SidebarRightTabRegistry(ctx)
+  const preferenceScope = ctx.settingsScope.bind({
+    namespace: SIDEBAR_RIGHT_PREFERENCES_NAMESPACE,
+    decode: parseSidebarRightPreferences,
+  })
+  const preferences = new SidebarRightPreferencesController(preferenceScope)
+  ctx.effect(() => preferences.connect(), 'ui-sidebar-right: global preferences')
+  const tabs = new SidebarRightTabRegistry(ctx, preferences)
   const { controller, adopt, materializeWith } = createSidebarRightController(
     tabs,
     (address, signal) => { ctx.resources.pin(address, signal) },
   )
   const disposeRegistry = ctx.reflect.provide('sidebarRightTabs', tabs)
+  const disposePreferences = ctx.reflect.provide('sidebarRightPreferences', preferences)
   const disposeService = ctx.reflect.provide('sidebarRight', controller)
   // Registered first, so it tears down last: the faces outlive every seat and
   // type that reaches for them. provide()'s disposer settles asynchronously;
@@ -124,6 +148,7 @@ export function apply(ctx: ClientContext): void {
   ctx.effect(() => () => {
     controller.tabDomain.dispose()
     void disposeService()
+    void disposePreferences()
     void disposeRegistry()
   }, 'ui-sidebar-right: service faces')
 
@@ -139,10 +164,12 @@ export function apply(ctx: ClientContext): void {
         adoptions.get(sessionId)?.()
         adoptions.set(sessionId, adopt(sessionId, instance))
       },
+      () => preferences.getSnapshot().preferences.openByDefault
+        && (typeof window === 'undefined' || window.innerWidth >= NARROW_WORKBENCH_WIDTH),
     )
     materializeWith(sessionId => store.create(sessionId))
     const layout: ILayout = ctx.layout
-    const injected: Omit<SidebarRightInjected, 'keyedHooks' | 'occurrence'> = {
+    const injected: Omit<SidebarRightInjected, 'occurrence'> = {
       syncPresentation({ shown, track, fullscreen }) {
         if (shown) layout.openRightbar(track, fullscreen)
         else layout.closeRightbar()
@@ -153,8 +180,13 @@ export function apply(ctx: ClientContext): void {
       },
       bindService: binding => controller.bind(binding),
       openTab: (kind, options) => { void controller.openTab(kind, options) },
+      activateTab: (tabId) => { controller.focus(tabId) },
       closeTab: (tabId) => { void controller.close(tabId) },
-      hooks: { tabTypes: { subscribe: listener => tabs.subscribe(listener), getSnapshot: () => tabs.entries() } },
+      hooks: {
+        tabTypes: { subscribe: listener => tabs.subscribe(listener), getSnapshot: () => tabs.entries() },
+        preferences: preferences,
+        workbench: controller,
+      },
     }
 
     const disposeTypes = [tabs.register(guideDefinition(t))]
@@ -165,12 +197,15 @@ export function apply(ctx: ClientContext): void {
         'sidebar.right.pane.tab': { kind: 'keyed', scope: 'session', inject: { hooks: { tabInfo: tabInfoFactory } } },
         'sidebar.right.pane.tab.title': { kind: 'keyed', scope: 'session', inject: { hooks: { tabInfo: tabInfoFactory } } },
         'sidebar.right.tab.menu.item': { kind: 'list', scope: 'session' },
+        'sidebar.right.tab.icon': { kind: 'keyed', scope: 'session' },
+        'sidebar.right.viewer.icon': { kind: 'keyed', scope: 'session' },
+        'sidebar.right.tab.settings': { kind: 'keyed', scope: 'session' },
+        'sidebar.right.viewer.settings': { kind: 'keyed', scope: 'session' },
       },
       store,
-      inject: (sessionId): SidebarRightInjected => ({
+      inject: (_sessionId): SidebarRightInjected => ({
         ...injected,
-        keyedHooks: { tabNavigation: key => controller.tabDomain.occurrence(sessionId, { id: key as TabId }).navigation },
-        occurrence: tab => controller.tabDomain.occurrence(sessionId, tab),
+        occurrence: (homeSessionId, tab) => controller.tabDomain.occurrence(homeSessionId, tab),
       }),
     }, WorkbenchSeat))
     // The expand button shares the panel's store: it only needs to know whether

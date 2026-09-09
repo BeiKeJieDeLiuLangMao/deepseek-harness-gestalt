@@ -93,6 +93,16 @@ describe('bottom panel', () => {
 })
 
 describe('right panel', () => {
+  it('accepts one settings or legacy seed before opening and never overwrites an existing preference', () => {
+    const { store, actions } = createLayoutStore().create()
+    actions.setViewportWidth(1000)
+    actions.seedRightbar(350)
+    expect(store.getSnapshot().rightbar).toBe(350)
+    actions.seedRightbar(500)
+    actions.openRightbar(true, false)
+    expect(store.getSnapshot().rightbar).toBe(350)
+  })
+
   it('initializes at 45% of the latest frame only on first opening', () => {
     const { store, actions } = createLayoutStore().create()
     actions.setViewportWidth(1000)

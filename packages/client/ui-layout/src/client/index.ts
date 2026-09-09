@@ -137,6 +137,8 @@ export interface WorkbenchOwnerProps {
   canShowRight: boolean
   /** Persist a user-selected right surface width through the frame's clamp. */
   setRightbarWidth: (width: number) => void
+  /** Seed the first right-surface width; ignored after any seed, open, or drag. */
+  seedRightbarWidth: (width: number) => void
 }
 
 /** Required services (cordis fiber inject — the loader passes all module exports as an object plugin). */

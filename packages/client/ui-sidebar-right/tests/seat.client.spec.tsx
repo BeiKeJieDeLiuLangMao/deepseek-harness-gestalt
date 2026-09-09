@@ -13,6 +13,7 @@ import { apply, inject } from '../src/client/index.ts'
 import { intentsFor } from '../src/client/shell/SidebarRight.tsx'
 import type { SidebarRightTabInfo, SidebarRightTabMenuOwnerProps } from '../src/client/contract/slots.ts'
 import type { createSidebarRightStore } from '../src/client/stores.ts'
+import { SIDEBAR_RIGHT_PREFERENCES_DEFAULTS } from '../src/client/preferences.ts'
 
 declare module '../src/client/contract/params.ts' {
   interface SidebarRightResourceParamsMap {
@@ -26,6 +27,7 @@ const runtimes: SlotTestRuntime[] = []
 let getAnimationsDescriptor: PropertyDescriptor | undefined
 
 beforeEach(() => {
+  localStorage.clear()
   getAnimationsDescriptor = Object.getOwnPropertyDescriptor(Element.prototype, 'getAnimations')
   Object.defineProperty(Element.prototype, 'getAnimations', { configurable: true, writable: true, value: () => [] })
 })
@@ -66,6 +68,23 @@ async function mountSeat(viewportWidth = 1440, canShow = true) {
   const pin = vi.fn<(address: string, signal: AbortSignal) => void>()
   runtime.ctx.provide('layout', frame as never)
   runtime.ctx.provide('resources', { pin } as never)
+  runtime.ctx.provide('settingsScope', {
+    bind: () => ({
+      getSnapshot: () => ({
+        status: 'ready' as const,
+        value: SIDEBAR_RIGHT_PREFERENCES_DEFAULTS,
+        base: undefined,
+        user: undefined,
+        revision: 1,
+        writable: true,
+        mode: 'host' as const,
+      }),
+      subscribe: () => () => {},
+      mutate: async () => {},
+      set: async () => {},
+      unset: async () => {},
+    }),
+  } as never)
   const locale = new LocaleRuntime(runtime.ctx)
   runtime.ctx.provide('locale', locale)
   runtime.slots.installLocale(locale)
@@ -109,6 +128,7 @@ async function mountSeat(viewportWidth = 1440, canShow = true) {
   hostRoot.append(rightHost, bottomHost)
   document.body.append(hostRoot)
   const setRightbarWidth = vi.fn()
+  const seedRightbarWidth = vi.fn()
   const owner = (width: number, show: boolean) => ({
     rightHostId: rightHost.id,
     bottomHostId: bottomHost.id,
@@ -119,6 +139,7 @@ async function mountSeat(viewportWidth = 1440, canShow = true) {
     rightbarWidth: show ? 420 : 0,
     canShowRight: show,
     setRightbarWidth,
+    seedRightbarWidth,
   })
   const rendered = runtime.renderSlot('workbench', owner(viewportWidth, canShow))
   const view = {
@@ -140,7 +161,7 @@ async function mountSeat(viewportWidth = 1440, canShow = true) {
   }
   return {
     runtime, feature, controller, instance, actions: instance.actions, layout, bottomLayout,
-    open, frame, pin, bodies, titles, hooks, view, setRightbarWidth,
+    open, frame, pin, bodies, titles, hooks, view, setRightbarWidth, seedRightbarWidth,
   }
 }
 
@@ -156,6 +177,7 @@ describe('RightbarSeat presentation', () => {
     const panel = element(h.view.container, '[data-sidebar-right-panel]')
     expect(panel.getAttribute('aria-hidden')).toBe('true')
     expect(h.frame.closeRightbar).toHaveBeenCalled()
+    expect(h.seedRightbarWidth).toHaveBeenCalledWith(504)
     h.open()
     expect(element(h.view.container, '[data-sidebar-right-panel]')).toBe(panel)
     expect(panel.hasAttribute('data-sidebar-right-open')).toBe(true)
@@ -463,6 +485,48 @@ describe('slot-owned useTabInfo', () => {
     expect(h.runtime.ctx.get('sidebarRight')).toBeUndefined()
   })
 
+  it('renders a foreign pin as a virtual view backed by its home occurrence', async () => {
+    const h = await mountSeat()
+    h.open()
+    let menu: SidebarRightTabMenuOwnerProps | undefined
+    await act(async () => {
+      h.runtime.slots.register({ name: 'sidebar.right.tab.menu.item', id: 'test-pinned' },
+        (props: PropsRuntime<'sidebar.right.tab.menu.item'>) => { menu = props; return null })
+    })
+    let homeTab!: TabId
+    await act(async () => {
+      homeTab = await h.controller.forSession(OTHER).openResource(
+        'dsh-resource://file/session/s-other/pinned.txt',
+        { activate: false, pin: { scope: 'global', homeSessionId: OTHER } },
+      )
+    })
+    const chip = [...h.view.container.querySelectorAll<HTMLElement>('[data-dockkit-tab]')]
+      .find(candidate => candidate.textContent?.includes('pinned.txt'))
+    if (chip === undefined) throw new Error('expected pinned virtual tab')
+    const virtualId = chip.getAttribute('data-dockkit-tab') as TabId
+    expect(virtualId).not.toBe(homeTab)
+    expect(h.layout().tabs[virtualId]).toBeUndefined()
+
+    fireEvent.click(chip)
+    const info = h.bodies.get(homeTab)!
+    expect(info.tab).toMatchObject({ id: homeTab, sessionId: OTHER, virtual: true })
+    expect(info.tab.signal).toBe(h.controller.tabDomain.occurrence(OTHER, { id: homeTab }).signal)
+    fireEvent.contextMenu(chip)
+    expect(menu).toMatchObject({
+      sessionId: OTHER,
+      surface: 'right',
+      tab: { id: homeTab },
+      pin: { scope: 'global', homeSessionId: OTHER },
+    })
+
+    act(() => { menu?.actions.update({ pin: undefined }) })
+    expect(h.controller.getSnapshot().sessions.find(session => session.sessionId === OTHER)
+      ?.tabs.find(tab => tab.record.id === homeTab)?.state.pin).toBeUndefined()
+    expect([...h.view.container.querySelectorAll('[data-dockkit-tab]')]
+      .some(candidate => candidate.textContent?.includes('pinned.txt'))).toBe(false)
+    expect(h.controller.tabDomain.occurrence(OTHER, { id: homeTab }).signal.aborted).toBe(false)
+  })
+
   it('updates guide replacements through the same hook and guide boxes through framework injection', async () => {
     const h = await mountSeat()
     let captured: SidebarRightTabInfo | undefined
@@ -519,6 +583,8 @@ describe('slot-owned useTabInfo', () => {
     const chip = element(h.view.container, '[data-dockkit-tab]')
     fireEvent.contextMenu(chip)
     expect(menu?.tab.id).toBe(chip.getAttribute('data-dockkit-tab'))
+    expect(menu).toMatchObject({ sessionId: SESSION, surface: 'right', payload: undefined, pin: undefined })
+    expect(typeof menu?.actions.close).toBe('function')
     act(() => { menu?.dismiss() })
     expect(document.querySelector('[data-dockkit-tab-menu]')).toBeNull()
   })
@@ -559,8 +625,15 @@ describe('intentsFor — the kit\'s gestures as one session\'s store actions', (
       resizeFloat: vi.fn(), resizeSplit: vi.fn(),
     }
     const openTab = vi.fn()
+    const activateTab = vi.fn()
     const closeTab = vi.fn()
-    const intents = intentsFor(SESSION, actions as unknown as Parameters<typeof intentsFor>[1], openTab, closeTab)
+    const intents = intentsFor(
+      SESSION,
+      actions as unknown as Parameters<typeof intentsFor>[1],
+      openTab,
+      activateTab,
+      closeTab,
+    )
     const rect = { x: 1, y: 2, width: 300, height: 200 }
     const TAB_1 = 'tab-1' as TabId
     const PANE_1 = 'pane-1' as PaneId
@@ -578,7 +651,7 @@ describe('intentsFor — the kit\'s gestures as one session\'s store actions', (
     intents.moveFloat(PANE_2, 30, 40)
     intents.resizeFloat(PANE_2, rect)
     intents.resizeSplit(SPLIT_1, [0.3, 0.7])
-    expect(actions.focusTab).toHaveBeenCalledWith(SESSION, TAB_1)
+    expect(activateTab).toHaveBeenCalledWith(TAB_1)
     expect(actions.focusPane).toHaveBeenCalledWith(SESSION, PANE_1)
     expect(actions.splitSurfacePane).toHaveBeenCalledWith(SESSION, 'right', PANE_1)
     expect(closeTab).toHaveBeenCalledWith(TAB_1)

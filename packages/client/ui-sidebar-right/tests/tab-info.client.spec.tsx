@@ -3,13 +3,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, renderHook } from '@testing-library/react'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
-import { keyedObservableHook } from '@deepseek-ai/dsh-client-ui-renderer/src/client/bindings.tsx'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { TabId } from '@deepseek-ai/dsh-client-ui-dockkit'
 import type { UseSidebarRightTabInfo } from '../src/client/contract/slots.ts'
 import { createSidebarRightStore } from '../src/client/stores.ts'
 import { TabDomain, type TabOccurrence } from '../src/client/tab-domain.ts'
-import { tabInfoFactory, type TabHookContext } from '../src/client/tab-info.ts'
+import { tabInfoFactory } from '../src/client/tab-info.ts'
 
 const SESSION = 's-info' as SessionId
 const ADDRESS = 'dsh-resource://file/session/s-info/a.txt'
@@ -22,12 +21,12 @@ afterEach(() => {
 
 function harness() {
   const instance = createSidebarRightStore(() => 'Start').create()
-  const domain = new TabDomain({ openResourceIn: vi.fn(), openTabIn: vi.fn(), closeIn: vi.fn() }, vi.fn())
+  const domain = new TabDomain({
+    openResourceIn: vi.fn(), openTabIn: vi.fn(), closeIn: vi.fn(), updateIn: vi.fn(),
+  }, vi.fn())
   domains.push(domain)
   const navigationSources = new Map<string, TabOccurrence['navigation']>()
   const useStore = bindSnapshotSelector(instance)
-  // The renderer erases the keyed snapshot type; this family contains only tab navigation sources.
-  const useTabNavigation = keyedObservableHook(key => navigationSources.get(key)) as TabHookContext['useTabNavigation']
   // Only sessionId is read from the standard share by this internal factory.
   const standard = { sessionId: SESSION } as Parameters<typeof tabInfoFactory>[0]
   const layout = () => instance.getSnapshot().bySession[SESSION]?.layout
@@ -41,7 +40,7 @@ function harness() {
     navigationSources.set(tabId, occurrence.navigation)
     return tabInfoFactory(standard, {
       tabId, surface: 'right', title: false, fullscreen: false, signal: occurrence.signal,
-      actions: occurrence.tabActions, useStore, useTabNavigation,
+      actions: occurrence.tabActions, useStore, navigation: occurrence.navigation,
     })
   }
   const open = (beforeCommit?: (tabId: TabId) => void): TabId => {

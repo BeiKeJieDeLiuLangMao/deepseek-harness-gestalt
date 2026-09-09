@@ -272,6 +272,7 @@ export function AppFrame({
             rightbarWidth: cols.rightbar,
             canShowRight: normal.rightbar > 0,
             setRightbarWidth: actions.setRightbar,
+            seedRightbarWidth: actions.seedRightbar,
           })}
         </SessionProvider>
       </>

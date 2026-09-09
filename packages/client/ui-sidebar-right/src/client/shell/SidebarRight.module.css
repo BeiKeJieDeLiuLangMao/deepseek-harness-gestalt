@@ -52,6 +52,12 @@
   border: none;
 }
 
+/* A desktop shell may reserve caption controls over the page. The official
+   frame preference owner writes the resolved standard/user inset. */
+:global(body[data-dsh-title-bar-compat]) .panel {
+  padding-top: var(--dsh-title-bar-strip, 0);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .panel,
   .panel[data-sidebar-right-open],

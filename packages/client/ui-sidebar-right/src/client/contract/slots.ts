@@ -1,7 +1,7 @@
 /**
  * The right Sidebar's extension seats and its copy namespace.
  *
- * Four seats, each with a different reason to exist:
+ * Eight seats, each with a different reason to exist:
  * - `sidebar.right.pane.tab` is how a tab type contributes a body. It is keyed by
  *   the type definition's `id`, so adding a type is a registration, never an
  *   edit here. The key domain stays the open string space because a tab type may
@@ -15,6 +15,11 @@
  * - `sidebar.right.tab.menu.item` extends a tab's actions menu. The kit owns the
  *   actions that are gestures on the layout itself; this seat is for actions that
  *   mean something about the tab's content.
+ * - `sidebar.right.tab.icon` and `sidebar.right.viewer.icon` let a descriptor
+ *   supply a React icon under its stable id when a renderer-independent string
+ *   token is insufficient.
+ * - `sidebar.right.tab.settings` and `sidebar.right.viewer.settings` let a
+ *   descriptor with `settings.custom` supply its feature-owned settings body.
  *
  * TYPE HOME RATIONALE: this package declares all four at runtime, and anything
  * registering into one already depends on it for the declaration. The types
@@ -25,6 +30,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-slots'
 // lookup chain consults after this namespace misses.
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type { PaneId, TabRecord } from '@deepseek-ai/dsh-client-ui-dockkit'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SlotHookFactory } from '@deepseek-ai/dsh-client-ui-slots'
 import type { TabHookContext } from '../tab-info.ts'
 import type { SidebarRightKey } from '../locales.ts'
@@ -83,7 +89,47 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * registrant the menu shows only the kit's own layout actions.
      */
     'sidebar.right.tab.menu.item': { kind: 'list'; scope: 'session'; owner: SidebarRightTabMenuOwnerProps }
+    /** Custom tab icon, dispatched with the tab definition id. */
+    'sidebar.right.tab.icon': {
+      kind: 'keyed'
+      scope: 'session'
+      owner: SidebarRightDescriptorIconOwnerProps
+    }
+    /** Custom viewer icon, dispatched with the viewer definition id. */
+    'sidebar.right.viewer.icon': {
+      kind: 'keyed'
+      scope: 'session'
+      owner: SidebarRightDescriptorIconOwnerProps
+    }
+    /** Custom tab settings body, dispatched with the tab definition id. */
+    'sidebar.right.tab.settings': {
+      kind: 'keyed'
+      scope: 'session'
+      owner: SidebarRightDescriptorSettingsOwnerProps
+    }
+    /** Custom viewer settings body, dispatched with the viewer definition id. */
+    'sidebar.right.viewer.settings': {
+      kind: 'keyed'
+      scope: 'session'
+      owner: SidebarRightDescriptorSettingsOwnerProps
+    }
   }
+}
+
+/** Owner share for a descriptor's keyed custom icon. */
+export interface SidebarRightDescriptorIconOwnerProps {
+  /** Requested square icon size in CSS pixels. */
+  readonly size: number
+}
+
+/** Owner share for a descriptor's keyed custom settings body. */
+export interface SidebarRightDescriptorSettingsOwnerProps {
+  /** Stable tab or viewer definition id used to dispatch this entry. */
+  readonly descriptorId: string
+  /** Durable plugin-settings blob id, which may differ during key retention. */
+  readonly settingsId: string
+  /** Close the containing settings surface. */
+  readonly close: () => void
 }
 
 /** Where a tab was last navigated to: what the `open` that created or revealed it carried. */
@@ -108,6 +154,8 @@ export interface SidebarRightTabPlacement {
   readonly paneId?: PaneId
   /** Defaults to `true`: a tab already showing the same content is focused instead of a second one opening. */
   readonly revealIfOpened?: boolean
+  /** `false` prepares the occurrence without focusing or expanding its surface. */
+  readonly activate?: boolean
   /** `true` opens in this tab's place — its pane and strip slot — and closes this tab in the same step. */
   readonly replaceTab?: boolean
 }
@@ -139,6 +187,12 @@ export interface SidebarRightTabActions {
   }): void
   /** Close this tab. */
   close(): void
+  /** Update this occurrence's title, JSON payload, or pin in its home Session. */
+  update<K extends string>(patch: {
+    readonly title?: string
+    readonly payload?: SidebarRightTabPayloadFor<K> | undefined
+    readonly pin?: SidebarRightTabPin | undefined
+  }): void
 }
 
 /** Live information shared by a tab's body, title, and guide replacement. */
@@ -151,6 +205,10 @@ export interface SidebarRightTabInfo {
   }
   readonly panel: { readonly id: PaneId }
   readonly tab: TabRecord & {
+    /** Session containing the authoritative record and runtime resource. */
+    readonly sessionId: SessionId
+    /** Whether this body is a display-only view of another Session's pinned occurrence. */
+    readonly virtual: boolean
     /** Docked bodies need an expanded sidebar and an active tab; expanded titles include inactive tabs. Floats stay visible. */
     readonly visible: boolean
     readonly navigation: SidebarRightTabNavigation
@@ -177,8 +235,18 @@ export interface SidebarRightTabInjected {
 
 /** Owner share of one tab-menu item occurrence. */
 export interface SidebarRightTabMenuOwnerProps {
+  /** Home Session that owns the occurrence and runtime resource. */
+  sessionId: SessionId
+  /** Home workbench surface containing the authoritative record. */
+  surface: SidebarWorkbenchSurface
   /** The tab whose menu is open. */
   tab: TabRecord
+  /** Persistent JSON owned by the tab kind. */
+  payload: SidebarRightTabPayload | undefined
+  /** Cross-Session pin metadata. */
+  pin: SidebarRightTabPin | undefined
+  /** Home-Session actions; pinned virtual views never mutate a copied record. */
+  actions: SidebarRightTabActions
   /**
    * Dismiss the menu.
    *

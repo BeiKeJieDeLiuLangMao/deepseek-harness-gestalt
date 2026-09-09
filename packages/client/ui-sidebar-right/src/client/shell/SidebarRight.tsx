@@ -27,7 +27,7 @@
  * signal, actions — is read through the slot-owned useTabInfo hook. The Tab
  * domain follows each session's store commits, including sessions off screen.
  */
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type { ReactNode, RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import type {
@@ -41,14 +41,29 @@ import type { HalvesFit, LayoutState, PaneId } from '@deepseek-ai/dsh-client-ui-
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { GUIDE_KIND, pageAddress } from '../contract/seed.ts'
 import { dockLabels } from '../labels.ts'
-import type { SidebarRightOpenTabOptions } from '../service.ts'
+import type { SidebarRightOpenTabOptions, SidebarRightProjection, SidebarRightTabProjection } from '../service.ts'
 import type { SidebarRightTabDefinition } from '../tab-registry.ts'
 import type {
   createSidebarRightStore, DockSurfaceState, SidebarWorkbenchSurface, SurfaceState,
 } from '../stores.ts'
+import type { SidebarRightTabState } from '../contract/payload.ts'
 import type { TabOccurrence } from '../tab-domain.ts'
-import type { SidebarRightTabNavigation } from '../contract/slots.ts'
+import type { SidebarRightTabMenuOwnerProps } from '../contract/slots.ts'
 import type { TabHookContext } from '../tab-info.ts'
+import {
+  isSidebarRightPinnedViewId,
+  projectSidebarRightPinnedViews,
+  type SidebarRightPinnedView,
+} from '../pinned-views.ts'
+import type { SidebarRightPreferencesSnapshot } from '../preferences.ts'
+import {
+  applySidebarRightFramePreferences,
+  getSidebarRightWindowControlsOverlay,
+  readSidebarRightDesktopEnvironment,
+  resolveSidebarRightFramePreferences,
+  resolveSidebarRightInitialWidth,
+  subscribeSidebarRightWindowControlsOverlay,
+} from '../frame-preferences.ts'
 import css from './SidebarRight.module.css'
 
 /** The store share the seat receives. */
@@ -107,16 +122,17 @@ export interface SidebarRightInjected {
    * the guide opened by kind, through the same path as every other open.
    */
   readonly openTab: (kind: string, options?: SidebarRightOpenTabOptions) => void
+  /** Focus an existing occurrence through its descriptor activation lifecycle. */
+  readonly activateTab: (tabId: TabId) => void
   /** Route true closes through the official admission coordinator. */
   readonly closeTab: (tabId: TabId) => void
   readonly hooks: {
     readonly tabTypes: HostObservable<readonly SidebarRightTabDefinition[]>
+    readonly preferences: HostObservable<SidebarRightPreferencesSnapshot>
+    readonly workbench: HostObservable<SidebarRightProjection>
   }
-  readonly keyedHooks: {
-    readonly tabNavigation: (key: string) => HostObservable<SidebarRightTabNavigation>
-  }
-  /** Read a committed record's lifetime; never creates an occurrence. */
-  readonly occurrence: (tab: Pick<TabRecord, 'id'>) => TabOccurrence
+  /** Read a committed home record's lifetime; never creates an occurrence. */
+  readonly occurrence: (sessionId: SessionId, tab: Pick<TabRecord, 'id'>) => TabOccurrence
 }
 
 /** The column seat's props: session scope, so the session arrives as a standard prop. */
@@ -136,11 +152,14 @@ interface PanelProps {
   readonly t: WorkbenchSeatProps['t']
   readonly renderSlot: Children['renderSlot']
   readonly openTab: SidebarRightInjected['openTab']
+  readonly activateTab: SidebarRightInjected['activateTab']
   readonly closeTab: SidebarRightInjected['closeTab']
   readonly useTabTypes: WorkbenchSeatProps['useTabTypes']
-  readonly useTabNavigation: WorkbenchSeatProps['useTabNavigation']
   readonly useStore: Store['useStore']
   readonly occurrence: SidebarRightInjected['occurrence']
+  readonly virtualViews: ReadonlyMap<TabId, SidebarRightPinnedView>
+  readonly activeVirtualId: TabId | undefined
+  readonly tabState: (tabId: TabId) => SidebarRightTabProjection['state']
   readonly fullscreen: boolean
   readonly autoFullscreen: boolean
   /** Receives the kit's room-rule readings for the service's `split`. */
@@ -163,11 +182,12 @@ export function intentsFor(
   sessionId: SessionId,
   actions: Store['actions'],
   openTab: PanelProps['openTab'],
+  activateTab: PanelProps['activateTab'],
   closeTab: PanelProps['closeTab'],
   surface: SidebarWorkbenchSurface = 'right',
 ): DockIntents {
   return {
-    focusTab: (tabId) => { actions.focusTab(sessionId, tabId) },
+    focusTab: activateTab,
     focusPane: (paneId) => { actions.focusPane(sessionId, paneId) },
     splitPane: (paneId) => { actions.splitSurfacePane(sessionId, surface, paneId) },
     // The guide is unique per pane: the control is drawn only while its pane
@@ -176,11 +196,19 @@ export function intentsFor(
     // already holds, so the ask is idempotent all the same.
     addTab: (paneId) => { openTab(GUIDE_KIND, { surface, paneId, revealIfOpened: false }) },
     closeTab,
-    duplicateTab: (tabId) => { actions.duplicateTab(sessionId, tabId) },
-    floatTab: (tabId, rect?: FloatRect) => { actions.floatTab(sessionId, tabId, rect) },
+    duplicateTab: (tabId) => {
+      if (!isSidebarRightPinnedViewId(tabId)) actions.duplicateTab(sessionId, tabId)
+    },
+    floatTab: (tabId, rect?: FloatRect) => {
+      if (!isSidebarRightPinnedViewId(tabId)) actions.floatTab(sessionId, tabId, rect)
+    },
     unfloatPane: (paneId) => { actions.unfloatPane(sessionId, paneId) },
-    placeTab: (tabId, toPaneId, index) => { actions.placeTab(sessionId, tabId, toPaneId, index) },
-    dropTab: (tabId, paneId, zone) => { actions.dropTab(sessionId, tabId, paneId, zone) },
+    placeTab: (tabId, toPaneId, index) => {
+      if (!isSidebarRightPinnedViewId(tabId)) actions.placeTab(sessionId, tabId, toPaneId, index)
+    },
+    dropTab: (tabId, paneId, zone) => {
+      if (!isSidebarRightPinnedViewId(tabId)) actions.dropTab(sessionId, tabId, paneId, zone)
+    },
     moveFloat: (paneId, x, y) => { actions.moveFloat(sessionId, paneId, x, y) },
     resizeFloat: (paneId, rect) => { actions.resizeFloat(sessionId, paneId, rect) },
     resizeSplit: (splitId, sizes) => { actions.resizeSplit(sessionId, splitId, sizes) },
@@ -188,7 +216,11 @@ export function intentsFor(
 }
 
 /** One tab's slot dispatch: which seat, and what to render when no type registered. */
-interface TabSlotProps extends Pick<PanelProps, 'renderSlot' | 'occurrence' | 'useTabTypes' | 'useTabNavigation' | 'useStore' | 'fullscreen' | 'workbenchSurface'> {
+interface TabSlotProps extends Pick<
+  PanelProps,
+  'sessionId' | 'renderSlot' | 'occurrence' | 'useTabTypes' | 'useStore' | 'fullscreen' | 'workbenchSurface'
+    | 'virtualViews' | 'activeVirtualId'
+> {
   readonly tab: TabRecord
   readonly seat: 'sidebar.right.pane.tab' | 'sidebar.right.pane.tab.title'
   readonly fallback: ReactNode
@@ -198,21 +230,26 @@ interface TabSlotProps extends Pick<PanelProps, 'renderSlot' | 'occurrence' | 'u
  * Dispatch one tab's body or title with stable framework hooks and record lifetime.
  */
 function TabSlot({
-  renderSlot, occurrence, useTabTypes, useTabNavigation, useStore, fullscreen, workbenchSurface, tab, seat, fallback,
+  sessionId, renderSlot, occurrence, useTabTypes, useStore, fullscreen, workbenchSurface,
+  virtualViews, activeVirtualId, tab, seat, fallback,
 }: TabSlotProps): ReactNode {
-  const { signal, tabActions } = occurrence(tab)
-  const definition = useTabTypes(types => types.find(definition => definition.kind === tab.kind))
+  const pinned = virtualViews.get(tab.id)
+  const homeSessionId = pinned?.home.sessionId ?? sessionId
+  const homeTab = pinned?.home.record ?? tab
+  const held = occurrence(homeSessionId, homeTab)
+  const definition = useTabTypes(types => types.find(definition => definition.kind === homeTab.kind))
   const hookContext = useMemo((): TabHookContext => ({
-    tabId: tab.id,
+    tabId: homeTab.id,
     surface: workbenchSurface,
     title: seat === 'sidebar.right.pane.tab.title',
     fullscreen,
-    signal,
-    actions: tabActions,
+    signal: held.signal,
+    actions: held.tabActions,
     useStore,
-    useTabNavigation,
-  }), [tab.id, workbenchSurface, seat, fullscreen, signal, tabActions, useStore, useTabNavigation])
-  return renderSlot(seat, {}, { entryKey: definition?.id ?? tab.kind, fallback, hookContext })
+    navigation: held.navigation,
+    ...pinned === undefined ? {} : { pinned, pinnedActive: activeVirtualId === tab.id },
+  }), [homeTab.id, workbenchSurface, seat, fullscreen, held, useStore, pinned, activeVirtualId, tab.id])
+  return renderSlot(seat, {}, { entryKey: definition?.id ?? homeTab.kind, fallback, hookContext })
 }
 
 /**
@@ -241,6 +278,25 @@ function bodiesFor(panel: PanelProps): TabRenderer {
 /** Dispatch a tab's title to its registered type; without one the chip shows the title captured at open time. */
 function titlesFor(panel: PanelProps): TabRenderer {
   return tab => <TabSlot key={tab.id} {...panel} tab={tab} seat="sidebar.right.pane.tab.title" fallback={tab.title} />
+}
+
+/** Complete home-occurrence facts for content menu contributions. */
+function menuOwner(panel: PanelProps, tab: TabRecord, dismiss: () => void): SidebarRightTabMenuOwnerProps {
+  const pinned = panel.virtualViews.get(tab.id)
+  const home = pinned?.home
+  const record = home?.record ?? tab
+  const sessionId = home?.sessionId ?? panel.sessionId
+  const held = panel.occurrence(sessionId, record)
+  const state = home?.state ?? panel.tabState(tab.id)
+  return {
+    sessionId,
+    surface: home?.surface ?? panel.workbenchSurface,
+    tab: record,
+    payload: state.payload,
+    pin: state.pin,
+    actions: held.tabActions,
+    dismiss,
+  }
 }
 
 /** Expand-to-viewport glyph. */
@@ -329,12 +385,12 @@ function SidebarPanel(panel: PanelProps & { width: number; panelRef: RefObject<H
           dropZones="horizontal"
           minPaneFraction={0.2}
           canAddTab={paneId => guideIn(surface.layout, paneId) === undefined}
-          intents={intentsFor(sessionId, actions, openTab, panel.closeTab, panel.workbenchSurface)}
+          intents={intentsFor(sessionId, actions, openTab, panel.activateTab, panel.closeTab, panel.workbenchSurface)}
           labels={dockLabels(t)}
           renderTab={bodiesFor(panel)}
           renderTabTitle={titlesFor(panel)}
           renderTabMenuItems={(tab, dismiss) =>
-            renderSlot('sidebar.right.tab.menu.item', { tab, dismiss })}
+            renderSlot('sidebar.right.tab.menu.item', menuOwner(panel, tab, dismiss))}
           chrome={(
             <PanelChrome
               sessionId={sessionId}
@@ -360,7 +416,7 @@ function Floats(panel: PanelProps): ReactNode {
     <div className={css.floatHost} data-sidebar-right-float-host>
       <FloatLayer
         state={surface.layout}
-        intents={intentsFor(sessionId, actions, openTab, panel.closeTab, panel.workbenchSurface)}
+        intents={intentsFor(sessionId, actions, openTab, panel.activateTab, panel.closeTab, panel.workbenchSurface)}
         labels={dockLabels(t)}
         renderTab={bodiesFor(panel)}
         renderTabTitle={titlesFor(panel)}
@@ -481,11 +537,12 @@ function BottomPanel(panel: PanelProps & {
           hideSplitAtCapacity
           minPaneFraction={0.2}
           canAddTab={paneId => guideIn(surface.layout, paneId) === undefined}
-          intents={intentsFor(sessionId, actions, openTab, panel.closeTab, 'bottom')}
+          intents={intentsFor(sessionId, actions, openTab, panel.activateTab, panel.closeTab, 'bottom')}
           labels={dockLabels(t)}
           renderTab={bodiesFor(panel)}
           renderTabTitle={titlesFor(panel)}
-          renderTabMenuItems={(tab, dismiss) => renderSlot('sidebar.right.tab.menu.item', { tab, dismiss })}
+          renderTabMenuItems={(tab, dismiss) =>
+            renderSlot('sidebar.right.tab.menu.item', menuOwner(panel, tab, dismiss))}
           chrome={<PanelChrome {...{ sessionId, actions, t, fullscreen, autoFullscreen }} workbenchSurface="bottom" />}
           onRoom={reportRoom}
         />
@@ -494,7 +551,11 @@ function BottomPanel(panel: PanelProps & {
   )
 }
 
-const NARROW_WORKBENCH_WIDTH = 768
+/** Viewports below this width use one fullscreen workbench drawer. */
+export const NARROW_WORKBENCH_WIDTH = 768
+
+const EMPTY_PINNED_VIEWS: ReadonlyMap<TabId, SidebarRightPinnedView> = new Map()
+const EMPTY_TAB_STATE: SidebarRightTabState = {}
 
 /**
  * One Session workbench owns both official dock surfaces and portals them into
@@ -502,8 +563,8 @@ const NARROW_WORKBENCH_WIDTH = 768
  */
 export function WorkbenchSeat({
   sessionId, rightHostId, bottomHostId, viewportWidth, viewportHeight, rightPanelWidth, rightbarWidth, canShowRight,
-  setRightbarWidth, useStore, actions, t, renderSlot, syncPresentation, syncBottomPresentation,
-  bindService, openTab, closeTab, useTabTypes, useTabNavigation, occurrence,
+  setRightbarWidth, seedRightbarWidth, useStore, actions, t, renderSlot, syncPresentation, syncBottomPresentation,
+  bindService, openTab, activateTab, closeTab, useTabTypes, usePreferences, useWorkbench, useSessions, occurrence,
 }: WorkbenchSeatProps): ReactNode {
   const [hosts, setHosts] = useState<{ right: HTMLElement; bottom: HTMLElement } | null>(null)
   // One store instance per session, so this map holds this session's surface.
@@ -526,6 +587,46 @@ export function WorkbenchSeat({
   const reportRightRoom = useCallback((fits: ReadonlyMap<PaneId, HalvesFit>): void => { room.current.right = fits }, [])
   const reportBottomRoom = useCallback((fits: ReadonlyMap<PaneId, HalvesFit>): void => { room.current.bottom = fits }, [])
   const track = rightShown && !autoFullscreen
+  const preferenceSnapshot = usePreferences(snapshot => snapshot)
+  const workbenchProjection = useWorkbench(snapshot => snapshot)
+  const viewerCwd = useSessions(snapshot => snapshot.byId[sessionId]?.cwd)
+  const [requestedVirtualId, setRequestedVirtualId] = useState<TabId | undefined>()
+  const pinnedRight = useMemo(
+    () => surface === undefined
+      ? undefined
+      : projectSidebarRightPinnedViews(
+        surface.layout,
+        workbenchProjection.pinned,
+        sessionId,
+        viewerCwd,
+        requestedVirtualId,
+      ),
+    [sessionId, surface, viewerCwd, workbenchProjection.pinned, requestedVirtualId],
+  )
+  const activeVirtualId = pinnedRight?.activeId
+  const desktopEnvironment = useMemo(() => readSidebarRightDesktopEnvironment(), [])
+  const overlay = useSyncExternalStore(
+    subscribeSidebarRightWindowControlsOverlay,
+    getSidebarRightWindowControlsOverlay,
+    getSidebarRightWindowControlsOverlay,
+  )
+
+  useLayoutEffect(() => {
+    if (preferenceSnapshot.status === 'loading') return
+    seedRightbarWidth(resolveSidebarRightInitialWidth(
+      viewportWidth,
+      preferenceSnapshot.preferences.defaultWidthPercent,
+    ))
+  }, [preferenceSnapshot, seedRightbarWidth, viewportWidth])
+
+  useLayoutEffect(() => {
+    if (preferenceSnapshot.status === 'loading') return
+    return applySidebarRightFramePreferences(resolveSidebarRightFramePreferences(
+      preferenceSnapshot.preferences,
+      desktopEnvironment,
+      overlay,
+    ))
+  }, [desktopEnvironment, overlay, preferenceSnapshot])
 
   useLayoutEffect(() => {
     const right = document.getElementById(rightHostId)
@@ -537,6 +638,10 @@ export function WorkbenchSeat({
   useEffect(() => {
     if (surface === undefined) actions.open(sessionId)
   }, [actions, sessionId, surface])
+
+  useEffect(() => {
+    if (requestedVirtualId !== undefined && activeVirtualId === undefined) setRequestedVirtualId(undefined)
+  }, [activeVirtualId, requestedVirtualId])
 
   useLayoutEffect(() => {
     if (rightShown && !rightFullscreen && !canShowRight) actions.setExpanded(sessionId, false)
@@ -600,19 +705,47 @@ export function WorkbenchSeat({
   // on screen or not.
 
   if (surface === undefined || hosts === null) return null
-  const shared = { sessionId, actions, t, renderSlot, openTab, closeTab, useTabTypes, useTabNavigation, useStore, occurrence }
+  const virtualViews = pinnedRight?.views ?? EMPTY_PINNED_VIEWS
+  const activateDisplayed = (tabId: TabId): void => {
+    if (virtualViews.has(tabId)) setRequestedVirtualId(tabId)
+    else {
+      setRequestedVirtualId(undefined)
+      activateTab(tabId)
+    }
+  }
+  const closeDisplayed = (tabId: TabId): void => {
+    const pinned = virtualViews.get(tabId)
+    if (pinned === undefined) closeTab(tabId)
+    else {
+      occurrence(pinned.home.sessionId, pinned.home.record).tabActions.close()
+      if (activeVirtualId === tabId) setRequestedVirtualId(undefined)
+    }
+  }
+  const shared = {
+    sessionId, actions, t, renderSlot, openTab, useTabTypes, useStore, occurrence,
+  }
   const rightPanel: PanelProps = {
     ...shared,
+    activateTab: activateDisplayed,
+    closeTab: closeDisplayed,
     workbenchSurface: 'right',
-    surface: { layout: surface.layout, history: surface.history },
+    surface: { layout: pinnedRight?.layout ?? surface.layout, history: surface.history },
+    virtualViews,
+    activeVirtualId,
+    tabState: tabId => virtualViews.get(tabId)?.home.state ?? surface.tabs[tabId] ?? EMPTY_TAB_STATE,
     fullscreen: rightFullscreen,
     autoFullscreen,
     reportRoom: reportRightRoom,
   }
   const bottomPanel: PanelProps = {
     ...shared,
+    activateTab,
+    closeTab,
     workbenchSurface: 'bottom',
     surface: surface.bottom,
+    virtualViews: EMPTY_PINNED_VIEWS,
+    activeVirtualId: undefined,
+    tabState: tabId => surface.tabs[tabId] ?? EMPTY_TAB_STATE,
     fullscreen: bottomFullscreen,
     autoFullscreen,
     reportRoom: reportBottomRoom,

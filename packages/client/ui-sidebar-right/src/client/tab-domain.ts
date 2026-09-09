@@ -22,7 +22,9 @@ import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SidebarRightNavigationParams } from './contract/params.ts'
 import type { SidebarRightTabActions, SidebarRightTabNavigation, SidebarRightTabPlacement } from './contract/slots.ts'
-import type { SidebarRightOpenResourceOptions, SidebarRightOpenTabOptions, SidebarRightPlacement } from './service.ts'
+import type {
+  SidebarRightOpenResourceOptions, SidebarRightOpenTabOptions, SidebarRightPlacement, SidebarRightUpdateTabOptions,
+} from './service.ts'
 
 /**
  * The navigation face a tab's actions call back into, aimed at the Session the
@@ -37,6 +39,8 @@ export interface SidebarRightNavigator {
   openTabIn(sessionId: SessionId, kind: string, options?: SidebarRightOpenTabOptions): Promise<TabId>
   /** Close a tab of one session. */
   closeIn(sessionId: SessionId, tabId: TabId): Promise<unknown>
+  /** Update a tab of one session. */
+  updateIn(sessionId: SessionId, tabId: TabId, patch: SidebarRightUpdateTabOptions): void
 }
 
 function runTabAction(action: Promise<unknown>): void {
@@ -175,6 +179,7 @@ export class TabDomain {
       ...placement.surface === undefined ? {} : { surface: placement.surface },
       ...placement.paneId === undefined ? {} : { paneId: placement.paneId },
       ...placement.revealIfOpened === undefined ? {} : { revealIfOpened: placement.revealIfOpened },
+      ...placement.activate === undefined ? {} : { activate: placement.activate },
     })
     const held: Held = {
       sessionId,
@@ -197,6 +202,9 @@ export class TabDomain {
         },
         close: () => {
           if (!controller.signal.aborted) runTabAction(navigator.closeIn(sessionId, tabId))
+        },
+        update: (patch) => {
+          if (!controller.signal.aborted) navigator.updateIn(sessionId, tabId, patch)
         },
       },
     }

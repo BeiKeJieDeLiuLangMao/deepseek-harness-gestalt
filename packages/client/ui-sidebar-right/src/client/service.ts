@@ -39,7 +39,8 @@ import type {
 } from './contract/payload.ts'
 import { pageAddress, pageInstanceAddress } from './contract/seed.ts'
 import type {
-  SidebarRightCloseReason, SidebarRightTabClaim, SidebarRightTabCloseContext, SidebarRightTabRegistry,
+  SidebarRightCloseReason, SidebarRightDescriptorContext, SidebarRightDescriptorTab, SidebarRightTabClaim,
+  SidebarRightTabCloseContext, SidebarRightTabDefinition, SidebarRightTabRegistry,
 } from './tab-registry.ts'
 import { SidebarRightCloseCoordinator, type SidebarRightCloseOutcome } from './close-coordinator.ts'
 import type { SidebarRightState, SidebarWorkbenchSurface, SurfaceState, UpdateTabIntent } from './stores.ts'
@@ -129,6 +130,8 @@ export interface SidebarRightPlacement {
    * focused and handed `params`. `false` opens another tab regardless.
    */
   readonly revealIfOpened?: boolean
+  /** `false` restores or prepares the occurrence without focusing it or expanding either surface. */
+  readonly activate?: boolean
 }
 
 /** How a caller wants a resource opened. */
@@ -537,6 +540,7 @@ export class SidebarRightController implements ISidebarRight {
   ): Promise<TabId> {
     const definition = this.tabs.get(kind)
     if (definition === undefined) throw new Error(`sidebarRight: no tab type is registered as "${kind}"`)
+    if (!this.tabs.isTabEnabled(definition.id)) throw new Error(`sidebarRight: tab type "${kind}" is disabled`)
     const address = options.instanceId === undefined ? pageAddress(kind) : pageInstanceAddress(kind, options.instanceId)
     return this.place(
       sessionId,
@@ -561,6 +565,35 @@ export class SidebarRightController implements ISidebarRight {
     payload: SidebarRightTabPayload | undefined,
     pin: SidebarRightTabPin | undefined,
   ): Promise<TabId> {
+    if (placement.activate === false && placement.replaceTab !== undefined) {
+      throw new Error('sidebarRight: an inactive open cannot replace a tab')
+    }
+    const definition = this.tabs.get(claim.kind)
+    if (definition === undefined) throw new Error(`sidebarRight: no tab type is registered as "${claim.kind}"`)
+    let settledClaim = claim
+    let settledPayload = payload
+    const descriptorContext = this.descriptorContext(sessionId)
+    if (definition.create !== undefined) {
+      const created = definition.create({
+        ...descriptorContext,
+        kind: claim.kind,
+        address,
+        title: claim.title,
+        params,
+        payload,
+        pin,
+      })
+      if (created === false) throw new Error(`sidebarRight: tab type "${claim.kind}" refused creation`)
+      settledClaim = {
+        kind: claim.kind,
+        contentId: created.contentId ?? claim.contentId,
+        title: created.title ?? claim.title,
+      }
+      if (Object.hasOwn(created, 'payload')) settledPayload = created.payload
+    }
+    if (settledClaim.contentId.length === 0) {
+      throw new Error(`sidebarRight: tab type "${claim.kind}" created an empty content id`)
+    }
     let paneId = placement.paneId
     let index: number | undefined
     const replacement = { checkpoint: false }
@@ -584,32 +617,114 @@ export class SidebarRightController implements ISidebarRight {
         }
       }
     }
-    const payloadSnapshot = payload === undefined
-      ? undefined
-      : snapshotJsonValue(payload)
-    if (payload !== undefined && payloadSnapshot === undefined) {
-      throw new Error(`sidebarRight: tab kind "${claim.kind}" carries a non-JSON payload`)
+    const duplicate = this.descriptorDuplicate(sessionId, definition, settledClaim, settledPayload, pin, placement.surface)
+    if (duplicate !== undefined) {
+      if (placement.activate !== false) {
+        actions.focusTab(sessionId, duplicate.id as TabId)
+        if (address.startsWith(RESOURCE_SCHEME) && !duplicate.floating) {
+          actions.setSurfaceExpanded(sessionId, duplicate.surface, true)
+        }
+      }
+      this.tabDomain.navigate(sessionId, duplicate.id as TabId, { address, params })
+      if (placement.activate !== false) {
+        this.invokeDescriptorLifecycle(sessionId, 'onActivate', definition, duplicate)
+      }
+      return duplicate.id as TabId
     }
-    const definition = this.tabs.get(claim.kind)
+    const payloadSnapshot = settledPayload === undefined
+      ? undefined
+      : snapshotJsonValue(settledPayload)
+    if (settledPayload !== undefined && payloadSnapshot === undefined) {
+      throw new Error(`sidebarRight: tab kind "${settledClaim.kind}" carries a non-JSON payload`)
+    }
+    const before = new Set(descriptorContext.tabs.map(tab => tab.id))
     let settled: TabId | undefined
     actions.openContent(sessionId, {
-      kind: claim.kind,
-      contentId: claim.contentId,
-      title: claim.title,
+      kind: settledClaim.kind,
+      contentId: settledClaim.contentId,
+      title: settledClaim.title,
       ...placement.surface === undefined ? {} : { surface: placement.surface },
       ...paneId === undefined ? {} : { paneId },
       ...index === undefined ? {} : { index },
       ...placement.replaceTab === undefined ? {} : { replaceTab: placement.replaceTab },
       ...placement.revealIfOpened === undefined ? {} : { revealIfOpened: placement.revealIfOpened },
+      ...placement.activate === undefined ? {} : { activate: placement.activate },
       ...payloadSnapshot === undefined ? {} : { payload: payloadSnapshot },
       ...pin === undefined ? {} : { pin },
-      checkpoint: replacement.checkpoint || definition?.beforeClose !== undefined || definition?.close !== undefined,
+      checkpoint: replacement.checkpoint || definition.beforeClose !== undefined || definition.close !== undefined,
     }, (tabId) => {
       settled = tabId
       this.tabDomain.navigate(sessionId, tabId, { address, params })
     })
     if (settled === undefined) throw new Error(`sidebarRight: open of "${address}" did not settle`)
+    const actual = this.descriptorContext(sessionId).tabs.find(tab => tab.id === settled)
+    if (actual !== undefined) {
+      if (!before.has(settled)) this.invokeDescriptorLifecycle(sessionId, 'onOpen', definition, actual)
+      else if (placement.activate !== false) this.invokeDescriptorLifecycle(sessionId, 'onActivate', definition, actual)
+    }
     return settled
+  }
+
+  /** Pure descriptor view over one Session's official projection. */
+  private descriptorContext(sessionId: SessionId): SidebarRightDescriptorContext {
+    const session = this.sessionProjections.get(sessionId)
+    return {
+      sessionId,
+      preferences: this.tabs.preferences(),
+      tabs: session?.tabs.map(tab => ({
+        id: tab.record.id,
+        kind: tab.record.kind,
+        contentId: tab.record.contentId,
+        title: tab.record.title,
+        surface: tab.surface,
+        floating: tab.floating,
+        payload: tab.state.payload,
+        pin: tab.state.pin,
+      })) ?? [],
+    }
+  }
+
+  /** Existing occurrence selected by a definition's explicit instance rule. */
+  private descriptorDuplicate(
+    sessionId: SessionId,
+    definition: SidebarRightTabDefinition,
+    claim: SidebarRightTabClaim,
+    payload: SidebarRightTabPayload | undefined,
+    pin: SidebarRightTabPin | undefined,
+    surface: SidebarWorkbenchSurface | undefined,
+  ): SidebarRightDescriptorTab | undefined {
+    const keyOf = definition.dedupeKey ?? (definition.single === true ? () => definition.id : undefined)
+    if (keyOf === undefined) return undefined
+    const context = this.descriptorContext(sessionId)
+    const requested: SidebarRightDescriptorTab = {
+      id: '',
+      kind: claim.kind,
+      contentId: claim.contentId,
+      title: claim.title,
+      surface: surface ?? 'right',
+      floating: false,
+      payload,
+      pin,
+    }
+    const key = keyOf(requested)
+    if (key === undefined) return undefined
+    return context.tabs.find(tab => tab.kind === definition.kind && keyOf(tab) === key)
+  }
+
+  /** Run a non-admitting descriptor notification without breaking the completed state action. */
+  private invokeDescriptorLifecycle(
+    sessionId: SessionId,
+    name: 'onOpen' | 'onActivate',
+    definition: SidebarRightTabDefinition,
+    tab: SidebarRightDescriptorTab,
+  ): void {
+    const callback = definition[name]
+    if (callback === undefined) return
+    try {
+      callback(tab, this.descriptorContext(sessionId))
+    } catch (error) {
+      console.error(`sidebarRight: ${name} failed for "${definition.id}"`, error)
+    }
   }
 
   /**
@@ -771,8 +886,12 @@ export class SidebarRightController implements ISidebarRight {
    */
   focus(tabId: TabId): void {
     const { sessionId, actions } = this.require()
-    if (this.mounted()?.layout.tabs[tabId] === undefined) return
+    const current = this.descriptorContext(sessionId).tabs.find(tab => tab.id === tabId)
+    if (current === undefined) return
     actions.focusTab(sessionId, tabId)
+    const actual = this.descriptorContext(sessionId).tabs.find(tab => tab.id === tabId) ?? current
+    const definition = this.tabs.get(actual.kind)
+    if (definition !== undefined) this.invokeDescriptorLifecycle(sessionId, 'onActivate', definition, actual)
   }
 
   /**

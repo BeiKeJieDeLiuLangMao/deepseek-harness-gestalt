@@ -22,6 +22,7 @@ import { ExpandButton } from '../src/client/shell/ExpandButton.tsx'
 import { GuideBody } from '../src/client/tabs/guide/GuideBody.tsx'
 import { GUIDE_ID } from '../src/client/tabs/guide/definition.ts'
 import { en, zh } from '../src/client/locales.ts'
+import { SIDEBAR_RIGHT_PREFERENCES_DEFAULTS, SidebarRightPreferencesController } from '../src/client/preferences.ts'
 
 const SESSION = 's-test' as SessionId
 
@@ -59,10 +60,28 @@ async function boot() {
     openRightbar: vi.fn(), closeRightbar: vi.fn(), openBottombar: vi.fn(), closeBottombar: vi.fn(),
   }
   const resources = { pin: vi.fn<(address: string, signal: AbortSignal) => void>() }
+  const settingsScope = {
+    bind: vi.fn(() => ({
+      getSnapshot: () => ({
+        status: 'ready' as const,
+        value: SIDEBAR_RIGHT_PREFERENCES_DEFAULTS,
+        base: undefined,
+        user: undefined,
+        revision: 1,
+        writable: true,
+        mode: 'host' as const,
+      }),
+      subscribe: () => () => {},
+      mutate: async () => {},
+      set: async () => {},
+      unset: async () => {},
+    })),
+  }
   ctx.provide('slots', slots as never)
   ctx.provide('locale', locale as never)
   ctx.provide('layout', layout as never)
   ctx.provide('resources', resources as never)
+  ctx.provide('settingsScope', settingsScope as never)
   const fiber = ctx.plugin({ inject: [...inject], apply })
   await fiber.await()
   const seat = (name: string): Recorded => {
@@ -74,7 +93,7 @@ async function boot() {
     if (entry.inject === undefined) throw new Error(`expected ${entry.name} to inject`)
     return entry.inject(SESSION)
   }
-  return { ctx, registered, dictionaries, layout, resources, fiber, seat, injectedOf }
+  return { ctx, registered, dictionaries, layout, resources, settingsScope, fiber, seat, injectedOf }
 }
 
 describe('ui-sidebar-right apply', () => {
@@ -86,6 +105,7 @@ describe('ui-sidebar-right apply', () => {
     const { ctx, registered, dictionaries, seat } = await boot()
     expect(ctx.sidebarRightTabs).toBeInstanceOf(SidebarRightTabRegistry)
     expect(ctx.sidebarRight).toBeInstanceOf(SidebarRightController)
+    expect(ctx.sidebarRightPreferences).toBeInstanceOf(SidebarRightPreferencesController)
     expect('adopt' in ctx.sidebarRight).toBe(false)
     expect(dictionaries.get('sidebarRight')).toEqual({ zh, en })
     const guide = ctx.sidebarRightTabs.get('guide')
@@ -102,6 +122,8 @@ describe('ui-sidebar-right apply', () => {
     // The panel declares the extension seats; the guide declares its chain child.
     expect(Object.keys(seat('workbench').children as object)).toEqual([
       'sidebar.right.pane.tab', 'sidebar.right.pane.tab.title', 'sidebar.right.tab.menu.item',
+      'sidebar.right.tab.icon', 'sidebar.right.viewer.icon',
+      'sidebar.right.tab.settings', 'sidebar.right.viewer.settings',
     ])
     expect(seat('sidebar.right.pane.tab').children).toMatchObject({ 'sidebar.right.tab.guide': { kind: 'chain', scope: 'session' } })
     // Both seats read one store: the button only needs to know whether the panel is expanded.
@@ -205,6 +227,7 @@ describe('ui-sidebar-right apply', () => {
     expect(instance.getSnapshot().bySession[SESSION]?.layout.tabs[guide.id]).toBeDefined()
     expect(ctx.get('sidebarRight')).toBeUndefined()
     expect(ctx.get('sidebarRightTabs')).toBeUndefined()
+    expect(ctx.get('sidebarRightPreferences')).toBeUndefined()
     expect(registered).toEqual([])
     expect(dictionaries.size).toBe(0)
     await ctx.plugin({ inject: [...inject], apply }).await()

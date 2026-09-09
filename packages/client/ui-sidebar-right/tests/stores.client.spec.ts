@@ -32,6 +32,14 @@ function harness() {
   return { instance, actions: instance.actions, surface, layout, entries, guide }
 }
 
+describe('createSidebarRightStore — global defaults', () => {
+  it('seeds only the right surface of a fresh non-persisted Session as expanded', () => {
+    const instance = createSidebarRightStore(() => 'Start', undefined, undefined, () => true).create('fresh')
+    expect(instance.getSnapshot().bySession['fresh']?.layout.expanded).toBe(true)
+    expect(instance.getSnapshot().bySession['fresh']?.bottom.layout.expanded).toBe(false)
+  })
+})
+
 describe('createSidebarRightStore — the sequence', () => {
   it.each(['left', 'right'] as const)('splits one pane at its %s edge and records the tab move as one reversible intent', (zone) => {
     const { actions, layout, entries, guide } = harness()

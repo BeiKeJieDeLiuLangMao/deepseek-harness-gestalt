@@ -38,6 +38,7 @@ function harness() {
   const result = Promise.resolve('tab-result' as TabId)
   const navigator = {
     openResourceIn: vi.fn(() => result), openTabIn: vi.fn(() => result), closeIn: vi.fn(() => Promise.resolve()),
+    updateIn: vi.fn(),
   } satisfies
     SidebarRightNavigator & Record<string, ReturnType<typeof vi.fn>>
   const pin = vi.fn<(address: string, signal: AbortSignal) => void>()

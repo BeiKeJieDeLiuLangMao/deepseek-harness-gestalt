@@ -55,6 +55,8 @@ export interface OpenContentIntent {
   readonly index?: number
   readonly replaceTab?: TabId
   readonly revealIfOpened?: boolean
+  /** Whether placement focuses and expands the target surface; defaults to true. */
+  readonly activate?: boolean
   readonly payload?: SidebarRightTabPayload
   readonly pin?: SidebarRightTabPin
   /** Reset reversible history around runtime-owned resource creation. */
@@ -130,15 +132,17 @@ function counting(from: number): { mint: Mint; used: () => number } {
 /**
  * Create a Session workbench with independent right and bottom layouts.
  * @param seedTitle - localized title for each initial guide tab.
+ * @param expanded - whether the fresh right surface starts expanded.
  * @returns the fresh state with a shared id cursor.
  */
-export function createSurface(seedTitle: () => string): SurfaceState {
+export function createSurface(seedTitle: () => string, expanded = false): SurfaceState {
   const counter = counting(0)
   const make = (): DockSurfaceState => ({
     layout: createInitialState({ next: counter.mint }, id => makeGuideTab(id, seedTitle())),
     history: EMPTY_HISTORY,
   })
-  const right = make()
+  const created = make()
+  const right = { ...created, layout: { ...created.layout, expanded } }
   return {
     ...right,
     bottom: make(),
@@ -195,6 +199,16 @@ function planFocusTab(state: LayoutState, tabId: TabId): readonly LayoutOp[] {
 
 function planFocusPane(state: LayoutState, paneId: PaneId): readonly LayoutOp[] {
   return state.activePaneId === paneId ? [] : [{ type: 'focusPane', paneId }]
+}
+
+/** Preserve every pane's selection and the global focus around an inactive open. */
+function restoreFocus(state: LayoutState): LayoutOp {
+  const paneActiveTabs = Object.fromEntries(
+    Object.values(state.nodes)
+      .filter(node => node.kind === 'pane')
+      .map(pane => [pane.id, pane.activeTabId]),
+  ) as Readonly<Record<PaneId, TabId | undefined>>
+  return { type: 'restoreFocus', activePaneId: state.activePaneId, floats: state.floats, paneActiveTabs }
 }
 
 function arriving(
@@ -330,7 +344,7 @@ function actionTable(seedTitle: () => string): SidebarRightActions {
         let settledTab: TabId | undefined
         let next = advance(s, surface, (state, mint) => {
           const { kind, contentId, title, replaceTab: replace } = intent
-          const ops: LayoutOp[] = [...planSetExpanded(state, true)]
+          const ops: LayoutOp[] = intent.activate === false ? [] : [...planSetExpanded(state, true)]
           const replaced = replace === undefined || state.tabs[replace] === undefined ? undefined : findTabPane(state, replace)
           const lent = replaced?.host === 'dock' ? replaced : undefined
           const paneId = lent?.id ?? intent.paneId
@@ -347,6 +361,7 @@ function actionTable(seedTitle: () => string): SidebarRightActions {
               ...intent.revealIfOpened === undefined ? {} : { revealIfOpened: intent.revealIfOpened },
             })
           ops.push(...planned.ops)
+          if (intent.activate === false) ops.push(restoreFocus(state))
           if (replace !== undefined && state.tabs[replace] !== undefined && replace !== planned.tabId) {
             ops.push({ type: 'closeTab', tabId: replace })
           }
@@ -523,12 +538,14 @@ export type SidebarRightStoreCreated = (
  * @param seedTitle - localized guide title read when a pane is minted.
  * @param persistence - versioned durable adapter; omitted in isolated tests.
  * @param created - adoption callback for each new scoped instance.
+ * @param seedExpanded - whether a newly materialized, non-persisted wide Session starts open.
  * @returns the handle registered by both official surface seats.
  */
 export function createSidebarRightStore(
   seedTitle: () => string,
   persistence?: SidebarWorkbenchPersistence,
   created?: SidebarRightStoreCreated,
+  seedExpanded: () => boolean = () => false,
 ): EngineStoreHandle<SidebarRightState, SidebarRightActions> {
   const spec = { init: (): SidebarRightState => ({ bySession: {} }), actions: actionTable(seedTitle) }
   const base = defineStore(spec)
@@ -542,7 +559,7 @@ export function createSidebarRightStore(
       }
       const instance = base.create()
       if (scopeKey !== undefined) {
-        const initial = persistence?.load(scopeKey, seedTitle) ?? createSurface(seedTitle)
+        const initial = persistence?.load(scopeKey, seedTitle) ?? createSurface(seedTitle, seedExpanded())
         instance.store.set({ bySession: { [scopeKey]: initial } })
         instance.subscribe(() => {
           const surface = instance.getSnapshot().bySession[scopeKey]

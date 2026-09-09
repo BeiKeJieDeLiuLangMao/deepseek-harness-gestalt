@@ -3,7 +3,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { createSidebarRightController } from '../src/client/service.ts'
-import { SidebarRightTabRegistry } from '../src/client/tab-registry.ts'
+import { SidebarRightTabRegistry, type SidebarRightTabCreateRequest } from '../src/client/tab-registry.ts'
 import { createSidebarRightStore } from '../src/client/stores.ts'
 import { guideDefinition } from '../src/client/tabs/guide/definition.ts'
 import { SidebarRightCloseCoordinator } from '../src/client/close-coordinator.ts'
@@ -99,6 +99,96 @@ describe('official workbench foundation', () => {
     expect(controller.getSnapshot().mountedSessionId).toBe(SESSION)
     release()
     expect(controller.getSnapshot().mountedSessionId).toBeUndefined()
+  })
+
+  it('settles a descriptor-created identity and payload from pure Session facts', async () => {
+    const { controller, tabs } = harness()
+    const create = vi.fn((request: SidebarRightTabCreateRequest) => {
+      expect(request).not.toHaveProperty('ctx')
+      expect(request).not.toHaveProperty('store')
+      expect(request.sessionId).toBe(SESSION)
+      expect(request.preferences.workspaceFence).toBe(true)
+      return {
+        contentId: 'runtime://terminal/owned',
+        title: 'zsh',
+        payload: { terminalId: 'owned', shell: 'zsh' },
+      }
+    })
+    tabs.register({ id: 'spec/runtime', kind: 'terminal', title: () => 'Terminal', create })
+    const opened = await controller.forSession(SESSION).openTab('terminal', { instanceId: 'request' })
+    const projected = controller.getSnapshot().sessions[0]?.tabs.find(tab => tab.record.id === opened)
+    expect(projected).toMatchObject({
+      record: { contentId: 'runtime://terminal/owned', title: 'zsh' },
+      state: { payload: { terminalId: 'owned', shell: 'zsh' } },
+    })
+    expect(create).toHaveBeenCalledOnce()
+  })
+
+  it('opens one lifecycle occurrence and activates it on dedupe and tab-strip focus', async () => {
+    const { controller, tabs, store } = harness()
+    const onOpen = vi.fn()
+    const onActivate = vi.fn()
+    tabs.register({
+      id: 'spec/terminal',
+      kind: 'terminal',
+      title: () => 'Terminal',
+      dedupeKey: tab => (tab.payload as { terminalId?: string } | undefined)?.terminalId,
+      onOpen,
+      onActivate,
+    })
+    const target = controller.forSession(SESSION)
+    const first = await target.openTab('terminal', { instanceId: 'first', payload: { terminalId: 'shared' } })
+    const second = await target.openTab('terminal', { instanceId: 'second', payload: { terminalId: 'shared' } })
+    expect(second).toBe(first)
+    expect(controller.getSnapshot().sessions[0]?.tabs.filter(tab => tab.record.kind === 'terminal')).toHaveLength(1)
+    expect(onOpen).toHaveBeenCalledOnce()
+    expect(onOpen.mock.calls[0]?.[0]).toMatchObject({ id: first, payload: { terminalId: 'shared' } })
+    expect(onOpen.mock.calls[0]?.[1]).toMatchObject({ sessionId: SESSION })
+    expect(onActivate).toHaveBeenCalledOnce()
+
+    const instance = store.create(SESSION)
+    const release = controller.bind({
+      sessionId: SESSION,
+      actions: instance.actions,
+      surfaces: instance.getSnapshot().bySession,
+      canSplitPane: () => true,
+    })
+    controller.focus(first)
+    expect(onOpen).toHaveBeenCalledOnce()
+    expect(onActivate).toHaveBeenCalledTimes(2)
+    expect(onActivate.mock.calls[1]?.[0]).toMatchObject({ id: first, payload: { terminalId: 'shared' } })
+    release()
+  })
+
+  it('restores a cold occurrence without taking focus or expanding the surface', async () => {
+    const { controller, tabs } = harness()
+    const onOpen = vi.fn()
+    const onActivate = vi.fn()
+    tabs.register({ id: 'spec/sidechat', kind: 'sidechat', title: () => 'Side Chat', onOpen, onActivate })
+    const target = controller.forSession(SESSION)
+    const before = controller.getSnapshot().sessions[0]!
+    const activeGuide = before.tabs.find(tab => tab.surface === 'right' && tab.active)!.record.id
+
+    const restored = await target.openTab('sidechat', { instanceId: 'child', activate: false })
+    const after = controller.getSnapshot().sessions[0]!
+    expect(after.rightExpanded).toBe(false)
+    expect(after.tabs.find(tab => tab.surface === 'right' && tab.active)?.record.id).toBe(activeGuide)
+    expect(after.tabs.find(tab => tab.record.id === restored)).toBeDefined()
+    expect(onOpen).toHaveBeenCalledOnce()
+    expect(onActivate).not.toHaveBeenCalled()
+
+    expect(await target.openTab('sidechat', { instanceId: 'child', activate: false })).toBe(restored)
+    expect(onOpen).toHaveBeenCalledOnce()
+    expect(onActivate).not.toHaveBeenCalled()
+  })
+
+  it('refuses descriptor creation before mutating the official surfaces', async () => {
+    const { controller, tabs } = harness()
+    tabs.register({ id: 'spec/refuse', kind: 'refuse', title: () => 'Refuse', create: () => false })
+    const target = controller.forSession(SESSION)
+    const before = controller.getSnapshot().sessions[0]?.tabs.map(tab => tab.record.id)
+    await expect(target.openTab('refuse')).rejects.toThrow('refused creation')
+    expect(controller.getSnapshot().sessions[0]?.tabs.map(tab => tab.record.id)).toEqual(before)
   })
 
   it('cancels a replacement before mutation when close admission refuses it', async () => {

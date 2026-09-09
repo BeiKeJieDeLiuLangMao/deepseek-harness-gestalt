@@ -60,6 +60,7 @@ type LayoutActions = {
   setViewportWidth: (draft: LayoutState, width: number) => void
   setViewportHeight: (draft: LayoutState, height: number) => void
   setRightbar: (draft: LayoutState, px: number) => void
+  seedRightbar: (draft: LayoutState, px: number) => void
   openRightbar: (draft: LayoutState, track: boolean, fullscreen: boolean) => void
   closeRightbar: (draft: LayoutState) => void
   openBottombar: (draft: LayoutState, height: number, fullscreen: boolean) => void
@@ -120,6 +121,10 @@ export function createLayoutStore(): EngineStoreHandle<LayoutState, LayoutAction
       },
       setRightbar: (d, px: number) => {
         d.rightbarInstant = false
+        d.rightbar = clampWidth(px, RIGHTBAR_MIN, Math.max(RIGHTBAR_MIN, d.viewportWidth * RIGHTBAR_MAX_RATIO))
+      },
+      seedRightbar: (d, px: number) => {
+        if (d.rightbar !== null) return
         d.rightbar = clampWidth(px, RIGHTBAR_MIN, Math.max(RIGHTBAR_MIN, d.viewportWidth * RIGHTBAR_MAX_RATIO))
       },
       openRightbar: (d, track: boolean, fullscreen: boolean) => {
