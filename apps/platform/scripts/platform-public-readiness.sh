@@ -62,10 +62,12 @@ NODE
 }
 
 platform_membership_ready() {
-  local body="$1" expected="${PLATFORM_MEMBERSHIP_BACKEND:-file}" deletion=false
-  if [ "$expected" = postgres ]; then deletion=true; fi
-  printf '%s' "$body" | grep -Fq '"membershipStorage":"'"$expected"'"' \
-    && printf '%s' "$body" | grep -Fq '"accountDeletion":'"$deletion"
+  node --eval '
+    const body = JSON.parse(process.argv[1])
+    const expected = process.argv[2]
+    process.exit(body.ok === true && body.membershipStorage === expected
+      && body.accountDeletion === (expected === "postgres") ? 0 : 1)
+  ' "$1" "${PLATFORM_MEMBERSHIP_BACKEND:-file}"
 }
 
 platform_public_readiness() {

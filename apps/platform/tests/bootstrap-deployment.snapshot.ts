@@ -16,6 +16,7 @@ describe('Platform bootstrap deployment entry snapshot', () => {
       'BASH_ENV=/dev/null',
       'export BASH_ENV',
       'node() {',
+      '  if [ "$1" = --eval ]; then command node "$@"; return; fi',
       '  address="${@: -1}"',
       '  origin="${@: -2:1}"',
       '  case "$address" in',

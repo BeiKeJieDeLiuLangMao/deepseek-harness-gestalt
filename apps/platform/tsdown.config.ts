@@ -1,7 +1,7 @@
 import { defineConfig } from 'tsdown'
 
 export default defineConfig({
-  entry: ['src/boot.ts', 'src/attachment-storage-cutover-cli.ts', 'src/oss-lifecycle-cli.ts', 'src/membership-cutover-cli.ts'],
+  entry: ['src/boot.ts', 'src/attachment-storage-cutover-cli.ts', 'src/oss-lifecycle-cli.ts', 'src/membership-cutover-cli.ts', 'src/membership-maintenance-cli.ts'],
   outDir: 'dist',
   format: ['esm'],
   platform: 'node',

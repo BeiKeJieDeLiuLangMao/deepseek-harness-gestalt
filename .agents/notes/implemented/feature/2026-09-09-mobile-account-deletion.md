@@ -4,6 +4,10 @@ Status: implemented
 
 English | [中文](2026-09-09-mobile-account-deletion.zh.md)
 
+The first operated cutover uses an explicit Platform Deploy mode with the existing release candidate, Environment, OIDC and Cloud Assistant checks. A stable private record binds the candidate, approved source, ordered instances and finite phase; private host records additionally bind predecessor container generations, restart policies and runtime configuration digests. Both file writers stop before capture or import. A changeset or nonempty second source rejects instead of selecting an arbitrary corpus. The imported PostgreSQL document is text, so the independent source marker and current UTF-8 bytes match the approved source before any Platform boot. Once PostgreSQL writers can run, resumption retains that authority and never restores the initial file snapshot. Global maintenance deadlines also bound interrupted runs; expired or foreign transactions remain inspectable without automatic file rollback.
+
+A timed-out Docker client does not stop a daemon-owned CLI. Maintenance commands therefore retain their own container identity before startup and prove exit before disposal; unresolved cleanup blocks continuation. SQL deadlines are transaction-local and refreshed from the absolute deadline before each statement, including commit, so a blocked import cannot continue writing after the operator budget. Re-entry verifies both live file sources before any first import; once PostgreSQL execution is possible, failure retains that authority instead of reviving old file writers.
+
 ## Problem
 
 Current-installation sign-out and selected Personal Pairing revocation leave a durable Platform Account and associated personal records. Account deletion also crosses PostgreSQL, attachment object storage, shared membership authority and installation-local storage, whose failures cannot share one atomic commit. [Issue #636](https://github.com/gestaltrun/deepseek-harness-gestalt/issues/636) owns this feature.

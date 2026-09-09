@@ -149,6 +149,7 @@ function runPublicReadinessHarness(
     'instance_ids=(i-first123 i-second456)',
     'READINESS_COUNTER=$(mktemp)',
     'node() {',
+    '  if [ "$1" = --eval ]; then command node "$@"; return; fi',
     '  endpoint="${@: -1}"',
     '  [ "$READINESS_RESULT" != unreachable ] && [ "$READINESS_RESULT" != redirect ] || return 22',
     '  if [ -n "$BOOTSTRAP_EIPS" ]; then printf \'ENDPOINT:%s\\n\' "$endpoint" >&2; fi',
@@ -670,8 +671,8 @@ describe('production and deploy names', () => {
       { membershipStorage: 'postgres', accountDeletion: false },
       { membershipStorage: 'postgres' },
     ]) expect(runMembershipCheck(JSON.stringify(body), 'postgres', check).status).not.toBe(0)
-    expect(runMembershipCheck(JSON.stringify({ membershipStorage: 'postgres', accountDeletion: true }), 'postgres', check).status).toBe(0)
-    expect(runMembershipCheck(JSON.stringify({ membershipStorage: 'file', accountDeletion: false }), 'file', check).status).toBe(0)
+    expect(runMembershipCheck(JSON.stringify({ ok: true, membershipStorage: 'postgres', accountDeletion: true }), 'postgres', check).status).toBe(0)
+    expect(runMembershipCheck(JSON.stringify({ ok: true, membershipStorage: 'file', accountDeletion: false }), 'file', check).status).toBe(0)
     expect(runMembershipCheck(JSON.stringify({ membershipStorage: 'file', accountDeletion: true }), 'file', check).status).not.toBe(0)
   })
 
@@ -1102,7 +1103,7 @@ describe('Platform release workflows', () => {
     const targetCheck = steps(validate).find(step => typeof step.run === 'string'
       && step.run.includes('ListServerGroupServers'))
     expect(String(targetCheck?.run)).toContain('.TotalCount == 2 and (.Servers | length) == 2')
-    expect(String(targetCheck?.run)).toContain('.Port == 80 and ($bootstrap or .Status == "Available")')
+    expect(String(targetCheck?.run)).toContain('.Port == 80 and ($bootstrap or $membership_cutover or .Status == "Available")')
     const recoverWorkflowSource = String(steps(recover).find(step => typeof step.run === 'string'
       && step.run.includes('platform-recover.sh'))?.run)
     expect(recoverWorkflowSource.trim()).toBe('bash apps/platform/scripts/platform-recover.sh')

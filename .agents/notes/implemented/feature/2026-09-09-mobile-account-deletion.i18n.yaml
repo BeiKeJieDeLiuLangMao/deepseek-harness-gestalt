@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-09-mobile-account-deletion.md
-2026-09-09-mobile-account-deletion.md: f377d56cc0be31fe7010cc18b7ec4f70086f3bcb
-2026-09-09-mobile-account-deletion.zh.md: ddd88d89489ebc541ec3b5baa95a299703d1a8f3
+2026-09-09-mobile-account-deletion.md: 96b0118e7b8793e3cbf54691d7bdf1f4a4cb4186
+2026-09-09-mobile-account-deletion.zh.md: 8d69b46f1bca3f1d2095f795414be5926d60b747
