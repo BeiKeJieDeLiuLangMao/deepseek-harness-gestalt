@@ -175,6 +175,7 @@
       "out/operated-platform.json",
       "out/boot.html",
       "out/sub2api-sources.json",
+      "out/cliproxyapi-source.json",
       "cordis.patch.yml",
       "package.json"
     ],

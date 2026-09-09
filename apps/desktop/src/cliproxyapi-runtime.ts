@@ -8,7 +8,6 @@ import { promisify } from 'node:util'
 
 const execFileAsync = promisify(execFile)
 const PROVIDER_ID = 'gestalt-account-pool'
-const CLIPROXYAPI_SOURCE_SHA = '7fac6b15bcfe5ea55c18c9eaec8e5b7e6457d974'
 const READINESS_INTERVAL_MS = 50
 
 /** Identity recorded beside one packaged CLIProxyAPI executable. */
@@ -46,16 +45,22 @@ export interface CLIProxyAPISupervisorOptions {
   readonly afterPortReservation?: (port: number) => void | Promise<void>
   /** Resolve OS listener owners; omission uses the supported platform inspector. */
   readonly listenerOwners?: (port: number) => Promise<ReadonlySet<number>>
+  /** Grace period before an owned process tree receives forced termination. */
+  readonly stopGraceMs?: number
+  /** Publish each ready inference generation and its withdrawal. */
+  readonly onCapability?: (capability: CLIProxyAPIInferenceCapability | undefined) => void | Promise<void>
 }
 
 /** Resolve and verify one packaged CLIProxyAPI resource. */
 export async function verifyCLIProxyAPIResource(
   resourceDirectory: string,
+  expectedSourceSHA: string,
   manifestPath = join(resourceDirectory, 'manifest.json'),
 ): Promise<string> {
+  if (!/^[0-9a-f]{40}$/u.test(expectedSourceSHA)) throw new Error('CLIProxyAPI expected source identity is invalid')
   const manifest = parseManifest(JSON.parse(await readFile(manifestPath, 'utf8')) as unknown)
-  if (manifest.sourceSHA !== CLIPROXYAPI_SOURCE_SHA) {
-    throw new Error(`CLIProxyAPI resource source is ${manifest.sourceSHA}, expected ${CLIPROXYAPI_SOURCE_SHA}`)
+  if (manifest.sourceSHA !== expectedSourceSHA) {
+    throw new Error(`CLIProxyAPI resource source is ${manifest.sourceSHA}, expected ${expectedSourceSHA}`)
   }
   if (manifest.platform !== process.platform || manifest.arch !== process.arch) {
     throw new Error(`CLIProxyAPI resource targets ${manifest.platform}/${manifest.arch}, not ${process.platform}/${process.arch}`)
@@ -89,6 +94,9 @@ export class CLIProxyAPISupervisor {
     if (!Number.isSafeInteger(options.restartLimit) || options.restartLimit < 0) {
       throw new TypeError('CLIProxyAPI restartLimit must be a non-negative safe integer')
     }
+    if (options.stopGraceMs !== undefined && (!Number.isSafeInteger(options.stopGraceMs) || options.stopGraceMs <= 0)) {
+      throw new TypeError('CLIProxyAPI stopGraceMs must be a positive safe integer')
+    }
   }
 
   /** Start or join the current generation. */
@@ -105,6 +113,7 @@ export class CLIProxyAPISupervisor {
         return
       }
       this.current = running
+      void Promise.resolve(this.options.onCapability?.(running.capability)).catch(() => running.stop())
       void running.exited.then(() => this.onExit(running))
     }, () => { this.pending = undefined })
     return task
@@ -126,6 +135,7 @@ export class CLIProxyAPISupervisor {
     const running = this.current
     this.current = undefined
     this.shutdownTask = Promise.resolve().then(async () => {
+      await this.options.onCapability?.(undefined)
       const admitted = await pending?.catch(() => undefined)
       await Promise.all([running, admitted].flatMap(value => value === undefined ? [] : [value.stop()]))
       await rm(this.options.stateRoot, { recursive: true, force: true })
@@ -136,6 +146,11 @@ export class CLIProxyAPISupervisor {
   private async onExit(running: RunningCLIProxyAPI): Promise<void> {
     if (this.current !== running) return
     this.current = undefined
+    try {
+      await this.options.onCapability?.(undefined)
+    } catch {
+      // Withdrawal failure cannot restore the exited core; recovery still owns the next generation.
+    }
     if (this.shutdownTask !== undefined || this.restartCount >= this.options.restartLimit) return
     this.restartCount += 1
     await this.start().catch(() => undefined)
@@ -152,6 +167,7 @@ export class CLIProxyAPISupervisor {
     const configPath = join(root, 'config.yaml')
     await mkdir(authDir, { recursive: true, mode: 0o700 })
     await mkdir(logDir, { recursive: true, mode: 0o700 })
+    await mkdir(join(root, 'tmp'), { recursive: true, mode: 0o700 })
     const managementKey = randomBytes(32).toString('base64url')
     const inferenceKey = randomBytes(32).toString('base64url')
     await writeFile(configPath, coreConfig(port, authDir, logDir, managementKey, inferenceKey), { mode: 0o600 })
@@ -159,7 +175,7 @@ export class CLIProxyAPISupervisor {
     const binary = resolve(this.options.binary)
     const child = spawn(binary, ['--config', configPath], {
       cwd: root,
-      env: credentialSafeEnvironment(process.env),
+      env: credentialSafeEnvironment(process.env, root),
       stdio: ['ignore', 'ignore', 'pipe'],
       detached: process.platform !== 'win32',
     })
@@ -168,7 +184,7 @@ export class CLIProxyAPISupervisor {
       child.once('exit', (code, signal) => onResolve(Object.freeze({ code, signal })))
     })
     let stopTask: Promise<void> | undefined
-    const stop = (): Promise<void> => stopTask ??= stopProcessTree(child, exited)
+    const stop = (): Promise<void> => stopTask ??= stopProcessTree(child, exited, this.options.stopGraceMs ?? 2_000)
     try {
       await waitForReady({
         child, exited, stop, port, inferenceKey,
@@ -216,11 +232,14 @@ function coreConfig(port: number, authDir: string, logDir: string, managementKey
   ].join('\n')
 }
 
-function credentialSafeEnvironment(environment: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+function credentialSafeEnvironment(environment: NodeJS.ProcessEnv, privateHome: string): NodeJS.ProcessEnv {
   const allowed = process.platform === 'win32'
-    ? ['SystemRoot', 'WINDIR', 'COMSPEC', 'PATHEXT', 'TEMP', 'TMP']
-    : ['PATH', 'HOME', 'USER', 'TMPDIR', 'LANG', 'LC_ALL', 'SSL_CERT_FILE', 'SSL_CERT_DIR']
-  return Object.fromEntries(allowed.flatMap(name => environment[name] === undefined ? [] : [[name, environment[name]]]))
+    ? ['SystemRoot', 'WINDIR', 'COMSPEC', 'PATHEXT']
+    : ['PATH', 'LANG', 'LC_ALL', 'SSL_CERT_FILE', 'SSL_CERT_DIR']
+  const retained = Object.fromEntries(allowed.flatMap(name => environment[name] === undefined ? [] : [[name, environment[name]]]))
+  return process.platform === 'win32'
+    ? { ...retained, USERPROFILE: privateHome, HOME: privateHome, TEMP: join(privateHome, 'tmp'), TMP: join(privateHome, 'tmp') }
+    : { ...retained, HOME: privateHome, TMPDIR: join(privateHome, 'tmp') }
 }
 
 async function reserveLoopbackPort(): Promise<number> {
@@ -303,6 +322,7 @@ function numericLines(output: string): ReadonlySet<number> {
 async function stopProcessTree(
   child: ChildProcess,
   exited: Promise<{ code: number | null; signal: NodeJS.Signals | null }>,
+  graceMs: number,
 ): Promise<void> {
   if (child.exitCode !== null || child.signalCode !== null) {
     await exited
@@ -310,7 +330,24 @@ async function stopProcessTree(
   }
   const pid = child.pid
   if (pid === undefined) throw new Error('CLIProxyAPI child has no process id')
-  if (process.platform === 'win32') await execFileAsync('taskkill', ['/pid', String(pid), '/t', '/f'])
-  else process.kill(-pid, 'SIGTERM')
+  if (process.platform === 'win32') {
+    await execFileAsync('taskkill', ['/pid', String(pid), '/t'])
+    if (!await settlesWithin(exited, graceMs)) await execFileAsync('taskkill', ['/pid', String(pid), '/t', '/f'])
+  } else {
+    process.kill(-pid, 'SIGTERM')
+    if (!await settlesWithin(exited, graceMs)) process.kill(-pid, 'SIGKILL')
+  }
   await exited
+}
+
+async function settlesWithin(promise: Promise<unknown>, timeoutMs: number): Promise<boolean> {
+  let timer: NodeJS.Timeout | undefined
+  try {
+    return await Promise.race([
+      promise.then(() => true, () => true),
+      new Promise<boolean>((resolve) => { timer = setTimeout(() => resolve(false), timeoutMs) }),
+    ])
+  } finally {
+    if (timer !== undefined) clearTimeout(timer)
+  }
 }

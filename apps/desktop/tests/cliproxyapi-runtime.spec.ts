@@ -20,14 +20,14 @@ describe('CLIProxyAPI packaged resource', () => {
       sourceSHA: '7fac6b15bcfe5ea55c18c9eaec8e5b7e6457d974', platform: process.platform, arch: process.arch,
       path: 'cliproxyapi', sha256: createHash('sha256').update('binary').digest('hex'),
     }))
-    await expect(verifyCLIProxyAPIResource(directory)).resolves.toBe(join(directory, 'cliproxyapi'))
+    await expect(verifyCLIProxyAPIResource(directory, '7fac6b15bcfe5ea55c18c9eaec8e5b7e6457d974')).resolves.toBe(join(directory, 'cliproxyapi'))
     const manifestPath = join(directory, 'manifest.json')
     const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as { sourceSHA: string }
     await writeFile(manifestPath, JSON.stringify({ ...manifest, sourceSHA: '0'.repeat(40) }))
-    await expect(verifyCLIProxyAPIResource(directory)).rejects.toThrow(/resource source/)
+    await expect(verifyCLIProxyAPIResource(directory, '7fac6b15bcfe5ea55c18c9eaec8e5b7e6457d974')).rejects.toThrow(/resource source/)
     await writeFile(manifestPath, JSON.stringify({ ...manifest }))
     await writeFile(join(directory, 'cliproxyapi'), 'changed')
-    await expect(verifyCLIProxyAPIResource(directory)).rejects.toThrow(/SHA-256/)
+    await expect(verifyCLIProxyAPIResource(directory, '7fac6b15bcfe5ea55c18c9eaec8e5b7e6457d974')).rejects.toThrow(/SHA-256/)
   })
 })
 
@@ -87,7 +87,9 @@ describe('CLIProxyAPI supervisor', () => {
       })
       await supervisor.start()
       const childObservation = JSON.parse(await readFile(observed, 'utf8')) as Record<string, unknown>
-      expect(childObservation).toEqual({ cwdHasDotenv: false })
+      expect(childObservation).toMatchObject({ cwdHasDotenv: false })
+      expect(childObservation.HOME).toContain(join('state', ''))
+      expect(childObservation.HOME).not.toBe(process.env.HOME)
       await supervisor.shutdown()
     } finally {
       process.chdir(previousCwd)
@@ -96,6 +98,40 @@ describe('CLIProxyAPI supervisor', () => {
       restoreEnvironment('OBJECTSTORE_URL', previous.OBJECTSTORE_URL)
       restoreEnvironment('PROVIDER_CONFIG', previous.PROVIDER_CONFIG)
     }
+  })
+
+  it('publishes replacement capabilities with new ports and keys', async () => {
+    const root = await scratch()
+    const executable = join(root, 'replacement-fixture.mjs')
+    await writeFile(executable, fixtureSource())
+    await chmod(executable, 0o755)
+    const observed: Array<{ baseURL: string; apiKey: string } | undefined> = []
+    const supervisor = new CLIProxyAPISupervisor({
+      binary: executable, stateRoot: join(root, 'state'), startupTimeoutMs: 5_000, restartLimit: 0,
+      onCapability: (capability) => { observed.push(capability) },
+    })
+    const first = await supervisor.start()
+    const second = await supervisor.restart()
+    expect(second.capability.baseURL).not.toBe(first.capability.baseURL)
+    expect(second.capability.apiKey).not.toBe(first.capability.apiKey)
+    expect(observed.filter(Boolean)).toEqual([first.capability, second.capability])
+    await supervisor.shutdown()
+    expect(observed.at(-1)).toBeUndefined()
+  })
+
+  it('forces only its owned child after the graceful-stop bound', async () => {
+    const root = await scratch()
+    const executable = join(root, 'stubborn-fixture.mjs')
+    await writeFile(executable, fixtureSource(0, '', "process.on('SIGTERM', () => {})"))
+    await chmod(executable, 0o755)
+    const supervisor = new CLIProxyAPISupervisor({
+      binary: executable, stateRoot: join(root, 'state'), startupTimeoutMs: 5_000, restartLimit: 0, stopGraceMs: 50,
+    })
+    const running = await supervisor.start()
+    const startedAt = Date.now()
+    await supervisor.shutdown()
+    expect(Date.now() - startedAt).toBeLessThan(2_000)
+    await expect(running.exited).resolves.toMatchObject({ signal: 'SIGKILL' })
   })
 
   it('uses isolated state, proves authenticated readiness, and reaches quiescence', async () => {
@@ -146,10 +182,11 @@ writeFileSync(${JSON.stringify(observed)}, JSON.stringify({
   GITSTORE_REPO: process.env.GITSTORE_REPO,
   OBJECTSTORE_URL: process.env.OBJECTSTORE_URL,
   PROVIDER_CONFIG: process.env.PROVIDER_CONFIG,
+  HOME: process.env.HOME,
 }))`)
 }
 
-function fixtureSource(delayMs = 0, prelude = ''): string {
+function fixtureSource(delayMs = 0, prelude = '', signalHandler = "process.on('SIGTERM', () => server.close(() => process.exit(0)))"): string {
   return `#!/usr/bin/env node
 import { readFileSync } from 'node:fs'
 import { createServer } from 'node:http'
@@ -163,6 +200,6 @@ const server = createServer((request, response) => {
   response.setHeader('content-type', 'application/json'); response.end(JSON.stringify({ data: [] }))
 })
 setTimeout(() => server.listen(port, '127.0.0.1'), ${String(delayMs)})
-process.on('SIGTERM', () => server.close(() => process.exit(0)))
+${signalHandler}
 `
 }

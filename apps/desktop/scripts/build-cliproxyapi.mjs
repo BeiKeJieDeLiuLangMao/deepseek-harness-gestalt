@@ -9,10 +9,14 @@ const here = dirname(fileURLToPath(import.meta.url))
 const desktop = join(here, '..')
 const repository = join(desktop, '..', '..')
 const source = join(repository, 'catalog', 'cliproxyapi')
-const sourceSHA = '7fac6b15bcfe5ea55c18c9eaec8e5b7e6457d974'
+const sourceIdentity = JSON.parse(await readFile(join(desktop, 'cliproxyapi-source.json'), 'utf8'))
+const sourceSHA = sourceIdentity.sourceSHA
+if (typeof sourceSHA !== 'string' || !/^[0-9a-f]{40}$/.test(sourceSHA)) {
+  throw new Error('Desktop CLIProxyAPI source identity is invalid')
+}
 const platform = flag('--platform') ?? process.platform
 const arch = flag('--arch') ?? process.arch
-const go = process.env.GO ?? '/opt/homebrew/bin/go'
+const go = process.env.GO ?? 'go'
 const target = targetOf(platform, arch)
 const outputDir = join(desktop, 'resources', 'cliproxyapi')
 const binaryName = platform === 'win32' ? 'cliproxyapi.exe' : 'cliproxyapi'

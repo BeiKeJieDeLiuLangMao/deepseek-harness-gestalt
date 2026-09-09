@@ -238,6 +238,9 @@ importers:
       '@deepseek-ai/dsh-launch-environment':
         specifier: workspace:^
         version: link:../../packages/util/launch-environment
+      '@deepseek-ai/dsh-llm-gestalt-account-pool':
+        specifier: workspace:^
+        version: link:../../packages/llm/llm-gestalt-account-pool
       '@deepseek-ai/dsh-mcp-client':
         specifier: workspace:^
         version: link:../../packages/mcp/mcp-client
@@ -494,6 +497,9 @@ importers:
       '@deepseek-ai/dsh-home-paths':
         specifier: workspace:^
         version: link:../../packages/util/home-paths
+      '@deepseek-ai/dsh-llm-gestalt-account-pool':
+        specifier: workspace:^
+        version: link:../../packages/llm/llm-gestalt-account-pool
       '@deepseek-ai/dsh-native-command':
         specifier: workspace:^
         version: link:../../packages/util/native-command
@@ -7050,6 +7056,21 @@ importers:
       '@deepseek-ai/dsh-timeout':
         specifier: workspace:^
         version: link:../../util/timeout
+
+  packages/llm/llm-gestalt-account-pool:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-invariants':
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
+      '@deepseek-ai/dsh-llm':
+        specifier: workspace:^
+        version: link:../llm
+      '@deepseek-ai/dsh-llm-deepseek':
+        specifier: workspace:^
+        version: link:../llm-deepseek
 
   packages/llm/llm-pi-ai:
     dependencies:
@@ -23233,7 +23254,7 @@ snapshots:
       '@wdio/native-cdp-bridge': 1.1.0(tsx@4.22.4)
       '@wdio/native-core': 1.1.0(supports-color@8.1.1)(tsx@4.22.4)
       '@wdio/native-types': 2.5.0
-      '@wdio/native-utils': 2.6.0(tsx@4.22.4)
+      '@wdio/native-utils': 2.6.0(supports-color@8.1.1)(tsx@4.22.4)
       compare-versions: 6.1.1
       debug: 4.4.3(supports-color@8.1.1)
       deepmerge-ts: 7.1.6
@@ -23320,7 +23341,7 @@ snapshots:
 
   '@wdio/native-cdp-bridge@1.1.0(tsx@4.22.4)':
     dependencies:
-      '@wdio/native-utils': 2.6.0(tsx@4.22.4)
+      '@wdio/native-utils': 2.6.0(supports-color@8.1.1)(tsx@4.22.4)
       wait-port: 1.1.0
       ws: 8.21.3
     transitivePeerDependencies:
@@ -23359,7 +23380,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@wdio/native-utils@2.6.0(tsx@4.22.4)':
+  '@wdio/native-utils@2.6.0(supports-color@8.1.1)(tsx@4.22.4)':
     dependencies:
       '@wdio/logger': 9.29.1
       debug: 4.4.3(supports-color@8.1.1)

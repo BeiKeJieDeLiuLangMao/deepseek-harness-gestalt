@@ -3,6 +3,7 @@
  * @module @deepseek-ai/dsh-desktop/main
  */
 import { appendFileSync } from 'node:fs'
+import { readFile } from 'node:fs/promises'
 import { hostname } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -135,6 +136,7 @@ const windowPresentation: DesktopWindowPresentation = desktopE2EProfile?.windowP
 let systemFetch: typeof globalThis.fetch
 const PRELOAD = join(here, 'preload.cjs')
 const OPERATED_PLATFORM_CONFIG = join(here, 'operated-platform.json')
+const CLIPROXYAPI_SOURCE_CONFIG = join(here, 'cliproxyapi-source.json')
 
 function smokeLog(line: string): void {
   const file = process.env.DSH_DESKTOP_SMOKE_FILE
@@ -332,7 +334,10 @@ async function boot(): Promise<void> {
       },
     })
     stopSub2ApiEvents = sub2api.subscribe(pushSub2ApiSnapshot)
-    await startCLIProxyAPI()
+    await startCLIProxyAPI().catch((error: unknown) => {
+      console.error('dsh desktop: account pool unavailable', error)
+      smokeLog('cliproxyapi unavailable')
+    })
     installIntegrationsOnce()
     const initialHostStartTimeout = sub2ApiBootHostStartTimeout(sub2api.getSnapshot())
     const startInitialHost = (): Promise<RunningWebHost> =>
@@ -829,6 +834,15 @@ function requestShutdown(exitCode: number, mode: 'exit' | 'allow-quit' = 'exit')
   void desktopShutdown.request(exitCode, mode)
 }
 
+async function readCLIProxyAPISourceSHA(path: string): Promise<string> {
+  const value: unknown = JSON.parse(await readFile(path, 'utf8'))
+  if (value === null || typeof value !== 'object' || !('sourceSHA' in value)
+    || typeof value.sourceSHA !== 'string' || !/^[0-9a-f]{40}$/u.test(value.sourceSHA)) {
+    throw new Error('Desktop CLIProxyAPI source identity is invalid')
+  }
+  return value.sourceSHA
+}
+
 async function startCLIProxyAPI(): Promise<void> {
   const explicit = process.env.DSH_DESKTOP_CLIPROXYAPI_FIXTURE
   if (!app.isPackaged && (explicit === undefined || explicit.length === 0)) return
@@ -838,18 +852,21 @@ async function startCLIProxyAPI(): Promise<void> {
     moduleUrl: import.meta.url,
   })
   const binary = app.isPackaged
-    ? await verifyCLIProxyAPIResource(paths.cliProxyAPI ?? '')
+    ? await verifyCLIProxyAPIResource(paths.cliProxyAPI ?? '', await readCLIProxyAPISourceSHA(CLIPROXYAPI_SOURCE_CONFIG))
     : explicit as string
   const supervisor = new CLIProxyAPISupervisor({
     binary,
     stateRoot: join(app.getPath('userData'), 'gestalt-account-pool', 'runtime'),
     startupTimeoutMs: 15_000,
     restartLimit: 1,
+    onCapability: async (capability) => {
+      cliProxyAPICapability = capability
+      if (host !== undefined && !shuttingDown) await replaceWebHost()
+    },
     fetch: async (input, init) => await net.fetch(input instanceof URL ? input.href : input, init),
   })
   cliProxyAPI = supervisor
   const running = await supervisor.start()
-  cliProxyAPICapability = running.capability
   smokeLog(`cliproxyapi ready pid ${String(running.child.pid)}`)
 }
 

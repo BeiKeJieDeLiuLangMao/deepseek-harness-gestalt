@@ -84,10 +84,16 @@ export function apply(ctx: Context, config: Config): void {
   let published = false
   let disposed = false
   let timer: NodeJS.Timeout | undefined
+  let inFlight: Promise<void> | undefined
+  let controller: AbortController | undefined
   const refresh = async (): Promise<void> => {
+    if (disposed) return
+    const request = new AbortController()
+    controller = request
     try {
       const response = await fetch(new URL('/v1/models', origin), {
         headers: { ...attributionHeaders(), Authorization: `Bearer ${config.apiKey}` },
+        signal: request.signal,
       })
       if (!response.ok) throw new LlmError(`account-pool catalog returned HTTP ${String(response.status)}`, 'PROVIDER_ERROR')
       const body = parseModels(await response.json())
@@ -103,6 +109,12 @@ export function apply(ctx: Context, config: Config): void {
         registration?.replace([PROVIDER])
       }
     } catch (error) {
+      if (disposed || request.signal.aborted) return
+      if (error instanceof LlmError && error.code === 'DUPLICATE_ADAPTER') {
+        disposed = true
+        ctx.logger('llm-gestalt-account-pool').error(error)
+        return
+      }
       if (published) {
         registration?.()
         registration = undefined
@@ -111,13 +123,16 @@ export function apply(ctx: Context, config: Config): void {
       ctx.logger('llm-gestalt-account-pool').warn('model catalog unavailable')
       ctx.logger('llm-gestalt-account-pool').warn(error)
     } finally {
-      if (!disposed) timer = setTimeout(() => { void refresh() }, refreshIntervalMs)
+      if (controller === request) controller = undefined
+      if (!disposed) timer = setTimeout(() => { inFlight = refresh() }, refreshIntervalMs)
     }
   }
-  void refresh()
-  ctx.effect(() => () => {
+  inFlight = refresh()
+  ctx.effect(() => async () => {
     disposed = true
     if (timer !== undefined) clearTimeout(timer)
+    controller?.abort()
+    await inFlight
     registration?.()
   })
 }

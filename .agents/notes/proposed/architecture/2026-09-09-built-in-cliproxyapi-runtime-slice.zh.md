@@ -16,7 +16,9 @@ Desktop 打包从 `catalog/cliproxyapi` gitlink 构建的原生 CLIProxyAPI 可�
 
 监督器会先通过操作系统监听表验证所 spawn 的子进程 PID 拥有所选端口，再通过带认证的 `/v1/models` 端点证明应用 readiness，之后才导出 inference capability。它绝不会把 inference key 发给不属于该子进程的监听者。Management 与 inference key 始终分离。只有 inference 端点与 key 进入 Web Host 子进程环境；renderer 协议、settings、诊断与模型元数据均不接收这些值。
 
-Web Host 插件拥有稳定 route `gestalt-account-pool`。空目录或不可用目录不注册 route；活跃模型列表变化时，它通过原子操作发布或撤回 route，并让 LLM registry 拒绝冲突。Dispose 会停止目录刷新并移除注册。
+Web Host 插件拥有稳定 route `gestalt-account-pool`。空目录或不可用目录不注册 route；活跃模型列表变化时，它通过原子操作发布或撤回 route，并让 LLM registry 拒绝冲突。Dispose 会先中止并等待进行中的目录读取，再移除注册。
+
+每个恢复后的 core 运行代都会把新端点与 inference key 发布给 Host；Host 随后替换 Web Host，因此 provider 无法继续保留上一运行代的权限。关闭会请求终止精确的已 spawn 进程组，在有界宽限期后升级为强制终止，并等待退出。账号池首次启动失败保持为局部不可用，不会阻止 Desktop 其余部分启动。
 
 Host 在 spawn 前预留一个临时 loopback 端口，因为当前 pin 虽然会把 `port: 0` 交给 `net.Listen`，配置对象仍保留零，management 代码无法重建自身 URL。预留关闭后再 spawn 存在有界分配竞争；若其他监听者抢占端口，启动会失败，但不会终止或复用该进程。
 
@@ -32,7 +34,7 @@ Host 在 spawn 前预留一个临时 loopback 端口，因为当前 pin 虽然�
 
 - 打包可执行文件与 manifest 的源码 SHA、平台、架构、路径和 SHA-256 一致；开发环境必须提供显式 fixture 路径。
 - 配置、auth 文件、日志、management key 和 inference key 始终位于 Desktop 实例的私有 state root 下；子进程 cwd 与环境白名单会阻止外部 `.env`、storage 配置、CLIProxyAPI 或 Sub2API 状态进入启动过程。
-- Capability 发布前必须同时完成操作系统层的子进程 PID 监听归属验证与认证 readiness；关闭会取消恢复、等待精确进程组退出、移除生成状态，并保持无关监听者不变。
+- Capability 发布前必须同时完成操作系统层的子进程 PID 监听归属验证与认证 readiness；恢复会替换 Host capability 与 Web Host 运行代；关闭会取消恢复，对精确进程组执行有界优雅终止与强制终止、移除生成状态，并保持无关监听者不变。
 - `gestalt-account-pool` 仅在实时模型目录非空时出现，通过 LLM 通知机制更新，在失败或空结果时撤回，拒绝冲突，并在 dispose 后消失。
 - macOS arm64 从 pin 的 submodule 原生构建并通过真实监督器完成无密钥运行；macOS x64 与 Windows x64 的原生发布 runner 在打包前构建各自目标二进制。
 

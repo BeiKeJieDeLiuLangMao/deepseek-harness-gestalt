@@ -16,7 +16,9 @@ Each Desktop instance generates one private runtime generation below its own `us
 
 The supervisor first verifies through the operating system's listener table that the spawned child PID owns the selected port, then proves application readiness through the authenticated `/v1/models` endpoint before it exports an inference capability. It never sends the inference key to a listener that is not owned by that child. Management and inference keys remain separate. Only the inference endpoint and key enter the Web Host child environment; renderer protocol, settings, diagnostics, and model metadata receive neither value.
 
-The Web Host plugin owns the stable route `gestalt-account-pool`. It registers no route for an empty or unavailable catalog, atomically publishes or withdraws the route when the live model list changes, and lets the LLM registry reject collisions. Disposal stops catalog refresh and removes the registration.
+The Web Host plugin owns the stable route `gestalt-account-pool`. It registers no route for an empty or unavailable catalog, atomically publishes or withdraws the route when the live model list changes, and lets the LLM registry reject collisions. Disposal aborts and joins an in-flight catalog read before it removes the registration.
+
+Each recovered core generation publishes its new endpoint and inference key to the Host, which replaces Web Host so the provider cannot retain the previous generation's authority. Shutdown requests termination of the exact spawned process group, escalates to forced termination after a bounded grace interval, and waits for exit. An initial account-pool failure remains local and does not prevent the rest of Desktop from booting.
 
 The Host reserves an ephemeral loopback port before spawn because the pinned core accepts `port: 0` at `net.Listen` but retains zero in its configuration, preventing management code from reconstructing its own URL. Closing the reservation before spawn leaves a bounded allocation race; a competing listener causes startup to fail without terminating or reusing that process.
 
@@ -32,7 +34,7 @@ The Host reserves an ephemeral loopback port before spawn because the pinned cor
 
 - The packaged executable matches the manifest source SHA, platform, architecture, path, and SHA-256; development requires an explicit fixture path.
 - Config, auth files, logs, management key, and inference key remain below the Desktop instance's private state root; the child cwd and allowlisted environment prevent external `.env`, storage configuration, CLIProxyAPI, or Sub2API state from entering startup.
-- OS listener ownership by the spawned child PID and authenticated readiness both precede capability publication; shutdown cancels recovery, joins the exact process group, removes generated state, and leaves unrelated listeners untouched.
+- OS listener ownership by the spawned child PID and authenticated readiness both precede capability publication; recovery replaces the Host capability and Web Host generation; shutdown cancels recovery, applies bounded graceful and forced termination to the exact process group, removes generated state, and leaves unrelated listeners untouched.
 - `gestalt-account-pool` appears only for a non-empty live model catalog, updates through the LLM notification mechanism, withdraws on failure or empty results, rejects collisions, and disappears on disposal.
 - Native macOS arm64 builds from the pinned submodule and runs keylessly through the real supervisor; native macOS x64 and Windows x64 release runners build their own target binaries before packaging.
 

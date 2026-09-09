@@ -30,6 +30,26 @@ describe('gestalt account pool dynamic registration', () => {
     await expect.poll(() => ctx.llm.listProviders().map(provider => provider.id)).not.toContain(PROVIDER)
   })
 
+  it('aborts and joins an in-flight catalog read before disposal settles', async () => {
+    let requestAborted = false
+    const server = createServer((request, _response) => {
+      request.once('aborted', () => { requestAborted = true })
+    })
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+    disposals.push(async () => await new Promise<void>(resolve => server.close(() => resolve())))
+    const address = server.address()
+    if (address === null || typeof address === 'string') throw new Error('missing address')
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    const fiber = await ctx.plugin({ apply, inject: ['llm'] }, {
+      baseURL: `http://127.0.0.1:${String(address.port)}/v1`, apiKey: 'internal-inference-key-650', refreshIntervalMs: 10,
+    })
+    await new Promise(resolve => setTimeout(resolve, 20))
+    await fiber.dispose()
+    await expect.poll(() => requestAborted).toBe(true)
+    await ctx.fiber.dispose()
+  })
+
   it('fails loud instead of replacing a conflicting provider', async () => {
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
