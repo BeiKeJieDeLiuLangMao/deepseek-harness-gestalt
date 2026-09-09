@@ -41,9 +41,10 @@ interface ConversationAttachmentFace {
     attachmentIds: readonly DraftAttachmentId[],
     mode: InputSubmitMode,
     signal?: AbortSignal,
+    historyImageIds?: readonly string[],
   ): Promise<SubmitOutcome>
   serializeDraftAttachments(attachmentIds: readonly DraftAttachmentId[]): Promise<DraftAttachmentSerializationResult>
-  releaseDraftAttachment(id: DraftAttachmentId): void
+  releaseDraftAttachment(id: DraftAttachmentId, preserveStaged?: boolean): void
 }
 
 /** Session-addressed input facade registry (SessionInputResolver face + composer-layer extras). */
@@ -94,7 +95,11 @@ export class InputHub implements SessionInputResolver {
         heading: index => this.t('annotation.compiled.heading', { index }),
         quote: value => this.t('annotation.compiled.quote', { value }),
         note: value => this.t('annotation.compiled.note', { value }),
-        image: (name, x, y) => this.t('annotation.compiled.image', { name, x, y }),
+        image: (name, x, y) => this.t('annotation.compiled.image', {
+          name,
+          x: x.toFixed(1),
+          y: y.toFixed(1),
+        }),
         overflow: this.t('annotation.overflow'),
       },
       commandAttachments: {
@@ -134,7 +139,7 @@ export class InputHub implements SessionInputResolver {
         const drafts = shell.dispose()
         this.shells.delete(id)
         const conversation = this.rootCtx.get('conversation') as ConversationAttachmentFace | undefined
-        for (const attachmentId of drafts) conversation?.releaseDraftAttachment(attachmentId)
+        for (const attachmentId of drafts) conversation?.releaseDraftAttachment(attachmentId, true)
       }
     }, 'conversation.input: session shell')
     return shell
@@ -177,10 +182,9 @@ export class InputHub implements SessionInputResolver {
   }
 
   /**
-   * Default sink: optimistic clear + prompt. The session is always a real
-   * host entity (materialized when its workspace was picked), so there is
-   * exactly one path; a failed first prompt is an ordinary prompt failure
-   * (banner via promptError, draft restored only while untouched).
+   * Default sink: prompt admission plus annotation settlement. The session is
+   * always a real host entity. Durable history images cited by pins reattach
+   * to the request, and annotations clear only after successful admission.
    */
   private sink(
     session: SessionFace,
@@ -189,8 +193,36 @@ export class InputHub implements SessionInputResolver {
     mode: InputSubmitMode,
     signal: AbortSignal,
   ): Promise<SubmitOutcome> {
-    if (text === '' && attachmentIds.length === 0) return Promise.resolve({ kind: 'success' })
-    return this.conversation().sendSession(session, text, attachmentIds, mode, signal)
+    const shell = this.shells.get(session.sessionId)
+    const reservation = shell?.annotationReservation
+    const historyImageIds = [...new Set(
+      (shell?.snapshot.annotations ?? []).flatMap(annotation =>
+        annotation.kind === 'image-pin' && annotation.source === 'history' ? [annotation.imageId] : []),
+    )]
+    if (text === '' && attachmentIds.length === 0 && historyImageIds.length === 0) {
+      return Promise.resolve({ kind: 'success' })
+    }
+    return this.conversation().sendSession(
+      session,
+      text,
+      attachmentIds,
+      mode,
+      signal,
+      historyImageIds,
+    ).then(
+      (outcome) => {
+        if (this.shells.get(session.sessionId) === shell && reservation !== undefined) {
+          shell?.settleAnnotationSubmission(reservation, outcome.kind === 'success')
+        }
+        return outcome
+      },
+      (error: unknown) => {
+        if (this.shells.get(session.sessionId) === shell && reservation !== undefined) {
+          shell?.settleAnnotationSubmission(reservation, false)
+        }
+        throw error
+      },
+    )
   }
 
   /**

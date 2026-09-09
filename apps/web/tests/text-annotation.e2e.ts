@@ -41,7 +41,7 @@ describe('web e2e: text annotation becomes an ordinary model-visible message', (
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
     tripwire = watchConsole(page)
-    await page.goto(scaffold.baseUrl, { waitUntil: 'load' })
+    await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
     await connectFreshWorkspace(page, scaffold.workspaceCwd)
   }, 120_000)
@@ -53,7 +53,7 @@ describe('web e2e: text annotation becomes an ordinary model-visible message', (
 
   it('selects across Markdown spans, edits the draft, and sends localized prose', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-text-annotation'))
-    const composer = page.locator('[data-composer-card] textarea').last()
+    const composer = page.locator('[data-composer-input][contenteditable="true"]').last()
     await composer.waitFor({ timeout: 10_000 })
     const firstSettled = scaffold.whenTurnSettled()
     await composer.fill(OPENING_PROMPT)
@@ -124,7 +124,10 @@ describe('web e2e: text annotation becomes an ordinary model-visible message', (
     expect(userTexts(events)).toEqual([OPENING_PROMPT, COMPILED])
     await compareOrRefreshGolden(MODEL_EXPECTED, COMPILED, MODE)
     await expect(page.getByText(QUESTION, { exact: false }).count()).resolves.toBeGreaterThanOrEqual(1)
-    await expect(page.getByRole('button', { name: '1 annotation' }).count()).resolves.toBe(0)
+    await expect.poll(
+      () => page.getByRole('button', { name: '1 annotation' }).count(),
+      { timeout: 5_000 },
+    ).toBe(0)
     expect(await page.evaluate(() => CSS.highlights?.has('annotation-draft-mark') ?? false)).toBe(false)
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])

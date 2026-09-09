@@ -82,7 +82,9 @@ describe('Conversation state survives on its store seat', () => {
     await b.runtime.sessions.add({ id: 's1' })
     const reborn = storeFor(b, 'conversation.session', sid('s1'))
     expect(reborn).not.toBe(doomed)
-    expect(reborn.store.getSnapshot()).toEqual({ draft: '', view: null, viewRequest: null })
+    expect(reborn.store.getSnapshot()).toEqual({
+      draft: '', annotationDraft: null, view: null, viewRequest: null,
+    })
     await b.runtime.dispose()
   })
 })

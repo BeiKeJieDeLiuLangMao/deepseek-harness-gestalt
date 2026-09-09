@@ -3,11 +3,12 @@
 import { useState } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render } from '@testing-library/react'
-import { useComposerImagePinOverlay } from '../src/client/annotation/composer-image-pins.tsx'
-import type { ImagePinAnnotation } from '../src/client/annotation/model.ts'
-import { TextAnnotationId } from '../src/client/annotation/model.ts'
-import type { ComposerAttachment, ComposerBarProps } from '../src/client/contract/slots.ts'
-import type { DraftAttachmentId, InputActions, InputState } from '../src/client/input/contract.ts'
+import { useComposerImagePinOverlay } from '../src/client/composer-image-pins.tsx'
+import type {
+  ComposerAttachment, ComposerBarProps, DraftAttachmentId, InputActions, InputState,
+} from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type { ImagePinAnnotation } from '../../ui-conversation/src/client/annotation/model.ts'
+import { TextAnnotationId } from '../../ui-conversation/src/client/annotation/model.ts'
 
 afterEach(cleanup)
 

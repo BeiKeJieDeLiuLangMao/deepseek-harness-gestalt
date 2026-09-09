@@ -289,6 +289,10 @@ export interface ConversationSessionInjected {
   readonly hooks: { readonly conversationViews: ObservableSnapshot<readonly ViewTab[]> }
   /** Bind input draft persistence to the Session-owned store instance. */
   bindDraftMirror: (write: (text: string) => void) => () => void
+  /** Bind annotation-draft persistence to the Session-owned store instance. */
+  bindAnnotationMirror: (write: (value: import('./annotation.ts').PersistedAnnotationDraft | null) => void) => () => void
+  /** Restore a persisted annotation draft and any Composer images it references. */
+  restoreAnnotationDraft: (draft: import('./annotation.ts').PersistedAnnotationDraft) => void
   /** Select and activate one View while addressing an opaque focus request to it. */
   openView: (view: string, focus: string) => void
 }

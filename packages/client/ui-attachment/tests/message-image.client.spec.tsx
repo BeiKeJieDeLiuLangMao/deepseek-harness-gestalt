@@ -261,9 +261,7 @@ describe('ImageGallery', () => {
     const useSession: MessageImagesProps['useSession'] = () => {
       throw new Error('MessageImages does not read the session snapshot')
     }
-    const useInput: MessageImagesProps['useInput'] = () => {
-      throw new Error('MessageImages does not read the input snapshot')
-    }
+    const useInput: MessageImagesProps['useInput'] = selector => selector({ annotations: [] } as never)
     const useSessions: MessageImagesProps['useSessions'] = () => {
       throw new Error('MessageImages does not read the session list snapshot')
     }

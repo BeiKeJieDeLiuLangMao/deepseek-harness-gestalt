@@ -1,16 +1,33 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { CSSProperties, MouseEvent, ReactNode } from 'react'
-import type { MarkdownSelectionMapRef } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { TextAnchor, TextAnnotation, TextAnnotationId } from './model.ts'
-import { createTextAnchor } from './model.ts'
-import { AnnotationEditor } from './AnnotationEditor.tsx'
+import { AnnotationEditor, type MarkdownSelectionMapRef } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { InputActions, InputState } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { removeDraftHighlightOwner, replaceDraftHighlightRanges } from './draft-highlights.ts'
 import css from './TextAnnotationTarget.module.css'
+
+type TextAnchor = Parameters<InputActions['addTextAnnotation']>[0]
+type TextAnnotation = Extract<InputState['annotations'][number], { kind: 'text' }>
+type TextAnnotationId = ReturnType<InputActions['addTextAnnotation']>
+
 interface PendingSelection {
   anchor: TextAnchor
   range: Range
   left: number
   top: number
+}
+
+const CONTEXT_LENGTH = 48
+
+function createTextAnchor(sourceId: string, source: string, quote: string, start: number): TextAnchor {
+  if (quote === '' || start < 0 || source.slice(start, start + quote.length) !== quote) {
+    throw new Error('text annotation selection does not match its source')
+  }
+  return {
+    sourceId,
+    quote,
+    prefix: source.slice(Math.max(0, start - CONTEXT_LENGTH), start),
+    suffix: source.slice(start + quote.length, start + quote.length + CONTEXT_LENGTH),
+  }
 }
 
 /** Viewport placement of one anchored floating surface, clamped away from the viewport edges. */

@@ -64,6 +64,40 @@ describe('ConversationController', () => {
     await b.runtime.dispose()
   })
 
+  it('reattaches durable history images selected by annotation pins', async () => {
+    const b = await bench()
+    const session = b.runtime.sessions.binding('s1')!.session
+    const readAttachment = vi.fn(() => Promise.resolve({
+      ok: true as const,
+      value: {
+        attachment: {
+          attachmentId: 'history-image',
+          mediaType: 'image/png' as const,
+          bytes: 2,
+          name: 'history.png',
+        },
+        data: Uint8Array.of(1, 2),
+      },
+    }))
+    ;(session as unknown as { readAttachment: typeof readAttachment }).readAttachment = readAttachment
+
+    await expect(b.root.sendSession(
+      session,
+      'Inspect this point.',
+      [],
+      'queue',
+      undefined,
+      ['history-image'],
+    )).resolves.toEqual({ kind: 'success' })
+
+    expect(readAttachment).toHaveBeenCalledWith('history-image')
+    expect(b.prompt).toHaveBeenCalledWith([
+      { type: 'image', mediaType: 'image/png', data: 'AQI=', name: 'history.png' },
+      { type: 'text', text: 'Inspect this point.' },
+    ], 'queue', undefined, expect.any(String))
+    await b.runtime.dispose()
+  })
+
   it('folds Session business failures into callback rejections', async () => {
     const b = await bench()
     b.prompt.mockResolvedValueOnce({ ok: false, error: new RemoteError('session/agent-busy', 'busy', { reason: 'busy' }) } as never)

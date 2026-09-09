@@ -45,6 +45,7 @@ export function inputActions(overrides: Partial<InputActions> = {}): InputAction
     discardTextAnnotations: () => unstubbed('discardTextAnnotations'),
     addImagePin: () => unstubbed('addImagePin'),
     updateImagePin: () => unstubbed('updateImagePin'),
+    removeImagePin: () => unstubbed('removeImagePin'),
     ...overrides,
   }
 }

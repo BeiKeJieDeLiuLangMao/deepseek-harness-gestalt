@@ -93,6 +93,7 @@ const kit = {
     discardTextAnnotations: () => {},
     addImagePin: () => { throw new Error('unused') },
     updateImagePin: () => {},
+    removeImagePin: () => {},
   },
 } satisfies Pick<
   MemberQuestionComposerProps,

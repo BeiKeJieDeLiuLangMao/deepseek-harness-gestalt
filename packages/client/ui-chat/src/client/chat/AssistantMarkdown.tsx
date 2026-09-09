@@ -1,12 +1,16 @@
-import { Fragment, memo, useMemo } from 'react'
+import { Fragment, memo, useMemo, useRef } from 'react'
 import type { ReactNode } from 'react'
 import { JsonBlock, MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { MarkdownFileMentions, MarkdownPathImages } from '@deepseek-ai/dsh-client-ui-primitives'
+import type {
+  MarkdownFileMentions, MarkdownPathImages, MarkdownSelectionMapRef,
+} from '@deepseek-ai/dsh-client-ui-primitives'
+import type { InputActions, InputState } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { ChatNodeOwnerProps, ChatViewSlotProps } from '../contract/slots.ts'
 import type { AssistantBlock } from '../contract/snapshot.ts'
 import { markdownLabels } from '../markdown-labels.ts'
 import { ReasoningRow } from './ReasoningRow.tsx'
 import { useSearchableHidden } from './searchable-hidden.ts'
+import { TextAnnotationTarget } from './TextAnnotationTarget.tsx'
 import css from './AssistantMarkdown.module.css'
 
 /**
@@ -31,7 +35,7 @@ export interface AssistantMarkdownProps {
   /** Frozen partial of an aborted turn: rendered with a stopped marker. */
   interrupted?: boolean | undefined
   /** Render consecutive image blocks through the attachment slot. */
-  renderMessageImages: ChatNodeOwnerProps['renderMessageImages']
+  renderMessageImages?: ChatNodeOwnerProps['renderMessageImages']
   /** Hide reasoning that belongs to the Turn-level process disclosure. */
   reasoningHidden?: boolean | undefined
   /** Reveal the owning Turn-level process disclosure. */
@@ -40,12 +44,55 @@ export interface AssistantMarkdownProps {
   mentions?: MarkdownFileMentions | undefined
   /** The owning view's locale seat, passed down as a plain prop. */
   t: ChatViewSlotProps['t']
+  /** Stable completed-message identity; absence keeps selection inert. */
+  sourceId?: string | undefined
+  /** Current unsent annotations for this Session. */
+  annotations?: InputState['annotations'] | undefined
+  /** Text-annotation creation action for this Session. */
+  annotationActions?: Pick<InputActions, 'addTextAnnotation'> | undefined
+}
+
+type TextAnnotation = Extract<InputState['annotations'][number], { kind: 'text' }>
+
+function AnnotatableAssistantText({
+  text, streaming, labels, mentions, pathImages, sourceId, annotations, add, t,
+}: {
+  text: string
+  streaming: boolean
+  labels: ReturnType<typeof markdownLabels>
+  mentions: MarkdownFileMentions | undefined
+  pathImages: MarkdownPathImages
+  sourceId: string
+  annotations: readonly TextAnnotation[]
+  add: InputActions['addTextAnnotation']
+  t: ChatViewSlotProps['t']
+}) {
+  const selectionMapRef = useRef<MarkdownSelectionMapRef['current']>(null)
+  return (
+    <TextAnnotationTarget
+      sourceId={sourceId}
+      selectionMapRef={selectionMapRef}
+      annotations={annotations.filter(item => item.anchor.sourceId === sourceId)}
+      add={add}
+      t={t}
+    >
+      <MarkdownText
+        text={text}
+        streaming={streaming}
+        labels={labels}
+        fileMentions={mentions}
+        pathImages={pathImages}
+        selectionMapRef={selectionMapRef}
+      />
+    </TextAnnotationTarget>
+  )
 }
 
 /** Reasoning block as the Think variant summary row (figma 39:28304). */
 export const AssistantMarkdown = memo(function AssistantMarkdown({
   blocks, streaming, interrupted, renderMessageImages,
   reasoningHidden = false, revealProcess, mentions, t,
+  sourceId, annotations = [], annotationActions,
 }: AssistantMarkdownProps) {
   // Stable per locale revision (t identity changes on switch): a fresh object
   // per render would rebuild MarkdownText's component table every chunk.
@@ -71,16 +118,34 @@ export const AssistantMarkdown = memo(function AssistantMarkdown({
     if (block === undefined) continue
     switch (block.kind) {
       case 'text':
-        rendered.push(
-          <MarkdownText
-            key={i}
-            text={block.text}
-            streaming={streaming}
-            labels={labels}
-            fileMentions={mentions}
-            pathImages={pathImages}
-          />,
-        )
+        {
+          const blockSourceId = sourceId === undefined ? undefined : `${sourceId}:${i}`
+          rendered.push(blockSourceId === undefined || annotationActions === undefined
+            ? (
+              <MarkdownText
+                key={i}
+                text={block.text}
+                streaming={streaming}
+                labels={labels}
+                fileMentions={mentions}
+                pathImages={pathImages}
+              />
+            )
+            : (
+              <AnnotatableAssistantText
+                key={i}
+                text={block.text}
+                streaming={streaming}
+                labels={labels}
+                mentions={mentions}
+                pathImages={pathImages}
+                sourceId={blockSourceId}
+                annotations={annotations.filter((item): item is TextAnnotation => item.kind === 'text')}
+                add={annotationActions.addTextAnnotation}
+                t={t}
+              />
+            ))
+        }
         break
       case 'reasoning':
         rendered.push(
@@ -109,7 +174,7 @@ export const AssistantMarkdown = memo(function AssistantMarkdown({
         }
         rendered.push(
           <Fragment key={start}>
-            {renderMessageImages({
+            {renderMessageImages?.({
               images: group.map(({ attachment }) => ({ attachment })),
               align: 'start',
             })}

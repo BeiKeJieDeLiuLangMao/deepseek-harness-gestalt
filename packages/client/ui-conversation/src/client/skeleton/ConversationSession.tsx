@@ -173,7 +173,7 @@ export function ConversationSessionHeader({
  */
 export function ConversationSession({
   useSession, useConversation, useConversationViews, useInput, inputActions, useStore, actions,
-  renderSlot, bindDraftMirror, openView,
+  renderSlot, bindDraftMirror, bindAnnotationMirror, restoreAnnotationDraft, openView,
 }: ConversationSessionProps) {
   const tabs = useConversationViews(value => value)
   const selectedId = useStore(s => s.view)
@@ -182,12 +182,20 @@ export function ConversationSession({
   const conversation = useConversation(s => s)
   const inputState = useInput(s => s)
   const storedDraft = useStore(s => s.draft)
+  const storedAnnotations = useStore(s => s.annotationDraft ?? null)
   const viewRequest = useStore(s => s.viewRequest ?? null)
 
   useEffect(() => {
     if (inputState.draft === '' && storedDraft !== '') inputActions.setDraft(storedDraft)
+    if (inputState.annotations.length === 0 && storedAnnotations !== null) {
+      restoreAnnotationDraft(storedAnnotations)
+    }
     const unmirror = bindDraftMirror(actions.setDraft)
-    return () => { unmirror() }
+    const unannotate = bindAnnotationMirror(actions.setAnnotationDraft)
+    return () => {
+      unmirror()
+      unannotate()
+    }
     // Mount-only (deps pinned to inputActions): later store writes come from
     // the machine mirror, not this seed effect.
   }, [inputActions])

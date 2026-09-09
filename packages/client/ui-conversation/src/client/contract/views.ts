@@ -1,5 +1,7 @@
 /** Conversation view and session-local presentation state. */
 
+import type { PersistedAnnotationDraft } from './annotation.ts'
+
 /**
  * One conversation view tab, projected from a 'conversation.view' slot
  * entry's registration options (label falls back to the entry id).
@@ -18,6 +20,8 @@ export interface ConversationViewRequest {
 export interface ConversationStoreState {
   /** Composer draft (persisted; survives session switches and reloads). */
   draft: string
+  /** Unsent text and image annotations (persisted with the addressed Session). */
+  annotationDraft: PersistedAnnotationDraft | null
   /** Preferred `conversation.view` entry id; null resolves to Chat when registered. */
   view: string | null
   /** Focus request consumed and acknowledged by the addressed View. */

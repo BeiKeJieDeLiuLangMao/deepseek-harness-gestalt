@@ -82,6 +82,8 @@ function props(overrides: Partial<ComposerAttachmentsOwnerProps> = {}): Composer
     onRemoveAttachment: () => {},
     uploads: {},
     onRetryFile: () => {},
+    useInput: (() => undefined) as ComposerAttachmentsProps['useInput'],
+    inputActions: undefined,
     t,
     ...overrides,
   } as unknown as ComposerAttachmentsProps

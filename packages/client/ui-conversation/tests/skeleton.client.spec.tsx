@@ -244,6 +244,8 @@ function mount(
           actions={store.actions}
           renderSlot={renderSlot as never}
           bindDraftMirror={write => wiring.bindMirror(write)}
+          bindAnnotationMirror={() => () => {}}
+          restoreAnnotationDraft={() => {}}
           openView={(view, focus) => { store.actions.openView(view, focus) }}
         />
       )

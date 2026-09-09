@@ -1,5 +1,6 @@
-import type { ComposerAttachment, ComposerBarProps, MessageImagePinOverlay } from '../contract/slots.ts'
-import type { InputActions, InputState } from '../input/contract.ts'
+import type {
+  ComposerAttachment, ComposerBarProps, InputActions, InputState, MessageImagePinOverlay,
+} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { useImagePinOverlay } from './image-pin-overlay.tsx'
 
 /**

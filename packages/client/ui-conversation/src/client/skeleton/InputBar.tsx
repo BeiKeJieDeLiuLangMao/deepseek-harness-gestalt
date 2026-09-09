@@ -13,11 +13,11 @@
  * trigger instead of a parallel tree.
  */
 
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, CSSProperties, KeyboardEvent, MouseEvent, ReactNode } from 'react'
 import clsx from 'clsx'
 import {
-  IconPaperclipOutline16, IconPlusOutline16, IconWarningOutline16, Toast, Tooltip,
+  AnnotationEditor, IconPaperclipOutline16, IconPlusOutline16, IconWarningOutline16, Toast, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 // Type-only: the `plan` projection key merge (the TodoDock posture — the
 // composer reads a host-computed value; the domain owns the key).
@@ -49,6 +49,7 @@ export const InputBar = memo(function InputBar({
   workspacePickerOpen = false, onRequestWorkspace,
   placeholder, accessory,
 }: InputBarProps) {
+  const annotationDetailsId = useId()
   const input = useInput(s => s)
   const notice = useNotices(s => s)
   const busyEnter = useBusyEnter(s => s)
@@ -73,7 +74,9 @@ export const InputBar = memo(function InputBar({
     () => input === undefined || resolveDraftAttachments === undefined ? [] : resolveDraftAttachments(input.attachmentIds),
     [resolveDraftAttachments, input?.attachmentIds],
   )
-  const empty = draft.trim() === '' && attachments.length === 0
+  const annotations = input?.annotations ?? []
+  const empty = draft.trim() === '' && attachments.length === 0 && annotations.length === 0
+  const [editingAnnotation, setEditingAnnotation] = useState<string | null>(null)
   const uploads = useFileUploads(snapshot => snapshot)
   // Send waits for every picked file: uploading and failed drafts both hold
   // the gate (a failed upload is retried or removed, never silently dropped).
@@ -133,7 +136,9 @@ export const InputBar = memo(function InputBar({
   // the composer asking for the only thing it prevents. The other reasons to
   // be disabled do lock it — there is no session to choose a model for.
   const modelSeatLocked = removed || inert || !live
-  const machineBusy = input?.phase === 'adjudicating' || input?.phase === 'submitting'
+  const annotationBusy = input?.annotationSubmitting === true
+  const machineBusy = input?.phase === 'adjudicating' || input?.phase === 'submitting' || annotationBusy
+  const annotationSummaryKey = annotations.length === 1 ? 'annotation.summary.one' : 'annotation.summary.other'
   // The no-workspace surface remains the resident DOM node but acts as the
   // existing picker trigger. Message controls stay locked until a Session
   // exists; the trigger itself is read-only rather than disabled so pointer
@@ -151,6 +156,16 @@ export const InputBar = memo(function InputBar({
       inputActions.pruneAttachments(attachments.map(attachment => attachment.id))
     }
   }, [attachments, input?.attachmentIds, inputActions])
+
+  useEffect(() => {
+    if (annotationBusy) setEditingAnnotation(null)
+  }, [annotationBusy])
+
+  useEffect(() => {
+    if (editingAnnotation !== null && !annotations.some(item => item.id === editingAnnotation)) {
+      setEditingAnnotation(null)
+    }
+  }, [annotations, editingAnnotation])
 
   // Scroll the draft scrollport the minimum that brings the selection focus
   // into view — the browser's own behavior for typing, performed for the
@@ -447,6 +462,78 @@ export const InputBar = memo(function InputBar({
             size: imageSizeText(imageLimits.maxImageBytes),
           },
         })}
+        {annotations.length > 0 && inputActions !== undefined && (
+          <div className={css.annotationSummary}>
+            <button
+              type="button"
+              className={css.annotationSummaryTrigger}
+              aria-controls={annotationDetailsId}
+            >
+              {t(annotationSummaryKey, { count: annotations.length })}
+            </button>
+            <button
+              type="button"
+              className={css.annotationDiscard}
+              disabled={annotationBusy}
+              aria-label={t('annotation.discard')}
+              onClick={() => { inputActions.discardTextAnnotations() }}
+            >
+              ×
+            </button>
+            <div
+              id={annotationDetailsId}
+              role="region"
+              aria-label={t(annotationSummaryKey, { count: annotations.length })}
+              className={css.annotationSummaryDetails}
+            >
+              {annotations.map((annotation, index) => {
+                const label = annotation.kind === 'text'
+                  ? annotation.anchor.quote
+                  : `${annotation.imageName} (${annotation.x.toFixed(1)}%, ${annotation.y.toFixed(1)}%)`
+                return (
+                  <div className={css.annotationSummaryItem} key={annotation.id}>
+                    <button
+                      type="button"
+                      disabled={annotationBusy}
+                      onClick={() => { setEditingAnnotation(annotation.id) }}
+                      aria-label={t('annotation.item', { index: index + 1, quote: label })}
+                    >
+                      <strong>{index + 1}. {label}</strong>
+                      <small>{annotation.note}</small>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={annotationBusy}
+                      aria-label={t('annotation.delete')}
+                      onClick={() => {
+                        if (annotation.kind === 'image-pin') inputActions.removeImagePin(annotation.id)
+                        else inputActions.removeTextAnnotation(annotation.id)
+                      }}
+                    >×</button>
+                  </div>
+                )
+              })}
+            </div>
+            {editingAnnotation !== null && (() => {
+              const annotation = annotations.find(item => item.id === editingAnnotation)
+              return annotation === undefined || annotation.kind === 'image-pin' ? null : (
+                <div className={css.annotationEditPopover}>
+                  <AnnotationEditor
+                    key={annotation.id}
+                    initialNote={annotation.note}
+                    placeholder={t('annotation.notePlaceholder')}
+                    saveLabel={t('annotation.save')}
+                    onSave={(note) => {
+                      inputActions.updateTextAnnotation(annotation.id, note)
+                      setEditingAnnotation(null)
+                    }}
+                    onCancel={() => { setEditingAnnotation(null) }}
+                  />
+                </div>
+              )
+            })()}
+          </div>
+        )}
         {/* One scrollport, one text surface: the contenteditable grows with
             its content and .scroll — capped at 14 lines in CSS — is the only
             thing that scrolls. Chips are decorator portals inside the same

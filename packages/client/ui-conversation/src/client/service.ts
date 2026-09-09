@@ -9,7 +9,7 @@
  */
 import { Service } from '@deepseek-ai/cordis'
 import type { Context } from '@deepseek-ai/cordis'
-import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
+import { bytesToBase64, randomUUID } from '@deepseek-ai/dsh-util-crypto'
 // Type-only imports: a plugin-to-plugin value import is a bundle purity
 // error, so scope resolution goes through the sessions service (scopeOf
 // method) instead of the standalone helper.
@@ -30,6 +30,7 @@ import type {
   DraftAttachmentId, DraftAttachmentSerializationResult, SessionInputResolver, SubmitAttachment, SubmitOutcome,
 } from './contract/input.ts'
 import type { InputSubmitMode } from './contract/composer-submission.ts'
+import { deleteStagedImage, getStagedImage, putStagedImage, stagedImageKey } from './annotation/staged-images.ts'
 
 /**
  * The outward conversation face (`ctx.conversation`): the scope-addressed
@@ -70,10 +71,13 @@ export interface IConversation {
 }
 
 /** Create one browser-only image draft descriptor; only its id enters input state. */
-function browserDraftAttachment(file: File): ComposerImageAttachment {
+function browserDraftAttachment(
+  file: File,
+  id = randomUUID() as DraftAttachmentId,
+): ComposerImageAttachment {
   return {
     kind: 'image',
-    id: randomUUID() as DraftAttachmentId,
+    id,
     previewUrl: URL.createObjectURL(file),
     file,
   }
@@ -157,6 +161,7 @@ export class ConversationController extends Service implements IConversation {
   /** Live upload state per file-kind draft; images never appear here. */
   readonly fileUploads: SnapshotStore<Record<string, DraftFileUpload>> = createSnapshotStore<Record<string, DraftFileUpload>>({})
   private readonly draftAttachments = new Map<DraftAttachmentId, ComposerAttachment>()
+  private readonly draftAttachmentSessions = new Map<DraftAttachmentId, SessionId>()
   private readonly fileUploadOperations = new Map<DraftAttachmentId, {
     readonly controller: AbortController
     readonly done: Promise<void>
@@ -195,6 +200,7 @@ export class ConversationController extends Service implements IConversation {
         if (attachment.kind === 'image') revokePreview(attachment.previewUrl)
       }
       this.draftAttachments.clear()
+      this.draftAttachmentSessions.clear()
       this.fileUploads.set({})
     }, 'conversation draft attachments')
   }
@@ -223,6 +229,7 @@ export class ConversationController extends Service implements IConversation {
    * @param attachmentIds - ordered draft-local attachment ids.
    * @param mode - queue or steer delivery selected by composer policy.
    * @param signal - optional cancellation for the complete Host admission.
+   * @param historyImageIds - durable history image ids referenced by unsent pins.
    * @returns the Host admission outcome; local attachment preparation failures reject.
    */
   async sendSession(
@@ -231,6 +238,7 @@ export class ConversationController extends Service implements IConversation {
     attachmentIds: readonly DraftAttachmentId[],
     mode: InputSubmitMode,
     signal?: AbortSignal,
+    historyImageIds: readonly string[] = [],
   ): Promise<SubmitOutcome> {
     const attachments = this.resolveDraftAttachments(attachmentIds)
     if (attachments.length !== attachmentIds.length) {
@@ -255,11 +263,12 @@ export class ConversationController extends Service implements IConversation {
         },
       }
       : { type: 'file' as const, value: uploadFor(attachment).file })
-    const serializeAttachments = (): Promise<Parameters<SessionFace['prompt']>[0]> => Promise.all(
-      attachments.map(async attachment => attachment.kind === 'image'
+    const serializeAttachments = async (): Promise<Parameters<SessionFace['prompt']>[0]> => [
+      ...await this.serializeHistoryImages(session, historyImageIds),
+      ...await Promise.all(attachments.map(async attachment => attachment.kind === 'image'
         ? { type: 'image' as const, ...await this.encodeImage(attachment.file) }
-        : { type: 'file' as const, receiptId: uploadFor(attachment).receiptId }),
-    )
+        : { type: 'file' as const, receiptId: uploadFor(attachment).receiptId })),
+    ]
     const snapshot = session.getSnapshot()
     if (snapshot.subagent !== null) {
       const uploaded = await serializeAttachments()
@@ -276,7 +285,7 @@ export class ConversationController extends Service implements IConversation {
       text,
       attachments: pendingAttachments,
       onRetire: (settlement) => {
-        this.settleSubmittedAttachments(session.sessionId, attachments, settlement)
+        this.settleSubmittedAttachments(session.sessionId, attachments, settlement, historyImageIds.length)
         finishRetirement?.(settlement)
       },
     })
@@ -310,7 +319,16 @@ export class ConversationController extends Service implements IConversation {
       if (isImageMediaType(file.type)) {
         const attachment = browserDraftAttachment(file)
         this.draftAttachments.set(attachment.id, attachment)
+        this.draftAttachmentSessions.set(attachment.id, sessionId)
         probeDimensions(attachment)
+        if (typeof indexedDB !== 'undefined') {
+          void file.arrayBuffer().then(bytes => putStagedImage({
+            key: stagedImageKey(sessionId, attachment.id),
+            name: file.name,
+            type: file.type,
+            bytes,
+          }))
+        }
         return attachment
       }
       const attachment: ComposerFileAttachment = {
@@ -319,9 +337,39 @@ export class ConversationController extends Service implements IConversation {
         file,
       }
       this.draftAttachments.set(attachment.id, attachment)
+      this.draftAttachmentSessions.set(attachment.id, sessionId)
       this.beginFileUpload(sessionId, attachment)
       return attachment
     })
+  }
+
+  /**
+   * Rehydrate Composer images referenced by a persisted annotation draft.
+   * @param sessionId - owning Session.
+   * @param attachmentIds - persisted draft attachment ids.
+   * @returns restored images whose bytes remain available.
+   */
+  async restoreStagedAttachments(
+    sessionId: SessionId,
+    attachmentIds: readonly DraftAttachmentId[],
+  ): Promise<readonly ComposerImageAttachment[]> {
+    if (typeof indexedDB === 'undefined') return []
+    const restored: ComposerImageAttachment[] = []
+    for (const id of attachmentIds) {
+      const live = this.draftAttachments.get(id)
+      if (live?.kind === 'image') {
+        restored.push(live)
+        continue
+      }
+      const record = await getStagedImage(stagedImageKey(sessionId, id))
+      if (record === undefined) continue
+      const attachment = browserDraftAttachment(new File([record.bytes], record.name, { type: record.type }), id)
+      this.draftAttachments.set(id, attachment)
+      this.draftAttachmentSessions.set(id, sessionId)
+      probeDimensions(attachment)
+      restored.push(attachment)
+    }
+    return restored
   }
 
   /**
@@ -464,14 +512,20 @@ export class ConversationController extends Service implements IConversation {
   /**
    * Release one browser-owned draft attachment, aborting its active upload.
    * @param id - draft attachment id.
+   * @param preserveStaged - keep persisted image bytes for reload restoration.
    */
-  releaseDraftAttachment(id: DraftAttachmentId): void {
+  releaseDraftAttachment(id: DraftAttachmentId, preserveStaged = false): void {
     const attachment = this.draftAttachments.get(id)
     if (attachment === undefined) return
+    const sessionId = this.draftAttachmentSessions.get(id)
+    this.draftAttachmentSessions.delete(id)
     const operation = this.fileUploadOperations.get(id)
     this.fileUploadOperations.delete(id)
     operation?.controller.abort()
     this.draftAttachments.delete(id)
+    if (!preserveStaged && attachment.kind === 'image' && sessionId !== undefined && typeof indexedDB !== 'undefined') {
+      void deleteStagedImage(stagedImageKey(sessionId, id))
+    }
     if (attachment.kind === 'image') {
       revokePreview(attachment.previewUrl)
       return
@@ -552,10 +606,11 @@ export class ConversationController extends Service implements IConversation {
     sessionId: SessionId,
     attachments: readonly ComposerAttachment[],
     retirement: PendingSubmissionRetirement,
+    observedOffset = 0,
   ): void {
     if (retirement.reason !== 'observed') return
     const uiConversation = this.ctx.get('uiConversation')
-    let observedIndex = 0
+    let observedIndex = observedOffset
     for (const attachment of attachments) {
       const live = this.draftAttachments.get(attachment.id)
       const ref = retirement.attachments[observedIndex++]
@@ -565,10 +620,36 @@ export class ConversationController extends Service implements IConversation {
         continue
       }
       this.draftAttachments.delete(attachment.id)
+      const owner = this.draftAttachmentSessions.get(attachment.id)
+      this.draftAttachmentSessions.delete(attachment.id)
+      if (owner !== undefined && typeof indexedDB !== 'undefined') {
+        void deleteStagedImage(stagedImageKey(owner, attachment.id))
+      }
       if (ref !== undefined && 'mediaType' in ref
         && uiConversation?.seedImageUrl(sessionId, ref, attachment.previewUrl) === true) continue
       revokePreview(attachment.previewUrl)
     }
+  }
+
+  /** Serialize durable history images selected by annotation pins. */
+  private async serializeHistoryImages(
+    session: SessionFace,
+    attachmentIds: readonly string[],
+  ): Promise<Parameters<SessionFace['prompt']>[0]> {
+    const content: Parameters<SessionFace['prompt']>[0] = []
+    for (const attachmentId of attachmentIds) {
+      const result = await session.readAttachment(attachmentId as never)
+      if (!result.ok || !('mediaType' in result.value.attachment)) {
+        throw new Error(`conversation.sendSession: history image "${attachmentId}" is no longer available`)
+      }
+      content.push({
+        type: 'image',
+        mediaType: result.value.attachment.mediaType,
+        data: bytesToBase64(result.value.data),
+        ...(result.value.attachment.name === undefined ? {} : { name: result.value.attachment.name }),
+      })
+    }
+    return content
   }
 
   /** Canonical base64 wire form of one browser image file. */

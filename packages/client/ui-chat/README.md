@@ -8,7 +8,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Use this package to render a browser chat from recorded Session conversations, including historical images, localized actions, and restored scroll position. Compact display folds completed-turn process rows while keeping the final answer and independently useful context visible; packed historical Assistant runs remain collapsed. Local transcript and steering submissions appear immediately, remain in their original surface, and disappear atomically when authoritative Session records arrive, while queued submissions stay outside Chat. The package does not assemble or modify model requests. The Chat view declares `conversation.browser.preview` and renders it in the scrollport's right gutter; a gutter narrower than 240px hides the rail.
+Render recorded Session conversations with historical images, localized actions, and restored scroll position. Compact display folds completed-turn process rows while preserving final answers and independently useful context; packed historical Assistant runs remain collapsed. Local transcript and steering submissions appear immediately and retire atomically when authoritative records arrive; queued submissions stay outside Chat. Settled assistant Markdown exposes selection annotations with stable message and block anchors. The package does not assemble model requests. Its Chat view can render a browser-preview rail in the right gutter and hides it below 240px.
 
 File-mention providers receive the viewed Session ID with the closing-turn owner, so links into inherited history can address the fork itself.
 

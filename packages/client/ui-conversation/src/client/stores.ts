@@ -2,13 +2,13 @@
 import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-store'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { ConversationStoreState } from './contract/views.ts'
-import type { PersistedAnnotationDraft } from './contract/annotation.ts'
 
 const CONVERSATION_STORE_KEY = 'dsh.conversation'
 
 /** Declared write set for the Conversation shell. */
 type ConversationActions = {
   setDraft: (draft: ConversationStoreState, text: string) => void
+  setAnnotationDraft: (draft: ConversationStoreState, value: ConversationStoreState['annotationDraft']) => void
   setView: (draft: ConversationStoreState, view: string) => void
   openView: (draft: ConversationStoreState, view: string, focus: string) => void
   completeViewRequest: (draft: ConversationStoreState) => void
@@ -20,10 +20,11 @@ type ConversationActions = {
  */
 export function createConversationStore(): EngineStoreHandle<ConversationStoreState, ConversationActions> {
   return defineStore({
-    init: (): ConversationStoreState => ({ draft: '', view: null, viewRequest: null }),
+    init: (): ConversationStoreState => ({ draft: '', annotationDraft: null, view: null, viewRequest: null }),
     persist: CONVERSATION_STORE_KEY,
     actions: {
       setDraft: (d, text: string) => { d.draft = text },
+      setAnnotationDraft: (d, value) => { d.annotationDraft = value },
       setView: (d, view: string) => { d.view = view },
       openView: (d, view: string, focus: string) => {
         d.view = view
@@ -50,25 +51,4 @@ export function readConversationViewPreference(sessionId: SessionId): string | n
   } catch {
     return null
   }
-}
-
-/** Annotation-draft persistence used by the Chat transcript store key. */
-interface AnnotationChatStoreState {
-  annotationDraft: PersistedAnnotationDraft | null
-}
-
-/**
- * Persist Annotation Drafts under the Chat store key.
- * @returns the store handle.
- */
-export function createChatStore(): EngineStoreHandle<AnnotationChatStoreState, {
-  setAnnotationDraft: (draft: AnnotationChatStoreState, value: PersistedAnnotationDraft | null) => void
-}> {
-  return defineStore({
-    init: (): AnnotationChatStoreState => ({ annotationDraft: null }),
-    persist: 'dsh.conversation.chat',
-    actions: {
-      setAnnotationDraft: (draft, value) => { draft.annotationDraft = value },
-    },
-  })
 }

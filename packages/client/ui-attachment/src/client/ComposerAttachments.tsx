@@ -9,6 +9,7 @@ import { DropOverlay } from '../DropOverlay.tsx'
 import { FileCard } from '../FileCard.tsx'
 import { ImageLightbox } from '../ImageLightbox.tsx'
 import { attachmentRailLabels, dropOverlayLabels, fileCardLabels, lightboxLabels } from './labels.ts'
+import { useComposerImagePinOverlay } from './composer-image-pins.tsx'
 import css from './ComposerAttachments.module.css'
 
 /** Rail item retaining its browser-owned attachment for callbacks. */
@@ -18,12 +19,23 @@ interface ComposerRailItem extends AttachmentRailItem {
 
 /** Draft image previews, pending-file cards, drop target, and original-image preview. */
 export function ComposerAttachments({
-  attachments, canAcceptDrop, onAddFiles, onRemoveAttachment, uploads, onRetryFile, dropLimits, t,
+  attachments, canAcceptDrop, onAddFiles, onRemoveAttachment, uploads, onRetryFile, dropLimits,
+  useInput, inputActions, t,
 }: ComposerAttachmentsProps) {
   const [preview, setPreview] = useState<ComposerImageAttachment | null>(null)
+  const [pinMode, setPinMode] = useState(false)
+  const [refuse, setRefuse] = useState<string | undefined>(undefined)
   const [dragActive, setDragActive] = useState(false)
   const dragDepth = useRef(0)
-  const closePreview = useCallback(() => { setPreview(null) }, [])
+  const annotations = useInput(state => state.annotations)
+  const pins = useComposerImagePinOverlay(annotations, inputActions, t)
+  const pinOverlay = preview === null ? undefined : pins.pinOverlayFor?.(preview)
+  const closePreview = useCallback(() => {
+    pinOverlay?.onCloseEditor?.()
+    setPreview(null)
+    setPinMode(false)
+    setRefuse(undefined)
+  }, [pinOverlay])
   useEffect(() => {
     if (preview !== null && !attachments.some(attachment => attachment.id === preview.id)) setPreview(null)
   }, [attachments, preview])
@@ -123,7 +135,11 @@ export function ComposerAttachments({
                     type="button"
                     className={css.thumbnail}
                     title={t('image.openOriginal')}
-                    onClick={() => { setPreview(attachment) }}
+                    onClick={() => {
+                      setPinMode(false)
+                      setRefuse(undefined)
+                      setPreview(attachment)
+                    }}
                   >
                     <img src={attachment.previewUrl} alt={attachment.file.name || t('image.pending')} />
                   </button>
@@ -147,6 +163,25 @@ export function ComposerAttachments({
           alt={preview.file.name || t('image.original')}
           labels={lightboxLabels(t)}
           onClose={closePreview}
+          {...(pinOverlay === undefined ? {} : { annotation: {
+            mode: pinMode,
+            pins: pinOverlay.pins,
+            modeLabel: pinOverlay.modeLabel,
+            exitLabel: pinOverlay.exitLabel,
+            ...(refuse === undefined ? {} : { refuse }),
+            onToggleMode: () => {
+              if (preview.file.type === 'image/gif') {
+                setRefuse(t('annotation.gifRefuse'))
+                setPinMode(false)
+                return
+              }
+              setRefuse(undefined)
+              setPinMode(current => !current)
+            },
+            onPlace: pinOverlay.onPlace,
+            onSelect: pinOverlay.onSelect,
+          } })}
+          {...(pinOverlay?.editor === undefined ? {} : { editor: pinOverlay.editor })}
         />
       )}
     </>

@@ -7,9 +7,10 @@ import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import { createTextAnchor, TextAnnotationId } from '../src/client/annotation/model.ts'
 import type { PersistedAnnotationDraft } from '../src/client/annotation/model.ts'
-import { AssistantMarkdown } from '../src/client/annotation/AssistantMarkdown.tsx'
+import { AssistantMarkdown } from '../../ui-chat/src/client/chat/AssistantMarkdown.tsx'
+import { zh as chatZh } from '../../ui-chat/src/client/locale.ts'
 import { zh } from '../src/client/locales.ts'
-import { createChatStore } from '../src/client/stores.ts'
+import { createConversationStore } from '../src/client/stores.ts'
 import type { SessionInputDeps } from '../src/client/input/facade.ts'
 import { SessionInputShell } from '../src/client/input/facade.ts'
 import { InputHub } from '../src/client/input/hub.ts'
@@ -42,7 +43,7 @@ function makeShell(deps: Partial<SessionInputDeps> = {}): SessionInputShell {
 describe('annotation draft persistence', () => {
   it('mirrors the live draft into the per-Session store and restores it after remount', () => {
     localStorage.clear()
-    const store = createChatStore().create('sess-1')
+    const store = createConversationStore().create('sess-1')
     const shell = makeShell()
     shell.bindAnnotationMirror((value) => { store.actions.setAnnotationDraft(value) })
     expect(store.store.getSnapshot().annotationDraft).toBeNull()
@@ -62,7 +63,7 @@ describe('annotation draft persistence', () => {
     // order, and the id sequence (no reuse of a live identity).
     const revived = makeShell()
     const rehydrated = JSON.parse(
-      localStorage.getItem('dsh.conversation.chat.sess-1') ?? 'null',
+      localStorage.getItem('dsh.conversation.sess-1') ?? 'null',
     ) as { annotationDraft: PersistedAnnotationDraft | null } | null
     expect(rehydrated?.annotationDraft?.annotations).toEqual(persisted?.annotations)
     revived.restoreAnnotationDraft(rehydrated?.annotationDraft ?? { annotations: [], nextSeq: 1 })
@@ -76,7 +77,7 @@ describe('annotation draft persistence', () => {
   // null); the assembled admission flow is owned by annotation-persistence.e2e.ts.
   it('clears the persisted draft when the last annotation is deleted', () => {
     localStorage.clear()
-    const store = createChatStore().create('sess-2')
+    const store = createConversationStore().create('sess-2')
     const shell = makeShell()
     shell.bindAnnotationMirror((value) => { store.actions.setAnnotationDraft(value) })
     const anchor = createTextAnchor('message-1:0', 'Exact quotation', 'Exact quotation', 0)
@@ -96,7 +97,7 @@ describe('annotation draft persistence', () => {
     const deleteMark = vi.fn()
     vi.stubGlobal('CSS', { highlights: { set, delete: deleteMark } })
     vi.stubGlobal('Highlight', FakeHighlight)
-    const store = createChatStore().create('sess-discard')
+    const store = createConversationStore().create('sess-discard')
     const shell = makeShell()
     shell.bindAnnotationMirror((value) => { store.actions.setAnnotationDraft(value) })
     const first = createTextAnchor('message-1:0', 'Alpha bold omega', 'Alpha', 0)
@@ -108,7 +109,7 @@ describe('annotation draft persistence', () => {
     const props = {
       blocks: [{ kind: 'text' as const, text: 'Alpha **bold** omega' }],
       streaming: false,
-      t: makeTranslate(zh, commonZh),
+      t: makeTranslate(chatZh, commonZh),
       sourceId: 'message-1',
       annotationActions: { addTextAnnotation: () => TextAnnotationId('unused') },
     }
@@ -210,7 +211,7 @@ describe('annotation draft persistence', () => {
 
   it('keeps independent same-key instances unsynchronized with deterministic last-writer-wins', () => {
     localStorage.clear()
-    const handle = createChatStore()
+    const handle = createConversationStore()
     const tabA = handle.create('sess-lww')
     const tabB = handle.create('sess-lww')
     const anchor = createTextAnchor('message-1:0', 'Exact quotation', 'Exact quotation', 0)
@@ -223,7 +224,7 @@ describe('annotation draft persistence', () => {
     // The later write from tabB owns the shared storage entry (last writer wins).
     tabB.actions.setAnnotationDraft({ annotations: [other], nextSeq: 2 })
     expect(tabA.store.getSnapshot().annotationDraft?.annotations[0]?.note).toBe('a')
-    const stored = JSON.parse(localStorage.getItem('dsh.conversation.chat.sess-lww') ?? 'null') as {
+    const stored = JSON.parse(localStorage.getItem('dsh.conversation.sess-lww') ?? 'null') as {
       annotationDraft: PersistedAnnotationDraft | null
     }
     expect(stored.annotationDraft?.annotations[0]?.note).toBe('b')
@@ -246,7 +247,7 @@ describe('annotation draft persistence', () => {
       <AssistantMarkdown
         blocks={[{ kind: 'text', text: 'Alpha **bold** omega' }]}
         streaming={false}
-        t={makeTranslate(zh, commonZh)}
+        t={makeTranslate(chatZh, commonZh)}
         sourceId="message-1"
         annotations={[
           { id: TextAnnotationId('annotation-stale'), kind: 'text', anchor: stale, note: 'stale note' },
@@ -266,7 +267,7 @@ describe('annotation draft persistence', () => {
     const rootCtx = {
       get: (name: string): unknown =>
         name === 'conversation'
-          ? { sendSession, releaseDraftImage: vi.fn() }
+          ? { sendSession, releaseDraftAttachment: vi.fn() }
           : undefined,
     }
     const hub = new InputHub(rootCtx as never, makeTranslate(zh, commonZh))
@@ -292,6 +293,7 @@ describe('annotation draft persistence', () => {
       [],
       'queue',
       expect.any(AbortSignal),
+      [],
     )
     // Newer text typed during the attempt must not enter the snapshot.
     shell.setDraft('A later edit must not win.')
@@ -302,5 +304,32 @@ describe('annotation draft persistence', () => {
     expect(shell.snapshot.annotations).toEqual([
       { id: TextAnnotationId('annotation-1'), kind: 'text', anchor, note: 'Original note' },
     ])
+  })
+
+  it('clears a reserved annotation after the hub observes successful admission', async () => {
+    const sendSession = vi.fn(async () => ({ kind: 'success' as const }))
+    const hub = new InputHub({
+      get: (name: string): unknown => name === 'conversation'
+        ? { sendSession, releaseDraftAttachment: vi.fn() }
+        : undefined,
+    } as never, makeTranslate(zh, commonZh))
+    const shell = hub.shellFor({
+      sessionId: 'sess-success',
+      session: {
+        sessionId: 'sess-success',
+        getSnapshot: () => ({ queue: [] }),
+        subscribe: () => () => {},
+      },
+      ctx: { effect: (): (() => void) => () => {} },
+    } as never)
+    shell.setDraft('Please revise this.')
+    const anchor = createTextAnchor('message-1:0', 'Exact quotation', 'Exact quotation', 0)
+    shell.actions.addTextAnnotation(anchor, '')
+
+    shell.submit('queue')
+
+    await vi.waitFor(() => { expect(sendSession).toHaveBeenCalledOnce() })
+    await vi.waitFor(() => { expect(shell.snapshot.annotationSubmitting).toBe(false) })
+    expect(shell.snapshot.annotations).toEqual([])
   })
 })

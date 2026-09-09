@@ -191,6 +191,7 @@ export class SessionInputShell implements SessionInput {
     addImagePin: (imageId, imageName, x, y, note, source) =>
       this.addImagePin(imageId, imageName, x, y, note, source),
     updateImagePin: (id, patch) => { this.updateImagePin(id, patch) },
+    removeImagePin: (id) => { this.removeImagePin(id) },
   }
 
   private readonly core = new SubmitMachine()
@@ -441,19 +442,33 @@ export class SessionInputShell implements SessionInput {
     }
     if (this.snapshot.draft.trim() === '' && this.attachmentIds.length > 0) {
       if (this.snapshot.phase === 'plain') {
+        const labels = this.deps.annotationLabels
+        if (this.annotations.length > 0 && labels === undefined) return
         const attachmentIds = [...this.attachmentIds]
+        const compiled = labels === undefined || this.annotations.length === 0
+          ? ''
+          : compileAnnotationSubmission('', this.annotations, labels)
+        if (this.annotations.length > 0) {
+          this.annotationReservation = {
+            restoreText: '',
+            ids: this.annotations.map(item => item.id),
+          }
+          this.annotationSubmitting = true
+        }
         const controller = new AbortController()
         this.attachmentFlightSeq += 1
         const flight = this.attachmentFlightSeq
         this.attachmentFlights.set(flight, { controller, attachmentIds })
         this.commitSend(attachmentIds)
-        void this.deps.defaultSink('', attachmentIds, mode, controller.signal).then((outcome) => {
+        void this.deps.defaultSink(compiled, attachmentIds, mode, controller.signal).then((outcome) => {
           if (this.disposed || !this.attachmentFlights.delete(flight)) return
           if (outcome.kind === 'success') return
+          this.releaseAnnotationReservation(false)
           this.restoreAttachments(attachmentIds)
           if (outcome.text !== undefined) this.notify('error', outcome.text)
         }, (error: unknown) => {
           if (this.disposed || !this.attachmentFlights.delete(flight)) return
+          this.releaseAnnotationReservation(false)
           this.restoreAttachments(attachmentIds)
           this.notify('error', error instanceof Error ? error.message : String(error))
         })
@@ -799,6 +814,16 @@ export class SessionInputShell implements SessionInput {
         note: patch.note ?? item.note,
       }
     })
+    this.publish()
+  }
+
+  /**
+   * Remove an unsent image pin; an active admission keeps its reserved annotation.
+   * @param id - image pin to remove.
+   */
+  removeImagePin(id: TextAnnotationId): void {
+    if (this.annotationReservation?.ids.includes(id) === true) return
+    this.annotations = this.annotations.filter(item => item.id !== id || item.kind !== 'image-pin')
     this.publish()
   }
 

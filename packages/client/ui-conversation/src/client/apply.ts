@@ -16,7 +16,7 @@ import type {
   ComposerBarInjected, ConversationInjected, ConversationSessionHeaderInjected,
   ConversationSessionInjected, DraftFileUploads,
 } from './contract/slots.ts'
-import type { InputNotice } from './contract/input.ts'
+import type { DraftAttachmentId, InputNotice } from './contract/input.ts'
 import { createConversationStore, readConversationViewPreference } from './stores.ts'
 import { ConversationController, UnsupportedImageMediaTypeError } from './service.ts'
 import type { IConversation } from './service.ts'
@@ -266,6 +266,19 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     inject: (sessionId: SessionId, actions: BoundActions<typeof conversationStore>): ConversationSessionInjected => ({
       hooks: { conversationViews },
       bindDraftMirror: write => inputHub.shell(sessionId).bindMirror(write),
+      bindAnnotationMirror: write => inputHub.shell(sessionId).bindAnnotationMirror(write),
+      restoreAnnotationDraft: (draft) => {
+        const shell = inputHub.shell(sessionId)
+        shell.restoreAnnotationDraft(draft)
+        const imageIds = [...new Set(draft.annotations.flatMap(annotation =>
+          annotation.kind === 'image-pin' && annotation.source === 'composer'
+            ? [annotation.imageId as DraftAttachmentId]
+            : []))]
+        if (imageIds.length === 0) return
+        void concreteConversation(ctx).restoreStagedAttachments(sessionId, imageIds).then((attachments) => {
+          shell.addAttachments(attachments.map(attachment => attachment.id))
+        })
+      },
       openView: (view, focus) => {
         activateView(sessionId, view)
         actions.openView(view, focus)

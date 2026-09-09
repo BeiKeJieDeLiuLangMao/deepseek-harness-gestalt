@@ -259,6 +259,8 @@ export interface InputActions {
   ): TextAnnotationId
   /** Patch one unsent image pin. */
   updateImagePin(id: TextAnnotationId, patch: { x?: number; y?: number; note?: string }): void
+  /** Drop one unsent image pin. */
+  removeImagePin(id: TextAnnotationId): void
 }
 
 /** One surfaced notice (command results, adjudication failures). seq keys re-render of repeats. */

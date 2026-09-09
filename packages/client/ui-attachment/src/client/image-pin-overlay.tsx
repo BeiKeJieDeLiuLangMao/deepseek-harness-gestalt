@@ -1,8 +1,11 @@
 import { useState } from 'react'
-import type { MessageImagePinOverlay } from '../contract/slots.ts'
-import type { InputActions, InputState } from '../input/contract.ts'
-import { AnnotationEditor } from './AnnotationEditor.tsx'
-import type { ImagePinAnnotation, TextAnnotationId } from './model.ts'
+import type {
+  InputActions, InputState, MessageImagePinOverlay,
+} from '@deepseek-ai/dsh-client-ui-conversation/client'
+import { AnnotationEditor } from '@deepseek-ai/dsh-client-ui-primitives'
+
+type ImagePinAnnotation = Extract<InputState['annotations'][number], { kind: 'image-pin' }>
+type TextAnnotationId = ReturnType<InputActions['addImagePin']>
 
 /** Locale keys the pin overlay reads. */
 export type ImagePinOverlayTranslate = (
@@ -79,9 +82,9 @@ export function useImagePinOverlay<T>(
           ? (
             <AnnotationEditor
               initialNote={editing.note}
+              overlay
               placeholder={t('annotation.notePlaceholder')}
               saveLabel={t('annotation.save')}
-              overlay
               onSave={(note) => {
                 actions.updateImagePin(editing.id, { note })
                 setEditingId(null)
