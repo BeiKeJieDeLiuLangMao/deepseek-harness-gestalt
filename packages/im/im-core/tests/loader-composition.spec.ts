@@ -2,187 +2,123 @@
  * REAL Loader composition test for @deepseek-ai/dsh-im-core:
  * Boots a keyless cordis.yml through the real Cordis Loader and StorageDomain,
  * proving configured accounts, route rules, simulation target gating, and persistence reload.
+ *
+ * Resolved by the real Cordis Loader through standard package resolution
+ * without any loader.internal or import map shims.
  */
 
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { spawnSync } from 'node:child_process'
 import { afterEach, describe, expect, it } from 'vitest'
-import { Context } from '@deepseek-ai/cordis'
-import Include from '@deepseek-ai/cordis-plugin-include'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
-import Storage from '@deepseek-ai/dsh-storage'
-import * as StorageJson from '@deepseek-ai/dsh-storage-json'
-import * as StorageDomain from '@deepseek-ai/dsh-storage-domain'
-import { brandString } from '@deepseek-ai/dsh-brand'
-import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
-import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
-import ImConfigService from '../src/index.ts'
-import type { ImAccountId, ImRouteRuleId } from '../src/types.ts'
+import * as imCoreModule from '@deepseek-ai/dsh-im-core'
+import ImConfigService from '@deepseek-ai/dsh-im-core'
 
 const roots: string[] = []
-const contexts: Context[] = []
 
 afterEach(async () => {
-  for (const loaded of contexts.splice(0).reverse()) await loaded.fiber.dispose()
   for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true })
 })
 
-interface BootResult {
-  readonly context: Context
-  readonly service: ImConfigService
-}
+const backendFixturePath = join(import.meta.dirname, 'memory-backend-fixture.ts')
+const backendFixtureUrl = pathToFileURL(backendFixturePath).href
+const driverPath = join(import.meta.dirname, 'fixtures/driver.ts')
+const repoRoot = join(import.meta.dirname, '../../../..')
+const tsconfigPath = join(repoRoot, 'tsconfig.json')
+const tsxLoader = import.meta.resolve('tsx/esm')
 
-async function bootGeneration(storageRoot: string): Promise<BootResult> {
-  const root = await mkdtemp(join(tmpdir(), 'dsh-im-composition-'))
-  roots.push(root)
-  const configPath = join(root, 'cordis.yml')
-
-  const yml = [
-    "- name: '@deepseek-ai/dsh-storage'",
-    "- name: '@deepseek-ai/dsh-storage-json'",
-    '  config:',
-    `    root: '${storageRoot}'`,
-    "- name: '@deepseek-ai/dsh-storage-domain'",
-    '  config:',
-    "    backend: 'json'",
-    "- name: '@deepseek-ai/dsh-im-core'",
-    '',
-  ].join('\n')
-  await writeFile(configPath, yml)
-
-  const context = new Context()
-  contexts.push(context)
-  context.baseUrl = pathToFileURL(root).href + '/'
-  await context.plugin(Loader)
-  context.loader.builtins.include = Include
-
-  const modules = new Map<string, unknown>([
-    ['@deepseek-ai/dsh-storage', Storage],
-    ['@deepseek-ai/dsh-storage-json', StorageJson],
-    ['@deepseek-ai/dsh-storage-domain', StorageDomain],
-    ['@deepseek-ai/dsh-im-core', ImConfigService],
-  ])
-
-  context.loader.internal = {
-    version: 'v2',
-    async import(specifier: string) {
-      if (!modules.has(specifier)) throw new Error(`unexpected Loader import: ${specifier}`)
-      return modules.get(specifier)
+function runLoaderDriver(cwd: string, configPath: string, storageFile: string, action: 'write' | 'read') {
+  const result = spawnSync(process.execPath, [
+    '--import',
+    tsxLoader,
+    driverPath,
+    configPath,
+    action,
+  ], {
+    cwd,
+    env: {
+      ...process.env,
+      TSX_TSCONFIG_PATH: tsconfigPath,
+      DSH_IM_TEST_STORAGE_FILE: storageFile,
     },
-  } as unknown as NonNullable<typeof context.loader.internal>
-
-  await context.loader.create({ name: 'cordis:include', config: { path: pathToFileURL(configPath).href } })
-  await context.loader.await()
-
-  const service = context.get('imConfig') as ImConfigService
-  expect(service).toBeDefined()
-  return { context, service }
+    encoding: 'utf8',
+  })
+  if (result.status !== 0) {
+    throw new Error(`Loader driver failed (exit ${String(result.status)}): ${result.stderr || result.stdout}`)
+  }
+  return result
 }
 
 describe('im-core real Loader cordis.yml composition and persistence reload', () => {
-  it('boots through real cordis.yml Loader, persists config, and reloads across two generations', async () => {
-    const storageRoot = await mkdtemp(join(tmpdir(), 'dsh-im-storage-root-'))
-    roots.push(storageRoot)
+  it('preserves plugin contract through Loader unwrapExports', () => {
+    const loader = Object.create(Loader.prototype) as Loader
+    const unwrapped = loader.unwrapExports(imCoreModule) as typeof ImConfigService
+    expect(unwrapped).toBe(ImConfigService)
+    expect(unwrapped.name).toBe('ImConfigService')
+    expect(unwrapped.inject).toEqual(['storageDomain'])
+  })
 
-    // Generation 1
-    const gen1 = await bootGeneration(storageRoot)
-    const service1 = gen1.service
+  it('boots through real cordis.yml Loader, persists config, and reloads across two distinct processes', async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), 'dsh-im-proc-'))
+    roots.push(tempDir)
+    const storageFile = join(tempDir, 'storage-proc.json')
+    const configPath = join(tempDir, 'cordis.yml')
 
-    const accountId = brandString<ImAccountId>('acc-loader-dt')
-    await service1.upsertAccount({
-      id: accountId,
+    const yml = [
+      "- name: '@deepseek-ai/dsh-storage'",
+      `- name: '${backendFixtureUrl}'`,
+      "- name: '@deepseek-ai/dsh-storage-domain'",
+      '  config:',
+      "    backend: 'memory'",
+      "- name: '@deepseek-ai/dsh-im-core'",
+      '',
+    ].join('\n')
+    await writeFile(configPath, yml)
+
+    // Process 1: boots through real Loader and writes accounts & rules
+    runLoaderDriver(tempDir, configPath, storageFile, 'write')
+
+    const report1 = JSON.parse(await readFile(join(tempDir, 'im-loader-report.json'), 'utf8'))
+    expect(report1).toEqual({
+      phase: 'write',
+      accountId: 'acc-loader-dt',
+      ruleId: 'rule-loader-1',
+      workspaceId: 'ws-loader-1',
+      routeStatus: 'matched',
+    })
+
+    // Process 2: boots another fresh process through real Loader and reloads config
+    runLoaderDriver(tempDir, configPath, storageFile, 'read')
+
+    const report2 = JSON.parse(await readFile(join(tempDir, 'im-loader-report.json'), 'utf8'))
+    expect(report2.account).toMatchObject({
+      id: 'acc-loader-dt',
       platform: 'dingtalk',
       displayName: 'Loader DingTalk Account',
-      credentialRef: brandString<CredentialRef>('CRED_LOADER_TOKEN'),
+      credentialRef: 'CRED_LOADER_TOKEN',
       status: 'connected',
       paused: false,
     })
-
-    const ws1 = brandString<WorkspaceId>('ws-loader-1')
-    const ruleId = brandString<ImRouteRuleId>('rule-loader-1')
-    await service1.createRouteRule({
-      id: ruleId,
-      accountId,
-      conversationKind: 'group',
-      target: { kind: 'all' },
-      workspaceId: ws1,
+    expect(report2.rule).toMatchObject({
+      id: 'rule-loader-1',
+      workspaceId: 'ws-loader-1',
       enabled: true,
-      groupTrigger: {
-        mention: true,
-        everyN: 3,
-      },
+      groupTrigger: { mention: true, everyN: 3 },
     })
-
-    await service1.setSimulationConfig({
-      workspaceId: ws1,
-      targetAccountId: accountId,
+    expect(report2.sim).toMatchObject({
+      workspaceId: 'ws-loader-1',
+      targetAccountId: 'acc-loader-dt',
       conversationKind: 'group',
     })
-
-    // Validate generation 1 route resolution
-    const resolvedGen1 = await service1.resolveRoute({
-      accountId,
-      conversationKind: 'group',
-      conversationId: 'group-dyn-101',
-    })
-    expect(resolvedGen1).toEqual({
+    expect(report2.route).toEqual({
       status: 'matched',
-      ruleId,
-      workspaceId: ws1,
+      ruleId: 'rule-loader-1',
+      workspaceId: 'ws-loader-1',
       enabled: true,
-      groupTrigger: {
-        mention: true,
-        everyN: 3,
-      },
-    })
-
-    // Dispose generation 1
-    await gen1.context.fiber.dispose()
-
-    // Generation 2: new process / Loader generation reading the same storageRoot
-    const gen2 = await bootGeneration(storageRoot)
-    const service2 = gen2.service
-
-    const accountGen2 = await service2.getAccount(accountId)
-    expect(accountGen2).toMatchObject({
-      id: accountId,
-      displayName: 'Loader DingTalk Account',
-      credentialRef: 'CRED_LOADER_TOKEN',
-    })
-
-    const ruleGen2 = await service2.getRouteRule(ruleId)
-    expect(ruleGen2).toMatchObject({
-      id: ruleId,
-      workspaceId: ws1,
-      groupTrigger: {
-        mention: true,
-        everyN: 3,
-      },
-    })
-
-    const simGen2 = await service2.getSimulationConfig(ws1)
-    expect(simGen2).toMatchObject({
-      workspaceId: ws1,
-      targetAccountId: accountId,
-    })
-
-    // Resolve on reloaded generation
-    const resolvedGen2 = await service2.resolveRoute({
-      accountId,
-      conversationKind: 'group',
-      conversationId: 'group-dyn-102',
-    })
-    expect(resolvedGen2).toEqual({
-      status: 'matched',
-      ruleId,
-      workspaceId: ws1,
-      enabled: true,
-      groupTrigger: {
-        mention: true,
-        everyN: 3,
-      },
+      groupTrigger: { mention: true, everyN: 3 },
     })
   })
 })
