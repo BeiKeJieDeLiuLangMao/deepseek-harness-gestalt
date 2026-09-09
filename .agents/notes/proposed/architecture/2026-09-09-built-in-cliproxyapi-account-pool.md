@@ -66,9 +66,11 @@ The provider probe matrix, refresh cadence, cache lifetime, rate limits, and sid
 
 ## GLM subscription status
 
-The GLM subscription addition belongs in the Gestalt CLIProxyAPI fork so routing and model execution remain inside the core. Its source revision, copied behavior, credentials, endpoints, model mapping, quota fields, and redistribution license are unresolved. No implementation, binary distribution, or acceptance claim may proceed until the dedicated investigation records those facts and confirms that the intended reuse is permitted.
+The candidate GLM Coding Plan behavior comes from the official `Wei-Shaw/sub2api` source at commit `98d86915becae9fe9491a91ffc6defd5235c8d2b`. It uses a subscription data-plane API key supplied by the user and selects the Coding Plan endpoint and quota semantics with `account_mode=coding`. It has no OAuth token provider, browser login, or refresh-token flow.
 
-GLM will remain an account source behind the single CLIProxyAPI provider unless verified protocol constraints require a separate route. A normal API-key integration will not be labeled as a subscription login, and the UI will not invent OAuth or refresh-token behavior.
+The Gestalt UI will therefore offer a dedicated GLM Coding Plan key entry rather than adding GLM to the five OAuth login actions. The Host will store the key through the credential-owning path and will pass only the resulting authority to the core. GLM will remain an account source behind the single CLIProxyAPI provider unless verified protocol constraints require a separate route.
+
+The source is LGPL-3.0 while the target core is MIT. The complete field inventory, copied-code boundary, attribution duties, linking or derivative-work analysis, and redistribution conclusion remain unresolved. No GLM implementation or binary distribution may proceed until the full license report confirms a permitted design; the proposal must change if direct copying would impose terms the intended distribution cannot satisfy.
 
 ## Alternatives considered
 
@@ -92,7 +94,7 @@ GLM will remain an account source behind the single CLIProxyAPI provider unless 
 - Each supported Desktop package contains the binary built from the recorded pin, starts from a fresh isolated home without a Go toolchain, database service, or core download, and rejects missing, mismatched, or unidentifiable binaries.
 - One Desktop instance owns one loopback CLIProxyAPI process and dynamic port; readiness, bounded crash recovery, shutdown, and cleanup are observable, and one instance never terminates another instance's process.
 - The renderer receives no management secret, inference API key, auth-file secret, or raw management escape hatch; credential-like values remain absent from logs, session data, screenshots, and retained artifacts.
-- The first-party Settings UI renders the accepted global management/quota switch and per-card flip behavior, the five verified login entries, truthful login states, and quota unknown/partial/stale/failure states without an iframe or runtime UI download.
+- The first-party Settings UI renders the accepted global management/quota switch and per-card flip behavior, the five verified OAuth login entries, the separate GLM Coding Plan key entry, truthful authorization states, and quota unknown/partial/stale/failure states without an iframe or runtime UI download.
 - The LLM integration publishes one provider route from the live local model catalog, withdraws or marks it unusable when the core cannot serve models, does not take over a user-owned conflicting route, and can complete a separately authorized real model request.
 - No replacement path reads or converts Sub2API data. Removal of old files, if later authorized, is verified as a distinct operation.
 - Fork synchronization preserves an auditable upstream base and the accepted Gestalt delta; the harness pin moves only after fork, packaging, deterministic UI, and required native evidence pass.
@@ -108,4 +110,4 @@ A fork-carried GLM implementation can make upstream synchronization conflict-pro
 
 Provider-specific quota probes may consume upstream requests, trigger rate limits, or expose only approximate data. Until the investigation fixes the matrix and cadence, the product must prefer an explicit unknown state over aggressive refresh.
 
-Native prototype and final acceptance require a legal callable Codex computer-use session. The DSH registration has been observed, but delegated native calls are currently denied by the fixed sandbox and no callable Codex task connector is available. This blocks native fidelity and experience-route acceptance, not review of this proposal or fixture-based draft work.
+Native prototype and final acceptance will first attempt a legal callable Codex computer-use session. The DSH registration has been observed, but delegated native calls are currently denied by the fixed sandbox and no callable Codex task connector is available. If the connection owner confirms that no legal Codex path is available, the user authorizes real isolated Electron automation as the fallback evidence lane; the owner must record that route change and its limits, and prototype writers must not switch drivers independently. This availability check blocks the native walk, not review of this proposal or fixture-based draft work.

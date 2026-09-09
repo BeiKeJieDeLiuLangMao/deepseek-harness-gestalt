@@ -66,9 +66,11 @@ Provider 探测矩阵、刷新节奏、缓存寿命、rate limit 与副作用仍
 
 ## GLM subscription status
 
-GLM 订阅扩展属于 Gestalt CLIProxyAPI fork，使路由与模型执行继续位于核心内部。其来源修订、复用行为、凭据、端点、模型映射、额度字段与再分发许可仍未解决。在专门调查记录这些事实并确认预期复用获许可前，不得实施、分发二进制或宣称验收通过。
+候选 GLM Coding Plan 行为来自官方 `Wei-Shaw/sub2api` 源码的提交 `98d86915becae9fe9491a91ffc6defd5235c8d2b`。它使用用户提供的订阅数据面 API key，并通过 `account_mode=coding` 选择 Coding Plan 专用端点与额度语义。它没有 OAuth token provider、浏览器登录或 refresh-token 流程。
 
-除非经过验证的协议约束要求独立 route，GLM 将保持为单一 CLIProxyAPI provider 背后的账号来源。普通 API key 集成不会被标为订阅登录，UI 也不会虚构 OAuth 或 refresh-token 行为。
+因此 Gestalt UI 将提供专用 GLM Coding Plan key 入口，而不会把 GLM 加入五个 OAuth 登录动作。Host 将通过拥有凭据的路径存储 key，只把产生的 authority 交给核心。除非经过验证的协议约束要求独立 route，GLM 将保持为单一 CLIProxyAPI provider 背后的账号来源。
+
+来源使用 LGPL-3.0，目标核心使用 MIT。完整字段清单、复用代码边界、署名义务、链接或衍生作品分析与再分发结论仍未解决。在完整许可报告确认一种获许可的设计前，不得实施 GLM 或分发二进制；若直接复制会引入预期分发无法满足的条款，本提案必须调整。
 
 ## Alternatives considered
 
@@ -92,7 +94,7 @@ GLM 订阅扩展属于 Gestalt CLIProxyAPI fork，使路由与模型执行继续
 - 每个受支持 Desktop 包含从记录钉住点构建的二进制，能从全新隔离 home 启动且不需要 Go 工具链、数据库服务或核心下载，并拒绝缺失、不匹配或无法识别的二进制。
 - 一个 Desktop 实例拥有一个 loopback CLIProxyAPI 进程和动态端口；ready 状态、有界崩溃恢复、关闭与清理均可观察，且一个实例绝不终止另一实例的进程。
 - Renderer 不会收到 management secret、inference API key、auth-file secret 或原始管理逃生口；凭据类值不会进入日志、Session 数据、截图与保留产物。
-- 第一方 Settings UI 会渲染已接受的全局管理/额度切换与单卡翻面、五个已验证登录入口、真实登录状态，以及额度 unknown、partial、stale 和 failure 状态，且不使用 iframe 或运行时 UI 下载。
+- 第一方 Settings UI 会渲染已接受的全局管理/额度切换与单卡翻面、五个已验证 OAuth 登录入口、独立 GLM Coding Plan key 入口、真实授权状态，以及额度 unknown、partial、stale 和 failure 状态，且不使用 iframe 或运行时 UI 下载。
 - LLM 集成会根据实时本机模型目录发布一条 provider route，在核心无法服务模型时撤回或标为不可用，不接管用户自有冲突 route，并能完成一项单独授权的真实模型请求。
 - 替代路径不会读取或转换 Sub2API 数据。若之后授权删除旧文件，该行为会作为独立操作验证。
 - fork 同步会保留可审计的上游基线与已接受 Gestalt delta；Harness 钉住点仅在 fork、打包、确定性 UI 和必需原生证据通过后移动。
@@ -108,4 +110,4 @@ Fork 承载的 GLM 实现会增加上游同步冲突，也可能无法按预期�
 
 Provider 专用额度探测可能消耗上游请求、触发 rate limit，或只提供近似数据。在调查固定矩阵与节奏前，产品必须优先展示明确 unknown，而不是激进刷新。
 
-原生原型与最终验收需要合法可调用的 Codex computer-use 会话。已经观察到 DSH 注册，但 delegated native 调用当前被固定 sandbox 拒绝，且没有可调用的 Codex task connector。该限制阻塞原生还原度与体验路线验收，不阻塞本提案评审或 fixture 原型工作。
+原生原型与最终验收会先尽力使用合法可调用的 Codex computer-use 会话。已经观察到 DSH 注册，但 delegated native 调用当前被固定 sandbox 拒绝，且没有可调用的 Codex task connector。若连接 owner 最终确认不存在合法 Codex 路径，用户授权把真实隔离 Electron 自动化作为后备证据车道；owner 必须记录该路线变更及其限制，原型 writer 不得自行切换 driver。该可用性判断阻塞原生走查，不阻塞本提案评审或 fixture 原型工作。
