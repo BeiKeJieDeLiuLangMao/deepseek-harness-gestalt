@@ -126,7 +126,8 @@ function provisioning(childId: SessionId, name: string): TeamMemberSnapshot {
 function recoverBeforeSenderDispatch(rootId: SessionId): void {
   const resume = Promise.withResolvers<undefined>()
   const entered = Promise.withResolvers<undefined>()
-  const recover = TeamMailbox.prototype.recoverFor
+  const recover = vi.spyOn(TeamMailbox.prototype, 'recoverFor')
+  recover.mockRestore()
   const recovery = vi.spyOn(TeamMailbox.prototype, 'recoverFor').mockImplementation(async function (
     this: TeamMailbox, agent, signal,
   ) {
@@ -135,7 +136,8 @@ function recoverBeforeSenderDispatch(rootId: SessionId): void {
     if (agent.id === rootId) entered.resolve(undefined)
     await pending
   })
-  const append = TeamJournal.prototype.appendAndFlush
+  const append = vi.spyOn(TeamJournal.prototype, 'appendAndFlush')
+  append.mockRestore()
   const queued = vi.spyOn(TeamJournal.prototype, 'appendAndFlush').mockImplementation(async function (
     this: TeamJournal, root, type, data,
   ) {
