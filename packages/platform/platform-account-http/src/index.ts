@@ -135,6 +135,20 @@ export function apply(ctx: Context, config: Config): void {
     }))
   })
 
+  route('/v1/account/mobile-installations', async (req, res) => {
+    requireMethod(req, 'GET')
+    writeJson(res, 200, await ctx.platformAccount.listMobileInstallations(accountSessionPresentation(req)))
+  })
+
+  route('/v1/account/mobile-installations/revoke', async (req, res) => {
+    requireMethod(req, 'POST')
+    const body = await readJson(req)
+    writeJson(res, 200, await ctx.platformAccount.revokeMobileInstallation({
+      ...accountSessionPresentation(req),
+      installationId: parseInstallationId(requiredString(body, 'installationId')),
+    }))
+  })
+
   route('/v1/account/deletion/plan', async (req, res) => {
     requireMethod(req, 'POST')
     writeJson(res, 200, await ctx.platformAccount.planAccountDeletion(accountSessionPresentation(req)))
@@ -289,12 +303,19 @@ function answerError(res: ServerResponse, error: unknown): void {
     return
   }
   if (error instanceof AccountError) {
+    const status = error.code === 'QUOTA' || error.code === 'PLATFORM_CAPACITY'
+      ? 429
+      : error.code.startsWith('SESSION_')
+        ? 401
+        : error.code === 'INSTALLATION_FORBIDDEN'
+          ? 403
+          : error.code === 'INSTALLATION_NOT_FOUND'
+            ? 404
+            : 400
     writeRetryAfterError(
       res,
       error,
-      error.code === 'QUOTA' || error.code === 'PLATFORM_CAPACITY'
-        ? 429
-        : error.code.startsWith('SESSION_') ? 401 : 400,
+      status,
     )
     return
   }

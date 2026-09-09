@@ -16,6 +16,12 @@ One Installation holds one current Platform Account. Account-scoped pairing keys
 
 The generic capability can validate distinct development and production identities for bounded examples and tests. Desktop and Mobile product entries accept one operated production identity before rendering or traffic: Desktop reads a release-generated public configuration from its application archive, while Mobile receives the same fields through its build configuration. The identity binds the HTTP Consumer's sole CORS origin, client transport, OAuth adapter, backend database, local store, callback, and issued account namespace; missing fields, localhost, or a mismatched Consumer origin fail before route registration. HTTP and durable records are parsed from `unknown` at their boundaries, and IndexedDB accepts only a genuine private signing P-256 `CryptoKey`. The in-memory backend and invalidation bus are fixture adapters; production persistence and distributed invalidation belong to the Platform deployment.
 
+## Desktop Mobile installation management
+
+An active Desktop Account Session can list its Account's active Mobile Installations and remotely sign out one proof-bound opaque target. Rows show authenticated Mobile presentation and a stable twelve-character Installation digest; a legacy row without presentation remains removable and displays no invented identity. Removal commits every matching Session revocation, refresh removal and durable invalidation record atomically while consuming already-authorized target login attempts from the same Account. Refresh either precedes that commit or observes an inactive Session. A later authorization or login can establish a new Session because removal creates no Installation blacklist.
+
+Invalidation publication attempts all committed Session ids independently and acknowledges only bus-accepted deliveries. A namespace-scoped timer driven by the required `sessionInvalidationRetryIntervalMs` repeats pending ids after publication failure or process restart, independently of Account deletion. Outbox records remain after their Account and Session rows are erased.
+
 ## Account deletion
 
 `AccountDeletionRequest` binds a client-created operation id, random recovery token and explicit `{projectId, successorMembershipId}` choices to the initiating Installation proof. `AccountDeletionView` exposes `deleting`, `action-required` with joined successor candidates, or `complete`. `AccountDeletionRecovery` permits progress and replacement choices without restoring revoked session authority. The Account provider persists acceptance before owner cleanup, and the Mobile controller retains its local receipt until cloud and local cleanup both finish. [The deletion decision](../../.agents/notes/implemented/feature/2026-09-09-mobile-account-deletion.md) owns ordering and retained-data limits.
@@ -79,6 +85,20 @@ abstract current(input: { accessToken: string; proof: AccountProof }): Promise<P
  * @returns provider-owned Account and Installation identity, including authenticated Mobile presentation.
  */
 abstract currentInstallation(input: { accessToken: string proof: AccountProof }): Promise<AuthenticatedInstallationView>
+
+/**
+ * List active Mobile Installations owned by the calling Desktop's Account.
+ * @param input - Desktop Account access token and proof bound to this list operation.
+ * @returns authenticated presentation plus an opaque removal target and display reference.
+ */
+abstract listMobileInstallations(input: { accessToken: string proof: AccountProof }): Promise<readonly MobileAccountInstallationView[]>
+
+/**
+ * Remotely sign one Mobile Installation out of the calling Desktop's Account.
+ * @param input - Desktop authorization and proof bound to the opaque target Installation id.
+ * @returns the active Mobile Installation list after durable revocation.
+ */
+abstract revokeMobileInstallation(input: { accessToken: string proof: AccountProof installationId: import('./types.ts').InstallationId }): Promise<readonly MobileAccountInstallationView[]>
 
 /**
  * Read the public identity of many accounts in one batch.

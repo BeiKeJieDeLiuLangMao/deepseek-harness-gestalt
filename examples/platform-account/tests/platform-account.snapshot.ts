@@ -24,6 +24,9 @@ describe('Platform Account keyless assembled lifecycle', () => {
       AUTHORIZE system-browser=https://github.com scope=none pkce=S256
       ACCOUNT githubId=13994321 login=octocat
       SESSION accessMinutes=15 refreshDays=30
+      MOBILE_LIST count=1 name=Keyless iPhone platform=ios reference=c6c8975a27af
+      MOBILE_REMOVE remaining=0 crossInstanceClosed=true
+      MOBILE_RELOGIN sameInstallation=true
       SIGN_OUT crossInstanceClosed=true local=idle
       DELETE accepted=deleting
       DELETE ordinaryAuthorization=SESSION_REVOKED

@@ -15,6 +15,7 @@ import type {
   LoginAttemptId,
   LoginAttemptView,
   LoginPollResult,
+  MobileAccountInstallationView,
   PlatformAccountId,
   PlatformAccountView,
   PublicAccountIdentity,
@@ -98,6 +99,27 @@ export abstract class AccountService extends Service {
     accessToken: string
     proof: AccountProof
   }): Promise<AuthenticatedInstallationView>
+
+  /**
+   * List active Mobile Installations owned by the calling Desktop's Account.
+   * @param input - Desktop Account access token and proof bound to this list operation.
+   * @returns authenticated presentation plus an opaque removal target and display reference.
+   */
+  abstract listMobileInstallations(input: {
+    accessToken: string
+    proof: AccountProof
+  }): Promise<readonly MobileAccountInstallationView[]>
+
+  /**
+   * Remotely sign one Mobile Installation out of the calling Desktop's Account.
+   * @param input - Desktop authorization and proof bound to the opaque target Installation id.
+   * @returns the active Mobile Installation list after durable revocation.
+   */
+  abstract revokeMobileInstallation(input: {
+    accessToken: string
+    proof: AccountProof
+    installationId: import('./types.ts').InstallationId
+  }): Promise<readonly MobileAccountInstallationView[]>
 
   /**
    * Read the public identity of many accounts in one batch.

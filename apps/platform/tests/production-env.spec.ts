@@ -62,6 +62,7 @@ function completeDeployEnv(): NodeJS.Dict<string> {
     PLATFORM_APSARADB_CA_BASE64: Buffer.from(APSARADB_CA).toString('base64'),
     PLATFORM_POSTGRES_DATABASE: 'gestalt',
     PLATFORM_IDENTITY_NAMESPACE: 'gestalt-production',
+    PLATFORM_ACCOUNT_SESSION_INVALIDATION_RETRY_INTERVAL_MS: '5000',
     PLATFORM_REDIS_HOST: 'redis.example.test',
     PLATFORM_REDIS_USER: 'gestalt',
     PLATFORM_REDIS_PASSWORD: DISTINCTIVE_SECRET,
@@ -649,11 +650,21 @@ describe('production and deploy names', () => {
 
 
   it('keeps file membership until PostgreSQL activation is explicitly configured', () => {
-    expect(loadOperatedPlatformConfig(completeDeployEnv())).toMatchObject({ membershipBackend: 'file' })
+    expect(loadOperatedPlatformConfig(completeDeployEnv())).toMatchObject({
+      membershipBackend: 'file', accountSessionInvalidationRetryIntervalMs: 5000,
+    })
     expect(loadOperatedPlatformConfig(completeDeployEnv()).accountDeletion).toBeUndefined()
     expect(loadOperatedPlatformConfig({ ...completeDeployEnv(), ...deletionEnv })).toMatchObject({
       membershipBackend: 'postgres', accountDeletion: { retryIntervalMs: 1500, completedReceiptLifetimeMs: 604800000 },
     })
+  })
+
+  it('requires an Account Session invalidation recovery budget for every membership backend', () => {
+    for (const value of [undefined, '', '0', '-1', '1.5', '9007199254740992', 'invalid']) {
+      expect(() => loadOperatedPlatformConfig({
+        ...completeDeployEnv(), PLATFORM_ACCOUNT_SESSION_INVALIDATION_RETRY_INTERVAL_MS: value,
+      })).toThrow('PLATFORM_ACCOUNT_SESSION_INVALIDATION_RETRY_INTERVAL_MS')
+    }
   })
 
   it.each(['PLATFORM_ACCOUNT_DELETION_RETRY_INTERVAL_MS', 'PLATFORM_ACCOUNT_DELETION_RECEIPT_LIFETIME_MS'])(
@@ -692,13 +703,15 @@ describe('production and deploy names', () => {
     expect(rollback.stderr).toContain('writer-fenced current export')
   })
 
-  it('transports explicit deletion settings through the deployment configuration container and host env file', () => {
+  it('transports Account recovery and deletion settings through the deployment configuration container and host env file', () => {
     const workflow = loadWorkflow('.github/workflows/platform-deploy.yml')
     const validate = steps(job(workflow, 'validate')).find(step => String(step.run).includes('production-env-cli.ts'))
     const prepare = steps(job(workflow, 'deploy')).find(step => String(step.run).includes('config_container=$(docker create'))
     if (prepare === undefined || validate === undefined) throw new Error('operated environment steps are required')
     for (const step of [validate, prepare]) {
       expect(step.env).toMatchObject({
+        PLATFORM_ACCOUNT_SESSION_INVALIDATION_RETRY_INTERVAL_MS:
+          '${{ vars.PLATFORM_ACCOUNT_SESSION_INVALIDATION_RETRY_INTERVAL_MS }}',
         PLATFORM_MEMBERSHIP_BACKEND: "${{ vars.PLATFORM_MEMBERSHIP_BACKEND || 'file' }}",
         PLATFORM_ACCOUNT_DELETION_RETRY_INTERVAL_MS: '${{ vars.PLATFORM_ACCOUNT_DELETION_RETRY_INTERVAL_MS }}',
         PLATFORM_ACCOUNT_DELETION_RECEIPT_LIFETIME_MS: '${{ vars.PLATFORM_ACCOUNT_DELETION_RECEIPT_LIFETIME_MS }}',
@@ -716,7 +729,7 @@ describe('production and deploy names', () => {
         '    shift',
         '    while [ "$#" -gt 0 ]; do',
         '      if [ "$1" = -e ]; then',
-        '        shift; case "$1" in PLATFORM_MEMBERSHIP_BACKEND|PLATFORM_ACCOUNT_DELETION_*) printf \'%s=%s\\n\' "$1" "${!1}" >> "$candidate_env" ;; esac',
+        '        shift; case "$1" in PLATFORM_ACCOUNT_SESSION_INVALIDATION_RETRY_INTERVAL_MS|PLATFORM_MEMBERSHIP_BACKEND|PLATFORM_ACCOUNT_DELETION_*) printf \'%s=%s\\n\' "$1" "${!1}" >> "$candidate_env" ;; esac',
         '      fi',
         '      shift',
         '    done',
@@ -729,11 +742,16 @@ describe('production and deploy names', () => {
         create,
         launch,
       ].join('\n')], { encoding: 'utf8', env: {
-        PATH: process.env.PATH, ...deletionEnv, image: 'immutable-candidate', DSH_DEPLOY_IMAGE: 'immutable-candidate',
+        PATH: process.env.PATH,
+        PLATFORM_ACCOUNT_SESSION_INVALIDATION_RETRY_INTERVAL_MS: '5000',
+        ...deletionEnv, image: 'immutable-candidate', DSH_DEPLOY_IMAGE: 'immutable-candidate',
         candidate_env: join(temp, 'candidate.env'),
       } })
       expect(result.status, result.stderr).toBe(0)
-      expect(result.stdout.trim().split('\n')).toEqual(Object.entries(deletionEnv).map(([key, value]) => `${key}=${value}`))
+      expect(result.stdout.trim().split('\n')).toEqual(Object.entries({
+        PLATFORM_ACCOUNT_SESSION_INVALIDATION_RETRY_INTERVAL_MS: '5000',
+        ...deletionEnv,
+      }).map(([key, value]) => `${key}=${value}`))
     } finally { rmSync(temp, { recursive: true, force: true }) }
   })
 
@@ -765,6 +783,7 @@ describe('production and deploy names', () => {
         timeoutMs: 10000,
       },
       membershipStoragePath: '/var/lib/dsh/projects',
+      accountSessionInvalidationRetryIntervalMs: 5000,
     })
     expect(loadOperatedPlatformConfig({
       ...completeDeployEnv(), PLATFORM_MEMBERSHIP_STORAGE: '/tmp/platform-membership',
@@ -824,6 +843,7 @@ describe('production and deploy names', () => {
       'PLATFORM_APSARADB_CA_BASE64',
       'PLATFORM_POSTGRES_DATABASE',
       'PLATFORM_IDENTITY_NAMESPACE',
+      'PLATFORM_ACCOUNT_SESSION_INVALIDATION_RETRY_INTERVAL_MS',
       'PLATFORM_REDIS_USER',
       'PLATFORM_REDIS_PASSWORD',
       'PLATFORM_OSS_ENDPOINT',

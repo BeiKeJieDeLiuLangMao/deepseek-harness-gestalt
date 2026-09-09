@@ -351,6 +351,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   MessageFeedbackVersionConflict: 'feedback.md',
   AccountProof: 'platform-account.md',
   AuthenticatedInstallationView: 'platform-account.md',
+  MobileAccountInstallationView: 'platform-account.md',
   AccountSessionId: 'platform-account.md',
   AccountSessionView: 'platform-account.md',
   AccountDeletionProject: 'platform-account.md',

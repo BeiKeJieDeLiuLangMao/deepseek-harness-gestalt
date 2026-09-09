@@ -1707,6 +1707,18 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'provider-owned Account and Installation identity, including authenticated Mobile presentation.',
       },
       {
+        signature: 'abstract listMobileInstallations(input: { accessToken: string proof: AccountProof }): Promise<readonly MobileAccountInstallationView[]>',
+        description: 'List active Mobile Installations owned by the calling Desktop\'s Account.',
+        parameters: [{ name: 'input', description: 'Desktop Account access token and proof bound to this list operation.' }],
+        returns: 'authenticated presentation plus an opaque removal target and display reference.',
+      },
+      {
+        signature: 'abstract revokeMobileInstallation(input: { accessToken: string proof: AccountProof installationId: import(\'./types.ts\').InstallationId }): Promise<readonly MobileAccountInstallationView[]>',
+        description: 'Remotely sign one Mobile Installation out of the calling Desktop\'s Account.',
+        parameters: [{ name: 'input', description: 'Desktop authorization and proof bound to the opaque target Installation id.' }],
+        returns: 'the active Mobile Installation list after durable revocation.',
+      },
+      {
         signature: 'abstract publicIdentitiesByIds( accountIds: readonly PlatformAccountId[], ): Promise<ReadonlyMap<PlatformAccountId, PublicAccountIdentity>>',
         description: 'Read the public identity of many accounts in one batch.',
         parameters: [{ name: 'accountIds', description: 'accounts to resolve, typically one roster.' }],
@@ -5512,6 +5524,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'MobileAccessState',
     declaration: 'export interface MobileAccessState {\n    enabled: boolean;\n    relay?: RelayCredentialGrant;\n}',
+  },
+  {
+    name: 'MobileAccountInstallationView',
+    declaration: 'export interface MobileAccountInstallationView {\n    id: InstallationId;\n    reference: string;\n    name?: string;\n    platform?: MobileInstallationPresentation[\'platform\'];\n}',
   },
   {
     name: 'MobileInstallationPresentation',

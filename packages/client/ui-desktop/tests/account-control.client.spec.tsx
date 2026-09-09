@@ -26,6 +26,8 @@ describe('AccountControl', () => {
 
     expect(screen.getByText(/Platform 会保存 GitHub 数字 ID/)).toBeTruthy()
     expect(screen.getByText(/Platform stores the numeric GitHub id/)).toBeTruthy()
+    expect(screen.getByText(/account deletion is requested from the Mobile Account page/)).toBeTruthy()
+    expect(document.body.textContent).not.toContain('first version has no account deletion')
     expect(screen.getByRole('button', { name: 'Continue to GitHub' }).hasAttribute('disabled')).toBe(true)
     fireEvent.click(screen.getByRole('checkbox'))
     expect(desktop.accountAcceptPrivacy).toHaveBeenCalledOnce()
@@ -138,6 +140,79 @@ describe('AccountControl', () => {
     ])
   })
 
+  it('separates signed-in Mobile Installations from Personal Pairings and confirms removal', () => {
+    const signedIn: DesktopAccountSnapshot = {
+      status: 'signed-in',
+      privacyAccepted: true,
+      account: { id: 'account-1', githubId: 1, githubLogin: 'octocat', avatarUrl: 'https://avatars.example/octocat' },
+      mobileInstallations: {
+        status: 'ready',
+        installations: [
+          {
+            id: 'opaque-mobile-installation-id' as never,
+            reference: '72ad112d30a3',
+            name: 'DSH Companion iOS Acceptance',
+            platform: 'ios',
+          },
+          {
+            id: 'opaque-legacy-mobile-id' as never,
+            reference: '7589663f04ed',
+          },
+        ],
+      },
+    }
+    const desktop = bridge(signedIn)
+    window.dshDesktop = desktop
+    renderControl(signedIn, { status: 'ready', enabled: true, pairings: [] })
+
+    expect(desktop.accountRefreshMobileInstallations).toHaveBeenCalledOnce()
+    cleanup()
+    renderControl(signedIn, { status: 'ready', enabled: true, pairings: [] })
+    expect(desktop.accountRefreshMobileInstallations).toHaveBeenCalledTimes(2)
+    expect(screen.getByText('Signed-in mobile installations')).toBeTruthy()
+    expect(screen.getByText('Personal Pairings')).toBeTruthy()
+    expect(screen.getByText('DSH Companion iOS Acceptance')).toBeTruthy()
+    expect(screen.getByText('Device name unavailable (older sign-in)')).toBeTruthy()
+    expect(screen.getByText('Platform unavailable')).toBeTruthy()
+    expect(screen.getByText('72ad112d30a3')).toBeTruthy()
+    expect(document.body.textContent).not.toContain('opaque-mobile-installation-id')
+    expect(document.body.textContent).not.toContain('opaque-legacy-mobile-id')
+    fireEvent.click(screen.getAllByRole('button', { name: 'Remove' })[0]!)
+    expect(screen.getByRole('dialog', { name: 'Remove this mobile installation?' })).toBeTruthy()
+    expect(screen.getByText(/Personal Pairings, projects, and local files stay in place/)).toBeTruthy()
+    const confirm = screen.getByRole('button', { name: 'Remove installation' })
+    expect(confirm.hasAttribute('disabled')).toBe(true)
+    fireEvent.click(screen.getByRole('checkbox'))
+    fireEvent.click(confirm)
+    expect(desktop.accountRevokeMobileInstallation).toHaveBeenCalledWith('opaque-mobile-installation-id')
+  })
+
+  it('shows Mobile Installation load failure without hiding retained rows', () => {
+    const snapshot: DesktopAccountSnapshot = {
+      status: 'signed-in',
+      privacyAccepted: true,
+      account: { id: 'account-1', githubId: 1, githubLogin: 'octocat', avatarUrl: 'https://avatars.example/octocat' },
+      mobileInstallations: {
+        status: 'error',
+        installations: [{
+          id: 'retained-mobile' as never,
+          reference: 'a1cda16210b5',
+          name: 'Retained phone',
+          platform: 'android',
+        }],
+        error: 'Platform temporarily unavailable',
+      },
+    }
+    const desktop = bridge(snapshot)
+    window.dshDesktop = desktop
+    renderControl(snapshot)
+    vi.mocked(desktop.accountRefreshMobileInstallations).mockClear()
+    expect(screen.getByText('Retained phone')).toBeTruthy()
+    expect(screen.getByRole('alert').textContent).toContain('Platform temporarily unavailable')
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+    expect(desktop.accountRefreshMobileInstallations).toHaveBeenCalledOnce()
+  })
+
   it('projects every Account state and renders nothing without the Desktop bridge', () => {
     const idle: DesktopAccountSnapshot = { status: 'idle', privacyAccepted: false }
     const empty = renderControl(idle)
@@ -218,6 +293,8 @@ function bridge(snapshot: DesktopAccountSnapshot): DesktopBridge {
     accountAcceptPrivacy: vi.fn().mockResolvedValue({ ...snapshot, privacyAccepted: true }),
     accountBeginLogin: vi.fn().mockResolvedValue({ status: 'polling', privacyAccepted: true }),
     accountCancelLogin: vi.fn().mockResolvedValue({ status: 'idle', privacyAccepted: true }),
+    accountRefreshMobileInstallations: vi.fn().mockResolvedValue(snapshot),
+    accountRevokeMobileInstallation: vi.fn().mockResolvedValue(snapshot),
     accountSignOut: vi.fn().mockResolvedValue({ status: 'idle', privacyAccepted: true }),
     onAccountSnapshot: () => () => {},
     pairingGetSnapshot: vi.fn(),

@@ -82,6 +82,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS account_sessions_refresh_hash
   ON account_sessions (refresh_hash) WHERE refresh_hash IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS account_sessions_active_install
   ON account_sessions (identity_namespace, installation_id) WHERE active;
+CREATE TABLE IF NOT EXISTS account_mobile_session_invalidations (
+  session_id text PRIMARY KEY,
+  identity_namespace text NOT NULL,
+  account_id text NOT NULL,
+  installation_id text NOT NULL
+);
 CREATE TABLE IF NOT EXISTS account_proofs (
   jti text PRIMARY KEY,
   expires_at bigint NOT NULL
@@ -311,6 +317,120 @@ export class PostgresAccountBackend implements AccountBackend {
       [sessionId],
     )
     return result.rowCount === 1
+  }
+
+  async listActiveMobileInstallations(accountId: PlatformAccountId): Promise<readonly SessionRecord[]> {
+    const result = await this.pool.query<SessionRow>(
+      `SELECT * FROM account_sessions
+        WHERE account_id = $1 AND installation_kind = 'mobile' AND active = TRUE
+        ORDER BY installation_id`,
+      [accountId],
+    )
+    return result.rows.map(sessionFromRow)
+  }
+
+  async revokeMobileInstallation(
+    initiating: SessionRecord,
+    installationId: InstallationId,
+  ): Promise<readonly AccountSessionId[]> {
+    const client = await this.pool.connect()
+    try {
+      await client.query('BEGIN')
+      const attempts = await client.query<{ id: string }>(
+        `SELECT id FROM account_attempts
+          WHERE identity_namespace = $1
+            AND installation_id = $2
+            AND status = 'authorized'
+            AND identity->>'providerSubject' = (
+              SELECT github_id::text FROM account_accounts WHERE id = $3
+            )
+          ORDER BY id
+          FOR UPDATE`,
+        [initiating.identityNamespace, installationId, initiating.accountId],
+      )
+      const account = await client.query(
+        'SELECT id FROM account_accounts WHERE id = $1 FOR UPDATE',
+        [initiating.accountId],
+      )
+      if (account.rows.length !== 1) throw new AccountError('SESSION_REVOKED', 'Account is unavailable')
+      const deleting = await client.query(
+        'SELECT id FROM account_deletions WHERE account_id = $1 AND completed_at IS NULL',
+        [initiating.accountId],
+      )
+      if (deleting.rows.length > 0) throw new AccountError('ACCOUNT_DELETING', 'Account deletion is in progress')
+      const caller = await client.query<SessionRow>(
+        'SELECT * FROM account_sessions WHERE id = $1 FOR UPDATE',
+        [initiating.id],
+      )
+      const current = caller.rows[0]
+      if (current === undefined || !current.active || current.revision !== initiating.revision
+        || current.account_id !== initiating.accountId || current.installation_kind !== 'desktop') {
+        throw new AccountError('SESSION_REVOKED', 'Desktop Account Session changed before removal')
+      }
+      const targets = await client.query<{ id: AccountSessionId }>(
+        `UPDATE account_sessions
+            SET active = FALSE, revision = revision + 1, refresh_hash = NULL
+          WHERE account_id = $1
+            AND installation_id = $2
+            AND installation_kind = 'mobile'
+            AND active = TRUE
+          RETURNING id`,
+        [initiating.accountId, installationId],
+      )
+      if (targets.rows.length === 0) {
+        const pending = await client.query<{ session_id: AccountSessionId }>(
+          `SELECT session_id FROM account_mobile_session_invalidations
+            WHERE account_id = $1 AND installation_id = $2
+            ORDER BY session_id`,
+          [initiating.accountId, installationId],
+        )
+        if (pending.rows.length > 0) {
+          await client.query('COMMIT')
+          return pending.rows.map(row => row.session_id)
+        }
+        throw new AccountError('INSTALLATION_NOT_FOUND', 'Mobile Installation is unavailable')
+      }
+      const attemptIds = attempts.rows.map(row => row.id)
+      if (attemptIds.length > 0) {
+        await client.query(
+          `UPDATE account_attempts SET status = 'used', identity = NULL
+            WHERE id = ANY($1::text[]) AND status = 'authorized'`,
+          [attemptIds],
+        )
+      }
+      for (const target of targets.rows) {
+        await client.query(
+          `INSERT INTO account_mobile_session_invalidations (
+            session_id, identity_namespace, account_id, installation_id
+          ) VALUES ($1,$2,$3,$4) ON CONFLICT (session_id) DO NOTHING`,
+          [target.id, initiating.identityNamespace, initiating.accountId, installationId],
+        )
+      }
+      await client.query('COMMIT')
+      return targets.rows.map(row => row.id)
+    } catch (error) {
+      await client.query('ROLLBACK')
+      throw error
+    } finally {
+      client.release()
+    }
+  }
+
+  async pendingMobileSessionInvalidations(identityNamespace: string): Promise<readonly AccountSessionId[]> {
+    const result = await this.pool.query<{ session_id: AccountSessionId }>(
+      `SELECT session_id FROM account_mobile_session_invalidations
+        WHERE identity_namespace = $1
+        ORDER BY session_id`,
+      [identityNamespace],
+    )
+    return result.rows.map(row => row.session_id)
+  }
+
+  async completeMobileSessionInvalidation(sessionId: AccountSessionId): Promise<void> {
+    await this.pool.query(
+      'DELETE FROM account_mobile_session_invalidations WHERE session_id = $1',
+      [sessionId],
+    )
   }
 
   async beginAccountDeletion(record: AccountDeletionRecord, initiating: SessionRecord): Promise<AccountDeletionRecord> {

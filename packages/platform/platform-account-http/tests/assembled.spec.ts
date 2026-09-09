@@ -73,7 +73,10 @@ describe('real Platform Account HTTP composition', () => {
             authorizationUrl(input) { callbackState = input.state; return `https://github.com/login/oauth/authorize?state=${input.state}` },
             async exchange() { return { providerSubject: 13994321, login: 'octocat', avatarUrl: 'https://avatars.example/octocat' } },
           },
-          config: { tokenSigningKey: Buffer.alloc(32, 7), pollingSigningKey: Buffer.alloc(32, 9) },
+          config: {
+            tokenSigningKey: Buffer.alloc(32, 7), pollingSigningKey: Buffer.alloc(32, 9),
+            sessionInvalidationRetryIntervalMs: 60_000,
+          },
           deletion: { retryIntervalMs: 60_000, completedReceiptLifetimeMs: 60_000,
             owner: { async plan() { return [] }, async revoke() {}, async cleanup() { cleanupCount += 1; return [] } } },
         })
@@ -170,7 +173,10 @@ describe('real Platform Account HTTP composition', () => {
       apply(ctx: Context) {
         const options = {
           backend, invalidation, github, environment: ENVIRONMENT,
-          config: { tokenSigningKey: Buffer.alloc(32, 7), pollingSigningKey: Buffer.alloc(32, 9) },
+          config: {
+            tokenSigningKey: Buffer.alloc(32, 7), pollingSigningKey: Buffer.alloc(32, 9),
+            sessionInvalidationRetryIntervalMs: 60_000,
+          },
           clock: { now: () => now },
         }
         new PlatformAccount(ctx, options)
@@ -271,7 +277,10 @@ describe('real Platform Account HTTP composition', () => {
           backend: new MemoryAccountBackend(ENVIRONMENT.databaseIdentity),
           invalidation: new MemoryAccountInvalidationBus(),
           github, environment: ENVIRONMENT,
-          config: { tokenSigningKey: Buffer.alloc(32, 7), pollingSigningKey: Buffer.alloc(32, 9) },
+          config: {
+            tokenSigningKey: Buffer.alloc(32, 7), pollingSigningKey: Buffer.alloc(32, 9),
+            sessionInvalidationRetryIntervalMs: 60_000,
+          },
           clock: { now: () => now },
         }
         new PlatformAccount(ctx, options)
@@ -384,6 +393,7 @@ describe('real Platform Account HTTP composition', () => {
           config: {
             tokenSigningKey: Buffer.alloc(32, 7),
             pollingSigningKey: Buffer.alloc(32, 9),
+            sessionInvalidationRetryIntervalMs: 60_000,
           },
         })
       },
@@ -472,7 +482,10 @@ function validationProvider(environment: SelectedPlatformEnvironment): unknown {
         invalidation: new MemoryAccountInvalidationBus(),
         github,
         environment,
-        config: { tokenSigningKey: Buffer.alloc(32, 7), pollingSigningKey: Buffer.alloc(32, 9) },
+        config: {
+          tokenSigningKey: Buffer.alloc(32, 7), pollingSigningKey: Buffer.alloc(32, 9),
+          sessionInvalidationRetryIntervalMs: 60_000,
+        },
       })
     },
   }

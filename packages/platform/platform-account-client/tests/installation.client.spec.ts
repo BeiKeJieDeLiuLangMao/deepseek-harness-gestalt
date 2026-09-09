@@ -73,6 +73,8 @@ interface MockTransport {
   pollLogin: Mock<PlatformAccountTransport['pollLogin']>
   refresh: Mock<PlatformAccountTransport['refresh']>
   current: Mock<PlatformAccountTransport['current']>
+  listMobileInstallations: Mock<PlatformAccountTransport['listMobileInstallations']>
+  revokeMobileInstallation: Mock<PlatformAccountTransport['revokeMobileInstallation']>
   signOut: Mock<PlatformAccountTransport['signOut']>
   planAccountDeletion: Mock<PlatformAccountTransport['planAccountDeletion']>
   deleteAccount: Mock<PlatformAccountTransport['deleteAccount']>
@@ -90,6 +92,8 @@ function transport(
       .mockImplementation(async () => ({ status: 'complete', ...results.shift()! })),
     refresh: vi.fn<PlatformAccountTransport['refresh']>(),
     current: vi.fn<PlatformAccountTransport['current']>(),
+    listMobileInstallations: vi.fn<PlatformAccountTransport['listMobileInstallations']>(),
+    revokeMobileInstallation: vi.fn<PlatformAccountTransport['revokeMobileInstallation']>(),
     signOut: vi.fn<PlatformAccountTransport['signOut']>().mockResolvedValue(undefined),
     planAccountDeletion: vi.fn<PlatformAccountTransport['planAccountDeletion']>().mockResolvedValue([]),
     deleteAccount: vi.fn<PlatformAccountTransport['deleteAccount']>(),
@@ -726,13 +730,15 @@ describe('PlatformAccountHttpTransport', () => {
       const address = typeof url === 'string' ? url : url instanceof URL ? url.href : url.url
       calls.push([address, init ?? {}])
       if (init?.method === 'DELETE') return new Response(null, { status: 204 })
-      const value = address.endsWith('/login-attempts')
-        ? ATTEMPT
-        : address.endsWith('/login-poll')
-          ? { status: 'pending' }
-          : address.endsWith('/refresh')
-            ? session('account-a', 'octocat')
-            : session('account-a', 'octocat').account
+      const value = address.endsWith('/mobile-installations') || address.endsWith('/mobile-installations/revoke')
+        ? [{ id: 'mobile-1', reference: '123456789abc', name: 'Test phone', platform: 'ios' }]
+        : address.endsWith('/login-attempts')
+          ? ATTEMPT
+          : address.endsWith('/login-poll')
+            ? { status: 'pending' }
+            : address.endsWith('/refresh')
+              ? session('account-a', 'octocat')
+              : session('account-a', 'octocat').account
       return new Response(JSON.stringify(value), {
         status: 200, headers: { 'content-type': 'application/json' },
       })
@@ -750,6 +756,10 @@ describe('PlatformAccountHttpTransport', () => {
     await transport.pollLogin({ attemptId: parseLoginAttemptId('attempt'), pollingToken: 'poll', proof })
     await transport.refresh({ refreshToken: 'refresh', proof })
     await transport.current({ accessToken: 'access', proof })
+    await transport.listMobileInstallations({ accessToken: 'access', proof })
+    await transport.revokeMobileInstallation({
+      accessToken: 'access', proof, installationId: parseInstallationId('mobile-1'),
+    })
     await transport.signOut({ accessToken: 'access', proof })
 
     expect(calls.map(([url]) => url)).toEqual([
@@ -757,6 +767,8 @@ describe('PlatformAccountHttpTransport', () => {
       'https://prod.example/v1/account/login-poll',
       'https://prod.example/v1/account/session/refresh',
       'https://prod.example/v1/account/session',
+      'https://prod.example/v1/account/mobile-installations',
+      'https://prod.example/v1/account/mobile-installations/revoke',
       'https://prod.example/v1/account/session',
     ])
     expect(new Headers(calls[0]?.[1].headers).get('content-type')).toBe('application/json')
@@ -821,6 +833,8 @@ describe('PlatformAccountHttpTransport', () => {
     })).rejects.toThrow('status')
     await expect(transport.refresh({ refreshToken: 'refresh', proof })).rejects.toThrow('Account Session')
     await expect(transport.current({ accessToken: 'access', proof })).rejects.toThrow('Platform Account')
+    await expect(transport.listMobileInstallations({ accessToken: 'access', proof }))
+      .rejects.toThrow('must be an array')
     const backwards = { ...session('account-a', 'octocat'), accessExpiresAt: 2_000, refreshExpiresAt: 1_000 }
     const backwardsTransport = new PlatformAccountHttpTransport({
       environment: DEVELOPMENT, fetch: vi.fn(async () => json(backwards)),

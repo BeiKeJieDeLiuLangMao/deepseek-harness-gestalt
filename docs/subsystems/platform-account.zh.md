@@ -16,6 +16,12 @@ Installation 在创建五分钟 `LoginAttemptView` 前接受唯一规范的双�
 
 通用能力可以为范围受限的 example 与测试校验彼此不同的开发和生产身份。Desktop 与 Mobile 产品入口会在渲染或流量前只接受一套实际运行的生产身份：Desktop 从应用 archive 读取发布流程生成的公开配置，Mobile 则通过构建配置接收同一组字段。该身份绑定 HTTP Consumer 唯一的 CORS origin、客户端 transport、OAuth adapter、backend 数据库、本地存储、回调与签发账号命名空间；字段缺失、localhost 或 Consumer origin 不匹配会在注册路由前失败。HTTP 与持久化记录都会在各自边界从 `unknown` 解析，IndexedDB 只接受真正的 P-256 私有签名 `CryptoKey`。内存后端与失效总线是 fixture adapter；生产持久化与分布式失效属于 Platform 部署。
 
+## Desktop 管理 Mobile 安装
+
+活跃 Desktop Account Session 可以列出所属 Account 的活跃 Mobile Installation，并远程退出一个与证明绑定的 opaque 目标。每行展示已认证 Mobile 信息和稳定的十二字符 Installation 摘要；缺少展示字段的旧记录仍可移除，也不会显示虚构身份。移除操作会原子提交全部匹配 Session 的撤销、refresh 移除和持久失效记录，同时消费同一 Account 中目标已经授权的 login attempt。Refresh 要么先于该事务提交，要么看到非活跃 Session。后续授权或登录仍可建立新 Session，因为移除不会创建 Installation 黑名单。
+
+失效发布会分别尝试全部已提交 Session id，只确认总线接受的投递。由必填 `sessionInvalidationRetryIntervalMs` 驱动的 namespace 恢复定时器会在发布失败或进程重启后重复待投递 id，且不依赖账号删除。Outbox 记录在所属 Account 与 Session 行删除后仍会保留。
+
 <a id="account-deletion"></a>
 
 ## 账号删除
@@ -81,6 +87,20 @@ abstract current(input: { accessToken: string; proof: AccountProof }): Promise<P
  * @returns provider-owned Account and Installation identity, including authenticated Mobile presentation.
  */
 abstract currentInstallation(input: { accessToken: string proof: AccountProof }): Promise<AuthenticatedInstallationView>
+
+/**
+ * List active Mobile Installations owned by the calling Desktop's Account.
+ * @param input - Desktop Account access token and proof bound to this list operation.
+ * @returns authenticated presentation plus an opaque removal target and display reference.
+ */
+abstract listMobileInstallations(input: { accessToken: string proof: AccountProof }): Promise<readonly MobileAccountInstallationView[]>
+
+/**
+ * Remotely sign one Mobile Installation out of the calling Desktop's Account.
+ * @param input - Desktop authorization and proof bound to the opaque target Installation id.
+ * @returns the active Mobile Installation list after durable revocation.
+ */
+abstract revokeMobileInstallation(input: { accessToken: string proof: AccountProof installationId: import('./types.ts').InstallationId }): Promise<readonly MobileAccountInstallationView[]>
 
 /**
  * Read the public identity of many accounts in one batch.

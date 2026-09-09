@@ -270,6 +270,8 @@ function fixture(): {
     pollLogin: vi.fn<PlatformAccountTransport['pollLogin']>().mockResolvedValue({ status: 'complete', ...session }),
     refresh: vi.fn<PlatformAccountTransport['refresh']>(),
     current: vi.fn<PlatformAccountTransport['current']>(),
+    listMobileInstallations: vi.fn<PlatformAccountTransport['listMobileInstallations']>(),
+    revokeMobileInstallation: vi.fn<PlatformAccountTransport['revokeMobileInstallation']>(),
     signOut: vi.fn<PlatformAccountTransport['signOut']>().mockResolvedValue(undefined),
     planAccountDeletion: vi.fn<PlatformAccountTransport['planAccountDeletion']>().mockResolvedValue([]),
     deleteAccount: vi.fn<PlatformAccountTransport['deleteAccount']>(),
@@ -298,6 +300,8 @@ interface MockTransport {
   pollLogin: Mock<PlatformAccountTransport['pollLogin']>
   refresh: Mock<PlatformAccountTransport['refresh']>
   current: Mock<PlatformAccountTransport['current']>
+  listMobileInstallations: Mock<PlatformAccountTransport['listMobileInstallations']>
+  revokeMobileInstallation: Mock<PlatformAccountTransport['revokeMobileInstallation']>
   signOut: Mock<PlatformAccountTransport['signOut']>
   planAccountDeletion: Mock<PlatformAccountTransport['planAccountDeletion']>
   deleteAccount: Mock<PlatformAccountTransport['deleteAccount']>

@@ -1,9 +1,11 @@
 /** Desktop Mobile Pairing Settings section and bilingual pre-authorization notice. */
 
-import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
+import { useEffect, useState } from 'react'
+import { Button, RiskConfirmation } from '@deepseek-ai/dsh-client-ui-primitives'
 import { ACCOUNT_PRIVACY_NOTICE } from '@deepseek-ai/dsh-platform-account/privacy'
 import type { PropsLocale, PropsRuntime, SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 import type { DesktopAccountSnapshot } from '../protocol.ts'
+import type { MobileAccountInstallationView } from '@deepseek-ai/dsh-platform-account'
 import type { DesktopPairingSnapshot } from '../protocol.ts'
 import { encode as encodeQrCode } from 'uqr'
 import css from './AccountControl.module.css'
@@ -35,9 +37,13 @@ export function AccountControl({ t, useAccount, usePairing }: AccountControlProp
   const snapshot = useAccount(value => value)
   const pairing = usePairing(value => value)
   const desktop = window.dshDesktop
-  if (desktop === undefined) return null
   const signedIn = (snapshot.status === 'signed-in' || snapshot.status === 'signing-out')
     && snapshot.account !== undefined
+  useEffect(() => {
+    if (desktop === undefined || !signedIn) return
+    void desktop.accountRefreshMobileInstallations()
+  }, [desktop, signedIn, snapshot.account?.id])
+  if (desktop === undefined) return null
   return (
     <section className={css.root} data-desktop-account-control={snapshot.status}>
       {!signedIn && (
@@ -50,9 +56,89 @@ export function AccountControl({ t, useAccount, usePairing }: AccountControlProp
         </header>
       )}
       <AccountPanel desktop={desktop} snapshot={snapshot} t={t} />
+      {signedIn && <MobileInstallationsPanel desktop={desktop} snapshot={snapshot} t={t} />}
       {(snapshot.status === 'signed-in' || snapshot.status === 'signing-out')
         && <PairingPanel desktop={desktop} snapshot={pairing} t={t} />}
     </section>
+  )
+}
+
+function MobileInstallationsPanel({ desktop, snapshot, t }: {
+  desktop: NonNullable<typeof window.dshDesktop>
+  snapshot: DesktopAccountSnapshot
+  t: AccountControlProps['t']
+}) {
+  const state = snapshot.mobileInstallations ?? { status: 'loading' as const, installations: [] }
+  const [selected, setSelected] = useState<MobileAccountInstallationView>()
+  const [acknowledged, setAcknowledged] = useState(false)
+  const removing = state.status === 'removing'
+  const select = (installation: MobileAccountInstallationView): void => {
+    setAcknowledged(false)
+    setSelected(installation)
+  }
+  const close = (): void => {
+    setAcknowledged(false)
+    setSelected(undefined)
+  }
+  const confirm = (): void => {
+    if (selected === undefined) return
+    void desktop.accountRevokeMobileInstallation(selected.id)
+    close()
+  }
+  return (
+    <div className={css.installations} data-mobile-installations={state.status}>
+      <div className={css.sectionHeading}>
+        <strong>{t('account.installations.title')}</strong>
+        <p>{t('account.installations.description')}</p>
+      </div>
+      {state.status === 'loading' && state.installations.length === 0 && (
+        <p className={css.secondary} aria-live="polite">{t('account.installations.loading')}</p>
+      )}
+      {state.status === 'error' && (
+        <div className={css.inlineError} role="alert">
+          <span>{state.error ?? t('account.installations.error')}</span>
+          <Button variant="outline" onClick={() => { void desktop.accountRefreshMobileInstallations() }}>
+            {t('account.installations.retry')}
+          </Button>
+        </div>
+      )}
+      {state.status === 'ready' && state.installations.length === 0 && (
+        <p className={css.secondary}>{t('account.installations.empty')}</p>
+      )}
+      {state.installations.map(installation => (
+        <div className={css.installation} key={installation.id}>
+          <div className={css.deviceIdentity}>
+            <strong>{installation.name ?? t('account.installations.nameUnavailable')}</strong>
+            <div className={css.deviceBadges}>
+              <span>{installation.platform ?? t('account.installations.platformUnavailable')}</span>
+              <span>{t('account.installations.reference')} <code>{installation.reference}</code></span>
+            </div>
+          </div>
+          <Button
+            variant="outline"
+            disabled={removing}
+            onClick={() => { select(installation) }}
+          >
+            {state.removingInstallationId === installation.id
+              ? t('account.installations.removing')
+              : t('account.installations.remove')}
+          </Button>
+        </div>
+      ))}
+      <RiskConfirmation
+        open={selected !== undefined}
+        title={t('account.installations.confirmTitle')}
+        description={t('account.installations.confirmDescription')}
+        acknowledgeLabel={t('account.installations.acknowledge')}
+        cancelLabel={t('account.installations.cancel')}
+        confirmLabel={t('account.installations.confirm')}
+        acknowledged={acknowledged}
+        disabled={removing}
+        onAcknowledgedChange={setAcknowledged}
+        onCancel={close}
+        onConfirm={confirm}
+      />
+    </div>
   )
 }
 
@@ -64,6 +150,10 @@ function PairingPanel({ desktop, snapshot, t }: {
   const pending = snapshot.pending
   return (
     <div className={css.pairing} data-desktop-pairing={snapshot.status}>
+      <div className={css.sectionHeading}>
+        <strong>{t('pairing.title')}</strong>
+        <p>{t('pairing.description')}</p>
+      </div>
       <div className={css.mobileAccess}>
         <div><strong>{t('pairing.mobileAccess')}</strong><p>{t('pairing.mobileAccessDescription')}</p></div>
         <button

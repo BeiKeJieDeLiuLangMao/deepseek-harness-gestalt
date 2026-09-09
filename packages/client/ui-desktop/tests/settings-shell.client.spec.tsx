@@ -220,6 +220,8 @@ function bridge(account: DesktopAccountSnapshot, pairing: DesktopPairingSnapshot
     accountAcceptPrivacy: vi.fn(),
     accountBeginLogin: vi.fn(),
     accountCancelLogin: vi.fn(),
+    accountRefreshMobileInstallations: vi.fn(),
+    accountRevokeMobileInstallation: vi.fn(),
     accountSignOut: vi.fn(),
     onAccountSnapshot: vi.fn(() => () => {}),
     pairingGetSnapshot: vi.fn().mockResolvedValue(pairing),

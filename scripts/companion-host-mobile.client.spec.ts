@@ -215,6 +215,8 @@ function installationWithCompletedLogin(): PlatformAccountInstallation {
     }),
     refresh: vi.fn<PlatformAccountTransport['refresh']>(),
     current: vi.fn<PlatformAccountTransport['current']>(),
+    listMobileInstallations: vi.fn<PlatformAccountTransport['listMobileInstallations']>(),
+    revokeMobileInstallation: vi.fn<PlatformAccountTransport['revokeMobileInstallation']>(),
     signOut: vi.fn<PlatformAccountTransport['signOut']>().mockResolvedValue(undefined),
     planAccountDeletion: vi.fn<PlatformAccountTransport['planAccountDeletion']>(),
     deleteAccount: vi.fn<PlatformAccountTransport['deleteAccount']>(),

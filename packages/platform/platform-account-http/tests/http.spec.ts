@@ -99,6 +99,22 @@ describe('Platform Account HTTP consumer', () => {
     const current = await fetch(`${server.origin}/v1/account/session`, { headers: proofHeaders })
     expect(current.status).toBe(200)
     expect(await current.json()).toMatchObject({ githubLogin: 'octocat' })
+    const installations = await fetch(`${server.origin}/v1/account/mobile-installations`, { headers: proofHeaders })
+    expect(installations.status).toBe(200)
+    expect(await installations.json()).toEqual([{
+      id: 'mobile-1', reference: '123456789abc', name: 'Test phone', platform: 'ios',
+    }])
+    const revoked = await fetch(`${server.origin}/v1/account/mobile-installations/revoke`, {
+      method: 'POST',
+      headers: { ...proofHeaders, 'content-type': 'application/json' },
+      body: JSON.stringify({ installationId: 'mobile-1' }),
+    })
+    expect(revoked.status).toBe(200)
+    expect(account.revokeMobileInstallation).toHaveBeenCalledWith({
+      accessToken: 'access',
+      installationId: 'mobile-1',
+      proof: { jti: 'proof-3', issuedAt: 3, signature: 'signature' },
+    })
     const signOut = await fetch(`${server.origin}/v1/account/session`, { method: 'DELETE', headers: proofHeaders })
     expect(signOut.status).toBe(204)
     expect(account.signOut).toHaveBeenCalledOnce()
@@ -203,6 +219,10 @@ describe('Platform Account HTTP consumer', () => {
     vi.mocked(account.beginLogin).mockRejectedValueOnce(new AccountError('PLATFORM_CAPACITY', 'full', 45))
     vi.mocked(account.refresh).mockRejectedValueOnce(new AccountError('SESSION_REVOKED', 'revoked'))
     vi.mocked(account.current).mockRejectedValueOnce(new Error('database unavailable'))
+    vi.mocked(account.listMobileInstallations)
+      .mockRejectedValueOnce(new AccountError('INSTALLATION_FORBIDDEN', 'desktop required'))
+    vi.mocked(account.revokeMobileInstallation)
+      .mockRejectedValueOnce(new AccountError('INSTALLATION_NOT_FOUND', 'missing'))
     const server = await start(account)
 
     const invalidJson = await fetch(`${server.origin}/v1/account/login-attempts`, {
@@ -240,6 +260,27 @@ describe('Platform Account HTTP consumer', () => {
       },
     })
     expect(await error(internal)).toEqual([500, 'INTERNAL'])
+    const forbidden = await fetch(`${server.origin}/v1/account/mobile-installations`, {
+      headers: {
+        authorization: 'Bearer access',
+        'x-gestalt-proof-jti': 'jti-forbidden',
+        'x-gestalt-proof-issued-at': '1',
+        'x-gestalt-proof-signature': 'sig',
+      },
+    })
+    expect(await error(forbidden)).toEqual([403, 'INSTALLATION_FORBIDDEN'])
+    const missing = await fetch(`${server.origin}/v1/account/mobile-installations/revoke`, {
+      method: 'POST',
+      headers: {
+        authorization: 'Bearer access',
+        'content-type': 'application/json',
+        'x-gestalt-proof-jti': 'jti-missing',
+        'x-gestalt-proof-issued-at': '1',
+        'x-gestalt-proof-signature': 'sig',
+      },
+      body: JSON.stringify({ installationId: 'missing-mobile' }),
+    })
+    expect(await error(missing)).toEqual([404, 'INSTALLATION_NOT_FOUND'])
     const wrongMethod = await fetch(`${server.origin}/v1/account/session`, { method: 'PATCH' })
     expect(await error(wrongMethod)).toEqual([405, 'METHOD_NOT_ALLOWED'])
   })
@@ -357,6 +398,8 @@ interface MockAccountService {
   pollLogin: Mock<AccountService['pollLogin']>
   refresh: Mock<AccountService['refresh']>
   current: Mock<AccountService['current']>
+  listMobileInstallations: Mock<AccountService['listMobileInstallations']>
+  revokeMobileInstallation: Mock<AccountService['revokeMobileInstallation']>
   signOut: Mock<AccountService['signOut']>
   planAccountDeletion: Mock<AccountService['planAccountDeletion']>
   deleteAccount: Mock<AccountService['deleteAccount']>
@@ -375,6 +418,10 @@ function accountService(): MockAccountService {
     pollLogin: vi.fn<AccountService['pollLogin']>().mockResolvedValue({ status: 'pending' }),
     refresh: vi.fn<AccountService['refresh']>().mockResolvedValue(session()),
     current: vi.fn<AccountService['current']>().mockResolvedValue(session().account),
+    listMobileInstallations: vi.fn<AccountService['listMobileInstallations']>().mockResolvedValue([{
+      id: 'mobile-1' as never, reference: '123456789abc', name: 'Test phone', platform: 'ios',
+    }]),
+    revokeMobileInstallation: vi.fn<AccountService['revokeMobileInstallation']>().mockResolvedValue([]),
     signOut: vi.fn<AccountService['signOut']>().mockResolvedValue(undefined),
     planAccountDeletion: vi.fn<AccountService['planAccountDeletion']>().mockResolvedValue([]),
     deleteAccount: vi.fn<AccountService['deleteAccount']>().mockResolvedValue({ operationId: 'delete-one' as never, status: 'deleting', projects: [] }),

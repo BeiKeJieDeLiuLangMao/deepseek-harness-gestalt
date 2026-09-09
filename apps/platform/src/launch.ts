@@ -140,6 +140,7 @@ export async function launchOperatedPlatform(
           config: {
             tokenSigningKey: config.tokenSigningKey,
             pollingSigningKey: config.pollingSigningKey,
+            sessionInvalidationRetryIntervalMs: config.accountSessionInvalidationRetryIntervalMs,
           },
         })
       },

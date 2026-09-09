@@ -24,6 +24,7 @@ import {
   parseAccountProofJti,
   parseLoginAttemptView,
   parseLoginPollResult,
+  parseMobileAccountInstallationViews,
   parsePlatformAccountView,
   type AccountProof,
   type AccountErrorCode,
@@ -34,6 +35,7 @@ import {
   type LoginAttemptId,
   type LoginAttemptView,
   type LoginPollResult,
+  type MobileAccountInstallationView,
   type PlatformAccountId,
   type PlatformAccountView,
   type PlatformEnvironment,
@@ -59,6 +61,12 @@ export interface PlatformAccountTransport {
   pollLogin(input: { attemptId: LoginAttemptId; pollingToken: string; proof: AccountProof }): Promise<LoginPollResult>
   refresh(input: { refreshToken: string; proof: AccountProof }): Promise<AccountSessionView>
   current(input: { accessToken: string; proof: AccountProof }): Promise<PlatformAccountView>
+  listMobileInstallations(input: { accessToken: string; proof: AccountProof }): Promise<readonly MobileAccountInstallationView[]>
+  revokeMobileInstallation(input: {
+    accessToken: string
+    proof: AccountProof
+    installationId: InstallationId
+  }): Promise<readonly MobileAccountInstallationView[]>
   signOut(input: { accessToken: string; proof: AccountProof }): Promise<void>
   planAccountDeletion(input: { accessToken: string; proof: AccountProof }): Promise<readonly AccountDeletionProject[]>
   deleteAccount(input: AccountDeletionRequest): Promise<AccountDeletionView>
@@ -109,6 +117,28 @@ export class PlatformAccountHttpTransport implements PlatformAccountTransport {
       method: 'GET',
       headers: proofHeaders(input.accessToken, input.proof),
     }, parsePlatformAccountView)
+  }
+
+  listMobileInstallations(input: {
+    accessToken: string
+    proof: AccountProof
+  }): Promise<readonly MobileAccountInstallationView[]> {
+    return this.json('/v1/account/mobile-installations', {
+      method: 'GET',
+      headers: proofHeaders(input.accessToken, input.proof),
+    }, parseMobileAccountInstallationViews)
+  }
+
+  revokeMobileInstallation(input: {
+    accessToken: string
+    proof: AccountProof
+    installationId: InstallationId
+  }): Promise<readonly MobileAccountInstallationView[]> {
+    return this.json('/v1/account/mobile-installations/revoke', {
+      method: 'POST',
+      headers: proofHeaders(input.accessToken, input.proof),
+      body: JSON.stringify({ installationId: input.installationId }),
+    }, parseMobileAccountInstallationViews)
   }
 
   async signOut(input: { accessToken: string; proof: AccountProof }): Promise<void> {
@@ -982,6 +1012,8 @@ function isAccountErrorCode(value: string): value is AccountErrorCode {
     'QUOTA',
     'PLATFORM_CAPACITY',
     'ACCOUNT_DELETING',
+    'INSTALLATION_FORBIDDEN',
+    'INSTALLATION_NOT_FOUND',
     'DELETION_UNAVAILABLE',
     'DELETION_INVALID',
     'DELETION_SELECTION_REQUIRED',

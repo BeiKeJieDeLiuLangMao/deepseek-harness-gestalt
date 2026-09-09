@@ -84,6 +84,7 @@ function platform() {
     config: {
       tokenSigningKey: Buffer.alloc(32, 7),
       pollingSigningKey: Buffer.alloc(32, 9),
+      sessionInvalidationRetryIntervalMs: 60_000,
     },
   })
 }
@@ -145,6 +146,8 @@ describe('DesktopAccountController', () => {
       pollLogin,
       refresh: vi.fn(),
       current: vi.fn(),
+      listMobileInstallations: vi.fn(),
+      revokeMobileInstallation: vi.fn(),
       signOut: vi.fn(),
       planAccountDeletion: vi.fn<PlatformAccountTransport['planAccountDeletion']>()
         .mockRejectedValue(new Error('Unexpected account deletion in Desktop login fixture')),
@@ -274,6 +277,78 @@ describe('DesktopAccountController', () => {
     expect(store.material.get('personal-pairing')).toBe('preserved')
   })
 
+  it('loads and removes Mobile Installations while retaining the signed-in Account', async () => {
+    const stored = desktopSession()
+    const privateKey = generateKeyPairSync('ec', { namedCurve: 'P-256' }).privateKey
+      .export({ format: 'pem', type: 'pkcs8' }).toString()
+    const store = new MemoryDesktopStore()
+    store.record = {
+      installationId: parseInstallationId('manager-desktop'),
+      session: stored,
+      sessionPrivateKey: privateKey,
+    }
+    const listed = [{
+      id: parseInstallationId('managed-mobile'),
+      reference: '72ad112d30a3',
+      name: 'DSH Companion iOS Acceptance',
+      platform: 'ios' as const,
+    }]
+    const listMobileInstallations = vi.fn<PlatformAccountTransport['listMobileInstallations']>()
+      .mockResolvedValue(listed)
+    const revokeMobileInstallation = vi.fn<PlatformAccountTransport['revokeMobileInstallation']>()
+      .mockResolvedValue([])
+    const transport: PlatformAccountTransport = {
+      environment: ENVIRONMENT,
+      beginLogin: vi.fn(),
+      pollLogin: vi.fn(),
+      refresh: vi.fn(),
+      current: vi.fn().mockResolvedValue(stored.account),
+      listMobileInstallations,
+      revokeMobileInstallation,
+      signOut: vi.fn(),
+      planAccountDeletion: vi.fn(),
+      deleteAccount: vi.fn(),
+      recoverAccountDeletion: vi.fn(),
+    }
+    const controller = new DesktopAccountController({
+      presentation: { name: 'Test Desktop', platform: 'linux' },
+      environment: ENVIRONMENT,
+      transport,
+      store,
+      systemBrowser: { open: vi.fn() },
+      now: () => NOW,
+    })
+
+    await controller.start()
+    expect(controller.getSnapshot().mobileInstallations).toEqual({
+      status: 'loading', installations: [],
+    })
+    await controller.refreshMobileInstallations()
+    expect(controller.getSnapshot().mobileInstallations).toEqual({
+      status: 'ready', installations: listed,
+    })
+    await controller.revokeMobileInstallation(parseInstallationId('managed-mobile'))
+
+    expect(controller.getSnapshot()).toMatchObject({
+      status: 'signed-in',
+      account: stored.account,
+      mobileInstallations: { status: 'ready', installations: [] },
+    })
+    expect(revokeMobileInstallation).toHaveBeenCalledOnce()
+    const removal = revokeMobileInstallation.mock.calls[0]?.[0]
+    expect(removal).toMatchObject({
+      accessToken: stored.accessToken,
+      installationId: 'managed-mobile',
+    })
+    expect(typeof removal?.proof.signature).toBe('string')
+    listMobileInstallations.mockRejectedValueOnce(new Error('temporary list failure'))
+    await controller.refreshMobileInstallations()
+    expect(controller.getSnapshot()).toMatchObject({
+      status: 'signed-in',
+      mobileInstallations: { status: 'error', installations: [], error: 'temporary list failure' },
+    })
+  })
+
   it('cancels a pending login locally and permits a fresh authorization attempt', async () => {
     const service = platform()
     const store = new MemoryDesktopStore()
@@ -323,6 +398,8 @@ describe('DesktopAccountController', () => {
       pollLogin: vi.fn(),
       refresh: vi.fn(),
       current: vi.fn(),
+      listMobileInstallations: vi.fn(),
+      revokeMobileInstallation: vi.fn(),
       signOut: vi.fn(),
       planAccountDeletion: vi.fn<PlatformAccountTransport['planAccountDeletion']>()
         .mockRejectedValue(new Error('Unexpected account deletion in Desktop login fixture')),
@@ -433,6 +510,8 @@ describe('DesktopAccountController', () => {
       pollLogin,
       refresh: vi.fn(),
       current: vi.fn(),
+      listMobileInstallations: vi.fn(),
+      revokeMobileInstallation: vi.fn(),
       signOut: vi.fn(),
       planAccountDeletion: vi.fn<PlatformAccountTransport['planAccountDeletion']>()
         .mockRejectedValue(new Error('Unexpected account deletion in Desktop login fixture')),
@@ -490,6 +569,8 @@ describe('DesktopAccountController', () => {
       pollLogin,
       refresh: vi.fn(),
       current: vi.fn(),
+      listMobileInstallations: vi.fn(),
+      revokeMobileInstallation: vi.fn(),
       signOut: vi.fn(),
       planAccountDeletion: vi.fn<PlatformAccountTransport['planAccountDeletion']>()
         .mockRejectedValue(new Error('Unexpected account deletion in Desktop login fixture')),

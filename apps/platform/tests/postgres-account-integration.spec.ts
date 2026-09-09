@@ -478,6 +478,124 @@ describe.skipIf(!postgresAvailable)('PostgresAccountBackend with disposable Post
     }
   })
 
+  it('serializes Mobile removal with authorized login consumption and refresh rotation', async () => {
+    const runtime = await startPostgres()
+    const backend = new PostgresAccountBackend('mobile-removal-race', runtime.pool)
+    let releaseRemoval = (): void => {}
+    let removal: Promise<readonly string[]> | undefined
+    let login: Promise<CreatedSession> | undefined
+    try {
+      await backend.migrate()
+      const desktop = await seedAccount(backend, 902)
+      const target = await seedInstallation(
+        backend,
+        902,
+        'managed-mobile',
+        'mobile',
+        'managed-mobile-session',
+      )
+      const authorizedId = parseLoginAttemptId('managed-mobile-authorized')
+      await backend.createAttempt({
+        id: authorizedId,
+        environment: 'production',
+        identityNamespace: 'gestalt-production',
+        installationId: parseInstallationId('managed-mobile'),
+        installationKind: 'mobile',
+        presentation: { name: 'Authorized replacement', platform: 'android' },
+        publicKey: target.session.publicKey,
+        state: 'managed-mobile-authorized-state',
+        codeVerifier: 'verifier',
+        expiresAt: Date.now() + 60_000,
+        status: 'pending',
+      })
+      await backend.authorizeAttempt(authorizedId, {
+        providerSubject: 902,
+        login: 'same-account',
+        avatarUrl: 'https://avatars.example/user',
+      })
+      let locked = (): void => {}
+      const accountLocked = new Promise<void>((resolve) => { locked = resolve })
+      const holdRemoval = new Promise<void>((resolve) => { releaseRemoval = resolve })
+      const client = await runtime.pool.connect()
+      const originalQuery = client.query.bind(client)
+      client.query = new Proxy(originalQuery, {
+        apply(targetQuery, receiver, args: unknown[]): unknown {
+          const result: unknown = Reflect.apply(targetQuery, receiver, args)
+          if (args[0] !== 'SELECT id FROM account_accounts WHERE id = $1 FOR UPDATE') return result
+          return Promise.resolve(result).then(async (value) => {
+            locked()
+            await holdRemoval
+            return value
+          })
+        },
+      })
+      client.release()
+      removal = backend.revokeMobileInstallation(desktop.session, parseInstallationId('managed-mobile'))
+      await accountLocked
+      login = backend.consumeAuthorizedAttempt(authorizedId, 'replacement-refresh', Date.now() + 60_000)
+      await vi.waitFor(async () => {
+        const blocked = await runtime.pool.query(
+          "SELECT pid FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock' AND query = $1",
+          ['SELECT * FROM account_attempts WHERE id = $1 FOR UPDATE'],
+        )
+        expect(blocked.rows.length).toBeGreaterThan(0)
+      })
+      releaseRemoval()
+      await expect(removal).resolves.toEqual([target.session.id])
+      await expect(login).rejects.toMatchObject({ code: 'LOGIN_ATTEMPT_USED' })
+      client.query = originalQuery
+      expect(await backend.getSessionByRefreshHash(target.session.refreshHash)).toBeUndefined()
+      const reopened = new PostgresAccountBackend('mobile-removal-race', runtime.pool)
+      await expect(reopened.pendingMobileSessionInvalidations('gestalt-production'))
+        .resolves.toEqual([target.session.id])
+      await expect(reopened.revokeMobileInstallation(
+        desktop.session,
+        parseInstallationId('managed-mobile'),
+      )).resolves.toEqual([target.session.id])
+      await reopened.completeMobileSessionInvalidation(target.session.id)
+      await expect(backend.pendingMobileSessionInvalidations('gestalt-production')).resolves.toEqual([])
+
+      const later = await seedInstallation(
+        backend,
+        902,
+        'managed-mobile',
+        'mobile',
+        'managed-mobile-later',
+      )
+      const [rotation, laterRemoval] = await Promise.allSettled([
+        backend.rotateRefresh(later.session.id, later.session.refreshHash, 'rotated-refresh'),
+        backend.revokeMobileInstallation(desktop.session, parseInstallationId('managed-mobile')),
+      ])
+      expect(laterRemoval.status).toBe('fulfilled')
+      expect(rotation.status).toBe('fulfilled')
+      await expect(backend.getSession(later.session.id)).resolves.toMatchObject({ active: false, refreshHash: '' })
+      expect(await backend.getSessionByRefreshHash('rotated-refresh')).toBeUndefined()
+
+      const deletionId = parseAccountDeletionId('mobile-removal-outbox-retention')
+      await backend.beginAccountDeletion({
+        operationId: deletionId,
+        accountId: desktop.account.id,
+        identityNamespace: 'gestalt-production',
+        installationId: desktop.session.installationId,
+        publicKey: desktop.session.publicKey,
+        recoveryTokenHash: 'a'.repeat(43),
+        successors: [],
+        sessionIds: [],
+        status: 'deleting',
+        projects: [],
+      }, desktop.session)
+      await backend.completeAccountDeletion(deletionId, Date.now())
+      await expect(backend.getAccount(desktop.account.id)).resolves.toBeUndefined()
+      await expect(backend.pendingMobileSessionInvalidations('gestalt-production'))
+        .resolves.toEqual([later.session.id])
+      await backend.completeMobileSessionInvalidation(later.session.id)
+    } finally {
+      releaseRemoval()
+      await Promise.allSettled([removal, login].filter(value => value !== undefined))
+      await runtime.close()
+    }
+  })
+
   it('recovers an unversioned pairing transaction in PostgreSQL without dropping confirmed pairings', async () => {
     const runtime = await startPostgres()
     try {
@@ -574,14 +692,33 @@ function legacyTransactionDocument(): unknown {
 }
 
 async function seedAccount(backend: PostgresAccountBackend, providerSubject: number): Promise<CreatedSession> {
-  const id = parseLoginAttemptId(`seed-${String(providerSubject)}`)
+  return await seedInstallation(
+    backend,
+    providerSubject,
+    `seed-installation-${String(providerSubject)}`,
+    'desktop',
+    `seed-${String(providerSubject)}`,
+  )
+}
+
+async function seedInstallation(
+  backend: PostgresAccountBackend,
+  providerSubject: number,
+  installationId: string,
+  installationKind: 'desktop' | 'mobile',
+  attemptId: string,
+): Promise<CreatedSession> {
+  const id = parseLoginAttemptId(attemptId)
   const publicKey = generateKeyPairSync('ec', { namedCurve: 'P-256' }).publicKey.export({ format: 'jwk' })
   await backend.createAttempt({ id, environment: 'production', identityNamespace: 'gestalt-production',
-    installationId: parseInstallationId(`seed-installation-${String(providerSubject)}`), installationKind: 'desktop',
-    presentation: { name: 'Write fence', platform: 'linux' }, publicKey, state: `seed-state-${String(providerSubject)}`,
+    installationId: parseInstallationId(installationId), installationKind,
+    presentation: installationKind === 'desktop'
+      ? { name: 'Write fence', platform: 'linux' }
+      : { name: 'Managed mobile', platform: 'ios' },
+    publicKey, state: `${attemptId}-state`,
     codeVerifier: 'fixture-verifier', expiresAt: Date.now() + 60_000, status: 'pending' })
   await backend.authorizeAttempt(id, { providerSubject, login: `user-${String(providerSubject)}`, avatarUrl: 'https://avatars.example/user' })
-  return await backend.consumeAuthorizedAttempt(id, `refresh-${String(providerSubject)}`, Date.now() + 60_000)
+  return await backend.consumeAuthorizedAttempt(id, `refresh-${attemptId}`, Date.now() + 60_000)
 }
 
 async function startPostgres(): Promise<{ pool: pg.Pool; close(): Promise<void> }> {

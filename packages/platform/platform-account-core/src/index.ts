@@ -20,6 +20,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import AccountService, {
   AccountError,
   accountDeletionBinding,
+  mobileInstallationRevocationBinding,
   type AccountDeletionRequest,
   type AccountDeletionId,
   type AccountDeletionRecovery,
@@ -42,6 +43,7 @@ import AccountService, {
   type LoginAttemptId,
   type LoginAttemptView,
   type LoginPollResult,
+  type MobileAccountInstallationView,
   type PlatformAccountId,
   type PlatformAccountView,
   type PlatformCapacityState,
@@ -275,6 +277,14 @@ export interface AccountBackend {
   rotateRefresh(sessionId: AccountSessionId, expectedHash: string, replacementHash: string): Promise<SessionRecord | undefined>
   /** Revoke one session and report whether it was active. */
   revokeSession(sessionId: AccountSessionId): Promise<boolean>
+  /** List active Mobile Installation sessions owned by one Account. */
+  listActiveMobileInstallations(accountId: PlatformAccountId): Promise<readonly SessionRecord[]>
+  /** Atomically revoke one owned Mobile Installation and its already-authorized login attempts. */
+  revokeMobileInstallation(initiating: SessionRecord, installationId: InstallationId): Promise<readonly AccountSessionId[]>
+  /** List committed Mobile Session invalidations still awaiting bus delivery. */
+  pendingMobileSessionInvalidations(identityNamespace: string): Promise<readonly AccountSessionId[]>
+  /** Remove one Mobile Session invalidation after the bus accepted it. */
+  completeMobileSessionInvalidation(sessionId: AccountSessionId): Promise<void>
   /** Atomically mark deletion and revoke all sessions, refusing a changed initiating session. */
   beginAccountDeletion(record: AccountDeletionRecord, initiating: SessionRecord): Promise<AccountDeletionRecord>
   /** Read a deletion independently of its revoked sessions. */
@@ -322,6 +332,11 @@ export class MemoryAccountBackend implements AccountBackend {
   private readonly proofs = new Map<AccountProofJti, number>()
   private readonly deletions = new Map<AccountDeletionId, AccountDeletionRecord>()
   private readonly deletionLocks = new Set<AccountDeletionId>()
+  private readonly pendingMobileInvalidations = new Map<AccountSessionId, {
+    identityNamespace: string
+    accountId: PlatformAccountId
+    installationId: InstallationId
+  }>()
 
   /**
    * @param databaseIdentity - deployment database identity bound to this backend.
@@ -386,7 +401,9 @@ export class MemoryAccountBackend implements AccountBackend {
     this.accounts.set(accountId, account)
 
     const installationKey = `${attempt.identityNamespace}:${attempt.installationId}`
-    const replacedSessionId = this.installationIndex.get(installationKey)
+    const indexedSessionId = this.installationIndex.get(installationKey)
+    const indexedSession = indexedSessionId === undefined ? undefined : this.sessions.get(indexedSessionId)
+    const replacedSessionId = indexedSession?.active === true ? indexedSessionId : undefined
     if (replacedSessionId !== undefined) {
       this.revoke(replacedSessionId)
     } else if (this.activeInstallationCount(accountId, attempt.installationKind) >= installationLimit(attempt.installationKind)) {
@@ -460,6 +477,69 @@ export class MemoryAccountBackend implements AccountBackend {
     if (session === undefined || !session.active) return Promise.resolve(false)
     this.revoke(sessionId)
     return Promise.resolve(true)
+  }
+
+  listActiveMobileInstallations(accountId: PlatformAccountId): Promise<readonly SessionRecord[]> {
+    return Promise.resolve([...this.sessions.values()]
+      .filter(session => session.active && session.accountId === accountId && session.installationKind === 'mobile')
+      .sort((left, right) => left.installationId.localeCompare(right.installationId))
+      .map(session => structuredClone(session)))
+  }
+
+  revokeMobileInstallation(
+    initiating: SessionRecord,
+    installationId: InstallationId,
+  ): Promise<readonly AccountSessionId[]> {
+    if ([...this.deletions.values()].some(record => record.accountId === initiating.accountId && record.status !== 'complete')) {
+      return Promise.reject(new AccountError('ACCOUNT_DELETING', 'Account deletion is in progress'))
+    }
+    const current = this.sessions.get(initiating.id)
+    if (current === undefined || !current.active || current.revision !== initiating.revision
+      || current.accountId !== initiating.accountId || current.installationKind !== 'desktop') {
+      return Promise.reject(new AccountError('SESSION_REVOKED', 'Desktop Account Session changed before removal'))
+    }
+    const targets = [...this.sessions.values()].filter(session => session.active
+      && session.accountId === current.accountId
+      && session.installationId === installationId
+      && session.installationKind === 'mobile')
+    if (targets.length === 0) {
+      const pending = [...this.pendingMobileInvalidations]
+        .filter(([, record]) => record.accountId === current.accountId && record.installationId === installationId)
+        .map(([sessionId]) => sessionId)
+      if (pending.length > 0) return Promise.resolve(pending)
+      return Promise.reject(new AccountError('INSTALLATION_NOT_FOUND', 'Mobile Installation is unavailable'))
+    }
+    const account = this.accounts.get(current.accountId)
+    if (account === undefined) return Promise.reject(new AccountError('SESSION_REVOKED', 'Account is unavailable'))
+    for (const attempt of this.attempts.values()) {
+      if (attempt.identityNamespace !== current.identityNamespace
+        || attempt.installationId !== installationId
+        || attempt.status !== 'authorized'
+        || attempt.identity?.providerSubject !== account.githubId) continue
+      attempt.status = 'used'
+      delete attempt.identity
+    }
+    const sessionIds = targets.map(target => target.id)
+    for (const sessionId of sessionIds) {
+      this.revoke(sessionId)
+      this.pendingMobileInvalidations.set(sessionId, {
+        identityNamespace: current.identityNamespace,
+        accountId: current.accountId,
+        installationId,
+      })
+    }
+    return Promise.resolve(sessionIds)
+  }
+
+  pendingMobileSessionInvalidations(identityNamespace: string): Promise<readonly AccountSessionId[]> {
+    return Promise.resolve([...this.pendingMobileInvalidations]
+      .filter(([, record]) => record.identityNamespace === identityNamespace)
+      .map(([sessionId]) => sessionId))
+  }
+
+  completeMobileSessionInvalidation(sessionId: AccountSessionId): Promise<void> {
+    this.pendingMobileInvalidations.delete(sessionId)
+    return Promise.resolve()
   }
 
   beginAccountDeletion(record: AccountDeletionRecord, initiating: SessionRecord): Promise<AccountDeletionRecord> {
@@ -613,12 +693,14 @@ export class MemoryAccountInvalidationBus implements AccountInvalidationBus {
   }
 }
 
-/** Secret signing material for one Platform Account provider. */
+/** Signing material and recovery budget for one Platform Account provider. */
 export interface PlatformAccountConfig {
   /** Shared secret used to sign short-lived access tokens. */
   tokenSigningKey: Uint8Array
   /** Shared secret used to sign five-minute polling tokens. */
   pollingSigningKey: Uint8Array
+  /** Interval for retrying committed Session invalidations after delivery failure. */
+  sessionInvalidationRetryIntervalMs: number
 }
 
 /** Construction dependencies for one Platform Account instance. */
@@ -694,6 +776,8 @@ export class PlatformAccount extends AccountService {
   private readonly sessionAccounts = new Map<AccountSessionId, PlatformAccountId>()
   private readonly connections = new Map<AccountSessionId, Set<() => void | Promise<void>>>()
   private readonly stopInvalidation: () => void
+  private invalidationRetryTimer: ReturnType<typeof setTimeout> | undefined
+  private readonly invalidationRecoveryOperations = new Set<Promise<unknown>>()
   private deletion: AccountDeletionOptions | undefined
   private deletionTimer: ReturnType<typeof setTimeout> | undefined
   private readonly deletionOperations = new Set<Promise<unknown>>()
@@ -720,6 +804,7 @@ export class PlatformAccount extends AccountService {
     this.capacity = options.capacity
     this.stopInvalidation = this.invalidation.subscribe(async (sessionId) => { await this.closeConnections(sessionId) })
     ctx.effect(() => async () => { await this.dispose() }, 'platform-account: invalidation subscription')
+    this.armSessionInvalidationRetry()
     if (options.deletion !== undefined) this.configureAccountDeletion(options.deletion)
   }
 
@@ -855,6 +940,43 @@ export class PlatformAccount extends AccountService {
       account: accountView(await this.requireAccount(payload.accountId)),
       installation,
     }
+  }
+
+  async listMobileInstallations(input: {
+    accessToken: string
+    proof: AccountProof
+  }): Promise<readonly MobileAccountInstallationView[]> {
+    const { session } = await this.authorizeAccess(input.accessToken)
+    if (session.installationKind !== 'desktop') {
+      throw new AccountError('INSTALLATION_FORBIDDEN', 'Desktop Installation authorization is required')
+    }
+    await this.verifyProof(
+      session.publicKey,
+      'list-mobile-installations',
+      hashAccountToken(input.accessToken),
+      input.proof,
+    )
+    return this.mobileInstallationViews(await this.backend.listActiveMobileInstallations(session.accountId))
+  }
+
+  async revokeMobileInstallation(input: {
+    accessToken: string
+    proof: AccountProof
+    installationId: InstallationId
+  }): Promise<readonly MobileAccountInstallationView[]> {
+    const { session } = await this.authorizeAccess(input.accessToken)
+    if (session.installationKind !== 'desktop') {
+      throw new AccountError('INSTALLATION_FORBIDDEN', 'Desktop Installation authorization is required')
+    }
+    await this.verifyProof(
+      session.publicKey,
+      'revoke-mobile-installation',
+      mobileInstallationRevocationBinding(hashAccountToken(input.accessToken), input.installationId),
+      input.proof,
+    )
+    const revoked = await this.backend.revokeMobileInstallation(session, input.installationId)
+    await this.publishMobileSessionInvalidations(revoked)
+    return this.mobileInstallationViews(await this.backend.listActiveMobileInstallations(session.accountId))
   }
 
   async publicIdentitiesByIds(
@@ -1037,6 +1159,40 @@ export class PlatformAccount extends AccountService {
     await this.backend.expireAccountDeletions(this.clock.now() - this.requireDeletion().completedReceiptLifetimeMs)
   }
 
+  private armSessionInvalidationRetry(): void {
+    if (this.disposed) return
+    this.invalidationRetryTimer = setTimeout(() => {
+      this.invalidationRetryTimer = undefined
+      const operation = this.retrySessionInvalidations()
+      this.invalidationRecoveryOperations.add(operation)
+      void operation.catch((error: unknown) => {
+        this.ctx.logger.warn(`Account Session invalidation recovery failed: ${String(error)}`)
+      }).finally(() => {
+        this.invalidationRecoveryOperations.delete(operation)
+        this.armSessionInvalidationRetry()
+      })
+    }, this.config.sessionInvalidationRetryIntervalMs)
+    this.invalidationRetryTimer.unref()
+  }
+
+  private async retrySessionInvalidations(): Promise<void> {
+    await this.publishMobileSessionInvalidations(
+      await this.backend.pendingMobileSessionInvalidations(this.environment.identityNamespace),
+    )
+  }
+
+  private async publishMobileSessionInvalidations(sessionIds: readonly AccountSessionId[]): Promise<void> {
+    const deliveries = await Promise.allSettled(sessionIds.map(async (sessionId) => {
+      this.sessionAccounts.delete(sessionId)
+      await this.invalidation.publish(sessionId)
+      await this.backend.completeMobileSessionInvalidation(sessionId)
+    }))
+    const failures = deliveries.flatMap(result => result.status === 'rejected' ? [result.reason as unknown] : [])
+    if (failures.length > 0) {
+      throw new AggregateError(failures, 'Mobile Installation invalidation is not fully published')
+    }
+  }
+
   async signOut(input: { accessToken: string; proof: AccountProof }): Promise<void> {
     const { session } = await this.authorizeAccess(input.accessToken)
     await this.verifyProof(session.publicKey, 'sign-out', hashAccountToken(input.accessToken), input.proof)
@@ -1071,7 +1227,9 @@ export class PlatformAccount extends AccountService {
   /** Stop the cross-instance subscription and close locally tracked connections. */
   async dispose(): Promise<void> {
     this.disposed = true
+    if (this.invalidationRetryTimer !== undefined) clearTimeout(this.invalidationRetryTimer)
     if (this.deletionTimer !== undefined) clearTimeout(this.deletionTimer)
+    await Promise.allSettled([...this.invalidationRecoveryOperations])
     await Promise.allSettled([...this.deletionOperations])
     this.stopInvalidation()
     const errors: Error[] = []
@@ -1160,6 +1318,20 @@ export class PlatformAccount extends AccountService {
     throw new AccountError('SESSION_REVOKED', 'Account Session has no Installation presentation')
   }
 
+  private mobileInstallationViews(sessions: readonly SessionRecord[]): readonly MobileAccountInstallationView[] {
+    return sessions.map((session) => {
+      const identity = {
+        id: session.installationId,
+        reference: createHash('sha256').update(session.installationId).digest('hex').slice(0, 12),
+      }
+      if (session.presentation === undefined) return identity
+      return { ...identity,
+        name: session.presentation.name,
+        platform: session.presentation.platform as 'ios' | 'android',
+      }
+    })
+  }
+
   private async closeConnections(sessionId: AccountSessionId): Promise<void> {
     const connections = this.connections.get(sessionId)
     this.connections.delete(sessionId)
@@ -1242,6 +1414,10 @@ function installationQuotaError(kind: InstallationKind): AccountError {
 function validateConfig(config: PlatformAccountConfig): PlatformAccountConfig {
   if (config.tokenSigningKey.byteLength < 32 || config.pollingSigningKey.byteLength < 32) {
     throw new TypeError('Platform Account signing keys must contain at least 256 bits')
+  }
+  if (!Number.isSafeInteger(config.sessionInvalidationRetryIntervalMs)
+    || config.sessionInvalidationRetryIntervalMs <= 0) {
+    throw new TypeError('Platform Account Session invalidation retry interval must be a positive safe integer')
   }
   return config
 }

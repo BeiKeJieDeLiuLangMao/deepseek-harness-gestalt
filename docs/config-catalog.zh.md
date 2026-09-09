@@ -2228,6 +2228,14 @@ export interface AccountBackend {
   rotateRefresh(sessionId: AccountSessionId, expectedHash: string, replacementHash: string): Promise<SessionRecord | undefined>
   /** Revoke one session and report whether it was active. */
   revokeSession(sessionId: AccountSessionId): Promise<boolean>
+  /** List active Mobile Installation sessions owned by one Account. */
+  listActiveMobileInstallations(accountId: PlatformAccountId): Promise<readonly SessionRecord[]>
+  /** Atomically revoke one owned Mobile Installation and its already-authorized login attempts. */
+  revokeMobileInstallation(initiating: SessionRecord, installationId: InstallationId): Promise<readonly AccountSessionId[]>
+  /** List committed Mobile Session invalidations still awaiting bus delivery. */
+  pendingMobileSessionInvalidations(identityNamespace: string): Promise<readonly AccountSessionId[]>
+  /** Remove one Mobile Session invalidation after the bus accepted it. */
+  completeMobileSessionInvalidation(sessionId: AccountSessionId): Promise<void>
   /** Atomically mark deletion and revoke all sessions, refusing a changed initiating session. */
   beginAccountDeletion(record: AccountDeletionRecord, initiating: SessionRecord): Promise<AccountDeletionRecord>
   /** Read a deletion independently of its revoked sessions. */
@@ -2273,12 +2281,14 @@ export interface GitHubIdentityProvider {
   exchange(code: string, verifier: string): Promise<GitHubIdentity>
 }
 
-/** Secret signing material for one Platform Account provider. */
+/** Signing material and recovery budget for one Platform Account provider. */
 export interface PlatformAccountConfig {
   /** Shared secret used to sign short-lived access tokens. */
   tokenSigningKey: Uint8Array
   /** Shared secret used to sign five-minute polling tokens. */
   pollingSigningKey: Uint8Array
+  /** Interval for retrying committed Session invalidations after delivery failure. */
+  sessionInvalidationRetryIntervalMs: number
 }
 
 /** Clock adapter for expiry and deterministic keyless scenarios. */
@@ -2416,7 +2426,7 @@ export interface AccountDeletionOwner {
 
 依赖：[`AccountDeletionId`](../packages/platform/platform-account/src/index.ts) · [`AccountDeletionProject`](subsystems/platform-account.zh.md) · [`AccountDeletionSuccessor`](subsystems/platform-account.zh.md) · [`AccountDeletionView`](subsystems/platform-account.zh.md) · [`AccountProofJti`](../packages/platform/platform-account/src/index.ts) · [`AccountSessionId`](subsystems/platform-account.zh.md) · [`InstallationId`](subsystems/platform-account.zh.md) · [`InstallationKind`](../packages/platform/platform-account/src/index.ts) · [`InstallationPresentation`](../packages/platform/platform-account/src/index.ts) · [`LoginAttemptId`](subsystems/platform-account.zh.md) · [`PlatformAccountId`](subsystems/platform-account.zh.md) · [`PlatformAccountView`](subsystems/platform-account.zh.md) · [`PlatformCapacityState`](../packages/platform/platform-account/src/index.ts) · [`PlatformEnvironment`](../packages/platform/platform-account/src/index.ts) · [`SelectedPlatformEnvironment`](../packages/platform/platform-account/src/index.ts)
 
-来源：[`packages/platform/platform-account-core/src/index.ts:625`](../packages/platform/platform-account-core/src/index.ts)
+来源：[`packages/platform/platform-account-core/src/index.ts:707`](../packages/platform/platform-account-core/src/index.ts)
 
 <a id="deepseek-aidsh-platform-account-http"></a>
 

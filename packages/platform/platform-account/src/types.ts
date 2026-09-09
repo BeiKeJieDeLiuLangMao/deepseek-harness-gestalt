@@ -88,6 +88,31 @@ export interface AuthenticatedInstallationView {
   installation: AuthenticatedInstallation
 }
 
+/** Active Mobile Installation shown to an authenticated Desktop Account owner. */
+export interface MobileAccountInstallationView {
+  /** Opaque target carried only for a later authenticated removal. */
+  id: InstallationId
+  /** Stable twelve-character SHA-256 prefix shown as a non-authoritative reference. */
+  reference: string
+  /** Authenticated device name committed at sign-in; absent only on a legacy Session. */
+  name?: string
+  /** Authenticated Mobile operating-system family; absent only on a legacy Session. */
+  platform?: MobileInstallationPresentation['platform']
+}
+
+/**
+ * Serialize a Mobile Installation removal target into its proof binding.
+ * @param accessTokenHash - SHA-256 base64url digest of the current access token.
+ * @param installationId - opaque Mobile Installation selected by Desktop.
+ * @returns canonical proof binding shared by Desktop and Platform.
+ */
+export function mobileInstallationRevocationBinding(
+  accessTokenHash: string,
+  installationId: InstallationId,
+): string {
+  return JSON.stringify([accessTokenHash, installationId])
+}
+
 /** Proof that the installation private key authorized one Account operation. */
 export interface AccountProof {
   /** Unique proof id; a successful verification consumes it once. */
@@ -144,6 +169,8 @@ export type AccountErrorCode =
   | 'QUOTA'
   | 'PLATFORM_CAPACITY'
   | 'ACCOUNT_DELETING'
+  | 'INSTALLATION_FORBIDDEN'
+  | 'INSTALLATION_NOT_FOUND'
   | 'DELETION_UNAVAILABLE'
   | 'DELETION_INVALID'
   | 'DELETION_SELECTION_REQUIRED'
