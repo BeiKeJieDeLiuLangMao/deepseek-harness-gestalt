@@ -155,6 +155,7 @@ function mount(membership: ProjectMembershipGateway | undefined, overrides: Part
     useResource,
     useSessions: hook(sessionState([summary('alpha-s', 2)])),
     useSessionPendingInteraction: hook(noPendingInteraction),
+    usePanelInfo: hook({ activePanelId: null }),
     useWorkspaces: hook(workspaceState([workspace('proj', ['alpha-s'])])),
     useStore: bindSnapshotSelector(store),
     actions: store.actions,

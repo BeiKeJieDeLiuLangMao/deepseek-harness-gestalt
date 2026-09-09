@@ -31,6 +31,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from './contract/slots.ts'
 import { GuideBody, type GuideInjected } from './tabs/guide/GuideBody.tsx'
+import { GuideTitle } from './tabs/guide/GuideTitle.tsx'
 import { ExpandButton } from './shell/ExpandButton.tsx'
 import { NARROW_WORKBENCH_WIDTH, WorkbenchSeat, type SidebarRightInjected } from './shell/SidebarRight.tsx'
 import { createSidebarRightController, type SidebarRightController } from './service.ts'
@@ -41,6 +42,7 @@ import {
   SidebarRightPreferencesController,
 } from './preferences.ts'
 import { createSidebarRightStore } from './stores.ts'
+import { defaultSeed } from './contract/seed.ts'
 import { createLocalSidebarWorkbenchPersistence } from './persistence.ts'
 import { en, zh } from './locales.ts'
 import { GUIDE_ID, guideDefinition } from './tabs/guide/definition.ts'
@@ -157,7 +159,7 @@ export function apply(ctx: ClientContext): void {
   ctx.effect(() => {
     const adoptions = new Map<SessionId, () => void>()
     const store = createSidebarRightStore(
-      () => t('tab.guide.title'),
+      () => defaultSeed(tabs),
       createLocalSidebarWorkbenchPersistence(),
       (scopeKey, instance) => {
         const sessionId = scopeKey as SessionId
@@ -227,7 +229,6 @@ export function apply(ctx: ClientContext): void {
     const disposeGuide = ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
       name: 'sidebar.right.pane.tab',
       key: GUIDE_ID,
-      locale: NS,
       children: {
         'sidebar.right.tab.guide': {
           kind: 'chain', scope: 'session', inject: { hooks: { tabInfo: guideTabInfoFactory } },
@@ -235,7 +236,12 @@ export function apply(ctx: ClientContext): void {
       },
       inject: () => guideInjected,
     }, GuideBody))
+    const disposeGuideTitle = ctx.slots.inject('sidebar.right.pane.tab.title', () => ctx.slots.register({
+      name: 'sidebar.right.pane.tab.title',
+      key: GUIDE_ID,
+    }, GuideTitle))
     return () => {
+      disposeGuideTitle()
       disposeGuide()
       disposeExpand()
       disposeSeat()

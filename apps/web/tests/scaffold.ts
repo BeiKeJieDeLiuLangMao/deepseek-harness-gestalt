@@ -306,8 +306,8 @@ export interface LaunchOptions {
    */
   extraOverlayPath?: string
   /**
-   * Additional source-checkout package manifests whose dependency closures
-   * supply private profile layers named by {@link extraOverlayPath}.
+   * Additional package manifests whose dependency closures supply experimental
+   * profile layers named by {@link extraOverlayPath}.
    */
   extraInstallAnchors?: string[]
   /**

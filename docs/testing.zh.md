@@ -15,6 +15,7 @@
 - **Web 浏览器快照**（`pnpm run test:web`；必需的 Linux PR 门禁）：Chromium 比较 `snapshots/web/` 下由会话驱动的输出，以及 `apps/web/tests/expected/` 下仅含 UI 的输出。CI 强制只读的 `DSH_SNAPSHOT=replay`，绝不写入预期输出；record/refresh 留在本地，每处 diff 都须评审（[web e2e 车道](../.agents/notes/implemented/testing/2026-07-24-web-gui-browser-e2e-lane.zh.md)、[CI 决策](../.agents/notes/implemented/testing/2026-07-30-web-browser-snapshot-ci-gate.zh.md)）。`test:web` 会先构建以交付插件 CSS。
 
 Session fixture 保留 header 与 payload，但省略正文 seq/time envelope；replay 会合成这些 envelope。Replay、record 与 refresh 会选择每个 parent/child 角色的最高 generation。V3 使用 `.v3`、每个事件一行，并嵌入紧凑 Assistant stream。历史 fixture 保留其已发布表示；显式 `sessionFormat` 所有者保留迁移覆盖。通过[格式版本实操手册](cookbook/adding-a-session-format-version.zh.md#snapshot-successors)添加后继代际，不改动前代。
+Session fixture 保留 header 与 payload，但省略正文 seq/time envelope；replay 会合成这些 envelope。Replay、record 与 refresh 会选择每个 parent/child 角色的最高 generation。当前 fixture 在文件名与 header 中使用[写入格式](session-format-status.zh.md)，每个事件一行，并嵌入紧凑 Assistant stream。历史 fixture 保留其已发布表示；显式 `sessionFormat` 所有者保留迁移覆盖。按照[格式版本实操手册](cookbook/adding-a-session-format-version.zh.md#snapshot-successors)添加后继代际，不改动前代。
 
 ## spec 如何被执行
 

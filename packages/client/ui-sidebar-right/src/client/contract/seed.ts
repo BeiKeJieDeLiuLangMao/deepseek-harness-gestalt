@@ -11,6 +11,22 @@
  * always available.
  */
 import type { TabId, TabRecord } from '@deepseek-ai/dsh-client-ui-dockkit'
+import type { SidebarRightTabRegistry } from '../tab-registry.ts'
+
+/** One pane's initial page, resolved from the current registered guide entries. */
+export interface SidebarRightSeed {
+  readonly kind: string
+  readonly title: string
+}
+
+/** Resolve the default page from the current registered guide entries. */
+export function defaultSeed(tabs: SidebarRightTabRegistry): SidebarRightSeed {
+  const [only, ...others] = tabs.guide()
+  const kind = only !== undefined && others.length === 0 ? only.kind : GUIDE_KIND
+  const definition = tabs.get(kind)
+  if (definition === undefined) throw new Error(`sidebarRight: default tab kind "${kind}" is not registered`)
+  return { kind, title: definition.title(pageAddress(kind)) }
+}
 
 /** The guide tab's kind. */
 export const GUIDE_KIND = 'guide'

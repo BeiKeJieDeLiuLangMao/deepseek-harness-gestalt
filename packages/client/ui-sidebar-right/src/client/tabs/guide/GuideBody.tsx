@@ -8,13 +8,13 @@
  * entry of its own, so there is always exactly one body and the shipped one
  * cannot be outvoted by accident.
  *
- * The shipped guide is a centred title, one line under it, and the entry boxes
- * every registered type contributed. Picking a box opens that type as a page in
+ * The shipped guide is a centred column of entry capsules every registered type
+ * contributed. Picking a capsule opens that type as a page in
  * this tab's place, so the guide is a doorway rather than a page that stays open.
  */
 import type { ReactNode } from 'react'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
-import type { ChainRenderOpts, HookContextOf, InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { ChainRenderOpts, HookContextOf, InjectFace, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SidebarRightProjection } from '../../service.ts'
 import type {
   SidebarRightDescriptorContext, SidebarRightDescriptorTab, SidebarRightGuideBox,
@@ -36,10 +36,9 @@ export interface GuideInjected {
 export type GuideBodyProps =
   & PropsRuntime<'sidebar.right.pane.tab'>
   & PropsRenderSlots<'sidebar.right.tab.guide'>
-  & PropsLocale<'sidebarRight'>
   & InjectFace<GuideInjected>
 
-/** One entry box: the contributing type's glyph, heading, and line. */
+/** One entry capsule: the contributing type's glyph and title. */
 function EntryBox({ entry, onPick }: { entry: SidebarRightGuideBox; onPick: (entry: SidebarRightGuideBox) => void }): ReactNode {
   const Icon = entry.icon
   return (
@@ -50,24 +49,18 @@ function EntryBox({ entry, onPick }: { entry: SidebarRightGuideBox; onPick: (ent
       onClick={() => { onPick(entry) }}
     >
       {Icon !== undefined && <span className={css.entryIcon}><Icon size={16} /></span>}
-      <span className={css.entryText}>
-        <span className={css.entryTitle}>{entry.title()}</span>
-        <span className={css.entryDescription}>{entry.description()}</span>
-      </span>
+      <span className={css.entryTitle}>{entry.title()}</span>
     </button>
   )
 }
 
 /** The shipped guide: what the column is for, and the doors out of it. */
-function ShippedGuide({ entries, onPick, t }: {
+function ShippedGuide({ entries, onPick }: {
   entries: readonly SidebarRightGuideBox[]
   onPick: (entry: SidebarRightGuideBox) => void
-  t: GuideBodyProps['t']
 }): ReactNode {
   return (
     <div className={css.guide} data-sidebar-right-guide>
-      <p className={css.guideTitle}>{t('guide.lead')}</p>
-      <p className={css.guideBody}>{t('guide.body')}</p>
       {entries.length > 0 && (
         <div className={css.entries}>
           {/* Keyed by position in the ordered list: one type may contribute several boxes, and `order` is not unique. */}
@@ -110,7 +103,7 @@ export function availableGuideEntries(
 
 /** The guide tab's body, replaceable through its chain child. */
 export function GuideBody({
-  useTabInfo, useGuideEntries, useGuideWorkbench, useGuidePreferences, renderSlotChain, t,
+  useTabInfo, useGuideEntries, useGuideWorkbench, useGuidePreferences, renderSlotChain,
 }: GuideBodyProps): ReactNode {
   const { tab } = useTabInfo()
   const entries = useGuideEntries(entries => entries)
@@ -124,7 +117,7 @@ export function GuideBody({
   const options = {
     hookContext: useTabInfo,
     fallback: (
-      <ShippedGuide entries={available} onPick={(entry) => { tab.actions.openTab(entry.kind, { replaceTab: true }) }} t={t} />
+      <ShippedGuide entries={available} onPick={(entry) => { tab.actions.openTab(entry.kind, { replaceTab: true }) }} />
     ),
   } satisfies ChainRenderOpts & { hookContext: HookContextOf<'sidebar.right.tab.guide'> }
   return renderSlotChain('sidebar.right.tab.guide', {}, options)

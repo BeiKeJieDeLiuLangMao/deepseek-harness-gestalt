@@ -20,7 +20,7 @@ afterEach(() => {
 })
 
 function harness() {
-  const instance = createSidebarRightStore(() => 'Start').create()
+  const instance = createSidebarRightStore(() => ({ kind: 'guide', title: 'Start' })).create()
   const domain = new TabDomain({
     openResourceIn: vi.fn(), openTabIn: vi.fn(), closeIn: vi.fn(), updateIn: vi.fn(),
   }, vi.fn())

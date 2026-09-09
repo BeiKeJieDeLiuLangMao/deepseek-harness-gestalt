@@ -8,6 +8,9 @@
 [浏览器 e2e Agent Note](../../../.agents/notes/implemented/testing/2026-07-24-web-gui-browser-e2e-lane.zh.md)中。
 
 `member-question-receiving.e2e.ts` 只把 mock remote Agent 用作发送方身份，随后演练发行版 Host receiver、API Proxy、WebSocket mux、Client Runtime、动态模块表、接收侧边栏行、member-question 组合卡片、共享问题呈现与 Host settlement RPC。问题到达时，会在 invitation 绑定的 Workspace 中物化一份 Host Session 并注入 Decision Brief，不启动模型轮次；本地回答不会留下永久的已回答提示条。引用 chip 会通过 Better Sidebar Files 打开由接收方拥有的隐藏 Workspace 副本，断言 Files 载荷路径位于 `.dsh/member-questions/<questionId>/` 下，并保持 Workspace 中的同名文件不变。
+## 完成状态观察
+
+依赖状态的用例使用 Workspace、接纳、附件和模型流屏障，区分可见中间状态与已完成操作。详情关闭等待框架过渡结束；归档验证为 seed Session 设置显式标题，并跨重载跟踪该身份。参见 [CI fixture 同步决策](../../../.agents/notes/implemented/testing/2026-09-08-ci-completion-observations.zh.md)。
 
 ## 这些是 Host 面的测试
 

@@ -98,6 +98,7 @@ export interface TestSessionRemoteDefaults {
   readonly nativeOpen?: boolean
   readonly saveDefaultModelSelection?: (selection: AgentModelSelection) => void | Promise<void>
   readonly openPath?: (path: string, signal: AbortSignal) => Promise<void>
+  readonly revealPath?: (path: string, signal: AbortSignal) => Promise<void>
   readonly canOpenPath?: () => boolean
   readonly receivingTerminalRetryMs?: number
   readonly receivingTerminalTimer?: SessionControllerInternals['receivingTerminalTimer']
@@ -296,6 +297,7 @@ function installControllers(
       },
       {
         ...defaults.openPath === undefined ? {} : { openPath: defaults.openPath },
+        ...defaults.revealPath === undefined ? {} : { revealPath: defaults.revealPath },
         ...defaults.canOpenPath === undefined ? {} : { canOpenPath: defaults.canOpenPath },
         ...defaults.receivingTerminalTimer === undefined
           ? {}

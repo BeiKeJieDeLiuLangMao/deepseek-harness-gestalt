@@ -48,7 +48,7 @@ function harness() {
   })
   const pin = vi.fn<(address: string, signal: AbortSignal) => void>()
   const { controller, adopt } = createSidebarRightController(tabs, pin)
-  const instance = createSidebarRightStore(() => 'seed').create()
+  const instance = createSidebarRightStore(() => ({ kind: 'guide', title: 'seed' })).create()
   let mountedAdoption: (() => void) | undefined
   const layout = (): LayoutState => {
     const surface = instance.getSnapshot().bySession[SESSION]
@@ -74,7 +74,8 @@ function harness() {
     return found.id
   }
   const entries = (): number => instance.getSnapshot().bySession[SESSION]?.history.entries.length ?? 0
-  return { controller, adopt, tabs, instance, pin, publish, titles, tabOf, layout, entries, room }
+  const expand = (): void => { instance.actions.setExpanded(SESSION, true) }
+  return { controller, adopt, tabs, instance, pin, publish, titles, tabOf, layout, entries, room, expand }
 }
 
 describe('SidebarRightController — opening', () => {
@@ -137,7 +138,8 @@ describe('SidebarRightController — opening', () => {
   })
 
   it('lands a new tab in the pane the caller names', () => {
-    const { controller, instance, publish, layout, tabOf } = harness()
+    const { controller, instance, publish, layout, tabOf, expand } = harness()
+    expand()
     publish()
     instance.actions.splitPane(SESSION)
     publish()
@@ -158,8 +160,8 @@ describe('SidebarRightController — opening', () => {
     const before = entries()
     await controller.openResource('dsh-resource://file/session/s-test/c.txt', { replaceTab: a })
     const pane = findTabPane(layout(), tabOf('c.txt'))
-    // The seeded guide sits at 0; a took 1; c took a's slot.
-    expect(pane.tabs.indexOf(tabOf('c.txt'))).toBe(1)
+    // The lazily seeded surface was empty, so c takes a's first slot.
+    expect(pane.tabs.indexOf(tabOf('c.txt'))).toBe(0)
     expect(layout().tabs[a]).toBeUndefined()
     expect(entries()).toBe(before + 1)
     publish()
@@ -183,8 +185,9 @@ describe('SidebarRightController — opening', () => {
   })
 
   it('refuses to copy the guide, and records nothing for the attempt', () => {
-    const { controller, instance, publish, layout, tabOf, entries } = harness()
+    const { controller, instance, publish, layout, tabOf, entries, expand } = harness()
     instance.actions.open(SESSION)
+    expand()
     publish()
     void controller.openResource('dsh-resource://file/session/s-test/a.txt')
     publish()
@@ -198,8 +201,9 @@ describe('SidebarRightController — opening', () => {
   })
 
   it('reveals an open guide for a plain open, as for any address', () => {
-    const { controller, instance, publish, layout, tabOf } = harness()
+    const { controller, instance, publish, layout, tabOf, expand } = harness()
     instance.actions.open(SESSION)
+    expand()
     publish()
     void controller.openResource('dsh-resource://file/session/s-test/a.txt')
     publish()
@@ -230,8 +234,9 @@ describe('SidebarRightController — opening', () => {
   })
 
   it('merges a guide placed, dropped, or docked into a pane that already holds one', () => {
-    const { instance, publish, layout } = harness()
+    const { instance, publish, layout, expand } = harness()
     instance.actions.open(SESSION)
+    expand()
     publish()
     const guides = (): TabId[] => Object.values(layout().tabs).filter(tab => tab.contentId === 'sidebar://guide').map(tab => tab.id)
     // Place: the split's guide dragged into the first pane's strip.
@@ -329,8 +334,9 @@ describe('SidebarRightController — the two opens', () => {
   })
 
   it('replaceTab opens in the named tab\'s place and closes it, as one entry', async () => {
-    const { controller, instance, publish, layout, tabOf, entries } = harness()
+    const { controller, instance, publish, layout, tabOf, entries, expand } = harness()
     instance.actions.open(SESSION)
+    expand()
     publish()
     void controller.openResource('dsh-resource://file/session/s-test/a.txt')
     publish()
@@ -343,7 +349,8 @@ describe('SidebarRightController — the two opens', () => {
 
 describe('SidebarRightController — layout operations', () => {
   it('focuses an existing tab and its pane, and leaves a missing tab alone', () => {
-    const { controller, publish, layout, tabOf, entries } = harness()
+    const { controller, publish, layout, tabOf, entries, expand } = harness()
+    expand()
     publish()
     void controller.openResource('dsh-resource://file/session/s-test/a.txt')
     publish()
@@ -363,8 +370,9 @@ describe('SidebarRightController — layout operations', () => {
   })
 
   it('splits the active docked pane and names the new one, or nothing when the budget or the room rule says no', () => {
-    const { controller, instance, publish, layout, entries, room } = harness()
+    const { controller, instance, publish, layout, entries, room, expand } = harness()
     instance.actions.open(SESSION)
+    expand()
     publish()
     const created = controller.split()
     expect(created).toBeDefined()
@@ -434,8 +442,9 @@ describe('SidebarRightController — a tab\'s own actions', () => {
   const B_TXT = 'dsh-resource://file/session/s-test/b.txt'
 
   it('land in the session the tab is in through its own adopted store, after another session\'s seat took over', async () => {
-    const { controller, adopt, instance, publish, layout } = harness()
+    const { controller, adopt, instance, publish, layout, expand } = harness()
     const releaseOwn = adopt(SESSION, instance)
+    expand()
     publish()
     void controller.openResource(A_TXT)
     const own = Object.values(layout().tabs).find(tab => tab.title === 'a.txt')
@@ -445,9 +454,9 @@ describe('SidebarRightController — a tab\'s own actions', () => {
     const guideOccurrence = controller.tabDomain.occurrence(SESSION, guide)
     // The user switches sessions: the other seat binds with the other session's
     // own instance, whose store knows nothing of this session.
-    const other = createSidebarRightStore(() => 'seed').create(OTHER)
+    const other = createSidebarRightStore(() => ({ kind: 'guide', title: 'seed' })).create(OTHER)
     const releaseOther = adopt(OTHER, other)
-    other.actions.open(OTHER)
+    other.actions.setExpanded(OTHER, true)
     const otherSurface = other.getSnapshot().bySession[OTHER]
     if (otherSurface === undefined) throw new Error('expected the other surface')
     controller.bind({ sessionId: OTHER, actions: other.actions, surfaces: other.getSnapshot().bySession, canSplitPane: () => true })
@@ -492,7 +501,7 @@ describe('SidebarRightController — a tab\'s own actions', () => {
     // session leaves this session's occurrences alone.
     instance.actions.open(OTHER)
     expect(pin).not.toHaveBeenCalled()
-    instance.actions.open(SESSION)
+    instance.actions.setExpanded(SESSION, true)
     expect(pin).toHaveBeenCalledWith('sidebar://guide', expect.any(AbortSignal))
     instance.actions.openContent(SESSION, { kind: 'text', contentId: A_TXT, title: 'a' }, () => {})
     const surface = instance.getSnapshot().bySession[SESSION]
@@ -514,7 +523,7 @@ describe('SidebarRightController — a tab\'s own actions', () => {
     // Adopting another instance for the session ends the earlier adoption's
     // subscription with its routing: the old store's commits sync nothing, the
     // new store's commits reconcile the session against its own layout.
-    const replacement = createSidebarRightStore(() => 'seed').create()
+    const replacement = createSidebarRightStore(() => ({ kind: 'guide', title: 'seed' })).create()
     const third = adopt(SESSION, replacement)
     const pins = pin.mock.calls.length
     instance.actions.openContent(SESSION, { kind: 'text', contentId: 'dsh-resource://file/session/s-test/c.txt', title: 'c' }, () => {})

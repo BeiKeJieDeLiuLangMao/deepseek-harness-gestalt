@@ -4,13 +4,13 @@ import type {
   DockMode, DockZone, FloatRect, History, LayoutOp, LayoutState, Mint, PaneId, SplitId, TabId, TabRecord,
 } from '@deepseek-ai/dsh-client-ui-dockkit'
 import {
-  activeDockPaneId, createInitialState, dockPaneIds, EMPTY_HISTORY, findPaneContentTab, findTabPane,
+  activeDockPaneId, createInitialState, dockPaneIds, EMPTY_HISTORY, findPaneContentTab, findTabPane, getPane,
   planDropTab, planDuplicateTab, planFloatTab, planOpenContent, planPlaceTab, planResizeSplit, planSetExpanded,
   planSetMode, planSettle, planSplitPane, planUnfloatPane, record, replay, stepBack, stepForward,
 } from '@deepseek-ai/dsh-client-ui-dockkit'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type { SidebarRightTabPayload, SidebarRightTabPin, SidebarRightTabState } from './contract/payload.ts'
-import { GUIDE_KIND, makeGuideTab, pageAddress } from './contract/seed.ts'
+import { GUIDE_KIND, pageAddress, type SidebarRightSeed } from './contract/seed.ts'
 import type { SidebarWorkbenchPersistence } from './persistence.ts'
 
 /** A docked official workbench surface. Floats belong to the right surface. */
@@ -80,6 +80,11 @@ type SurfacePlan = (state: LayoutState, mint: Mint) => readonly LayoutOp[]
 type HistoryStepper =
   (history: History, state: LayoutState) => { history: History; state: LayoutState } | undefined
 
+function seedRecord(id: TabId, seed: () => SidebarRightSeed): TabRecord {
+  const initial = seed()
+  return { id, kind: initial.kind, title: initial.title, contentId: pageAddress(initial.kind) }
+}
+
 /** Store write set. Public UI writes still enter through `ctx.sidebarRight`. */
 export type SidebarRightActions = {
   open: (draft: SidebarRightState, sessionId: string) => void
@@ -131,21 +136,21 @@ function counting(from: number): { mint: Mint; used: () => number } {
 
 /**
  * Create a Session workbench with independent right and bottom layouts.
- * @param seedTitle - localized title for each initial guide tab.
+ * @param seed - current default page.
  * @param expanded - whether the fresh right surface starts expanded.
  * @returns the fresh state with a shared id cursor.
  */
-export function createSurface(seedTitle: () => string, expanded = false): SurfaceState {
+export function createSurface(seed: () => SidebarRightSeed, expanded = false): SurfaceState {
   const counter = counting(0)
-  const make = (): DockSurfaceState => ({
-    layout: createInitialState({ next: counter.mint }, id => makeGuideTab(id, seedTitle())),
+  const make = (seeded: boolean): DockSurfaceState => ({
+    layout: createInitialState({ next: counter.mint }, seeded ? id => seedRecord(id, seed) : undefined),
     history: EMPTY_HISTORY,
   })
-  const created = make()
+  const created = make(expanded)
   const right = { ...created, layout: { ...created.layout, expanded } }
   return {
     ...right,
-    bottom: make(),
+    bottom: make(false),
     minted: counter.used(),
     bottomHeight: BOTTOM_HEIGHT_DEFAULT,
     bottomOpenedOnce: false,
@@ -184,12 +189,25 @@ function withDock(surface: SurfaceState, target: SidebarWorkbenchSurface, next: 
   return target === 'right' ? { ...surface, ...next } : { ...surface, bottom: next }
 }
 
-function paneGuide(state: LayoutState, paneId: PaneId): TabId | undefined {
-  return findPaneContentTab(state, paneId, pageAddress(GUIDE_KIND), GUIDE_KIND)
+function panePage(state: LayoutState, paneId: PaneId, kind: string): TabId | undefined {
+  return findPaneContentTab(state, paneId, pageAddress(kind), kind)
 }
 
-function isGuide(state: LayoutState, tabId: TabId): boolean {
-  return state.tabs[tabId]?.kind === GUIDE_KIND
+function pageKind(state: LayoutState, tabId: TabId): string | undefined {
+  const tab = state.tabs[tabId]
+  return tab !== undefined && tab.contentId === pageAddress(tab.kind) ? tab.kind : undefined
+}
+
+/** Whether a tab stands alone on the docked part of one surface. */
+export function soleDockedTab(state: LayoutState, tabId: TabId): boolean {
+  const pane = findTabPane(state, tabId)
+  return pane.host === 'dock' && pane.tabs.length === 1 && dockPaneIds(state).length === 1
+}
+
+/** Whether an explicit close may remove a tab. */
+export function canCloseTab(surface: DockSurfaceState, tabId: TabId): boolean {
+  const tab = surface.layout.tabs[tabId]
+  return tab !== undefined && !(tab.kind === GUIDE_KIND && soleDockedTab(surface.layout, tabId))
 }
 
 function planFocusTab(state: LayoutState, tabId: TabId): readonly LayoutOp[] {
@@ -217,8 +235,9 @@ function arriving(
   toPaneId: PaneId,
   otherwise: () => readonly LayoutOp[],
 ): readonly LayoutOp[] {
-  if (!isGuide(state, tabId)) return otherwise()
-  const existing = paneGuide(state, toPaneId)
+  const kind = pageKind(state, tabId)
+  if (kind === undefined) return otherwise()
+  const existing = panePage(state, toPaneId, kind)
   if (existing === undefined || existing === tabId) return otherwise()
   return [{ type: 'closeTab', tabId }, { type: 'focusTab', tabId: existing }]
 }
@@ -234,7 +253,7 @@ function advance(
   surface: SurfaceState,
   target: SidebarWorkbenchSurface,
   plan: SurfacePlan,
-  seedTitle: () => string,
+  seed: () => SidebarRightSeed,
   checkpoint = false,
 ): SurfaceState {
   const current = dock(surface, target)
@@ -242,7 +261,7 @@ function advance(
   const planned = plan(current.layout, counter.mint)
   if (planned.length === 0) return surface
   const after = replay(current.layout, planned)
-  const settled = planSettle(after, counter.mint, id => makeGuideTab(id, seedTitle()))
+  const settled = planSettle(after, counter.mint, after.expanded ? id => seedRecord(id, seed) : undefined)
   const operations = [...planned, ...settled]
   const stepped = checkpoint
     ? { state: replay(current.layout, operations), history: EMPTY_HISTORY }
@@ -256,11 +275,11 @@ function advance(
 function seat(
   state: SidebarRightState,
   sessionId: string,
-  seedTitle: () => string,
+  seed: () => SidebarRightSeed,
   next: (surface: SurfaceState) => SurfaceState,
 ): Record<string, SurfaceState> {
   const existing = state.bySession[sessionId]
-  const updated = next(existing ?? createSurface(seedTitle))
+  const updated = next(existing ?? createSurface(seed))
   return updated === existing ? state.bySession : { ...state.bySession, [sessionId]: updated }
 }
 
@@ -284,12 +303,12 @@ function updateRecord(layout: LayoutState, tabId: TabId, title: string | undefin
   return { ...layout, tabs: { ...layout.tabs, [tabId]: { ...record, title } } }
 }
 
-function actionTable(seedTitle: () => string): SidebarRightActions {
+function actionTable(seed: () => SidebarRightSeed): SidebarRightActions {
   const setExpanded = (
     d: SidebarRightState, sessionId: string, surface: SidebarWorkbenchSurface, expanded: boolean,
   ): void => {
-    d.bySession = seat(d, sessionId, seedTitle, s =>
-      advance(s, surface, state => planSetExpanded(state, expanded), seedTitle))
+    d.bySession = seat(d, sessionId, seed, s =>
+      advance(s, surface, state => planSetExpanded(state, expanded), seed))
   }
   const split = (
     d: SidebarRightState,
@@ -298,11 +317,12 @@ function actionTable(seedTitle: () => string): SidebarRightActions {
     paneId?: PaneId,
     settled?: (paneId: PaneId) => void,
   ): void => {
-    d.bySession = seat(d, sessionId, seedTitle, (s) => {
+    d.bySession = seat(d, sessionId, seed, (s) => {
       const before = new Set(dockPaneIds(dock(s, surface).layout))
       const next = advance(s, surface, (state, mint) => dockPaneIds(state).length >= 2
+        || getPane(state, paneId ?? activeDockPaneId(state)).tabs.length === 0
         ? []
-        : planSplitPane(state, mint, paneId, id => makeGuideTab(id, seedTitle())), seedTitle)
+        : planSplitPane(state, mint, paneId, id => seedRecord(id, seed)), seed)
       if (settled !== undefined && next !== s) {
         for (const id of dockPaneIds(dock(next, surface).layout)) if (!before.has(id)) settled(id)
       }
@@ -310,36 +330,36 @@ function actionTable(seedTitle: () => string): SidebarRightActions {
     })
   }
   return {
-    open: (d, sessionId) => { d.bySession = seat(d, sessionId, seedTitle, surface => surface) },
+    open: (d, sessionId) => { d.bySession = seat(d, sessionId, seed, surface => surface) },
     setExpanded: (d, sessionId, expanded) => { setExpanded(d, sessionId, 'right', expanded) },
     toggleExpanded: (d, sessionId) => {
-      d.bySession = seat(d, sessionId, seedTitle, s =>
-        advance(s, 'right', state => planSetExpanded(state, !state.expanded), seedTitle))
+      d.bySession = seat(d, sessionId, seed, s =>
+        advance(s, 'right', state => planSetExpanded(state, !state.expanded), seed))
     },
     setMode: (d, sessionId, mode) => {
-      d.bySession = seat(d, sessionId, seedTitle, s =>
-        advance(s, 'right', state => planSetMode(state, mode), seedTitle))
+      d.bySession = seat(d, sessionId, seed, s =>
+        advance(s, 'right', state => planSetMode(state, mode), seed))
     },
     setSurfaceExpanded: setExpanded,
     setSurfaceMode: (d, sessionId, surface, mode) => {
-      d.bySession = seat(d, sessionId, seedTitle, s =>
-        advance(s, surface, state => planSetMode(state, mode), seedTitle))
+      d.bySession = seat(d, sessionId, seed, s =>
+        advance(s, surface, state => planSetMode(state, mode), seed))
     },
     setBottomHeight: (d, sessionId, height, viewportHeight) => {
-      d.bySession = seat(d, sessionId, seedTitle, (s) => {
+      d.bySession = seat(d, sessionId, seed, (s) => {
         const maximum = Math.max(BOTTOM_HEIGHT_MIN, Math.round(viewportHeight) - 280)
         const next = Math.max(BOTTOM_HEIGHT_MIN, Math.min(maximum, Math.round(height)))
         return next === s.bottomHeight ? s : { ...s, bottomHeight: next }
       })
     },
     markBottomOpened: (d, sessionId) => {
-      d.bySession = seat(d, sessionId, seedTitle, s =>
+      d.bySession = seat(d, sessionId, seed, s =>
         s.bottomOpenedOnce ? s : { ...s, bottomOpenedOnce: true })
     },
     splitPane: (d, sessionId, paneId, settled) => { split(d, sessionId, 'right', paneId, settled) },
     splitSurfacePane: split,
     openContent: (d, sessionId, intent, settled) => {
-      d.bySession = seat(d, sessionId, seedTitle, (s) => {
+      d.bySession = seat(d, sessionId, seed, (s) => {
         const surface = intent.surface ?? targetFor(s, intent.paneId, intent.replaceTab)
         let settledTab: TabId | undefined
         let next = advance(s, surface, (state, mint) => {
@@ -349,7 +369,8 @@ function actionTable(seedTitle: () => string): SidebarRightActions {
           const lent = replaced?.host === 'dock' ? replaced : undefined
           const paneId = lent?.id ?? intent.paneId
           const index = lent === undefined || replace === undefined ? intent.index : lent.tabs.indexOf(replace)
-          const held = kind === GUIDE_KIND ? paneGuide(state, paneId ?? activeDockPaneId(state)) : undefined
+          const page = contentId === pageAddress(kind)
+          const held = page ? panePage(state, paneId ?? activeDockPaneId(state), kind) : undefined
           const planned = held !== undefined
             ? { ops: [{ type: 'focusTab' as const, tabId: held }], tabId: held }
             : planOpenContent(state, mint, {
@@ -358,7 +379,9 @@ function actionTable(seedTitle: () => string): SidebarRightActions {
               title,
               ...paneId === undefined ? {} : { paneId },
               ...index === undefined ? {} : { index },
-              ...intent.revealIfOpened === undefined ? {} : { revealIfOpened: intent.revealIfOpened },
+              ...page
+                ? { revealIfOpened: false }
+                : intent.revealIfOpened === undefined ? {} : { revealIfOpened: intent.revealIfOpened },
             })
           ops.push(...planned.ops)
           if (intent.activate === false) ops.push(restoreFocus(state))
@@ -367,7 +390,7 @@ function actionTable(seedTitle: () => string): SidebarRightActions {
           }
           settledTab = planned.tabId
           return ops
-        }, seedTitle, intent.checkpoint)
+        }, seed, intent.checkpoint)
         if (settledTab === undefined) return next
         const current = next.tabs[settledTab] ?? {}
         const tabState: SidebarRightTabState = {
@@ -383,42 +406,48 @@ function actionTable(seedTitle: () => string): SidebarRightActions {
       })
     },
     duplicateTab: (d, sessionId, tabId) => {
-      d.bySession = seat(d, sessionId, seedTitle, (s) => {
+      d.bySession = seat(d, sessionId, seed, (s) => {
         const found = locateTab(s, tabId)
         if (found === undefined) return s
         let copied: TabId | undefined
         let next = advance(s, found.surface, (state, mint) => {
-          if (isGuide(state, tabId)) return []
+          if (pageKind(state, tabId) !== undefined) return []
           const planned = planDuplicateTab(state, mint, tabId)
           copied = planned.tabId
           return planned.ops
-        }, seedTitle)
+        }, seed)
         const metadata = s.tabs[tabId]
         if (copied !== undefined && metadata !== undefined) next = { ...next, tabs: { ...next.tabs, [copied]: metadata } }
         return next
       })
     },
     closeTab: (d, sessionId, tabId) => {
-      d.bySession = seat(d, sessionId, seedTitle, (s) => {
+      d.bySession = seat(d, sessionId, seed, (s) => {
         const found = locateTab(s, tabId)
-        return found === undefined ? s : advance(s, found.surface, () => [{ type: 'closeTab', tabId }], seedTitle)
+        if (found === undefined) return s
+        const current = dock(s, found.surface)
+        return advance(s, found.surface, (state) => {
+          if (!canCloseTab(current, tabId)) return []
+          if (!soleDockedTab(state, tabId)) return [{ type: 'closeTab', tabId }]
+          return [{ type: 'closeTab', tabId }, ...planSetMode(state, 'push'), ...planSetExpanded(state, false)]
+        }, seed)
       })
     },
     closeTabs: (d, sessionId, tabIds, checkpoint) => {
-      d.bySession = seat(d, sessionId, seedTitle, (s) => {
+      d.bySession = seat(d, sessionId, seed, (s) => {
         let next = s
         for (const surface of ['right', 'bottom'] as const) {
           const layout = dock(next, surface).layout
           const present = tabIds.filter(tabId => layout.tabs[tabId] !== undefined)
           if (present.length > 0) {
-            next = advance(next, surface, () => present.map(tabId => ({ type: 'closeTab' as const, tabId })), seedTitle, checkpoint)
+            next = advance(next, surface, () => present.map(tabId => ({ type: 'closeTab' as const, tabId })), seed, checkpoint)
           }
         }
         return next
       })
     },
     updateTab: (d, sessionId, tabId, patch) => {
-      d.bySession = seat(d, sessionId, seedTitle, (s) => {
+      d.bySession = seat(d, sessionId, seed, (s) => {
         const found = locateTab(s, tabId)
         if (found === undefined) return s
         const current = s.tabs[tabId] ?? {}
@@ -441,7 +470,7 @@ function actionTable(seedTitle: () => string): SidebarRightActions {
       })
     },
     updateData: (d, sessionId, key, value) => {
-      d.bySession = seat(d, sessionId, seedTitle, (s) => {
+      d.bySession = seat(d, sessionId, seed, (s) => {
         if (value === undefined && !Object.hasOwn(s.data, key)) return s
         const data = value === undefined
           ? Object.fromEntries(Object.entries(s.data).filter(([candidate]) => candidate !== key))
@@ -450,80 +479,80 @@ function actionTable(seedTitle: () => string): SidebarRightActions {
       })
     },
     replaceDock: (d, sessionId, surface, next) => {
-      d.bySession = seat(d, sessionId, seedTitle, current => retainTabState(withDock(current, surface, next)))
+      d.bySession = seat(d, sessionId, seed, current => retainTabState(withDock(current, surface, next)))
     },
     focusTab: (d, sessionId, tabId) => {
-      d.bySession = seat(d, sessionId, seedTitle, (s) => {
+      d.bySession = seat(d, sessionId, seed, (s) => {
         const found = locateTab(s, tabId)
-        return found === undefined ? s : advance(s, found.surface, state => planFocusTab(state, tabId), seedTitle)
+        return found === undefined ? s : advance(s, found.surface, state => planFocusTab(state, tabId), seed)
       })
     },
     focusPane: (d, sessionId, paneId) => {
-      d.bySession = seat(d, sessionId, seedTitle, (s) => {
+      d.bySession = seat(d, sessionId, seed, (s) => {
         const surface = targetFor(s, paneId, undefined)
         return dock(s, surface).layout.nodes[paneId] === undefined
           ? s
-          : advance(s, surface, state => planFocusPane(state, paneId), seedTitle)
+          : advance(s, surface, state => planFocusPane(state, paneId), seed)
       })
     },
     placeTab: (d, sessionId, tabId, toPaneId, index) => {
-      d.bySession = seat(d, sessionId, seedTitle, (s) => {
+      d.bySession = seat(d, sessionId, seed, (s) => {
         const found = locateTab(s, tabId)
         const target = targetFor(s, toPaneId, undefined)
         if (found === undefined || found.surface !== target) return s
         return advance(s, target, state => arriving(
           state, tabId, toPaneId, () => planPlaceTab(state, tabId, toPaneId, index),
-        ), seedTitle)
+        ), seed)
       })
     },
     dropTab: (d, sessionId, tabId, paneId, zone) => {
-      d.bySession = seat(d, sessionId, seedTitle, (s) => {
+      d.bySession = seat(d, sessionId, seed, (s) => {
         const found = locateTab(s, tabId)
         const target = targetFor(s, paneId, undefined)
         if (found === undefined || found.surface !== target) return s
         return advance(s, target, (state, mint) => {
           if (zone === 'top' || zone === 'bottom') return []
           if (zone !== 'center' && dockPaneIds(state).length >= 2) return []
-          const plan = (): readonly LayoutOp[] => planDropTab(state, mint, tabId, paneId, zone)
+          const plan = (): readonly LayoutOp[] => planDropTab(state, mint, tabId, paneId, zone, id => seedRecord(id, seed))
           return zone === 'center' ? arriving(state, tabId, paneId, plan) : plan()
-        }, seedTitle)
+        }, seed)
       })
     },
     floatTab: (d, sessionId, tabId, rect) => {
-      d.bySession = seat(d, sessionId, seedTitle, (s) => {
+      d.bySession = seat(d, sessionId, seed, (s) => {
         const found = locateTab(s, tabId)
         if (found?.surface !== 'right') return s
-        return advance(s, 'right', (state, mint) => planFloatTab(state, mint, tabId, rect).ops, seedTitle)
+        return advance(s, 'right', (state, mint) => planFloatTab(state, mint, tabId, rect).ops, seed)
       })
     },
     unfloatPane: (d, sessionId, paneId) => {
-      d.bySession = seat(d, sessionId, seedTitle, s => advance(s, 'right', (state) => {
-        const guide = paneGuide(state, paneId)
+      d.bySession = seat(d, sessionId, seed, s => advance(s, 'right', (state) => {
+        const floated = getPane(state, paneId).tabs[0]
         const plan = (): readonly LayoutOp[] => planUnfloatPane(state, paneId)
-        return guide === undefined ? plan() : arriving(state, guide, activeDockPaneId(state), plan)
-      }, seedTitle))
+        return floated === undefined ? plan() : arriving(state, floated, activeDockPaneId(state), plan)
+      }, seed))
     },
     moveFloat: (d, sessionId, paneId, x, y) => {
-      d.bySession = seat(d, sessionId, seedTitle, s =>
-        advance(s, 'right', () => [{ type: 'moveFloat', paneId, x, y }], seedTitle))
+      d.bySession = seat(d, sessionId, seed, s =>
+        advance(s, 'right', () => [{ type: 'moveFloat', paneId, x, y }], seed))
     },
     resizeFloat: (d, sessionId, paneId, rect) => {
-      d.bySession = seat(d, sessionId, seedTitle, s =>
-        advance(s, 'right', () => [{ type: 'resizeFloat', paneId, rect }], seedTitle))
+      d.bySession = seat(d, sessionId, seed, s =>
+        advance(s, 'right', () => [{ type: 'resizeFloat', paneId, rect }], seed))
     },
     resizeSplit: (d, sessionId, splitId, sizes) => {
-      d.bySession = seat(d, sessionId, seedTitle, (s) => {
+      d.bySession = seat(d, sessionId, seed, (s) => {
         const surface = s.bottom.layout.nodes[splitId] === undefined ? 'right' : 'bottom'
-        return advance(s, surface, () => planResizeSplit(splitId, sizes, 0.2), seedTitle)
+        return advance(s, surface, () => planResizeSplit(splitId, sizes, 0.2), seed)
       })
     },
     undo: (d, sessionId, surface = 'right') => {
-      d.bySession = seat(d, sessionId, seedTitle, s => stepped(s, surface, stepBack))
+      d.bySession = seat(d, sessionId, seed, s => stepped(s, surface, stepBack))
     },
     redo: (d, sessionId, surface = 'right') => {
-      d.bySession = seat(d, sessionId, seedTitle, s => stepped(s, surface, stepForward))
+      d.bySession = seat(d, sessionId, seed, s => stepped(s, surface, stepForward))
     },
-    reset: (d, sessionId) => { d.bySession = { ...d.bySession, [sessionId]: createSurface(seedTitle) } },
+    reset: (d, sessionId) => { d.bySession = { ...d.bySession, [sessionId]: createSurface(seed) } },
   }
 }
 
@@ -535,19 +564,19 @@ export type SidebarRightStoreCreated = (
 
 /**
  * Create the shared official workbench store handle.
- * @param seedTitle - localized guide title read when a pane is minted.
+ * @param seed - default page read when a pane is minted.
  * @param persistence - versioned durable adapter; omitted in isolated tests.
  * @param created - adoption callback for each new scoped instance.
  * @param seedExpanded - whether a newly materialized, non-persisted wide Session starts open.
  * @returns the handle registered by both official surface seats.
  */
 export function createSidebarRightStore(
-  seedTitle: () => string,
+  seed: () => SidebarRightSeed,
   persistence?: SidebarWorkbenchPersistence,
   created?: SidebarRightStoreCreated,
   seedExpanded: () => boolean = () => false,
 ): EngineStoreHandle<SidebarRightState, SidebarRightActions> {
-  const spec = { init: (): SidebarRightState => ({ bySession: {} }), actions: actionTable(seedTitle) }
+  const spec = { init: (): SidebarRightState => ({ bySession: {} }), actions: actionTable(seed) }
   const base = defineStore(spec)
   const scoped = new Map<string, EngineStoreInstance<SidebarRightState, SidebarRightActions>>()
   return {
@@ -559,7 +588,7 @@ export function createSidebarRightStore(
       }
       const instance = base.create()
       if (scopeKey !== undefined) {
-        const initial = persistence?.load(scopeKey, seedTitle) ?? createSurface(seedTitle, seedExpanded())
+        const initial = persistence?.load(scopeKey, () => seed().title) ?? createSurface(seed, seedExpanded())
         instance.store.set({ bySession: { [scopeKey]: initial } })
         instance.subscribe(() => {
           const surface = instance.getSnapshot().bySession[scopeKey]

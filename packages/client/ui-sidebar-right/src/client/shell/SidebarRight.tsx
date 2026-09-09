@@ -46,6 +46,7 @@ import type { SidebarRightTabDefinition } from '../tab-registry.ts'
 import type {
   createSidebarRightStore, DockSurfaceState, SidebarWorkbenchSurface, SurfaceState,
 } from '../stores.ts'
+import { canCloseTab } from '../stores.ts'
 import type { SidebarRightTabState } from '../contract/payload.ts'
 import type { TabOccurrence } from '../tab-domain.ts'
 import type { SidebarRightTabMenuOwnerProps } from '../contract/slots.ts'
@@ -381,10 +382,11 @@ function SidebarPanel(panel: PanelProps & { width: number; panelRef: RefObject<H
         <DockSurface
           state={surface.layout}
           canSplit={canSplit(surface.layout) && dockPaneIds(surface.layout).length < 2}
-          hideSplitAtCapacity
+          hideSplitWhenBlocked
           dropZones="horizontal"
           minPaneFraction={0.2}
           canAddTab={paneId => guideIn(surface.layout, paneId) === undefined}
+          canCloseTab={tabId => canCloseTab(surface, tabId)}
           intents={intentsFor(sessionId, actions, openTab, panel.activateTab, panel.closeTab, panel.workbenchSurface)}
           labels={dockLabels(t)}
           renderTab={bodiesFor(panel)}
@@ -416,6 +418,7 @@ function Floats(panel: PanelProps): ReactNode {
     <div className={css.floatHost} data-sidebar-right-float-host>
       <FloatLayer
         state={surface.layout}
+        canCloseTab={tabId => canCloseTab(surface, tabId)}
         intents={intentsFor(sessionId, actions, openTab, panel.activateTab, panel.closeTab, panel.workbenchSurface)}
         labels={dockLabels(t)}
         renderTab={bodiesFor(panel)}
@@ -534,9 +537,10 @@ function BottomPanel(panel: PanelProps & {
         <DockSurface
           state={surface.layout}
           canSplit={canSplit(surface.layout) && dockPaneIds(surface.layout).length < 2}
-          hideSplitAtCapacity
+          hideSplitWhenBlocked
           minPaneFraction={0.2}
           canAddTab={paneId => guideIn(surface.layout, paneId) === undefined}
+          canCloseTab={tabId => canCloseTab(surface, tabId)}
           intents={intentsFor(sessionId, actions, openTab, panel.activateTab, panel.closeTab, 'bottom')}
           labels={dockLabels(t)}
           renderTab={bodiesFor(panel)}

@@ -9,6 +9,9 @@ the deliberate composition divergences from `dsh web` — are documented in
 [browser e2e Agent Note](../../../.agents/notes/implemented/testing/2026-07-24-web-gui-browser-e2e-lane.md).
 
 `member-question-receiving.e2e.ts` uses a mock remote Agent only as the sender identity, then exercises the shipped Host receiver, API Proxy, WebSocket mux, Client Runtime, dynamic module table, receiving sidebar row, member-question composite card, shared question presentation, and Host settlement RPC. Arrival materializes one Host Session in the invitation-bound Workspace and injects the Decision Brief without starting a model turn; a local answer leaves no permanent answered strip. Reference chips open the receiver-owned hidden Workspace copy through Better Sidebar Files, assert the Files payload path under `.dsh/member-questions/<questionId>/`, and leave a same-named Workspace file untouched.
+## Completion observations
+
+State-sensitive cases use Workspace, admission, attachment, and model-stream barriers to separate visible intermediate states from completed operations. Details close waits for frame transitions; archive verification assigns an explicit title to the seeded Session and follows that identity across reload. See the [CI fixture synchronization decision](../../../.agents/notes/implemented/testing/2026-09-08-ci-completion-observations.md).
 
 ## These are Host-face tests
 

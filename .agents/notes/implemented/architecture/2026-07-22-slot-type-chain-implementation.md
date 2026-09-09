@@ -13,6 +13,9 @@ The page is composed at runtime from independently loaded plugins, so the UI nee
 ## Decision
 
 One sentence: **the ui-renderer's application assembly renders `'root'`; a plugin composes UI through a single `register` call that simultaneously occupies a slot, declares+authorizes its child slots, declares its store, and injects its business face; components are pure functions whose props arrive in four shares, each auto-derived from its single source of truth.** A feature shell may mount a declared non-root Session slot through the framework's [explicit Session mount](2026-08-23-explicit-session-slot-mounts.md), without adding another definition or component-import API.
+Global main-panel selection and its root lifetime are defined by the [global main-panels decision](2026-09-08-global-main-panels.md).
+
+One sentence: **the ui-renderer renders only `'root'`; a plugin composes UI through a single `register` call that simultaneously occupies a slot, declares+authorizes its child slots, declares its store, and injects its business face; components are pure functions whose props arrive in four shares, each auto-derived from its single source of truth.**
 
 ### 'root' is the only a-priori slot
 
@@ -25,7 +28,7 @@ ctx.slots.register({
   name: 'root',
   children: {
     'sidebar':      { kind: 'single', scope: 'root' },
-    'conversation': { kind: 'single', scope: 'session' },
+    'main':         { kind: 'keyed', scope: 'root' },
   },
   store: createLayoutStore,      // StoreHandle or factory (below)
   inject: injectFrame,           // business face (below)

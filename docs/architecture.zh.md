@@ -136,6 +136,7 @@ seam 正是替换一个提供方就能改变整个产品的原因。文件系统
 [Browser Runtime seam](subsystems/browser-runtime.zh.md) 将不透明的 Profile、Workspace、浏览器实例与标签页身份封装在 `ctx.browserRuntime` 后。Session 本地 Workspace 所有权由 `ctx.browserWorkspace` 持有。首个确定性 Provider 证明串行、修订保护操作与释放；deferred Consumer 则沿用普通工具与通用展示路径。
 
 [实验性 Agent Teams](subsystems/agent-team.zh.md) 是 `ctx.agentTeams` 上的私有显式启用协作 seam，在可继续 subagent 之上提供持久 roster、任务板和 mailbox。
+[实验性 Agent Teams](subsystems/agent-team.zh.md) 是 `ctx.agentTeams` 上公开发布、显式启用的协作 seam，在可继续 subagent 之上提供持久 roster、任务板和 mailbox。
 
 ## 新行为的归属位置
 

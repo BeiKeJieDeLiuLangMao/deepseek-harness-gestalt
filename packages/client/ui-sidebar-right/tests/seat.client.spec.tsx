@@ -530,10 +530,11 @@ describe('slot-owned useTabInfo', () => {
   it('updates guide replacements through the same hook and guide boxes through framework injection', async () => {
     const h = await mountSeat()
     let captured: SidebarRightTabInfo | undefined
+    act(() => { h.actions.setExpanded(SESSION, true) })
     await act(async () => {
       h.runtime.ctx.sidebarRightTabs.register({
         id: 'test/files', kind: 'files', title: () => 'Files',
-        guide: [{ order: 1, title: () => 'Files', description: () => 'Browse' }],
+        guide: [{ order: 1, title: () => 'Files' }],
       })
     })
     expect(h.view.container.querySelector('[data-sidebar-right-guide-entry="files"]')).not.toBeNull()
@@ -605,7 +606,9 @@ describe('slot-owned useTabInfo', () => {
     h.open('right.txt', { paneId: right })
     const guide = getPane(h.layout(), right).tabs.find(id => h.layout().tabs[id]?.kind === 'guide')!
     act(() => { h.actions.closeTab(SESSION, guide) })
-    const add = element(h.view.container, '[data-dockkit-add-tab]')
+    const add = [...h.view.container.querySelectorAll<HTMLElement>('[data-dockkit-add-tab]')]
+      .find(candidate => candidate.closest('[data-dockkit-pane]')?.getAttribute('data-dockkit-pane') === right)
+    if (add === undefined) throw new Error('expected the right pane add control')
     expect(add.closest('[data-dockkit-pane]')?.getAttribute('data-dockkit-pane')).toBe(right)
     fireEvent.click(add)
     expect(getPane(h.layout(), right).tabs.filter(id => h.layout().tabs[id]?.kind === 'guide')).toHaveLength(1)

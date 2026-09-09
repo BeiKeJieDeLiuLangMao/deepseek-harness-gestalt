@@ -53,7 +53,7 @@ function legacy() {
 
 describe('official workbench persistence', () => {
   it('round-trips both layouts, metadata, pins, and extension data with process-local history reset', () => {
-    const surface = createSurface(() => 'Start')
+    const surface = createSurface(() => ({ kind: 'guide', title: 'Start' }))
     const encoded = encodeSidebarWorkbench({
       ...surface,
       bottomHeight: 310,
@@ -73,7 +73,7 @@ describe('official workbench persistence', () => {
     const officialKey = `${SIDEBAR_WORKBENCH_STORAGE_PREFIX}:${SESSION}`
     const backing = storage({ [legacyKey]: JSON.stringify(legacy()) })
     const persistence = new LocalSidebarWorkbenchPersistence(backing)
-    const restored = persistence.load(SESSION, () => 'Start')
+    const restored = persistence.load(SESSION, () => ({ kind: 'guide', title: 'Start' }))
     expect(restored).toBeDefined()
     expect(backing.data.get(legacyKey)).toBe(JSON.stringify(legacy()))
     expect(decodeSidebarWorkbench(JSON.parse(backing.data.get(officialKey)!) as unknown)).toBeDefined()
@@ -96,15 +96,15 @@ describe('official workbench persistence', () => {
     backing.setItem.mockImplementation(() => { throw new Error('quota') })
     const error = vi.spyOn(console, 'error').mockImplementation(() => {})
     const persistence = new LocalSidebarWorkbenchPersistence(backing)
-    expect(persistence.load(SESSION, () => 'Start')).toBeUndefined()
+    expect(persistence.load(SESSION, () => ({ kind: 'guide', title: 'Start' }))).toBeUndefined()
     expect(backing.data.has(`${SIDEBAR_WORKBENCH_STORAGE_PREFIX}:${SESSION}`)).toBe(false)
     expect(backing.data.get(legacyKey)).toBe(JSON.stringify(legacy()))
     expect(error).toHaveBeenCalledWith('sidebarRight: legacy workbench migration failed:', expect.any(Error))
     backing.setItem.mockImplementation((key: string, value: string) => { backing.data.set(key, value) })
-    persistence.save(SESSION, createSurface(() => 'Start'))
+    persistence.save(SESSION, createSurface(() => ({ kind: 'guide', title: 'Start' })))
     expect(backing.data.has(`${SIDEBAR_WORKBENCH_STORAGE_PREFIX}:${SESSION}`)).toBe(false)
     persistence.clear(SESSION)
-    persistence.save(SESSION, createSurface(() => 'Start'))
+    persistence.save(SESSION, createSurface(() => ({ kind: 'guide', title: 'Start' })))
     expect(backing.data.has(`${SIDEBAR_WORKBENCH_STORAGE_PREFIX}:${SESSION}`)).toBe(true)
     error.mockRestore()
   })
@@ -114,16 +114,16 @@ describe('official workbench persistence', () => {
     const unknown = JSON.stringify({ version: 99, future: { opaque: true } })
     const backing = storage({ [key]: unknown })
     const persistence = new LocalSidebarWorkbenchPersistence(backing)
-    expect(persistence.load(SESSION, () => 'Start')).toBeUndefined()
-    persistence.save(SESSION, createSurface(() => 'Start'))
+    expect(persistence.load(SESSION, () => ({ kind: 'guide', title: 'Start' }))).toBeUndefined()
+    persistence.save(SESSION, createSurface(() => ({ kind: 'guide', title: 'Start' })))
     expect(backing.data.get(key)).toBe(unknown)
     persistence.clear(SESSION)
-    persistence.save(SESSION, createSurface(() => 'Start'))
+    persistence.save(SESSION, createSurface(() => ({ kind: 'guide', title: 'Start' })))
     expect(backing.data.get(key)).not.toBe(unknown)
   })
 
   it('rejects duplicate cross-surface ids and a minted cursor behind restored records', () => {
-    const surface = createSurface(() => 'Start')
+    const surface = createSurface(() => ({ kind: 'guide', title: 'Start' }))
     const document = JSON.parse(encodeSidebarWorkbench(surface)) as {
       minted: number
       right: { layout: typeof surface.layout }

@@ -20,6 +20,7 @@ import type { createSidebarRightStore } from '../src/client/stores.ts'
 import { WorkbenchSeat } from '../src/client/shell/SidebarRight.tsx'
 import { ExpandButton } from '../src/client/shell/ExpandButton.tsx'
 import { GuideBody } from '../src/client/tabs/guide/GuideBody.tsx'
+import { GuideTitle } from '../src/client/tabs/guide/GuideTitle.tsx'
 import { GUIDE_ID } from '../src/client/tabs/guide/definition.ts'
 import { en, zh } from '../src/client/locales.ts'
 import { SIDEBAR_RIGHT_PREFERENCES_DEFAULTS, SidebarRightPreferencesController } from '../src/client/preferences.ts'
@@ -112,12 +113,13 @@ describe('ui-sidebar-right apply', () => {
     expect(guide?.id).toBe(GUIDE_ID)
     expect(guide?.priority).toBe('builtin')
     expect(guide?.title('sidebar://guide')).toBe('tab.guide.title')
-    // Three registrations: the panel seat, the header's corner seat, and the
-    // guide body under the guide implementation's id.
+    // Four registrations: the panel seat, the header's corner seat, and the
+    // guide body and title under the guide implementation's id.
     expect(registered.map(entry => [entry.name, entry.key, entry.locale, entry.component])).toEqual([
       ['workbench', undefined, 'sidebarRight', WorkbenchSeat],
       ['conversation.session.header.corner', undefined, 'sidebarRight', ExpandButton],
-      ['sidebar.right.pane.tab', GUIDE_ID, 'sidebarRight', GuideBody],
+      ['sidebar.right.pane.tab', GUIDE_ID, undefined, GuideBody],
+      ['sidebar.right.pane.tab.title', GUIDE_ID, undefined, GuideTitle],
     ])
     // The panel declares the extension seats; the guide declares its chain child.
     expect(Object.keys(seat('workbench').children as object)).toEqual([
@@ -179,7 +181,11 @@ describe('ui-sidebar-right apply', () => {
     expect(seat('conversation.session.header.corner').store).toBe(handle)
     const instance = handle.create(SESSION)
     instance.actions.open(SESSION)
-    const guide = Object.values(instance.getSnapshot().bySession[SESSION]?.layout.tabs ?? {})[0]
+    instance.actions.setExpanded(SESSION, true)
+    instance.actions.openContent(SESSION, {
+      kind: 'text', contentId: 'dsh-resource://file/session/s-test/a.txt', title: 'a',
+    }, () => {})
+    const guide = Object.values(instance.getSnapshot().bySession[SESSION]?.layout.tabs ?? {}).find(tab => tab.kind === 'guide')
     if (guide === undefined) throw new Error('expected the seeded guide')
     // Held and pinned from the store's own commit: no seat synced anything.
     const occurrence = ctx.sidebarRight.tabDomain.occurrence(SESSION, guide)
@@ -201,7 +207,7 @@ describe('ui-sidebar-right apply', () => {
       id: 'spec/files',
       kind: 'files',
       title: () => 'Files',
-      guide: [{ order: 10, title: () => 'Files', description: () => 'The workspace tree' }],
+      guide: [{ order: 10, title: () => 'Files' }],
     })
     expect(seen).toHaveBeenCalledOnce()
     expect(guideEntries.getSnapshot().map(entry => entry.kind)).toEqual(['files'])
@@ -231,6 +237,6 @@ describe('ui-sidebar-right apply', () => {
     expect(dictionaries.size).toBe(0)
     await ctx.plugin({ inject: [...inject], apply }).await()
     expect(ctx.sidebarRightTabs.get('guide')?.id).toBe(GUIDE_ID)
-    expect(registered).toHaveLength(3)
+    expect(registered).toHaveLength(4)
   })
 })

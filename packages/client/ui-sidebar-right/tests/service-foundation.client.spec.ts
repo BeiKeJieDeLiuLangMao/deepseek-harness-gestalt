@@ -25,7 +25,7 @@ function harness() {
   const pinResource = vi.fn()
   const { controller, adopt, materializeWith } = createSidebarRightController(tabs, pinResource)
   const releases: Array<() => void> = []
-  const store = createSidebarRightStore(() => 'Start', undefined, (sessionId, instance) => {
+  const store = createSidebarRightStore(() => ({ kind: 'guide', title: 'Start' }), undefined, (sessionId, instance) => {
     releases.push(adopt(sessionId as SessionId, instance))
   })
   materializeWith(sessionId => store.create(sessionId))
@@ -61,8 +61,13 @@ describe('official workbench foundation', () => {
   })
 
   it('reconciles right and bottom records as one SessionDomain set', async () => {
-    const { controller } = harness()
+    const { controller, tabs, store } = harness()
+    tabs.register({ id: 'spec/page', kind: 'page', title: () => 'Page' })
     const target = controller.forSession(SESSION)
+    const instance = store.create(SESSION)
+    instance.actions.setSurfaceExpanded(SESSION, 'right', true)
+    instance.actions.setSurfaceExpanded(SESSION, 'bottom', true)
+    await target.openTab('page', { instanceId: 'bottom', surface: 'bottom' })
     const guides = controller.getSnapshot().sessions[0]?.tabs.filter(tab => tab.record.kind === 'guide') ?? []
     const right = guides.find(tab => tab.surface === 'right')
     const bottom = guides.find(tab => tab.surface === 'bottom')
@@ -167,7 +172,7 @@ describe('official workbench foundation', () => {
     tabs.register({ id: 'spec/sidechat', kind: 'sidechat', title: () => 'Side Chat', onOpen, onActivate })
     const target = controller.forSession(SESSION)
     const before = controller.getSnapshot().sessions[0]!
-    const activeGuide = before.tabs.find(tab => tab.surface === 'right' && tab.active)!.record.id
+    const activeGuide = before.tabs.find(tab => tab.surface === 'right' && tab.active)?.record.id
 
     const restored = await target.openTab('sidechat', { instanceId: 'child', activate: false })
     const after = controller.getSnapshot().sessions[0]!

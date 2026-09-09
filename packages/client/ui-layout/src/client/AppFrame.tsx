@@ -3,10 +3,9 @@
  * shell renders only 'root'). Owns the grid tracks (sidebar | center |
  * rightbar), the drag handles (pointer capture + rAF throttle), the column
  * solve (columns.ts), and the child-slot render decisions: the sidebar slot
- * renders HERE with live parameters from that solve, and the session-aware
- * occupants render in fixed column positions; the strict right-column entry
- * gates itself on current-session availability while the session-maybe
- * conversation retains identity.
+ * receives live parameters from that solve. The root-scoped main slot selects
+ * the Conversation or a global panel. Each column occupant owns its Session
+ * binding and reports the geometry it needs.
  *
  * The right column is a track, not a box: its occupant draws its panel anchored
  * to the frame's right edge at the resolved normal width, and the
@@ -15,7 +14,7 @@
  * track but hides the outer resize handle. Everything arrives through the framework
  * shares — zero cordis or framework imports, zero self-made hooks.
  */
-import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type {
   PropsLocale, PropsRenderSlots, PropsRuntime, PropsStore,
@@ -25,15 +24,10 @@ import { DocumentTitle } from './DocumentTitle.tsx'
 import type { createLayoutStore } from './stores.ts'
 import css from './AppFrame.module.css'
 
-/** True when this document is the Desktop native overlay renderer. */
-function isDesktopOverlayDocument(): boolean {
-  return document.documentElement.hasAttribute('data-dsh-desktop-overlay')
-}
-
 /** Full composed props: runtime share + child-slot render share + store share. */
 export type AppFrameProps =
   & PropsRuntime<'root'>
-  & PropsRenderSlots<'sidebar' | 'conversation' | 'workbench' | 'shell.overlay'>
+  & PropsRenderSlots<'sidebar' | 'main' | 'workbench' | 'shell.overlay'>
   & PropsStore<ReturnType<typeof createLayoutStore>>
   & PropsLocale<'common'>
 
@@ -45,6 +39,12 @@ function CenterColumn(props: { bottomHostId: string; bottomHeight: number; child
       <div id={props.bottomHostId} className={css.bottomHost} data-bottombar-host />
     </div>
   )
+}
+
+/** Subscribe to the main key without subscribing the column frame to each panel id. */
+function MainPanel({ usePanelInfo, renderSlot }: Pick<PropsRuntime<'root'>, 'usePanelInfo'> & PropsRenderSlots<'main'>) {
+  const panelId = usePanelInfo(info => info.activePanelId)
+  return renderSlot('main', {}, { entryKey: panelId ?? 'conversation' })
 }
 
 /**
@@ -126,34 +126,25 @@ function DragHandle(props: { side: 'sidebar' | 'rightbar'; left: number; onStart
 export function AppFrame({
   useStore,
   useSessions,
+  usePanelInfo,
   actions,
   renderSlot,
   SessionProvider,
   t,
 }: AppFrameProps) {
-  // The overlay WebContentsView paints only native chrome. Rendering the
-  // Session Surface here creates a full-window duplicate that receives input
-  // above the Host window after a menu or Settings request opens the view.
-  if (isDesktopOverlayDocument()) {
+  if (document.documentElement.hasAttribute('data-dsh-desktop-overlay')) {
     return (
       <div data-dsh-desktop-overlay-root="">
-        {renderSlot('sidebar', {
-          collapsed: false,
-          width: SIDEBAR_DEFAULT,
-        })}
+        {renderSlot('sidebar', { collapsed: false, width: SIDEBAR_DEFAULT })}
         {renderSlot('shell.overlay', {})}
       </div>
     )
   }
-  const panels = useStore(s => s)
-  const documentTitle = useSessions((s) => {
-    const current = s.current
-    return current === undefined ? undefined : s.byId[current]?.title
-  })
+  const layoutInfo = useStore(state => state.layoutInfo)
   const frameRef = useRef<HTMLDivElement | null>(null)
   const rightHostId = `dsh-workbench-right-${useId()}`
   const bottomHostId = `dsh-workbench-bottom-${useId()}`
-  const viewport = panels.viewportWidth
+  const viewport = layoutInfo.viewportWidth
 
   // Track the frame's own box (not the window): rAF-throttled ResizeObserver.
   useLayoutEffect(() => {
@@ -184,15 +175,15 @@ export function AppFrame({
   }, [actions])
 
   const narrow = viewport < SIDEBAR_AUTO_COLLAPSE
-  const sidebarCollapsed = narrow ? !panels.narrowExpanded : panels.sidebar === 0
+  const sidebarCollapsed = narrow ? !layoutInfo.narrowExpanded : layoutInfo.sidebar === 0
   const sidebarPreference = sidebarCollapsed
     ? 0
-    : panels.sidebar === 0 ? SIDEBAR_DEFAULT : panels.sidebar
-  const rightbarPreference = panels.rightbar ?? viewport * RIGHTBAR_DEFAULT_RATIO
+    : layoutInfo.sidebar === 0 ? SIDEBAR_DEFAULT : layoutInfo.sidebar
+  const rightbarPreference = layoutInfo.rightbar ?? viewport * RIGHTBAR_DEFAULT_RATIO
   // Opening on a narrow frame collapses the left sidebar. Eligibility must
   // include that space before the occupant's first shown report arrives.
-  const normal = computeColumns(viewport, !panels.rightbarShown && narrow ? 0 : sidebarPreference, rightbarPreference)
-  const cols = computeColumns(viewport, sidebarPreference, panels.rightbarTrack ? rightbarPreference : 0)
+  const normal = computeColumns(viewport, !layoutInfo.rightbarShown && narrow ? 0 : sidebarPreference, rightbarPreference)
+  const cols = computeColumns(viewport, sidebarPreference, layoutInfo.rightbarTrack ? rightbarPreference : 0)
   const colsRef = useRef(cols)
   colsRef.current = cols
   const rightbarWidth = useRef(normal.rightbar)
@@ -216,8 +207,16 @@ export function AppFrame({
     actions.setRightbar(rightbarBase.current - dx)
   }, [actions])
   const productTitle = process.env.DSH_CLIENT_TITLE ?? t('brand.localBuild')
-  const bottomHeight = panels.bottombarShown && !panels.bottombarFullscreen
-    ? Math.min(panels.bottombar, panels.viewportHeight)
+  const sidebar = useMemo(() => renderSlot('sidebar', {
+    collapsed: sidebarCollapsed,
+    width: cols.sidebar,
+  }), [renderSlot, sidebarCollapsed, cols.sidebar])
+  const main = useMemo(() => (
+    <MainPanel usePanelInfo={usePanelInfo} renderSlot={renderSlot} />
+  ), [usePanelInfo, renderSlot])
+  const overlays = useMemo(() => renderSlot('shell.overlay', {}), [renderSlot])
+  const bottomHeight = layoutInfo.bottombarShown && !layoutInfo.bottombarFullscreen
+    ? Math.min(layoutInfo.bottombar, layoutInfo.viewportHeight)
     : 0
 
   return (
@@ -230,43 +229,27 @@ export function AppFrame({
       }}
       data-sidebar-collapsed={sidebarCollapsed || undefined}
       data-rightbar-collapsed={cols.rightbar === 0 || undefined}
-      data-rightbar-fullscreen={panels.rightbarFullscreen || undefined}
-      data-rightbar-instant={panels.rightbarInstant || undefined}
+      data-rightbar-fullscreen={layoutInfo.rightbarFullscreen || undefined}
+      data-rightbar-instant={layoutInfo.rightbarInstant || undefined}
       data-dragging={dragging || undefined}
     >
       <DocumentTitle
         productTitle={productTitle}
-        {...documentTitle === undefined ? {} : { title: documentTitle }}
+        useSessions={useSessions}
+        usePanelInfo={usePanelInfo}
       />
       <div className={css.sidebarCol}>
-        {/* Render-site slot call with live concession output: a closed
-            sidebar keeps the mounted slot at the compact-rail width, and the
-            component sees its rendered state as owner params decided here
-            (collapsed follows the resolved rail, so a derived auto-collapse
-            renders the rail UI too). */}
-        {renderSlot('sidebar', {
-          collapsed: sidebarCollapsed,
-          width: cols.sidebar,
-        })}
+        {sidebar}
       </div>
       <>
-        {/* Both column occupants stay at fixed tree positions from first
-            paint — no loading gate: a bare status line reads worse than
-            the shell's own pending rendering. The conversation is
-            session-maybe; SessionProvider withholds the strict right-column
-            entry while no session is current. */}
-        <CenterColumn bottomHostId={bottomHostId} bottomHeight={bottomHeight}>
-          {renderSlot('conversation', {})}
-        </CenterColumn>
+        <CenterColumn bottomHostId={bottomHostId} bottomHeight={bottomHeight}>{main}</CenterColumn>
         <RightbarColumn hostId={rightHostId} />
-        {/* One Session-owned workbench resolves these stable frame hosts and
-            portals both surfaces from one React/store tree. */}
         <SessionProvider>
           {renderSlot('workbench', {
             rightHostId,
             bottomHostId,
             viewportWidth: viewport,
-            viewportHeight: panels.viewportHeight,
+            viewportHeight: layoutInfo.viewportHeight,
             centerWidth: cols.center,
             rightPanelWidth: normal.rightbar,
             rightbarWidth: cols.rightbar,
@@ -277,11 +260,11 @@ export function AppFrame({
         </SessionProvider>
       </>
       <div className={css.overlayLayer} data-shell-overlay>
-        {renderSlot('shell.overlay', {})}
+        {overlays}
       </div>
       {/* The collapsed rail is fixed-width: no resize handle while closed. */}
       {!sidebarCollapsed && <DragHandle side="sidebar" left={cols.sidebar} onStart={onSidebarStart} onDrag={onSidebarDrag} onEnd={onDragEnd} />}
-      {panels.rightbarShown && !panels.rightbarFullscreen && normal.rightbar > 0 && (
+      {layoutInfo.rightbarShown && !layoutInfo.rightbarFullscreen && normal.rightbar > 0 && (
         <DragHandle side="rightbar" left={viewport - normal.rightbar} onStart={onRightbarStart} onDrag={onRightbarDrag} onEnd={onDragEnd} />
       )}
     </div>

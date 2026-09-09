@@ -269,3 +269,5 @@
 # only the model-facing tools are per-session.
 - id: tool-browser
   name: '@deepseek-ai/dsh-tool-browser'
+- id: present
+  name: '@deepseek-ai/dsh-tool-present'
