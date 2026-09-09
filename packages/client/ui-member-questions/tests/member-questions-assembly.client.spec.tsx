@@ -202,6 +202,11 @@ describe('three Client applies: session-controller, member-questions, user-quest
       registerGenerationSource: () => () => {},
       start: () => ({ stop: () => {} }),
     }
+    ctx.reflect.provide('connection', connection)
+    ctx.reflect.provide('fileUpload', {
+      available: true,
+      post: () => Promise.reject(new Error('unexpected file upload')),
+    })
     const sessionRemote = {
       control: async function* (signal?: AbortSignal) {
         await new Promise<void>((resolve) => {
