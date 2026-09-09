@@ -38,3 +38,4 @@ Mounted at `ctx.imConfig`.
 - **Unconfigured No-Trigger**: Unmatched conversations resolve to `unconfigured` to prevent accidental access.
 - **Group Trigger Invariant**: Group routes require at least one trigger condition (mention, everyN, or fixedIntervalSeconds) with positive numbers.
 - **Simulation Target Restriction**: Workspace simulation targets must reference existing configured accounts.
+- **No Invariant Companion Needed**: `im-core` manages state through `StorageDomain`, which owns atomic record and change guarantees. There are no divergent observations or separate process bridges requiring an independent `./invariant` companion.
