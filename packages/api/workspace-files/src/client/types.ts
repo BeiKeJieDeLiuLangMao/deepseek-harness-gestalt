@@ -21,6 +21,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 export interface WorkspaceFileParams {
   /** 1-based line to scroll into view; absent leaves the position alone. */
   readonly line?: number
+  /** Absolute file paths to reveal in an attached tree; consumers without a tree ignore them. */
+  readonly reveal?: readonly string[]
 }
 
 declare module '@deepseek-ai/dsh-typert-protocol' {

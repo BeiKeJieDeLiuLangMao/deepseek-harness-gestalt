@@ -28,6 +28,7 @@ export interface OfficialFileInjected {
   }
   readonly start: (tabId: TabId, root: string, signal: AbortSignal) => void
   readonly toggle: (tabId: TabId, path: string) => void
+  readonly reveal: (tabId: TabId, paths: readonly string[]) => void
   readonly split: (paneId: PaneId) => PaneId | undefined
   readonly matchViewer: (address: string, path: string, head?: Uint8Array) => SidebarRightViewerDefinition | undefined
   readonly viewerSettings: (viewerId: string) => Readonly<Record<string, JsonValue>>
@@ -98,6 +99,7 @@ export function officialFileFace(
         signal.addEventListener('abort', () => { actions.forget(tabId) }, { once: true })
       },
       toggle: (tabId, path) => { actions.toggle(tabId, path) },
+      reveal: (tabId, paths) => { actions.reveal(tabId, paths) },
       split: paneId => ctx.sidebarRight.split(paneId),
       matchViewer: (address, path, head) => ctx.sidebarRightTabs.matchViewer({ address, path, head }),
       viewerSettings: viewerId => ctx.sidebarRightPreferences.pluginSettings(viewerId),

@@ -64,7 +64,9 @@ function projectReferenceView(
     if (!tab.visible || registry.get(tab.record.kind) === undefined) continue
     const file = parseFileAddress(tab.record.contentId)
     if (file === undefined || (file.scope === 'session' && file.sessionId !== sessionId)) continue
-    paths.push(file.scope === 'absolute' ? file.path : resolveWorkspacePath(cwd, file.path))
+    const path = file.scope === 'absolute' ? file.path : resolveWorkspacePath(cwd, file.path)
+    if (registry.matchViewer({ address: tab.record.contentId, path }) === undefined) continue
+    paths.push(path)
   }
   return { sessionId, paths }
 }
@@ -75,6 +77,7 @@ function referenceViewSource(ctx: ClientContext): HostObservable<MemberQuestionR
   let previousSnapshot: SidebarSnapshot | undefined
   let previousRegistry: SidebarRegistry | undefined
   let previousEntries: ReturnType<SidebarRegistry['entries']> | undefined
+  let previousViewers: ReturnType<SidebarRegistry['viewers']> | undefined
   let previousCwd: string | undefined
   let previousView: MemberQuestionReferenceView = { paths: [] }
   return {
@@ -83,14 +86,17 @@ function referenceViewSource(ctx: ClientContext): HostObservable<MemberQuestionR
       const snapshot = service?.getSnapshot()
       const registry = ctx.get('sidebarRightTabs')
       const entries = registry?.entries()
+      const viewers = registry?.viewers()
       const sessionId = snapshot?.mountedSessionId
       const cwd = sessionId === undefined ? undefined : ctx.sessions.list.getSnapshot().byId[sessionId]?.cwd
       if (service === previousService && snapshot === previousSnapshot
-        && registry === previousRegistry && entries === previousEntries && cwd === previousCwd) return previousView
+        && registry === previousRegistry && entries === previousEntries
+        && viewers === previousViewers && cwd === previousCwd) return previousView
       previousService = service
       previousSnapshot = snapshot
       previousRegistry = registry
       previousEntries = entries
+      previousViewers = viewers
       previousCwd = cwd
       previousView = projectReferenceView(snapshot, registry, cwd)
       return previousView

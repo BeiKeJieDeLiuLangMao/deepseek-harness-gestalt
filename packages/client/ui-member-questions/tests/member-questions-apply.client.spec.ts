@@ -195,6 +195,7 @@ describe('ui-member-questions browser apply', () => {
     expect(source.getSnapshot()).toEqual({ paths: [] })
     const sessionId = 'receiving-session'
     let entries = [{ kind: 'text' }]
+    let viewers = [{ id: 'markdown' }]
     const tab = (contentId: string, visible = true) => ({
       record: { kind: 'text', contentId }, visible, active: false,
     })
@@ -214,7 +215,9 @@ describe('ui-member-questions browser apply', () => {
     }
     let disposeRegistry = ctx.reflect.provide('sidebarRightTabs', {
       entries: () => entries,
+      viewers: () => viewers,
       get: (kind: string) => entries.find(entry => entry.kind === kind),
+      matchViewer: () => viewers[0],
       subscribe: subscribe(registryListeners),
     })
     let disposeSidebar = ctx.reflect.provide('sidebarRight', {
@@ -235,6 +238,13 @@ describe('ui-member-questions browser apply', () => {
       for (const notify of registryListeners) notify()
       expect(source.getSnapshot().paths).toHaveLength(2)
 
+      viewers = []
+      for (const notify of registryListeners) notify()
+      expect(source.getSnapshot()).toEqual({ sessionId, paths: [] })
+      viewers = [{ id: 'markdown' }]
+      for (const notify of registryListeners) notify()
+      expect(source.getSnapshot().paths).toHaveLength(2)
+
       cwd = '/moved-workspace'
       for (const notify of sessionListeners) notify()
       expect(source.getSnapshot().paths).toEqual(['/moved-workspace/brief.md', '/workspace/floating.html'])
@@ -252,7 +262,9 @@ describe('ui-member-questions browser apply', () => {
       expect(source.getSnapshot()).toEqual({ paths: [] })
       disposeRegistry = ctx.reflect.provide('sidebarRightTabs', {
         entries: () => entries,
+        viewers: () => viewers,
         get: (kind: string) => entries.find(entry => entry.kind === kind),
+        matchViewer: () => viewers[0],
         subscribe: subscribe(registryListeners),
       })
       snapshot = { ...snapshot, sessions: [{ sessionId, tabs }] }

@@ -81,7 +81,7 @@ function lineOf(params: unknown): number | undefined {
 export function OfficialEditorHost(props: OfficialFileBodyProps): ReactNode {
   const {
     useTabInfo, useSessions, useStore, renderSlot,
-    useFilePreferences, useFileViewers, start, toggle, split,
+    useFilePreferences, useFileViewers, start, toggle, reveal, split,
     matchViewer, viewerSettings, htmlSafety, setOpenWith, disableWorkspaceFence,
     writeFile, openExternal, reference, insertText, renamed, removed,
     armEditor, retainedEditor, retainEditor, setDirty,
@@ -110,6 +110,15 @@ export function OfficialEditorHost(props: OfficialFileBodyProps): ReactNode {
     if (treeRoot === undefined || state !== undefined || tab.signal.aborted) return
     start(tab.id, treeRoot, tab.signal)
   }, [treeRoot, state, tab.id, tab.signal, start])
+
+  const appliedRevealRevision = useRef<number>()
+  const treeReady = state !== undefined
+  useEffect(() => {
+    const paths = (tab.navigation.params as { readonly reveal?: readonly string[] } | undefined)?.reveal
+    if (!treeReady || paths === undefined || appliedRevealRevision.current === tab.navigation.revision) return
+    appliedRevealRevision.current = tab.navigation.revision
+    reveal(tab.id, paths)
+  }, [treeReady, tab.id, tab.navigation.params, tab.navigation.revision, reveal])
 
   useEffect(() => { armEditor(homeSessionId, tab.id, tab.signal) }, [armEditor, homeSessionId, tab.id, tab.signal])
 
