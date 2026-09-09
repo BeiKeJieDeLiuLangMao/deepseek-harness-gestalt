@@ -33,6 +33,7 @@ import {
 import { apiKeyFailure } from './apiKey.ts'
 import { EditorFooter } from './EditorFooter.tsx'
 import { ModelListEditor } from './ModelListEditor.tsx'
+import { InputModalityTags } from './InputModalityTags.tsx'
 import { deriveKeyRef, protocolChoices } from './store.ts'
 import type { ModelsOperations } from './operations.ts'
 import type { SettingsSchemaOperations } from './schema-operations.ts'
@@ -448,6 +449,23 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
                 </div>
               )
               : null}
+            {family === 'pi-ai' ? (
+              <div className={styles['field']}>
+                <span className={styles['fieldLabel']}>{t('defaultInput')}</span>
+                <InputModalityTags
+                  value={schema.getPath(draft, ['defaultInput'])}
+                  disabled={disabled}
+                  name={t('defaultInput')}
+                  labels={{ text: t('modalityText'), image: t('modalityImage') }}
+                  onChange={(next) => {
+                    setDraft(current => next === undefined
+                      ? schema.deletePath(current, ['defaultInput'])
+                      : schema.setPath(current, ['defaultInput'], next))
+                  }}
+                />
+                <span className={styles['advancedHint']}>{t('defaultInputHint')}</span>
+              </div>
+            ) : null}
             {/* Both families edit the same rows through the same contract; only
                 the extras differ — DeepSeek's inherited capacities, pi-ai's
                 endpoint interrogation. */}

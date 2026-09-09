@@ -33,30 +33,30 @@
       - button "编辑 minimax-cn": 编辑
       - button "删除 minimax-cn": 删除
     - listitem:
-      - text: Acme Gateway 自定义
-      - button "编辑 Acme Gateway (acme-gateway)": 编辑
-      - button "删除 Acme Gateway (acme-gateway)": 删除
-      - text: Acme Gateway acme-gateway API 密钥
+      - text: Acme 网关 自定义
+      - button "编辑 Acme 网关 (acme-gateway)": 编辑
+      - button "删除 Acme 网关 (acme-gateway)": 删除
+      - text: Acme 网关 acme-gateway API 密钥
       - textbox "API 密钥":
         - /placeholder: 输入 API 密钥，或留空使用环境认证
       - group:
         - text: 自定义设置 显示名称
         - textbox "显示名称":
           - /placeholder: acme-gateway
-          - text: Acme Gateway
+          - text: Acme 网关
         - text: API 地址
         - textbox "API 地址":
           - /placeholder: https://gateway.acme.example/v1
           - text: https://gateway.acme.example/v1
         - text: API 协议
         - combobox "API 协议":
-          - option "openai-completions" [selected]
+          - option "openai-completions"
           - option "openai-responses"
-          - option "anthropic-messages"
+          - option "anthropic-messages" [selected]
         - text: 默认接受的输入
         - group "默认接受的输入":
           - button "默认接受的输入 文本": 文本
-          - button "默认接受的输入 图片": 图片
+          - button "默认接受的输入 图片" [pressed]: 图片
         - text: 模型未单独设置时使用。适配器默认只接受文本。
         - region "模型目录":
           - text: 模型目录 已自定义模型目录
@@ -67,8 +67,35 @@
             - text: acme-large
           - textbox "显示名称 1":
             - /placeholder: 显示名称
-          - button "高级设置 1"
+          - button "高级设置 1" [expanded]
           - button "删除模型 1"
+          - text: 上下文窗口
+          - textbox "上下文窗口 1":
+            - /placeholder: 256K
+          - text: 最大输出 token
+          - textbox "最大输出 token 1":
+            - /placeholder: 32K
+          - text: 接受的输入
+          - group "接受的输入 1":
+            - button "接受的输入 1 文本" [pressed]: 文本
+            - button "接受的输入 1 图片" [pressed]: 图片
+          - text: 都不选则沿用模型目录，再使用本提供方的默认设置。 思考档位
+          - group "思考档位 1":
+            - button "思考档位 1 关闭" [pressed]: 关闭
+            - button "思考档位 1 最低": 最低
+            - button "思考档位 1 低": 低
+            - button "思考档位 1 中": 中
+            - button "思考档位 1 高" [pressed]: 高
+            - button "思考档位 1 很高": 很高
+            - button "思考档位 1 最高": 最高
+          - text: 都不选则沿用模型目录；自定义模型此时没有思考档位。若要设置，除「关闭」外至少再选一档。
+          - textbox "模型 ID 2":
+            - /placeholder: 模型 ID
+            - text: acme-inherited
+          - textbox "显示名称 2":
+            - /placeholder: 显示名称
+          - button "高级设置 2"
+          - button "删除模型 2"
           - button "添加模型"
       - button "取消"
       - button "保存"

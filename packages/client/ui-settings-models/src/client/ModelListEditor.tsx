@@ -19,6 +19,9 @@ import type { ReactNode } from 'react'
 import type { LlmDiscoveredModel } from '@deepseek-ai/dsh-api-remotes/client'
 import { Button, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import { formatCapacity, parseCapacity } from './DeepSeekModelsEditor.tsx'
+import { InputModalityTags } from './InputModalityTags.tsx'
+import { ReasoningEffortTags } from './ReasoningEffortTags.tsx'
+import type { ReasoningEffortsDraft } from './ReasoningEffortTags.tsx'
 import type { ModelsOperations } from './operations.ts'
 import type { DeepSeekModelDraft } from './DeepSeekModelsEditor.tsx'
 import type { en } from './locales.ts'
@@ -163,8 +166,7 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
   const [candidates, setCandidates] = useState<readonly LlmDiscoveredModel[] | undefined>(undefined)
   const [picked, setPicked] = useState<ReadonlySet<string>>(new Set())
   const [candidateQuery, setCandidateQuery] = useState('')
-  // Rows carry an id and a name; capacities are the exception, so they stay
-  // folded until asked for rather than crowding every row with four inputs.
+  // Capacity and capability declarations share each row's advanced section.
   const [expanded, setExpanded] = useState<ReadonlySet<number>>(new Set())
   // Capacities are edited as text, so a field's keystrokes are held here rather
   // than re-derived from the parsed count on every change — that would rewrite
@@ -209,14 +211,10 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
     })
   }
 
-  const patch = (index: number, next: Record<string, string | number | undefined>): void => {
+  const patch = (index: number, next: Record<string, string | number | string[] | ReasoningEffortsDraft | undefined>): void => {
     onChange(models.map((model, at) => {
       if (at !== index) return model
-      // Rebuilt rather than spread over: an emptied optional field has to leave
-      // the profile, not be stored as a value its schema would reject.
-      // Spread first so a field this card does not edit survives; an emptied
-      // optional field is then dropped rather than stored as a value its
-      // schema would reject.
+      // Empty edits remove only their own override; other provider fields survive.
       const cleared = new Set(
         Object.entries(next).filter(([, value]) => value === undefined || value === '').map(([key]) => key),
       )
@@ -433,6 +431,33 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
                     onChange={(event) => { editCapacity(index, 'maxTokens', event.target.value) }}
                   />
                 </label>
+                <div className={`${styles['modelField']} ${styles['modelFieldWide']}`}>
+                  <span className={styles['modelFieldLabel']}>{t('modelInput')}</span>
+                  <InputModalityTags
+                    value={model['input']}
+                    disabled={disabled}
+                    name={`${t('modelInput')} ${index + 1}`}
+                    labels={{ text: t('modalityText'), image: t('modalityImage') }}
+                    onChange={(next) => { patch(index, { input: next }) }}
+                  />
+                  <span className={styles['modelFieldHint']}>{t('modelInputHint')}</span>
+                </div>
+                <div className={`${styles['modelField']} ${styles['modelFieldWide']}`}>
+                  <span className={styles['modelFieldLabel']}>{t('modelReasoning')}</span>
+                  <ReasoningEffortTags
+                    value={model['reasoningEfforts']}
+                    disabled={disabled}
+                    name={`${t('modelReasoning')} ${index + 1}`}
+                    labels={{
+                      off: t('effortOff'), minimal: t('effortMinimal'), low: t('effortLow'),
+                      medium: t('effortMedium'), high: t('effortHigh'), xhigh: t('effortXhigh'), max: t('effortMax'),
+                    }}
+                    onChange={(next) => { patch(index, { reasoningEfforts: next }) }}
+                  />
+                  <span className={styles['modelFieldHint']}>
+                    {model['reasoningEfforts'] === false ? t('modelReasoningDisabled') : t('modelReasoningHint')}
+                  </span>
+                </div>
               </div>
             )
             : null}

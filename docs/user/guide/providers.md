@@ -42,8 +42,8 @@ If a saved default names a provider that was deleted, the composer displays **Se
 
 The generated [plugin configuration catalog](../../config-catalog.md) lists every supported field and default for every plugin; [`dsh-llm-pi-ai`](../../config-catalog.md#deepseek-aidsh-llm-pi-ai) is the provider section this page configures. The [`dsh-llm-pi-ai`](../../../packages/llm/llm-pi-ai/README.md) and [`dsh-llm-deepseek`](../../../packages/llm/llm-deepseek/README.md) references own direct `settings.yaml` configuration, catalog resolution, reasoning controls, credentials, and adapter errors.
 
-::: tip The form is deliberately small
-The Models page exposes only what a route needs to exist: the API key, display name, base URL, API protocol, and for each model its id, display name, context window, and max output tokens. Every other field — reasoning effort levels, image input, request-compatibility switches, headers, timeouts, retry policy — is set in `$DSH_HOME/settings.yaml`, the same document the page writes. Edit it directly, or, when the browser runs on the same machine as the server, open it with **Open configuration file** in the Settings header; the adapters re-read it on the next request, so nothing needs a restart. The subsections below cover the fields most gateways need.
+::: tip Form and configuration file
+The Models page exposes the API key, display name, base URL, API protocol, model ids, names, capacities, and pi-ai input and thinking-level declarations. Request-compatibility switches, headers, timeouts, retry policy, custom reasoning wire values, and `modelOverrides` remain in `$DSH_HOME/settings.yaml`, the same document the page writes. Edit it directly, or, when the browser runs on the same machine as the server, open it with **Open configuration file** in the Settings header. The adapters re-read it on the next request without a restart. The subsections below cover the fields most gateways need.
 :::
 
 ### Image input
@@ -99,7 +99,7 @@ Both fields state a claim about your endpoint rather than checking it. A model t
 
 ### Reasoning effort
 
-The model picker offers an **Effort** menu for a model that declares reasoning levels. A built-in provider's models inherit their levels from the installed catalog. A model you enter by hand declares none, so the Effort entry does not appear in the menu and the endpoint's own default decides whether the model thinks. Declare the levels with `reasoningEfforts` in `$DSH_HOME/settings.yaml`:
+The model picker offers an **Effort** menu for a model that declares reasoning levels. A built-in provider's models inherit their levels from the installed catalog. A model you enter by hand declares none until you configure it. Open **Settings → Models**, edit the provider, expand **Customized settings**, and open the model's **Advanced settings** to select its **Thinking levels**. Clearing every tag restores inheritance. The same declaration can be written as `reasoningEfforts` in `$DSH_HOME/settings.yaml`, including custom wire values:
 
 ```yaml
 llm-pi-ai:
@@ -183,8 +183,8 @@ Every switch, its accepted values, and the protocols that take it are listed und
 - **Fetching available models reports neither a `data` array nor a `models` object** — The endpoint's listing is in a format discovery does not read. Enter the models by hand.
 - **The gateway refuses every request although the key and URL are right** — Its request shape differs from OpenAI's. Start with `compat.supportsDeveloperRole: false` and `compat.maxTokensField: max_tokens` on the route.
 - **Only reasoning models fail** — pi-ai sends their system prompt as the `developer` role, which the gateway rejects. Set `compat.supportsDeveloperRole: false`.
-- **The Effort menu does not appear for a model you entered by hand** — It declares no levels. Add `reasoningEfforts` to the model in `settings.yaml`.
+- **The Effort menu does not appear for a model you entered by hand** — Open the model's **Advanced settings** on the Models page and select its **Thinking levels**, or declare `reasoningEfforts` in `settings.yaml`.
 - **`off` does not stop a DeepSeek model from thinking** — An empty `off` sends no reasoning field at all, and an endpoint that thinks by default keeps thinking. Set `compat.thinkingFormat: deepseek` on the model or the route.
 - **A compat switch is refused as having no value** — A key written with nothing after the colon. Give it a value, or remove the key to keep the installed catalog's.
-- **An image is refused before sending** — The model declares no image modality. Give a custom provider's model `input: [text, image]`; on DeepSeek's own route, select `deepseek-v4-flash-vision-exp`, the model that declares images.
+- **An image is refused before sending** — The model declares no image modality. In the custom model's **Advanced settings**, select **Text** and **Image** under **Accepted input**, equivalent to `input: [text, image]`; on DeepSeek's own route, select `deepseek-v4-flash-vision-exp`, the model that declares images.
 - **The provider rejects a request carrying an image** — The model declares images its endpoint does not actually serve. Remove `image` from whichever list granted it — the model's `input`, or the route's `defaultInput` — then start a new session: the attached image stays in the session log, so the same request repeats until the session moves off it.

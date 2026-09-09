@@ -514,6 +514,16 @@
   line-height: 18px;
 }
 
+.modelFieldWide {
+  grid-column: 1 / -1;
+}
+
+.modelFieldHint {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+}
+
 .modalityGroup {
   display: flex;
   flex-wrap: wrap;

@@ -31,11 +31,14 @@ const PiAiConfig = Schema.object({
     displayName: Schema.string(),
     api: Schema.union(PROTOCOLS),
     baseURL: Schema.string(),
+    defaultInput: Schema.array(Schema.union(['text', 'image'])),
     models: Schema.array(Schema.object({
       id: Schema.string().required(),
       name: Schema.string(),
       contextWindow: Schema.number(),
       maxTokens: Schema.number(),
+      input: Schema.array(Schema.union(['text', 'image'])),
+      reasoningEfforts: Schema.any(),
     })),
     reasoning: Schema.union(['off', 'high']),
   })),
@@ -256,6 +259,70 @@ describe('protocolChoices', () => {
 })
 
 describe('model list editing', () => {
+  it('edits input capabilities and thinking levels through an existing provider form', async () => {
+    const { mutate } = await mountSection({
+      providers: {
+        openai: {
+          defaultInput: ['text'],
+          models: [{ id: 'custom-model', input: ['text'], reasoningEfforts: { low: 'vendor-low', high: 'high' }, contextWindow: 65536 }],
+        },
+      },
+    })
+    openEditor('openai')
+    fireEvent.click(screen.getByRole('button', { name: 'Default accepted input Image' }))
+    expandModel(1)
+    fireEvent.click(screen.getByRole('button', { name: 'Accepted input 1 Image' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Thinking levels 1 High' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Thinking levels 1 Extra high' }))
+    fireEvent.click(screen.getByText(en.apply))
+
+    await waitFor(() => { expect(mutate).toHaveBeenCalledOnce() })
+    expect(firstMutate(mutate)).toMatchObject({
+      ns: 'llm-pi-ai',
+      expectedRevision: 3,
+      ops: expect.arrayContaining([
+        { op: 'set', path: ['providers', 'openai', 'defaultInput'], value: ['text', 'image'] },
+        { op: 'set', path: ['providers', 'openai', 'models'], value: [{
+          id: 'custom-model', input: ['text', 'image'], reasoningEfforts: { low: 'vendor-low', xhigh: 'xhigh' }, contextWindow: 65536,
+        }] },
+      ]),
+    })
+  })
+
+  it('clears capability overrides to inheritance without saving empty arrays or effort maps', async () => {
+    const { mutate } = await mountSection({
+      providers: { openai: { defaultInput: ['image'], models: [{ id: 'custom-model', input: ['image'], reasoningEfforts: { high: 'high' } }] } },
+    })
+    openEditor('openai')
+    fireEvent.click(screen.getByRole('button', { name: 'Default accepted input Image' }))
+    expandModel(1)
+    fireEvent.click(screen.getByRole('button', { name: 'Accepted input 1 Image' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Thinking levels 1 High' }))
+    fireEvent.click(screen.getByText(en.apply))
+
+    await waitFor(() => { expect(mutate).toHaveBeenCalledOnce() })
+    expect(firstMutate(mutate).ops).toEqual(expect.arrayContaining([
+      { op: 'unset', path: ['providers', 'openai', 'defaultInput'] },
+      { op: 'set', path: ['providers', 'openai', 'models'], value: [{ id: 'custom-model' }] },
+    ]))
+  })
+
+  it('keeps a stored non-reasoning declaration when only the model name changes', async () => {
+    const { mutate } = await mountSection({
+      providers: { openai: { models: [{ id: 'custom-model', input: ['image'], reasoningEfforts: false }] } },
+    })
+    openEditor('openai')
+    expandModel(1)
+    expect(screen.getByText(en.modelReasoningDisabled)).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Thinking levels 1 High' }).getAttribute('aria-pressed')).toBe('false')
+    fireEvent.change(screen.getByLabelText(`${en.modelName} 1`), { target: { value: 'Renamed' } })
+    fireEvent.click(screen.getByText(en.apply))
+    await waitFor(() => { expect(mutate).toHaveBeenCalledOnce() })
+    expect(firstMutate(mutate).ops).toEqual([
+      { op: 'set', path: ['providers', 'openai', 'models'], value: [{ id: 'custom-model', name: 'Renamed', input: ['image'], reasoningEfforts: false }] },
+    ])
+  })
+
   it('adds, edits, and removes rows without storing emptied optional fields', async () => {
     const { mutate } = await mountSection()
     openEditor('openai')
@@ -780,6 +847,31 @@ describe('hand-declared providers', () => {
     )
     return { ...scripted, onClose }
   }
+
+  it('creates model capabilities and refuses an Off-only thinking declaration', async () => {
+    const { mutate } = mountCard()
+    fireEvent.change(screen.getByLabelText(en.customRoute), { target: { value: 'acme' } })
+    fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: 'https://models.example/v1' } })
+    fireEvent.click(screen.getByRole('button', { name: en.addModel }))
+    fireEvent.change(screen.getByLabelText(`${en.modelId} 1`), { target: { value: 'custom-model' } })
+    expandModel(1)
+    fireEvent.click(screen.getByRole('button', { name: 'Accepted input 1 Text' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Accepted input 1 Image' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Thinking levels 1 Off' }))
+    expect(buttonNamed(en.create).disabled).toBe(true)
+    expect(mutate).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Thinking levels 1 High' }))
+    expect(buttonNamed(en.create).disabled).toBe(false)
+    fireEvent.click(screen.getByText(en.create))
+
+    await waitFor(() => { expect(mutate).toHaveBeenCalledOnce() })
+    expect(firstMutate(mutate).ops).toEqual([
+      { op: 'set', path: ['providers', 'acme'], value: {
+        api: 'openai-completions', baseURL: 'https://models.example/v1',
+        models: [{ id: 'custom-model', input: ['text', 'image'], reasoningEfforts: { off: null, high: 'high' } }],
+      } },
+    ])
+  })
 
   it('writes the whole profile and the key under the derived reference', async () => {
     const { mutate, set, onClose } = mountCard()
