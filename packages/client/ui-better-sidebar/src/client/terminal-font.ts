@@ -242,7 +242,7 @@ export function withMonospaceFallback(stack: string): string {
  * @returns the `fontFamily` / `fontSize` xterm options.
  */
 export function resolveTerminalFont(
-  prefs: SidebarPrefs,
+  prefs: Pick<SidebarPrefs, 'terminalFontFamily' | 'terminalFontSize'>,
   themeFontFamily: string | undefined,
 ): { fontFamily: string; fontSize: number } {
   const base = usableBase(prefs.terminalFontFamily)

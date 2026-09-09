@@ -43,6 +43,7 @@ import { api, type SessionScope, type TerminalDepsStatus } from './api.ts'
 import { agentUuidOf, isAgentTabId, type SidebarStore } from './state.ts'
 import { isDarkScheme, subscribeColorScheme, effectiveTokenValue, tokenValue } from './theme.ts'
 import { resolveTerminalFont } from './terminal-font.ts'
+import type { SidebarPrefs } from '../prefs-shared.ts'
 import {
   buildTerminalLinks,
   shouldActivateTerminalLink,
@@ -116,8 +117,32 @@ function xtermTheme(): ITheme {
   }
 }
 
-export function TerminalView(props: { scope: SessionScope; tabId: string; store: SidebarStore }) {
-  const { scope, tabId, store } = props
+/** Live font values consumed by xterm independently of either workbench store. */
+export interface TerminalPreferenceSource {
+  getSnapshot(): Pick<SidebarPrefs, 'terminalFontFamily' | 'terminalFontSize'>
+  subscribe(listener: () => void): () => void
+}
+
+/** Occurrence lifecycle operations supplied by the official workbench adapter. */
+export interface TerminalViewLifecycle {
+  /** Whether this unmount follows a Session switch and must park a UI PTY. */
+  shouldParkOnUnmount(): boolean
+  /** Make the current socket reachable by the true-close hook while mounted. */
+  registerCloseSender(sendClose: () => void): () => void
+}
+
+/**
+ * One terminal attachment. Legacy callers supply `store`; the official
+ * occurrence adapter supplies the smaller preference and lifecycle faces.
+ */
+export function TerminalView(props: {
+  scope: SessionScope
+  tabId: string
+  store?: SidebarStore
+  preferences?: TerminalPreferenceSource
+  lifecycle?: TerminalViewLifecycle
+}) {
+  const { scope, tabId, store, preferences, lifecycle } = props
   const hostRef = useRef<HTMLDivElement>(null)
   const [connected, setConnected] = useState(false)
   const [fatal, setFatal] = useState<string | null>(null)
@@ -130,7 +155,12 @@ export function TerminalView(props: { scope: SessionScope; tabId: string; store:
     if (host === null) return
     // The custom font prefs (side card settings, terminal card) resolve at
     // mount; store changes re-apply them live below.
-    const font = resolveTerminalFont(store.getPrefs(), tokenValue('--ds-font-family-code'))
+    const terminalPreferences = (): Pick<SidebarPrefs, 'terminalFontFamily' | 'terminalFontSize'> => {
+      if (preferences !== undefined) return preferences.getSnapshot()
+      if (store !== undefined) return store.getPrefs()
+      throw new Error('TerminalView requires a preference source')
+    }
+    const font = resolveTerminalFont(terminalPreferences(), tokenValue('--ds-font-family-code'))
     const term = new Terminal({
       cursorBlink: true,
       fontSize: font.fontSize,
@@ -188,6 +218,11 @@ export function TerminalView(props: { scope: SessionScope; tabId: string; store:
     let closed = false
     let retry: number | undefined
     let failures = 0
+    const unregisterCloseSender = lifecycle?.registerCloseSender(() => {
+      if (socket !== null && socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({ type: 'close' }))
+      }
+    })
 
     const wsUrl = (): string => {
       const url = new URL('/sidebar/ws/terminal', location.origin)
@@ -307,8 +342,8 @@ export function TerminalView(props: { scope: SessionScope; tabId: string; store:
     // when they moved (the grid dimensions may change with the font). The
     // subscribe fires on every store change (tabs, panels…), so the diff is
     // what keeps this cheap.
-    const fontSub = store.subscribe(() => {
-      const next = resolveTerminalFont(store.getPrefs(), tokenValue('--ds-font-family-code'))
+    const fontSub = (preferences ?? store)?.subscribe(() => {
+      const next = resolveTerminalFont(terminalPreferences(), tokenValue('--ds-font-family-code'))
       if (next.fontFamily !== term.options.fontFamily || next.fontSize !== term.options.fontSize) {
         term.options.fontFamily = next.fontFamily
         term.options.fontSize = next.fontSize
@@ -319,7 +354,7 @@ export function TerminalView(props: { scope: SessionScope; tabId: string; store:
           // The terminal may be mid-dispose; ignore.
         }
       }
-    })
+    }) ?? (() => {})
 
     // The terminal must not be opened in a zero-size container: xterm's
     // renderer creation fails there and the next Viewport refresh crashes
@@ -351,6 +386,7 @@ export function TerminalView(props: { scope: SessionScope; tabId: string; store:
       fontSub()
       schemeSub()
       inputSub.dispose()
+      unregisterCloseSender?.()
       // Three unmount cases, distinguished by the store's tab/open state and
       // the active session id:
       // 1. The tab was closed by the user (NOT in its session's state): send
@@ -368,21 +404,28 @@ export function TerminalView(props: { scope: SessionScope; tabId: string; store:
       // Agent terminals follow the close-frame rule; their lifetime is owned
       // by the agent, so a bare drop (case 3) already leaves them alive
       // indefinitely — no park frame needed.
-      const tabStillOpen = store.tabOpen(scope.sessionId, tabId)
-      const sessionSwitched = store.getSnapshot().sessionId !== scope.sessionId
-      if (!tabStillOpen
-        && socket !== null && socket.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({ type: 'close' }))
-      } else if (tabStillOpen && sessionSwitched && !isAgentTabId(tabId)
-        && socket !== null && socket.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({ type: 'park' }))
+      if (lifecycle !== undefined) {
+        if (lifecycle.shouldParkOnUnmount() && !isAgentTabId(tabId)
+          && socket !== null && socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({ type: 'park' }))
+        }
+      } else if (store !== undefined) {
+        const tabStillOpen = store.tabOpen(scope.sessionId, tabId)
+        const sessionSwitched = store.getSnapshot().sessionId !== scope.sessionId
+        if (!tabStillOpen
+          && socket !== null && socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({ type: 'close' }))
+        } else if (tabStillOpen && sessionSwitched && !isAgentTabId(tabId)
+          && socket !== null && socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({ type: 'park' }))
+        }
       }
       socket?.close()
       linkProvider.dispose()
       term.dispose()
       connectRef.current = null
     }
-  }, [scope.sessionId, scope.cwd, tabId, store])
+  }, [scope.sessionId, scope.cwd, tabId, store, preferences, lifecycle])
 
   return (
     <div className={css.terminalWrap}>

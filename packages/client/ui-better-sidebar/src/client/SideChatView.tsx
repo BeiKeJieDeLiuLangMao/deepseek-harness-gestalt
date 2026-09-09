@@ -27,6 +27,37 @@ function threadDisplayTitle(title: string): string {
   return title.startsWith(SIDE_LABEL_PREFIX) ? title.slice(SIDE_LABEL_PREFIX.length) : title
 }
 
+/**
+ * Mount one explicit Session into the canonical conversation renderer.
+ *
+ * The official and legacy workbenches share this leaf while their occurrence
+ * owners stay separate. Mounting only owns the renderer attachment; draft
+ * admission, Host Agent lifetime, and durable tab state belong to the
+ * enclosing occurrence owner and therefore survive a React remount.
+ * @param props - Session identity, renderer service, and descendant navigation.
+ * @returns the conversation host element.
+ */
+export function SideChatSessionView(props: {
+  ctx: SidebarContext
+  threadId: SessionIdType
+  openSession(sessionId: SessionIdType): void
+}): React.ReactNode {
+  const { ctx, threadId, openSession } = props
+  const conversationHost = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    const host = conversationHost.current
+    if (host === null) return
+    return ctx.uiRenderer.mountSession(host, 'conversation', threadId, { renderMode: 'sidechat', openSession })
+  }, [ctx.uiRenderer, openSession, threadId])
+
+  return (
+    <div className={css.sidechat}>
+      <div ref={conversationHost} className={css.sidechatCanonical} />
+    </div>
+  )
+}
+
 /** One Side Chat tab: thread creation plus the canonical conversation slot. */
 export function SideChatView(props: {
   ctx: SidebarContext
@@ -44,7 +75,6 @@ export function SideChatView(props: {
   const provisional = (tab.meta as { provisional?: unknown } | undefined)?.provisional === true
   const summary = threadId === undefined ? undefined : list.byId[threadId]
   const published = summary?.blank === false
-  const conversationHost = useRef<HTMLDivElement | null>(null)
   const openSession = useCallback((sessionId: SessionIdType): void => {
     ctx.get('betterSidebar')?.updateTab(tab.id, {
       meta: { threadId: sessionId, ...(rootThreadId === undefined ? {} : { rootThreadId }) },
@@ -88,17 +118,6 @@ export function SideChatView(props: {
     }
   }, [summary, published, tab.id, tab.title, ctx])
 
-  useEffect(() => {
-    const host = conversationHost.current
-    if (host === null || threadId === undefined) return
-    return ctx.uiRenderer.mountSession(host, 'conversation', threadId, { renderMode: 'sidechat', openSession })
-  }, [ctx.uiRenderer, openSession, threadId])
-
   if (threadId === undefined) return null
-
-  return (
-    <div className={css.sidechat}>
-      <div ref={conversationHost} className={css.sidechatCanonical} />
-    </div>
-  )
+  return <SideChatSessionView ctx={ctx} threadId={threadId} openSession={openSession} />
 }
