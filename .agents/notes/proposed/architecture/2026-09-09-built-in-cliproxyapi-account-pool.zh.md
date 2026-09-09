@@ -130,4 +130,4 @@ Fork 承载的 GLM 实现会增加上游同步冲突。独立实现会减少混�
 
 Provider 专用额度探测可能消耗上游请求、触发 rate limit，或只提供近似数据。固定 Host 策略会排除付费 inference 探测、保持有界刷新与缓存，并优先展示明确 unknown 或 stale，而不是激进刷新。
 
-原生原型与最终验收会先尽力使用合法可调用的 Codex computer-use 会话。已经观察到 DSH 注册，但 delegated native 调用当前被固定 sandbox 拒绝，且没有可调用的 Codex task connector。若连接 owner 最终确认不存在合法 Codex 路径，用户授权把真实隔离 Electron 自动化作为后备证据车道；owner 必须记录该路线变更及其限制，原型 writer 不得自行切换 driver。该可用性判断阻塞原生走查，不阻塞本提案评审或 fixture 原型工作。
+原生原型与最终验收会先在验证 owner 当前获授权的环境中尝试合法可调用的 Codex computer-use 会话。若记录的 probe 最终确认没有合法 Codex 路径，用户授权把真实隔离 Electron 自动化作为后备证据车道。验证 owner 必须记录所选 driver 及其限制，原型 writer 不得自行切换 driver。Driver 可用性不阻塞非 GUI runtime 或 provider 基础。
