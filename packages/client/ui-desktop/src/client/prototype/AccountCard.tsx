@@ -14,8 +14,9 @@ import css from './AccountCard.module.css'
 export interface AccountCardProps {
   key?: string
   item: AccountPoolItem
-  forcedFace?: 'A' | 'B' | null | undefined
+  currentFace?: 'A' | 'B' | undefined
   styleVariant?: 'needle' | 'band' | 'compact' | undefined
+  onFlipFace?: ((id: string) => void) | undefined
   onToggleStatus?: ((id: string) => void) | undefined
   onRefreshQuota?: ((id: string) => void) | undefined
   onDelete?: ((id: string) => void) | undefined
@@ -23,20 +24,17 @@ export interface AccountCardProps {
 
 export function AccountCard({
   item,
-  forcedFace = null,
+  currentFace = 'A',
   styleVariant = 'needle',
+  onFlipFace,
   onToggleStatus,
   onRefreshQuota,
   onDelete,
 }: AccountCardProps) {
-  // Internal face state if not forced globally
-  const [localFace, setLocalFace] = useState<'A' | 'B'>('A')
   const [enabled, setEnabled] = useState(item.status !== 'expired' && item.status !== 'error')
 
-  const currentFace = forcedFace !== null ? forcedFace : localFace
-
   const flipFace = () => {
-    setLocalFace(prev => (prev === 'A' ? 'B' : 'A'))
+    onFlipFace?.(item.id)
   }
 
   const handleToggle = () => {

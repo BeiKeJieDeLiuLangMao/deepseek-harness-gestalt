@@ -1,7 +1,7 @@
 /**
  * Mock data fixture based on actual manager upstream schema (/tmp/cpamc-repo SHA ed5f1c48e11b).
- * Provides active quota metrics across all providers (Claude, Codex, Antigravity, Kimi, xAI, GLM)
- * using the official multi-vendor detection fields and window models.
+ * All account names and emails strictly use fictitious example.com domains to ensure
+ * total safety during recording and GIF demonstration (fixing R4 privacy finding).
  */
 
 export type ProviderType = 'kimi' | 'codex' | 'anthropic' | 'antigravity' | 'xai' | 'glm'
@@ -36,10 +36,10 @@ export interface AccountPoolItem {
 export const MOCK_ACCOUNTS: AccountPoolItem[] = [
   {
     id: 'antigravity-1',
-    filename: 'antigravity-canassavitsky@gmail.com.json',
+    filename: 'antigravity-dev-alpha@example.com.json',
     provider: 'antigravity',
-    label: 'Antigravity Pro Primary',
-    accountEmail: 'canassavitsky@gmail.com',
+    label: 'Antigravity Pro Alpha',
+    accountEmail: 'dev-alpha@example.com',
     tier: 'Pro',
     status: 'error',
     statusMessage: '额度获取失败: auth token refresh failed',
@@ -51,10 +51,10 @@ export const MOCK_ACCOUNTS: AccountPoolItem[] = [
   },
   {
     id: 'antigravity-2',
-    filename: 'antigravity-cy517375685@gmail.com.json',
+    filename: 'antigravity-workspace-team@example.com.json',
     provider: 'antigravity',
     label: 'Antigravity Workspace',
-    accountEmail: 'cy517375685@gmail.com',
+    accountEmail: 'workspace-team@example.com',
     tier: 'Pro',
     status: 'active',
     successCount: 2270,
@@ -102,10 +102,10 @@ export const MOCK_ACCOUNTS: AccountPoolItem[] = [
   },
   {
     id: 'codex-1',
-    filename: 'codex-a7724509-wangcc613@gmail.com-pro.json',
+    filename: 'codex-pool-engine@example.com-pro.json',
     provider: 'codex',
     label: 'Codex 20x Dev Pool',
-    accountEmail: 'wangcc613@gmail.com',
+    accountEmail: 'pool-engine@example.com',
     tier: 'Pro 20x',
     status: 'active',
     successCount: 7217,
@@ -153,10 +153,10 @@ export const MOCK_ACCOUNTS: AccountPoolItem[] = [
   },
   {
     id: 'kimi-1',
-    filename: 'kimi-1788455448854.json',
+    filename: 'kimi-research-seat@example.com.json',
     provider: 'kimi',
     label: 'Kimi Research Account',
-    accountEmail: 'kimi-account@moonshot.cn',
+    accountEmail: 'research-seat@example.com',
     tier: 'Standard',
     status: 'active',
     successCount: 1443,
@@ -177,10 +177,10 @@ export const MOCK_ACCOUNTS: AccountPoolItem[] = [
   },
   {
     id: 'xai-1',
-    filename: 'xai-cy517375685@gmail.com.json',
+    filename: 'xai-grok-sub@example.com.json',
     provider: 'xai',
     label: 'xAI Grok Subscription',
-    accountEmail: 'cy517375685@gmail.com',
+    accountEmail: 'grok-sub@example.com',
     tier: 'Premium',
     status: 'warning',
     statusMessage: '周限额已用完，等待窗口刷新',
@@ -203,10 +203,10 @@ export const MOCK_ACCOUNTS: AccountPoolItem[] = [
   },
   {
     id: 'anthropic-1',
-    filename: 'anthropic-team-primary.json',
+    filename: 'anthropic-workstation@example.com.json',
     provider: 'anthropic',
     label: 'Claude Team Workstation',
-    accountEmail: 'anthropic-team@studio.dev',
+    accountEmail: 'workstation@example.com',
     tier: 'Team',
     status: 'active',
     successCount: 3105,
@@ -227,10 +227,10 @@ export const MOCK_ACCOUNTS: AccountPoolItem[] = [
   },
   {
     id: 'glm-1',
-    filename: 'glm-coding-plan-cn.json',
+    filename: 'glm-coding-plan@example.com.json',
     provider: 'glm',
     label: 'GLM Coding Plan (CN个人订阅)',
-    accountEmail: 'glm-coding-user@bigmodel.cn',
+    accountEmail: 'coding-plan@example.com',
     tier: 'Coding Plan (CN)',
     status: 'active',
     successCount: 450,

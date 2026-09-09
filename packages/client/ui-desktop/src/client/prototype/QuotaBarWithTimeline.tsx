@@ -42,6 +42,11 @@ export function QuotaBarWithTimeline({
         ? 'var(--dsw-alias-state-warning-primary, #f59e0b)'
         : 'var(--dsw-alias-state-success-primary, #10b981)'
 
+  // Quota is reliable?
+  const showQuotaFill = isReliable
+  // Time is reliable only when timeRemainingPercent is provided AND isReliable is true
+  const showTime = isReliable && boundedTime !== undefined
+
   return (
     <div className={css.container}>
       <div className={css.labelRow}>
@@ -50,7 +55,7 @@ export function QuotaBarWithTimeline({
           <span className={css.windowBadge}>{windowLabel}</span>
         </div>
         <div className={css.metaGroup}>
-          <span className={css.percentText} style={{ color: quotaColor }}>
+          <span className={css.percentText} style={{ color: isReliable ? quotaColor : 'var(--dsw-alias-label-tertiary, #94a3b8)' }}>
             {isReliable ? `${boundedQuota}%` : '未知'}
           </span>
           <span className={css.resetTime}>{resetText}</span>
@@ -58,17 +63,19 @@ export function QuotaBarWithTimeline({
       </div>
 
       <div className={css.track}>
-        {/* Fill representing quota remaining */}
-        <div
-          className={css.quotaFill}
-          style={{
-            width: `${String(boundedQuota)}%`,
-            backgroundColor: quotaColor,
-          }}
-        />
+        {/* Fill representing quota remaining - rendered only when reliable */}
+        {showQuotaFill && (
+          <div
+            className={css.quotaFill}
+            style={{
+              width: `${String(boundedQuota)}%`,
+              backgroundColor: quotaColor,
+            }}
+          />
+        )}
 
-        {/* Time comparison overlay: Needle marker (Figure 4) */}
-        {boundedTime !== undefined && styleVariant === 'needle' && (
+        {/* Time comparison overlay: Needle marker (Figure 4) - rendered only when time data is reliable */}
+        {showTime && boundedTime !== undefined && styleVariant === 'needle' && (
           <div
             className={css.timelineMarker}
             style={{ left: `${String(boundedTime)}%` }}
@@ -79,8 +86,8 @@ export function QuotaBarWithTimeline({
           </div>
         )}
 
-        {/* Time comparison overlay: Band range */}
-        {boundedTime !== undefined && styleVariant === 'band' && (
+        {/* Time comparison overlay: Band range - rendered only when time data is reliable */}
+        {showTime && boundedTime !== undefined && styleVariant === 'band' && (
           <div
             className={css.timelineBand}
             style={{ width: `${String(boundedTime)}%` }}
@@ -89,7 +96,7 @@ export function QuotaBarWithTimeline({
         )}
       </div>
 
-      {boundedTime !== undefined && (
+      {showTime && boundedTime !== undefined && (
         <div className={css.legendRow}>
           <span className={css.legendItem}>
             <span className={css.quotaDot} style={{ backgroundColor: quotaColor }} />
