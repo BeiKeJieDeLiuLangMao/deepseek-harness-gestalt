@@ -61,6 +61,73 @@ afterEach(async () => {
 })
 
 describe('real Platform Account HTTP composition', () => {
+  it.each(['before-acceptance', 'after-acceptance'] as const)('recovers a Mobile deletion interrupted %s through signed HTTP', async (interruption) => {
+    const backend = new MemoryAccountBackend(ENVIRONMENT.databaseIdentity)
+    let callbackState = ''
+    let cleanupCount = 0
+    const Provider = {
+      name: 'deletion-account-provider',
+      apply(ctx: Context) {
+        new PlatformAccount(ctx, { backend, invalidation: new MemoryAccountInvalidationBus(), environment: ENVIRONMENT,
+          github: { environment: ENVIRONMENT,
+            authorizationUrl(input) { callbackState = input.state; return `https://github.com/login/oauth/authorize?state=${input.state}` },
+            async exchange() { return { providerSubject: 13994321, login: 'octocat', avatarUrl: 'https://avatars.example/octocat' } },
+          },
+          config: { tokenSigningKey: Buffer.alloc(32, 7), pollingSigningKey: Buffer.alloc(32, 9) },
+          deletion: { retryIntervalMs: 60_000, completedReceiptLifetimeMs: 60_000,
+            owner: { async plan() { return [] }, async revoke() {}, async cleanup() { cleanupCount += 1; return [] } } },
+        })
+      },
+    }
+    const loaded = await loadComposition(Provider, ENVIRONMENT.origin)
+    let interrupt = true
+    const paths: string[] = []
+    const networkFetch: typeof fetch = async (input, init = {}) => {
+      const source = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url)
+      paths.push(source.pathname)
+      const headers = new Headers(init.headers)
+      headers.set('origin', ENVIRONMENT.origin)
+      const deletionRequest = source.pathname === '/v1/account/deletion'
+      if (deletionRequest && interrupt && interruption === 'before-acceptance') {
+        interrupt = false
+        throw new Error('network disconnected before request delivery')
+      }
+      const response = await fetch(`http://127.0.0.1:${String(loaded.webServer.port)}${source.pathname}${source.search}`, { ...init, headers })
+      if (deletionRequest && interrupt && interruption === 'after-acceptance') {
+        interrupt = false
+        throw new Error('network disconnected after acceptance')
+      }
+      return response
+    }
+    const store = new MemoryInstallationAccountStore()
+    const options = { environment: ENVIRONMENT, installationId: parseInstallationId('deletion-recovering-mobile'),
+      installationKind: 'mobile' as const, presentation: { name: 'Deletion recovery', platform: 'ios' as const },
+      transport: new PlatformAccountHttpTransport({ environment: ENVIRONMENT, fetch: networkFetch }), store,
+      systemBrowser: { open() {} }, crypto: webcrypto as Crypto }
+    const first = new PlatformAccountInstallation(options)
+    first.acceptPrivacy()
+    await first.beginLogin()
+    const callbackResponse = await networkFetch(`${ENVIRONMENT.callbackUrl}?${new URLSearchParams({ code: 'deletion-login', state: callbackState })}`)
+    expect(callbackResponse.status).toBe(200)
+    await first.pollLogin()
+    await first.prepareAccountDeletion()
+    await first.confirmAccountDeletion([])
+    const record = await store.loadDeletion('development')
+    if (record === undefined) throw new Error('Interrupted deletion must retain its recovery record')
+    expect(await backend.getAccountDeletion(record.receipt.operationId)).toEqual(interruption === 'before-acceptance'
+      ? undefined : expect.objectContaining({ status: 'complete' }))
+    expect(first.getSnapshot().deletion?.status).toBe('retry')
+    const beforeRestart = paths.length
+    const second = new PlatformAccountInstallation(options)
+    await second.load()
+    expect(paths.slice(beforeRestart)).toEqual(interruption === 'before-acceptance'
+      ? ['/v1/account/deletion/recovery', '/v1/account/deletion'] : ['/v1/account/deletion/recovery'])
+    expect(second.getSnapshot().deletion?.status).toBe('complete')
+    expect(cleanupCount).toBe(1)
+    expect(await store.loadSession('development')).toBeUndefined()
+    expect(await store.loadDeletion('development')).toBeUndefined()
+  })
+
   it.each([
     { label: 'missing', origin: undefined },
     { label: 'mismatched', origin: 'https://platform.example.com' },

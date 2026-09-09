@@ -69,6 +69,14 @@ const MEMBERS: readonly MemberView[] = [
 
 /** In-memory membership provider; non-read operations are unreachable here. */
 class MemoryProjectMembership extends ProjectMembershipService {
+  override async accountDeletionProjects(): Promise<never> {
+    throw new Error('This composition does not delete accounts')
+  }
+
+  override async deleteAccountMemberships(): Promise<never> {
+    throw new Error('This composition does not delete accounts')
+  }
+
   override async roster(actor: TestAccountId, id: ProjectId): Promise<RosterView> {
     if (id !== PROJECT.id) throw new ProjectMembershipError('PROJECT_NOT_FOUND', `project ${id} does not exist`)
     if (!MEMBERS.some(member => member.accountId === actor)) {

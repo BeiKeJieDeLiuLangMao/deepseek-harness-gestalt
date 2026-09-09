@@ -1,6 +1,0 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
-#   pnpm run verify-translation-pairing --write .agents/notes/proposed/feature/2026-09-09-mobile-account-deletion.md
-2026-09-09-mobile-account-deletion.md: fc8836131bb93fc80af14f4a97314dbc807b6028
-2026-09-09-mobile-account-deletion.zh.md: 72fbef71738571d112147f40aeaa0def588036ad

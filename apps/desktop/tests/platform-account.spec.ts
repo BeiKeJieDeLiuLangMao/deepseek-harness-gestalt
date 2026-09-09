@@ -146,6 +146,12 @@ describe('DesktopAccountController', () => {
       refresh: vi.fn(),
       current: vi.fn(),
       signOut: vi.fn(),
+      planAccountDeletion: vi.fn<PlatformAccountTransport['planAccountDeletion']>()
+        .mockRejectedValue(new Error('Unexpected account deletion in Desktop login fixture')),
+      deleteAccount: vi.fn<PlatformAccountTransport['deleteAccount']>()
+        .mockRejectedValue(new Error('Unexpected account deletion in Desktop login fixture')),
+      recoverAccountDeletion: vi.fn<PlatformAccountTransport['recoverAccountDeletion']>()
+        .mockRejectedValue(new Error('Unexpected account deletion in Desktop login fixture')),
     }
     const privateKey = generateKeyPairSync('ec', { namedCurve: 'P-256' }).privateKey
       .export({ format: 'pem', type: 'pkcs8' }).toString()
@@ -318,6 +324,12 @@ describe('DesktopAccountController', () => {
       refresh: vi.fn(),
       current: vi.fn(),
       signOut: vi.fn(),
+      planAccountDeletion: vi.fn<PlatformAccountTransport['planAccountDeletion']>()
+        .mockRejectedValue(new Error('Unexpected account deletion in Desktop login fixture')),
+      deleteAccount: vi.fn<PlatformAccountTransport['deleteAccount']>()
+        .mockRejectedValue(new Error('Unexpected account deletion in Desktop login fixture')),
+      recoverAccountDeletion: vi.fn<PlatformAccountTransport['recoverAccountDeletion']>()
+        .mockRejectedValue(new Error('Unexpected account deletion in Desktop login fixture')),
     }
     const store = new MemoryDesktopStore()
     const open = vi.fn()
@@ -422,6 +434,12 @@ describe('DesktopAccountController', () => {
       refresh: vi.fn(),
       current: vi.fn(),
       signOut: vi.fn(),
+      planAccountDeletion: vi.fn<PlatformAccountTransport['planAccountDeletion']>()
+        .mockRejectedValue(new Error('Unexpected account deletion in Desktop login fixture')),
+      deleteAccount: vi.fn<PlatformAccountTransport['deleteAccount']>()
+        .mockRejectedValue(new Error('Unexpected account deletion in Desktop login fixture')),
+      recoverAccountDeletion: vi.fn<PlatformAccountTransport['recoverAccountDeletion']>()
+        .mockRejectedValue(new Error('Unexpected account deletion in Desktop login fixture')),
     }
     const privateKey = generateKeyPairSync('ec', { namedCurve: 'P-256' }).privateKey
       .export({ format: 'pem', type: 'pkcs8' }).toString()
@@ -473,6 +491,12 @@ describe('DesktopAccountController', () => {
       refresh: vi.fn(),
       current: vi.fn(),
       signOut: vi.fn(),
+      planAccountDeletion: vi.fn<PlatformAccountTransport['planAccountDeletion']>()
+        .mockRejectedValue(new Error('Unexpected account deletion in Desktop login fixture')),
+      deleteAccount: vi.fn<PlatformAccountTransport['deleteAccount']>()
+        .mockRejectedValue(new Error('Unexpected account deletion in Desktop login fixture')),
+      recoverAccountDeletion: vi.fn<PlatformAccountTransport['recoverAccountDeletion']>()
+        .mockRejectedValue(new Error('Unexpected account deletion in Desktop login fixture')),
     }
     const privateKey = generateKeyPairSync('ec', { namedCurve: 'P-256' }).privateKey
       .export({ format: 'pem', type: 'pkcs8' }).toString()

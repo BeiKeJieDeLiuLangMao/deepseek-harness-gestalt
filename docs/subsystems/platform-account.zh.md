@@ -16,6 +16,12 @@ Installation 在创建五分钟 `LoginAttemptView` 前接受唯一规范的双�
 
 通用能力可以为范围受限的 example 与测试校验彼此不同的开发和生产身份。Desktop 与 Mobile 产品入口会在渲染或流量前只接受一套实际运行的生产身份：Desktop 从应用 archive 读取发布流程生成的公开配置，Mobile 则通过构建配置接收同一组字段。该身份绑定 HTTP Consumer 唯一的 CORS origin、客户端 transport、OAuth adapter、backend 数据库、本地存储、回调与签发账号命名空间；字段缺失、localhost 或 Consumer origin 不匹配会在注册路由前失败。HTTP 与持久化记录都会在各自边界从 `unknown` 解析，IndexedDB 只接受真正的 P-256 私有签名 `CryptoKey`。内存后端与失效总线是 fixture adapter；生产持久化与分布式失效属于 Platform 部署。
 
+<a id="account-deletion"></a>
+
+## 账号删除
+
+`AccountDeletionRequest` 将客户端创建的操作 id、随机恢复令牌及明确的 `{projectId, successorMembershipId}` 选择绑定到发起 Installation 的证明。`AccountDeletionView` 返回 `deleting`、带已加入接任候选的 `action-required`，或 `complete`。`AccountDeletionRecovery` 仅允许查询和替换选择，不恢复已撤销的会话权限。Account 提供方在 owner 清理前持久化接受状态；Mobile 控制器在云端和本地清理均完成后才移除本地凭据。[删除决策](../../.agents/notes/implemented/feature/2026-09-09-mobile-account-deletion.zh.md)负责顺序和保留数据的限制。
+
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
 <a id="cordis-surface"></a>
@@ -91,6 +97,27 @@ abstract publicIdentitiesByIds( accountIds: readonly PlatformAccountId[], ): Pro
 abstract publicIdentityByGithubLogin(githubLogin: string): Promise<PublicAccountIdentity | undefined>
 
 /**
+ * Inspect shared projects requiring explicit ownership successors.
+ * @param input - Current Installation authorization.
+ * @returns Projects requiring a successor selected from joined members.
+ */
+abstract planAccountDeletion(input: { accessToken: string; proof: AccountProof }): Promise<readonly AccountDeletionProject[]>
+
+/**
+ * Resume the initiating Installation's deletion without an Account Session.
+ * @param input - Restricted recovery receipt and optional replacement choices.
+ * @returns Durable progress or an explicit successor-selection requirement.
+ */
+abstract recoverAccountDeletion(input: AccountDeletionRecovery): Promise<AccountDeletionView>
+
+/**
+ * Delete this Account and invalidate every Installation.
+ * @param input - Confirmed operation, recovery material and Installation proof.
+ * @returns Durable deletion progress.
+ */
+abstract deleteAccount(input: AccountDeletionRequest): Promise<AccountDeletionView>
+
+/**
  * Revoke only the current installation Account Session.
  * @param input - access token and installation proof.
  */
@@ -98,7 +125,7 @@ abstract signOut(input: { accessToken: string; proof: AccountProof }): Promise<v
 
 /**
  * Track a Platform connection so cross-instance session invalidation closes it.
- * Unbound session ids are resolved through the Account backend; missing or inactive sessions are rejected.
+ * Every admission checks durable session activity, including ids already cached for connection counting.
  * @param sessionId - Account Session owning the connection.
  * @param close - idempotent close callback.
  * @returns disposer removing the tracked connection.

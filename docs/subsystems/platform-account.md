@@ -16,6 +16,10 @@ One Installation holds one current Platform Account. Account-scoped pairing keys
 
 The generic capability can validate distinct development and production identities for bounded examples and tests. Desktop and Mobile product entries accept one operated production identity before rendering or traffic: Desktop reads a release-generated public configuration from its application archive, while Mobile receives the same fields through its build configuration. The identity binds the HTTP Consumer's sole CORS origin, client transport, OAuth adapter, backend database, local store, callback, and issued account namespace; missing fields, localhost, or a mismatched Consumer origin fail before route registration. HTTP and durable records are parsed from `unknown` at their boundaries, and IndexedDB accepts only a genuine private signing P-256 `CryptoKey`. The in-memory backend and invalidation bus are fixture adapters; production persistence and distributed invalidation belong to the Platform deployment.
 
+## Account deletion
+
+`AccountDeletionRequest` binds a client-created operation id, random recovery token and explicit `{projectId, successorMembershipId}` choices to the initiating Installation proof. `AccountDeletionView` exposes `deleting`, `action-required` with joined successor candidates, or `complete`. `AccountDeletionRecovery` permits progress and replacement choices without restoring revoked session authority. The Account provider persists acceptance before owner cleanup, and the Mobile controller retains its local receipt until cloud and local cleanup both finish. [The deletion decision](../../.agents/notes/implemented/feature/2026-09-09-mobile-account-deletion.md) owns ordering and retained-data limits.
+
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
 <a id="cordis-surface"></a>
@@ -91,6 +95,27 @@ abstract publicIdentitiesByIds( accountIds: readonly PlatformAccountId[], ): Pro
 abstract publicIdentityByGithubLogin(githubLogin: string): Promise<PublicAccountIdentity | undefined>
 
 /**
+ * Inspect shared projects requiring explicit ownership successors.
+ * @param input - Current Installation authorization.
+ * @returns Projects requiring a successor selected from joined members.
+ */
+abstract planAccountDeletion(input: { accessToken: string; proof: AccountProof }): Promise<readonly AccountDeletionProject[]>
+
+/**
+ * Resume the initiating Installation's deletion without an Account Session.
+ * @param input - Restricted recovery receipt and optional replacement choices.
+ * @returns Durable progress or an explicit successor-selection requirement.
+ */
+abstract recoverAccountDeletion(input: AccountDeletionRecovery): Promise<AccountDeletionView>
+
+/**
+ * Delete this Account and invalidate every Installation.
+ * @param input - Confirmed operation, recovery material and Installation proof.
+ * @returns Durable deletion progress.
+ */
+abstract deleteAccount(input: AccountDeletionRequest): Promise<AccountDeletionView>
+
+/**
  * Revoke only the current installation Account Session.
  * @param input - access token and installation proof.
  */
@@ -98,7 +123,7 @@ abstract signOut(input: { accessToken: string; proof: AccountProof }): Promise<v
 
 /**
  * Track a Platform connection so cross-instance session invalidation closes it.
- * Unbound session ids are resolved through the Account backend; missing or inactive sessions are rejected.
+ * Every admission checks durable session activity, including ids already cached for connection counting.
  * @param sessionId - Account Session owning the connection.
  * @param close - idempotent close callback.
  * @returns disposer removing the tracked connection.

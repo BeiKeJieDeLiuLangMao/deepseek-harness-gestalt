@@ -1,6 +1,7 @@
 /** Durable Remote Access adapters owned by the operated Platform composition. */
 
 import { RedisRelayCoordinator, type RelayRedisClient } from '@deepseek-ai/dsh-remote-access-redis'
+import type { PlatformAccountWriteFence } from './account-write-fence.ts'
 import type { PlatformSqlPool } from './postgres-pairing-store.ts'
 import { PostgresPersonalPairingAuthorityStore } from './postgres-pairing-store.ts'
 import { PostgresRelayRouteStore } from './postgres-route-store.ts'
@@ -8,6 +9,7 @@ import { PostgresRelayRouteStore } from './postgres-route-store.ts'
 /** Inputs for the production PostgreSQL and Redis Remote Access adapters. */
 export interface OperatedRemoteAccessResourcesOptions {
   databaseIdentity: string
+  accountWriteFence?: PlatformAccountWriteFence
   postgres: PlatformSqlPool
   redisCommand: RelayRedisClient
   redisSubscriber: RelayRedisClient
@@ -22,7 +24,7 @@ export class OperatedRemoteAccessResources {
 
   /** @param options - connected deployment-selected PostgreSQL and Redis clients. */
   constructor(options: OperatedRemoteAccessResourcesOptions) {
-    this.authority = new PostgresPersonalPairingAuthorityStore(options.databaseIdentity, options.postgres)
+    this.authority = new PostgresPersonalPairingAuthorityStore(options.databaseIdentity, options.postgres, options.accountWriteFence)
     this.routeStore = new PostgresRelayRouteStore(options.databaseIdentity, options.postgres)
     this.coordinator = new RedisRelayCoordinator({
       command: options.redisCommand,

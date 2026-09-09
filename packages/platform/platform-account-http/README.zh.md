@@ -6,6 +6,8 @@
 
 回调返回中英文完成页，绝不会把 OAuth code 或提供方令牌重定向到应用 URL。
 
+`POST /v1/account/deletion/plan` 与 `POST /v1/account/deletion` 要求 Account bearer 及 Installation 证明请求头。删除请求体包含操作 id、随机恢复令牌及明确的项目接任成员。`POST /v1/account/deletion/recovery` 使用 JSON 中的凭据和发起 Installation 证明，不授予普通会话权限，仅能在 action-required 后替换接任者。所有路由沿用相同的精确 origin、请求体上限和禁止缓存响应政策。
+
 ## 模型体验
 
 无。这些路由由安装界面消费，不由 agent 消费。

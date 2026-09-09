@@ -8,7 +8,7 @@ import WebServer from '@deepseek-ai/dsh-host-webserver'
 import * as FrontendStatic from '@deepseek-ai/dsh-host-frontend-static'
 import { GitHubOAuthIdentityProvider, PlatformAccount } from '@deepseek-ai/dsh-platform-account-core'
 import * as PlatformAccountHttp from '@deepseek-ai/dsh-platform-account-http'
-import FileProjectMembership from '@deepseek-ai/dsh-project-membership-core'
+import FileProjectMembership, { ProjectMembership } from '@deepseek-ai/dsh-project-membership-core'
 import * as ProjectMembershipHttp from '@deepseek-ai/dsh-project-membership-http'
 import {
   PersonalPairingProvider,
@@ -32,6 +32,10 @@ import {
   createRemoteAttachmentsHttpPlugin,
 } from '@deepseek-ai/dsh-remote-attachments/http'
 import pg, { type Pool } from 'pg'
+import { PostgresProjectMembershipPersistence } from './postgres-membership-store.ts'
+import { createAccountDeletionOwner, authorizeAttachmentPairing } from './account-deletion-owner.ts'
+import { readAttachmentStoragePhase } from './attachment-storage-phase.ts'
+import { platformAccountWriteFence } from './account-write-fence.ts'
 import { PostgresAccountBackend } from './postgres-backend.ts'
 import { loadOperatedPlatformConfig, type OperatedPlatformConfig } from './production-env.ts'
 import { RedisAccountInvalidationBus, connectRedis } from './redis-bus.ts'
@@ -110,6 +114,7 @@ export async function launchOperatedPlatform(
     await invalidation.listen()
     const remoteAccess = new OperatedRemoteAccessResources({
       databaseIdentity: environment.databaseIdentity,
+      accountWriteFence: platformAccountWriteFence(environment.identityNamespace),
       postgres,
       redisCommand: publisher.client,
       redisSubscriber: subscriber.client,
@@ -123,10 +128,11 @@ export async function launchOperatedPlatform(
     })
     context.effect(() => closeResources, 'platform: durable process resources')
     await context.plugin(WebServer, listen)
+    let accountProvider!: PlatformAccount
     await context.plugin({
       name: 'platform-account-provider',
       apply(inner: Context) {
-        new PlatformAccount(inner, {
+        accountProvider = new PlatformAccount(inner, {
           backend,
           invalidation,
           github,
@@ -139,10 +145,19 @@ export async function launchOperatedPlatform(
       },
     })
     await context.plugin(PlatformAccountHttp, { origins: productOrigins })
-    await context.plugin(FileProjectMembership, {
-      storagePath: config.membershipStoragePath,
-      environment: environment.environment,
-    })
+    if (config.membershipBackend === 'postgres') {
+      const membership = new PostgresProjectMembershipPersistence(
+        postgres, environment.identityNamespace, platformAccountWriteFence(environment.identityNamespace),
+      )
+      await membership.migrate()
+      await membership.exportSnapshot()
+      await context.plugin({ name: 'postgres-project-membership', apply(inner: Context) { new ProjectMembership(inner, membership) } })
+    } else {
+      await context.plugin(FileProjectMembership, {
+        storagePath: config.membershipStoragePath,
+        environment: environment.environment,
+      })
+    }
     await context.plugin(ProjectMembershipHttp, { origins: productOrigins })
     const relay = new RemoteRelayProvider(context, {
       instanceId: parseRelayInstanceId(config.relay.instanceId),
@@ -172,6 +187,9 @@ export async function launchOperatedPlatform(
       ? new PostgresRemoteAttachmentStore(context, environment.databaseIdentity, postgres, {
         ...config.remoteAttachments,
         quotaCleanup,
+        authorizePairing: async (client, pairingId) => {
+          await authorizeAttachmentPairing(client, environment.databaseIdentity, pairingId)
+        },
       })
       : new OssRemoteAttachmentStore(
         context,
@@ -183,10 +201,25 @@ export async function launchOperatedPlatform(
           objectPrefix: config.oss.objectPrefix,
           capacityRetryAfterSeconds: Math.max(1, Math.ceil(config.relay.capacityRetryAfterMs / 1_000)),
           quotaCleanup,
+          authorizePairing: async (client, pairingId) => {
+            await authorizeAttachmentPairing(client, environment.databaseIdentity, pairingId)
+          },
           inactivePairingIds: async pairingIds => await remoteAccess.authority.filterInactivePairingIds(pairingIds),
         },
       )
     await remoteAttachments.migrate()
+    if (config.accountDeletion !== undefined) {
+      const phase = await readAttachmentStoragePhase(postgres, environment.databaseIdentity)
+      if (phase !== 'bridge' && phase !== 'oss') throw new Error('Account deletion requires completed attachment bridge or OSS authority')
+      accountProvider.configureAccountDeletion({
+        ...config.accountDeletion,
+        owner: createAccountDeletionOwner({
+          account: context.platformAccount, membership: context.projectMembership,
+          authority: remoteAccess.authority, pairing: personalPairingComposition.accountDeletion,
+          attachments: remoteAttachments,
+        }),
+      })
+    }
     await context.plugin({
       Config: RemoteAccessHttpConfig,
       apply: applyRemoteAccessHttp,
@@ -209,7 +242,7 @@ export async function launchOperatedPlatform(
       attachTimeoutMs: config.relay.attachTimeoutMs,
       maxPendingChallenges: config.relay.maxPendingChallenges,
     })
-    registerHealth(context, config.remoteAttachments.storage, config.relay.instanceId)
+    registerHealth(context, config.remoteAttachments.storage, config.relay.instanceId, config.membershipBackend)
     await context.plugin(FrontendStatic, {
       distIndex: options.publicIndex ?? join(dirname(fileURLToPath(import.meta.url)), '..', 'public', 'index.html'),
     })
@@ -247,14 +280,14 @@ function endpointOnlyError(): Error {
   return new Error('Platform-mediated pairing cryptography is disabled; endpoints must use the opaque mailbox')
 }
 
-function registerHealth(context: Context, attachmentStorage: 'postgres' | 'oss', instanceId: string): void {
+function registerHealth(context: Context, attachmentStorage: 'postgres' | 'oss', instanceId: string, membershipStorage: 'file' | 'postgres'): void {
   for (const path of ['/healthz', '/readyz']) {
     context.effect(() => context.webServer.register({
       kind: 'exact',
       path,
       handler(_req, res) {
         res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' })
-        res.end(JSON.stringify({ ok: true, attachmentStorage, instanceId }))
+        res.end(JSON.stringify({ ok: true, attachmentStorage, instanceId, membershipStorage, accountDeletion: membershipStorage === 'postgres' }))
       },
     }),
     `platform: ${path}`,

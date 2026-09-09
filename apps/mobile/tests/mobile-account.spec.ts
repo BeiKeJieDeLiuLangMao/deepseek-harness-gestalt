@@ -88,7 +88,7 @@ describe('MobileAccount', () => {
     expect(screen.getByText('Read before authorization')).toBeTruthy()
     expect(screen.getByText('Public identity · no OAuth scopes')).toBeTruthy()
     expect(screen.getByText('IP ≤ 7 days · security events ≤ 30 days')).toBeTruthy()
-    expect(screen.getByText('Not available in the first release')).toBeTruthy()
+    expect(screen.getByText('Available from the signed-in Account page')).toBeTruthy()
     expect(screen.getByText('I have read both privacy notices')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Continue with GitHub' }).hasAttribute('disabled')).toBe(true)
     expect(screen.getByText('This account identifies only this installation; it grants no Desktop access.')).toBeTruthy()
@@ -271,6 +271,9 @@ function fixture(): {
     refresh: vi.fn<PlatformAccountTransport['refresh']>(),
     current: vi.fn<PlatformAccountTransport['current']>(),
     signOut: vi.fn<PlatformAccountTransport['signOut']>().mockResolvedValue(undefined),
+    planAccountDeletion: vi.fn<PlatformAccountTransport['planAccountDeletion']>().mockResolvedValue([]),
+    deleteAccount: vi.fn<PlatformAccountTransport['deleteAccount']>(),
+    recoverAccountDeletion: vi.fn<PlatformAccountTransport['recoverAccountDeletion']>(),
   }
   const openSystemBrowser = vi.fn()
   return {
@@ -296,4 +299,34 @@ interface MockTransport {
   refresh: Mock<PlatformAccountTransport['refresh']>
   current: Mock<PlatformAccountTransport['current']>
   signOut: Mock<PlatformAccountTransport['signOut']>
+  planAccountDeletion: Mock<PlatformAccountTransport['planAccountDeletion']>
+  deleteAccount: Mock<PlatformAccountTransport['deleteAccount']>
+  recoverAccountDeletion: Mock<PlatformAccountTransport['recoverAccountDeletion']>
 }
+
+
+it('requires an explicit joined successor and preserves the account when deletion confirmation is canceled', async () => {
+  const { installation, api } = fixture()
+  api.planAccountDeletion.mockResolvedValue([{ projectId: 'shared-project' as never, name: 'Shared project',
+    candidates: [{ membershipId: 'joined-bob' as never, accountId: 'bob' as never, label: 'Bob' }] }])
+  api.deleteAccount.mockImplementation(async input => ({ operationId: input.operationId, status: 'complete', projects: [] }))
+  render(createElement(MobileAccount, { installation, locale: 'zh', theme: 'light', clock }))
+  fireEvent.click(screen.getByRole('checkbox'))
+  await waitFor(() => { expect(screen.getByRole('button', { name: '使用 GitHub 继续' }).hasAttribute('disabled')).toBe(false) })
+  fireEvent.click(screen.getByRole('button', { name: '使用 GitHub 继续' }))
+  fireEvent.click(await screen.findByRole('button', { name: '查看账号' }))
+  fireEvent.click(screen.getByRole('button', { name: '删除账号' }))
+  expect(await screen.findByRole('dialog')).toBeTruthy()
+  expect(screen.getByRole('button', { name: '永久删除账号' }).hasAttribute('disabled')).toBe(true)
+  fireEvent.click(screen.getByRole('button', { name: '取消' }))
+  expect(api.deleteAccount).not.toHaveBeenCalled()
+  expect(installation.getSnapshot().status).toBe('signed-in')
+  fireEvent.click(screen.getByRole('button', { name: '删除账号' }))
+  const select = await screen.findByRole('combobox', { name: 'Shared project 新所有者' })
+  fireEvent.change(select, { target: { value: 'joined-bob' } })
+  fireEvent.click(screen.getByRole('button', { name: '永久删除账号' }))
+  expect(await screen.findByText('账号已删除，本机清理已完成。')).toBeTruthy()
+  expect(api.deleteAccount.mock.calls[0]?.[0].successors).toEqual([{ projectId: 'shared-project', successorMembershipId: 'joined-bob' }])
+  fireEvent.click(screen.getByRole('button', { name: '返回登录' }))
+  expect(screen.getByRole('button', { name: '使用 GitHub 继续' })).toBeTruthy()
+})

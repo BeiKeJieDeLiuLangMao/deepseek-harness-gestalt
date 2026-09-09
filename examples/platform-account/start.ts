@@ -2,6 +2,9 @@ import { createHash, generateKeyPairSync, randomUUID, sign } from 'node:crypto'
 import { Context } from '@deepseek-ai/cordis'
 import {
   parseAccountProofJti,
+  parseAccountDeletionId,
+  accountDeletionBinding,
+  AccountError,
   ACCOUNT_PRIVACY_NOTICE,
   parseInstallationId,
   selectPlatformEnvironment,
@@ -65,11 +68,17 @@ export async function apply(ctx: Context): Promise<void> {
     tokenSigningKey: Buffer.alloc(32, 1),
     pollingSigningKey: Buffer.alloc(32, 2),
   }
+  let cleanupAvailable = false
+  const deletion = { retryIntervalMs: 60_000, completedReceiptLifetimeMs: 60_000,
+    owner: { async plan() { return [] }, async revoke() {}, async cleanup() {
+      if (!cleanupAvailable) throw new Error('cleanup temporarily unavailable')
+      return []
+    } } }
   const first = new PlatformAccount(ctx, {
-    backend, invalidation, github, environment, config, clock: { now: () => now },
+    backend, invalidation, github, environment, config, deletion, clock: { now: () => now },
   })
   const second = new PlatformAccount(new Context(), {
-    backend, invalidation, github, environment, config, clock: { now: () => now },
+    backend, invalidation, github, environment, config, deletion, clock: { now: () => now },
   })
 
   const pair = generateKeyPairSync('ec', { namedCurve: 'P-256' })
@@ -101,6 +110,29 @@ export async function apply(ctx: Context): Promise<void> {
     proof: proof(pair.privateKey, 'sign-out', hash(session.accessToken), now),
   })
   console.log(`SIGN_OUT crossInstanceClosed=${String(closed)} local=idle`)
+  const deletingAttempt = await first.beginLogin({ installationId: parseInstallationId('deleting-mobile'),
+    installationKind: 'mobile', presentation: { name: 'Deleting Mobile', platform: 'ios' }, publicKey: pair.publicKey.export({ format: 'jwk' }) })
+  await first.completeGitHubCallback(callback)
+  const deletingSession = await first.pollLogin({ attemptId: deletingAttempt.id, pollingToken: deletingAttempt.pollingToken,
+    proof: proof(pair.privateKey, 'login-poll', `${deletingAttempt.id}:${hash(deletingAttempt.pollingToken)}`, now) })
+  if (deletingSession.status !== 'complete') throw new Error('Deletion installation login did not complete')
+  const operationId = parseAccountDeletionId(randomUUID())
+  const recoveryToken = createHash('sha256').update(randomUUID()).digest('base64url')
+  const binding = accountDeletionBinding({ operationId, recoveryTokenHash: hash(recoveryToken), successors: [] })
+  const accepted = await first.deleteAccount({ operationId, recoveryToken, successors: [], accessToken: deletingSession.accessToken,
+    proof: proof(pair.privateKey, 'delete-account', `${hash(deletingSession.accessToken)}:${binding}`, now) })
+  console.log(`DELETE accepted=${accepted.status}`)
+  try {
+    await second.current({ accessToken: deletingSession.accessToken, proof: proof(pair.privateKey, 'current', hash(deletingSession.accessToken), now) })
+    throw new Error('Deleted Account Session remained authorized')
+  } catch (error) {
+    if (!(error instanceof AccountError) || error.code !== 'SESSION_REVOKED') throw error
+    console.log(`DELETE ordinaryAuthorization=${error.code}`)
+  }
+  cleanupAvailable = true
+  const recovered = await second.recoverAccountDeletion({ operationId, recoveryToken,
+    proof: proof(pair.privateKey, 'recover-account-deletion', binding, now) })
+  console.log(`DELETE installationProofRecovery=${recovered.status}`)
   await first.dispose()
   await second.dispose()
 }

@@ -9,6 +9,9 @@ import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import {
   AccountError,
+  parseAccountDeletionId,
+  parseAccountDeletionRecoveryToken,
+  parseAccountDeletionSuccessors,
   parseAccountProofJti,
   parseDesktopInstallationPresentation,
   parseInstallationId,
@@ -129,6 +132,30 @@ export function apply(ctx: Context, config: Config): void {
     writeJson(res, 200, await ctx.platformAccount.refresh({
       refreshToken: requiredString(body, 'refreshToken'),
       proof: requiredProof(body.proof),
+    }))
+  })
+
+  route('/v1/account/deletion/plan', async (req, res) => {
+    requireMethod(req, 'POST')
+    writeJson(res, 200, await ctx.platformAccount.planAccountDeletion(accountSessionPresentation(req)))
+  })
+
+  route('/v1/account/deletion', async (req, res) => {
+    requireMethod(req, 'POST')
+    const body = await readJson(req)
+    const receipt = requiredDeletionReceipt(body)
+    const successors = requiredDeletionSuccessors(body.successors)
+    writeJson(res, 200, await ctx.platformAccount.deleteAccount({
+      ...accountSessionPresentation(req), ...receipt, successors,
+    }))
+  })
+
+  route('/v1/account/deletion/recovery', async (req, res) => {
+    requireMethod(req, 'POST')
+    const body = await readJson(req)
+    writeJson(res, 200, await ctx.platformAccount.recoverAccountDeletion({
+      ...requiredDeletionReceipt(body), proof: requiredProof(body.proof),
+      ...(body.successors === undefined ? {} : { successors: requiredDeletionSuccessors(body.successors) }),
     }))
   })
 
@@ -276,4 +303,18 @@ function answerError(res: ServerResponse, error: unknown): void {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function requiredDeletionReceipt(body: Record<string, unknown>) {
+  try {
+    return { operationId: parseAccountDeletionId(body.operationId), recoveryToken: parseAccountDeletionRecoveryToken(body.recoveryToken) }
+  } catch (error) {
+    throw new HttpError(400, 'INVALID_REQUEST', error instanceof Error ? error.message : 'invalid deletion receipt')
+  }
+}
+
+function requiredDeletionSuccessors(value: unknown) {
+  try { return parseAccountDeletionSuccessors(value) } catch (error) {
+    throw new HttpError(400, 'INVALID_REQUEST', error instanceof Error ? error.message : 'invalid deletion successors')
+  }
 }

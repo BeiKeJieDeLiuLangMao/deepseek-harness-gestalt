@@ -1,5 +1,6 @@
 /** Shared PostgreSQL authority phase for the two-step attachment-storage rollout. */
 
+import { parsePlatformAccountId, type PlatformAccountId } from '@deepseek-ai/dsh-platform-account'
 import type { PlatformSqlClient, PlatformSqlPool } from './postgres-pairing-store.ts'
 import { validateOssObjectPrefix } from './oss-config.ts'
 import {
@@ -14,6 +15,13 @@ import { REMOTE_PROTOCOL_LIMITS } from '@deepseek-ai/dsh-remote-protocol'
 export type AttachmentStoragePhase = 'legacy' | 'draining' | 'bridge' | 'oss'
 
 const SCHEMA = `
+CREATE TABLE IF NOT EXISTS remote_attachment_pairing_owners (
+  database_identity text NOT NULL,
+  pairing_id text NOT NULL,
+  account_id text NOT NULL,
+  PRIMARY KEY (database_identity, pairing_id)
+);
+
 CREATE TABLE IF NOT EXISTS remote_attachment_storage_phase (
   database_identity text PRIMARY KEY,
   phase text NOT NULL CHECK (phase IN ('legacy', 'draining', 'bridge', 'oss'))
@@ -391,4 +399,37 @@ function reservationId(value: unknown): string | undefined {
 
 function sameBytes(left: Uint8Array, right: Uint8Array): boolean {
   return left.byteLength === right.byteLength && left.every((value, index) => value === right[index])
+}
+
+
+/**
+ * Retain attachment ownership independently of later unpairing and object retirement.
+ * @param client - Publication transaction holding the confirmed pairing row lock.
+ * @param databaseIdentity - Selected deployment namespace.
+ * @param pairingId - Confirmed attachment pairing.
+ * @param accountId - Account read from that pairing's durable authority.
+ */
+export async function retainAttachmentAccountOwner(client: PlatformSqlClient, databaseIdentity: string, pairingId: import('@deepseek-ai/dsh-remote-access').PersonalPairingId, accountId: PlatformAccountId): Promise<void> {
+  await client.query(`INSERT INTO remote_attachment_pairing_owners (database_identity, pairing_id, account_id)
+    VALUES ($1,$2,$3) ON CONFLICT (database_identity, pairing_id) DO NOTHING`, [databaseIdentity, pairingId, accountId])
+  const retained = await client.query('SELECT account_id FROM remote_attachment_pairing_owners WHERE database_identity = $1 AND pairing_id = $2', [databaseIdentity, pairingId])
+  if (retained.rows.length !== 1 || parsePlatformAccountId(retained.rows[0]?.account_id) !== accountId) throw new Error('Attachment pairing owner conflicts with its confirmed authority')
+}
+
+/**
+ * Include attachments retained after their public pairing was removed, then erase their ownership records.
+ * @param pool - Shared database selected by the attachment owner.
+ * @param databaseIdentity - Selected deployment namespace.
+ * @param accountId - Account whose access is already revoked.
+ * @param captured - Pairings captured by the Personal Pairing owner before revocation.
+ * @param revoke - Attachment cleanup that returns only after every required object and quota release succeeds.
+ */
+export async function revokeAccountAttachments(pool: PlatformSqlPool, databaseIdentity: string, accountId: PlatformAccountId,
+  captured: readonly import('@deepseek-ai/dsh-remote-access').PersonalPairingId[],
+  revoke: (pairingIds: readonly import('@deepseek-ai/dsh-remote-access').PersonalPairingId[]) => Promise<void>,
+): Promise<void> {
+  const rows = await pool.query('SELECT pairing_id FROM remote_attachment_pairing_owners WHERE database_identity = $1 AND account_id = $2', [databaseIdentity, accountId])
+  const pairings = [...new Set([...captured, ...rows.rows.map(row => parsePersonalPairingId(row.pairing_id))])]
+  await revoke(pairings)
+  await pool.query('DELETE FROM remote_attachment_pairing_owners WHERE database_identity = $1 AND account_id = $2', [databaseIdentity, accountId])
 }

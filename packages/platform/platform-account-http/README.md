@@ -6,6 +6,8 @@ HTTP Consumer for `ctx.platformAccount`. It registers Login Attempt creation, th
 
 The callback returns a bilingual completion page and never redirects an OAuth code or provider token to an application URL.
 
+`POST /v1/account/deletion/plan` and `POST /v1/account/deletion` require Account bearer and Installation-proof headers. The deletion body contains the operation id, random recovery token and explicit project successor memberships. `POST /v1/account/deletion/recovery` uses the receipt and initiating Installation proof in JSON; it accepts no ordinary session authority and can replace successors only after an action-required result. Every route retains the same exact origins, body limit and no-cache response policy.
+
 ## Model Experience
 
 None, as installation UI rather than an agent consumes these routes.
