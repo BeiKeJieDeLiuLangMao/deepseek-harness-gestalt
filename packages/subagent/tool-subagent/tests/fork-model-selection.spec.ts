@@ -5,7 +5,6 @@ import { createUserMessage, ReasoningEffortId, ToolCallId } from '@deepseek-ai/d
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
 import { SessionId } from '@deepseek-ai/dsh-session'
-import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import * as Spawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
 import * as Fork from '@deepseek-ai/dsh-subagent-fork-in-process'
@@ -30,7 +29,6 @@ async function boot(order: readonly ('spawn' | 'fork')[] = ['spawn', 'fork'], en
   contexts.push(ctx)
   await ctx.plugin(SubagentModelSelectionConfig, { enabled, allowedModels: routes })
   await mountAgentLoopTestDependencies(ctx)
-  await ctx.plugin(SessionProjectionRegistry)
   await ctx.plugin(AgentLoop, { agents: [] })
   await ctx.plugin(SubagentRuntime)
   await ctx.plugin(Spawn, { providerName: 'spawn' })
@@ -145,7 +143,7 @@ describe('model-selectable fork', () => {
 
   it('refuses conflicting discovery policy in the same Agent', async () => {
     const { agent } = await boot()
-    expect(() => { registerListSubagentModels(agent.ctx, { routes: [{ provider: 'other', model: 'outside' }] }) })
+    expect(() => { registerListSubagentModels(agent.ctx, agent, { routes: [{ provider: 'other', model: 'outside' }] }) })
       .toThrow('must share one Session route policy')
   })
 })
@@ -159,7 +157,7 @@ describe('discovery replacement during teardown', () => {
     ctx.on('tools/change', () => {
       if (attached || ctx.tools.schemas(agent).some(row => row.name === 'list_subagent_models')) return
       attached = true
-      registerListSubagentModels(agent.ctx, { routes })
+      registerListSubagentModels(agent.ctx, agent, { routes })
     })
     await fibers[1]!.dispose()
     expect(attached).toBe(true)

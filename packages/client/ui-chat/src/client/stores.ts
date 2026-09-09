@@ -1,18 +1,14 @@
-/** Per-Session Chat selection store shared by the transcript and details panel. */
+/** Per-Session Chat view store. */
 import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-store'
-import type { DetailsDocumentFocus } from '@deepseek-ai/dsh-client-ui-conversation/client'
-import type { ChatStoreState, SelectionTarget, TurnProcessViewEntry } from './contract/store.ts'
+import type { ChatStoreState, TurnProcessViewEntry } from './contract/store.ts'
 
 type ChatActions = {
-  select: (draft: ChatStoreState, target: SelectionTarget | null) => void
   setTurnProcessOpen: (
     draft: ChatStoreState,
     turn: number,
     answerStep: number,
     open: boolean,
   ) => void
-  focusDocument: (draft: ChatStoreState, document: DetailsDocumentFocus) => void
-  clearDocumentFocus: (draft: ChatStoreState) => void
 }
 
 /**
@@ -29,17 +25,13 @@ export function storedTurnProcessEntry(
 }
 
 /**
- * Create the Chat selection store handle.
+ * Create the Chat view store handle.
  * @returns a handle instantiated once per rendered Session scope.
  */
 export function createChatStore(): EngineStoreHandle<ChatStoreState, ChatActions> {
   return defineStore({
-    init: (): ChatStoreState => ({ selection: null, turnProcesses: [], documentFocus: null }),
+    init: (): ChatStoreState => ({ turnProcesses: [] }),
     actions: {
-      select: (draft, target: SelectionTarget | null) => {
-        draft.selection = target
-        draft.documentFocus = null
-      },
       setTurnProcessOpen: (draft, turn, answerStep, open) => {
         const index = draft.turnProcesses.findIndex(entry => entry.turn === turn)
         if (!open) {
@@ -50,8 +42,6 @@ export function createChatStore(): EngineStoreHandle<ChatStoreState, ChatActions
         if (index < 0) draft.turnProcesses.push(next)
         else draft.turnProcesses[index] = next
       },
-      focusDocument: (draft, document: DetailsDocumentFocus) => { draft.documentFocus = document },
-      clearDocumentFocus: (draft) => { draft.documentFocus = null },
     },
   })
 }

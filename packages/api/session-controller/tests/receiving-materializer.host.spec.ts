@@ -23,7 +23,6 @@ import {
 import SessionStore, { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import { MockAdapter } from '../../../core/agent-loop/tests/mock-adapter.ts'
-import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import Storage from '@deepseek-ai/dsh-storage'
 import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
 import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
@@ -116,7 +115,6 @@ async function harness(options: {
   const ctx = new Context()
   contexts.push(ctx)
   await mountAgentLoopTestDependencies(ctx)
-  await ctx.plugin(SessionProjectionRegistry)
   await ctx.plugin(JsonlSessionPersistence, { root: jsonlRoot, compression: 'none' })
   await ctx.plugin(AgentLoop, { agents: [] })
   const adapter = new MockAdapter([])
@@ -208,7 +206,7 @@ describe('Session Controller receiving materializer', () => {
       'read',
     )
     try {
-      const persisted = await stored.read()
+      const persisted = (await stored.read()).events
       expect(stored.header.id).toBe(arrived.receivingSessionId)
       expect(persisted.filter(event => event.type === 'member-question/received')).toHaveLength(1)
       expect(persisted.filter(event => event.type === 'agent/inbox/spliced'
@@ -352,7 +350,6 @@ describe('Session Controller receiving materializer', () => {
     const ctx = new Context()
     contexts.push(ctx)
     await mountAgentLoopTestDependencies(ctx)
-    await ctx.plugin(SessionProjectionRegistry)
     await ctx.plugin(JsonlSessionPersistence, { root: jsonlRoot, compression: 'none' })
     await ctx.plugin(AgentLoop, { agents: [] })
     ctx.llm.registerAdapter(['mock'], new MockAdapter([]))
@@ -427,7 +424,6 @@ describe('Session Controller receiving materializer', () => {
     const ctx = new Context()
     contexts.push(ctx)
     await mountAgentLoopTestDependencies(ctx)
-    await ctx.plugin(SessionProjectionRegistry)
     await ctx.plugin(JsonlSessionPersistence, { root: join(root, 'sessions'), compression: 'none' })
     await ctx.plugin(AgentLoop, { agents: [] })
     ctx.llm.registerAdapter(['mock'], new MockAdapter([]))

@@ -19,19 +19,22 @@ import {
   collectReferenceTargets, createReferenceTargets, renderBlocks, renderFootnoteSection,
   wrapBlockChildren,
 } from './render.tsx'
-import type { MarkdownFileMentions, MarkdownLabels, MarkdownRenderContext, ReferenceTargets } from './render.tsx'
+import type {
+  MarkdownFileMentions, MarkdownLabels, MarkdownPathImages, MarkdownRenderContext, ReferenceTargets,
+} from './render.tsx'
 import { MarkdownSelectionCollector } from './selection-map.tsx'
 import type { MarkdownSelectionMapRef } from './selection-map.tsx'
 import 'katex/dist/katex.min.css'
 import css from './MarkdownText.module.css'
 
-export type { MarkdownCodeLabels, MarkdownFileMentions, MarkdownLabels } from './render.tsx'
+export type { MarkdownCodeLabels, MarkdownFileMentions, MarkdownLabels, MarkdownPathImages } from './render.tsx'
 
 /** One settled full render: parse with math, resolve references, append the footnote section. */
 function renderSettled(
   text: string,
   labels: MarkdownLabels,
   fileMentions: MarkdownFileMentions | undefined,
+  pathImages: MarkdownPathImages | undefined,
   selection: MarkdownSelectionCollector | undefined,
 ): ReactNode[] {
   const root = parseGfmWithMath(text)
@@ -41,6 +44,7 @@ function renderSettled(
     streaming: false,
     labels,
     fileMentions,
+    pathImages,
     targets,
     footnoteOrder: [],
     footnoteCounts: new Map(),
@@ -110,6 +114,7 @@ class StreamingRenderer {
         streaming: true,
         labels: this.labels,
         fileMentions: undefined,
+        pathImages: undefined,
         targets: frameTargets,
         footnoteOrder: this.frozenFootnoteOrder,
         footnoteCounts: this.frozenFootnoteCounts,
@@ -128,6 +133,7 @@ class StreamingRenderer {
       streaming: true,
       labels: this.labels,
       fileMentions: undefined,
+      pathImages: undefined,
       targets: frameTargets,
       footnoteOrder: [...this.frozenFootnoteOrder],
       footnoteCounts: new Map(this.frozenFootnoteCounts),
@@ -154,8 +160,10 @@ class StreamingRenderer {
  * `labels` forwards localized fence and footnote chrome — pass a
  * reference-stable object (memoized per locale revision), because a new
  * identity discards the streaming render cache mid-message. `fileMentions`
- * links inline-code tokens its resolver recognizes as real files; this is
- * the single streaming gate — it applies to settled renders only, because a
+ * links inline-code tokens its resolver recognizes as real files, and
+ * `pathImages` rewrites image destinations that are local file paths into
+ * displayable URLs its resolver vouches for; both vocabularies are the
+ * single streaming gate — they apply to settled renders only, because a
  * streaming message's vocabulary is not final and frozen cached elements
  * must not bake in handlers that could go stale.
  * @returns A GFM document with TeX math rendered through KaTeX; raw HTML,
@@ -163,12 +171,13 @@ class StreamingRenderer {
  * images render directly.
  */
 export const MarkdownText = memo(function MarkdownText({
-  text, streaming = false, labels, fileMentions, selectionMapRef,
+  text, streaming = false, labels, fileMentions, pathImages, selectionMapRef,
 }: {
   text: string
   streaming?: boolean
   labels: MarkdownLabels
   fileMentions?: MarkdownFileMentions | undefined
+  pathImages?: MarkdownPathImages | undefined
   /** Receives the settled renderer's selectable text/image mapping. */
   selectionMapRef?: MarkdownSelectionMapRef | undefined
 }) {
@@ -178,14 +187,14 @@ export const MarkdownText = memo(function MarkdownText({
     if (!streaming) {
       streamRef.current = null
       const selection = selectionMapRef === undefined ? undefined : new MarkdownSelectionCollector()
-      return { children: renderSettled(text, labels, fileMentions, selection), selection }
+      return { children: renderSettled(text, labels, fileMentions, pathImages, selection), selection }
     }
     if (streamRef.current === null || streamLabelsRef.current !== labels) {
       streamRef.current = new StreamingRenderer(labels)
       streamLabelsRef.current = labels
     }
     return { children: streamRef.current.render(text), selection: undefined }
-  }, [text, streaming, labels, fileMentions, selectionMapRef])
+  }, [text, streaming, labels, fileMentions, pathImages, selectionMapRef])
   useLayoutEffect(() => {
     if (selectionMapRef === undefined) return
     selectionMapRef.current = rendered.selection ?? null

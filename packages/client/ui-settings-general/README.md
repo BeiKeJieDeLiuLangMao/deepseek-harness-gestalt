@@ -9,10 +9,11 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-client-ui-settings-general` is the settings shell of the dsh web client: the fullscreen Settings page opens from the sidebar's bottom control, a connection-failure indicator beside that control offers immediate recovery, the navigation is built from the sections features contribute, and first-run users are walked through one onboarding step at a time. It also registers everything on the Settings pages that belongs to no single feature: the trigger/header/close chrome content, the local configuration-file action, the General section and its `settings.general.item` slot, and the `settings` dictionaries. Feature-owned rows (Permission, Language, Appearance), sections (Models), and conditional onboarding steps stay with their feature packages; the shell itself ships no onboarding copy of its own.
+Open the full-screen Settings shell from the sidebar, recover a failed connection, and complete first-run onboarding one step at a time. Feature packages contribute navigation, settings rows, sections, and onboarding content. This package owns only shared Settings chrome, the General section, the local configuration-file action, dictionaries, and the versioned welcome notice.
 
 ## Table of Contents
 
+- [Package contract](#package-contract)
 - [Use this package](#use-this-package)
 - [Understand the implementation](#understand-the-implementation)
 - [Further Exploration](#further-exploration)
@@ -21,6 +22,11 @@ English | [中文](README.zh.md)
 - [Dev Note](#dev-note)
 
 -----
+
+<a id="package-contract"></a>
+## Package contract
+
+`dsh-client-ui-settings-general` is the settings shell of the dsh web client: the fullscreen Settings page opens from the sidebar's bottom control, a connection-failure indicator beside that control offers immediate recovery, the navigation is built from the sections features contribute, and first-run users are walked through one onboarding step at a time. It also registers everything on the Settings pages that belongs to no single feature: the trigger/header/close chrome content, the local configuration-file action, the General section and its `settings.general.item` slot, and the `settings` dictionaries. Feature-owned rows (Permission, Language, Appearance), sections (Models), and conditional onboarding steps stay with their feature packages; the shell itself ships no onboarding copy of its own.
 
 <a id="use-this-package"></a>
 ## Use this package

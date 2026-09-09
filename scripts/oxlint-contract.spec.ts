@@ -109,7 +109,7 @@ probePromise()
           'apps/desktop/tests/tsconfig.json',
         ],
         [
-          'Desktop Companion Host fixture',
+          'Desktop Host 400 codec probe',
           'apps/desktop/tests/companion-fixture/host-400-codec-probe.ts',
           'apps/desktop/tests/companion-fixture/tsconfig.json',
         ],

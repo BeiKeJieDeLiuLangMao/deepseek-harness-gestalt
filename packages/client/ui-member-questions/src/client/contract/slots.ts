@@ -71,6 +71,14 @@ export interface MemberQuestionBrief {
   expiresAt?: number
 }
 
+/** Files viewers currently visible in one Better Sidebar Session. */
+export interface MemberQuestionReferenceView {
+  /** Session whose Sidebar state supplied the paths. */
+  sessionId?: SessionId
+  /** Absolute paths of visible active editor tabs. */
+  paths: readonly string[]
+}
+
 /** Code-point ceiling of the banner's background block, matching routed-ask construction. */
 export const BACKGROUND_CLAMP = 600
 
@@ -179,10 +187,14 @@ export interface MemberQuestionDockInjected {
    * Workspace file is never opened.
    */
   openReference: (sessionId: SessionId, path: string, title?: string) => void
+  /** Resolve a receiver-owned cached path exactly as {@link openReference} does. */
+  referencePath: (sessionId: SessionId, path: string) => string
   /** Sources bound to selector hooks before the dock component renders. */
   hooks: {
     /** Host-owned pending and terminal member-question projection. */
     receivingQuestions: HostObservable<ReceivingQuestionBookView>
+    /** Visible active Files viewers, scoped to their owning Session. */
+    referenceView: HostObservable<MemberQuestionReferenceView>
   }
 }
 

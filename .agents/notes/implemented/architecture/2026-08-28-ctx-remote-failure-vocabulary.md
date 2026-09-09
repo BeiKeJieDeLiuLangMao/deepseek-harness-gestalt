@@ -87,4 +87,4 @@ The type of `details` follows from the code, so a code-and-details mismatch is r
 
 Session admission's input type omits the marker and Error identity while preserving each code's corresponding details fields. Its outward `ISession` and `SessionModelRoute` methods still resolve only `RemoteResult`, so adding another admission operation requires routing its callback result through the same Session Controller runner.
 
-Consumer signatures for Remote methods are uniformly `Promise<RemoteResult<T>>`, matching the generated projection described in [the method-call surface](2026-08-02-typert-remote-method-calls.md); the ledger for the unary endpoints is [the unary endpoint migration](2026-08-10-unary-apiproxy-remote-migration.md).
+Consumer signatures for Remote methods are uniformly `Promise<RemoteResult<T>>`, matching the generated projection described in [the method-call surface](2026-08-02-typert-remote-method-calls.md); the ledger for the unary endpoints is [the unary endpoint migration](../../archived/architecture/2026-08-10-unary-apiproxy-remote-migration.md).

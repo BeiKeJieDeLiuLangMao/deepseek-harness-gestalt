@@ -37,7 +37,12 @@ function textPosition(node: Node, value: string): { node: Text; offset: number }
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
-/** Compiler labels required by every shell construction (the hub always supplies them). */
+const commandAttachments = {
+  serialize: () => Promise.resolve([]),
+  release: () => {},
+  unsupportedNotice: (token: string) => `${token.trim()} attachments-unsupported`,
+}
+
 const LABELS = {
   heading: (index: number) => `Annotation ${index}`,
   quote: (value: string) => `Quoted text: “${value}”`,
@@ -624,7 +629,7 @@ describe('text annotation mechanics', () => {
 
   it('submits annotation-only prose through one owned reservation and clears only after admission', () => {
     const sink = vi.fn<SessionInputDeps['defaultSink']>(() => new Promise(() => {}))
-    const shell = new SessionInputShell({
+    const shell = new SessionInputShell({ commandAttachments,
       actx: {} as Context,
       defaultSink: sink,
       annotationLabels: LABELS,
@@ -657,7 +662,7 @@ describe('text annotation mechanics', () => {
     const sink = vi.fn<SessionInputDeps['defaultSink']>()
       .mockImplementationOnce(() => Promise.resolve({ kind: 'error' }))
       .mockImplementation(() => new Promise(() => {}))
-    const shell = new SessionInputShell({ actx: {} as Context, defaultSink: sink, annotationLabels: LABELS })
+    const shell = new SessionInputShell({ commandAttachments, actx: {} as Context, defaultSink: sink, annotationLabels: LABELS })
     shell.setDraft('Please revise this.')
     const anchor = createTextAnchor('message-1', 'Exact quotation', 'Exact quotation', 0)
     const id = shell.actions.addTextAnnotation(anchor, 'Original note')
@@ -689,7 +694,7 @@ describe('text annotation mechanics', () => {
   })
 
   it('edits and deletes an unsent annotation through the Composer actions', () => {
-    const shell = new SessionInputShell({
+    const shell = new SessionInputShell({ commandAttachments,
       actx: {} as Context,
       defaultSink: () => Promise.resolve({ kind: 'success' }),
       annotationLabels: LABELS,

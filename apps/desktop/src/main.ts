@@ -364,7 +364,7 @@ async function boot(): Promise<void> {
     const running = started.value
     host = running
     await installCompanionHost(running)
-    if (shuttingDown || hostLifecycle.current !== running || host !== running) return
+    if (!isCurrentWebHost(running)) return
     observeHostExit(running)
     sub2api.onHostOriginChanged()
     smokeLog('host ' + running.url + ' pid ' + String(running.child.pid))
@@ -623,6 +623,10 @@ function observeHostExit(running: RunningWebHost): void {
   observeWebHostExit(running, smokeLog, () => onHostExit(running))
 }
 
+function isCurrentWebHost(running: RunningWebHost): boolean {
+  return !shuttingDown && hostLifecycle.current === running && host === running
+}
+
 /**
  * Stop the current Web Host (and any in-flight spawn), start a fresh one, and
  * point the window and the native overlay at its new URL. The Electron window
@@ -635,7 +639,7 @@ async function replaceWebHost(startTimeoutMs?: number): Promise<RunningWebHost> 
   if (shuttingDown || hostLifecycle.current !== started) throw new Error('dsh web startup aborted')
   host = started
   await installCompanionHost(started)
-  if (shuttingDown || hostLifecycle.current !== started || host !== started) {
+  if (!isCurrentWebHost(started)) {
     throw new Error('dsh web startup aborted')
   }
   observeHostExit(started)
@@ -904,7 +908,7 @@ async function installCompanionHost(running: RunningWebHost): Promise<void> {
   if (shuttingDown || hostLifecycle.current !== running) return
   clearCompanionHost()
   const cookieHeader = await bootstrapDesktopHostCookie(running.launchUrl, running.url)
-  if (shuttingDown || host !== running || hostLifecycle.current !== running) return
+  if (!isCurrentWebHost(running)) return
   uninstallCompanionHost = companionProduct.installHost(running.url, cookieHeader)
   companionHostReady = true
   void startPairingForCurrentDesktop()

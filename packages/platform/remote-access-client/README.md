@@ -9,6 +9,20 @@ English | [中文](README.zh.md)
 
 ## Summary
 
+Pair Desktop and Mobile Installations and maintain their authenticated Remote Relay lifecycle through the public HTTP service. The client validates every response, preserves capacity retry metadata, and exposes only branded pairing ids. Product controllers own Account authorization and handshake keys; the transport carries opaque messages and reconnects only within endpoint-granted authority.
+
+## Table of Contents
+
+- [Package contract](#package-contract)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
+
+-----
+
+<a id="package-contract"></a>
+## Package contract
+
 Authenticated Desktop and Mobile HTTP transport for the public Remote Access service. It forwards one current-Installation Account proof per operation and validates every JSON response before exposing branded Personal Pairing identifiers. `QUOTA` and `PLATFORM_CAPACITY` responses preserve integer `retryAfter` seconds on the thrown `RemoteAccessError`.
 
 The HTTP client does not implement a handshake or store pairing keys. Product controllers supply signed-in Account authorization while endpoint-owned Snow owners exchange opaque handshake messages through the Platform mailbox. After confirmation, the Mobile pairing controller opens its sealed endpoint-specific Relay authority through the crypto adapter and configures `MobileRelayEndpointLifecycle`; the lifecycle can send on the live attachment, and `unpair()` calls `configure(undefined)` so the lifecycle has no authority. The controller never receives the Desktop credential.
@@ -18,14 +32,6 @@ The HTTP client does not implement a handshake or store pairing keys. Product co
 The browser and Node adapters enforce the Relay wire ceiling on the physical socket and feed an item-and-byte-bounded live queue. A blocked consumer or oversized inbound frame closes the socket instead of accumulating unowned ciphertext. Received ciphertext must name the active route and target attachment before the endpoint callback can observe it.
 
 The Desktop Settings owner starts this lifecycle only while Mobile Access is enabled. It initiates physical starts under the lifecycle authority serial but awaits network readiness after releasing that serial, so Settings synchronization and pairing actions remain available while WSS attachment waits. Window close quits the Desktop process, and sleep, quit, sign-out, or disabling Mobile Access stops and drains the socket. There is no daemon, background Host, or remote wake path.
-
-## Table of Contents
-
-- [Model Experience](#model-experience)
-- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
-- [Dev Note](#dev-note)
-
------
 
 <a id="model-experience"></a>
 ## Model Experience

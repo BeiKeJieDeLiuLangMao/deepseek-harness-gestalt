@@ -9,10 +9,11 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This package provides model selection in the Web GUI: the `/model` popup command and the composer's model seat, both over one per-session directory of provider-grouped models. Choosing a model submits the complete selection — provider, model, and reasoning effort — which the route owner snapshots at the next prompt-assembly boundary, so the following request uses it while a running step keeps its assembled selection. The composer seat shows a two-level Model/Effort menu: models stay provider-grouped, and the selected exact model supplies its adapter-owned effort names and default. When the route owner reports that no adapter serves the session's selection, the composer input goes inert until a route becomes available.
+Select a provider model and reasoning effort from either the `/model` popup or the composer. The complete selection takes effect at the next prompt-assembly boundary while a running step keeps its assembled selection. Unroutable sessions disable input until a route returns, and each model supplies its own effort names and default.
 
 ## Table of Contents
 
+- [Package contract](#package-contract)
 - [Use this package](#use-this-package)
 - [Understand the implementation](#understand-the-implementation)
 - [Further Exploration](#further-exploration)
@@ -21,6 +22,11 @@ This package provides model selection in the Web GUI: the `/model` popup command
 - [Dev Note](#dev-note)
 
 -----
+
+<a id="package-contract"></a>
+## Package contract
+
+This package provides model selection in the Web GUI: the `/model` popup command and the composer's model seat, both over one per-session directory of provider-grouped models. Choosing a model submits the complete selection — provider, model, and reasoning effort — which the route owner snapshots at the next prompt-assembly boundary, so the following request uses it while a running step keeps its assembled selection. The composer seat shows a two-level Model/Effort menu: models stay provider-grouped, and the selected exact model supplies its adapter-owned effort names and default. When the route owner reports that no adapter serves the session's selection, the composer input goes inert until a route becomes available.
 
 <a id="use-this-package"></a>
 ## Use this package

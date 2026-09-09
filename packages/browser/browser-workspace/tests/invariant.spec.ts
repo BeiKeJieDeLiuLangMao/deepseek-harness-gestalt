@@ -99,7 +99,7 @@ describe('Browser Workspace invariant', () => {
         time: 1,
         data: { kind: 'kept' },
         ignorable: true,
-      } as SessionEvent],
+      } as unknown as SessionEvent],
     })
     expect(session.snapshotEvents()).toEqual(expect.arrayContaining([
       expect.objectContaining({ type: 'plugin/telemetry', ignorable: true, data: { kind: 'kept' } }),

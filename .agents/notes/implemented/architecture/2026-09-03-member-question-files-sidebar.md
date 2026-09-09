@@ -12,7 +12,9 @@ A routed Member Question can carry referenced documents. T6 opened those chips i
 
 The Host Session materializer writes transferred document bytes under a receiver-owned hidden Workspace directory: `.dsh/member-questions/<questionId>/<basename>`. Colliding basenames inside one question receive a numeric suffix. Cache parents are created as owner-only real directories after unlinking a planted symlink at `.dsh`, `.dsh/member-questions`, or the question directory. Cache files unlink a leftover or link-shaped path, then exclusive-create an owner-only regular file (`wx`, `0o600`) so the write cannot follow into a same-named Workspace file. The receiver ledger stores only `{ path, reason, cachedPath }` metadata; document bodies stay outside the JSON document.
 
-Clicking a material chip opens only that cached path through `ctx.betterSidebar.openFile` with the receiving Session id. A chip without `cachedPath` is a no-op: the asking Session path and a same-named Workspace file are never opened. Markdown, sandboxed HTML, and unsupported types reuse the ordinary Files viewers. When the Files editor tab is unregistered, the chip calls `ctx.remote.session.openWorkspacePath({ path: absolute })` and the Host system opener. The details-panel document seat is no longer the product open path.
+Clicking a material chip opens only that cached path through `ctx.betterSidebar.openFile` with the receiving Session id. A chip without `cachedPath` is a no-op: the asking Session path and a same-named Workspace file are never opened. Markdown, HTML, and other extensions reuse the ordinary Files viewer registry. HTML starts in its opaque-origin sandbox; the Files settings own the warned opt-out. When the Files editor tab is unregistered, the chip calls `ctx.remote.session.openWorkspacePath({ path: absolute })` and the Host system opener. The details-panel document seat is not part of the product path.
+
+The card subscribes to Better Sidebar state and folds only while one of its cached reference paths is the active editor in a visible pane or free window of the same receiving Session. Hiding that viewer, activating another tab, or switching Sessions restores the card and clears the local reveal; reopening the reference folds it again. The subscription follows late provider registration and releases both the provider subscription and Cordis service listener on unmount.
 
 The [receiving Session materialization note](2026-09-02-receiving-session-arrival-materialization.md) still owns Host Session creation and brief injection. The [Host receiver ledger](2026-08-31-host-owned-member-question-receiver-ledger.md) still owns persistence, first claim, and human-turn reservation.
 
@@ -26,10 +28,12 @@ The [receiving Session materialization note](2026-09-02-receiving-session-arriva
 
 **Always call `ctx.workspaces.openPath` and let Better Sidebar intercept.** Rejected because a missing Files viewer must fall back to the system opener without a second in-product dock, and the chip must name the receiving Session rather than the current Session.
 
+**Infer viewer focus from global panel DOM state.** Rejected because an unrelated tab or another Session can open the same panel. The Files service snapshot identifies the owning Session and active editor path without a second focus store.
+
 ## Consequences
 
-A receiver reads the transferred copy through the ordinary Files viewer of the receiving Session. Local Workspace files with the same basename stay untouched. A composition without Files uses the Host system opener.
+A receiver reads the transferred copy through the ordinary Files viewer of the receiving Session while the decision remains recoverable beside it. Local Workspace files with the same basename stay untouched. A composition without Files uses the Host system opener and does not fold the card around an in-product viewer that is absent.
 
 ## Testing
 
-Focused cache tests pin hidden-directory writes, same-name isolation, and planted-symlink refusal. Receiver ingest tests pin transferred bytes on the materializer without ledger bodies. Client plugin tests pin Files `openFile` with the receiving Session id, system-opener fallback, and a no-op when `cachedPath` is absent. Keyless Web assembled coverage and the owning snapshot prove Files opened `.dsh/member-questions/<questionId>/` rather than the Workspace twin.
+Focused cache tests pin hidden-directory writes, same-name isolation, and planted-symlink refusal. Receiver ingest tests pin transferred bytes on the materializer without ledger bodies. Client plugin tests pin Files `openFile` with the receiving Session id, system-opener fallback, late-provider subscription cleanup, and a no-op when `cachedPath` is absent. The card test pins exact Session-and-path matching, restoration when the viewer disappears, and a new fold when it reappears. Keyless Web assembled coverage opens the transferred Files path, observes the card fold, restores it beside the visible viewer, and proves the Workspace twin was not read; the owning snapshot pins the durable receiving events.

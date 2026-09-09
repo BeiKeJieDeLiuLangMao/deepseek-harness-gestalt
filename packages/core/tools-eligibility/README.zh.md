@@ -9,6 +9,20 @@ kind: "package-reference"
 
 ## 概述
 
+使用由 preset、Workspace 和会话配置组合而成的仅允许集合来限制最终工具。配置按稳定 id 增加正向许可；声明任一列表即启用限制，有效并集为空时不允许任何最终工具。没有声明的会话为兼容性保持不受限。
+
+## 目录
+
+- [包约定](#package-contract)
+- [模型体验](#model-experience)
+- [已知限制与暂缓事项](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+-----
+
+<a id="package-contract"></a>
+## 包约定
+
 allow-only 工具资格的宿主平面解析器。Preset 许可作为基础；`tool-eligibility` settings 分节按稳定 id 依次添加 Workspace 与 Session 条目。
 
 ```yaml
@@ -24,14 +38,6 @@ tool-eligibility:
 解析器为每个实时 Agent 持有一条可变注册表贡献。每次刷新都会先提交所有受影响贡献，再开始扇出，并为每个受影响 Agent 尝试关系 publication 与注册表变化通知。普通实时 Settings 更新会在完整扇出后传播一个聚合后的观察者错误。Settings provider 分离或 HMR 会提交 composition 回退值并尝试同样的完整扇出，但把 `AggregateError` 记录到日志，使 provider 卸载得以完成。解析器卸载或 Agent 销毁会移除对应贡献。注册表让模型 schema、查询和分发共用解析后的视图，因此不合格或过期调用会在工具主体运行前被解析为未知工具。发送给模型的精确 schema 已记录在持久 `request/header` 事件中；回放无需读取当前 settings 即可重建模型可见资格。
 
 `session.toolEligibility` 直接读取权威 `ctx.tools` 许可与 schema 目录。settings schema 只包含 `workspaces` 和 `sessions`；内部支持 deny 的 `ctx.tools.restrict()` API 不会投影到用户配置。
-
-## 目录
-
-- [模型体验](#model-experience)
-- [已知限制与暂缓事项](#known-limitations-and-deferred-work)
-- [开发备注](#dev-note)
-
------
 
 <a id="model-experience"></a>
 ## 模型体验

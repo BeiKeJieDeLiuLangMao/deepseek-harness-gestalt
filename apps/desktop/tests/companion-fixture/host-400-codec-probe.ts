@@ -9,7 +9,7 @@ import {
 } from '@deepseek-ai/dsh-remote-protocol'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { DesktopCompanionProductOwner } from '#testing/desktop/companion-product'
+import { DesktopCompanionProductOwner } from '../../src/companion-product.ts'
 
 /**
  * Produce the encoded Companion result emitted from one real HTTP 400 Host response.

@@ -94,6 +94,7 @@ export class PendingApproval {
    * @param request - Host approval request projected through the Remote Event.
    */
   constructor(readonly sessionId: SessionId, request: ApprovalPresentationRequest) {
+    this.kind = 'approval'
     nextApprovalKey += 1
     this.key = `approval:${String(nextApprovalKey)}`
     this.toolName = request.toolName

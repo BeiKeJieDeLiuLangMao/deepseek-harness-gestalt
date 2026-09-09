@@ -1,4 +1,5 @@
 /** Black-box helpers for the built Desktop Host phone-tab journey. */
+import { randomUUID } from 'node:crypto'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { browser, expect } from '@wdio/globals'
@@ -111,14 +112,16 @@ export async function openSession(): Promise<void> {
   const welcome = browser.$('button=继续')
   if (await welcome.isExisting()) await welcome.click()
   const workspace = requiredEnv('DSH_ELECTRON_E2E_WORKSPACE')
-  const created = await browser.execute(async (path: string) => {
+  const rpcIdPrefix = randomUUID()
+  const created = await browser.execute(async (path: string, prefix: string) => {
+    let rpcSequence = 0
     const call = async (method: string, payload: unknown): Promise<unknown> => {
       const response = await fetch(`${location.origin}/api/${method}`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           type: 'client-request',
-          rpcId: crypto.randomUUID(),
+          rpcId: `${prefix}-${rpcSequence++}`,
           method,
           payload,
         }),
@@ -139,7 +142,7 @@ export async function openSession(): Promise<void> {
     const sessionValue = await call('session.create', { workspaceId }) as { sessionId?: string }
     if (typeof sessionValue.sessionId !== 'string') throw new Error(`session.create omitted sessionId: ${JSON.stringify(sessionValue)}`)
     return { workspaceId, sessionId: sessionValue.sessionId }
-  }, workspace)
+  }, workspace, rpcIdPrefix)
   await writeArtifact('session.json', created)
   await browser.refresh()
   await newTabButton().waitForExist({ timeout: 30_000 })

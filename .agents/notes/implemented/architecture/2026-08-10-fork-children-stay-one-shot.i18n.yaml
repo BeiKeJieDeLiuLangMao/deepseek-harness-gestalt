@@ -3,4 +3,4 @@
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-10-fork-children-stay-one-shot.md
 2026-08-10-fork-children-stay-one-shot.md: c22591ce0125338646bdaaa8bde89cb0347594c6
-2026-08-10-fork-children-stay-one-shot.zh.md: 3f01cac319dc2ed4f43ce1802b0d5618eb9e0c9e
+2026-08-10-fork-children-stay-one-shot.zh.md: 93be6ebceeed75ec445ae785a0db4f8655b41dda

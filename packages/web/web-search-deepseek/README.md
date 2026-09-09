@@ -9,10 +9,11 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-With `dsh-web-search-deepseek`, the harness searches the web through one `deepseek-official` provider. The Web Search card writes `backend` on the DeepSeek section: `deepseek` (Anthropic Messages + `web_search_20250305` at `https://api.deepseek.com/anthropic/v1`), `anthropic-messages` (the same Messages contract at a user-named base; missing `baseURL` makes the provider unavailable), or `kimi` (Moonshot `POST` of `{ "text_query" }` with Bearer-only auth at the dedicated search URL). Protocol is explicit, not sniffed from the URL. DeepSeek native search costs a full model turn; Kimi does not. Results come from structured blocks or Moonshot `search_results`, never from scraping text out of a reply. A missing credential fails the call with a structured error. The model-facing `web_search` tool lives in `dsh-tool-web`.
+Search the web through the `deepseek-official` provider using an explicitly selected DeepSeek, Anthropic Messages, or Kimi backend. Each backend has a fixed request protocol, credential path, and structured-result parser; missing required configuration fails with a stable error. DeepSeek native search consumes a model turn, while Kimi search does not.
 
 ## Table of Contents
 
+- [Package contract](#package-contract)
 - [Use this package](#use-this-package)
 - [Understand the implementation](#understand-the-implementation)
 - [Further Exploration](#further-exploration)
@@ -21,6 +22,11 @@ With `dsh-web-search-deepseek`, the harness searches the web through one `deepse
 - [Dev Note](#dev-note)
 
 -----
+
+<a id="package-contract"></a>
+## Package contract
+
+With `dsh-web-search-deepseek`, the harness searches the web through one `deepseek-official` provider. The Web Search card writes `backend` on the DeepSeek section: `deepseek` (Anthropic Messages + `web_search_20250305` at `https://api.deepseek.com/anthropic/v1`), `anthropic-messages` (the same Messages contract at a user-named base; missing `baseURL` makes the provider unavailable), or `kimi` (Moonshot `POST` of `{ "text_query" }` with Bearer-only auth at the dedicated search URL). Protocol is explicit, not sniffed from the URL. DeepSeek native search costs a full model turn; Kimi does not. Results come from structured blocks or Moonshot `search_results`, never from scraping text out of a reply. A missing credential fails the call with a structured error. The model-facing `web_search` tool lives in `dsh-tool-web`.
 
 <a id="use-this-package"></a>
 ## Use this package

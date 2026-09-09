@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-22-desktop-web-host-no-open.md
-2026-08-22-desktop-web-host-no-open.md: c7e400f76533a9904d1c09efea59386d39fb9c48
-2026-08-22-desktop-web-host-no-open.zh.md: 6d6a2dc2afbb869edd88ced5d0faf85bc59b516c
+2026-08-22-desktop-web-host-no-open.md: 4bf2408636650412612ed1357c3eafbfaf182e17
+2026-08-22-desktop-web-host-no-open.zh.md: 206fcd5243f19768026d5a0f5a6f70cb6b7f0a96

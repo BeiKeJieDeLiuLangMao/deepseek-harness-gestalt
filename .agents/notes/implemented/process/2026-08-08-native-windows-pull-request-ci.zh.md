@@ -1,4 +1,4 @@
-# Agent Note: Wine 与原生 Windows 双通道拉取请求 CI
+# Agent Note: Wine 与原生 Windows CI
 
 Status: implemented
 
@@ -6,13 +6,13 @@ Status: implemented
 
 ## 问题
 
-拉取请求必需的 Windows 判定既需要快速的 win32 工具链信号，也不能让聚合流程等待稀缺的 Windows 容量。Wine 提供这项关键路径信号，但它运行在 Linux 内核与区分大小写的 ext4 之上，采用 hoisted 依赖布局，且无法证明 NTFS、DACL、ConPTY、崩溃持久性或原生进程行为。原生串行参考流程停用期间，每个拉取请求分支头还需要自动取得真实 Windows 内核结果。
+Wine 在 Linux 内核与区分大小写的 ext4 之上采用 hoisted 依赖布局检查 win32 工具链。它无法证明 NTFS、DACL、ConPTY、崩溃持久性或原生进程行为。因此，拉取请求的正确性需要原生 Windows 构建和进程检查，独立于合并后的 Wine 结果。
 
 覆盖率审计发现，陈旧分支状态恢复了针对受支持 LSP 源码的临时排除项。因此，原生 Windows 需要按同一逐文件 100% 阈值执行完整的受支持源码清单，而不能依赖缩小后的平台专用分母。
 
 ## 决策
 
-[ci.yml](../../../../.github/workflows/ci.yml) 中必需的 `windows` 作业仍是在 `ubuntu-latest` 上运行的 `windows node 24 / wine blocking`。它保留经过校验和验证的 Windows Node、Wine apt 与 pnpm 缓存、仅限工作区快照的 hoisted 安装，以及运行工作区构建与生产网站的[共享 Wine 门禁脚本](../../../../scripts/wine-windows-gates.sh)。Linux `taskset` 会把该 hoisted pnpm 安装固定到一个 CPU，使并行 linker 无法争用同一个嵌套包 rename；没有 `taskset` 的宿主仍会只对精确的 `ERR_PNPM_ENOENT` 特征执行有界重试。Node 分发文件传输采用有界重试；nodejs.org 的大文件传输停滞时，由支持范围请求的传输镜像续传相同字节，但版本和 SHA-256 权威仍属于 nodejs.org，归档通过该校验前绝不会投入使用。稳定的 `windows` 作业 ID 仍是 `all checks passed` 的依赖项。[已归档的 Wine 实验](../../archived/process/2026-07-27-wine-windows-gates-experiment.md)保留其实测取舍，而本文负责当前双通道拓扑。
+[ci-master.yml](../../../../.github/workflows/ci-master.yml) 中仅 master 触发的 `windows` 作业在 `ubuntu-latest` 上运行 `windows node 24 / wine`。它保留经过校验和验证的 Windows Node、Wine apt 与 pnpm 缓存、仅限工作区快照的 hoisted 安装，以及运行工作区构建与生产网站的[共享 Wine 门禁脚本](../../../../scripts/wine-windows-gates.sh)。Node 分发文件传输采用有界重试；nodejs.org 的大文件传输停滞时，由支持范围请求的传输镜像续传相同字节，但版本和 SHA-256 权威仍属于 nodejs.org，归档通过该校验前绝不会投入使用。根据[仅 master 平台策略](2026-09-06-master-only-platform-ci.zh.md)，Wine 不参与 PR 聚合。[已归档的 Wine 实验](../../archived/process/2026-07-27-wine-windows-gates-experiment.md)保留其实测取舍，而本文负责当前双通道拓扑。
 
 每个被选中的穷尽 plan 还会启动 3 个相互独立的原生 Windows 分区，分别负责构建与 runtime、完整受支持源码覆盖率，以及静态可移植性。`windows node 24 / native verdict` 要求 3 个分区全部成功。分区默认使用 `windows-latest`；`DSH_CI_FAILOVER_WINDOWS=selfhosted` 会把可信 PR 重定向到 `dsh-win-ci`。[标准托管主路径决策](2026-08-18-standard-hosted-primary-ci.zh.md)负责该选择器，[并行原生证据决策](2026-08-24-parallel-native-windows-evidence.zh.md)负责分区清单与并发。
 
@@ -32,7 +32,7 @@ Windows 的持久 JSONL 路径会保留驱动器根目录的原生写法，并�
 
 启动后，只有根 fiber 与 Loader 均处于活跃状态时，系统才会继续设置 profile watcher。只有当同一次调用所记录的信号已取得关闭流程所有权时，系统才会隔离并发设置错误；无关 HMR 故障仍会响亮失败。[进程关闭控制器](../bug-fix/2026-08-03-cli-signal-shutdown-escalation.zh.md)会在根级 dispose 成功后让单次任务的正常完成流程排空 Node 剩余句柄，同时让拆卸失败、截止时间到期和信号升级继续强制退出。vendored Include 会串行化防抖写入，只对瞬时访问或忙碌故障执行有界退避重试，并确保每个由计时器触发的拒绝都得到观察。持久化最终失败后，该故障会保留在队列中，并重新抛给拆卸责任方；成功拆卸则会排空最新写入。
 
-Shiki 会禁用 TextMate 正则的延迟编译，并在用户内容进入保持不变的逐行 tokenization（词元化）预算前预热每种启动语法，从而避免调度器争用发布不完整的高亮流。Codex 真实产品 fixture 固定使用稳定版 0.147.0 schema，并选择实际提供的命令工具与对应参数形态；这样既保留由提供方负责的协议，也能在每种宿主上证明无人值守拒绝和整棵进程树退出。
+Shiki 会禁用 TextMate 正则的延迟编译，并在用户内容进入保持不变的逐行 tokenization（词元化）预算前预热每种启动语法，从而避免调度器争用发布不完整的高亮流。Codex 真实产品 fixture 固定使用稳定版 0.153.4 schema，并选择实际提供的命令工具与对应参数形态；这样既保留由提供方负责的协议，也能在每种宿主上证明无人值守拒绝和整棵进程树退出。
 
 ## 曾考虑的替代方案
 
@@ -50,7 +50,7 @@ Shiki 会禁用 TextMate 正则的延迟编译，并在用户内容进入保持�
 
 ## 后果
 
-Wine 保留必需 aggregate 现有的关键路径和 job 身份。`all checks passed` 变绿时，原生 Windows 分区或其 verdict 仍可能处于待处理或红灯状态，因此 branch protection 采用 Wine 结果，而评审者和后续自动化采用独立的原生 verdict。
+Wine 提供合并后的工具链证据。`all checks passed` 变绿时，原生覆盖率与观测性结果仍可能处于待处理或红灯状态，因此分支保护采用定向原生构建和进程检查，而评审者和后续自动化采用其余原生结果。
 
 尽管如此，每个穷尽 PR 都会获得真实 NT 内核、NTFS、PowerShell、Windows 进程、原生 addon 和受支持源码覆盖率信号。3 个分区会重复不可变 setup，使各自的证据时钟能够重叠；测试、阈值、构建产物检查和可移植性门禁均未删除。
 

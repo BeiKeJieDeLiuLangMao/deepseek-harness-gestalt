@@ -20,7 +20,7 @@ Schedule contributes an independent Session projection keyed `schedule` containi
 
 The Web app bundle includes an A-variant Session-header action at order 30, immediately after background jobs. It activates only when the Host mounts the Schedule Remote contribution and stays absent for an empty projection. The trigger count includes scheduled plus overdue records and excludes paused records. Its board retains creation order, shows scheduled, overdue, and paused rows, and provides pause, resume, and delete. Delete requires a second inline confirmation. There is no create form; creation remains model-facing through `schedule_create`.
 
-The board is not a delivery receipt. Reminder assistant output still arrives only as an ordinary later conversation turn under the [conversational delivery decision](../simplification/2026-08-09-conversational-schedule-delivery.md). The board says what Schedule currently retains and whether delivery is suspended, never whether a model answer succeeded or a user read it. This partially extends the [durable Schedule decision](2026-08-05-durable-web-schedule.md) without changing its Session-local delivery boundary.
+The board is not a delivery receipt. Reminder assistant output still arrives only as an ordinary later conversation turn under the [conversational delivery decision](../../archived/simplification/2026-08-09-conversational-schedule-delivery.md). The board says what Schedule currently retains and whether delivery is suspended, never whether a model answer succeeded or a user read it. This partially extends the [durable Schedule decision](2026-08-05-durable-web-schedule.md) without changing its Session-local delivery boundary.
 
 ## Alternatives considered
 

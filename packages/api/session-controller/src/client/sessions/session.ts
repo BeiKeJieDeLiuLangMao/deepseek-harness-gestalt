@@ -2,7 +2,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
-import type { AttachmentIdType, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import type { AttachmentIdType, FileAttachmentRef, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { SubagentAddress } from '@deepseek-ai/dsh-subagent/client'
 import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
 import { SessionLogOffset, SessionSeq, type SessionId } from '@deepseek-ai/dsh-session/types'
@@ -12,8 +12,8 @@ import type {
   PromptContentPart,
   QueueAction,
   SessionAddress,
+  SessionAssistantStreamBaseline,
   SessionControlFrame,
-  SessionHistoryRecord,
   SessionProjectionBaseline,
   SessionQueuedItem,
   SessionRequestId,
@@ -32,13 +32,17 @@ import type {
 import { runSessionAdmission } from './admission-result.ts'
 import { Notifier } from './notifier.ts'
 import { isRemoteFailure } from '@deepseek-ai/dsh-api-gateway/client'
-import { RemoteError, type RemoteFailure, type RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
+import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
+import type { RemoteFailure, RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type { SessionRemotes } from './remotes.ts'
 import { ProjectionValueStore } from './projection-store.ts'
 import type { ProjectionsBaseline } from './projection-store.ts'
 import { resolvedClientTimeZone } from '../time-zone.ts'
 import { SessionQueueMirror } from './queue-mirror.ts'
-import { historyRecordFirstSeq, historyRecordLastSeq } from './history-records.ts'
+import {
+  ClientAssistantStream,
+  type ClientAssistantStreamResult,
+} from './assistant-stream.ts'
 
 function projectionsBaseline(value: SessionProjectionBaseline): ProjectionsBaseline {
   return {
@@ -88,11 +92,10 @@ export class Session implements SessionFace {
   // ---- Window and derived state (all private; the snapshot is the only read API) ----
   private baseSeq = SessionLogOffset(0)
   private hasMore = false
-  /** Host `inheritedEventCount` from the follow snapshot `seedLength`. */
+  /** Exact inherited prefix supplied by the Host follow opening snapshot. */
   private inheritedFloor: SessionLogOffset | undefined
-  /** Untrimmed journal window; owned-suffix display is derived from this. */
-  private retainedEntries: readonly SessionEventLikeEntry[] = []
-  private retainedHasMore = false
+  /** Complete durable and transient window from which admission visibility is derived. */
+  private readonly retainedEvents = new MutableSessionEventSource()
   private openState: OpenState = 'cold'
   private openError: RemoteFailure | null = null
   private openPromise: Promise<void> | null = null
@@ -106,6 +109,7 @@ export class Session implements SessionFace {
   private jumpPromise: Promise<void> | null = null
   /** Authoritative stream-only inbox snapshot; pending work never hits history. */
   private readonly queueMirror = new SessionQueueMirror()
+  private readonly assistantStream = new ClientAssistantStream()
   private running = false
   private address: SubagentAddress | undefined
   private parentAvailable: boolean | undefined
@@ -215,7 +219,7 @@ export class Session implements SessionFace {
         : 'transcript',
       time: Date.now(),
       text: input.text,
-      images: input.images,
+      attachments: input.attachments,
     }]
     this.submissionSettlements.set(requestId, { onRetire: input.onRetire, retiring: false })
     // The blank → engaging edge flips here, ahead of prompt(): the composer
@@ -227,7 +231,7 @@ export class Session implements SessionFace {
 
   /**
    * Send (queue/steer passed through 1:1); failures land in the snapshot's promptError.
-   * @param content - text plus browser-owned temporary image uploads.
+   * @param content - text, browser-owned temporary image uploads, and staged-file receipts.
    * @param mode - queue appends after the current turn; steer interrupts it.
    * @param signal - optional caller cancellation for the complete admission round-trip.
    * @param requestId - identity from {@link beginSubmission}; a failed identified prompt retires its echo.
@@ -260,13 +264,26 @@ export class Session implements SessionFace {
         content,
         clientTimeZone,
       }, signal)
+    } else if (content.some(part => part.type === 'file')) {
+      result = {
+        ok: false,
+        error: new RemoteError(
+          'subagent/attachment-invalid',
+          'subagent continuation does not accept files',
+          { reason: 'SUBAGENT_FILE_UNSUPPORTED' },
+        ),
+      }
     } else {
+      // The preceding branch rejects file parts before the narrower subagent
+      // wire type is used; this array is not filtered or reordered.
+      const routedContent = content as Exclude<PromptContentPart, { readonly type: 'file' }>[]
       const routed = await this.remote.subagents.prompt({
         requestId: randomUUID() as SessionRequestId,
         parentSessionId: this.address.parentSessionId,
         childSessionId: this.address.childSessionId,
         mode: 'continuable',
-        content,
+        delivery: mode,
+        content: routedContent,
         clientTimeZone: resolvedClientTimeZone(),
       }, signal)
       result = routed.ok ? { ok: true, value: { accepted: true } } : routed
@@ -488,8 +505,7 @@ export class Session implements SessionFace {
     this.openError = null
     this.baseSeq = SessionLogOffset(0)
     this.inheritedFloor = undefined
-    this.retainedEntries = []
-    this.retainedHasMore = false
+    this.retainedEvents.replace([], false)
     this.notifier.markDirty()
     await this.open()
   }
@@ -674,14 +690,18 @@ export class Session implements SessionFace {
           change.entries,
           change.hasMore,
           change.page.projections === undefined ? undefined : projectionsBaseline(change.page.projections),
-          change.page.seedLength,
+          change.page.assistantStream,
+          change.page.inheritedEventCount,
         )
         return
       case 'prepend':
         this.prependWindow(change.entries, change.hasMore)
         return
       case 'append':
-        if (this.appendLive(change.entry)) this.notifier.markDirty()
+        this.publishAssistantEntry(this.assistantStream.acceptDurable(change.entry))
+        return
+      case 'assistant-stream':
+        this.publishAssistantEntry(this.assistantStream.acceptFrame(change.frame))
     }
   }
 
@@ -690,11 +710,12 @@ export class Session implements SessionFace {
     entries: readonly SessionEventLikeEntry[],
     hasMore: boolean,
     projections?: ProjectionsBaseline,
-    seedLength?: number,
+    assistantStream?: SessionAssistantStreamBaseline,
+    inheritedEventCount?: number,
   ): void {
-    this.inheritedFloor = seedLength === undefined ? undefined : SessionLogOffset(seedLength)
-    this.retainedEntries = entries
-    this.retainedHasMore = hasMore
+    if (inheritedEventCount !== undefined) this.inheritedFloor = SessionLogOffset(inheritedEventCount)
+    const retained = this.assistantStream.replace(entries, assistantStream)
+    this.retainedEvents.replace(retained, hasMore)
     if (projections !== undefined) this.projections.seed(projections)
     const visible = this.publishVisibleWindow()
     if (visible.some(entry => entry.event.type === 'turn/start')) this.firstPromptPendingTurn = false
@@ -702,13 +723,45 @@ export class Session implements SessionFace {
     this.notifier.markDirty()
   }
 
+  private publishAssistantEntry(result: ClientAssistantStreamResult): void {
+    if (result?.type === 'rebaseline') {
+      const events = this.events
+      queueMicrotask(() => {
+        if (events !== undefined && this.events === events) events.restart()
+      })
+      return
+    }
+    if (result?.type === 'settlement') {
+      this.retainedEvents.settleAssistant(result.attemptId, result.entry)
+      const visible = this.filterOwnedSuffix([result.entry]).length > 0 ? result.entry : undefined
+      this.eventSource.settleAssistant(result.attemptId, visible)
+      this.observeSubmissionEvent(result.entry.event)
+      this.notifier.markDirty()
+      return
+    }
+    if (result?.type === 'abandonment') {
+      this.retainedEvents.settleAssistant(result.attemptId)
+      this.eventSource.settleAssistant(result.attemptId)
+      this.notifier.markDirty()
+      return
+    }
+    if (result?.type === 'publish' && this.appendLive(result.entry)) {
+      this.notifier.markDirty()
+    } else if (result?.type === 'transient') {
+      this.retainedEvents.append(result.entry)
+      if (this.filterOwnedSuffix([result.entry]).length > 0) this.eventSource.append(result.entry)
+      this.notifier.markDirty()
+    }
+  }
+
   /** Prepend one stream-validated history page. */
   private prependWindow(entries: readonly SessionEventLikeEntry[], hasMore: boolean): void {
-    this.retainedEntries = entries.length === 0 ? this.retainedEntries : [...entries, ...this.retainedEntries]
-    this.retainedHasMore = hasMore
+    this.retainedEvents.prepend(entries, hasMore)
     const visibleNew = this.filterOwnedSuffix(entries)
     const visible = this.visibleWindow()
-    this.baseSeq = SessionLogOffset(visible.entries[0]?.event.seq ?? this.baseSeq)
+    this.baseSeq = SessionLogOffset(
+      visible.entries.find(entry => entry.type === 'event')?.event.seq ?? this.inheritedFloor ?? this.baseSeq,
+    )
     this.hasMore = visible.hasMore
     if (visibleNew.length === 0) {
       if (this.eventSource.getSnapshot().hasMore !== visible.hasMore) {
@@ -721,7 +774,7 @@ export class Session implements SessionFace {
 
   /**
    * Displayed suffix for `historyScope: 'owned-suffix'`.
-   * Floor is Host `seedLength` (`inheritedEventCount`). Later `session/end-seed`
+   * Floor is Host `inheritedEventCount`. Later `session/end-seed`
    * markers are own records and must not raise it.
    */
   private ownedFloor(): SessionLogOffset | undefined {
@@ -736,35 +789,32 @@ export class Session implements SessionFace {
   }
 
   /**
-   * Whether one journal record belongs in the owned display window.
-   * Packed rows use their logical seq range; a row that starts below the
-   * inherited cut is dropped rather than split. `session/end-seed` is hidden
-   * and never raises the floor.
+   * Current-stream frames are owned by this Session; durable entries use the inherited cut.
+   * `session/end-seed` is hidden and never raises the floor.
    */
   private isOwnedSuffixEntry(entry: SessionEventLikeEntry, floor: SessionLogOffset): boolean {
-    if (entry.type === 'event' && entry.event.type === 'session/end-seed') return false
-    const record = entry as SessionHistoryRecord
-    const first = historyRecordFirstSeq(record)
-    const last = historyRecordLastSeq(record)
-    return first >= floor && last >= floor
+    if (entry.type === 'transient') return true
+    if (entry.event.type === 'session/end-seed') return false
+    return entry.event.seq >= floor
   }
 
   private visibleWindow(): { entries: SessionEventLikeEntry[]; hasMore: boolean } {
     const floor = this.ownedFloor()
+    const retained = this.retainedEvents.getSnapshot()
     if (floor === undefined) {
-      return { entries: [...this.retainedEntries], hasMore: this.retainedHasMore }
+      return { entries: [...retained.entries], hasMore: retained.hasMore }
     }
-    const entries = this.filterOwnedSuffix(this.retainedEntries)
-    const firstRetained = this.retainedEntries[0] === undefined
-      ? undefined
-      : historyRecordFirstSeq(this.retainedEntries[0] as SessionHistoryRecord)
-    const hasMore = this.retainedHasMore && firstRetained !== undefined && firstRetained > floor
+    const entries = this.filterOwnedSuffix(retained.entries)
+    const firstRetained = retained.entries[0]?.event.seq
+    const hasMore = retained.hasMore && firstRetained !== undefined && firstRetained > floor
     return { entries, hasMore }
   }
 
   private publishVisibleWindow(): SessionEventLikeEntry[] {
     const visible = this.visibleWindow()
-    this.baseSeq = SessionLogOffset(visible.entries[0]?.event.seq ?? this.baseSeq)
+    this.baseSeq = SessionLogOffset(
+      visible.entries.find(entry => entry.type === 'event')?.event.seq ?? this.inheritedFloor ?? this.baseSeq,
+    )
     this.hasMore = visible.hasMore
     this.eventSource.replace(visible.entries, visible.hasMore)
     return visible.entries
@@ -776,7 +826,7 @@ export class Session implements SessionFace {
     const awaitingFirstTurn = this.firstPromptPendingTurn
     if (event.type === 'turn/start') this.firstPromptPendingTurn = false
     const queueChanged = this.queueMirror.acceptDurable(event)
-    this.retainedEntries = [...this.retainedEntries, entry]
+    this.retainedEvents.append(entry)
     if (this.filterOwnedSuffix([entry]).length > 0) this.eventSource.append(entry)
     // After the feed append: the conversation assembly's animation frame is
     // registered by the feed subscribers above, so the echo-retirement frame
@@ -794,7 +844,7 @@ export class Session implements SessionFace {
     const data = event.data as { readonly source?: unknown; readonly content?: unknown } | undefined
     const source = data?.source as { readonly kind?: unknown; readonly rpcId?: unknown } | undefined
     if (source?.kind !== 'user' || typeof source.rpcId !== 'string') return
-    this.scheduleObservedRetirement(source.rpcId as SessionRequestId, imageRefsIn(data?.content))
+    this.scheduleObservedRetirement(source.rpcId as SessionRequestId, attachmentRefsIn(data?.content))
   }
 
   /** Retire echoes whose prompts landed in the host inbox instead of the log (running-turn submissions). */
@@ -802,7 +852,7 @@ export class Session implements SessionFace {
     if (this.submissionSettlements.size === 0) return
     for (const item of items) {
       if (item.rpcId !== undefined) {
-        this.scheduleObservedRetirement(item.rpcId, imageRefsIn(item.message.content))
+        this.scheduleObservedRetirement(item.rpcId, attachmentRefsIn(item.message.content))
       }
     }
   }
@@ -815,7 +865,7 @@ export class Session implements SessionFace {
    */
   private scheduleObservedRetirement(
     requestId: SessionRequestId,
-    attachments: readonly ImageAttachmentRef[],
+    attachments: readonly (ImageAttachmentRef | FileAttachmentRef)[],
   ): void {
     const settlement = this.submissionSettlements.get(requestId)
     if (settlement === undefined || settlement.retiring) return
@@ -896,15 +946,16 @@ function scheduleFrame(fn: () => void): void {
   else setTimeout(fn, 0)
 }
 
-/** Image attachment references in one structurally-read content block list, in block order. */
-function imageRefsIn(content: unknown): readonly ImageAttachmentRef[] {
+/** Attachment references in one structurally-read content block list, in block order. */
+function attachmentRefsIn(content: unknown): readonly (ImageAttachmentRef | FileAttachmentRef)[] {
   if (!Array.isArray(content)) return []
-  const refs: ImageAttachmentRef[] = []
+  const refs: Array<ImageAttachmentRef | FileAttachmentRef> = []
   for (const block of content) {
     if (typeof block !== 'object' || block === null) continue
     const candidate = block as { readonly type?: unknown; readonly attachment?: unknown }
-    if (candidate.type === 'image' && typeof candidate.attachment === 'object' && candidate.attachment !== null) {
-      refs.push(candidate.attachment as ImageAttachmentRef)
+    if ((candidate.type === 'image' || candidate.type === 'file')
+      && typeof candidate.attachment === 'object' && candidate.attachment !== null) {
+      refs.push(candidate.attachment as ImageAttachmentRef | FileAttachmentRef)
     }
   }
   return refs

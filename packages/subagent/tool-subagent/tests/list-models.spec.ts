@@ -15,9 +15,20 @@ import ToolRuntime from '@deepseek-ai/dsh-tools'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
+import type { Agent } from '@deepseek-ai/dsh-agent'
 import * as tool from '../src/index.ts'
 import { registerListSubagentModels } from '../src/list-models.ts'
 import { testToolSignal, text } from './harness.ts'
+
+const discoveryOwners = new WeakMap<Context, Agent>()
+
+function discoveryOwner(ctx: Context): Agent {
+  const current = discoveryOwners.get(ctx)
+  if (current !== undefined) return current
+  const owner = { ctx } as Agent
+  discoveryOwners.set(ctx, owner)
+  return owner
+}
 
 class CatalogAdapter extends LlmAdapter {
   constructor(private readonly empty = false) {
@@ -68,7 +79,7 @@ async function setupListTool(routes = [
   await ctx.plugin(LlmRuntime)
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(ToolRuntime)
-  registerListSubagentModels(ctx, { routes })
+  registerListSubagentModels(ctx, discoveryOwner(ctx), { routes })
   return ctx
 }
 
@@ -77,7 +88,7 @@ async function setupAllowedListTool() {
   await ctx.plugin(LlmRuntime)
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(ToolRuntime)
-  registerListSubagentModels(ctx, {
+  registerListSubagentModels(ctx, discoveryOwner(ctx), {
     routes: [
       { provider: 'alpha', model: 'fast' },
       { provider: 'alpha', model: 'unlisted' },
@@ -115,17 +126,17 @@ describe('list_subagent_models', () => {
     await ctx.plugin(SystemPrompt)
     await ctx.plugin(ToolRuntime)
     await ctx.plugin(SubagentRuntime)
-    registerListSubagentModels(ctx, { routes: [{ provider: 'alpha', model: 'fast' }] })
+    registerListSubagentModels(ctx, discoveryOwner(ctx), { routes: [{ provider: 'alpha', model: 'fast' }] })
     const result = await call(ctx, {})
     expect(result.isError).toBe(true)
     expect(text(result)).toContain('`llm` service is unavailable')
   })
 
-  it('rejects two discovery-owning instances in one tool scope', async () => {
+  it('rejects conflicting discovery policies on one Agent', async () => {
     const ctx = await setupListTool()
     expect(() => {
-      registerListSubagentModels(ctx, { routes: [{ provider: 'alpha', model: 'fast' }] })
-    }).toThrow('tool "list_subagent_models" is already registered')
+      registerListSubagentModels(ctx, discoveryOwner(ctx), { routes: [{ provider: 'alpha', model: 'fast' }] })
+    }).toThrow('subagent model discovery consumers must share one Session route policy')
   })
 
   it('lists registered providers and follows live registration changes', async () => {

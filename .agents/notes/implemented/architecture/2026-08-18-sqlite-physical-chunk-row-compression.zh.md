@@ -78,4 +78,4 @@ SQLite 在 schema 17 包内拥有分片编码和验证。字段完全匹配的�
 
 代价是不迁移旧的预发布 SQLite schema，以及取决于时序的物理行数。SQLite 与 Zstandard 都是同步操作：每个连接以配置的 `busyTimeoutMs` 等待竞争锁，该等待期间会阻塞其 JavaScript 线程，大型行的编码与解码也在该线程上执行。冷打开会在 journal-mode 切换立即返回 `SQLITE_BUSY` 后让出执行，并在从打开时计算的重试截止点后不再发起新尝试；正在执行的同步调用可能更晚才完成。外部 SQL 工具必须使用提供方解码器，而不能假定每个物理 `events.type` 都是逻辑事件类型或每个 payload 列都是文本。
 
-[JSONL 打包行决策](2026-07-26-packed-chunk-rows-by-default.zh.md)、[有界持久化批处理](2026-08-08-bounded-session-persistence-write-batching.zh.md)和原始[会话持久化决策](2026-06-14-session-persistence.zh.md)继续保持 active：它们分别负责 JSONL 格式、写入调度以及后端无关的服务语义。
+当前的 [Session 格式](../../../../docs/subsystems/session.zh.md)与[持久化](../../../../docs/subsystems/persistence.zh.md)参考定义 JSONL 格式和写入调度。原始的[会话持久化决策](2026-06-14-session-persistence.zh.md)继续负责后端无关的服务语义。

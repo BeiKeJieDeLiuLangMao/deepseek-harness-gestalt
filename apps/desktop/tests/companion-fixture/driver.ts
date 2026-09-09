@@ -17,7 +17,7 @@ export class FixtureTransportClosedError extends Error {
 
 /** Launch one suite-local Host; successful disposal observes its exit.
  * Deadline rejection retains failed cleanup, not proof of quiescence. */
-export function launchCompanionFixture(entry = new URL('./host.ts', import.meta.url)) {
+export function launchCompanionFixture(entry: URL) {
   const child = fork(fileURLToPath(entry), [], {
     execArgv: ['--import', import.meta.resolve('tsx/esm')],
     serialization: 'advanced',

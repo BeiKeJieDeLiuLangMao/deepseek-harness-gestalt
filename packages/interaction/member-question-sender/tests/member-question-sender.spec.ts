@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import AgentRegistry, { Inbox, type Agent } from '@deepseek-ai/dsh-agent'
+import AgentRegistry, { type Agent } from '@deepseek-ai/dsh-agent'
 import { parsePlatformAccountId } from '@deepseek-ai/dsh-platform-account'
 import UserQuestionService, {
   UserQuestionError,
@@ -27,6 +27,14 @@ import CompanionMemberQuestionSender, {
 } from '../src/index.ts'
 
 const SETTLED_AT = 1_788_089_400_000
+
+function unsupportedInbox(): Agent['inbox'] {
+  const reject = (): never => { throw new Error('this test Agent does not support Inbox mutations') }
+  return {
+    nextTurn: [], nextStep: [], clear: reject, append: reject, prepend: reject,
+    replace: reject, remove: reject, splice: reject,
+  }
+}
 
 function declinedSettlement(): MemberQuestionSettlement {
   return {
@@ -91,7 +99,7 @@ function stubAgent(id: string): Agent {
     id: agentId,
     options: {},
     session: asking,
-    inbox: new Inbox(asking, { inserted: () => {}, discarded: () => {}, claimed: () => {} }),
+    inbox: unsupportedInbox(),
     status: 'idle',
     ctx: new Context(),
     send: () => {},

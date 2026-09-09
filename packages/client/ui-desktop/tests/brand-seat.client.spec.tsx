@@ -3,10 +3,15 @@ import { describe, expect, it } from 'vitest'
 import { render } from '@testing-library/react'
 import { BrandSeat } from '../src/client/BrandSeat.tsx'
 
+const useResource = (() => ({
+  status: 'none' as const, value: undefined, failure: undefined, reload: () => {},
+})) as import('@deepseek-ai/dsh-client-ui-slots').GlobalStandardProps['useResource']
+
 describe('BrandSeat', () => {
   it('renders the GESTALT plate', () => {
     const { container } = render(
       <BrandSeat
+        useResource={useResource}
         useSessions={(() => { throw new Error('unused') })}
         useSessionPendingInteraction={(() => { throw new Error('unused') })}
         useWorkspaces={(() => { throw new Error('unused') })}

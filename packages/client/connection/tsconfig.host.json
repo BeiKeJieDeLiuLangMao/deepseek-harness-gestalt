@@ -11,6 +11,7 @@
     "src/browser-auth.ts",
     "src/http-bridge.ts",
     "src/index.ts",
+    "src/recovery-config.ts",
     "src/rpc-host.ts",
     "src/rpc-schema.ts",
     "src/rpc.ts"

@@ -2,8 +2,8 @@
  * Generate `docs/tool-catalog.md` from schemas collected by booting each tool
  * plugin. Runtime registration is the source of truth for computed schemas;
  * the manifest is checked against every on-disk `tool-*` package. `--check`
- * verifies the committed artifact. Rationale and ownership live in
- * `.agents/notes/implemented/process/2026-07-02-tool-schema-catalog.md`.
+ * verifies the committed artifact. The original decision is recorded in
+ * `.agents/notes/archived/process/2026-07-02-tool-schema-catalog.md`.
  */
 
 import { globSync, readFileSync, writeFileSync } from 'node:fs'
@@ -221,7 +221,7 @@ const TOOL_PACKAGES: ToolPackage[] = [
       tool_search: 'packages/core/tools/src/index.ts',
     },
     requires: ['ctx.tools', 'ctx.codeRuntime (execution time)', 'ctx.systemPrompt', 'toolSearch config for deferred discovery'],
-    writes: ['tool/call', 'one tool/code-dispatch-start + tool/code-dispatch pair per bridged sub-call', 'tool/result'],
+    writes: ['tool/call', 'one tool/ptc-dispatch-start + tool/ptc-dispatch pair per bridged sub-call', 'tool/result'],
     // run_code exists only under a non-native mode; tool_search exists only
     // when toolSearch is configured (the SDK profile). Harvest both.
     toolsConfig: { mode: 'ptc', toolSearch: { maxResultBytes: 65536 } },
@@ -522,7 +522,9 @@ const TOOL_PACKAGES: ToolPackage[] = [
       await ctx.plugin(LlmRuntime)
       registerCatalogSubagentProvider(ctx, 'mock')
       await ctx.plugin(ToolSubagent, { provider: 'mock' })
-      registerListSubagentModels(ctx, { routes: [{ provider: 'mock', model: 'mock' }] })
+      registerListSubagentModels(ctx, { id: SessionId('tool-catalog-parent'), ctx } as Agent, {
+        routes: [{ provider: 'mock', model: 'mock' }],
+      })
     },
     note:
       'The registered delegation name is the load-time `toolName` config (default `subagent`); the default schema above has model selection off, while the discovery schema is shown as the fixed companion available in an enabled Session. The optional `images` parameter is present only when the bound provider advertises `capabilities.images`; this harvest uses an in-process catalog fixture that does, so ACP and other out-of-process backends that advertise `images: false` omit the field. Web presets sample the Plugins preference for each new top-level Session and preserve that decision for its child Sessions; `subagent_fork` accepts the same authorized route selection while preserving completed parent turns; omitting its route keeps inheritance. Selectable tools on one Agent share discovery. Each instance independently controls whether it reads model-selection settings and its background behavior through `modelSelectionSettings`, `backgroundMode`, and `enableRunInBackground`.',
@@ -845,7 +847,7 @@ export function render(catalog: ToolCatalog): string {
     '',
     'Every model-facing tool a shipped plugin contributes to `ctx.tools`: the `name`, `description`, and JSON-Schema `parameters` the model receives via the system-prompt assembly. It complements the [subsystem pages](subsystems/core.md) (the types plus each page\'s generated Cordis API region) — this page is the *tools* the agent is offered.',
     '',
-    'This file is GENERATED and verified fresh by `pnpm run verify-tool-catalog` (part of `doc-sync`) — do not edit it by hand. Unlike the cordis catalog (a pure source-AST pass), this generator BOOTS each tool plugin on a real context and reads the complete `ctx.tools.catalogSchemas()` end-tool catalog plus the registry-owned presentation schemas from `ctx.tools.schemas()`, because a tool schema is not statically knowable (runtime-spread enums, concatenated descriptions, config-driven names, raw-JSON-Schema MCP tools). A completeness guard globs `packages/*/tool-*` and fails if any package is missing from the generator\'s boot manifest, so a new tool cannot be silently undocumented. See [the tool-schema-catalog Agent Note](../.agents/notes/implemented/process/2026-07-02-tool-schema-catalog.md).',
+    'This file is GENERATED and verified fresh by `pnpm run verify-tool-catalog` (part of `doc-sync`) — do not edit it by hand. Unlike the cordis catalog (a pure source-AST pass), this generator BOOTS each tool plugin on a real context and reads the complete `ctx.tools.catalogSchemas()` end-tool catalog plus the registry-owned presentation schemas from `ctx.tools.schemas()`, because a tool schema is not statically knowable (runtime-spread enums, concatenated descriptions, config-driven names, raw-JSON-Schema MCP tools). A completeness guard globs `packages/*/tool-*` and fails if any package is missing from the generator\'s boot manifest, so a new tool cannot be silently undocumented. The archived [tool-schema-catalog record](../.agents/notes/archived/process/2026-07-02-tool-schema-catalog.md) documents the original decision.',
     '',
     'Scope: shipped product tools under `packages/*/tool-*`, each booted with its DEFAULT config, except where a Config field is REQUIRED with no default — there the generator must choose, and the per-package note records which branch this page shows. The registered tool NAME can be a load-time config (e.g. `tool-subagent`\'s `toolName`), so a deployment may expose a package under a different or additional name — a per-package note records those shipped aliases where they exist. The `examples/` demo tools (e.g. `echo`) are excluded, matching the cordis catalog\'s packages-only scope.',
     '',

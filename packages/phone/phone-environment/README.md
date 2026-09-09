@@ -1,6 +1,28 @@
+---
+description: "Host-owned phone toolchain detection and trusted mobilecli preparation for the Phone Devices settings flow."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-phone-environment
 
 English | [中文](README.zh.md)
+
+## Summary
+
+Expose one immutable Phone Devices environment snapshot across runtime and platform preparation. The service keeps shared mobilecli state separate from extensible Android and iOS preparation states, and reports unsupported iOS work accurately on non-macOS hosts. It validates operation ownership, cancellation, progress, and managed-runtime activation without changing the user's environment.
+
+## Table of Contents
+
+- [Package contract](#package-contract)
+- [Config](#config)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
+
+-----
+
+<a id="package-contract"></a>
+## Package contract
 
 Host-owned phone toolchain state on `ctx.phoneEnvironment`. The Service publishes one immutable full snapshot for the Phone Devices settings client and keeps its identity while the enable gate or active mobilecli generation changes. The shared runtime state is a closed missing / downloading / verifying / activating / ready / failed union. Android and iOS preparation use separate extensible states. A Host-owned one-click iOS preparation marks its `checking` state with `operation: 'prepare'`; passive detection omits the marker. A non-macOS host reports that iOS Simulator and physical iPhone control require macOS with a complete Xcode installation instead of offering operations it cannot execute.
 
@@ -10,6 +32,7 @@ The Host exposes the full snapshot at `GET /phone/environment` and trusted runti
 
 mobilecli is licensed under FSL-1.1 with an Apache-2.0 future license. A runtime download directly from the upstream release is not a copy inside the Desktop Bundle, but product release remains blocked until counsel or the upstream licensor confirms that the intended product use is permitted. The package does not vendor or redistribute mobilecli.
 
+<a id="config"></a>
 ## Config
 
 | Field | Default | Meaning |
@@ -24,6 +47,7 @@ mobilecli is licensed under FSL-1.1 with an Apache-2.0 future license. A runtime
 
 Preparation rejects concurrent calls with `PHONE_ENVIRONMENT_BUSY`; cancellation uses `PHONE_ENVIRONMENT_ABORTED`. Download trust failures use `PHONE_ENVIRONMENT_DOWNLOAD`, `PHONE_ENVIRONMENT_LENGTH`, or `PHONE_ENVIRONMENT_DIGEST`; archive, version, current-pointer, and filesystem failures use `PHONE_ENVIRONMENT_ARCHIVE`, `PHONE_ENVIRONMENT_VERSION`, `PHONE_ENVIRONMENT_CURRENT`, or `PHONE_ENVIRONMENT_DISK`. Activation and unexpected runtime loss use `PHONE_ENVIRONMENT_ACTIVATION` and `PHONE_ENVIRONMENT_RUNTIME_LOST`. Failed detection or preparation never silently selects a lower-precedence candidate or leaves the prior child and tools active.
 
+<a id="model-experience"></a>
 ## Model Experience
 
 Indirectly, through `dsh-tool-phone`, which registers deferred `device_*` tools only when an enabled runtime generation is ready.
@@ -34,5 +58,12 @@ None while the runtime is missing or disabled. Deferred phone schemas enter a re
 
 ## Known Limitations and Deferred Work
 
+<a id="known-limitations-and-deferred-work"></a>
+
 - Apple license acceptance, first-launch authorization, Apple ID, system permissions, real-device trust, Developer Mode, signing identities, and provisioning profiles remain manual.
 - FSL-1.1 product-use clearance remains a Desktop release blocker.
+
+<a id="dev-note"></a>
+### Dev Note
+
+None.

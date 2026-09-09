@@ -91,7 +91,6 @@ function handle(options: {
   readonly collected: SubprocessHandle['collected']
 }): SubprocessHandle {
   return {
-    pid: 1,
     stdin: undefined,
     stdout: undefined,
     stderr: undefined,

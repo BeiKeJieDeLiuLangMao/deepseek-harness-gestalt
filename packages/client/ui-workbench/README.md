@@ -9,19 +9,25 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-First-party adapter beside the [`better-sidebar` snapshot](../ui-better-sidebar/README.md). Host apply observes Loader and Cordis lifecycle transitions until the snapshot loader fiber activates and namespace `dsh-better-sidebar` is registered, joining that fiber while registration is pending. It propagates a failure from the snapshot row while ignoring unrelated Loader failures, then writes `tabsEnabled.browser: true` and turns link takeover on (`browserInterceptLinks` / `browserInterceptHttps`) through `settings.get` / `settings.update` on that literal namespace; disposal cancels an unfinished wait without a late write. The client half publishes `workbenchBrowser`, requires the `browserUi` service published by ui-browser, and binds each official Workspace page to one snapshot `browser` tab. Browser Workspace owns Profile-matched instance reuse when `+ → Browser` creates another page. A tab opened with a seed URL navigates to it right after create; a rejected create is recorded on the tab meta so the chrome offers a retry instead of a perpetual creating placeholder. When a Runtime restart invalidates a projected target, the adapter keeps the sidebar tab and its Profile identity while Browser Workspace replaces the missing page. Closing a sidebar tab closes the Runtime page; stale revisions are observed and retried, and transient failures retain the close intent instead of reopening the tab. Better-sidebar owns per-Session panel visibility. The Desktop overlay document publishes the face without reconciling official pages. Daily product changes belong here, not in the snapshot tree.
-
-On Browser UI provider unload, the workbench stops new bridge actions and waits for accepted Remote operations to settle. Late replies cannot update sidebar tabs or start queued reconciliation. Rendering uses the provider callback captured during workbench activation.
-
-Web-app composition inserts the snapshot row, then this adapter, then keeps `id: ui-browser`. Occupancy is specified by the [workbench official browser Agent Note](../../../.agents/notes/implemented/feature/2026-08-21-workbench-official-browser.md).
+Mount the pinned Better Sidebar snapshot and bind official Browser Workspace pages to its Browser tab. The Host waits for the snapshot namespace, enables Browser tabs and link interception, and cancels cleanly if disposed before activation. The Client reuses Profile-matched instances and records rejected seeded-page creation for retry.
 
 ## Table of Contents
 
+- [Package contract](#package-contract)
 - [Model Experience](#model-experience)
 - [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
 - [Dev Note](#dev-note)
 
 -----
+
+<a id="package-contract"></a>
+## Package contract
+
+First-party adapter beside the [`better-sidebar` snapshot](../ui-better-sidebar/README.md). Host apply observes Loader and Cordis lifecycle transitions until the snapshot loader fiber activates and namespace `dsh-better-sidebar` is registered, joining that fiber while registration is pending. It propagates a failure from the snapshot row while ignoring unrelated Loader failures, then writes `tabsEnabled.browser: true` and turns link takeover on (`browserInterceptLinks` / `browserInterceptHttps`) through `settings.get` / `settings.update` on that literal namespace; disposal cancels an unfinished wait without a late write. The client half publishes `workbenchBrowser`, requires the `browserUi` service published by ui-browser, and binds each official Workspace page to one snapshot `browser` tab. Browser Workspace owns Profile-matched instance reuse when `+ → Browser` creates another page. A tab opened with a seed URL navigates to it right after create; a rejected create is recorded on the tab meta so the chrome offers a retry instead of a perpetual creating placeholder. When a Runtime restart invalidates a projected target, the adapter keeps the sidebar tab and its Profile identity while Browser Workspace replaces the missing page. Closing a sidebar tab closes the Runtime page; stale revisions are observed and retried, and transient failures retain the close intent instead of reopening the tab. Better-sidebar owns per-Session panel visibility. The Desktop overlay document publishes the face without reconciling official pages. Daily product changes belong here, not in the snapshot tree.
+
+On Browser UI provider unload, the workbench stops new bridge actions and waits for accepted Remote operations to settle. Late replies cannot update sidebar tabs or start queued reconciliation. Rendering uses the provider callback captured during workbench activation.
+
+Web-app composition inserts the snapshot row, then this adapter, then keeps `id: ui-browser`. Occupancy is specified by the [workbench official browser Agent Note](../../../.agents/notes/implemented/feature/2026-08-21-workbench-official-browser.md).
 
 <a id="model-experience"></a>
 ## Model Experience

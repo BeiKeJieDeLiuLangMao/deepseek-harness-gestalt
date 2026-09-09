@@ -139,6 +139,9 @@ async function boot(existingRoot?: string): Promise<{
   contexts.push(ctx)
   ctx.baseUrl = `${pathToFileURL(root).href}/`
   await ctx.plugin(Loader)
+  ctx.provide('fileUploads', {
+    registerAgentResolver: () => () => {},
+  } as never)
   ctx.loader.builtins.include = Include
   const modules = new Map<string, unknown>([
     ['@deepseek-ai/dsh-llm', LlmRuntime],
@@ -259,7 +262,7 @@ describe('receiving materializer through a real Loader composition', () => {
     await reader.plugin(JsonlSessionPersistence, { root: jsonlRoot, compression: 'none' })
     const stored = await reader.sessionPersistence.open(sessionId, 'read')
     try {
-      const persisted = await stored.read()
+      const persisted = (await stored.read()).events
       expect(stored.header.id).toBe(arrived.receivingSessionId)
       expect(persisted.filter(event => event.type === 'member-question/received')).toHaveLength(1)
       expect(persisted.filter(event => event.type === 'agent/inbox/spliced'
@@ -331,7 +334,7 @@ describe('receiving materializer through a real Loader composition', () => {
     await reader.plugin(JsonlSessionPersistence, { root: first.jsonlRoot, compression: 'none' })
     const stored = await reader.sessionPersistence.open(sessionId, 'read')
     try {
-      const persisted = await stored.read()
+      const persisted = (await stored.read()).events
       expect(stored.header.id).toBe(sessionId)
       expect(persisted.filter(event => event.type === 'member-question/received')).toHaveLength(1)
       expect(persisted.filter(event => event.type === 'agent/inbox/spliced'
@@ -509,7 +512,7 @@ describe('receiving materializer through a real Loader composition', () => {
     await reader.plugin(JsonlSessionPersistence, { root: jsonlRoot, compression: 'none' })
     const stored = await reader.sessionPersistence.open(sessionId, 'read')
     try {
-      const persisted = await stored.read()
+      const persisted = (await stored.read()).events
       expect(persisted.filter(event => event.type === 'member-question/received')).toHaveLength(1)
       expect(persisted.filter(event => event.type === 'user/message'
         && event.data.id === `member-question-human:${rpcId}`)).toHaveLength(1)

@@ -9,6 +9,20 @@ kind: "package-reference"
 
 ## 概述
 
+允许同一 Account 下的 Desktop Installation 与 Mobile Installation 显式配对，并授予有界 Device Principal。服务在设置启用前保持 Mobile Access 关闭，使用短期端点 mailbox，并执行配对、blob、上传、连接与容量配额。Relay 提供方只承载密文；Account 身份、显式确认与撤销负责授权。
+
+## 目录
+
+- [包约定](#package-contract)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+-----
+
+<a id="package-contract"></a>
+## 包约定
+
 远程访问 Service Definition 与个人配对 Service Provider。`ctx.remoteAccess` 对每个 Desktop Installation 默认关闭手机访问，直到用户在设置中开启；它分配两分钟端点 mailbox 路由，通过 `AccountService.currentInstallation()` 鉴别每个 Account Session 的 Installation id、类型与 Mobile 展示，要求两个 Installation 解析到同一账号，并且仅在 Desktop 明确确认后授予 Device Principal。端点完成请求不携带调用方提供的设备元数据；待确认与已确认记录会复制已鉴别 Mobile Installation 展示。开放注册配额限制安装、配对与附件；容量水位会以 `PLATFORM_CAPACITY` 和 `retryAfter` 拒绝新的登录、配对、附件或 WSS 接入，已建立的密文流继续。配对挑战 HTTP 使用 TCP 对端地址并忽略 `x-forwarded-for`。每小时挑战、并发附件和每日上传窗口位于共享配对事务状态中，因此共用一个 `PersonalPairingAuthorityStore` 的两个提供方执行同一份账号完整上限。硬上限返回 60 秒 `retryAfter`；滑动窗口返回剩余窗口秒数。`admitAttachmentBlob` 会在返回前提交带绝对过期时间的账号 quota lease；之后每次成功的 pairing 事务都会把旧 reservation 迁移为有界 lease，并淘汰已过期 lease。实际运行的 lease 时长是已配置 attachment capability lifetime 的两倍，attachment store 会拒绝早于 blob authority 结束的 lease。因此结果不明的 publish 只会造成有界 orphan overcount，不会造成 active blob undercount。`releaseAttachmentBlob` 负责主动清理，且不存储密文。开发与生产使用独立的 origin、OAuth App、回调、凭据、数据库与身份命名空间；密钥只来自部署托管引用，缺失则该能力失败关闭。`PersonalPairingAuthorityStore` 原子持有共享 Desktop route 关联、端点 mailbox、prepared publication 与补偿记录、已确认 Mobile 结果及配额窗口；内存适配器是确定性测试适配器，部署必须向每个 Platform Instance 提供同一个持久适配器。
 
 Platform 返回不含邀请 PSK 的路由元数据。Desktop 在本地创建完整 XKpsk3 QR 或 HTTPS 载荷，把私有状态保存在受保护存储中，并且只通过 Platform 发送不透明握手消息与端点公钥摘要。握手完成后保持待确认，两个 Installation 显示由本地 transcript 派生的同一组六个认证词。只有保留的 SHA-256 commitment 与账号、Mobile Installation、完整邀请及 Mobile 握手字节相符时，完成 id 才会重放；请求内容变化会按 id 碰撞拒绝。共享事务文档使用格式版本 1。无版本文档会保留受 digest 约束的重放记录与已确认配对；缺少 digest 的完成或待确认记录会转为不可重放且持有清理责任的终态记录。系统拒绝未知的显式版本与格式错误的带版本记录。确认 id 保证确认重试幂等，串行变更保证并发完成只有一个获得路由挑战。
@@ -24,14 +38,6 @@ Platform 返回不含邀请 PSK 的路由元数据。Desktop 在本地创建完�
 `ctx.remoteRelay` 拥有无状态多实例 Relay 生命周期。Desktop 与 Mobile 分别持有独立 P-256 签名凭据，持久 `RelayRouteStore` 只保留公钥摘要。每条物理连接都证明一份绑定 route、端点、attachment 与过期时间的新鲜挑战，因此观察到的 attach 交换无法授权另一条连接，仅凭不透明 route id 也无法 attach。Personal Pairing authority 会把 Mobile 公钥摘要对应的不含内容 fingerprint 绑定到已确认设备。每个已鉴别 Mobile attachment 会登记连接 token 与过期 lease；attach、heartbeat 和 ciphertext 访问推进 `lastAccessAt`，close 只删除该 token。只要任一当前 lease 存在，presence 就为在线，因此旧连接延迟 close 不会清除替换连接，进程崩溃也会在 lease 到期后转为离线。Desktop Settings 读取该状态，而不是使用确认时写死的值。每个 Platform Instance 先鉴权 attachment 并刷出 ready，再把它注册到会过期的共享目录，并直接发布到目标实例。跨实例 peer update 只表示目录发生变化；接收实例会从共享目录投影目标的当前 peer，避免并发发布者的通知恢复更早的 route 快照。跨实例事件只包含有界 Relay 密文、带品牌 transport id、连接 token 与 route revision。目标缺失时返回 `REMOTE_OFFLINE`，不存在离线密文或 mutation queue。容量限制只拒绝新 attachment，慢消费者在配置的字节上限处断开，心跳重新验证 route 权限，轮换或撤销会跨实例使旧在线 attachment 失效。仅主机侧的 `relay-provider` 包从本包的公开入口导入 `RemoteRelayError`，使按该类做 `instanceof` 映射的 HTTP Consumer 与 provider 共用同一个构造函数。
 
 部署持久状态仅限 route identity、credential digest、单调 revision 与撤销／关联状态。临时协调仅限会过期的 attachment 位置、失效事件与直达密文 Pub/Sub。实例退出会关闭其 socket；Mobile 与 Desktop 获取新的 non-sticky 连接，Desktop 发送权威加密 resync，而不迁移在线 socket。容量、目录、心跳、缓冲、连接与 attach timeout 都是组合中显式校验的配置值。
-
-## 目录
-
-- [Model Experience](#model-experience)
-- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
-- [开发备注](#dev-note)
-
------
 
 <a id="model-experience"></a>
 ## Model Experience

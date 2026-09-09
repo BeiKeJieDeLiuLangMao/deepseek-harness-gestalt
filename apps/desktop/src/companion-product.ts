@@ -7,11 +7,8 @@ import type {
 } from '@deepseek-ai/dsh-api-workspace-controller/types'
 import workspaceRemote from '@deepseek-ai/dsh-api-workspace-controller/remote'
 import sessionRemote from '@deepseek-ai/dsh-api-session-controller/remote'
-import {
-  expandSessionHistoryRecords,
-} from '@deepseek-ai/dsh-api-session-controller'
 import type {
-  SessionFollowFrame, SessionPage, SessionWireEvent,
+  SessionFollowFrame, SessionHistoryRecord, SessionPage, SessionWireEvent,
 } from '@deepseek-ai/dsh-api-session-controller/types'
 import type {
   RemoteEventClientId,
@@ -1506,7 +1503,7 @@ export class DesktopSessionHistoryCache {
     }
     return {
       ok: true,
-      value: conversationHistoryValue(expandSessionHistoryRecords(records.records), records.hasMore),
+      value: conversationHistoryValue(historyRecordEvents(records.records), records.hasMore),
     }
   }
 
@@ -1595,7 +1592,7 @@ export class DesktopSessionHistoryCache {
       const snapshot: DesktopHistoryFollowSnapshot = {
         maxMessages,
         throughSeq: decoded.cursor,
-        events: expandSessionHistoryRecords(decoded.records),
+        events: historyRecordEvents(decoded.records),
         hasMore: decoded.hasMore,
       }
       this.follows.set(key, snapshot)
@@ -1606,6 +1603,7 @@ export class DesktopSessionHistoryCache {
       }
       return
     }
+    if (decoded.type === 'assistant-stream') return
     const current = this.follows.get(key)
     if (current === undefined) {
       this.failFollow(key, 'Desktop Host session follow increment arrived before a snapshot')
@@ -1615,6 +1613,10 @@ export class DesktopSessionHistoryCache {
     const sessionId = key.slice(0, key.lastIndexOf(':'))
     this.onSessionChanged?.(sessionId)
   }
+}
+
+function historyRecordEvents(records: readonly SessionHistoryRecord[]): SessionWireEvent[] {
+  return records.map(record => record.event)
 }
 
 function historyLoadingFailure(): DesktopHostRpcResult {

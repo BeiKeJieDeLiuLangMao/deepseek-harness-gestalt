@@ -10,7 +10,6 @@
     "types": ["node"]
   },
   "files": [
-    "companion-host-assembled.spec.ts",
     "companion-fixture/driver.ts",
     "companion-fixture/driver.spec.ts",
     "companion-fixture/wire.ts"

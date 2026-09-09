@@ -38,6 +38,7 @@ function historyFixture(): string {
   session.append('step/start', { turn: 1, step: 1 })
   session.append('assistant/message', {
     turn: 1, step: 1,
+    stream: [],
     message: createMessage({
       role: 'assistant', content: [{ type: 'text', text: READY }],
       source: { kind: 'model', provider: 'fixture', model: 'fixture' },

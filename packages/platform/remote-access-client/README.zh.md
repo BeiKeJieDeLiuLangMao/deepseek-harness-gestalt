@@ -9,6 +9,20 @@ kind: "package-reference"
 
 ## 概述
 
+通过公共 HTTP 服务配对 Desktop 与 Mobile Installation，并维护其已鉴权 Remote Relay 生命周期。客户端校验每个应答、保留容量重试元数据，并且只公开 branded 配对 id。产品控制器持有 Account 鉴权和握手密钥；传输层承载不透明消息，并且只在端点授予的权限内重连。
+
+## 目录
+
+- [包约定](#package-contract)
+- [模型体验](#model-experience)
+- [已知限制与暂缓事项](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+-----
+
+<a id="package-contract"></a>
+## 包约定
+
 面向公开远程访问服务的 Desktop 与 Mobile 鉴权 HTTP 传输。每次操作转发一份当前安装的账号证明，并在暴露带品牌的个人配对标识符前校验所有 JSON 响应。`QUOTA` 与 `PLATFORM_CAPACITY` 会把整数秒 `retryAfter` 保留在抛出的 `RemoteAccessError` 上。
 
 HTTP 客户端不实现握手，也不存储配对密钥。产品控制器提供已登录账号的鉴权信息，端点持有的 Snow owner 通过 Platform mailbox 交换不透明握手消息。确认后，Mobile pairing controller 通过密码 adapter 打开封装的 endpoint 专属 Relay authority，并配置 `MobileRelayEndpointLifecycle`；该生命周期可在存活附着上发送，`unpair()` 会调用 `configure(undefined)`，因此该生命周期不再持有 authority。控制器不会收到 Desktop credential。
@@ -18,14 +32,6 @@ HTTP 客户端不实现握手，也不存储配对密钥。产品控制器提供
 浏览器与 Node adapter 会在物理 socket 上执行 Relay wire 上限，并把消息送入同时限制 item 数与字节数的在线 queue。消费者阻塞或入站 frame 超限时会关闭 socket，而不是累积无 owner 的密文。接收的密文必须指向当前 route 与目标 attachment，endpoint callback 才能观察它。
 
 Desktop 设置所有者只在手机访问开启期间启动该生命周期。它会在 lifecycle authority 串行区内发起物理启动，但释放串行区后才等待网络就绪，因此 WSS attachment 等待期间，设置同步与配对操作仍然可用。关闭窗口会退出 Desktop 进程；sleep、quit、退出账号或关闭手机访问都会停止并排空 socket。不存在 daemon、后台 Host 或 remote wake 路径。
-
-## 目录
-
-- [模型体验](#model-experience)
-- [已知限制与暂缓事项](#known-limitations-and-deferred-work)
-- [开发备注](#dev-note)
-
------
 
 <a id="model-experience"></a>
 ## 模型体验

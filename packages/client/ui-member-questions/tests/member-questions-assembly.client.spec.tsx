@@ -37,7 +37,7 @@ function bindSnapshot<Snapshot>(value: Snapshot): SnapshotSelectorHook<Snapshot>
 }
 
 const inputState: InputState = {
-  draft: '', imageIds: [], draftRev: 0, phase: 'plain',
+  draft: '', attachmentIds: [], draftRev: 0, phase: 'plain',
   occurrences: [], queue: [], annotations: [],
 }
 
@@ -127,7 +127,7 @@ describe('three Client applies: session-controller, member-questions, user-quest
         useProjection: () => undefined,
         useInput: bindSnapshot(inputState),
         inputActions: {
-          setDraft: () => {}, addImages: () => false, removeImage: () => {}, pruneImages: () => {},
+          setDraft: () => {}, addAttachments: () => false, removeAttachment: () => {}, pruneAttachments: () => {},
           submit: () => {}, addTextAnnotation: () => { throw new Error('unused') },
           updateTextAnnotation: () => {}, removeTextAnnotation: () => {}, discardTextAnnotations: () => {},
           addImagePin: () => { throw new Error('unused') }, updateImagePin: () => {},
@@ -260,7 +260,7 @@ describe('three Client applies: session-controller, member-questions, user-quest
       props.renderSlot('conversation.input.dock', {
         session: sessionSnapshot(SID),
         input: {
-          draft: '', imageIds: [], draftRev: 0, phase: 'plain',
+          draft: '', attachmentIds: [], draftRev: 0, phase: 'plain',
           occurrences: [], queue: [], annotations: [],
         },
       })

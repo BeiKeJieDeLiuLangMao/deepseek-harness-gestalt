@@ -9,10 +9,11 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-client-ui-user-questions` is the web question feature plugin: its browser half registers the `question` entry in the conversation-owned `conversation.composer` chain, so when the agent asks the user a question the composer is taken over by the question UI. It also occupies `question.presentation` for JSON questions plus Host answer and cancel callbacks, so a member-question dock can declare that child without importing `PendingQuestion`. The component renders one question at a time with progress navigation, single- and multi-select choices, recommendation badges, and custom answers, and submits one structured answer batch for the whole request. A request whose single question declares a presentation intent renders as that intent's own surface instead — notably the `plan-review` waiting-approval card with `Chat about it` / `Refuse` / `Approve`. Its host half is empty on purpose: mounting `dsh-tool-ask-user` there would put the tool in the registry's global layer and merge it into every agent regardless of the preset that composed it.
+Answer `ask_user_question` requests through a composer takeover that preserves progress, single or multiple choices, recommendations, custom answers, and one structured settlement. Presentation intents can replace the ordinary form, including the plan-review approval card. The browser package owns the UI and callbacks; tool registration remains with the composing preset.
 
 ## Table of Contents
 
+- [Package contract](#package-contract)
 - [Use this package](#use-this-package)
 - [Understand the implementation](#understand-the-implementation)
 - [Further Exploration](#further-exploration)
@@ -21,6 +22,11 @@ English | [中文](README.zh.md)
 - [Dev Note](#dev-note)
 
 -----
+
+<a id="package-contract"></a>
+## Package contract
+
+`dsh-client-ui-user-questions` is the web question feature plugin: its browser half registers the `question` entry in the conversation-owned `conversation.composer` chain, so when the agent asks the user a question the composer is taken over by the question UI. It also occupies `question.presentation` for JSON questions plus Host answer and cancel callbacks, so a member-question dock can declare that child without importing `PendingQuestion`. The component renders one question at a time with progress navigation, single- and multi-select choices, recommendation badges, and custom answers, and submits one structured answer batch for the whole request. A request whose single question declares a presentation intent renders as that intent's own surface instead — notably the `plan-review` waiting-approval card with `Chat about it` / `Refuse` / `Approve`. Its host half is empty on purpose: mounting `dsh-tool-ask-user` there would put the tool in the registry's global layer and merge it into every agent regardless of the preset that composed it.
 
 <a id="use-this-package"></a>
 ## Use this package

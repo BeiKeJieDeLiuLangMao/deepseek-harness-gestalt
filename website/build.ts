@@ -1,11 +1,9 @@
-/** Production documentation-site build with project-owned output preparation. */
+/** Documentation build-output lifecycle shared by the standard and MPA entrypoints. */
 
 import { lstatSync, realpathSync, rmSync, unlinkSync } from 'node:fs'
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
-import { pathToFileURL } from 'node:url'
-import { build } from 'vitepress'
+import { build } from './vitepress.ts'
 
-const websiteRoot = resolve(import.meta.dirname)
 type DocSiteBuildOptions = NonNullable<Parameters<typeof build>[1]>
 
 function escapesRoot(root: string, candidate: string): boolean {
@@ -69,18 +67,12 @@ export function docSiteBuildOptions(siteRoot: string, mpa: boolean): DocSiteBuil
   }
 }
 
-async function buildDocSite(siteRoot: string, mpa: boolean): Promise<void> {
-  const root = resolve(siteRoot)
-  await build(root, docSiteBuildOptions(root, mpa))
-}
-
-function parseMpa(args: string[]): boolean {
-  if (args.length === 0) return false
-  if (args.length === 1 && args[0] === '--mpa') return true
-  throw new Error(`website/build: expected no arguments or --mpa, got ${JSON.stringify(args)}.`)
-}
-
-const invokedPath = process.argv[1]
-if (invokedPath !== undefined && import.meta.url === pathToFileURL(resolve(invokedPath)).href) {
-  await buildDocSite(websiteRoot, parseMpa(process.argv.slice(2)))
+/**
+ * Build the fixed documentation website with a fresh resolved output directory.
+ * @param mpa - Whether to use VitePress's multi-page application build.
+ * @returns A promise that settles when VitePress finishes the documentation build.
+ */
+export async function buildDocumentationSite(mpa: boolean): Promise<void> {
+  const siteRoot = resolve(import.meta.dirname)
+  await build(siteRoot, docSiteBuildOptions(siteRoot, mpa))
 }

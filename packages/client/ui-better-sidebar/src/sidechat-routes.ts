@@ -210,8 +210,8 @@ function withModelSelection(
   base: AgentSetup,
   selection: ModelSelectionRef,
 ): AgentSetup {
-  return async (agentCtx) => {
-    await base(agentCtx)
+  return async (agentCtx, agent) => {
+    await base(agentCtx, agent)
     agentCtx.effect(
       () => installModelSelection(agentCtx, selection),
       'dsh-better-sidebar: Side Chat model selection',

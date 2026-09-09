@@ -12,14 +12,15 @@ import type {
   ReceivingMemberQuestionRecord, ReceivingQuestionBookView, SessionListState, SessionSnapshot,
 } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { PendingMemberQuestionView } from '@deepseek-ai/dsh-member-question-receiver/types'
-import { useState } from 'react'
+import { useState, useSyncExternalStore } from 'react'
 import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 import type { InputState } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { registerDomSnapshotSerializer, sessionSnapshot } from '@deepseek-ai/dsh-client-test-runtime'
 import {
   BACKGROUND_CLAMP, clampBackground, memberBriefOf, selectMemberQuestion,
   selectMemberQuestionRecords,
-  type MemberQuestionComposerProps, type MemberQuestionDockProps, type MemberQuestionRole,
+  type MemberQuestionComposerProps, type MemberQuestionDockProps, type MemberQuestionReferenceView,
+  type MemberQuestionRole,
 } from '../src/client/contract/slots.ts'
 import { MemberQuestionCard, MemberQuestionDock, MemberQuestionRecords } from '../src/client/MemberQuestionCard.tsx'
 import { en, zh } from '../src/client/locales.ts'
@@ -32,6 +33,9 @@ registerDomSnapshotSerializer()
 afterEach(cleanup)
 
 const SID = 's1' as SessionId
+const useResource = (() => ({
+  status: 'none' as const, value: undefined, failure: undefined, reload: () => {},
+})) as import('@deepseek-ai/dsh-client-ui-slots').GlobalStandardProps['useResource']
 
 /** Seat stub over a dictionary pair mirroring the real lookup chain: package dictionary, common vocabulary, `{name}` substitution. */
 const seatOver = (dict: Record<string, string>, question: Record<string, string>, common: Record<string, string>) =>
@@ -53,7 +57,7 @@ function unusedHook<Snapshot>(): SnapshotSelectorHook<Snapshot> {
 
 const inputState: InputState = {
   draft: '',
-  imageIds: [],
+  attachmentIds: [],
   draftRev: 0,
   phase: 'plain',
   occurrences: [],
@@ -68,6 +72,7 @@ const kit = {
   input: inputState,
   SessionProvider: ({ children }) => children,
   useSession: unusedHook<SessionSnapshot>(),
+  useResource,
   useSessions: unusedHook<SessionListState>(),
   useSessionPendingInteraction: unusedHook<HookSnapshot<MemberQuestionComposerProps['useSessionPendingInteraction']>>(),
   useWorkspaces: unusedHook<HookSnapshot<MemberQuestionComposerProps['useWorkspaces']>>(),
@@ -78,9 +83,9 @@ const kit = {
   useInput: selector => selector(inputState),
   inputActions: {
     setDraft: () => {},
-    addImages: () => false,
-    removeImage: () => {},
-    pruneImages: () => {},
+    addAttachments: () => false,
+    removeAttachment: () => {},
+    pruneAttachments: () => {},
     submit: () => {},
     addTextAnnotation: () => { throw new Error('unused') },
     updateTextAnnotation: () => {},
@@ -92,7 +97,7 @@ const kit = {
 } satisfies Pick<
   MemberQuestionComposerProps,
   | 'sessionId' | 'session' | 'input' | 'SessionProvider'
-  | 'useSession' | 'useSessions' | 'useSessionPendingInteraction'
+  | 'useSession' | 'useResource' | 'useSessions' | 'useSessionPendingInteraction'
   | 'useWorkspaces' | 'useConversation' | 'useChat' | 'useTrajectory'
   | 'useProjection' | 'useInput' | 'inputActions'
 >
@@ -275,11 +280,14 @@ function receivingProps(
   wait?: PendingMemberQuestionView,
   records: readonly ReceivingMemberQuestionRecord[] = [],
   questionT: ReturnType<typeof seat> = seat('question'),
+  useReferenceView: MemberQuestionComposerProps['useReferenceView'] = selector => selector({ paths: [] }),
 ) {
   const view = receivingView(wait, records)
   const useReceivingQuestions: SnapshotSelectorHook<ReceivingQuestionBookView> = selector => selector(view)
   return {
     useReceivingQuestions,
+    useReferenceView,
+    referencePath: (_sessionId: SessionId, path: string) => `/bound-workspace/${path}`,
     settle: vi.fn<MemberQuestionComposerProps['settle']>(async () => {}),
     decline: vi.fn<MemberQuestionComposerProps['decline']>(async () => {}),
     renderSlot: ((_name: 'question.presentation', owner: {
@@ -302,12 +310,13 @@ function receivingProps(
 function renderCard(
   carrier: PendingMemberQuestionView,
   openReference: MemberQuestionComposerProps['openReference'] = () => {},
+  useReferenceView: MemberQuestionComposerProps['useReferenceView'] = selector => selector({ paths: [] }),
 ) {
   return render(
     <MemberQuestionCard
       matched={carrier}
       {...kit}
-      {...receivingProps(carrier)}
+      {...receivingProps(carrier, [], seat('question'), useReferenceView)}
       t={seat('member-question')}
       openReference={openReference}
     />,
@@ -536,10 +545,20 @@ describe('MemberQuestionCard', () => {
     expect(screen.getByRole('button', { name: '收起问题卡片' })).toBeTruthy()
   })
 
-  it('opens a referenced document through Files and restores the decision beside the open details panel', async () => {
+  it('folds only for this Session\'s visible referenced Files viewer and restores beside it', async () => {
     const openReference = vi.fn()
     const { carrier } = memberWait()
-    const { container } = renderCard(carrier, openReference)
+    let referenceView: MemberQuestionReferenceView = { paths: [] }
+    const listeners = new Set<() => void>()
+    const useReferenceView: MemberQuestionComposerProps['useReferenceView'] = selector => useSyncExternalStore(
+      (listener) => { listeners.add(listener); return () => { listeners.delete(listener) } },
+      () => selector(referenceView),
+    )
+    const setReferenceView = (next: MemberQuestionReferenceView): void => {
+      referenceView = next
+      act(() => { for (const listener of listeners) listener() })
+    }
+    const { container } = renderCard(carrier, openReference, useReferenceView)
 
     fireEvent.click(screen.getByRole('button', { name: /roster\.md/ }))
     expect(openReference).toHaveBeenCalledWith(
@@ -550,36 +569,30 @@ describe('MemberQuestionCard', () => {
       SID, '.dsh/member-questions/question-1/activity.csv', 'activity.csv',
     )
 
-    // Panel opens → the card folds to its strip; panel closes → restored.
-    // The linkage rides the persistent details column's aria-expanded. The
-    // panel mounts first, so the attribute flips are observed mutations.
-    const panel = document.createElement('div')
-    panel.setAttribute('data-details-panel', '')
-    document.body.appendChild(panel)
-    try {
-      panel.setAttribute('aria-expanded', 'true')
-      await waitFor(() => { expect(container.querySelector('[data-folded]')).toBeTruthy() })
-      expect(screen.getByText('远端 · 王小明')).toBeTruthy()
+    setReferenceView({
+      sessionId: 'another-session',
+      paths: ['/bound-workspace/.dsh/member-questions/question-1/roster.md'],
+    })
+    expect(container.querySelector('[data-folded]')).toBeNull()
+    setReferenceView({ sessionId: SID, paths: ['/bound-workspace/unrelated.md'] })
+    expect(container.querySelector('[data-folded]')).toBeNull()
+    setReferenceView({
+      sessionId: SID,
+      paths: ['/bound-workspace/.dsh/member-questions/question-1/roster.md'],
+    })
+    await waitFor(() => { expect(container.querySelector('[data-folded]')).toBeTruthy() })
+    expect(screen.getByText('远端 · 王小明')).toBeTruthy()
 
-      fireEvent.click(screen.getByRole('button', { name: '远端 · 王小明' }))
-      await waitFor(() => { expect(container.querySelector('[data-folded]')).toBeNull() })
-      expect(panel.getAttribute('aria-expanded')).toBe('true')
-      expect(screen.getByText('将王小明移出项目吗？')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '远端 · 王小明' }))
+    await waitFor(() => { expect(container.querySelector('[data-folded]')).toBeNull() })
+    expect(screen.getByText('将王小明移出项目吗？')).toBeTruthy()
 
-      fireEvent.click(screen.getByRole('button', { name: '收起问题卡片' }))
-      await waitFor(() => { expect(container.querySelector('[data-folded]')).toBeTruthy() })
-      fireEvent.click(screen.getByRole('button', { name: '远端 · 王小明' }))
-      await waitFor(() => { expect(container.querySelector('[data-folded]')).toBeNull() })
-      fireEvent.click(screen.getByRole('button', { name: '展开问题卡片' }))
-      await waitFor(() => { expect(screen.getByText('将王小明移出项目吗？')).toBeTruthy() })
-
-      panel.setAttribute('aria-expanded', 'false')
-      await waitFor(() => { expect(container.querySelector('[data-folded]')).toBeNull() })
-      panel.setAttribute('aria-expanded', 'true')
-      await waitFor(() => { expect(container.querySelector('[data-folded]')).toBeTruthy() })
-    } finally {
-      panel.remove()
-    }
+    setReferenceView({ sessionId: SID, paths: [] })
+    setReferenceView({
+      sessionId: SID,
+      paths: ['/bound-workspace/.dsh/member-questions/question-1/roster.md'],
+    })
+    await waitFor(() => { expect(container.querySelector('[data-folded]')).toBeTruthy() })
   })
 
   it('does not open a chip without a receiver-owned cached path', () => {

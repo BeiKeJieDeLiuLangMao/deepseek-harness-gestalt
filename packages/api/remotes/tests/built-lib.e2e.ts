@@ -51,6 +51,7 @@ describe.skipIf(!requiredArtifacts)('generated Remote built LIB chains', () => {
     const script = `
       import { createServer } from 'node:http'
       import * as cordis from '@deepseek-ai/cordis'
+      import * as zod from 'zod'
 
       const urls = ${JSON.stringify(urls)}
       const { Context } = cordis
@@ -174,6 +175,7 @@ describe.skipIf(!requiredArtifacts)('generated Remote built LIB chains', () => {
         if (handoff === undefined) throw new Error('missing Client bundle handoff ' + id)
         return handoff.factory(specifier => {
           if (specifier === '@deepseek-ai/cordis') return cordis
+          if (specifier === 'zod') return zod
           throw new Error('unexpected Client external ' + specifier)
         })
       }

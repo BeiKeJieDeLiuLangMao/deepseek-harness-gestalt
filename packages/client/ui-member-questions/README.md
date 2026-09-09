@@ -9,9 +9,23 @@ English | [中文](README.zh.md)
 
 ## Summary
 
+Present member-directed `ask_user_question` requests above the composer with a Decision Brief and the shared question UI. The card preserves pagination, selections, custom answers, settlement, minimization, and drafts while document-focus state may fold it. Generic questions and plan review remain on the shared question chain.
+
+## Table of Contents
+
+- [Package contract](#package-contract)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
+
+-----
+
+<a id="package-contract"></a>
+## Package contract
+
 Presents member-directed `ask_user_question` requests as a composite card: the remote Decision Brief banner (remote tag, asker identity and role, project, source session, expiry countdown, clamped background, material chips) over the shared question presentation, which keeps pagination, multi-select, recommendation badges, custom answers, and settlement as its native behavior.
 
-The package registers an additive `conversation.input.dock` entry above the product composer. A Host pending member-question row renders the Decision Brief there; `plan-review` and generic composer takeovers stay on the shared question chain. Observing the shared presentation's own minimize toggle folds the whole card to a 「远端 · 发起人」 strip and marks it collapsed; the presentation stays mounted, so its drafts survive.
+The package registers an additive `conversation.input.dock` entry above the product composer. A Host pending member-question row renders the Decision Brief there; `plan-review` and generic composer takeovers stay on the shared question chain. The shared presentation's minimize toggle folds the whole card to a 「远端 · 发起人」 strip. A visible active Files viewer also folds it when its path belongs to this card and its Better Sidebar state belongs to the same receiving Session. Hiding that viewer, activating another tab, or switching Sessions restores the card; the presentation stays mounted, so its drafts survive.
 
 The shipped Web application mounts this package as the `ui-member-questions` Loader row for both Web and Desktop. The Client module registry discovers only active Loader rows; the package's `dsh.client` declaration orders its dependencies but does not activate the package by itself.
 
@@ -20,14 +34,6 @@ Material chips open only the receiver-owned cached copy through Better Sidebar F
 `ReceivingQuestionBook` is the only Host snapshot owner. It stores Host pending views from generated `memberQuestion.snapshot`, settles through `memberQuestion.settle` after a successful Remote write, and refreshes on `member-question-receiver/changed`. The dock maps Host questions into JSON and declares `question.presentation` with Host answer and cancel callbacks. `PendingQuestion` and drafts stay in ui-user-questions. A failed Host settle leaves the Host pending view and the QuestionComposer drafts.
 
 Answered, declined, expired, withdrawn, and superseded records remain visible as passive bands after the pending card disappears. An answer won by another Installation renders as answered elsewhere with the winning device name and settlement time. The unchanged product composer submits through the receiving face's single admission RPC; the card does not mount a second textarea and the renderer does not issue separate Session creation and prompt calls.
-
-## Table of Contents
-
-- [Model Experience](#model-experience)
-- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
-- [Dev Note](#dev-note)
-
------
 
 <a id="model-experience"></a>
 ## Model Experience

@@ -1,4 +1,4 @@
-# Agent Note: fork child 生命周期由组合决定
+# Agent Note: Fork child 保留 parent 请求前缀
 
 Status: implemented
 

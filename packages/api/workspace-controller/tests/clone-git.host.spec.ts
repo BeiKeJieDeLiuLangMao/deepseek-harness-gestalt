@@ -58,7 +58,6 @@ function collected(text = '', stderrText = ''): SubprocessHandle['collected'] {
 
 function handle(outcome: SubprocessOutcome = { exitCode: 0, signal: null }): SubprocessHandle {
   return {
-    pid: 1,
     stdin: undefined,
     stdout: undefined,
     stderr: undefined,

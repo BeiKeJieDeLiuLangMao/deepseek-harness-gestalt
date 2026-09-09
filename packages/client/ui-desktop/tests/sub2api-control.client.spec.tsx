@@ -229,9 +229,13 @@ describe('Sub2ApiControl', () => {
 })
 
 function renderControl(snapshot: DesktopSub2ApiSnapshot): ReturnType<typeof render> {
+  const useResource = (() => ({
+    status: 'none' as const, value: undefined, failure: undefined, reload: () => {},
+  })) as import('@deepseek-ai/dsh-client-ui-slots').GlobalStandardProps['useResource']
   return render(
     <Sub2ApiControl
       t={t as never}
+      useResource={useResource}
       useSessions={(() => { throw new Error('unused') })}
       useSessionPendingInteraction={(() => { throw new Error('unused') })}
       useWorkspaces={(() => { throw new Error('unused') })}

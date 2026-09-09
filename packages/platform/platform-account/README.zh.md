@@ -9,19 +9,25 @@ kind: "package-reference"
 
 ## 概述
 
-本包定义 Platform 账号身份及绑定到单个 Desktop 或 Mobile 安装的账号会话服务。`AccountService` 通过 `ctx.platformAccount` 拥有登录尝试创建、GitHub 回调完成、签名轮询、访问令牌刷新、当前账号读取、已鉴别当前安装读取、当前安装退出登录和连接跟踪。Mobile Login Attempt 会把有界设备名称与 iOS 或 Android 平台提交到生成的 Account Session。`currentInstallation()` 会随账号投影返回由提供方绑定的 Installation id、类型与 Mobile 展示，因此其他能力无需读取账号表，也无需信任调用方自行提供的身份字段。Quota admission 只按行是否存在检查已有 Installation，不解码旧会话 payload，因此强制登录可以原子替换引入展示字段前创建的 Mobile 行。
-
-公共类型对账号、登录尝试、账号会话、安装和证明 JTI id 使用品牌类型。运行时 `AccountError` 为无效或过期尝试、无效或重放证明、过期或已撤销会话，以及携带秒级 `retryAfter` 的开放注册 `QUOTA` / `PLATFORM_CAPACITY` 失败提供稳定错误码；`./types` 子路径保持仅含类型。规格固定上限为每个账号 10 个在线 Desktop 安装、10 个在线 Mobile 安装，以及 20 条并发被跟踪连接。可选的共享 `PlatformCapacityState` 会拒绝新的登录，已建立会话仍可使用。
-
-`loadOperatedPlatformEnvironment` 是产品入口 parser：它只接受一套完整生产身份，并拒绝本地 origin。`loadPlatformEnvironment` 仅供 example 与测试等范围受限的 composition 校验并选择开发／生产身份对。产品客户端通过部署所有的构建产物取得实际运行身份，不提供运行时开发 selector。
+使用 `AccountService` 创建并完成 Platform 登录尝试、刷新会话、读取当前 Account 与 Installation、注销并跟踪连接。每个 Account 会话都绑定到一个 Desktop 或 Mobile Installation，Mobile 登录保留有界设备呈现。branded id 与提供方绑定身份避免调用方提供 Account 表字段。
 
 ## 目录
 
+- [包约定](#package-contract)
 - [模型体验](#model-experience)
 - [已知限制与暂缓事项](#known-limitations-and-deferred-work)
 - [开发备注](#dev-note)
 
 -----
+
+<a id="package-contract"></a>
+## 包约定
+
+本包定义 Platform 账号身份及绑定到单个 Desktop 或 Mobile 安装的账号会话服务。`AccountService` 通过 `ctx.platformAccount` 拥有登录尝试创建、GitHub 回调完成、签名轮询、访问令牌刷新、当前账号读取、已鉴别当前安装读取、当前安装退出登录和连接跟踪。Mobile Login Attempt 会把有界设备名称与 iOS 或 Android 平台提交到生成的 Account Session。`currentInstallation()` 会随账号投影返回由提供方绑定的 Installation id、类型与 Mobile 展示，因此其他能力无需读取账号表，也无需信任调用方自行提供的身份字段。Quota admission 只按行是否存在检查已有 Installation，不解码旧会话 payload，因此强制登录可以原子替换引入展示字段前创建的 Mobile 行。
+
+公共类型对账号、登录尝试、账号会话、安装和证明 JTI id 使用品牌类型。运行时 `AccountError` 为无效或过期尝试、无效或重放证明、过期或已撤销会话，以及携带秒级 `retryAfter` 的开放注册 `QUOTA` / `PLATFORM_CAPACITY` 失败提供稳定错误码；`./types` 子路径保持仅含类型。规格固定上限为每个账号 10 个在线 Desktop 安装、10 个在线 Mobile 安装，以及 20 条并发被跟踪连接。可选的共享 `PlatformCapacityState` 会拒绝新的登录，已建立会话仍可使用。
+
+`loadOperatedPlatformEnvironment` 是产品入口 parser：它只接受一套完整生产身份，并拒绝本地 origin。`loadPlatformEnvironment` 仅供 example 与测试等范围受限的 composition 校验并选择开发／生产身份对。产品客户端通过部署所有的构建产物取得实际运行身份，不提供运行时开发 selector。
 
 <a id="model-experience"></a>
 ## 模型体验

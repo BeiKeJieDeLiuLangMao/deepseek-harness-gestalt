@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import type { GlobalStandardProps } from '@deepseek-ai/dsh-client-ui-slots'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -14,7 +15,11 @@ import {
   inputActions, inputState as createInputState,
 } from '@deepseek-ai/dsh-client-test-runtime'
 
+// Every session-scope fixture carries the resource hook the resources plugin merges into GlobalStandardProps.
+const useResource = (() => ({ status: 'none' as const, value: undefined, failure: undefined, reload: () => {} })) as GlobalStandardProps['useResource']
+
 afterEach(cleanup)
+
 
 const SID = 's1' as SessionId
 
@@ -106,6 +111,7 @@ const kit: Omit<QuestionComposerProps, 'matched'> = {
   pendingInteraction: undefined,
   useSession: selector => selector(sessionState),
   useSessions: selector => selector(sessionList),
+  useResource,
   useSessionPendingInteraction: selector => selector(attentionState),
   useWorkspaces: selector => selector(workspaceState),
   useConversation: selector => selector(conversationState),

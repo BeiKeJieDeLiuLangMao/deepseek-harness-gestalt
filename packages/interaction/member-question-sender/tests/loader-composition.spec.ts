@@ -10,8 +10,8 @@ import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import UserQuestions from '@deepseek-ai/dsh-user-questions'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
-import AgentRegistry, { Inbox, type Agent } from '@deepseek-ai/dsh-agent'
-import { Session, SessionId } from '@deepseek-ai/dsh-session'
+import AgentRegistry, { type Agent } from '@deepseek-ai/dsh-agent'
+import { Session, SessionId, SESSION_FORMAT_VERSION } from '@deepseek-ai/dsh-session'
 import { parseInstallationId, parsePlatformAccountId } from '@deepseek-ai/dsh-platform-account'
 import { parseCompanionSessionId, parseMemberQuestionProjectId } from '@deepseek-ai/dsh-remote-protocol'
 import * as toolAskUser from '@deepseek-ai/dsh-tool-ask-user'
@@ -31,6 +31,14 @@ interface Delivered extends EncodedMemberQuestion {
   toProjectMember: string
   projectId: ReturnType<typeof parseMemberQuestionProjectId>
   documents: readonly EncodedMemberQuestionDocument[]
+}
+
+function unsupportedInbox(): Agent['inbox'] {
+  const reject = (): never => { throw new Error('this test Agent does not support Inbox mutations') }
+  return {
+    nextTurn: [], nextStep: [], clear: reject, append: reject, prepend: reject,
+    replace: reject, remove: reject, splice: reject,
+  }
 }
 
 class DeferredDelivery implements MemberQuestionDeliveryPort {
@@ -67,10 +75,12 @@ async function testAgent(context: Context, cwd: string): Promise<{ agent: Agent;
   const agentScope = context.plugin(() => undefined)
   await agentScope
   const id = SessionId('loader-session')
-  const session = Session.create(id, undefined, { version: 0, id, createdAt: 0, cwd, isSeeded: false })
+  const session = Session.create(id, undefined, {
+    version: SESSION_FORMAT_VERSION, id, createdAt: 0, cwd, isSeeded: false,
+  })
   const agent: Agent = {
     id, options: {}, session,
-    inbox: new Inbox(session, { inserted() {}, discarded() {}, claimed() {} }),
+    inbox: unsupportedInbox(),
     status: 'idle', ctx: agentScope.ctx, send() {}, followup() {},
     steer: () => ({ outcome: Promise.resolve({ status: 'rejected' as const }) }),
     inject() {}, cancel() {},

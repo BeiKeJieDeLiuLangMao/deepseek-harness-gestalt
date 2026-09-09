@@ -6,13 +6,13 @@ Status: implemented
 
 ## Problem
 
-文档站只提供渲染后的 HTML，agent 读文档要么抓取 VitePress 标记，要么退回仓库源文件，而后者的链接和图片引用跟随源码布局而非公开路由。Claude 平台文档确立了本特性采纳的约定：任意页面 URL 加 `.md` 后缀即得到该页的原始 Markdown，站根 `llms.txt` 作为面向 agent 的索引。[站点投影](2026-07-13-documentation-site-projection.zh.md)本就为公开站点重写每页链接，缺的只是把这份投影以纯 Markdown 形式对外提供。
+文档站只提供渲染后的 HTML，agent 读文档要么抓取 VitePress 标记，要么退回仓库源文件，而后者的链接和图片引用跟随源码布局而非公开路由。Claude 平台文档确立了本特性采纳的约定：任意页面 URL 加 `.md` 后缀即得到该页的原始 Markdown，站根 `llms.txt` 作为面向 agent 的索引。[站点投影](../../../skills/dsh-doc/references/website-sync.md)本就为公开站点重写每页链接，缺的只是把这份投影以纯 Markdown 形式对外提供。
 
 ## Decision
 
 `vitepress build` 结束时向构建输出发射每个已发布路由的纯 Markdown 孪生页。`emitRawMarkdownPages` 复用填充 `website/.generated/` 的同一趟 manifest 加投影器流程，但以原始页面内容写入 `<outDir>/<route>`：不带 `editSource`/`outline` 投影 frontmatter，不做 locale 首页截断——frontmatter 是 VitePress 的渲染配置，孪生页丢弃它并保留正文——仓库版式（语言切换行、徽章）的剥离与渲染站一致。页面引用的图片复制到孪生页旁边。
 
-每次文档构建都将已解析的完整 `outDir` 作为可丢弃的自有输出。`buildDocumentationSite` 将构建根目录固定为 `website/`；删除函数与 VitePress 生命周期回调均保持为 `website/build.ts` 的私有实现，因此调用方无法要求该能力删除任意路径。VitePress 加载固定站点的配置后、写入当次 bundle 或 `public/` 文件前，该回调会删除已解析的输出；若输出路径是链接，则只解除链接而不遍历其目标。纯 Markdown 投影不在 `buildEnd` 删除文件，因此它的冲突检查能看到当次构建产生的每个文件，并仍会拒绝与 public 文件、页面或图片同路径的输出。
+每次文档构建都将已解析的完整 `outDir` 作为可丢弃的自有输出。`buildDocumentationSite` 将构建入口固定为 `website/`，`docSiteBuildOptions` 只接受该入口所给站点根目录下的输出。配置加载后、写入当次 bundle 或 `public/` 文件前，该回调会删除该输出；若输出路径是链接，则只解除链接而不遍历其目标；若输出的现有父目录解析到站点根目录之外，则拒绝该输出。纯 Markdown 投影不在 `buildEnd` 删除文件，因此它的冲突检查能看到当次构建产生的每个文件，并仍会拒绝与 public 文件、页面或图片同路径的输出。
 
 一份投影同时服务两棵树，因为站内链接是相对路径。`./sibling.md` 在 HTML 站渲染为 clean URL，在原始树中按文件对文件解析，孪生页不需要第二套链接改写模式。所有路由都被发射，包括仅有 frontmatter 的 locale 首页：已发布页面链接到它们，原始树必须保持链接封闭；一个 spec 遍历发射树中的每条相对链接来钉住这条闭合性。
 

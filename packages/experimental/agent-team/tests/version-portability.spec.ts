@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { SessionId, SessionSeq } from '@deepseek-ai/dsh-session'
+import { SESSION_FORMAT_VERSION, SessionId, SessionSeq } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { foldTeam } from '../src/fold.ts'
 import { teamProjectionDefinition } from '../src/projection.ts'
@@ -77,7 +77,9 @@ function normalizedProjection(state: TeamProjectionState) {
 }
 
 function project(events: readonly SessionEvent[]): TeamProjectionState {
-  let state = teamProjectionDefinition.init({ version: 0, id: ROOT, createdAt: 0, isSeeded: false })
+  let state = teamProjectionDefinition.init({
+    version: SESSION_FORMAT_VERSION, id: ROOT, createdAt: 0, isSeeded: false,
+  })
   for (const event of events) state = teamProjectionDefinition.apply(state, event)
   return state
 }

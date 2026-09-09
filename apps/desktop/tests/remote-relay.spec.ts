@@ -1061,7 +1061,7 @@ describe('Desktop Remote Relay composition', () => {
   it('uses the Node WSS adapter when the product composition supplies no socket override', async () => {
     const socket = new TestRelaySocket()
     const connect = vi.spyOn(NodeRelayEndpointSocket, 'connect')
-      .mockResolvedValue(socket as unknown as NodeRelayEndpointSocket)
+      .mockResolvedValue(socket)
     const relay = createDesktopRemoteRelay({
       environment: PRODUCTION, config: RELAY_CONFIG,
       snowPairingVault: new DesktopSnowPairingVault(), initializeWasm: () => {},

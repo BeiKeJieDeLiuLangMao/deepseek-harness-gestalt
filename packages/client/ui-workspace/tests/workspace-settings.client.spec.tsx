@@ -51,6 +51,9 @@ const workspaceState = (items: readonly WorkspaceView[]): WorkspaceSnapshot => (
   items, archivedSessionIds: [], state: 'idle', phase: 'ready', error: null,
 })
 const noPendingInteraction: SessionPendingInteractionSnapshot = new Map()
+const useResource = (() => ({
+  status: 'none' as const, value: undefined, failure: undefined, reload: () => {},
+})) as import('@deepseek-ai/dsh-client-ui-slots').GlobalStandardProps['useResource']
 function hook<T>(snapshot: T) {
   return function select<S>(selector: (state: T) => S): S { return selector(snapshot) }
 }
@@ -149,6 +152,7 @@ function mount(membership: ProjectMembershipGateway | undefined, overrides: Part
   const props: WorkspaceBrowserProps = {
     wide: true,
     expandSidebar: vi.fn(),
+    useResource,
     useSessions: hook(sessionState([summary('alpha-s', 2)])),
     useSessionPendingInteraction: hook(noPendingInteraction),
     useWorkspaces: hook(workspaceState([workspace('proj', ['alpha-s'])])),

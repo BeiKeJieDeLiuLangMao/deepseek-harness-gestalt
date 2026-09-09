@@ -16,7 +16,12 @@ import { InputHub } from '../src/client/input/hub.ts'
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
-/** Compiler labels required by every shell construction (the hub always supplies them). */
+const commandAttachments = {
+  serialize: () => Promise.resolve([]),
+  release: () => {},
+  unsupportedNotice: (token: string) => `${token.trim()} attachments-unsupported`,
+}
+
 const LABELS = {
   heading: (index: number) => `Annotation ${index}`,
   quote: (value: string) => `Quoted text: “${value}”`,
@@ -26,7 +31,7 @@ const LABELS = {
 }
 
 function makeShell(deps: Partial<SessionInputDeps> = {}): SessionInputShell {
-  return new SessionInputShell({
+  return new SessionInputShell({ commandAttachments,
     actx: {} as Context,
     defaultSink: vi.fn(() => Promise.resolve({ kind: 'success' as const })),
     annotationLabels: LABELS,

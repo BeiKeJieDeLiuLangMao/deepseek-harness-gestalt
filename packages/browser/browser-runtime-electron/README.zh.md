@@ -9,18 +9,24 @@ kind: "package-reference"
 
 ## 概述
 
-这是服务临时、命名持久与共享 Profile 的进程内 Electron Browser Runtime Provider。它用本进程的 `session.fromPartition` 与页面 `WebContentsView` 实现 `ctx.browserRuntime`。截图使用 `webContents.capturePage`；首次出现 Chromium `UnknownVizError` 时，会在同一操作时限内等待一个动画帧并重试一次，其他截图失败和重试失败都会拒绝。页面文本使用 `executeJavaScript`。命名与共享 Profile 恢复 `persist:session-*` partition；临时 Profile 使用没有 `persist:` 前缀的临时 `session-*` partition，Chromium 只在内存中保存其身份，磁盘上不留任何可复用内容。Chromium persist partition 位于 Electron `userData/Partitions/<name>`，绝不写入 `~/Library/Application Support/Tandem Browser`。
-
-插件仅在 `process.versions.electron` 已设置，或 Node 测试通过 `@deepseek-ai/dsh-browser-runtime-electron/testing` 安装 host 时加载。在普通 Node 上组合会在加载时失败。Desktop Host 把同一份 `webContents` 作为 `WebContentsView` 加到 Host `contentView` 上。不用子 `BrowserWindow`：对其调用 `setParentWindow` 会在 macOS Electron 41 上 SIGSEGV。
+在应用进程内运行临时、具名持久或共享的 Electron 浏览器 Profile。提供方使用 Electron partition 和 `WebContentsView` 页面，仅针对 Chromium 首次出现的 `UnknownVizError` 在操作期限内重试一次，并在 renderer 中读取页面文本。临时 Profile 不会在磁盘上留下可复用 partition，具名和共享 Profile 会恢复持久 partition。
 
 ## 目录
 
+- [包约定](#package-contract)
 - [配置](#configuration)
 - [模型体验](#model-experience)
 - [已知限制与后续工作](#known-limitations-and-deferred-work)
 - [开发备注](#dev-note)
 
 -----
+
+<a id="package-contract"></a>
+## 包约定
+
+这是服务临时、命名持久与共享 Profile 的进程内 Electron Browser Runtime Provider。它用本进程的 `session.fromPartition` 与页面 `WebContentsView` 实现 `ctx.browserRuntime`。截图使用 `webContents.capturePage`；首次出现 Chromium `UnknownVizError` 时，会在同一操作时限内等待一个动画帧并重试一次，其他截图失败和重试失败都会拒绝。页面文本使用 `executeJavaScript`。命名与共享 Profile 恢复 `persist:session-*` partition；临时 Profile 使用没有 `persist:` 前缀的临时 `session-*` partition，Chromium 只在内存中保存其身份，磁盘上不留任何可复用内容。Chromium persist partition 位于 Electron `userData/Partitions/<name>`，绝不写入 `~/Library/Application Support/Tandem Browser`。
+
+插件仅在 `process.versions.electron` 已设置，或 Node 测试通过 `@deepseek-ai/dsh-browser-runtime-electron/testing` 安装 host 时加载。在普通 Node 上组合会在加载时失败。Desktop Host 把同一份 `webContents` 作为 `WebContentsView` 加到 Host `contentView` 上。不用子 `BrowserWindow`：对其调用 `setParentWindow` 会在 macOS Electron 41 上 SIGSEGV。
 
 <a id="configuration"></a>
 ## 配置

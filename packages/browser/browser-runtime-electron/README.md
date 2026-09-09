@@ -9,18 +9,24 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-In-process Electron Browser Runtime Provider for temporary, named persistent, and shared Profiles. It implements `ctx.browserRuntime` with this process's `session.fromPartition` and page `WebContentsView`s. Screenshots use `webContents.capturePage`; an initial Chromium `UnknownVizError` waits for one animation frame and retries once within the same operation deadline, while every other capture failure and a failed retry reject. Page text uses `executeJavaScript`. Named and shared Profiles restore `persist:session-*` partitions; temporary Profiles use ephemeral `session-*` partitions without the `persist:` prefix, so Chromium keeps their identity in memory and leaves nothing reusable on disk. Chromium persist partitions live at Electron `userData/Partitions/<name>` and never write `~/Library/Application Support/Tandem Browser`.
-
-The plugin loads only when `process.versions.electron` is set or a Node test installs a host through `@deepseek-ai/dsh-browser-runtime-electron/testing`. Composing it on plain Node fails at load. Desktop Host presents the same `webContents` as a `WebContentsView` on the Host `contentView`. A child `BrowserWindow` is not used: `setParentWindow` on one SIGSEGV on macOS Electron 41.
+Run temporary, named persistent, or shared Electron browser Profiles inside the application process. It uses Electron partitions and `WebContentsView` pages, retries only Chromium's initial `UnknownVizError` once within the operation deadline, and reads page text in the renderer. Temporary Profiles leave no reusable partition on disk; named and shared Profiles restore persistent partitions.
 
 ## Table of Contents
 
+- [Package contract](#package-contract)
 - [Configuration](#configuration)
 - [Model Experience](#model-experience)
 - [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
 - [Dev Note](#dev-note)
 
 -----
+
+<a id="package-contract"></a>
+## Package contract
+
+In-process Electron Browser Runtime Provider for temporary, named persistent, and shared Profiles. It implements `ctx.browserRuntime` with this process's `session.fromPartition` and page `WebContentsView`s. Screenshots use `webContents.capturePage`; an initial Chromium `UnknownVizError` waits for one animation frame and retries once within the same operation deadline, while every other capture failure and a failed retry reject. Page text uses `executeJavaScript`. Named and shared Profiles restore `persist:session-*` partitions; temporary Profiles use ephemeral `session-*` partitions without the `persist:` prefix, so Chromium keeps their identity in memory and leaves nothing reusable on disk. Chromium persist partitions live at Electron `userData/Partitions/<name>` and never write `~/Library/Application Support/Tandem Browser`.
+
+The plugin loads only when `process.versions.electron` is set or a Node test installs a host through `@deepseek-ai/dsh-browser-runtime-electron/testing`. Composing it on plain Node fails at load. Desktop Host presents the same `webContents` as a `WebContentsView` on the Host `contentView`. A child `BrowserWindow` is not used: `setParentWindow` on one SIGSEGV on macOS Electron 41.
 
 <a id="configuration"></a>
 ## Configuration

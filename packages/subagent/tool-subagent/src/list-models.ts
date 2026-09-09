@@ -92,14 +92,11 @@ type DiscoveryAgent = Agent & { [DISCOVERY]?: SharedDiscovery | undefined }
 /**
  * Share one discovery definition among selectable tools on the same Agent.
  * @param ctx - the delegation-tool consumer's effect owner.
+ * @param owner - Agent whose scope owns the shared discovery definition.
  * @param policy - exact route policy captured for this Session.
  */
-export function registerListSubagentModels(ctx: Context, policy: ModelSelectionPolicy): void {
-  const agent: DiscoveryAgent | undefined = ctx.agent
-  if (agent === undefined) {
-    registerDiscovery(ctx, policy)
-    return
-  }
+export function registerListSubagentModels(ctx: Context, owner: Agent, policy: ModelSelectionPolicy): void {
+  const agent: DiscoveryAgent = owner
   const policyKey = JSON.stringify(policy.routes)
   ctx.effect(() => {
     let shared = agent[DISCOVERY]

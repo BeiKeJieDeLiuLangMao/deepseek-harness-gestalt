@@ -15,7 +15,7 @@ function unstubbed(name: keyof InputActions): never {
 export function inputState(overrides: Partial<InputState> = {}): InputState {
   return {
     draft: '',
-    imageIds: [],
+    attachmentIds: [],
     draftRev: 0,
     phase: 'plain',
     occurrences: [],
@@ -35,9 +35,9 @@ export function inputState(overrides: Partial<InputState> = {}): InputState {
 export function inputActions(overrides: Partial<InputActions> = {}): InputActions {
   return {
     setDraft: () => unstubbed('setDraft'),
-    addImages: () => unstubbed('addImages'),
-    removeImage: () => unstubbed('removeImage'),
-    pruneImages: () => unstubbed('pruneImages'),
+    addAttachments: () => unstubbed('addAttachments'),
+    removeAttachment: () => unstubbed('removeAttachment'),
+    pruneAttachments: () => unstubbed('pruneAttachments'),
     submit: () => unstubbed('submit'),
     addTextAnnotation: () => unstubbed('addTextAnnotation'),
     updateTextAnnotation: () => unstubbed('updateTextAnnotation'),

@@ -1,6 +1,29 @@
+---
+description: "Same-origin phone IO, screen-capture proxy, and managed Android or iOS agent recovery for Host browser consumers."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-phone-stream
 
 English | [中文](README.zh.md)
+
+## Summary
+
+Serve phone IO, screen capture, and managed agent recovery to browsers through same-origin Host routes without exposing mobilecli directly. The plugin publishes device listings, signed MJPEG or H264 URLs, and a trust-checked WebSocket action channel while preserving structured device errors. ui-phone owns measured picture layout; signed capture URLs remain loopback-only.
+
+## Table of Contents
+
+- [Package contract](#package-contract)
+- [Config](#config)
+- [Extension points](#extension-points)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
+
+-----
+
+<a id="package-contract"></a>
+## Package contract
 
 Same-origin Host Consumer for phone IO, screen capture, and managed Android/iOS agent recovery. The plugin injects `phoneDevices` and `webServer`, registers the fleet and agent routes, a WebSocket upgrade plus signed HTTP capture routes, and publishes `ctx.phoneStream`. The browser never dials mobilecli `:12000`: tap/swipe/text/button JSON-RPC rides `/phone/ws/io`, and MJPEG/H264 frames ride Host-origin URLs minted by `sessionFor`. This package mints unique capture identities and forwards frames; ui-phone owns measured picture layout.
 
@@ -11,6 +34,7 @@ Same-origin Host Consumer for phone IO, screen capture, and managed Android/iOS 
 - `GET /phone/stream/<id>/<mjpeg|h264>?token=` — reverse-proxies `device.screencapture`. The `/api` trust fence runs first, then a loopback Host fence, then HMAC verification; expired, forged, or non-loopback requests return 403. The proxy accepts both upstream `device.screencapture` answer shapes — the bare byte stream and mobilecli 1.0.5's `{ format, sessionUrl }` envelope, whose session URL must stay on the loopback fence — and re-emits multipart MJPEG bodies under a single normalized boundary, dropping non-image parts (JSON notifications) while keeping frame bytes untouched.
 - `GET /phone/ws/io` upgrade — forwards `device.io.tap` / `swipe` / `text` / `button` JSON-RPC after the `/api` trust fence; tap and swipe may carry live capture dimensions and exact H264 rotation; arbitrary gesture frames are rejected. Untrusted upgrades are refused before protocol negotiation.
 
+<a id="config"></a>
 ## Config
 
 | Field | Default | Meaning |
@@ -18,10 +42,12 @@ Same-origin Host Consumer for phone IO, screen capture, and managed Android/iOS 
 | `tokenTtlMs` | `30000` | Lifetime of a minted capture URL. Minting rejects an absolute expiry outside JavaScript’s safe-integer range. Path prefixes, HMAC-SHA256, and the loopback capture fence are not configurable. |
 | `transportCleanupTimeoutMs` | `1000` | Bounded shutdown interval for admitted HTTP transactions, WebSocket connections/server closure, and detached transport cleanup. Admission and module-owned authority end synchronously; foreign promises may settle later under terminal observers. |
 
+<a id="extension-points"></a>
 ## Extension points
 
 Composition must provide `phoneDevices` and `webServer`; the fiber waits on both. The `./invariant` companion is empty because Host WebServer effects own route registration and disposal.
 
+<a id="model-experience"></a>
 ## Model Experience
 
 None, as this package is a pure Host-side reverse-proxy that registers no prompt, tool schema, or other model-visible surface.
@@ -32,6 +58,13 @@ Independent of model requests: the plugin only registers Host HTTP and WebSocket
 
 ## Known Limitations and Deferred Work
 
+<a id="known-limitations-and-deferred-work"></a>
+
 - **Capture URLs are loopback-only** — even a trusted LAN Host is refused, so a non-loopback deployment cannot play device video until a later ticket adds an authenticated remote path.
 - **No GUI** — this package does not render `react-device-view` or enforce the 1:2 picture ratio; ui-phone consumes the minted URLs later.
 - **mobilecli remains user-installed** — `phone-runtime` still owns binary discovery and spawn; this Consumer cannot compose without that Service.
+
+<a id="dev-note"></a>
+### Dev Note
+
+None.

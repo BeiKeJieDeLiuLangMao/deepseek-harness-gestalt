@@ -16,14 +16,15 @@
  * may add node types this renderer has no mapping for.
  */
 
-import { Fragment, createElement } from 'react'
-import type { Key, ReactNode } from 'react'
+import { Fragment, createElement, useState } from 'react'
+import type { Key, ReactNode, RefCallback } from 'react'
 import clsx from 'clsx'
 import type * as Md from 'mdast'
 import type {} from 'mdast-util-math'
 import { normalizeUri } from 'micromark-util-sanitize-uri'
 import { CodeBlock } from './CodeBlock.tsx'
 import { renderTexToReact } from './katex.tsx'
+import { LinkIcon, classifyLinkPath } from '../LinkIcon.tsx'
 import type { PositionedBlock } from './incremental.ts'
 import type { MarkdownSelectionCollector } from './selection-map.tsx'
 import css from './MarkdownText.module.css'
@@ -69,6 +70,35 @@ function remoteImageUrl(url: string): string | undefined {
   }
 }
 
+/** Protocols a vocabulary-rewritten image destination may carry. */
+function vocabularyImageUrl(url: string): string | undefined {
+  try {
+    const protocol = new URL(url).protocol
+    return protocol === 'http:' || protocol === 'https:' || protocol === 'blob:' || protocol === 'data:'
+      ? url
+      : undefined
+  } catch {
+    // A vocabulary result must be an absolute URL; anything else stays a miss.
+    return undefined
+  }
+}
+
+/**
+ * The displayable source for one image destination: absolute HTTP(S) as
+ * authored, otherwise the context's local-path vocabulary when it vouches for
+ * the destination. Either miss leaves the authored fallback (alt text) to the
+ * caller.
+ * @param url - The authored markdown destination.
+ * @param pathImages - Rewriting vocabulary, when the render pass has one.
+ * @returns The displayable image URL, or undefined.
+ */
+function imageSource(url: string, pathImages: MarkdownPathImages | undefined): string | undefined {
+  const remote = remoteImageUrl(sanitizeUrl(normalizeUri(url)))
+  if (remote !== undefined) return remote
+  const rewritten = pathImages?.resolve(url)
+  return rewritten === undefined ? undefined : vocabularyImageUrl(rewritten)
+}
+
 /** Link/image reference targets collected from a document (first definition per identifier wins, as in CommonMark). */
 export interface ReferenceTargets {
   /** Link/image definitions keyed by upper-cased identifier. */
@@ -108,6 +138,24 @@ export function collectReferenceTargets(
 }
 
 /**
+ * Local-path image vocabulary for image destinations: the owner maps an
+ * authored destination that fails the remote-URL allowlist (an absolute local
+ * file path, for example) to a displayable URL it can vouch for. Absent
+ * wherever no such vocabulary exists, authored local destinations keep their
+ * documented fallback (the image's alt text). Rewritten destinations must be
+ * absolute; the renderer re-checks their protocol before emitting them.
+ */
+export interface MarkdownPathImages {
+  /**
+   * Resolve one authored image destination.
+   * @param value - The destination exactly as the markdown author wrote it.
+   * @returns A displayable absolute URL, or undefined when the destination
+   * names no displayable image — it then stays inert alt text.
+   */
+  resolve(value: string): string | undefined
+}
+
+/**
  * File-mention affordance for inline code: the owner resolves an authored
  * token to the file it names, using its own vocabulary of real files — the
  * renderer never guesses at what looks like a path.
@@ -135,6 +183,8 @@ export interface MarkdownRenderContext {
   readonly inBlockquote?: boolean
   /** Inline-code file mentions; absent wherever no opener vocabulary exists. */
   readonly fileMentions: MarkdownFileMentions | undefined
+  /** Local-path image vocabulary; absent wherever no rewriting owner exists. */
+  readonly pathImages: MarkdownPathImages | undefined
   /** Inside an anchor's children: interactive mentions must not nest there. */
   readonly inLink?: boolean
   /** Reference targets visible to this pass. */
@@ -267,6 +317,7 @@ function renderNode(node: Md.RootContent, key: Key, context: MarkdownRenderConte
               aria-label={mention.label}
               onClick={mention.open}
             >
+              <LinkIcon kind={classifyLinkPath(value)} className={css.linkIcon} />
               {rendered}
             </button>
           </code>
@@ -291,11 +342,11 @@ function renderNode(node: Md.RootContent, key: Key, context: MarkdownRenderConte
     case 'table':
       return renderTable(node, key, context)
     case 'link':
-      return renderAnchor(node.url, renderChildren(node.children, { ...context, inLink: true }), key)
+      return renderAnchor(node.url, renderChildren(node.children, { ...context, inLink: true }), key, !anchorWrapsOnlyImages(node.children))
     case 'linkReference':
       return renderLinkReference(node, key, context)
     case 'image':
-      return renderImage(node.url, node.alt ?? '', key, context.selection)
+      return renderImage(node.url, node.alt ?? '', key, context)
     case 'imageReference':
       return renderImageReference(node, key, context)
     case 'footnoteReference':
@@ -470,8 +521,17 @@ function renderTableRow(
   return <tr key={key}>{cells}</tr>
 }
 
+/**
+ * True when an anchor's markdown children are all images, so the anchor is a
+ * clickable picture (badge, thumbnail): the leading URL glyph would dangle
+ * beside the image instead of leading link text, so those anchors skip it.
+ */
+function anchorWrapsOnlyImages(children: Md.PhrasingContent[]): boolean {
+  return children.length > 0 && children.every(child => child.type === 'image' || child.type === 'imageReference')
+}
+
 /** Anchor over an already-authored href: allowlisted or unwrapped, external links get the safe attributes. */
-function renderSafeLink(href: string, children: ReactNode[], key: Key): ReactNode {
+function renderSafeLink(href: string, children: ReactNode[], key: Key, glyph = true): ReactNode {
   const safeHref = sanitizeUrl(href)
   if (safeHref === '') return <Fragment key={key}>{children}</Fragment>
   const external = ['http:', 'https:'].includes(new URL(safeHref).protocol)
@@ -481,14 +541,15 @@ function renderSafeLink(href: string, children: ReactNode[], key: Key): ReactNod
       href={safeHref}
       {...(external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
     >
+      {glyph && <LinkIcon kind="url" className={css.linkIcon} />}
       {children}
     </a>
   )
 }
 
 /** Anchor over a parsed markdown destination, which hast normalized before the allowlist saw it. */
-function renderAnchor(url: string, children: ReactNode[], key: Key): ReactNode {
-  return renderSafeLink(normalizeUri(url), children, key)
+function renderAnchor(url: string, children: ReactNode[], key: Key, glyph = true): ReactNode {
+  return renderSafeLink(normalizeUri(url), children, key, glyph)
 }
 
 /**
@@ -506,26 +567,42 @@ function inlineCodeHttpUrl(value: string): string | undefined {
   }
 }
 
-function renderImage(
-  url: string,
-  alt: string,
-  key: Key,
-  selection?: MarkdownSelectionCollector,
-): ReactNode {
-  const imageSrc = remoteImageUrl(sanitizeUrl(normalizeUri(url)))
+function renderImage(url: string, alt: string, key: Key, context: MarkdownRenderContext): ReactNode {
+  const imageSrc = imageSource(url, context.pathImages)
   if (imageSrc === undefined) {
     return <span key={key} className={css.imageAlt}>{alt}</span>
   }
+  const imageRef = context.selection?.registerImage(alt)
+  return <MarkdownImage
+    key={`${key}:${imageSrc}`}
+    src={imageSrc}
+    alt={alt}
+    destination={url}
+    imageRef={imageRef}
+  />
+}
+
+/** Failed loads retain the authored alt or destination; a new source remounts the image. */
+function MarkdownImage({
+  src, alt, destination, imageRef,
+}: {
+  src: string
+  alt: string
+  destination: string
+  imageRef?: RefCallback<HTMLImageElement> | undefined
+}): ReactNode {
+  const [failed, setFailed] = useState(false)
+  if (failed) return <span className={css.imageAlt}>{alt || destination}</span>
   return (
     <img
-      key={key}
       className={css.image}
-      src={imageSrc}
+      src={src}
       alt={alt}
+      onError={() => { setFailed(true) }}
       loading="lazy"
       decoding="async"
       referrerPolicy="no-referrer"
-      ref={selection?.registerImage(alt)}
+      ref={imageRef}
     />
   )
 }
@@ -550,7 +627,8 @@ function renderLinkReference(
     // not an anchor, so mentions inside it stay live.
     return <Fragment key={key}>{'['}{renderChildren(node.children, context)}{referenceSuffix(node)}</Fragment>
   }
-  return renderAnchor(definition.url, renderChildren(node.children, { ...context, inLink: true }), key)
+  const rendered = renderChildren(node.children, { ...context, inLink: true })
+  return renderAnchor(definition.url, rendered, key, !anchorWrapsOnlyImages(node.children))
 }
 
 function renderImageReference(
@@ -560,7 +638,7 @@ function renderImageReference(
 ): ReactNode {
   const definition = context.targets.definitions.get(node.identifier.toUpperCase())
   if (definition === undefined) return `![${node.alt ?? ''}${referenceSuffix(node)}`
-  return renderImage(definition.url, node.alt ?? '', key, context.selection)
+  return renderImage(definition.url, node.alt ?? '', key, context)
 }
 
 function renderFootnoteReference(

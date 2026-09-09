@@ -7,12 +7,13 @@
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type { ReceivingQuestionBook } from '@deepseek-ai/dsh-api-session-controller/client'
-import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
-import type {} from '@deepseek-ai/dsh-client-ui-better-sidebar/client'
+import type { BetterSidebarService } from '@deepseek-ai/dsh-client-ui-better-sidebar/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
+import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
 import { resolveWorkspacePath } from '@deepseek-ai/dsh-util-workspace-path'
-import type { MemberQuestionDockInjected } from './contract/slots.ts'
+import type { MemberQuestionDockInjected, MemberQuestionReferenceView } from './contract/slots.ts'
 import { MemberQuestionDock } from './MemberQuestionCard.tsx'
 import { en, zh, type MemberQuestionKey } from './locales.ts'
 
@@ -22,7 +23,7 @@ export {
 } from './contract/slots.ts'
 export type {
   MemberQuestionBrief, MemberQuestionComposerProps, MemberQuestionOrigin,
-  MemberQuestionReferenceChip, MemberQuestionRole, MemberQuestionWait,
+  MemberQuestionReferenceChip, MemberQuestionReferenceView, MemberQuestionRole, MemberQuestionWait,
 } from './contract/slots.ts'
 export type { MemberQuestionKey } from './locales.ts'
 
@@ -46,6 +47,82 @@ const NS = 'member-question'
 /** Required services: slots, dictionaries, Sessions, Host Remote, and receiving projection. */
 export const inject = ['slots', 'locale', 'sessions', 'receivingQuestions', 'remote', 'remote.session']
 
+type SidebarSnapshot = ReturnType<BetterSidebarService['getSnapshot']>
+type SidebarNode = NonNullable<SidebarSnapshot['state']>['splits']
+
+/** Collect the active editor path from every visible pane in one split tree. */
+function activeEditorPaths(node: SidebarNode, paths: string[]): void {
+  if (node.kind === 'split') {
+    for (const child of node.children) activeEditorPaths(child, paths)
+    return
+  }
+  const tab = node.tabs.find(candidate => candidate.id === node.active)
+  if (tab?.type === 'editor' && tab.path !== undefined) paths.push(tab.path)
+}
+
+/** Project only visible Files viewers while the editor descriptor owns their tabs. */
+function projectReferenceView(
+  snapshot: SidebarSnapshot | undefined,
+  editorAvailable: boolean,
+): MemberQuestionReferenceView {
+  const state = snapshot?.state
+  if (snapshot?.sessionId === undefined || state === undefined || !editorAvailable) return { paths: [] }
+  const paths: string[] = []
+  if (state.panelOpen) activeEditorPaths(state.splits, paths)
+  if (state.bottomOpen) activeEditorPaths(state.bottomSplits, paths)
+  for (const floating of state.floats) {
+    if (floating.tab.type === 'editor' && floating.tab.path !== undefined) paths.push(floating.tab.path)
+  }
+  return { sessionId: SessionId(snapshot.sessionId), paths }
+}
+
+/** Optional Better Sidebar state as one stable renderer source, including late provider changes. */
+function referenceViewSource(ctx: ClientContext): HostObservable<MemberQuestionReferenceView> {
+  let previousService: BetterSidebarService | undefined
+  let previousSnapshot: SidebarSnapshot | undefined
+  let previousEditorAvailable = false
+  let previousView: MemberQuestionReferenceView = { paths: [] }
+  return {
+    getSnapshot: () => {
+      const service = ctx.get('betterSidebar')
+      const snapshot = service?.getSnapshot()
+      const editorAvailable = service?.getTab('editor') !== undefined
+      if (
+        service === previousService
+        && snapshot === previousSnapshot
+        && editorAvailable === previousEditorAvailable
+      ) return previousView
+      previousService = service
+      previousSnapshot = snapshot
+      previousEditorAvailable = editorAvailable
+      previousView = projectReferenceView(snapshot, editorAvailable)
+      return previousView
+    },
+    subscribe: (listener) => {
+      let releaseState: (() => void) | undefined
+      let releaseRegistry: (() => void) | undefined
+      const bind = (): void => {
+        releaseState?.()
+        releaseRegistry?.()
+        const service = ctx.get('betterSidebar')
+        releaseState = service?.subscribeState(listener)
+        releaseRegistry = service?.subscribe(listener)
+      }
+      bind()
+      const releaseService = ctx.on('internal/service', (name: string) => {
+        if (name !== 'betterSidebar') return
+        bind()
+        listener()
+      })
+      return () => {
+        releaseService()
+        releaseState?.()
+        releaseRegistry?.()
+      }
+    },
+  }
+}
+
 /**
  * Client plugin body: register the `member-question` dictionaries and the
  * composite card into the composer chain at a priority ahead of the shared
@@ -56,9 +133,13 @@ export const inject = ['slots', 'locale', 'sessions', 'receivingQuestions', 'rem
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-member-questions: dictionaries')
 
+  const referencePath = (sessionId: SessionId, path: string): string => {
+    const cwd = ctx.sessions.list.getSnapshot().byId[sessionId]?.cwd
+    return resolveWorkspacePath(cwd, path)
+  }
   const openReference = (sessionId: SessionId, path: string, title?: string): void => {
     const cwd = ctx.sessions.list.getSnapshot().byId[sessionId]?.cwd
-    const absolute = resolveWorkspacePath(cwd, path)
+    const absolute = referencePath(sessionId, path)
     const sidebar = ctx.get('betterSidebar')
     if (sidebar?.getTab('editor') !== undefined) {
       sidebar.openFile(cwd === undefined ? { sessionId } : { sessionId, cwd }, absolute, title)
@@ -66,6 +147,7 @@ export function apply(ctx: ClientContext): void {
     }
     void ctx.remote.session.openWorkspacePath({ path: absolute })
   }
+  const referenceView = referenceViewSource(ctx)
 
   ctx.slots.inject('conversation.input.dock', () => ctx.slots.register(
     {
@@ -78,9 +160,10 @@ export function apply(ctx: ClientContext): void {
       },
       inject: (): MemberQuestionDockInjected => ({
         openReference,
+        referencePath,
         settle: (sessionId, answers) => ctx.receivingQuestions.settle(sessionId, answers),
         decline: sessionId => ctx.receivingQuestions.decline(sessionId),
-        hooks: { receivingQuestions: ctx.receivingQuestions },
+        hooks: { receivingQuestions: ctx.receivingQuestions, referenceView },
       }),
     },
     MemberQuestionDock,

@@ -1,11 +1,34 @@
+---
+description: "用于列出、观察、控制和采集 `ctx.phoneDevices` 设备的延迟模型工具。"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-tool-phone
 
 [English](README.md) | 中文
+
+## 概述
+
+通过延迟的 `device_*` 工具列出、打开、关闭、观察、操作 `ctx.phoneDevices` 中的设备并截屏。完整工具集仅在设备群就绪时存在，发现操作不会激活工具。动作只接受封闭的点击、滑动、输入或硬件按键请求，不提供任意 `adb` 或 shell 路径。
+
+## 目录
+
+- [包约定](#package-contract)
+- [配置](#configuration)
+- [模型体验](#model-experience)
+- [已知限制与后续工作](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+-----
+
+<a id="package-contract"></a>
+## 包约定
 
 这是 `ctx.phoneDevices` 的模型 Consumer。它把 `device_list`、`device_open`、`device_close`、`device_observe`、`device_act` 与 `device_screenshot` 注册为普通延迟工具。`device_act` 只接受封闭的 tap、swipe、type 或硬件按钮动作；没有任意 `adb` 或 shell 路径。`device_list` 与 `device_observe` 的应答每项携带 `id`/`name`/`kind`/`state`/`online`/`platform`。
 
 只有 `phoneDevices.isReady()` 为 true 时，六个 definition 才存在。Consumer 订阅 generation readiness，在激活时注册完整集合，并在 generation 停止或替换前 dispose 完整集合。缺少 readiness 方法的树外 fleet 实现保留静态注册约定以维持兼容。
 
+<a id="configuration"></a>
 ## 配置
 
 `timeoutMs` 是每次调用的正安全整数协作超时，默认值为 `30000`。无效值会让插件加载失败。Consumer 依赖手机设备群 Service 与工具注册表；禁用 `toolSearch` 时注册会明确失败。
@@ -16,6 +39,7 @@
 
 已携带 `PhoneDevicesError` 代码（`PHONE_DISPOSED`、`PHONE_ABORTED`、`PHONE_TIMEOUT`、`PHONE_UNAVAILABLE`、`PHONE_UNRESOLVED`、`PHONE_PROTOCOL`、`PHONE_UPSTREAM`、`PHONE_DEVICE_NOT_FOUND`、`PHONE_REAL_DEVICE`）的设备群失败会以同一代码重抛为 `HarnessError`。`device_act` 把封闭的 tap、swipe、type 或按钮动作转发到 `phoneDevices.io`。swipe 转发语义端点，并把平台与旋转转换留给 `PhoneDevices.io()`（[输入所有权](../../../.agents/notes/implemented/bug-fix/2026-09-04-ios-semantic-input-rotation.zh.md)）。空 type 文本，或注入设备群缺少 `io` / `screenshot`，使用 `PHONE_UNSUPPORTED`。`device_screenshot` 调用 `phoneDevices.screenshot`，返回磁盘上仅所有者可读写 PNG 的 `{ deviceId, path }`；渲染后的工具文本就是这两项，绝不是 PNG 字节或 base64 图片块。仅当注入的测试设备群省略该方法时仍走 `PHONE_UNSUPPORTED`。实况 MJPEG/H264 采集仍由 `dsh-phone-stream` 负责。
 
+<a id="model-experience"></a>
 ## 模型体验
 
 ### 手机工具发现与结果
@@ -34,4 +58,11 @@
 
 ## 已知限制与后续工作
 
+<a id="known-limitations-and-deferred-work"></a>
+
 - 已交付的 headless 无密钥快照在记录式假设备群上挂载本 Consumer，并证明初始设备 schema 为零、`tool_search` 可重建工具，以及一次闭合动作。Desktop 不挂载本 Consumer。实况视频、签名流路由与 GUI chrome 仍在各自的包中。
+
+<a id="dev-note"></a>
+### 开发备注
+
+无。

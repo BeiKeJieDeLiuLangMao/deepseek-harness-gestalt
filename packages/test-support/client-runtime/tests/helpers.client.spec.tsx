@@ -37,11 +37,18 @@ function entry(seq: number): SessionLiveEventEntry {
       time: seq,
       data: { seq },
       ignorable: true,
-    } as SessionLiveEventEntry['event'],
+    } as unknown as SessionLiveEventEntry['event'],
   }
 }
 
 describe('fixture helpers', () => {
+  it('rejects an upload until a suite replaces the default stub', async () => {
+    const runtime = await SlotTestRuntime.create()
+    expect(runtime.fileUpload.available).toBe(false)
+    await expect(runtime.fileUpload.upload('fixture-session' as SessionId)).rejects.toThrow('file upload is not stubbed')
+    await runtime.dispose()
+  })
+
   it('builds independent Conversation and Chat snapshots with optional overrides', () => {
     const conversation = conversationSnapshot()
     expect(conversation).toEqual(EMPTY_CONVERSATION_SNAPSHOT)
@@ -76,7 +83,7 @@ describe('fixture helpers', () => {
     const second = inputState({ draft: 'hello', annotations: [] })
     expect(first).toEqual({
       draft: '',
-      imageIds: [],
+      attachmentIds: [],
       draftRev: 0,
       phase: 'plain',
       occurrences: [],
@@ -84,13 +91,13 @@ describe('fixture helpers', () => {
       annotations: [],
     })
     expect(second.draft).toBe('hello')
-    expect(second.imageIds).not.toBe(first.imageIds)
+    expect(second.attachmentIds).not.toBe(first.attachmentIds)
     expect(second.annotations).not.toBe(first.annotations)
 
-    const addImages = vi.fn(() => true)
-    const actions = inputActions({ addImages })
-    expect(actions.addImages([])).toBe(true)
-    expect(addImages).toHaveBeenCalledWith([])
+    const addAttachments = vi.fn(() => true)
+    const actions = inputActions({ addAttachments })
+    expect(actions.addAttachments([])).toBe(true)
+    expect(addAttachments).toHaveBeenCalledWith([])
     expect(() => { actions.submit() }).toThrow('test input action "submit" is not stubbed')
   })
 })

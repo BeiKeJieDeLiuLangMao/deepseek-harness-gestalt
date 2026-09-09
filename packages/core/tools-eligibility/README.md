@@ -9,6 +9,20 @@ English | [中文](README.zh.md)
 
 ## Summary
 
+Restrict end tools with an allow-only set assembled from preset, Workspace, and Session entries. Configuration adds positive allowances by stable id; declaring any list activates the restriction, and an empty effective union allows no end tool. Sessions without a declaration remain unrestricted for compatibility.
+
+## Table of Contents
+
+- [Package contract](#package-contract)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
+
+-----
+
+<a id="package-contract"></a>
+## Package contract
+
 The host-plane resolver for allow-only tool eligibility. Preset allowances form the base; the `tool-eligibility` settings section adds Workspace and then Session entries by stable id.
 
 ```yaml
@@ -24,14 +38,6 @@ All configured lists are positive additions. The effective set is the sorted uni
 The resolver owns one mutable registry contribution for each live Agent. Every refresh commits all affected contributions before fan-out, then attempts both relationship publication and registry change notification for every affected Agent. Ordinary live Settings updates propagate one aggregated observer failure after the complete fan-out. Settings provider detach or HMR commits the composition fallback and attempts the same complete fan-out, but logs the `AggregateError` so provider unload completes. Resolver unload or Agent disposal removes the exact contribution. The registry uses the resulting view for model schemas, lookup, and dispatch, so an ineligible or stale call resolves as an unknown tool before its body runs. The exact schemas sent to a model already live in the durable `request/header` event; replay can therefore reconstruct the model-visible eligibility without consulting current settings.
 
 `session.toolEligibility` reads the authoritative `ctx.tools` allowance and schema catalog directly. The settings schema contains `workspaces` and `sessions` only; the internal deny-capable `ctx.tools.restrict()` API is not projected into user configuration.
-
-## Table of Contents
-
-- [Model Experience](#model-experience)
-- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
-- [Dev Note](#dev-note)
-
------
 
 <a id="model-experience"></a>
 ## Model Experience

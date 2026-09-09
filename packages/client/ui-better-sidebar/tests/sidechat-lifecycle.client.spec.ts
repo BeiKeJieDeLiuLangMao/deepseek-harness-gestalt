@@ -7,7 +7,7 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { snapshotSubagentDescriptor } from '@deepseek-ai/dsh-subagent'
 import { Context as CordisContext } from '@deepseek-ai/cordis'
 import {
-  SessionId, SessionLogOffset,
+  SESSION_FORMAT_VERSION, SessionId, SessionLogOffset,
   type SessionEvent, type SessionHeader,
 } from '@deepseek-ai/dsh-session'
 import {
@@ -31,14 +31,14 @@ function persistedSidechat(
 ) {
   const header = (id: SessionId): SessionHeader => ({
     ...options.header,
-    version: 0,
+    version: SESSION_FORMAT_VERSION,
     id,
     createdAt: options.header?.createdAt ?? 1,
     isSeeded: options.header?.isSeeded ?? false,
   })
   const close = vi.fn(() => Promise.resolve())
   const read = vi.fn(() => options.readFailure === undefined
-    ? Promise.resolve(events as readonly SessionEvent[])
+    ? Promise.resolve({ eventState: 'shared-frozen' as const, events: events as readonly SessionEvent[] })
     : Promise.reject(options.readFailure))
   const open = vi.fn(async (id: SessionId, access: SessionAccess): Promise<SessionHandle> => ({
     id,
@@ -644,14 +644,15 @@ describe('sidechat route lifecycle', () => {
       agentOptions?: AgentOptions
       setup?: AgentSetup
     }) => {
-      await options.setup?.(agentCtx)
-      resumedAgent = {
+      const child = {
         id: 'cold-child',
         ctx: agentCtx,
         options: options.agentOptions ?? {},
         session: { events, snapshotEvents: () => events, header: {} },
         followup: vi.fn(),
       } as unknown as Agent
+      await options.setup?.(agentCtx, child)
+      resumedAgent = child
       return { agent: resumedAgent, dispose: () => Promise.resolve() }
     })
     const persisted = persistedSidechat(events)

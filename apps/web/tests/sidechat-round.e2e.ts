@@ -154,6 +154,8 @@ describe.skipIf(MODE === 'record')('web e2e: Side Chat through the shipped workb
     await panel.getByRole('button', { name: 'Side Chat', exact: true }).click()
     const sideComposer = panel.locator('[data-composer-input][contenteditable="true"]')
     await sideComposer.waitFor({ timeout: 15_000 })
+    expect(await panel.getByRole('button', { name: 'Choose workspace', exact: true }).count()).toBe(0)
+    expect(await panel.getByRole('button', { name: 'Standard mode', exact: true }).count()).toBe(0)
     expect(scaffold.ctx.agents.list().map(agent => agent.id)).toEqual(liveIdsBeforeSideChat)
 
     const sideChatTab = panel.locator('[draggable="true"]').first()

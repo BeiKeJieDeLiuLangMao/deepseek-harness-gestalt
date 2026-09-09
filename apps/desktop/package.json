@@ -28,7 +28,9 @@
   },
   "license": "MIT",
   "scripts": {
+    "build": "node scripts/build-main.mjs",
     "dev": "node scripts/build-main.mjs && electron out/main.mjs",
+    "start": "electron out/main.mjs",
     "build:main": "node scripts/build-main.mjs",
     "typecheck:e2e-critical-path": "tsc -b tests/critical-path-e2e/tsconfig.json",
     "typecheck:e2e-project-members": "tsc -p tests/member-question-e2e/tsconfig.json",

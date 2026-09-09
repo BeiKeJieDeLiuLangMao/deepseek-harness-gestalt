@@ -10,8 +10,8 @@ import type { Agent, AgentHandle, CreateAgentOptions } from '@deepseek-ai/dsh-ag
 import { createUserMessage, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type { LlmCallConfig } from '@deepseek-ai/dsh-llm'
 import GoalService, { foldGoal } from '@deepseek-ai/dsh-goal'
-import SessionStore, { Session, SessionLogOffset, SessionSeq } from '@deepseek-ai/dsh-session'
-import type { SessionEvent, SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
+import SessionStore, { SESSION_FORMAT_VERSION, Session, SessionLogOffset, SessionSeq } from '@deepseek-ai/dsh-session'
+import type { SessionEvent, SessionHeader, SessionId, SessionSeedEventState } from '@deepseek-ai/dsh-session'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
@@ -34,7 +34,7 @@ function request<P>(payload: P): P {
 async function composed(workspaces: readonly Workspace[] = []): Promise<Context> {
   const ctx = new Context()
   await ctx.plugin(SessionStore)
-  await ctx.plugin(SystemPrompt, { persona: '' })
+  await ctx.plugin(SystemPrompt, { personaPrefix: '' })
   await ctx.plugin(AgentRegistry)
   installSessionReadTestServices(ctx)
   ctx.provide('workspaceRegistry', { list: () => workspaces } as never)
@@ -48,9 +48,9 @@ async function composed(workspaces: readonly Workspace[] = []): Promise<Context>
           : { inheritedEventCount: options.inheritedEventCount },
       })
       const agent = {} as Agent
-      const agentCtx = ownerCtx.extend({ agent })
+      const agentCtx = ownerCtx
       Object.assign(agent, { id: session.id, session, status: 'idle', ctx: agentCtx })
-      await options.setup?.(agentCtx)
+      await options.setup?.(agentCtx, agent)
       ctx.agents.register(agent)
       return { agent, dispose: () => Promise.resolve() }
     },
@@ -146,7 +146,7 @@ describe('sessions.fork', () => {
 
     const response = await remote(ctx).fork(request({ sessionId: grandchild.id }))
 
-    expect(response.ok).toBe(true)
+    expect(response).toMatchObject({ ok: true })
     if (!response.ok) return
     expect(attachSession).toHaveBeenCalledWith(response.value.sessionId)
     expect(ctx.sessions.get(response.value.sessionId)?.header).toMatchObject({
@@ -162,7 +162,7 @@ describe('sessions.fork', () => {
     const sourceId = sid('session-cold-subagent')
     const parentId = sid('session-cold-parent')
     const header: SessionHeader = {
-      version: 0,
+      version: SESSION_FORMAT_VERSION,
       id: sourceId,
       createdAt: 1,
       cwd: '/proj',
@@ -201,7 +201,7 @@ describe('sessions.fork', () => {
 
     const response = await remote(ctx).fork(request({ sessionId: sourceId }))
 
-    expect(response.ok).toBe(true)
+    expect(response).toMatchObject({ ok: true })
     if (!response.ok) return
     expect(resume).not.toHaveBeenCalled()
     expect(ctx.agents.get(sourceId)).toBeUndefined()
@@ -256,7 +256,7 @@ describe('sessions.fork', () => {
     // one event before its turn/end, floored client-side to that event's seq.
     const anchor = (source.snapshotEvents().at(-1)?.seq ?? 0) - 1
     const response = await remote(ctx).fork(request({ sessionId: source.id, atSeq: anchor }))
-    expect(response.ok).toBe(true)
+    expect(response).toMatchObject({ ok: true })
     if (!response.ok) return
     expect(ctx.sessions.get(response.value.sessionId)?.snapshotEvents().map(event => event.type)).toEqual([
       'turn/start', 'user/message', 'turn/end',
@@ -293,7 +293,7 @@ describe('sessions.fork', () => {
       reason: 'initial',
     })
     const response = await remote(ctx).fork(request({ sessionId: source.id }))
-    expect(response.ok).toBe(true)
+    expect(response).toMatchObject({ ok: true })
     if (!response.ok) return
     const child = ctx.agents.get(response.value.sessionId)
     if (child === undefined) throw new Error('fork did not publish the child agent')
@@ -322,7 +322,7 @@ describe('sessions.fork', () => {
     const goal = ctx.goals.create(parentAgent, { objective: 'parent product goal', maxGoalRounds: 8 })
     const parentEvents = source.snapshotEvents()
     const response = await remote(ctx).fork(request({ sessionId: source.id }))
-    expect(response.ok).toBe(true)
+    expect(response).toMatchObject({ ok: true })
     if (!response.ok) return
     const child = ctx.sessions.get(response.value.sessionId)
     const childAgent = ctx.agents.get(response.value.sessionId)
@@ -335,10 +335,10 @@ describe('sessions.fork', () => {
     expect(source.snapshotEvents()).toEqual(parentEvents)
     expect(ctx.goals.get(childAgent)).toBeUndefined()
     expect(foldGoal(child.snapshotEvents()).goal).toBeUndefined()
-    const lastOwned = child.snapshotEvents().at(-2)
+    const lastOwned = child.snapshotEvents().at(-1)
     expect(lastOwned?.type).toBe('goal/change')
     if (lastOwned?.type !== 'goal/change') throw new Error('expected a child-owned clear tombstone')
-    expect(lastOwned.seq).toBe(child.inheritedEventCount)
+    expect(lastOwned.seq).toBe(child.inheritedEventCount + 1)
     const created = ctx.goals.create(childAgent, { objective: 'child-owned goal' })
     expect(created.phase).toBe('active')
     expect(ctx.goals.get(parentAgent)?.id).toBe(goal.id)
@@ -357,7 +357,7 @@ describe('sessions.fork', () => {
     const parentGoal = ctx.goals.create(parentAgent, { objective: 'parent jsonl goal', maxGoalRounds: 8 })
     const parentEvents = source.snapshotEvents()
     const response = await remote(ctx).fork(request({ sessionId: source.id }))
-    expect(response.ok).toBe(true)
+    expect(response).toMatchObject({ ok: true })
     if (!response.ok) return
     const liveChild = ctx.sessions.get(response.value.sessionId)
     const liveChildAgent = ctx.agents.get(response.value.sessionId)
@@ -389,18 +389,28 @@ describe('sessions.fork', () => {
     await reader.plugin(JsonlSessionPersistence, { root, compression: 'none' })
     const storedParent = await reader.sessionPersistence.open(source.id, 'read')
     const storedChild = await reader.sessionPersistence.open(liveChild.id, 'read')
-    let parentInspection: { header: SessionHeader; inheritedEventCount: SessionLogOffset; events: readonly SessionEvent[] }
-    let childInspection: { header: SessionHeader; inheritedEventCount: SessionLogOffset; events: readonly SessionEvent[] }
+    type Inspection = {
+      header: SessionHeader
+      inheritedEventCount: SessionLogOffset
+      events: readonly SessionEvent[]
+      eventState: SessionSeedEventState
+    }
+    let parentInspection: Inspection
+    let childInspection: Inspection
     try {
+      const parentSeed = await storedParent.read()
+      const childSeed = await storedChild.read()
       parentInspection = {
         header: storedParent.header,
         inheritedEventCount: storedParent.inheritedEventCount,
-        events: await storedParent.read(),
+        events: parentSeed.events,
+        eventState: parentSeed.eventState,
       }
       childInspection = {
         header: storedChild.header,
         inheritedEventCount: storedChild.inheritedEventCount,
-        events: await storedChild.read(),
+        events: childSeed.events,
+        eventState: childSeed.eventState,
       }
     } finally {
       await storedParent.close()
@@ -417,16 +427,16 @@ describe('sessions.fork', () => {
       phase: 'active',
       objective: 'child jsonl goal',
     })
-    const tombstone = childInspection.events[parentCut]
+    const tombstone = childInspection.events[parentCut + 1]
     expect(tombstone?.type).toBe('goal/change')
     if (tombstone?.type !== 'goal/change') throw new Error('expected a persisted child-owned clear tombstone')
-    expect(tombstone.seq).toBe(parentCut)
+    expect(tombstone.seq).toBe(parentCut + 1)
 
     const restoredChild = reader.sessions.prepare(liveChild.id, {
-      seedSource: 'persistence',
       seed: [...childInspection.events],
       meta: childInspection.header,
       inheritedEventCount: childInspection.inheritedEventCount,
+      eventState: childInspection.eventState,
     })
     expect(restoredChild).toBeInstanceOf(Session)
     expect(restoredChild.inheritedEventCount).toBe(parentCut)
@@ -434,12 +444,12 @@ describe('sessions.fork', () => {
       id: childGoal.id,
       objective: 'child jsonl goal',
     })
-    const restoredParent = Session.fromRestore(
-      source.id,
-      parentInspection.events,
-      parentInspection.header,
-      parentInspection.inheritedEventCount,
-    )
+    const restoredParent = reader.sessions.prepare(source.id, {
+      seed: [...parentInspection.events],
+      meta: parentInspection.header,
+      inheritedEventCount: parentInspection.inheritedEventCount,
+      eventState: parentInspection.eventState,
+    })
     expect(foldGoal(restoredParent.snapshotEvents()).goal).toMatchObject({ id: parentGoal.id })
     await reader.fiber.dispose()
   })

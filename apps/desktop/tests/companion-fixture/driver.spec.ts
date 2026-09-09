@@ -17,7 +17,10 @@ class Child extends EventEmitter {
 function fixture() {
   const child = new Child()
   launch.child = child
-  return { child, driver: launchCompanionFixture() }
+  return {
+    child,
+    driver: launchCompanionFixture(new URL('./host-400-codec-probe.ts', import.meta.url)),
+  }
 }
 afterEach(() => { vi.useRealTimers() })
 

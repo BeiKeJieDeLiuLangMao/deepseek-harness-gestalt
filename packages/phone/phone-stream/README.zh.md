@@ -1,6 +1,29 @@
+---
+description: "面向 Host 浏览器消费方的同源手机 IO、屏幕采集代理与托管 Android/iOS agent 恢复。"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-phone-stream
 
 [English](README.md) | 中文
+
+## 概述
+
+通过 Host 同源路由向浏览器提供手机 IO、屏幕采集与托管 agent 恢复，无需直接暴露 mobilecli。该插件发布设备清单、签名 MJPEG/H264 URL 和经过信任检查的 WebSocket 操作通道，并保留结构化设备错误。ui-phone 负责实测画面布局；签名采集 URL 仍仅限回环地址。
+
+## 目录
+
+- [包约定](#package-contract)
+- [配置](#config)
+- [扩展点](#extension-points)
+- [模型体验](#model-experience)
+- [已知限制与后续工作](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+-----
+
+<a id="package-contract"></a>
+## 包约定
 
 手机 IO、屏幕采集与 Android/iOS 托管 agent 恢复的同源 Host Consumer。插件注入 `phoneDevices` 与 `webServer`，注册设备清单和 agent 路由、一条 WebSocket 升级路由和签名 HTTP 采集路由，并发布 `ctx.phoneStream`。浏览器永不直连 mobilecli `:12000`：tap/swipe/text/button JSON-RPC 走 `/phone/ws/io`，MJPEG/H264 帧走由 `sessionFor` 签发的 Host 同源 URL。本包签发唯一采集身份并转发帧；ui-phone 负责按实测画面尺寸排版。
 
@@ -11,6 +34,7 @@
 - `GET /phone/stream/<id>/<mjpeg|h264>?token=` — 反代 `device.screencapture`。先执行 `/api` 信任栅栏，再执行 loopback Host 栅栏，最后校验 HMAC；过期、伪造或非 loopback 请求返回 403。代理接受上游 `device.screencapture` 的两种应答形态——裸字节流，以及 mobilecli 1.0.5 的 `{ format, sessionUrl }` 信封（会话 URL 必须留在回环栅栏内）——并把 multipart MJPEG 体在单一归一化边界下重新发出：丢弃非图像段（JSON 通知），帧字节原样保留。
 - `GET /phone/ws/io` 升级 — 在 `/api` 信任栅栏之后转发 `device.io.tap` / `swipe` / `text` / `button` JSON-RPC；tap 与 swipe 可携带 live 采集尺寸及精确 H264 旋转；任意 gesture 帧会被拒绝。未信任的升级在协议协商前被拒绝。
 
+<a id="config"></a>
 ## 配置
 
 | 字段 | 默认 | 含义 |
@@ -18,10 +42,12 @@
 | `tokenTtlMs` | `30000` | 已签发采集 URL 的有效期；若绝对到期时间超出 JavaScript 安全整数范围，签发会失败。路径前缀、HMAC-SHA256 与 loopback 采集栅栏不可配置。 |
 | `transportCleanupTimeoutMs` | `1000` | 已接纳 HTTP 事务、WebSocket 连接/服务器关闭及分离传输清理的有界关闭时间。接纳与模块持有的权威会同步终止；外部 Promise 可由终结观察器稍后收敛。 |
 
+<a id="extension-points"></a>
 ## 扩展点
 
 组合必须提供 `phoneDevices` 与 `webServer`；fiber 会等待二者。`./invariant` 伴生体为空，因为 Host WebServer 的 effect 持有路由注册与注销。
 
+<a id="model-experience"></a>
 ## 模型体验
 
 无模型体验：本包是纯 Host 侧反代，不注册任何提示词、工具 schema 或其他模型可见面。
@@ -32,6 +58,13 @@
 
 ## 已知限制与后续工作
 
+<a id="known-limitations-and-deferred-work"></a>
+
 - **采集 URL 仅限 loopback** — 即使是受信任的 LAN Host 也会被拒绝，因此非 loopback 部署在后续票补上已鉴权远程路径之前无法播放设备视频。
 - **无 GUI** — 本包不渲染 `react-device-view`，也不强制 1:2 画面比例；ui-phone 稍后消费已签发 URL。
 - **mobilecli 仍需用户安装** — `phone-runtime` 仍持有二进制发现与启动；没有该 Service 时本 Consumer 无法组合。
+
+<a id="dev-note"></a>
+### 开发备注
+
+无。

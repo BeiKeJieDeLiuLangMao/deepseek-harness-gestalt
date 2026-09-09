@@ -1,5 +1,5 @@
 ---
-description: "Durable image attachments for users and maintainers attaching, reusing, or debugging images in prompts and commands."
+description: "Durable image and file attachments for users and maintainers attaching, reusing, or debugging uploads in prompts and commands."
 kind: "package-reference"
 ---
 
@@ -9,10 +9,11 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-You can attach images to prompts and commands, and the harness keeps provider-independent normalized versions durably: each source image is admitted and normalized before your message is processed, reappears in conversation history, and is projected to the selected model route in later turns of the same session. The same store can persist exact opaque Companion files as content-addressed byte objects that never enter model history. The shipped `dsh` composition enables this with no setup. Attached images survive restarts, while browser paths, provider URLs, local storage paths, and base64 never enter durable session events. Prompt images accept only raster formats (PNG, JPEG, WebP, GIF), and unsent composer drafts stay in the browser until you submit. Stored objects are never deleted automatically. Audio and video still have no product path.
+Attach images to prompts and commands, then reuse them in later turns of the same session. The service admits and normalizes images, stores opaque Companion files outside model history, and records only provider-independent references. The shipped composition needs no setup; images survive restarts, drafts stay in the browser until submission, and stored objects are never deleted automatically.
 
 ## Table of Contents
 
+- [Package contract](#package-contract)
 - [Use this package](#use-this-package)
 - [Understand the implementation](#understand-the-implementation)
 - [Further Exploration](#further-exploration)
@@ -21,6 +22,11 @@ You can attach images to prompts and commands, and the harness keeps provider-in
 - [Dev Note](#dev-note)
 
 -----
+
+<a id="package-contract"></a>
+## Package contract
+
+You can attach images to prompts and commands, and the harness keeps provider-independent normalized versions durably: each source image is admitted and normalized before your message is processed, reappears in conversation history, and is projected to the selected model route in later turns of the same session. The same store can persist exact opaque Companion files as content-addressed byte objects that never enter model history. The shipped `dsh` composition enables this with no setup. Attached images survive restarts, while browser paths, provider URLs, local storage paths, and base64 never enter durable session events. Prompt images accept only raster formats (PNG, JPEG, WebP, GIF), and unsent composer drafts stay in the browser until you submit. Stored objects are never deleted automatically. Audio and video still have no product path.
 
 <a id="use-this-package"></a>
 ## Use this package
@@ -35,9 +41,13 @@ Attach one or more images to a user prompt in the client UI. Each source is chec
 - name: '@deepseek-ai/dsh-attachment-local'
 ```
 
-### Pass images to commands
+### Attach any other file to a prompt
 
-Commands that accept image input receive attached images the same way. If a command does not accept images, the harness refuses with an error message instead of silently dropping them.
+Any non-image file attaches to a prompt as a generic file: the exact bytes are saved read-only under the harness home, the message records the file name, byte size, and content digest, and the model receives one line naming the saved path so it can read the content with its file tools only when needed. There is no file-type whitelist and no size limit; what you attach is stored verbatim.
+
+### Pass attachments to commands
+
+Commands declaring attachment input receive images and generic files in selection order. Commands that do not accept attachments return an error and retain the composer's draft and cards.
 
 ### Reuse images across the session
 
@@ -63,7 +73,8 @@ This section explains the design decisions behind the seam and the service opera
 - **Immutable and retention-neutral.** Objects are immutable once published; resumed and forked sessions may share them, so reference-aware garbage collection is deferred rather than tied to any one session's deletion.
 - **Verify on read.** Reads check bytes and metadata against the logged reference before returning them, and request projections fully decode cached bytes, so a missing, corrupted, or swapped object fails closed.
 - **Role-neutral image blocks.** The `ImageBlock` content block in `dsh-llm` carries an `ImageAttachmentRef`; provider adapters resolve it into deterministic request versions with explicit pixel and byte budgets, while execution filesystems may map the immutable host object to a model-readable process path.
-- **Error routing by code.** `AttachmentError` re-implements the `HarnessError` shape instead of extending it because the base lives in `dsh-llm`, which depends on this package; consumers route on `code`, never on the prototype chain.
+- **Error routing by code.** `AttachmentError` re-implements the `HarnessError` shape instead of extending it because the base lives in `dsh-llm`, which depends on this package; consumers use `isAttachmentError` and route on `code`, never on the prototype chain.
+- **Files are verbatim, images are normalized.** `saveFile` commits an existing byte array, `saveFileStream` commits bounded chunks with backpressure and cancellation, `readFileStream` verifies and returns bounded chunks, and `fileHostPath` locates the stored object for read-on-demand projection; neither file write path applies admission limits. The image path keeps its separate normalization, limits, and request-version pipeline. The `FileBlock` content block in `dsh-llm` carries a `FileAttachmentRef`, and request assembly projects it to deterministic handle text for every route.
 
 ### Service operations
 
@@ -99,7 +110,7 @@ For the full service contract and payload types, read the subsystem reference; f
 <a id="model-experience"></a>
 ## Model Experience
 
-Indirectly, through the provider adapter, which resolves each durable reference into an exact request version and sends its stable attachment id and actual dimensions beside the image. When the execution filesystem maps the stored object, the descriptor also includes a read-only process path and a matching extension for a writable copy.
+Indirectly, through the provider adapter, which resolves each durable image reference into an exact request version and sends its stable attachment id and actual dimensions beside the image. When the execution filesystem maps the stored object, the descriptor also includes a read-only process path and a matching extension for a writable copy. A generic file never reaches the provider as bytes: every route receives one deterministic handle line naming the file, its byte size, its digest prefix, and the saved read-only path to read with file tools.
 
 #### KV Cache effect
 

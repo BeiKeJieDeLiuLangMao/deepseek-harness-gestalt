@@ -9,10 +9,11 @@ kind: "package-reference"
 
 ## 概述
 
-有了 `dsh-web-search-deepseek`，harness 通过同一个 `deepseek-official` 提供方检索 web。Web Search 卡片在 DeepSeek 段写入 `backend`：`deepseek`（Anthropic Messages + `web_search_20250305`，基址 `https://api.deepseek.com/anthropic/v1`）、`anthropic-messages`（同一套 Messages 约定，基址由用户填写；缺少 `baseURL` 时提供方不可用），或 `kimi`（对专用搜索 URL 以 Bearer-only 鉴权 `POST` `{ "text_query" }`）。协议是显式的，不从 URL 猜测。DeepSeek 原生搜索消耗完整模型轮次；Kimi 不会。结果来自结构化块或 Moonshot `search_results`，绝不会从回复文本中抓取。凭据缺失时调用以结构化错误失败。面向模型的 `web_search` 工具位于 `dsh-tool-web`。
+通过显式选择的 DeepSeek、Anthropic Messages 或 Kimi 后端，使用 `deepseek-official` 提供方搜索 Web。每个后端都有固定的请求协议、凭据路径和结构化结果解析器；缺少必要配置时返回稳定错误。DeepSeek 原生搜索消耗一个完整模型轮次，Kimi 搜索不消耗。
 
 ## 目录
 
+- [包约定](#package-contract)
 - [使用本包](#use-this-package)
 - [理解实现](#understand-the-implementation)
 - [进一步探索](#further-exploration)
@@ -21,6 +22,11 @@ kind: "package-reference"
 - [开发备注](#dev-note)
 
 -----
+
+<a id="package-contract"></a>
+## 包约定
+
+有了 `dsh-web-search-deepseek`，harness 通过同一个 `deepseek-official` 提供方检索 web。Web Search 卡片在 DeepSeek 段写入 `backend`：`deepseek`（Anthropic Messages + `web_search_20250305`，基址 `https://api.deepseek.com/anthropic/v1`）、`anthropic-messages`（同一套 Messages 约定，基址由用户填写；缺少 `baseURL` 时提供方不可用），或 `kimi`（对专用搜索 URL 以 Bearer-only 鉴权 `POST` `{ "text_query" }`）。协议是显式的，不从 URL 猜测。DeepSeek 原生搜索消耗完整模型轮次；Kimi 不会。结果来自结构化块或 Moonshot `search_results`，绝不会从回复文本中抓取。凭据缺失时调用以结构化错误失败。面向模型的 `web_search` 工具位于 `dsh-tool-web`。
 
 <a id="use-this-package"></a>
 ## 使用本包

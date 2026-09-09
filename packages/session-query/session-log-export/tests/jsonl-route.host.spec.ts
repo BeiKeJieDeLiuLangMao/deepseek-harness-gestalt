@@ -7,11 +7,18 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { HostConnectionService } from '@deepseek-ai/dsh-client-connection'
 import type { BrowserAuth } from '@deepseek-ai/dsh-client-connection/src/browser-auth.ts'
-import { SessionSeq, type SessionEvent, type SessionHeader, type SessionId } from '@deepseek-ai/dsh-session'
+import {
+  SESSION_FORMAT_VERSION,
+  SessionSeq,
+  type SessionEvent,
+  type SessionHeader,
+  type SessionId,
+} from '@deepseek-ai/dsh-session'
 import JsonlSessionPersistence from '../../../session/session-persistence-jsonl/src/index.ts'
 import { strFromU8, unzipSync } from 'fflate'
 import {
   SESSION_LOG_EXPORT_PATH,
+  SESSION_LOG_FILENAME,
   apply,
   inject,
   serializeSessionLog,
@@ -21,7 +28,7 @@ import {
 const sid = (value: string): SessionId => value as SessionId
 
 const header: SessionHeader = {
-  version: 0,
+  version: SESSION_FORMAT_VERSION,
   id: sid('jsonl-export-root'),
   createdAt: 1_000,
   isSeeded: false,
@@ -96,8 +103,8 @@ describe('Session log export over JSONL persistence', () => {
     expect(response.headers.get('content-disposition'))
       .toBe(`attachment; filename="${sessionLogZipFilename(header.id)}"`)
     const files = unzipSync(new Uint8Array(await response.arrayBuffer()))
-    expect(strFromU8(files['session.jsonl'] as Uint8Array))
-      .toBe(serializeSessionLog(header, 0, events))
+    expect(strFromU8(files[SESSION_LOG_FILENAME] as Uint8Array))
+      .toBe(serializeSessionLog(header, events))
 
     const head = await fetch(new Request(url, { method: 'HEAD' }))
     expect(head.status).toBe(200)

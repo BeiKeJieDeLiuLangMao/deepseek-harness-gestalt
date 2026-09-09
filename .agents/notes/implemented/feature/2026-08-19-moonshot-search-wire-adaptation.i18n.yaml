@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-19-moonshot-search-wire-adaptation.md
-2026-08-19-moonshot-search-wire-adaptation.md: 3147220b58ee310273d0819a52cc7ac38ed1cd45
-2026-08-19-moonshot-search-wire-adaptation.zh.md: f7f218fb2ddc6a0a5f37afe9227dbbdc3a509b55
+2026-08-19-moonshot-search-wire-adaptation.md: d23b6f4cfac65ad703305661f41f2cd416b90d37
+2026-08-19-moonshot-search-wire-adaptation.zh.md: 8a7c2495fd8ac138242c4e88c11c87f506e3c3f7

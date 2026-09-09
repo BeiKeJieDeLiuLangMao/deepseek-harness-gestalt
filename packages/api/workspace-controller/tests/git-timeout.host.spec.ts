@@ -17,19 +17,6 @@ afterEach(async () => {
   for (const path of temps.splice(0)) rmSync(path, { recursive: true, force: true })
 })
 
-async function waitGone(pid: number, timeoutMs = 5_000): Promise<void> {
-  const until = Date.now() + timeoutMs
-  while (Date.now() < until) {
-    try {
-      process.kill(pid, 0)
-    } catch {
-      return
-    }
-    await new Promise(resolve => setTimeout(resolve, 20))
-  }
-  throw new Error(`pid ${pid} still alive after ${timeoutMs}ms`)
-}
-
 function stageGit(script: string): string {
   const root = realpathSync.native(mkdtempSync(join(tmpdir(), 'dsh-workspace-git-timeout-')))
   temps.push(root)
@@ -52,12 +39,24 @@ async function withScopedPath<T>(binDir: string, run: () => Promise<T>): Promise
 }
 
 class RecordingLocalSubprocess extends LocalSubprocessRuntime {
-  lastPid: number | undefined
+  lastHandle: SubprocessHandle | undefined
+  waitForExitCalls = 0
 
   override spawn(spec: SubprocessSpawnSpec): SubprocessHandle {
     const handle = super.spawn(spec)
-    this.lastPid = handle.pid
-    return handle
+    this.lastHandle = {
+      stdin: handle.stdin,
+      stdout: handle.stdout,
+      stderr: handle.stderr,
+      collected: handle.collected,
+      done: handle.done,
+      terminate: () => { handle.terminate() },
+      waitForExit: (signal) => {
+        this.waitForExitCalls += 1
+        return handle.waitForExit(signal)
+      },
+    }
+    return this.lastHandle
   }
 }
 
@@ -86,8 +85,9 @@ describe('createWorkspaceGitCommand Host deadline', () => {
           .then(() => { throw new Error('unexpected resolve') }, (error: unknown) => error)
         expect(failure).toBeInstanceOf(Error)
         expect((failure as Error).message).toMatch(/timed out after 400ms/)
-        expect(subprocess.lastPid).toBeGreaterThan(0)
-        await waitGone(subprocess.lastPid!)
+        expect(subprocess.lastHandle).toBeDefined()
+        expect(subprocess.waitForExitCalls).toBe(1)
+        await expect(subprocess.lastHandle!.waitForExit()).resolves.toBe(true)
       })
     },
   )
@@ -96,8 +96,9 @@ describe('createWorkspaceGitCommand Host deadline', () => {
     await withLocalGit('process.stdout.write("https://github.com/o/r.git\\n")', 5_000, async (git, subprocess) => {
       await expect(git('git', ['remote', 'get-url', 'origin'], new AbortController().signal))
         .resolves.toEqual({ stdout: 'https://github.com/o/r.git\n', stderr: '' })
-      expect(subprocess.lastPid).toBeGreaterThan(0)
-      await waitGone(subprocess.lastPid!)
+      expect(subprocess.lastHandle).toBeDefined()
+      expect(subprocess.waitForExitCalls).toBe(1)
+      await expect(subprocess.lastHandle!.waitForExit()).resolves.toBe(true)
     })
   })
 
@@ -113,8 +114,9 @@ describe('createWorkspaceGitCommand Host deadline', () => {
         const failure = await pending.then(() => { throw new Error('unexpected resolve') }, (error: unknown) => error)
         expect(failure).toBeInstanceOf(Error)
         expect((failure as Error).message).not.toMatch(/timed out after/)
-        expect(subprocess.lastPid).toBeGreaterThan(0)
-        await waitGone(subprocess.lastPid!)
+        expect(subprocess.lastHandle).toBeDefined()
+        expect(subprocess.waitForExitCalls).toBe(1)
+        await expect(subprocess.lastHandle!.waitForExit()).resolves.toBe(true)
       })
     },
   )

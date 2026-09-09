@@ -9,10 +9,11 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-client-ui-settings-general` 是 dsh Web 客户端的设置外壳：全屏 Settings 页面从侧边栏底部的控件打开，该控件旁的连接故障指示器提供即时恢复操作；导航由各功能贡献的分区构建；首次运行的用户一次只走一个引导步骤。它还注册设置页面上所有不属于单一功能的内容：触发器、标题栏与关闭控件界面框架、「本地配置文件」操作、「通用」分区及其 `settings.general.item` slot，以及 `settings` 字典。归具体功能所有的行（「权限」、「语言」、「外观」）、分区（「模型」）与条件式首次使用引导步骤仍由各自的功能包提供；外壳本身不自带任何引导文案。
+从侧栏打开全屏设置页面、恢复失败的连接，并逐步完成首次运行引导。功能包贡献导航、设置行、分区和引导内容。此包只负责共享的设置 chrome、「通用」分区、本地配置文件操作、词典和带版本的欢迎通知。
 
 ## 目录
 
+- [包约定](#package-contract)
 - [使用本包](#use-this-package)
 - [理解实现](#understand-the-implementation)
 - [进一步探索](#further-exploration)
@@ -21,6 +22,11 @@ kind: "package-reference"
 - [开发备注](#dev-note)
 
 -----
+
+<a id="package-contract"></a>
+## 包约定
+
+`dsh-client-ui-settings-general` 是 dsh Web 客户端的设置外壳：全屏 Settings 页面从侧边栏底部的控件打开，该控件旁的连接故障指示器提供即时恢复操作；导航由各功能贡献的分区构建；首次运行的用户一次只走一个引导步骤。它还注册设置页面上所有不属于单一功能的内容：触发器、标题栏与关闭控件界面框架、「本地配置文件」操作、「通用」分区及其 `settings.general.item` slot，以及 `settings` 字典。归具体功能所有的行（「权限」、「语言」、「外观」）、分区（「模型」）与条件式首次使用引导步骤仍由各自的功能包提供；外壳本身不自带任何引导文案。
 
 <a id="use-this-package"></a>
 ## 使用本包

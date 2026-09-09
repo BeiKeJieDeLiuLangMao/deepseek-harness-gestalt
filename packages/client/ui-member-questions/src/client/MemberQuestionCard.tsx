@@ -100,8 +100,7 @@ export function MemberQuestionCard(props: MemberQuestionComposerProps) {
   const bodyRef = useRef<HTMLDivElement | null>(null)
   const [innerCollapsed, setInnerCollapsed] = useState(false)
   const [innerRevealed, setInnerRevealed] = useState(false)
-  const [detailsRevealed, setDetailsRevealed] = useState(false)
-  const [detailsOpen, setDetailsOpen] = useState(false)
+  const [referenceRevealed, setReferenceRevealed] = useState(false)
 
   useEffect(() => {
     const body = bodyRef.current
@@ -117,30 +116,23 @@ export function MemberQuestionCard(props: MemberQuestionComposerProps) {
     return () => { observer.disconnect() }
   }, [])
 
-  // Details-panel linkage: the persistent details column carries its open
-  // state as `aria-expanded` on `[data-details-panel]` (ui-layout's AppFrame);
-  // the same observation mechanism folds the card to its strip while the
-  // panel is open and restores it when the panel closes.
-  useEffect(() => {
-    const sync = (): void => {
-      const panel = document.querySelector('[data-details-panel]')
-      setDetailsOpen(panel?.getAttribute('aria-expanded') === 'true')
-    }
-    sync()
-    const observer = new MutationObserver(sync)
-    observer.observe(document.body, { attributes: true, attributeFilter: ['aria-expanded'], subtree: true })
-    return () => { observer.disconnect() }
-  }, [])
+  const referencePaths = useMemo(() => new Set(brief.references.flatMap(reference =>
+    reference.cachedPath === undefined
+      ? []
+      : [props.referencePath(props.sessionId, reference.cachedPath)])),
+  [brief.references, props.referencePath, props.sessionId])
+  const referenceOpen = props.useReferenceView(view =>
+    view.sessionId === props.sessionId && view.paths.some(path => referencePaths.has(path)))
 
   useEffect(() => {
     if (!innerCollapsed) setInnerRevealed(false)
   }, [innerCollapsed])
 
   useEffect(() => {
-    if (!detailsOpen) setDetailsRevealed(false)
-  }, [detailsOpen])
+    if (!referenceOpen) setReferenceRevealed(false)
+  }, [referenceOpen])
 
-  const folded = (innerCollapsed && !innerRevealed) || (detailsOpen && !detailsRevealed)
+  const folded = (innerCollapsed && !innerRevealed) || (referenceOpen && !referenceRevealed)
   const askerName = brief.origin?.askerDisplayName ?? props.t('origin.fallback')
   const records = props.useReceivingQuestions(view =>
     view.byId[props.sessionId]?.records ?? [])
@@ -175,7 +167,7 @@ export function MemberQuestionCard(props: MemberQuestionComposerProps) {
             aria-label={props.t('collapsed.bar', { name: askerName })}
             onClick={() => {
               if (innerCollapsed) setInnerRevealed(true)
-              if (detailsOpen) setDetailsRevealed(true)
+              if (referenceOpen) setReferenceRevealed(true)
             }}
           >
             <span className={css.remoteTag}>{props.t('tag.remote')}</span>

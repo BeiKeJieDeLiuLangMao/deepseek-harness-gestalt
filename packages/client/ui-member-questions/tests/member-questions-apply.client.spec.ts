@@ -11,6 +11,7 @@ import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { TestRemote } from '@deepseek-ai/dsh-client-test-runtime'
 import { MemberQuestionDock } from '../src/client/MemberQuestionCard.tsx'
 import { apply, inject } from '../src/client/index.ts'
+import type { MemberQuestionReferenceView } from '../src/client/contract/slots.ts'
 import { apply as nodeApply } from '../src/index.ts'
 import { en as questionEn, zh as questionZh } from '@deepseek-ai/dsh-client-ui-user-questions/src/client/locales.ts'
 
@@ -142,5 +143,65 @@ describe('ui-member-questions browser apply', () => {
       await fiber.dispose()
     }
     expect(ctx.slots.entries('conversation.input.dock')).toHaveLength(0)
+  })
+
+  it('tracks only visible active Files paths in their owning Session and releases subscriptions', async () => {
+    const { ctx, fiber } = await bench()
+    const entry = ctx.slots.entries('conversation.input.dock')[0]!
+    const injected = (entry.inject as unknown as () => {
+      hooks: { referenceView: { getSnapshot: () => MemberQuestionReferenceView; subscribe: (listener: () => void) => () => void } }
+    })()
+    const listener = vi.fn()
+    const release = injected.hooks.referenceView.subscribe(listener)
+    const stateListener = vi.fn()
+    const registryListener = vi.fn()
+    const releaseState = vi.fn()
+    const releaseRegistry = vi.fn()
+    let editorRegistered = true
+    const sessionId = 'receiving-session'
+    const snapshot = {
+      sessionId,
+      state: {
+        panelOpen: true,
+        bottomOpen: false,
+        splits: {
+          kind: 'leaf', id: 'right', active: 'reference',
+          tabs: [{ id: 'reference', type: 'editor', title: 'brief', path: '/workspace/brief.md' }],
+        },
+        bottomSplits: { kind: 'leaf', id: 'bottom', active: null, tabs: [] },
+        floats: [],
+      },
+    }
+    const disposeSidebar = ctx.reflect.provide('betterSidebar', {
+      getSnapshot: () => snapshot,
+      getTab: (id: string) => id === 'editor' && editorRegistered ? { id: 'editor' } : undefined,
+      subscribeState: (next: () => void) => { stateListener.mockImplementation(next); return releaseState },
+      subscribe: (next: () => void) => { registryListener.mockImplementation(next); return releaseRegistry },
+    })
+    try {
+      expect(injected.hooks.referenceView.getSnapshot()).toEqual({
+        sessionId,
+        paths: ['/workspace/brief.md'],
+      })
+      expect(listener).toHaveBeenCalledTimes(1)
+      stateListener()
+      expect(listener).toHaveBeenCalledTimes(2)
+
+      editorRegistered = false
+      registryListener()
+      expect(injected.hooks.referenceView.getSnapshot()).toEqual({ paths: [] })
+      editorRegistered = true
+      registryListener()
+      expect(injected.hooks.referenceView.getSnapshot()).toEqual({
+        sessionId,
+        paths: ['/workspace/brief.md'],
+      })
+    } finally {
+      await disposeSidebar()
+      release()
+      await fiber.dispose()
+    }
+    expect(releaseState).toHaveBeenCalledTimes(1)
+    expect(releaseRegistry).toHaveBeenCalledTimes(1)
   })
 })

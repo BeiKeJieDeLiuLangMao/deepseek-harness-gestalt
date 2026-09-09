@@ -86,7 +86,7 @@ async function bench() {
 }
 
 describe('ui-browser browser plugin', () => {
-  it('registers the collapsed preview without a details occupant', async () => {
+  it('registers the collapsed preview and browser settings', async () => {
     const b = await bench()
     expect(inject).toEqual([
       'slots', 'sessions', 'remote', 'remote.browserWorkspace', 'locale', 'settingsScope',
@@ -94,7 +94,6 @@ describe('ui-browser browser plugin', () => {
     expect(b.ctx.browserUi.createRequest()).toEqual({ profile: 'shared' })
     expect(b.ctx.browserUi.recoverListedMutation).toBe(recoverListedMutation)
     expect(b.ctx.browserUi.renderPageChrome({} as never).type).toBe(BrowserPageChrome)
-    expect(b.ctx.slots.entries('details')).toEqual([])
     expect(b.preview()?.locale).toBe(NS)
     const section = b.ctx.slots.entries('settings.section')[0]
     expect(section?.options).toMatchObject({ id: 'browser', order: 35 })

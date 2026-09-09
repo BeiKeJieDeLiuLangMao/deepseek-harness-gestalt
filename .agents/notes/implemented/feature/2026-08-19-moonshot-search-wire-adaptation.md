@@ -36,7 +36,7 @@ Extra plugins register more tabs into `settings.plugin.web-search.provider`. The
 
 A user who wants official DeepSeek stays on the DeepSeek tab. A user who wants Messages on Kimi coding uses the Anthropic tab and names `https://api.kimi.com/coding/v1`. A user who wants Moonshot retrieval uses the Kimi tab and the dedicated search URL. Non-ASCII stored keys are not sent as HTTP headers.
 
-The unused field panel and `useThis` leftover are tracked in [drop the unused provider panel](../../proposed/simplification/2026-08-19-drop-dead-web-search-provider-panel.md).
+The unused field panel and `useThis` leftover are tracked in [drop the unused provider panel](../../rejected/simplification/2026-08-19-drop-dead-web-search-provider-panel.md).
 
 ## Testing
 
@@ -45,4 +45,4 @@ The unused field panel and `useThis` leftover are tracked in [drop the unused pr
 ## Related
 
 - [Web capability seam](../architecture/2026-06-24-web-capability-seam.md) — providers register capabilities; `dsh-tool-web` owns the stable `web_search` schema.
-- [Web plugin configuration](2026-08-10-web-plugin-configuration.md) — settings cards bind one namespace each.
+- [Web plugin configuration](../../archived/feature/2026-08-10-web-plugin-configuration.md) — settings cards bind one namespace each.

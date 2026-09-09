@@ -9,6 +9,20 @@ English | [中文](README.zh.md)
 
 ## Summary
 
+Use the pinned Better Sidebar snapshot to host the right sidebar and bottom-panel workbench. Its Host half serves sidebar data, media, previews, lazy chunks, and terminal WebSockets behind the trust fence; its Client half renders the panels through `ctx.betterSidebar`. Upstream refresh instructions and repository-owned modifications remain documented separately.
+
+## Table of Contents
+
+- [Package contract](#package-contract)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
+
+-----
+
+<a id="package-contract"></a>
+## Package contract
+
 Pinned source snapshot of [omdsh-dev/DSH-better-sidebar](https://github.com/omdsh-dev/DSH-better-sidebar). The host half mounts `/sidebar` JSON, media, HTML preview, lazy-chunk, and terminal WebSocket routes behind the webServer trust fence. The client half publishes `ctx.betterSidebar` and paints the right sidebar plus bottom panel. Only the public `./client` entry augments Cordis with that Client service; the shared snapshot mirror is named `SidebarContext` so Host type catalogs cannot mistake it for Cordis `Context`. SHA and refresh steps live in [UPSTREAM.md](UPSTREAM.md). Repository-owned edits are listed in [LOCAL-MODIFICATIONS.md](LOCAL-MODIFICATIONS.md).
 
 Product composition mounts this package and [`dsh-client-ui-workbench`](../ui-workbench/README.md). The adapter enables the snapshot browser tab and publishes official chrome from [`dsh-client-ui-browser`](../ui-browser/README.md); the sandboxed iframe remains the standalone fallback. Do not edit snapshot sources to change product behavior.
@@ -22,14 +36,6 @@ The Side Chat tab mounts the repository's declared `conversation` slot under a p
 Side Chat tabs survive a Host restart. A thread is a durable child Session while the tab strip lives in origin-scoped localStorage, so a restart under a new origin can lose the strip without losing the threads. When a Session's sidebar state activates, the strip restores every published, unarchived direct Side Chat child that lacks a tab. A cold child whose Session summary has no title projection uses the matching direct parent catalog label for the reserved `Side: ` classification and tab title. Restored tabs land in the active pane without replacing its active tab; blank children and renderer-only provisional identities do not restore. A restored thread resumes with the model route from its latest child-owned request, or its creation descriptor before any request exists; a provisional draft still reads the live parent's route. The Host serializes close against an admitted first prompt, reports publication from its live and durable Session stores, and releases the live handle. The client archives a published Session without deleting its log; an unsent draft has no Session to archive. The tab closes only when those operations succeed; failure is reported and leaves it open. Plugin disposal waits for in-flight closes without letting them commit stale browser state. A local tombstone then prevents list refreshes from reopening the tab before the archive projection arrives. The `?dsh-sidebar-reset` escape hatch skips restoration for that load.
 
 File-tree rename refuses an existing destination; delete is permanent and protects the workspace root. Changes previews provide reading mode and default secret redaction. Terminal settings accept quoted shell paths and arguments; `terminal_wait_for` searches a JavaScript regular expression and returns the matched text, with literal matching for an invalid pattern.
-
-## Table of Contents
-
-- [Model Experience](#model-experience)
-- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
-- [Dev Note](#dev-note)
-
------
 
 <a id="model-experience"></a>
 ## Model Experience

@@ -51,47 +51,51 @@ function fixture(options: {
   return { root, loaderUrl: pathToFileURL(loaderPath).href }
 }
 
-function verify(root: string, loaderUrl: string) {
-  return spawnSync(process.execPath, [
+function verify(root: string, loaderUrl: string, timeout: number) {
+  const result = spawnSync(process.execPath, [
     verifier,
     '--packages-root', root,
     '--loader-url', loaderUrl,
   ], {
     encoding: 'utf8',
-    timeout: 5_000,
+    // Plain-Node startup and staged imports share the runner's platform budget.
+    timeout,
   })
+  expect(result.error).toBeUndefined()
+  expect(result.signal, result.stderr).toBeNull()
+  return result
 }
 
 describe('built package invariant verifier', () => {
-  it('loads the staged compiled self-reference through plain Node and Loader normalization', () => {
+  it('loads the staged compiled self-reference through plain Node and Loader normalization', ({ task }) => {
     const { root, loaderUrl } = fixture()
-    const result = verify(root, loaderUrl)
+    const result = verify(root, loaderUrl, task.timeout)
     expect(result.status, result.stderr).toBe(0)
     expect(result.stdout).toContain('1 compiled companion(s) passed plain-Node Loader checks')
   })
 
-  it('accepts packages that do not publish a companion', () => {
+  it('accepts packages that do not publish a companion', ({ task }) => {
     const { root, loaderUrl } = fixture({ companion: false })
-    const result = verify(root, loaderUrl)
+    const result = verify(root, loaderUrl, task.timeout)
     expect(result.status, result.stderr).toBe(0)
     expect(result.stdout).toContain('0 compiled companion(s) passed plain-Node Loader checks')
   })
 
-  it('rejects a default export and a broken invariant export map', () => {
+  it('rejects a default export and a broken invariant export map', ({ task }) => {
     const withDefault = fixture({
       invariantSource: "export default {}\nexport const name = 'probe-invariant'\nexport const inject = ['invariants']\nexport const apply = () => {}\n",
     })
-    const defaultResult = verify(withDefault.root, withDefault.loaderUrl)
+    const defaultResult = verify(withDefault.root, withDefault.loaderUrl, task.timeout)
     expect(defaultResult.status).toBe(1)
     expect(defaultResult.stderr).toContain('companion has a default export')
 
     const brokenExport = fixture({ invariantExport: './lib/missing.js' })
-    const exportResult = verify(brokenExport.root, brokenExport.loaderUrl)
+    const exportResult = verify(brokenExport.root, brokenExport.loaderUrl, task.timeout)
     expect(exportResult.status).toBe(1)
     expect(exportResult.stderr).toContain('@deepseek-ai/dsh-probe')
   })
 
-  it('stages manifest-declared transitive chunks from portable package paths', () => {
+  it('stages manifest-declared transitive chunks from portable package paths', ({ task }) => {
     const { root, loaderUrl } = fixture({
       files: ['lib/invariant.js', 'lib/chunks/**/*.js'],
       invariantSource: "export * from './chunks/entry.js'\n",
@@ -100,11 +104,11 @@ describe('built package invariant verifier', () => {
         'lib/chunks/nested/runtime.js': "export const name = 'probe-invariant'\nexport const inject = ['invariants']\nexport const apply = () => {}\n",
       },
     })
-    const result = verify(root, loaderUrl)
+    const result = verify(root, loaderUrl, task.timeout)
     expect(result.status, result.stderr).toBe(0)
   })
 
-  it('rejects an invariant bundle whose staged chunk needs an undeclared transitive chunk', () => {
+  it('rejects an invariant bundle whose staged chunk needs an undeclared transitive chunk', ({ task }) => {
     const { root, loaderUrl } = fixture({
       files: ['lib/invariant.js', 'lib/chunks/entry.js'],
       invariantSource: "export * from './chunks/entry.js'\n",
@@ -113,10 +117,8 @@ describe('built package invariant verifier', () => {
         'lib/chunks/nested/runtime.js': "export const name = 'probe-invariant'\nexport const inject = ['invariants']\nexport const apply = () => {}\n",
       },
     })
-    const result = verify(root, loaderUrl)
+    const result = verify(root, loaderUrl, task.timeout)
     expect(result.status).toBe(1)
     expect(result.stderr).toContain('runtime.js')
   })
-
-
 })

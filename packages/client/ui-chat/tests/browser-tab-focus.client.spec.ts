@@ -5,7 +5,7 @@ import {
   focusListedBrowserTab,
   listedBrowserTabRevision,
 } from '../src/client/chat/browser-tab-focus.ts'
-import { findToolCall } from '../src/client/details/tool-node-reader.ts'
+import { findToolCall } from '../src/client/chat/tool-node-reader.ts'
 
 const TARGET = {
   profileId: 'profile-1',

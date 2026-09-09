@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
-  SessionId, SessionLogOffset, SessionSeq,
+  SESSION_FORMAT_VERSION, SessionId, SessionLogOffset, SessionSeq,
   type SessionEvent, type SessionHeader,
 } from '@deepseek-ai/dsh-session'
 import type SessionPersistence from '@deepseek-ai/dsh-session-persistence'
@@ -21,13 +21,13 @@ function persistenceReader(
     ? Promise.resolve()
     : Promise.reject(options.closeFailure))
   const read = vi.fn(() => options.readFailure === undefined
-    ? Promise.resolve(events)
+    ? Promise.resolve({ eventState: 'shared-frozen' as const, events })
     : Promise.reject(options.readFailure))
   const open = vi.fn(async (id: SessionId, access: SessionAccess): Promise<SessionHandle> => ({
     id,
     access,
     header: {
-      version: 0,
+      version: SESSION_FORMAT_VERSION,
       id,
       createdAt: 1,
       isSeeded: false,

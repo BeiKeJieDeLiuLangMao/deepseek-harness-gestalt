@@ -9,10 +9,11 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-schedule` gives your session durable reminders: ask the model to remind you later, and the reminder comes back as an ordinary follow-up message in the same conversation. You can schedule a one-time reminder after a delay or at an absolute time, or a repeating reminder on a fixed interval, and you can list or cancel retained reminders, including paused ones. Reminders survive restarts: an already-live idle agent can deliver due work immediately, while a closed or cold session keeps it overdue until a future live root agent resumes the session. Delivery stays inside the session, with no email, SMS, or push notification. It is an opt-in Web capability; load the Schedule overlay to enable the reminder tools. `schedule_list` returns retained reminders in creation order, including paused rows. The conversation-header catalog is not mounted. Ordinary and search sidebar rows may show a non-interactive alarm when their best-effort list projection is known to be non-empty; the alarm does not promise a live runtime or a header catalog.
+Ask the model to deliver durable one-time or fixed-rate reminders as ordinary follow-up messages in the same session. You can create, list, pause, resume, or cancel retained reminders; overdue work waits for a live root agent after restart. The Web capability is opt-in and never sends email, SMS, or push notifications.
 
 ## Table of Contents
 
+- [Package contract](#package-contract)
 - [Use this package](#use-this-package)
 - [Understand the implementation](#understand-the-implementation)
 - [Further Exploration](#further-exploration)
@@ -21,6 +22,11 @@ English | [中文](README.zh.md)
 - [Dev Note](#dev-note)
 
 -----
+
+<a id="package-contract"></a>
+## Package contract
+
+`dsh-schedule` gives your session durable reminders: ask the model to remind you later, and the reminder comes back as an ordinary follow-up message in the same conversation. You can schedule a one-time reminder after a delay or at an absolute time, or a repeating reminder on a fixed interval, and you can list or cancel retained reminders, including paused ones. Reminders survive restarts: an already-live idle agent can deliver due work immediately, while a closed or cold session keeps it overdue until a future live root agent resumes the session. Delivery stays inside the session, with no email, SMS, or push notification. It is an opt-in Web capability; load the Schedule overlay to enable the reminder tools. `schedule_list` returns retained reminders in creation order, including paused rows. The conversation-header catalog is not mounted. Ordinary and search sidebar rows may show a non-interactive alarm when their best-effort list projection is known to be non-empty; the alarm does not promise a live runtime or a header catalog.
 
 <a id="use-this-package"></a>
 ## Use this package
@@ -134,9 +140,9 @@ Read these pages when the package-level contract is not enough. They move from t
 - [Session-local Schedule subsystem](../../../docs/subsystems/schedule.md) — durable record, transition, view, and delivery contracts with the exact type definitions.
 - [Generated tool catalog](../../../docs/tool-catalog.md#deepseek-aidsh-schedule) — the complete `schedule_create`, `schedule_list`, and `schedule_delete` schemas the model receives.
 - [Durable Web Schedule decision](../../../.agents/notes/implemented/feature/2026-08-05-durable-web-schedule.md) — persistence and lifecycle decisions behind the package.
-- [Conversational delivery decision](../../../.agents/notes/implemented/simplification/2026-08-09-conversational-schedule-delivery.md) — the no-receipt boundary and follow-up delivery.
+- [Conversational delivery decision](../../../.agents/notes/archived/simplification/2026-08-09-conversational-schedule-delivery.md) — the no-receipt boundary and follow-up delivery.
 - [Explicit time-zone boundary](../../../.agents/notes/implemented/simplification/2026-08-09-explicit-schedule-time-zone.md) — why the model must always pass an explicit zone.
-- [Bounded fixed-rate Schedule](../../../.agents/notes/implemented/simplification/2026-08-09-bounded-fixed-rate-schedule.md) — recurrence scope: latest-only catch-up and batch delivery.
+- [Bounded fixed-rate Schedule](../../../.agents/notes/archived/simplification/2026-08-09-bounded-fixed-rate-schedule.md) — recurrence scope: latest-only catch-up and batch delivery.
 - [Schedule user guide](../../../docs/user/guide/schedule.md) — the official configuration path for mounting this package with time-context.
 
 -----

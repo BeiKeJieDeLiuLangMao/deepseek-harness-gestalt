@@ -29,7 +29,8 @@ export const SCHEDULE_SNAPSHOT_TIMEZONE = 'Asia/Shanghai'
  * This keeps role locators and goldens deterministic while leaving the Host
  * settings document free to override the provisional browser-derived locale;
  * scenarios asserting the Chinese surface advertise
- * {@link ZH_BROWSER_LOCALE} instead.
+ * {@link ZH_BROWSER_LOCALE} instead. The context uses Asia/Shanghai to preserve
+ * the recorded Web user-source timezone independently of the host timezone.
  * @param browser - Playwright browser owning the page.
  * @param height - Viewport height; width is fixed to the lane baseline.
  * @param timezoneId - optional IANA zone for the page's browser context.
@@ -38,7 +39,7 @@ export const SCHEDULE_SNAPSHOT_TIMEZONE = 'Asia/Shanghai'
 export async function newEnglishPage(
   browser: Browser,
   height = 1000,
-  timezoneId?: string,
+  timezoneId = 'Asia/Shanghai',
 ): Promise<Page> {
   return await browser.newPage({
     viewport: { width: 1680, height },
@@ -128,7 +129,7 @@ export async function connectFreshWorkspace(page: Page, root: string, name = 'wo
   await dialog.getByRole('button', { name: 'Open', exact: true }).click()
   // The pick connected the workspace: the blank session's live composer
   // replaces the locked placeholder and enables.
-  await page.locator('[data-composer-input][contenteditable="true"][data-placeholder="Describe what you want to build... / commands, @ files or sessions"]')
+  await page.locator('[data-composer-input][contenteditable="true"][data-placeholder="Describe what you want to build, / commands, @ files or sessions"]')
     .waitFor({ timeout: 15_000 })
 }
 
@@ -151,7 +152,7 @@ export async function connectFreshWorkspaceZh(page: Page, root: string, name = '
   await pathInput.fill(join(root, name))
   await pathInput.press('Enter')
   await dialog.getByRole('button', { name: '打开', exact: true }).click()
-  await page.locator('[data-composer-input][contenteditable="true"][data-placeholder="描述你想要构建的内容… / 调用指令 @ 文件或对话"]')
+  await page.locator('[data-composer-input][contenteditable="true"][data-placeholder="描述你想要构建的内容, / 调用指令, @ 文件或对话"]')
     .waitFor({ timeout: 15_000 })
 }
 

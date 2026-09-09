@@ -9,10 +9,11 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-client-ui-user-questions` 是 Web 提问功能插件：其浏览器侧把 `question` 条目注册到会话拥有的 `conversation.composer` chain 中，因此当 agent 向用户提问时，编辑器会被提问 UI 接管。它还占用 `question.presentation`，接收 JSON questions 与 Host answer/cancel callback，因此 member-question dock 可以声明该子槽而不导入 `PendingQuestion`。组件每次渲染一个问题，提供进度导航、单选与多选选项、推荐徽标与自定义答案，并为整个请求提交一批结构化答案。若某个请求的唯一问题声明了呈现意图，则改为渲染该意图自己的界面——最典型的是 `plan-review` 等待审批卡片，带 `Chat about it` / `Refuse` / `Approve`。其主机侧刻意为空：在那里挂载 `dsh-tool-ask-user` 会把工具放进注册表的全局层，并把它并入每一个 agent，无论它由哪个 preset 组装。
+通过接管编辑器回答 `ask_user_question` 请求，同时保留进度、单选或多选、推荐、自定义回答和一次结构化结算。呈现意图可以替换普通表单，包括计划评审批复卡。浏览器包负责 UI 和回调；工具注册仍由组合它的 preset 负责。
 
 ## 目录
 
+- [包约定](#package-contract)
 - [使用本包](#use-this-package)
 - [理解实现](#understand-the-implementation)
 - [进一步探索](#further-exploration)
@@ -21,6 +22,11 @@ kind: "package-reference"
 - [开发备注](#dev-note)
 
 -----
+
+<a id="package-contract"></a>
+## 包约定
+
+`dsh-client-ui-user-questions` 是 Web 提问功能插件：其浏览器侧把 `question` 条目注册到会话拥有的 `conversation.composer` chain 中，因此当 agent 向用户提问时，编辑器会被提问 UI 接管。它还占用 `question.presentation`，接收 JSON questions 与 Host answer/cancel callback，因此 member-question dock 可以声明该子槽而不导入 `PendingQuestion`。组件每次渲染一个问题，提供进度导航、单选与多选选项、推荐徽标与自定义答案，并为整个请求提交一批结构化答案。若某个请求的唯一问题声明了呈现意图，则改为渲染该意图自己的界面——最典型的是 `plan-review` 等待审批卡片，带 `Chat about it` / `Refuse` / `Approve`。其主机侧刻意为空：在那里挂载 `dsh-tool-ask-user` 会把工具放进注册表的全局层，并把它并入每一个 agent，无论它由哪个 preset 组装。
 
 <a id="use-this-package"></a>
 ## 使用本包

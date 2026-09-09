@@ -131,6 +131,7 @@ async function createGeneratedHost(options: {
   await ctx.plugin(JsonlSessionPersistence, { root: join(dshHome, 'sessions'), compression: 'none' })
   installSessionReadTestServices(ctx)
   ctx.provide('workspaceRegistry', { list: () => [] } as never)
+  ctx.provide('fileUploads', { registerAgentResolver: () => () => {} } as never)
   ctx.provide('fileReferences', {
     list: () => Promise.resolve([]),
   } as never)
@@ -149,7 +150,7 @@ async function createGeneratedHost(options: {
   ): Promise<Context> => {
     const withAgent = ownerCtx.extend({ agent })
     Object.assign(agent, { status: 'idle', ctx: withAgent })
-    await setup?.(withAgent)
+    await setup?.(withAgent, agent)
     let agentCtx = withAgent
     if (options.allow !== undefined && options.tools !== false) {
       await withAgent.plugin(Object.assign((inner: Context) => {
@@ -181,10 +182,10 @@ async function createGeneratedHost(options: {
         handle = await ctx.sessionPersistence.open(resume.resumeSessionId, 'write')
         const persisted = await handle.read()
         session = ctx.sessions.prepare(resume.resumeSessionId, {
-          seed: [...persisted],
+          seed: [...persisted.events],
           meta: structuredClone(handle.header),
           inheritedEventCount: handle.inheritedEventCount,
-          seedSource: 'persistence',
+          eventState: persisted.eventState,
         })
         ctx.sessions.enter(session)
         ctx.sessions.announce(session)

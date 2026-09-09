@@ -1,6 +1,27 @@
+---
+description: "Phone tab and Phone Devices settings for selecting, viewing, and controlling mobilecli-backed Android and iOS devices."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-client-ui-phone
 
 English | [中文](README.zh.md)
+
+## Summary
+
+Open a singleton Phone tab, select an online Android or iOS device, view its live screen, and send touch, text, button, screenshot, or stream-refresh actions. The Phone Devices settings page prepares the shared mobilecli runtime and platform environments. The feature stays disabled until its durable setting is enabled and produces no model-visible output.
+
+## Table of Contents
+
+- [Package contract](#package-contract)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
+
+-----
+
+<a id="package-contract"></a>
+## Package contract
 
 Phone tab plugin: registers the Phone tab type into the `ctx.betterSidebar` registry (id `phone`, + menu title 手机 / Phone from `settings.phone-devices`, monochrome inline SVG icon, `order: 55`). The entry is always reachable — `available` never refuses, so a deployment with zero devices still opens the picker instance and lands on the locked design's not-connected empty state: the Android/iOS platform segment, the grouped device list (模拟器 / USB 真机), the USB placeholder row, and the 重新检测环境 control.
 
@@ -20,6 +41,7 @@ Composition: the `tsconfig.client.json` aggregate references the package; `packa
 
 Android sessions keep H264 visible when the runtime can replace a malformed mobilecli AVC response with the system Annex-B encoder. A managed tap or swipe JSON-RPC error stays on the live picture; agent recovery runs after mint, picture, or socket death, and after io `-32010` or unauthorized messages. A missing agent keeps one-click installation in the error card. OEMs may still require an on-device USB-install or debugging-security confirmation. `INSTALL_FAILED_USER_RESTRICTED` has its own retryable card and never asks the user to download or run the installer manually.
 
+<a id="model-experience"></a>
 ## Model Experience
 
 None, as the browser UI, Host settings namespace, and video playback register no prompt, tool schema, session event, or provider request; model-facing capabilities belong to separate consumers.
@@ -30,8 +52,15 @@ None; UI settings and device state never alter a model request prefix.
 
 ## Known Limitations and Deferred Work
 
+<a id="known-limitations-and-deferred-work"></a>
+
 - **Badge fidelity gap** — the pill node is aria-hidden (accessibility P3: the count never joins the tab's accessible name), but the locked mockup's 灰点 (no device) / 绿色数字 (online count) still needs a dot-and-color rendering path that the pinned better-sidebar badge contract does not offer: it renders one neutral pill around a string or number, and `null` hides the pill entirely. This package therefore ships the value-level two arms (quiet vs count); the dot styling lands when the contract extends. The badge callback also cannot see which tab instance renders it, so every phone tab shows the fleet online count rather than the active device's dot.
 - **截图 is disabled** — the design stores screenshots as session attachments; no client-attachable route exists yet, so the button renders disabled with a tooltip instead of pretending.
 - **最近设备 and per-row 启动 stay future surfaces** — fleet history and picker row-start controls do not exist; the picker ships 打开 only, while default Simulator start belongs to Phone Devices settings.
 - **IME composition and control keys do not reach the device** — printable input and Enter map to `device.io.text`; deletions, shortcuts, and IME pre-edit need a richer text path.
 - **Remaining zh-only copy** — the + menu, picker, and occupied tab titles plus the Phone Devices settings section resolve through `settings.phone-devices`; picker rows, connection cards, and other device-dock chrome still ship Chinese until that pass lands.
+
+<a id="dev-note"></a>
+### Dev Note
+
+None.

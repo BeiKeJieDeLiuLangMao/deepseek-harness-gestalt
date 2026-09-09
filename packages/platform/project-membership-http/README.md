@@ -9,6 +9,20 @@ English | [中文](README.zh.md)
 
 ## Summary
 
+Expose project creation and recovery, rosters, invitations, member administration, and Installation presence over HTTP. Each route validates bounded input, authenticates the Account, and delegates one role-gated operation without copying membership state. Responses disable caching and map membership, Account, conflict, and capacity failures to stable JSON status codes and retry metadata.
+
+## Table of Contents
+
+- [Package contract](#package-contract)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
+
+-----
+
+<a id="package-contract"></a>
+## Package contract
+
 HTTP Consumer for `ctx.projectMembership`. It registers project creation, current-Account recovery by normalized remote, roster reads, invitation issuance, authoritative invitee and project-scoped issuer pending reads, the body-discriminated `accept-with-link`/`decline` decision, retraction, member role, function-tag, and removal routes, and the per-installation presence heartbeat and close. Creation and remote recovery attach the authenticated Account id; invitation presentations join only public GitHub logins and the granted role. Issue requests carry `grantedRole`; the membership operation owns the grant gate. Every route is a thin adapter onto one membership operation, which owns each role gate; the Consumer copies no membership state. Responses disable caching; errors use stable JSON envelopes that carry the domain code — membership `INVALID_*` answers 400, `ROLE_REQUIRED` and `NOT_A_MEMBER` answer 403, `*_NOT_FOUND` answers 404, `DUPLICATE_INVITEE`, `PROJECT_NAME_TAKEN`, `PROJECT_REMOTE_TAKEN`, `INVITATION_NOT_PENDING`, and `LAST_OWNER` answer 409, revoked Account sessions answer 401, and Account `QUOTA`/`PLATFORM_CAPACITY` answer 429 with a `Retry-After` header. Its required non-empty `origins` Config must include the Account provider's selected validated environment origin; request bodies are capped at 64 KiB and parsed through the `@deepseek-ai/dsh-host-webserver` JSON helpers.
 
 Every route resolves the acting account from an existing Account session: a bearer access token plus the `x-gestalt-proof-*` installation proof headers, verified through `ctx.platformAccount.current`, with the shared `/v1/projects/presence` prefix handler resolving the installation through `currentInstallation` for both heartbeat and close. The parameterized routes register as the `/v1/projects` prefix owners and answer 404 for unmatched subpaths.
@@ -16,14 +30,6 @@ Every route resolves the acting account from an existing Account session: a bear
 Presence is heartbeat-registered and liveness-only. One `/v1/projects/presence` prefix handler owns both `POST /v1/projects/presence/heartbeat` and `POST /v1/projects/presence/close`. An authenticated Desktop installation calls heartbeat on the `presenceHeartbeatIntervalMs` cadence (default 60 seconds; other installation kinds answer `403 INSTALLATION_KIND_UNSUPPORTED`), each beat stays live for `presenceTtlMs` (default 90 seconds), and close drops that installation immediately so roster readers see Offline without waiting for TTL. TTL expiry remains the crash and partition path. A member is `online` while any of their installations holds a live heartbeat. Roster reads attach that `presence` verdict to every member and join the member's public identity in the same batch: `displayName` carries the current public GitHub login and `avatarRef` the current public avatar URL, both left empty for an account the Account plane does not know. There is no manual state and no idle inference.
 
 Presence entries live in a process-local TTL map behind the reserved `PresenceStore` adapter (`record`, `clear`, `onlineAccountIds`); a shared store that keeps presence consistent across Platform instances is deferred deployment work, not a service change.
-
-## Table of Contents
-
-- [Model Experience](#model-experience)
-- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
-- [Dev Note](#dev-note)
-
------
 
 <a id="model-experience"></a>
 ## Model Experience

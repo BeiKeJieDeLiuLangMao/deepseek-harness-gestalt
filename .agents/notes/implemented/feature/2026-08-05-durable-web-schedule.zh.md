@@ -14,7 +14,7 @@ Status: implemented
 
 [Schedule 指南](../../../../docs/user/guide/schedule.zh.md)使用一层显式加载 `@deepseek-ai/dsh-time-context` 与 `@deepseek-ai/dsh-schedule` 的 overlay；纯浏览器 Web 的默认配置树保持不变。DeepSeek Gestalt Desktop overlay 默认加载同一插件对。Schedule 只观察插件加载后发布的根 Agent，并在该 Agent scope 中安装三个工具和一个可丢弃 owner。cold history 读取、已发布的根、child Agent 与没有其中一层 overlay 的 host 都不会激活它。
 
-用户可见的投递边界是 `session-local`：原 Session 只有在 live 时才会准时运行提醒，cold 期间不发送任何外部通知；该 Session 再次 live 后才会处理 overdue 提醒。到期工作会等待 Agent 完全 idle，再通过 `followup()` 进入普通的下一轮队列；它绝不会中途引导当前轮次，也没有独立投递回执（[对话式交付](../simplification/2026-08-09-conversational-schedule-delivery.zh.md)）。Host fold 与工具接受持久 `create`／`pause`／`resume`／`delete`／`dispatch`；`schedule_list` 包含暂停行，`schedule_delete` 接受暂停 id。不存在面向模型的 pause 或 resume 工具。人工 pause/resume Remote 传输与 Desktop 任务板仍是保留的设计义务，尚未挂载；本 Host 包不安装 `ctx.schedules`。[Session Schedule 任务板](2026-08-17-session-schedule-board.zh.md) 决策仍拥有该目录。
+用户可见边界是 `session-local`：原 Session 只有在 live 时才会准时运行提醒，cold 期间不发送任何外部通知；该 Session 再次 live 后才会处理 overdue 提醒。到期工作会等待 Agent 完全 idle，再通过 `followup()` 进入普通的下一轮队列；它绝不会中途引导当前轮次，也没有独立 Web 回执（[对话式交付](../../archived/simplification/2026-08-09-conversational-schedule-delivery.md)）。
 
 | 场景 | 持久事实 | live 行为 | 用户可见结果 |
 | --- | --- | --- | --- |
@@ -28,7 +28,7 @@ Status: implemented
 
 版本 1 `schedule/change` stream 是唯一持久的 Schedule 权威。create 记录拥有一个 Session 内不复用的品牌 id、trim 后的提示词、规则判别字段和 UTC 目标。pause 与 resume 保留记录且不改变目标；delete 与一次性 dispatch 是终结转换。Every dispatch 会存储 id 与决策时点，使 fold 将该记录直接推进到错过的发生时点之后。严格 decoder 与纯 fold 会拒绝未知版本、额外字段、重复使用的 id、形状不匹配的 dispatch，以及从缺失或不兼容状态发起的转换。普通 Session 折叠完整 stream；fork 只折叠 `Session.inheritedEventCount` 位置及其后的 event。
 
-当前规则 union 接受非空提示词和恰好一个 selector。`after_seconds` 是正的安全整数 delay，其记录为 `{ id, kind: 'after', prompt, afterSeconds, scheduledAt }`。`at` 可以是带 `Z` 或数值偏移量且严格符合 RFC 3339 的值，也可以是带显式时区的结构化 `{ date, time, time_zone }`；其记录为 `{ id, kind: 'at', prompt, scheduledAt }`。`every_seconds` 是不小于 300 的安全整数，其 `{ id, kind: 'every', prompt, everySeconds, scheduledAt }` 记录始终与从创建时刻加一个间隔开始的序列对齐。一次性 dispatch 只存储 id；Every dispatch 存储 `id + acceptedAt`。工具值派生 `scheduled`、`overdue` 或 `paused`，并包含 `deliveryMode: 'session-local'`。
+`ctx.sessionProjections` 存在时，Schedule 会注册一个复用同一 transition 的严格单元，并发布完整的活动 `ScheduleRecord[]`；共享的 [projection state 决策](../../archived/architecture/2026-08-19-session-projection-state-and-client-views.md)拥有其初始化与 restore 约定。损坏的持久输入会使既有读取路径失败，而不会产生部分数组。浏览器安全的记录词汇通过纯类型子路径 `@deepseek-ai/dsh-schedule/client` 暴露。
 
 一个插件拥有的 `ScheduleTransactions` FIFO 会将管理事务与 live owner 的到期事务从 preflight 到 post-append barrier 全程串行化。每项工具读取都会先等待 `ctx.sessions.flush(session)`。create 会尽可能在进入 FIFO 前拒绝输入形状错误，随后执行 preflight、分配 id、追加记录并再次 checkpoint。delete 会在进入 FIFO 前验证 id，在判断其是否位于 `folded.schedules` 前执行 preflight，并且只在追加后再次 checkpoint。list 与 not-found delete 绝不会根据未经确认的 live 后缀作答。barrier 失败会返回 `persistence_uncertain`，而不是猜测 eager write 是否已经提交。
 
@@ -46,7 +46,7 @@ Every 是固定时长间隔，而不是日历规则。第一个目标是创建�
 
 所有不同的逾期 Every 记录都会参与同一个批次，每条记录各自提供一个最新发生时点，并共享同一个 `acceptedAt`。系统不存在跨记录的冷却、门控、配额或保留的批次时间戳。至少 5 分钟的限制约束了唤醒与模型请求频率。如果下一个序列点会超出四位年份存储范围，dispatch 会终结该记录。
 
-日历表达式与 Cron 表达式被有意排除（[有界周期性简化](../simplification/2026-08-09-bounded-fixed-rate-schedule.zh.md)）；支持这些表达式需要增加时区敏感的日历语言、求值器依赖、校验范围和 tzdata 回放策略，而这些都与固定速率提醒无关。
+日历表达式与 Cron 表达式被有意排除（[有界周期性简化](../../archived/simplification/2026-08-09-bounded-fixed-rate-schedule.md)）；支持这些表达式需要增加时区敏感的日历语言、求值器依赖、校验范围和 tzdata 回放策略，而这些都与固定速率提醒无关。
 
 ### Live 交付生命周期
 

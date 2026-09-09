@@ -80,8 +80,8 @@ describe('TabBar Desktop + menu', () => {
     const tabDragRule = /body\[data-dsh-tab-dragging\] \.windowDragSpace\s*\{(?<body>[^}]+)\}/.exec(source)?.groups?.body ?? ''
     expect(tabDragRule).toContain('-webkit-app-region: no-drag')
     const noDragSelectors = [...source.matchAll(/(?<selectors>[^{}]+)\{(?<body>[^{}]*)\}/g)]
-      .filter(match => match.groups?.body.includes('-webkit-app-region: no-drag'))
-      .flatMap(match => match.groups?.selectors.split(',').map(selector => selector.trim()))
+      .filter(match => match.groups?.body?.includes('-webkit-app-region: no-drag') === true)
+      .flatMap(match => (match.groups?.selectors ?? '').split(',').map(selector => selector.trim()))
     expect(noDragSelectors).not.toContain('.tabBar')
   })
 

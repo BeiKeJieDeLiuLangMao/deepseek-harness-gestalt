@@ -3,7 +3,7 @@
  * listing revision.
  */
 import type { ChatSnapshot, ToolCallBlock } from '../contract/snapshot.ts'
-import { findToolCall } from '../details/tool-node-reader.ts'
+import { findToolCall } from './tool-node-reader.ts'
 
 /** Opaque Browser Runtime identities carried on tool args and results. */
 export interface BrowserTabIdentity {

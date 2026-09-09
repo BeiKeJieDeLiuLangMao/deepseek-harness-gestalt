@@ -99,7 +99,7 @@ describe('documentation site build', () => {
     const options = docSiteBuildOptions(root, mpa)
     expect(options.mpa).toBe(expectedMpa)
     expect(existsSync(stale)).toBe(true)
-    await options.onAfterConfigResolve?.({ outDir } as never)
+    await options.onAfterConfigResolve?.({ outDir, root } as never)
     expect(existsSync(outDir)).toBe(false)
   })
 
@@ -463,7 +463,7 @@ describe('docsPages locale routes', () => {
     const translated = rootPages.filter(page => page.contentLocale === 'zh-CN')
     const fallbacks = rootPages.filter(page => page.contentLocale === 'en-US')
 
-    expect(translated).toHaveLength(46)
+    expect(translated).toHaveLength(48)
     expect(translated.every(page => page.source.endsWith('.zh.md'))).toBe(true)
     expect(fallbacks).toEqual([])
   })

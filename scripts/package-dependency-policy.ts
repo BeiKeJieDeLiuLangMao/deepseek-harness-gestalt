@@ -39,6 +39,9 @@ const DUPLICATE_SAFE_PACKAGES: readonly string[] = [
 
 /**
  * Runtime exports whose values remain valid when npm installs another package copy.
+ * New entries are forbidden by default. Automated agents must not add an
+ * exception; every addition requires explicit human review and a dedicated,
+ * prominent heading in the pull request description.
  */
 const SAFE_HOST_DEPENDENCY_EXPORTS = {
   '@deepseek-ai/dsh-agent': ['liveModelSelection'],
@@ -53,6 +56,7 @@ const SAFE_HOST_DEPENDENCY_EXPORTS = {
   ],
   '@deepseek-ai/dsh-session': ['SessionId', 'SessionLogOffset', 'foldRequestHeader'],
   '@deepseek-ai/dsh-subagent': ['foldSubagentDescriptor', 'snapshotSubagentDescriptor'],
+  '@deepseek-ai/dsh-session-format': ['sessionFormatLogFilename'],
   '@deepseek-ai/dsh-timeout': ['MAX_TIMER_DELAY_MS'],
   '@deepseek-ai/dsh-tools': ['defineTool'],
   '@deepseek-ai/schemastery': ['default'],
@@ -62,6 +66,7 @@ const SAFE_HOST_DEPENDENCY_EXPORTS = {
 const PEER_REQUIRED_HOST_EXPORTS = {
   '@deepseek-ai/dsh-agent': ['installModelSelection'],
   '@deepseek-ai/dsh-scope': ['carrierKeyOf', 'scopeOf', 'scopeTarget'],
+  '@deepseek-ai/dsh-session': ['SESSION_FORMAT_VERSION'],
   '@deepseek-ai/dsh-session-persistence': ['SessionPersistenceNotFoundError'],
   '@deepseek-ai/dsh-settings': ['SettingsConflictError'],
 } as const satisfies HostDependencyExports

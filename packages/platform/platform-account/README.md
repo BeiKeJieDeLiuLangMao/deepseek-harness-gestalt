@@ -9,19 +9,25 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Service Definition for Platform Account identity and the Account Session bound to one Desktop or Mobile Installation. `AccountService` owns Login Attempt creation, GitHub callback completion, signed polling, access-token refresh, current-account reads, authenticated current-installation reads, current-installation sign-out, and connection tracking through `ctx.platformAccount`. A Mobile Login Attempt commits its bounded device name and iOS or Android platform into the resulting Account Session. `currentInstallation()` returns the provider-bound Installation id, kind, and Mobile presentation with the Account projection, so another capability never needs Account tables or caller-supplied identity fields. Quota admission checks an existing Installation by row existence rather than decoding its obsolete session payload, allowing a forced login to replace a pre-presentation Mobile row atomically.
-
-The public types brand Account, Login Attempt, Account Session, Installation, and proof-JTI ids. Runtime `AccountError` exposes stable failure codes for invalid or expired attempts, invalid or replayed proof, expired or revoked sessions, and open-registration `QUOTA` / `PLATFORM_CAPACITY` failures that carry `retryAfter` in seconds; the `./types` subpath remains type-only. Spec-fixed ceilings are ten live Desktop installations, ten live Mobile installations, and twenty concurrent tracked connections per Account. An optional shared `PlatformCapacityState` sheds new login while established sessions remain usable.
-
-`loadOperatedPlatformEnvironment` is the product-entry parser: it accepts one complete production identity and rejects local origins. `loadPlatformEnvironment` validates and selects a development/production pair only for bounded compositions such as examples and tests. Product clients supply the operated identity through deployment-owned build artifacts and have no runtime development selector.
+Use `AccountService` to create and complete Platform login attempts, refresh sessions, read the current Account and Installation, sign out, and track connections. Each Account Session is bound to one Desktop or Mobile Installation, and Mobile login retains a bounded device presentation. Branded ids and provider-bound identity prevent callers from supplying Account table fields.
 
 ## Table of Contents
 
+- [Package contract](#package-contract)
 - [Model Experience](#model-experience)
 - [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
 - [Dev Note](#dev-note)
 
 -----
+
+<a id="package-contract"></a>
+## Package contract
+
+Service Definition for Platform Account identity and the Account Session bound to one Desktop or Mobile Installation. `AccountService` owns Login Attempt creation, GitHub callback completion, signed polling, access-token refresh, current-account reads, authenticated current-installation reads, current-installation sign-out, and connection tracking through `ctx.platformAccount`. A Mobile Login Attempt commits its bounded device name and iOS or Android platform into the resulting Account Session. `currentInstallation()` returns the provider-bound Installation id, kind, and Mobile presentation with the Account projection, so another capability never needs Account tables or caller-supplied identity fields. Quota admission checks an existing Installation by row existence rather than decoding its obsolete session payload, allowing a forced login to replace a pre-presentation Mobile row atomically.
+
+The public types brand Account, Login Attempt, Account Session, Installation, and proof-JTI ids. Runtime `AccountError` exposes stable failure codes for invalid or expired attempts, invalid or replayed proof, expired or revoked sessions, and open-registration `QUOTA` / `PLATFORM_CAPACITY` failures that carry `retryAfter` in seconds; the `./types` subpath remains type-only. Spec-fixed ceilings are ten live Desktop installations, ten live Mobile installations, and twenty concurrent tracked connections per Account. An optional shared `PlatformCapacityState` sheds new login while established sessions remain usable.
+
+`loadOperatedPlatformEnvironment` is the product-entry parser: it accepts one complete production identity and rejects local origins. `loadPlatformEnvironment` validates and selects a development/production pair only for bounded compositions such as examples and tests. Product clients supply the operated identity through deployment-owned build artifacts and have no runtime development selector.
 
 <a id="model-experience"></a>
 ## Model Experience

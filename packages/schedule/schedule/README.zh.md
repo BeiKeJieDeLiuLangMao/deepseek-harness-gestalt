@@ -9,10 +9,11 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-schedule` 为你的会话提供持久的提醒：让模型稍后提醒你，提醒会作为同一会话中的普通 follow-up 消息返回。你可以安排延时后的一次性提醒、绝对时间的一次性提醒，或固定间隔的重复提醒，也可以列出或取消保留提醒，包括暂停的提醒。提醒在重启后依然存在：已经 live 且空闲的 agent 可以立即交付到期工作，而已关闭或 cold 的会话会让提醒保持逾期，直到未来的 live 根 agent 恢复会话。交付只发生在会话内部，没有电子邮件、短信或推送通知。它是可选的 Web 能力；加载 Schedule overlay 即可启用提醒工具。`schedule_list` 按创建顺序返回保留提醒，包括暂停行。会话头目录尚未挂载。普通与搜索侧边栏行可能在尽力而为的列表 projection 明确非空时显示不可交互的闹钟；该闹钟不保证 live runtime，也不表示已挂载会话头目录。
+让模型将持久的一次性或固定频率提醒作为同一会话中的普通后续消息交付。你可以创建、列出、暂停、恢复或取消保留的提醒；重启后，逾期工作会等待实时 root agent（智能体）。该 Web 能力需要选择启用，绝不发送电子邮件、短信或推送通知。
 
 ## 目录
 
+- [包约定](#package-contract)
 - [使用本包](#use-this-package)
 - [理解实现](#understand-the-implementation)
 - [进一步探索](#further-exploration)
@@ -21,6 +22,11 @@ kind: "package-reference"
 - [开发备注](#dev-note)
 
 -----
+
+<a id="package-contract"></a>
+## 包约定
+
+`dsh-schedule` 为你的会话提供持久的提醒：让模型稍后提醒你，提醒会作为同一会话中的普通 follow-up 消息返回。你可以安排延时后的一次性提醒、绝对时间的一次性提醒，或固定间隔的重复提醒，也可以列出或取消保留提醒，包括暂停的提醒。提醒在重启后依然存在：已经 live 且空闲的 agent 可以立即交付到期工作，而已关闭或 cold 的会话会让提醒保持逾期，直到未来的 live 根 agent 恢复会话。交付只发生在会话内部，没有电子邮件、短信或推送通知。它是可选的 Web 能力；加载 Schedule overlay 即可启用提醒工具。`schedule_list` 按创建顺序返回保留提醒，包括暂停行。会话头目录尚未挂载。普通与搜索侧边栏行可能在尽力而为的列表 projection 明确非空时显示不可交互的闹钟；该闹钟不保证 live runtime，也不表示已挂载会话头目录。
 
 <a id="use-this-package"></a>
 ## 使用本包
@@ -134,9 +140,9 @@ owner 把长等待拆分为有界的 timer 段，并在每次唤醒后重新读�
 - [仅限会话内的 Schedule 子系统](../../../docs/subsystems/schedule.zh.md)——带精确类型定义的持久记录、转换、视图与交付约定。
 - [生成的工具目录](../../../docs/tool-catalog.zh.md#deepseek-aidsh-schedule)——模型接收的 `schedule_create`、`schedule_list` 与 `schedule_delete` 完整 schema。
 - [持久 Web Schedule 决策](../../../.agents/notes/implemented/feature/2026-08-05-durable-web-schedule.zh.md)——本包背后的持久化与生命周期决策。
-- [对话式交付决策](../../../.agents/notes/implemented/simplification/2026-08-09-conversational-schedule-delivery.zh.md)——无回执边界与 follow-up 交付。
+- [对话式交付决策](../../../.agents/notes/archived/simplification/2026-08-09-conversational-schedule-delivery.md)——无回执边界与 follow-up 交付。
 - [显式时区边界](../../../.agents/notes/implemented/simplification/2026-08-09-explicit-schedule-time-zone.zh.md)——为什么模型必须始终传入显式时区。
-- [有界固定速率 Schedule](../../../.agents/notes/implemented/simplification/2026-08-09-bounded-fixed-rate-schedule.zh.md)——重复调度范围：只追赶最新一次与批次交付。
+- [有界固定速率 Schedule](../../../.agents/notes/archived/simplification/2026-08-09-bounded-fixed-rate-schedule.md)——重复调度范围：只追赶最新一次与批次交付。
 - [Schedule 用户指南](../../../docs/user/guide/schedule.zh.md)——挂载本包与 time-context 的官方配置路径。
 
 -----

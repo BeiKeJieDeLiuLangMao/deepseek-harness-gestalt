@@ -7,8 +7,9 @@ import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import AgentRegistry, { Inbox } from '@deepseek-ai/dsh-agent'
-import type { Agent, AgentHandle, CreateAgentOptions } from '@deepseek-ai/dsh-agent'
+import AgentRegistry from '@deepseek-ai/dsh-agent'
+import type { Agent, AgentHandle, CreateAgentOptions, Inbox } from '@deepseek-ai/dsh-agent'
+import { createInboxStub } from '@deepseek-ai/dsh-agent-loop-testkit'
 import { apply as applyClientRemote, inject as clientRemoteInject } from '@deepseek-ai/dsh-api-gateway/client'
 import TypertGatewayService from '@deepseek-ai/dsh-api-gateway'
 import type {} from '@deepseek-ai/dsh-api-session-controller/remote'
@@ -118,6 +119,7 @@ async function createGeneratedHost(origin?: 'subagent'): Promise<{
   await ctx.plugin(JsonlSessionPersistence, { root: join(dshHome, 'sessions'), compression: 'none' })
   installSessionReadTestServices(ctx)
   ctx.provide('workspaceRegistry', { list: () => [] } as never)
+  ctx.provide('fileUploads', { registerAgentResolver: () => () => {} } as never)
   ctx.provide('fileReferences', {
     list: () => Promise.resolve([]),
   } as never)
@@ -138,7 +140,7 @@ async function createGeneratedHost(origin?: 'subagent'): Promise<{
       const agent = {} as Agent
       const agentCtx = ownerCtx.extend({ agent })
       Object.assign(agent, { id: session.id, session, status: 'idle', ctx: agentCtx })
-      await options.setup?.(agentCtx)
+      await options.setup?.(agentCtx, agent)
       ctx.agents.register(agent)
       return { agent, dispose: async () => { await handle.close() } }
     },
@@ -155,7 +157,7 @@ async function createGeneratedHost(origin?: 'subagent'): Promise<{
   }), { surfaceOp: 'append' })
   session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
   ctx.effect(() => () => { void liveHandle.close() })
-  const inbox = new Inbox(session, { inserted: () => {}, discarded: () => {}, claimed: () => {} })
+  const inbox = createInboxStub()
   ctx.agents.register({ id: session.id, session, status: 'idle', ctx, inbox } as Agent)
   await ctx.plugin(SessionController, { nativeOpen: false })
   return { ctx, sessionId: session.id, inbox }

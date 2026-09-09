@@ -1,6 +1,27 @@
+---
+description: "用于选择、查看和控制 mobilecli 支持的 Android 与 iOS 设备的手机标签页及「手机设备」设置。"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-client-ui-phone
 
 [English](README.md) | 中文
+
+## 概述
+
+打开单例手机标签页，选择在线 Android 或 iOS 设备，查看实时屏幕，并发送触摸、文本、按键、截图或刷新流操作。「手机设备」设置页负责准备共享 mobilecli 运行时和平台环境。持久化设置启用前该功能保持关闭，并且不产生模型可见输出。
+
+## 目录
+
+- [包约定](#package-contract)
+- [模型体验](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+-----
+
+<a id="package-contract"></a>
+## 包约定
 
 「手机」tab 插件：向 `ctx.betterSidebar` 注册表登记 `phone` tab 类型（id `phone`、+ 菜单标题 手机 / Phone，来自 `settings.phone-devices`、单色内联 SVG 图标、`order: 55`）。入口恒可达——`available` 永不拒绝，零设备的部署同样能打开选择器实例，落到已锁稿的未连接空态：Android/iOS 平台分段选择、分组设备清单（模拟器 / USB 真机）、USB 占位行与「重新检测环境」控件。
 
@@ -20,6 +41,7 @@ Loader `Config.enabled`（boolean，schemastery 校验，默认 `false`）仍是
 
 Android session 在 runtime 能用系统 Annex-B encoder 替换畸形 mobilecli AVC 响应时继续显示 H264。托管会话上 tap / swipe 的 JSON-RPC 错误保持画面；agent 恢复只在 mint、画面或 socket 死亡之后，以及 io `-32010` 或未授权报文之后运行。agent 缺失时错误卡保留一键安装。OEM 仍可能要求用户在手机上确认 USB 安装或调试安全开关。`INSTALL_FAILED_USER_RESTRICTED` 使用独立、可重试的提示卡，不要求用户手工下载安装器或执行命令。
 
+<a id="model-experience"></a>
 ## 模型体验
 
 无，因为浏览器界面、Host 设置命名空间与视频播放不注册提示词、工具 schema、会话事件或提供方请求；模型侧能力归独立消费方所有。
@@ -30,8 +52,15 @@ Android session 在 runtime 能用系统 Annex-B encoder 替换畸形 mobilecli 
 
 ## Known Limitations and Deferred Work
 
+<a id="known-limitations-and-deferred-work"></a>
+
 - **徽标保真缺口**——pill 节点已 aria-hidden（可访问性 P3：计数不再进入 tab 可访问名），但已锁稿的 灰点（无设备）/ 绿色数字（在线台数）仍需点形与配色渲染路径，而钉死的 better-sidebar 徽标契约只提供包裹字符串或数字的中性 pill，且 `null` 会整体隐藏 pill。本包因此先交付值层面的两态（静默 / 计数）；点样式待契约扩展后落地。徽标回调也看不到渲染它的 tab 实例，因此每个手机 tab 显示的是全队在线台数，而非激活设备的绿点。
 - **「截图」禁用**——设计稿把截图存入会话附件；客户端侧暂无可用的附件通道，按钮以 tooltip 禁用渲染，不做假动作。
 - **「最近设备」与行内「启动」是后续界面**——设备历史与选择器行内启动控件仍不存在；选择器只交付「打开」，默认模拟器启动由「手机设备」设置页负责。
 - **IME 组合与控制键不上送设备**——可打印字符与 Enter 映射到 `device.io.text`；删除、快捷键与 IME 预编辑需要更完整的文本通道。
 - **其余中文文案**——+ 菜单、选择器与占用 tab 标题以及「手机设备」设置分区经 `settings.phone-devices` 解析；选择器行、连接卡与其余 device-dock 界面仍是中文，待该轮落地。
+
+<a id="dev-note"></a>
+### 开发备注
+
+无。

@@ -13,6 +13,9 @@ afterEach(() => {
 })
 
 const t = (key: string) => (en as Record<string, string>)[key] ?? key
+const useResource = (() => ({
+  status: 'none' as const, value: undefined, failure: undefined, reload: () => {},
+})) as import('@deepseek-ai/dsh-client-ui-slots').GlobalStandardProps['useResource']
 
 function bridge(platform: NodeJS.Platform): DesktopBridge {
   return {
@@ -75,6 +78,7 @@ describe('DragStrip', () => {
     render(
       <DragStrip
         t={t}
+        useResource={useResource}
         useSessions={(() => { throw new Error('unused') })}
         useSessionPendingInteraction={(() => { throw new Error('unused') })}
         useWorkspaces={(() => { throw new Error('unused') })}
@@ -90,6 +94,7 @@ describe('DragStrip', () => {
     render(
       <DragStrip
         t={t}
+        useResource={useResource}
         useSessions={(() => { throw new Error('unused') })}
         useSessionPendingInteraction={(() => { throw new Error('unused') })}
         useWorkspaces={(() => { throw new Error('unused') })}
@@ -108,6 +113,7 @@ describe('DragStrip', () => {
     const { container } = render(
       <DragStrip
         t={t}
+        useResource={useResource}
         useSessions={(() => { throw new Error('unused') })}
         useSessionPendingInteraction={(() => { throw new Error('unused') })}
         useWorkspaces={(() => { throw new Error('unused') })}

@@ -9,15 +9,21 @@ kind: "package-group"
 
 ## 概述
 
-schedule 组为运行中的会话提供会话本地提醒：让 agent 在稍后、绝对时间或固定间隔提醒你，每条提醒到期时都会作为同一会话中的普通消息到达。它的宿主包拥有三个管理工具（含暂停 list 与 delete），并可通过可选的 Session projection registry 发布保留记录。独立的 [`ui-schedule`](../client/ui-schedule/README.zh.md) 浏览器插件尚未挂载。[`ui-workspace`](../client/ui-workspace/README.zh.md) 仍可能为尽力而为的列表值明确非空的普通行与搜索结果显示闹钟。该标识只报告缓存所知的保留状态，不保证 live runtime 存在。提醒在重启后依然存在，但只留在会话内部：没有电子邮件、短信或推送通知。本页是组地图；各包 README 拥有自己的约定。
+使用 schedule 包族创建持久的会话本地提醒，并在同一会话中将提醒作为普通消息交付。Host 包负责创建、列出和删除工具以及可选的保留状态投影；独立浏览器包可以显示缓存标记。提醒可跨重启，但绝不发送电子邮件、短信或推送通知。
 
 ## 目录
 
+- [包组约定](#package-contract)
 - [包](#packages)
 - [相关文档](#related-documentation)
 - [开发备注](#dev-note)
 
 -----
+
+<a id="package-contract"></a>
+## 包组约定
+
+schedule 组为运行中的会话提供会话本地提醒：让 agent 在稍后、绝对时间或固定间隔提醒你，每条提醒到期时都会作为同一会话中的普通消息到达。它的宿主包拥有三个管理工具（含暂停 list 与 delete），并可通过可选的 Session projection registry 发布保留记录。独立的 [`ui-schedule`](../client/ui-schedule/README.zh.md) 浏览器插件尚未挂载。[`ui-workspace`](../client/ui-workspace/README.zh.md) 仍可能为尽力而为的列表值明确非空的普通行与搜索结果显示闹钟。该标识只报告缓存所知的保留状态，不保证 live runtime 存在。提醒在重启后依然存在，但只留在会话内部：没有电子邮件、短信或推送通知。本页是组地图；各包 README 拥有自己的约定。
 
 <a id="packages"></a>
 ## 包

@@ -12,6 +12,8 @@ English | [中文](2026-08-16-deepseek-gestalt-desktop-host.zh.md)
 
 DeepSeek Gestalt is a Desktop Host: Electron owns the window, application menu, process lifetime, and update checks. On launch it starts a bundled official Node plus a locked `dsh web` Web Host (`--host 127.0.0.1 --port 0 --no-open`) and loads that loopback URL. Desktop Host owns the window, so spawn and the overlay keep the OS default browser closed ([Desktop Web Host `--no-open`](../bug-fix/2026-08-22-desktop-web-host-no-open.md)). The Web Host keeps every Host capability, including the native directory picker.
 
+Gestalt remains the only product assembly under `apps/desktop`. Core and SDK packages follow the repository release version, while the Desktop bundle keeps its independent version, product identity, updater, Companion, pairing, phone, Sub2API, and native overlay owners. A separate Electron shell that installs a pnpm-managed runtime is not a second build entry in this package. Adopting that shell requires porting these owners and passing the existing source, packaged, upgrade, and device acceptance paths first.
+
 Electron supervises the Web Host through shutdown. Window exit, termination signals, and smoke completion cancel a pending start, stop the child, and wait for process exit before the Desktop Host terminates; an intentional shutdown cannot trigger the one-time crash respawn. The trusted main window stays on the active loopback origin, sends ordinary web links to the system browser, and denies other navigation and every new Electron window.
 
 The first Desktop Bundle is `0.1.0`, independent of the npm `dsh` line. The app id is `com.gestalt.deepseek`. Display name is DeepSeek Gestalt. Feed is GitHub Releases on `BeiKeJieDeLiuLangMao/deepseek-harness-gestalt` (`gestalt-v*` tags, non-prerelease). Each macOS target installs and deploys on a matching runner architecture before notarization with the 千机 team identity; Windows ships unsigned NSIS and still updates. Downloaded updates never install on an ordinary quit. While the Update Control offers Download, the same 15-minute GitHub feed check still runs and a later `update-available` replaces the shown version; a recheck error keeps that offer. The Update Control shows a truncated integer download percent. On macOS, after the zip lands the control stays in `preparing` until native Squirrel finishes staging; Install and restart is offered only then. `before-quit` does not cancel Electron quit while the updater is installing, so `quitAndInstall` can replace the application. On macOS, `autoInstallOnAppQuit` only prefetches the zip into Squirrel after download.
@@ -33,6 +35,8 @@ The right and bottom Workbenches retain their preferred sizes while closed but c
 ## Alternatives considered
 
 **Electron as the Web Host (`ELECTRON_RUN_AS_NODE`).** This rebuilds every native addon against Electron's ABI and forks engine behavior from CLI `dsh web`.
+
+**Replace Gestalt with the isolated pnpm-managed Electron shell.** That shell does not own Gestalt's updater feed, Companion and pairing protocols, phone runtime, Sub2API installer, or native overlay. Replacing the entry before those owners move would remove shipped product behavior.
 
 **One workspace per window, as in 千机·Gestalt.** The existing Session Surface already lists every Workspace in one sidebar.
 

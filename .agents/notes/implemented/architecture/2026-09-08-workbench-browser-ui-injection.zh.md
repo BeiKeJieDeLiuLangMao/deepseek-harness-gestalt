@@ -12,7 +12,7 @@ Status: implemented
 
 ui-browser 声明并提供必需的 Cordis `browserUi` face。`createRequest()` 解析 provider 最新的偏好；`renderPageChrome(props)` 返回现有 BrowserPageChrome 元素并保留其 hooks；`recoverListedMutation` 执行现有变更，至多 observe 一次后重试，对已关闭 target 返回 undefined。工作台仅导入 face 声明，等待 provider 后才发布 `workbenchBrowser` 并订阅调和。卸载 provider 会移除该消费者及其订阅，停止新的 bridge 调用，并等待已接受的 create、close、navigation 与 recovery 操作。晚到的回复不能更新侧栏标签或执行排队的调和。清理完成后，重新加载才激活新的 bridge。每次渲染通过私有 prop 接收已捕获的 provider renderer；外部快照组件 context 不能选择另一个 Browser UI provider。
 
-[Client 依赖分类](../process/2026-08-23-client-cross-package-value-dependencies.zh.md) 继续要求呈现贡献通过其声明 slot 注册。此 face 服务于现有的非 slot 快照渲染适配层：BrowserView 委托给 `workbenchBrowser.renderTab`，OfficialBrowserTab 绑定 Session 和标签元数据后请求 provider 的组件。它不引入另一种页面放置方式或通用组件注册表。ui-browser 仍持有预览和设置 slot；工作台按照[官方浏览器决定](../feature/2026-08-21-workbench-official-browser.zh.md)持有页面与标签的调和。
+[Client 依赖分类](../../archived/process/2026-08-23-client-cross-package-value-dependencies.md) 继续要求呈现贡献通过其声明 slot 注册。此 face 服务于现有的非 slot 快照渲染适配层：BrowserView 委托给 `workbenchBrowser.renderTab`，OfficialBrowserTab 绑定 Session 和标签元数据后请求 provider 的组件。它不引入另一种页面放置方式或通用组件注册表。ui-browser 仍持有预览和设置 slot；工作台按照[官方浏览器决定](../feature/2026-08-21-workbench-official-browser.zh.md)持有页面与标签的调和。
 
 ## 考虑过的替代方案
 

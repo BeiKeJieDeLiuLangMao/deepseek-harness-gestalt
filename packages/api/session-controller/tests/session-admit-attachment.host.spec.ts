@@ -66,7 +66,7 @@ async function harness(maxByteBytes = 1024): Promise<{
       const agent = {} as Agent
       const agentCtx = ownerCtx.extend({ agent })
       Object.assign(agent, { id: session.id, session, status: 'idle', ctx: agentCtx })
-      await options.setup?.(agentCtx)
+      await options.setup?.(agentCtx, agent)
       ctx.agents.register(agent)
       return {
         agent,
@@ -102,8 +102,7 @@ describe('session.admitAttachment', () => {
     const { ctx, sessionId, remote } = await harness()
     const data = pdfBytes()
     const first = await remote.admitAttachment(payload(data))
-    expect(first.ok).toBe(true)
-    if (!first.ok) return
+    if (!first.ok) throw first.error
     const sha256 = createHash('sha256').update(data).digest('hex')
     expect(first.value.attachment).toMatchObject({
       mediaType: 'application/pdf',
@@ -233,7 +232,7 @@ describe('session.admitAttachment', () => {
     await reader.plugin(JsonlSessionPersistence, { root: jsonlRoot, compression: 'none' })
     const handle = await reader.sessionPersistence.open(sessionId, 'read')
     try {
-      const events = await handle.read()
+      const events = (await handle.read()).events
       const admitted = events.filter(event => event.type === 'session/attachment-admitted')
       expect(admitted).toHaveLength(1)
       expect(admitted[0]).toMatchObject({
@@ -261,7 +260,7 @@ describe('session.admitAttachment', () => {
     await reader.plugin(JsonlSessionPersistence, { root: jsonlRoot, compression: 'none' })
     const handle = await reader.sessionPersistence.open(sessionId, 'read')
     try {
-      const events = await handle.read()
+      const events = (await handle.read()).events
       const last = events.at(-1)
       expect(last?.type).toBe('session/attachment-admitted')
       expect(last).toMatchObject({

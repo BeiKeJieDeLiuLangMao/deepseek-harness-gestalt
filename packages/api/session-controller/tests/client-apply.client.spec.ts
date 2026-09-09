@@ -109,6 +109,11 @@ async function mount(initialGeneration?: ConnectionGeneration): Promise<Bench> {
       error: { code: 'unused', message: 'unused', details: {} },
     })),
   }
+  ctx.reflect.provide('connection', connection)
+  ctx.reflect.provide('fileUpload', {
+    available: true,
+    post: () => Promise.reject(new Error('unexpected file upload')),
+  })
   ctx.reflect.provide('remote', {
     ...remote,
     memberQuestion,
@@ -155,6 +160,8 @@ async function flush(): Promise<void> {
 describe('Session Controller Client apply', () => {
   it('injects every required generated Remote namespace including memberQuestion', () => {
     expect(SessionClient.inject).toEqual([
+      'connection',
+      'fileUpload',
       'typert',
       'remote',
       'remote.commands',
@@ -185,6 +192,10 @@ describe('Session Controller Client apply', () => {
       registerGenerationSource: () => () => {},
       start: () => ({ stop: () => {} }),
     } as ConnectionHandle)
+    ctx.reflect.provide('fileUpload', {
+      available: true,
+      post: () => Promise.reject(new Error('unexpected file upload')),
+    })
     ctx.reflect.provide('remote.commands', remote.commands)
     ctx.reflect.provide('remote.session', remote.session)
     ctx.reflect.provide('remote.subagents', remote.subagents)

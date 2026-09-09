@@ -22,7 +22,7 @@ export async function readPersistedSession(
   const reader = await persistence.open(sessionId, 'read')
   let events: PersistedSessionRead['events']
   try {
-    events = await reader.read()
+    events = (await reader.read()).events
   } catch (readError: unknown) {
     try {
       await reader.close()

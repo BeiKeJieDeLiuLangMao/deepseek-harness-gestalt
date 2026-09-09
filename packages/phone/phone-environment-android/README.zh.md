@@ -1,6 +1,28 @@
+---
+description: "用于配置或调试 mobilecli 设备的 Android SDK、系统镜像和托管 AVD 准备。"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-phone-environment-android
 
 [English](README.md) | 中文
+
+## 概述
+
+为 mobilecli 准备可信的 Android SDK、API 35 系统镜像和默认托管 AVD。它会复用兼容且可写的 SDK，否则安装到 `DSH_HOME` 下，并且不修改用户的 `PATH`。固定的 manifest（元数据清单）、校验和、包 id 与显式许可同意约束整个准备过程。
+
+## 目录
+
+- [包约定](#package-contract)
+- [Config](#config)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+-----
+
+<a id="package-contract"></a>
+## 包约定
 
 这是注册到 `ctx.phoneEnvironment` 的 Android 平台提供方。它从 `ANDROID_HOME`、`ANDROID_SDK_ROOT`、Host 默认位置或 `sdkmanager` 路径探测兼容且可写的 Android SDK；兼容探测要求可工作的 `sdkmanager` 12+、`avdmanager` 与 `pixel_6` 设备定义，否则准备到 `$DSH_HOME/phone/android/sdk`；当发现完全未命中时，提供方会从磁盘探测该托管根目录，使已准备好的安装在重新检测后保持就绪。默认 AVD 始终位于 `$DSH_HOME/phone/android/avd`，只有 mobilecli 子进程收到两个根目录，不修改用户的 `PATH`。
 
@@ -10,6 +32,7 @@
 
 准备流程只安装 SDK 和私有 AVD，不会自行启动。每次显式启动前，提供方都运行 `emulator -accel-check`。Windows Hypervisor Platform 与 BIOS 虚拟化、Linux KVM 安装与用户组权限、不可用的 macOS 虚拟化都会成为 `manual-required` 状态。USB 开发者模式、USB 调试、RSA 信任和 Windows OEM 驱动也保持人工处理。产品启动的 Emulator 进程由提供方持有，关闭功能、取消或插件 teardown 都会等待其退出；进程意外退出会立即撤销运行就绪状态。停止过程有界，多个生命周期调用方共享同一个任务；Windows 进程树终止失败会显式报错，不会伪称完全停稳。
 
+<a id="config"></a>
 ## Config
 
 | 字段 | 默认值 | 含义 |
@@ -18,6 +41,7 @@
 
 许可、下载、长度、摘要、归档、SDK 包、AVD 创建、启动超时、取消、不支持 Host 与进程失败使用稳定的 `PHONE_ANDROID_*` 错误码。Host 通过带 revision 的完整 `/phone/environment` 快照投影这些状态。
 
+<a id="model-experience"></a>
 ## Model Experience
 
 通过 `dsh-tool-phone` 间接可见。Android 环境运行后，选中的 mobilecli 代会携带托管 SDK/AVD 环境重新启动；只有该代将模拟器列为在线并识别出语法有效的 Annex-B key access unit，且其中的 SPS、PPS 与 IDR slice header 相互引用一致后，才发布 ready。Host 探测不解码像素；最终验收仍单独要求 GUI 显示真实画面。启动、重新激活、列举与采集共享同一个取消所有者，因此关闭功能、取消和 teardown 不会发布过期的运行就绪状态。GUI 与模型可见 `device_*` 工具操作的是同一台已验证模拟器。
@@ -28,6 +52,13 @@
 
 ## Known Limitations and Deferred Work
 
+<a id="known-limitations-and-deferred-work"></a>
+
 - Google SDK 包仍从上游下载，不会被 Desktop 打包或转存。
 - Windows hypervisor、Linux KVM 权限、BIOS 虚拟化、USB 调试、RSA 信任和 OEM 驱动需要用户或管理员处理。
 - 最终发布验收必须包含真实 API 35 下载、H264 画面、GUI 控制和真实模型 `device_act`；fixture 证据不能替代。
+
+<a id="dev-note"></a>
+### 开发备注
+
+无。

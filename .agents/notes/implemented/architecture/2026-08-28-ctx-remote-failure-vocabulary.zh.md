@@ -87,4 +87,4 @@ envelope 不变：wire 上仍是 `{ code, message, details }` 数据，`RemoteEr
 
 Session admission 的输入类型省略 marker 与 Error 身份，同时保留每个 code 对应的 details 字段。其对外 `ISession` 与 `SessionModelRoute` 方法仍只 resolve `RemoteResult`，因此新增 admission 操作时必须让回调结果走同一个 Session Controller runner。
 
-Remote 方法的消费端签名统一为 `Promise<RemoteResult<T>>`，与[方法调用面](2026-08-02-typert-remote-method-calls.zh.md)描述的生成投影一致；一元调用的迁移账本见[一元端点迁移](2026-08-10-unary-apiproxy-remote-migration.zh.md)。
+Remote 方法的消费端签名统一为 `Promise<RemoteResult<T>>`，与[方法调用面](2026-08-02-typert-remote-method-calls.zh.md)描述的生成投影一致；一元调用的迁移账本见[一元端点迁移](../../archived/architecture/2026-08-10-unary-apiproxy-remote-migration.md)。

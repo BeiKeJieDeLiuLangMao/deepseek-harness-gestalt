@@ -1,9 +1,10 @@
 /**
- * owned-suffix history display: Host seedLength trims the Client event
+ * owned-suffix history display: Host inheritedEventCount trims the Client event
  * window without deleting the durable log. Later session/end-seed markers
  * hide themselves and do not raise that floor.
  */
 import { Context } from '@deepseek-ai/cordis'
+import { LlmAttemptId } from '@deepseek-ai/dsh-llm'
 import { describe, expect, it, vi } from 'vitest'
 import { SessionSeq, type SessionEvent } from '@deepseek-ai/dsh-session/types'
 import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
@@ -43,7 +44,7 @@ describe('Session owned-suffix history', () => {
     const marker = endSeed(SessionSeq(parent.length))
     const own = plainTurn(SessionSeq(parent.length + 1), 1, 'side', 'side answer')
     const api = new FakeApiClient()
-    api.historySeedLength = parent.length + 1
+    api.historyInheritedEventCount = parent.length + 1
     api.onHistory = (payload: { beforeSeq?: number }) => payload.beforeSeq === undefined
       ? Promise.resolve(ok(historyValue([...parent, marker, ...own], true)))
       : Promise.resolve(ok(historyValue(parent, false)))
@@ -58,11 +59,11 @@ describe('Session owned-suffix history', () => {
     expect(api.callsOf('session.history')).toEqual([])
   })
 
-  it('uses Host seedLength when the opening page omits session/end-seed', async () => {
+  it('uses Host inheritedEventCount when the opening page omits session/end-seed', async () => {
     const parent = plainTurn(SessionSeq(0), 0, 'parent', 'hidden')
     const own = plainTurn(SessionSeq(6), 1, 'side', 'visible')
     const api = new FakeApiClient()
-    api.historySeedLength = 6
+    api.historyInheritedEventCount = 6
     api.onHistory = () => Promise.resolve(ok(historyValue([...parent, ...own], false)))
     const session = new Session(SID, fakeRemote(api), { admission: () => suffixRoute() })
 
@@ -86,7 +87,7 @@ describe('Session owned-suffix history', () => {
     const own = plainTurn(SessionSeq(parent.length + 1), 1, 'side', 'side answer')
     const ctx = new Context()
     const api = new FakeApiClient()
-    api.historySeedLength = parent.length + 1
+    api.historyInheritedEventCount = parent.length + 1
     api.onList = () => Promise.resolve(ok({
       items: [{ sessionId: SID, updatedAt: 100, running: false, blank: false }],
     }))
@@ -113,7 +114,7 @@ describe('Session owned-suffix history', () => {
     const marker = endSeed(SessionSeq(parent.length))
     const own = plainTurn(SessionSeq(parent.length + 1), 1, 'side', 'side answer')
     const api = new FakeApiClient()
-    api.historySeedLength = parent.length + 1
+    api.historyInheritedEventCount = parent.length + 1
     api.onHistory = () => Promise.resolve(ok(historyValue([...parent, marker, ...own], true)))
     const session = new Session(SID, fakeRemote(api), { admission: () => suffixRoute() })
     await session.open()
@@ -129,7 +130,7 @@ describe('Session owned-suffix history', () => {
     const resumeMarker = endSeed(SessionSeq(parent.length + 1 + own.length))
     const after = plainTurn(SessionSeq(resumeMarker.seq + 1), 2, 'later', 'later answer')
     const api = new FakeApiClient()
-    api.historySeedLength = parent.length
+    api.historyInheritedEventCount = parent.length
     api.onHistory = (payload: { beforeSeq?: number }) => payload.beforeSeq === undefined
       ? Promise.resolve(ok(historyValue(
         [...parent, forkMarker, ...own, resumeMarker, ...after],
@@ -150,7 +151,7 @@ describe('Session owned-suffix history', () => {
     const forkMarker = endSeed(SessionSeq(parent.length))
     const own = plainTurn(SessionSeq(parent.length + 1), 1, 'side', 'side answer')
     const api = new FakeApiClient()
-    api.historySeedLength = parent.length
+    api.historyInheritedEventCount = parent.length
     api.onHistory = () => Promise.resolve(ok(historyValue([...parent, forkMarker, ...own], false)))
     const session = new Session(SID, fakeRemote(api), { admission: () => suffixRoute() })
     await session.open()
@@ -168,50 +169,70 @@ describe('Session owned-suffix history', () => {
     expect(eventSeqs(session)).toEqual(own.map(event => event.seq))
   })
 
-  it('keeps a packed own record whose logical range starts at Host seedLength', async () => {
+  it('preserves an active Assistant stream across admission changes and settles it once', async () => {
     const parent = plainTurn(SessionSeq(0), 0, 'parent', 'hidden')
-    const packed = {
-      type: 'chunks' as const,
-      event: {
-        type: 'chunkrow/text-chunks' as const,
-        seq: 6,
-        time: 6,
-        data: { turn: 1, step: 0, index: 0, texts: ['own'], dt: [0] },
+    const ownStart: SessionEvent = {
+      type: 'turn/start', seq: SessionSeq(parent.length), time: 10, data: { turn: 1 },
+    }
+    const attemptId = LlmAttemptId('owned-attempt')
+    const stream = [{ type: 'chunk' as const, time: 20, chunk: { type: 'text-delta' as const, index: 0, text: 'draft' } }]
+    const api = new FakeApiClient()
+    api.historyInheritedEventCount = parent.length
+    api.onHistory = () => Promise.resolve(ok(historyValue([...parent, ownStart], false)))
+    api.assistantStreamBaseline = {
+      revision: 2,
+      activeAttempt: {
+        attemptId, startedAfterSeq: ownStart.seq, turn: 1, step: 1, nextIndex: 1, stream,
       },
     }
-    const api = new FakeApiClient()
-    api.historySeedLength = 6
-    api.onHistory = () => Promise.resolve(ok({
-      records: [
-        ...parent.map(event => ({ type: 'event' as const, event: event as never })),
-        packed,
-      ],
-      hasMore: false,
-    }))
-    const session = new Session(SID, fakeRemote(api), { admission: () => suffixRoute() })
+    let admission: SessionAdmissionRoute | undefined = suffixRoute()
+    const session = new Session(SID, fakeRemote(api), { admission: () => admission })
     await session.open()
-    expect(session.eventSource.getSnapshot().entries).toEqual([packed])
+    const entries = () => session.eventSource.getSnapshot().entries
+    expect(entries().filter(entry => entry.type === 'transient')).toHaveLength(1)
+    expect(entries().filter(entry => entry.type === 'event').map(entry => entry.event.seq)).toEqual([ownStart.seq])
+    admission = undefined
+    session.applyHistoryScope()
+    expect(entries().filter(entry => entry.type === 'transient')).toHaveLength(1)
+    expect(entries().filter(entry => entry.type === 'event')).toHaveLength(parent.length + 1)
+    admission = suffixRoute()
+    session.applyHistoryScope()
+    const settlement: SessionEvent<'assistant/attempt'> = {
+      type: 'assistant/attempt', seq: SessionSeq(parent.length + 1), time: 21,
+      data: { turn: 1, step: 1, stream },
+    }
+    await api.pushFollow(SID, { type: 'event', event: settlement as never })
+    await api.pushFollow(SID, { type: 'assistant-stream', frame: {
+      type: 'end', attemptId, revision: 3, index: 1,
+      outcome: { kind: 'committed', eventType: 'assistant/attempt', seq: settlement.seq },
+    } })
+    await vi.waitFor(() => { expect(entries().filter(entry => entry.type === 'transient')).toHaveLength(0) })
+    session.applyHistoryScope()
+    expect(eventSeqs(session)).toEqual([ownStart.seq, settlement.seq])
+    admission = undefined
+    session.applyHistoryScope()
+    expect(eventSeqs(session)).toEqual([...parent.map(event => event.seq), ownStart.seq, settlement.seq])
+    await session.dispose()
   })
 
-  it('drops a packed row that starts below Host seedLength instead of splitting it', async () => {
-    const packed = {
-      type: 'chunks' as const,
-      event: {
-        type: 'chunkrow/text-chunks' as const,
-        seq: 4,
-        time: 4,
-        data: { turn: 0, step: 0, index: 0, texts: ['a', 'b', 'c'], dt: [0, 0, 0] },
-      },
-    }
-    const own = plainTurn(SessionSeq(7), 1, 'side', 'visible')
+  it('does not restore abandoned transient rows when the admission changes', async () => {
     const api = new FakeApiClient()
-    api.historySeedLength = 6
-    api.onHistory = () => Promise.resolve(ok({
-      records: [packed, ...own.map(event => ({ type: 'event' as const, event: event as never }))],
-      hasMore: false,
-    }))
+    const attemptId = LlmAttemptId('abandoned-owned-attempt')
+    api.historyInheritedEventCount = 0
+    api.onHistory = () => Promise.resolve(ok(historyValue([], false)))
+    api.assistantStreamBaseline = { revision: 2, activeAttempt: {
+      attemptId, startedAfterSeq: -1, turn: 1, step: 1, nextIndex: 1,
+      stream: [{ type: 'chunk', time: 20, chunk: { type: 'text-delta', index: 0, text: 'draft' } }],
+    } }
     const session = new Session(SID, fakeRemote(api), { admission: () => suffixRoute() })
     await session.open()
-    expect(eventSeqs(session)).toEqual(own.map(event => event.seq))
+    expect(session.eventSource.getSnapshot().entries).toHaveLength(1)
+    await api.pushFollow(SID, { type: 'assistant-stream', frame: {
+      type: 'end', attemptId, revision: 3, index: 1, outcome: { kind: 'abandoned' },
+    } })
+    await vi.waitFor(() => { expect(session.eventSource.getSnapshot().entries).toHaveLength(0) })
+    session.applyHistoryScope()
+    expect(session.eventSource.getSnapshot().entries).toHaveLength(0)
+    await session.dispose()
   })
 })

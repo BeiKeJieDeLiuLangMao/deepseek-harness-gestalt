@@ -9,9 +9,23 @@ kind: "package-reference"
 
 ## 概述
 
+在编辑器上方显示成员发起的 `ask_user_question` 请求，其中包含 Decision Brief 和共享提问 UI。卡片保留分页、选择、自定义回答、结算、最小化与草稿；文档聚焦状态可以将其折叠。通用问题和计划评审仍使用共享提问链。
+
+## 目录
+
+- [包约定](#package-contract)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+-----
+
+<a id="package-contract"></a>
+## 包约定
+
 本包把成员导向的 `ask_user_question` 请求呈现为一张组合卡片：远端决策简报横幅（远端标记、提问人身份与角色、项目、来源会话、到期倒计时、截断的背景、材料芯片）叠加在共享问题呈现之上，后者原生支持分页、多选、推荐徽标、自定义回答与结算行为。
 
-本包在产品 composer 上方注册一个叠加式 `conversation.input.dock` 入口。Host pending 成员提问行在此渲染 Decision Brief；`plan-review` 与普通 composer 接管仍走共享问题链。观察到共享呈现自身的最小化开关时，整卡折叠为一条「远端 · 发起人」窄条并标记为已收起；呈现保持挂载，因此其草稿得以保留。
+本包在产品 composer 上方注册一个叠加式 `conversation.input.dock` 入口。Host pending 成员提问行在此渲染 Decision Brief；`plan-review` 与普通 composer 接管仍走共享问题链。共享呈现的最小化开关会把整卡折叠为一条「远端 · 发起人」窄条。当可见的 active Files viewer path 属于本卡，且其 Better Sidebar state 属于同一 receiving Session 时，整卡也会折叠；隐藏该 viewer、激活其他标签或切换 Session 会恢复卡片。呈现保持挂载，因此其草稿得以保留。
 
 随发行版交付的 Web 应用会把本包作为 `ui-member-questions` Loader 行挂载到 Web 与 Desktop。Client 模块注册表只发现活跃 Loader 行；本包的 `dsh.client` 声明会排列依赖顺序，但不会自行激活本包。
 
@@ -20,14 +34,6 @@ kind: "package-reference"
 `ReceivingQuestionBook` 是唯一 Host snapshot owner。它保存生成 `memberQuestion.snapshot` 的 Host pending 视图，仅在 Remote 写入成功后经 `memberQuestion.settle` 刷新，并在 `member-question-receiver/changed` 时刷新。dock 把 Host questions 映射为 JSON，并声明 `question.presentation`，传入 Host answer/cancel callback。`PendingQuestion` 与草稿仍由 ui-user-questions 拥有。Host settle 失败时 Host pending 视图与 QuestionComposer 草稿都保留。
 
 pending 卡片消失后，answered、declined、expired、withdrawn 与 superseded 记录仍以被动条带显示。另一个 Installation 赢得的回答会显示为 elsewhere answered，并带获胜设备名与 settlement time。未被替换的产品 composer 经 receiving face 的单次 admission RPC 提交；卡片不会再挂载第二个 textarea，renderer 也不会分别发起 Session creation 与 prompt。
-
-## 目录
-
-- [Model Experience](#model-experience)
-- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
-- [开发备注](#dev-note)
-
------
 
 <a id="model-experience"></a>
 ## Model Experience

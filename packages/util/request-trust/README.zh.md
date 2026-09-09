@@ -1,9 +1,30 @@
+---
+description: "面向浏览器可访问本地 HTTP 路由的零依赖 Host、Origin 与 Fetch-Metadata 信任判断。"
+kind: "package-reference"
+---
+
 # dsh-request-trust
 
 [English](README.md) | 中文
 
+## 概述
+
+使用一个零依赖请求信任栅栏保护浏览器可访问的本地 HTTP 路由。它对 Node `IncomingMessage` header 与 Fetch `Headers` 统一执行 Host、Origin 和 Fetch-Metadata 判断。消费方可针对签名采集 URL 额外执行仅限回环地址的检查。
+
+## 目录
+
+- [包约定](#package-contract)
+- [栅栏判定什么](#what-the-fence-decides)
+- [开发备注](#dev-note)
+
+-----
+
+<a id="package-contract"></a>
+## 包约定
+
 浏览器可触达的每个本地 HTTP 路由共享的零依赖浏览器信任栅栏：`/api` 载体（`@deepseek-ai/dsh-client-connection`）与 phone-stream 路由（`@deepseek-ai/dsh-phone-stream`）。Host、Origin 与 Fetch-Metadata 规则只有一份判定，且可从两种 HTTP 表示——Node `IncomingMessage` 头与 Fetch `Headers`——读取，各路由的副本因此不会漂移。
 
+<a id="what-the-fence-decides"></a>
 ## 栅栏判定什么
 
 `isTrustedApiRequest(request, trustedHosts)` 仅在 `Host` 权威属于本服务且附带的所有浏览器标记同为同源时放行请求：
@@ -17,3 +38,8 @@
 `isBareAuthority(entry)` 是 `trustedHosts` 的配置判定：条目必须是经 WHATWG 解析后读回不变的纯规范 `host[:port]` 权威（大小写除外）。加载器在插件加载时断言它，否则解析会悄悄授权 `harness.internal/path` 内嵌的 hostname，或把悬空冒号、补零端口放大成任意端口授权。
 
 这道栅栏是混淆代理人防御，而不是认证层；可达性仍属于 webserver 绑定，真正远程部署的认证仍是消费载体的待办工作。决策记录：[api 浏览器信任边界 Agent Note](../../../.agents/notes/implemented/architecture/2026-07-28-api-browser-trust-boundary.zh.md)。
+
+<a id="dev-note"></a>
+## 开发备注
+
+无。

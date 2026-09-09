@@ -3,6 +3,7 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
+  checkDshFamilyVersion,
   checkExperimentalDependencyIsolation,
   checkExperimentalManifest,
   checkPnpmBuildPolicy,
@@ -99,6 +100,49 @@ describe('pnpm build-script policy', () => {
     expect(checkPnpmBuildPolicy({ allowBuilds: { electron: 'set this to true or false' } })).toEqual([
       'pnpm-workspace.yaml: allowBuilds.electron must be true or false, got "set this to true or false"',
     ])
+  })
+})
+
+describe('dsh family version coherence', () => {
+  it('rejects a package carrying a stale shared version', () => {
+    expect(checkDshFamilyVersion(
+      { name: '@deepseek-ai/dsh-http-proxy', version: '0.1.2-alpha.5' },
+      '0.1.2-rc.1',
+    )).toBe('@deepseek-ai/dsh-http-proxy: package.json version must match root version 0.1.2-rc.1')
+  })
+
+  it('rejects the root-named CLI app on a stale shared version', () => {
+    expect(checkDshFamilyVersion(
+      { name: '@deepseek-ai/dsh', version: '0.1.2-alpha.5' },
+      '0.1.2-rc.1',
+    )).toBe('@deepseek-ai/dsh: package.json version must match root version 0.1.2-rc.1')
+  })
+
+  it('accepts a manifest carrying the shared version', () => {
+    expect(checkDshFamilyVersion(
+      { name: '@deepseek-ai/dsh-http-proxy', version: '0.1.2-rc.1' },
+      '0.1.2-rc.1',
+    )).toBeUndefined()
+  })
+
+  it('leaves other sequences to their own version lines', () => {
+    expect(checkDshFamilyVersion({ name: '@deepseek-ai/cordis', version: '4.0.1' }, '0.1.2-rc.1')).toBeUndefined()
+    expect(checkDshFamilyVersion(
+      { name: '@deepseek-ai/node-addon-system', version: '0.1.1' },
+      '0.1.2-rc.1',
+    )).toBeUndefined()
+    expect(checkDshFamilyVersion({ version: '0.1.2-alpha.5' }, '0.1.2-rc.1')).toBeUndefined()
+  })
+
+  it.each([
+    ['apps/desktop', '@deepseek-ai/dsh-desktop'],
+    ['apps/mobile', '@deepseek-ai/dsh-mobile'],
+    ['apps/platform', '@deepseek-ai/dsh-platform'],
+  ])('leaves the separately released product at %s on its own version', (dir, name) => {
+    expect(checkWorkspaceManifest({
+      dir,
+      manifest: { name, version: '9.8.7', private: true },
+    })).toEqual([])
   })
 })
 

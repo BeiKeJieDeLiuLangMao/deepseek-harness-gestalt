@@ -352,7 +352,7 @@ describe('ui-model-selection dual entry', () => {
     const b = await bench()
     b.mint('existing')
     const existing = b.seat().inject!(sid('existing'))
-    await existing.load()
+    existing.load()
     expect(existing.directory.getSnapshot()).toMatchObject({
       current: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
       routable: true,
@@ -375,7 +375,7 @@ describe('ui-model-selection dual entry', () => {
 
     b.mint('new')
     const created = b.seat().inject!(sid('new'))
-    await created.load()
+    created.load()
     expect(created.directory.getSnapshot()).toMatchObject({
       current: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
       routable: false,

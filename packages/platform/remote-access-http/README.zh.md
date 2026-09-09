@@ -9,6 +9,20 @@ kind: "package-reference"
 
 ## 概述
 
+通过 HTTP 提供 Personal Pairing 操作，并在一个精确 WSS 路径上提供已鉴权 Remote Relay 附件。路由先校验 Account 证明、有界操作输入、对端地址配额与声明的 blob 大小，再委托给服务。容量失败保留重试元数据；不可信或格式错误的连接不会进入 Relay 协议处理。
+
+## 目录
+
+- [包约定](#package-contract)
+- [模型体验](#model-experience)
+- [已知限制与暂缓事项](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+-----
+
+<a id="package-contract"></a>
+## 包约定
+
 公开远程访问服务的 HTTP 与 WSS 消费方。一个固定 HTTP 路由接收当前安装的账号证明请求头、校验操作输入，并且只通过 `ctx.remoteAccess` 委派。配对挑战请求把 TCP 对端地址交给每 IP 小时配额。`QUOTA` 与 `PLATFORM_CAPACITY` 映射为 HTTP 429，JSON 含 `retryAfter`，并带 `Retry-After` 响应头。附件准入操作（`admit-blob`、`release-blob`）按声明大小执行对应配额。精确 WSS 路径只接收 Relay Transport frame，并通过 `ctx.remoteRelay` 委派已鉴权 attachment。JSON 请求体与错误信封走 `@deepseek-ai/dsh-host-webserver` 助手，错误码与文案仍由 Remote Access 持有。
 
 HTTP 消费方要求非空且精确的 `origins` 配置。匹配的标准和自定义元组 origin 会在 `Access-Control-Allow-Origin` 中收到已配置值；带路径的 origin、畸形值、未配置 origin 与 opaque `null` 会收到 `ORIGIN_DENIED`。
@@ -16,14 +30,6 @@ HTTP 消费方要求非空且精确的 `origins` 配置。匹配的标准和自�
 消费方不读取账号数据库字段，也不自行授予权限。远程访问提供方会在任何配对生命周期变更前，通过平台账号公开服务鉴别账号、安装标识及安装类型。
 
 WSS 消费方要求端点自有的 challenge request 与签名 attach proof 先于任何 Relay 密文，执行显式 pending-challenge／attach deadline 与协议消息字节上限，关闭压缩，串行处理 frame，并且只在鉴权与目录注册完成后发送 ready。它随 socket 一起清理 Relay attachment，并且只返回不含内容的稳定 transport error。组装测试启动两套由独立 Loader 持有的 WebServer／HTTP composition，经 non-sticky TLS endpoint 到达两者发布的 WSS upgrade handler，并以独立撤销运行两项端点自有 Snow 配对。其中的 localhost 证书与内存适配器是确定性测试输入；TLS 终止与已运营基础设施仍由部署负责。
-
-## 目录
-
-- [模型体验](#model-experience)
-- [已知限制与暂缓事项](#known-limitations-and-deferred-work)
-- [开发备注](#dev-note)
-
------
 
 <a id="model-experience"></a>
 ## 模型体验

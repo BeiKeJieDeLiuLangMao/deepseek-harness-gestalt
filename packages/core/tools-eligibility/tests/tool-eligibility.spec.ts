@@ -4,7 +4,7 @@ import { createScope, scopeTarget } from '@deepseek-ai/dsh-scope'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
-import { Session, SessionId } from '@deepseek-ai/dsh-session'
+import { Session, SessionId, SESSION_FORMAT_VERSION } from '@deepseek-ai/dsh-session'
 import { SettingsProvider } from '@deepseek-ai/dsh-settings'
 import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
@@ -89,7 +89,7 @@ async function harness(options: HarnessOptions = {}) {
   let agentCtx!: Context
   const id = SessionId('session-1')
   const session = Session.create(id, [], {
-    version: 0,
+    version: SESSION_FORMAT_VERSION,
     id,
     createdAt: 0,
     isSeeded: false,
@@ -116,7 +116,7 @@ async function addSecondAgent(ctx: Context): Promise<Agent> {
   let agentCtx!: Context
   const id = SessionId('session-2')
   const session = Session.create(id, [], {
-    version: 0,
+    version: SESSION_FORMAT_VERSION,
     id,
     createdAt: 0,
     isSeeded: false,
@@ -143,7 +143,7 @@ describe('allow-only tool eligibility', () => {
       [TOOL_ELIGIBILITY_SETTINGS_NAMESPACE]: { workspaces: {}, sessions: { existing: ['allowed'] } },
     })
     const id = SessionId('existing')
-    const session = Session.create(id, [], { version: 0, id, createdAt: 0, isSeeded: false })
+    const session = Session.create(id, [], { version: SESSION_FORMAT_VERSION, id, createdAt: 0, isSeeded: false })
     const agent = { id, session } as Agent
     let agentCtx!: Context
     await ctx.plugin(Object.assign((inner: Context) => { agentCtx = createScope(inner, agent).ctx }, {

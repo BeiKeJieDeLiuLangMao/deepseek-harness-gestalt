@@ -3,4 +3,4 @@
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/simplification/2026-08-28-omit-unneeded-invariant-companions.md
 2026-08-28-omit-unneeded-invariant-companions.md: afcc613d91c5f216a85f3a6dda86c7cea9ff911d
-2026-08-28-omit-unneeded-invariant-companions.zh.md: 2308c6655d9ada536230a18cb56b3f42029623c1
+2026-08-28-omit-unneeded-invariant-companions.zh.md: 8086fac8de31faa1caba68c400782fde8f2a1c1d

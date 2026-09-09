@@ -119,7 +119,7 @@ describe.skipIf(MODE === 'record')('web e2e: Host-owned member-question receivin
     if (failures.length > 0) throw new AggregateError(failures, 'member-question e2e cleanup failed')
   })
 
-  it('answers and declines through Host authority while retaining terminal bands', async () => {
+  it('opens references, restores the card, and settles through Host authority', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-member-question-host-receiver'))
     forbiddenRequests.length = 0
     const initialSessionIds = scaffold.ctx.sessions.list().map(session => session.id)
@@ -191,6 +191,9 @@ describe.skipIf(MODE === 'record')('web e2e: Host-owned member-question receivin
         .toBe(false)
       await expect.poll(() => page.locator('input[title*=".dsh/member-questions/mq-web-host-1/receiver-decision.md"]').count())
         .toBeGreaterThan(0)
+      await expect.poll(() => card.getAttribute('data-folded')).toBe('true')
+      await card.getByRole('button', { name: 'Remote · Alice', exact: true }).click()
+      await expect.poll(() => card.getAttribute('data-folded')).toBeNull()
       expect(await page.locator('input[title*="/docs/receiver-decision.md"], input[title*="\\docs\\receiver-decision.md"]').count())
         .toBe(0)
       expect(await readFile(join(workspaceRoot, 'docs', 'receiver-decision.md'), 'utf8'))
