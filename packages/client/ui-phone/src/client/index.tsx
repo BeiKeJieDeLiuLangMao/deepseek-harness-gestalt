@@ -94,7 +94,7 @@ interface OfficialPhoneBodyInjected {
 
 type OfficialPhoneBodyProps = PropsRuntime<'sidebar.right.pane.tab'> & OfficialPhoneBodyInjected
 
-function OfficialPhoneBody({
+export function OfficialPhoneBody({
   useTabInfo, gate, source, runtime, createController, title, occupiedTitle,
 }: OfficialPhoneBodyProps): ReactNode {
   const { tab } = useTabInfo()

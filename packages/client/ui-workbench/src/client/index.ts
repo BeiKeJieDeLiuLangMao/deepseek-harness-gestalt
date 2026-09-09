@@ -13,6 +13,7 @@ import {
   OFFICIAL_WORKBENCH_BROWSER_ID, officialBrowserTargetKey, officialBrowserTargetOf,
   officialBrowserPayloadOf, workbenchBrowserDefinition, type OfficialWorkbenchBrowserContext,
 } from './official-browser.tsx'
+import { isDesktopOverlayDocument } from '../desktop-overlay-document.ts'
 
 /** Exact services required before the official Workbench Browser registers. */
 export const inject = [
@@ -45,6 +46,7 @@ export function apply(ctx: Context): void {
   const runtime = new OfficialBrowserRuntime(officialCtx)
   ctx.provide('workbenchBrowser', {
     reveal: (rawSessionId) => {
+      if (isDesktopOverlayDocument()) return
       const sessionId = rawSessionId as SessionId
       const row = ctx.sessions.list.getSnapshot().byId[sessionId] as SessionListRow | undefined
       const page = listBrowserWorkspacePages(row?.projectionValues?.browserWorkspace).at(-1)
@@ -66,6 +68,7 @@ export function apply(ctx: Context): void {
       })
     },
   })
+  if (isDesktopOverlayDocument()) return
   ctx.effect(() => {
     const disposers = [
       ctx.sidebarRightTabs.register(workbenchBrowserDefinition(officialCtx, runtime)),

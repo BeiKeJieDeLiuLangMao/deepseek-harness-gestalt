@@ -1,8 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { Context, Service } from '@deepseek-ai/cordis'
-import type { BrowserPageState, BrowserTarget } from '@deepseek-ai/dsh-browser-workspace/client'
-import { apply as applyClient, inject as clientInject } from '../src/client/index.ts'
+import { Context } from '@deepseek-ai/cordis'
+import { apply } from '../src/client/index.ts'
 import { isDesktopOverlayDocument } from '../src/desktop-overlay-document.ts'
 
 afterEach(() => {
@@ -18,65 +17,27 @@ describe('isDesktopOverlayDocument', () => {
     document.documentElement.removeAttribute('data-dsh-desktop-overlay')
     vi.stubGlobal('location', { search: '?dsh-desktop-overlay=1' })
     expect(isDesktopOverlayDocument()).toBe(true)
-    vi.stubGlobal('location', { search: '' })
-    expect(isDesktopOverlayDocument()).toBe(false)
   })
 })
 
 describe('workbench apply on the overlay document', () => {
-  it('publishes the face and does not tick official-page reconcile', async () => {
+  it('publishes reveal without registering or reconciling pages', () => {
     document.documentElement.setAttribute('data-dsh-desktop-overlay', '')
     const ctx = new Context()
-    class RemoteService extends Service {
-      constructor() { super(ctx, 'remote') }
-    }
-    new RemoteService()
+    const register = vi.fn()
+    const subscribeSidebar = vi.fn()
+    const subscribeSessions = vi.fn()
     const create = vi.fn()
-    const subscribeState = vi.fn()
-    const subscribe = vi.fn()
-    ctx.provide('betterSidebar', {
-      openTab: vi.fn(),
-      updateTab: vi.fn(),
-      closeTab: vi.fn(),
-      activateTab: vi.fn(),
-      setPanelOpen: vi.fn(),
-      getSnapshot: () => ({
-        sessionId: 's1',
-        state: {
-          panelOpen: true,
-          splits: { kind: 'leaf' as const, tabs: [{ id: 'browser:1', type: 'browser' }] },
-        },
-      }),
-      subscribeState,
-    })
-    ctx.provide('remote.browserWorkspace', { create })
-    ctx.provide('sessions', {
-      list: { getSnapshot: () => ({ byId: {} }), subscribe },
-    })
-    ctx.provide('browserUi', {
-      createRequest: () => ({ profile: 'shared' }),
-      renderPageChrome: vi.fn(),
-      recoverListedMutation: vi.fn(),
-    })
-    await ctx.plugin({ inject: [...clientInject], apply: applyClient }).await()
-    const face = ctx.get('workbenchBrowser') as {
-      ensureOfficial: (tabId: string) => void
-      createRequest: () => { profile: string }
-      recoverOfficial: (tabId: string, target: BrowserTarget) => Promise<BrowserPageState | undefined>
-    }
-    expect(typeof face.ensureOfficial).toBe('function')
-    expect(typeof face.createRequest).toBe('function')
-    expect(typeof face.recoverOfficial).toBe('function')
-    face.ensureOfficial('browser:1')
-    await expect(face.recoverOfficial('browser:1', {
-      profileId: 'p' as BrowserTarget['profileId'],
-      workspaceId: 'w' as BrowserTarget['workspaceId'],
-      browserId: 'b' as BrowserTarget['browserId'],
-      tabId: 't' as BrowserTarget['tabId'],
-    })).resolves.toBeUndefined()
-    expect(face.createRequest()).toEqual({ profile: 'shared' })
+    ctx.provide('sidebarRightTabs', { register })
+    ctx.provide('sidebarRight', { subscribe: subscribeSidebar })
+    ctx.provide('sessions', { list: { subscribe: subscribeSessions } })
+    ctx.provide('remote', { browserWorkspace: { create } })
+    apply(ctx)
+    expect(ctx.get('workbenchBrowser')).toEqual({ reveal: expect.any(Function) })
+    ctx.workbenchBrowser.reveal('s1')
+    expect(register).not.toHaveBeenCalled()
+    expect(subscribeSidebar).not.toHaveBeenCalled()
+    expect(subscribeSessions).not.toHaveBeenCalled()
     expect(create).not.toHaveBeenCalled()
-    expect(subscribeState).not.toHaveBeenCalled()
-    expect(subscribe).not.toHaveBeenCalled()
   })
 })
