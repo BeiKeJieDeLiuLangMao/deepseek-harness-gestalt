@@ -54,6 +54,7 @@ describe('Electron Browser Runtime configuration', () => {
       ['fractional viewportHeight', { viewportHeight: 1.5 }, /viewportHeight/],
       ['zero requestTimeoutMs', { requestTimeoutMs: 0 }, /requestTimeoutMs/],
       ['oversized requestTimeoutMs', { requestTimeoutMs: 2_147_483_648 }, /requestTimeoutMs/],
+      ['zero cancelTimeoutMs', { cancelTimeoutMs: 0 }, /cancelTimeoutMs/],
     ]
     for (const [label, overrides, failure] of cases) {
       const ctx = new Context()
@@ -574,8 +575,12 @@ describe('Electron Browser Runtime protocol and recovery', () => {
       signal: controller.signal,
     })).rejects.toMatchObject({ code: 'BROWSER_ABORTED' })
     const window = runtimeOf(ctx).profiles.get(created.target.profileId)?.tabs.get(created.target.tabId)?.window as
-      { webContents: { stopped: boolean } } | undefined
+      { destroyed: boolean; webContents: { stopped: boolean } } | undefined
     expect(window?.webContents.stopped).toBe(true)
+    expect(window?.destroyed).toBe(false)
+    await expect(ctx.browserRuntime.observe({ target: created.target })).resolves.toMatchObject({
+      status: 'open', revision: created.revision,
+    })
   })
 
   it('bounds a hung Chromium operation', async () => {
@@ -597,6 +602,82 @@ describe('Electron Browser Runtime protocol and recovery', () => {
       revision: 0,
       url: 'about:blank',
     })
+  })
+
+  it('recovers a presented page when stop cannot settle a timed-out navigation', async () => {
+    const { ctx, host } = await setup(
+      { loadDelayMs: 400, stopDoesNotSettleLoad: true },
+      { requestTimeoutMs: 50, cancelTimeoutMs: 20 },
+    )
+    const created = await ctx.browserRuntime.create({ profile: 'temporary' })
+    const runtime = ctx.browserRuntime as ElectronBrowserRuntime
+    const parent = { id: 'main' }
+    const bounds = { x: 10, y: 20, width: 640, height: 480 }
+    runtime.present(created.target, bounds, parent)
+
+    await expect(ctx.browserRuntime.navigate({
+      target: created.target,
+      expectedRevision: created.revision,
+      url: 'https://example.test/',
+    })).rejects.toMatchObject({ code: 'BROWSER_RUNTIME_UNAVAILABLE' })
+
+    expect(host.windows[0]?.destroyed).toBe(true)
+    await expect(ctx.browserRuntime.observe({ target: created.target })).resolves.toMatchObject({
+      status: 'open',
+      revision: created.revision + 2,
+      url: 'about:blank',
+    })
+    expect(host.windows[1]).toMatchObject({ shown: true, parent, bounds })
+  })
+
+  it('recovers a presented page when caller abort wins and stop cannot settle navigation', async () => {
+    const { ctx, host } = await setup(
+      { loadDelayMs: 400, stopDoesNotSettleLoad: true },
+      { requestTimeoutMs: 5_000, cancelTimeoutMs: 20 },
+    )
+    const created = await ctx.browserRuntime.create({ profile: 'temporary' })
+    const runtime = ctx.browserRuntime as ElectronBrowserRuntime
+    const parent = { id: 'main' }
+    const bounds = { x: 10, y: 20, width: 640, height: 480 }
+    runtime.present(created.target, bounds, parent)
+    const controller = new AbortController()
+    setTimeout(() => { controller.abort(new Error('client disconnected')) }, 20)
+
+    await expect(ctx.browserRuntime.navigate({
+      target: created.target,
+      expectedRevision: created.revision,
+      url: 'https://example.test/',
+      signal: controller.signal,
+    })).rejects.toMatchObject({ code: 'BROWSER_ABORTED' })
+
+    expect(host.windows[0]?.destroyed).toBe(true)
+    await expect(ctx.browserRuntime.observe({ target: created.target })).resolves.toMatchObject({
+      status: 'open',
+      revision: created.revision + 2,
+      url: 'about:blank',
+    })
+    expect(host.windows[1]).toMatchObject({ shown: true, parent, bounds })
+  })
+
+  it('keeps a recovered page concealed when presentation is withdrawn during recovery', async () => {
+    const { ctx, host } = await setup(
+      { loadDelayMs: 400, stopDoesNotSettleLoad: true },
+      { requestTimeoutMs: 50, cancelTimeoutMs: 20 },
+    )
+    const created = await ctx.browserRuntime.create({ profile: 'temporary' })
+    const runtime = ctx.browserRuntime as ElectronBrowserRuntime
+    runtime.present(created.target, { x: 10, y: 20, width: 640, height: 480 }, { id: 'main' })
+    ctx.on('browser/runtime-state', (state) => {
+      if (state.status === 'unavailable') runtime.conceal(created.target)
+    })
+
+    await expect(ctx.browserRuntime.navigate({
+      target: created.target,
+      expectedRevision: created.revision,
+      url: 'https://example.test/',
+    })).rejects.toMatchObject({ code: 'BROWSER_RUNTIME_UNAVAILABLE' })
+    await expect(ctx.browserRuntime.observe({ target: created.target })).resolves.toMatchObject({ status: 'open' })
+    expect(host.windows[1]?.shown).toBe(false)
   })
 
   it('rejects a non-PNG screenshot and a non-string page text', async () => {

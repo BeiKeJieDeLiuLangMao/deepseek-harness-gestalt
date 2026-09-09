@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-10-electron-browser-stall-recovery.md
-2026-09-10-electron-browser-stall-recovery.md: 2a1959f4dd4c9b84ad9197b50c218d1cb0dbcbeb
-2026-09-10-electron-browser-stall-recovery.zh.md: 1758846f3e7325ab594916214de748c05e4d462c
+2026-09-10-electron-browser-stall-recovery.md: f26e05751a089e9ac7616c359be35ce4c678b0dc
+2026-09-10-electron-browser-stall-recovery.zh.md: 36c01ae5f3c95ec7e6b67c821a2eea346178e954

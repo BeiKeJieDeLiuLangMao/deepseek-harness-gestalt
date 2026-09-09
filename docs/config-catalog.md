@@ -426,6 +426,8 @@ export interface Config {
   viewportHeight?: number
   /** Bound on each Chromium navigation or content read. */
   requestTimeoutMs?: number
+  /** Grace for Chromium to settle after an operation is stopped. */
+  cancelTimeoutMs?: number
 }
 ```
 

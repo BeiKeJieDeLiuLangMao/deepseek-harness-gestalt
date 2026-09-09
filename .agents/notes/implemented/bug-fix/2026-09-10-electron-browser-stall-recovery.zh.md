@@ -6,11 +6,11 @@ Status: implemented
 
 ## Problem
 
-Electron Browser Runtime 通过一个操作队列串行执行导航和页面观察。Chromium load 一直不结束的页面会占用该队列直到请求期限，而 Desktop loopback `/status` 路由为了观察每个标签也会进入同一队列。因此，即使 HTTP 服务本身已经运行，Tandem 启动健康检查仍会等待卡住的页面，后续 Browser 标签也会停留在创建状态。
+Electron Browser Runtime 通过一个操作队列串行执行导航和页面观察。Chromium load 一直不结束的页面会占用该队列直到请求期限，而 Desktop loopback `/status` 路由为了观察每个标签也会进入同一队列。因此，即使 HTTP 服务本身已经运行，Tandem 启动健康检查仍会等待卡住的页面，后续 Browser 标签也会停留在创建状态。`webContents.stop()` 可能让操作 promise 继续等待，因此无界等待该 promise 会在 Runtime 期限或更早的调用方取消后继续占用队列。
 
 ## Decision
 
-导航以 `BROWSER_RUNTIME_UNAVAILABLE` 失败时，会为同一 target 安排与异常观察共用的恢复流程。恢复提交不可用回执，销毁异常页面，在最后提交的 URL 上重建页面，并释放串行队列供后续 create 和操作使用。
+导航以 `BROWSER_RUNTIME_UNAVAILABLE` 失败时，会为同一 target 安排与异常观察共用的恢复流程。取消时，Runtime 会在配置的 `cancelTimeoutMs` 内等待 `webContents.stop()` 结束操作。promise 仍未结束时，Runtime 会销毁所持有的页面窗口、观察其随后到达的 promise 拒绝，再推进队列。调用方取消仍返回 `BROWSER_ABORTED`；已提交 target 的窗口被销毁后，会进入相同的异常恢复流程。恢复会重建最后提交的 URL，并且仅在展示请求仍有效时，才把已展示页面重新附加到原 Host parent 和 bounds。
 
 loopback 适配器接收其所属 `Context`，并通过已提交的 `browser/runtime-state` 事件同步缓存。`/status` 同步读取该缓存，无需观察页面内容即可报告 HTTP 服务就绪状态。打开回执刷新缓存清单，关闭回执从中移除标签。实时标签列表与页面内容路由仍会观察 Chromium，并暴露当前页面数据。
 
@@ -22,10 +22,12 @@ loopback 适配器接收其所属 `Context`，并通过已提交的 `browser/run
 
 **直接返回导航失败而不恢复。** 放弃该方案，因为超时的 WebContents 可能保留未完成的加载状态，不能继续作为后续操作的底层页面。
 
+**保留 WebContents 并直接推进队列。** 放弃该方案，因为等待中的操作可能与后续串行工作并发修改同一页面。销毁其所属页面窗口会在队列推进前结束原生生命周期。
+
 ## Consequences
 
-单个卡住的页面会在配置的请求期限失败并被替换，后续 Browser create 与本地导航仍可继续。故障期间 `/status` 仍然可用，并在恢复提交替代页面前保留最后提交的标签清单。页面级路由保留实时观察的耗时与失败语义。
+单个卡住的页面会在配置的请求期限与取消期限后失败并被替换，后续 Browser create 与本地导航仍可继续。调用方取消会在取消期限后结束，同时保持其公开失败代码。已展示标签恢复后仍位于同一视口，而并发的 conceal 会阻止页面再次展示。故障期间 `/status` 仍然可用，并在恢复提交替代页面前保留最后提交的标签清单。页面级路由保留实时观察的耗时与失败语义。
 
 ## Testing
 
-单元覆盖让页面观察永久挂起并确认 `/status` 仍返回，检查缓存的 create、导航、恢复与关闭回执，并验证超时导航先恢复被定址的 target，随后另一次 create 成功。真实 Electron 启动器提供一个永不结束的本地响应，观察请求期限与恢复后的 `about:blank` 页面，然后创建另一个标签并加载可响应的本地页面。
+单元覆盖让页面观察永久挂起并确认 `/status` 仍返回，检查缓存的 create、导航、恢复与关闭回执，并让 `stop()` 在 Runtime 期限与调用方取消两条路径中都无法结束已展示页面的 load。两条路径都会在取消期限后销毁页面、恢复被定址的 target 并恢复有效展示；在宽限期内结束的取消则保留页面。真实 Electron 启动器把页面附加到 Host 窗口，提供一个永不结束的本地响应，观察请求期限与恢复后的 `about:blank` 页面，然后创建另一个标签并加载可响应的本地页面。
