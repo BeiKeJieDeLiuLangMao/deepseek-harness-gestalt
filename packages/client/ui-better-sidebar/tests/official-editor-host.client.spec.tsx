@@ -4,6 +4,7 @@ import { cleanup, render, waitFor } from '@testing-library/react'
 import { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { OfficialFileViewerOwnerProps } from '../src/client/official-files/contract.ts'
 import { OfficialEditorHost } from '../src/client/official-files/OfficialEditorHost.tsx'
+import { officialFileAddress } from '../src/client/official-files/address.ts'
 import { api } from '../src/client/api.ts'
 
 afterEach(() => {
@@ -42,7 +43,7 @@ describe('official file host resource ownership', () => {
         tab: {
           id: 'file-tab',
           sessionId: display,
-          contentId: 'dsh-resource://file/session/side-child/docs/a.md',
+          contentId: officialFileAddress(resource, '/child-work', '/child-work/docs/a.md'),
           title: 'a.md',
           payload: {},
           navigation: { params: { line: 9 }, revision: 1 },
@@ -90,7 +91,7 @@ describe('official file host resource ownership', () => {
       expect.any(AbortSignal),
     )
     expect(viewerOwner).toMatchObject({
-      address: 'dsh-resource://file/session/side-child/docs/a.md',
+      address: officialFileAddress(resource, '/child-work', '/child-work/docs/a.md'),
       scope: { sessionId: resource, cwd: '/child-work' },
       path: '/child-work/docs/a.md',
       line: 9,

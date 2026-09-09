@@ -13,7 +13,22 @@ describe('official file addresses', () => {
     expect(officialFileTitle(address)).toBe('a #1.md')
   })
 
-  it('keeps POSIX, Windows, and UNC paths under the authorizing Session', () => {
+  it('round-trips dot segments, absolute paths, Unicode, and URI punctuation without changing the owner', () => {
+    const owner = 'child/../会话?#%'
+    const paths = [
+      '../outside/./a.txt',
+      '.',
+      '..',
+      '/other/../a #?.txt',
+      'D:/other/../a.txt',
+      '//server/share/../a.txt',
+      '目录/雪 &?#%.md',
+    ]
+    for (const path of paths) {
+      const address = officialFileAddress(owner, '/work', path)
+      expect(parseOfficialFileAddress(address)).toEqual({ scope: 'session', sessionId: owner, path })
+    }
+
     expect(parseOfficialFileAddress(officialFileAddress('s', '/work', '/other/a.txt')))
       .toEqual({ scope: 'session', sessionId: 's', path: '/other/a.txt' })
     expect(parseOfficialFileAddress(officialFileAddress('s', 'C:\\work', 'D:\\other\\a.txt')))
@@ -25,5 +40,7 @@ describe('official file addresses', () => {
   it('rejects foreign schemes and malformed encoding', () => {
     expect(parseOfficialFileAddress('https://file/session/s/a')).toBeUndefined()
     expect(parseOfficialFileAddress('dsh-resource://file/session/s/%zz')).toBeUndefined()
+    expect(parseOfficialFileAddress('dsh-resource://file/session/s/a?b')).toBeUndefined()
+    expect(parseOfficialFileAddress('dsh-resource://file/session/s/%2E%2E/a')).toBeUndefined()
   })
 })

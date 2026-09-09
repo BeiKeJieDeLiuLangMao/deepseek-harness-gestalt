@@ -293,10 +293,14 @@ export function TextEditorCore(props: TextEditorCoreProps) {
     setMode('edit')
     const target = view.state.doc.line(Math.min(Math.max(1, props.line), view.state.doc.lines)).from
     view.dispatch({ selection: { anchor: target } })
+    view.requestMeasure()
+    // The first frame commits edit mode; the second reads measurable line geometry.
     requestAnimationFrame(() => {
-      const block = view.lineBlockAt(target)
-      view.scrollDOM.scrollTop = Math.max(0, block.top - 8)
-      view.requestMeasure()
+      requestAnimationFrame(() => {
+        const block = view.lineBlockAt(target)
+        view.scrollDOM.scrollTop = Math.max(0, block.top - 8)
+        view.requestMeasure()
+      })
     })
   }, [props.line, props.navigationRevision, content])
 

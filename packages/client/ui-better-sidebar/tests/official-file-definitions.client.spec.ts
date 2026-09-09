@@ -7,6 +7,7 @@ import {
   OFFICIAL_FILE_ID,
   OFFICIAL_FILE_KIND,
 } from '../src/client/official-files/definitions.ts'
+import { officialFileAddress } from '../src/client/official-files/address.ts'
 import { OfficialFileRuntime } from '../src/client/official-files/runtime.ts'
 
 describe('official file definitions', () => {
@@ -15,7 +16,7 @@ describe('official file definitions', () => {
     registry.register(officialFileDefinition(new OfficialFileRuntime()))
     for (const viewer of officialBuiltinViewers()) registry.registerViewer(viewer)
 
-    const address = (path: string) => `dsh-resource://file/session/s/${path}`
+    const address = (path: string) => officialFileAddress('s', undefined, path)
     expect(registry.claim(address('notes/a.md'))).toMatchObject({ kind: OFFICIAL_FILE_KIND })
     expect(registry.get(OFFICIAL_FILE_KIND)?.id).toBe(OFFICIAL_FILE_ID)
     expect(registry.viewers().map(viewer => [viewer.id, viewer.fetchStrategy])).toEqual([

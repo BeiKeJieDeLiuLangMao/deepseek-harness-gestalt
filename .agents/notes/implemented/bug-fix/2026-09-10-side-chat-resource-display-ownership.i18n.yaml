@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-10-side-chat-resource-display-ownership.md
-2026-09-10-side-chat-resource-display-ownership.md: 4acd9cd7403037d40c571361824d29d778a5c445
-2026-09-10-side-chat-resource-display-ownership.zh.md: c2243e792946b67be4debe522da5cdabe12ff2fa
+2026-09-10-side-chat-resource-display-ownership.md: e232ecf2366f9cb5878e6cc3d279855130c859a0
+2026-09-10-side-chat-resource-display-ownership.zh.md: eae15f11aa6dda553386d66ed7a51c3599f602c8

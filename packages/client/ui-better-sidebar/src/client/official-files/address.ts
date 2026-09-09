@@ -9,17 +9,20 @@ export type OfficialFileAddress = {
 
 /** Decode one official file address. */
 export function parseOfficialFileAddress(address: string): OfficialFileAddress | undefined {
+  const prefix = 'dsh-resource://file/session/'
+  if (!address.startsWith(prefix)) return undefined
+  const encoded = address.slice(prefix.length)
+  const separator = encoded.indexOf('/')
+  if (separator <= 0) return undefined
   try {
-    const url = new URL(address)
-    if (url.protocol !== 'dsh-resource:' || url.host !== 'file') return undefined
-    const [, scope, sessionId, ...segments] = url.pathname.split('/')
-    if (scope !== 'session' || sessionId === undefined || sessionId === '' || segments.length === 0) {
-      return undefined
-    }
+    const sessionId = decodeURIComponent(encoded.slice(0, separator))
+    const path = encoded.slice(separator + 1).split('/').map(decodeURIComponent).join('/')
+    if (encodeSegment(sessionId) !== encoded.slice(0, separator)) return undefined
+    if (path.split('/').map(encodeSegment).join('/') !== encoded.slice(separator + 1)) return undefined
     return {
-      scope,
-      sessionId: decodeURIComponent(sessionId),
-      path: segments.map(decodeURIComponent).join('/'),
+      scope: 'session',
+      sessionId,
+      path,
     }
   } catch {
     return undefined

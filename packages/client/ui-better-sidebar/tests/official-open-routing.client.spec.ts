@@ -2,6 +2,7 @@ import { Children, isValidElement, type ReactElement, type ReactNode } from 'rea
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { TabId } from '@deepseek-ai/dsh-client-ui-dockkit'
+import { officialFileAddress, parseOfficialFileAddress } from '../src/client/official-files/address.ts'
 import {
   agentOpenRequestOf,
   OfficialProducedFiles,
@@ -52,17 +53,21 @@ describe('official open routing', () => {
     const { ctx, forSession, openResource, update } = bench()
     await openOfficialFile(ctx, SESSION, 'docs/a.txt', 'Decision')
     expect(forSession).toHaveBeenLastCalledWith(SESSION)
-    expect(openResource).toHaveBeenLastCalledWith('dsh-resource://file/session/inactive-session/docs/a.txt')
+    expect(openResource).toHaveBeenLastCalledWith(
+      officialFileAddress(SESSION, '/work', '/work/docs/a.txt'),
+    )
     expect(update).toHaveBeenLastCalledWith(TAB, { title: 'Decision' })
 
     update.mockClear()
     await openOfficialFile(ctx, SESSION, '/outside/a.md')
-    expect(openResource).toHaveBeenLastCalledWith('dsh-resource://file/session/inactive-session//outside/a.md')
+    expect(openResource).toHaveBeenLastCalledWith(
+      officialFileAddress(SESSION, '/work', '/outside/a.md'),
+    )
     expect(update).not.toHaveBeenCalled()
 
     await openOfficialFolder(ctx, SESSION, 'reports')
     expect(openResource).toHaveBeenLastCalledWith(
-      'dsh-resource://file/session/inactive-session/reports',
+      officialFileAddress(SESSION, '/work', '/work/reports'),
       { kind: 'file', payload: { dir: true } },
     )
     expect(update).toHaveBeenLastCalledWith(TAB, { title: 'reports' })
@@ -74,7 +79,7 @@ describe('official open routing', () => {
 
     await revealOfficialFiles(ctx, SESSION, ['src/a.ts', '/work/docs/b.txt'])
     expect(openResource).toHaveBeenLastCalledWith(
-      'dsh-resource://file/session/inactive-session/',
+      officialFileAddress(SESSION, '/work', '/work'),
       {
         kind: 'file',
         params: { reveal: ['/work/src/a.ts', '/work/docs/b.txt'] },
@@ -84,14 +89,14 @@ describe('official open routing', () => {
 
     await revealOfficialFiles(ctx, SESSION, [])
     expect(openResource).toHaveBeenLastCalledWith(
-      'dsh-resource://file/session/inactive-session/',
+      officialFileAddress(SESSION, '/work', '/work'),
       { kind: 'file', params: { reveal: ['/work'] }, payload: { dir: true } },
     )
 
     const rootless = bench(null)
     await revealOfficialFiles(rootless.ctx, SESSION, [])
     expect(rootless.openResource).toHaveBeenCalledWith(
-      'dsh-resource://file/session/inactive-session/',
+      officialFileAddress(SESSION, undefined, ''),
       { kind: 'file', params: { reveal: [] }, payload: { dir: true } },
     )
   })
@@ -131,19 +136,27 @@ describe('official open routing', () => {
     await openOfficialFile(ctx, SESSION, 'src/a.ts', undefined, DISPLAY)
     expect(forSession).toHaveBeenLastCalledWith(DISPLAY)
     expect(openResource).toHaveBeenLastCalledWith(
-      'dsh-resource://file/session/inactive-session/src/a.ts',
+      officialFileAddress(SESSION, '/child-work', '/child-work/src/a.ts'),
     )
 
     await revealOfficialFiles(ctx, SESSION, ['src/a.ts'], DISPLAY)
     expect(forSession).toHaveBeenLastCalledWith(DISPLAY)
     expect(openResource).toHaveBeenLastCalledWith(
-      'dsh-resource://file/session/inactive-session/',
+      officialFileAddress(SESSION, '/child-work', '/child-work'),
       {
         kind: 'file',
         params: { reveal: ['/child-work/src/a.ts'] },
         payload: { dir: true },
       },
     )
+
+    await openOfficialFile(ctx, SESSION, '../outside/a.txt', undefined, DISPLAY)
+    expect(forSession).toHaveBeenLastCalledWith(DISPLAY)
+    const address = openResource.mock.calls.at(-1)?.[0]
+    expect(typeof address).toBe('string')
+    expect(parseOfficialFileAddress(String(address))).toEqual({
+      scope: 'session', sessionId: SESSION, path: '../outside/a.txt',
+    })
   })
 
   it('renders produced files and preserves every row gesture', () => {
