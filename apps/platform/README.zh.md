@@ -40,4 +40,6 @@ Platform Deploy 从 Environment `production` 读取 `PLATFORM_MEMBERSHIP_BACKEND
 
 ## 已知限制与暂缓事项
 
+成员关系维护 host action 面向 Linux ECS。其 host 集成 fixture 在具备 Python 3 的 Linux 和 macOS 上运行，依赖 POSIX 所有权、可执行 shell stub 和路径。具备 Python 3 的 Windows 仍执行 deadline 算术测试；必需的 Docker 生命周期 CI 在 Linux 上运行。
+
 - 产品配置不能关闭 Redis 与 PostgreSQL 的证书校验。产品入口测试会先校验实际运行的 TLS 配置，再用临时非 TLS store adapter 驱动 `launchOperatedPlatform`；这不构成实际运行验收。

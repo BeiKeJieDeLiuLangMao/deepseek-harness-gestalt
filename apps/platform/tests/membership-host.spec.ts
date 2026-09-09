@@ -82,7 +82,7 @@ function hostFixture(run: (fixture: {
   }
 }
 
-describe.skipIf(!available)('Membership maintenance host entry', { timeout: 60_000 }, () => {
+describe.skipIf(!available)('Membership maintenance deadlines', () => {
   it('reserves cleanup inside the shorter action deadline rather than the transaction deadline', () => {
     const remainingFunction = python.slice(python.indexOf('def remaining():'), python.indexOf('\ndef run('))
     const result = spawnSync('python3', ['-c', [
@@ -103,7 +103,11 @@ describe.skipIf(!available)('Membership maintenance host entry', { timeout: 60_0
     ].join('\n')], { encoding: 'utf8', timeout: 5000 })
     expect(result.status, result.stderr).toBe(0)
   })
+})
 
+// Linux ECS host actions require POSIX ownership, executable shell stubs, and paths.
+// The controlled providers also run on macOS; Windows only runs deadline arithmetic.
+describe.skipIf(!available || !['linux', 'darwin'].includes(process.platform))('Membership maintenance host entry', { timeout: 60_000 }, () => {
   it('stages without boot, disables restart before stopping, and captures through the real CLI', () =>{  hostFixture((fixture) => {
     expect(fixture.action('stage').status).toBe(0)
     expect(fixture.actions()).not.toContain(' run ')
