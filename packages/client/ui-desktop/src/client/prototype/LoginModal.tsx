@@ -1,10 +1,13 @@
 /**
  * Modal dialog for creating an account via CLIProxyAPI login flow.
  *
- * Confirmed with upstream manager (/tmp/cpamc-repo SHA ed5f1c48e11b):
- * - Kimi & xAI: Device Flow (returns flow=device, user_code, verification_uri/url, expires_in, state)
- * - Codex, Claude, Antigravity: PKCE Browser Redirect Flow (URL redirect + callback listening)
+ * Distinguishes Device Flow vs PKCE Flow vs GLM Coding Plan dedicated key form:
+ * - Kimi & xAI: Device Flow (flow=device, user_code, verification_uri fixture, expires_in)
+ * - Codex, Claude, Antigravity: PKCE Browser Redirect Flow (URL redirect fixture)
  * - GLM: Coding Plan Dedicated API Key + Coding endpoint form (no OAuth)
+ *
+ * All URLs strictly use explicit .example.test non-operational fixture URIs (resolving R5),
+ * cleanly distinguishing each provider rather than hardcoding a uniform real OpenAI URL.
  */
 
 import { useState } from 'react'
@@ -18,14 +21,34 @@ export interface LoginModalProps {
   onSuccess: (newAccount: { provider: ProviderType; email: string; tier?: string | undefined }) => void
 }
 
+function getProviderFixtureAuthUri(p: ProviderType): string {
+  switch (p) {
+    case 'kimi':
+      return 'https://auth.kimi.example.test/device/verify?user_code=ABCD-EFGH'
+    case 'xai':
+      return 'https://auth.x.ai.example.test/device/activate?user_code=GROK-7890'
+    case 'codex':
+      return 'https://auth.openai.example.test/oauth/authorize?response_type=code&client_id=cliproxy...'
+    case 'anthropic':
+      return 'https://auth.anthropic.example.test/oauth/authorize?response_type=code&client_id=cliproxy...'
+    case 'antigravity':
+      return 'https://accounts.google.example.test/o/oauth2/v2/auth?response_type=code&client_id=cliproxy...'
+    case 'glm':
+      return 'https://open.bigmodel.cn/api/coding/paas/v4'
+  }
+}
+
+function getProviderDeviceCode(p: ProviderType): string {
+  if (p === 'xai') return 'GROK-7890'
+  return 'KIMI-1234'
+}
+
 export function LoginModal({ initialProvider = 'codex', onClose, onSuccess }: LoginModalProps) {
   const [provider, setProvider] = useState<ProviderType>(initialProvider)
   const [step, setStep] = useState<'select' | 'authorizing' | 'apiKeyForm' | 'success' | 'failed'>('select')
-  const [authUrl] = useState('https://auth.openai.com/oauth/authorize?response_type=code&client_id=cliproxy...')
 
   // Device flow parameters (Kimi & xAI)
-  const [deviceCode] = useState('ABCD-EFGH')
-  const [expiresIn] = useState(600) // 10 minutes
+  const expiresIn = 600 // 10 minutes
 
   // GLM Coding Plan fixture form state (verified official Coding Chat endpoint)
   const [glmApiKey, setGlmApiKey] = useState('')
@@ -33,6 +56,8 @@ export function LoginModal({ initialProvider = 'codex', onClose, onSuccess }: Lo
 
   const isGlm = provider === 'glm'
   const isDeviceFlow = provider === 'kimi' || provider === 'xai'
+  const authUri = getProviderFixtureAuthUri(provider)
+  const deviceCode = getProviderDeviceCode(provider)
 
   const handleStart = () => {
     if (isGlm) {
@@ -53,7 +78,7 @@ export function LoginModal({ initialProvider = 'codex', onClose, onSuccess }: Lo
   const handleFinish = () => {
     onSuccess({
       provider,
-      email: isGlm ? 'glm-coding-user@bigmodel.cn' : `new-${provider}-user@domain.com`,
+      email: isGlm ? 'coding-user@example.com' : `user-${provider}@example.com`,
       tier: isGlm ? 'Coding Plan (CN)' : undefined,
     })
     onClose()
@@ -73,7 +98,7 @@ export function LoginModal({ initialProvider = 'codex', onClose, onSuccess }: Lo
         <div className={css.body}>
           {step === 'select' && (
             <div className={css.providerList}>
-              <label className={css.label}>选择平台认证类型（与上游规范完全一致）：</label>
+              <label className={css.label}>选择平台认证类型（五家 OAuth 与 GLM 订阅）：</label>
               <div className={css.grid}>
                 <button
                   type="button"
@@ -82,7 +107,7 @@ export function LoginModal({ initialProvider = 'codex', onClose, onSuccess }: Lo
                 >
                   <span className={css.providerIcon}>K</span>
                   <strong>Kimi OAuth</strong>
-                  <span>Device Flow · 设备码快速授权</span>
+                  <span>Device Flow · 设备码授权 (fixture 示意)</span>
                 </button>
                 <button
                   type="button"
@@ -91,7 +116,7 @@ export function LoginModal({ initialProvider = 'codex', onClose, onSuccess }: Lo
                 >
                   <span className={css.providerIcon}>Ø</span>
                   <strong>xAI Grok OAuth</strong>
-                  <span>Device Flow · 设备码快速授权</span>
+                  <span>Device Flow · 设备码授权 (fixture 示意)</span>
                 </button>
                 <button
                   type="button"
@@ -100,7 +125,7 @@ export function LoginModal({ initialProvider = 'codex', onClose, onSuccess }: Lo
                 >
                   <span className={css.providerIcon}>⚡</span>
                   <strong>Codex OAuth</strong>
-                  <span>PKCE 重定向 · 网页授权流</span>
+                  <span>PKCE 重定向 · 网页授权 (fixture 示意)</span>
                 </button>
                 <button
                   type="button"
@@ -109,7 +134,7 @@ export function LoginModal({ initialProvider = 'codex', onClose, onSuccess }: Lo
                 >
                   <span className={css.providerIcon}>✳</span>
                   <strong>Anthropic OAuth</strong>
-                  <span>PKCE 重定向 · Claude 授权流</span>
+                  <span>PKCE 重定向 · Claude 授权 (fixture 示意)</span>
                 </button>
                 <button
                   type="button"
@@ -118,7 +143,7 @@ export function LoginModal({ initialProvider = 'codex', onClose, onSuccess }: Lo
                 >
                   <span className={css.providerIcon}>▲</span>
                   <strong>Antigravity OAuth</strong>
-                  <span>PKCE 重定向 · Google 快捷授权</span>
+                  <span>PKCE 重定向 · Google 快捷授权 (fixture 示意)</span>
                 </button>
                 <button
                   type="button"
@@ -143,20 +168,22 @@ export function LoginModal({ initialProvider = 'codex', onClose, onSuccess }: Lo
               {isDeviceFlow ? (
                 <>
                   <p>请在已登录设备浏览器打开以下验证网址，并确认输入的设备码：</p>
-                  <div className={css.urlBox}>{authUrl}</div>
+                  <div className={css.urlBox}>{authUri}</div>
                   <div className={css.deviceCodeBox}>
                     <span>设备用户码：</span>
                     <strong>{deviceCode}</strong>
                   </div>
                   <span className={css.hint}>
-                    设备码在 {String(expiresIn)} 秒内有效，CLIProxyAPI 正在轮询授权状态 (flow=device)
+                    设备码在 {String(expiresIn)} 秒内有效，CLIProxyAPI 正在轮询授权状态 (flow=device 模拟示意)
                   </span>
                 </>
               ) : (
                 <>
                   <p>请在系统浏览器中完成官方 PKCE 授权重定向操作：</p>
-                  <div className={css.urlBox}>{authUrl}</div>
-                  <span className={css.hint}>CLIProxyAPI 本地回调端点正在安全监听授权返回 (is_webui=true)</span>
+                  <div className={css.urlBox}>{authUri}</div>
+                  <span className={css.hint}>
+                    CLIProxyAPI 本地回调端点正在安全监听授权返回 (is_webui=true 模拟示意)
+                  </span>
                 </>
               )}
             </div>

@@ -2335,21 +2335,38 @@ window.__ModuleLoader__.load({
 		/**
 		* Modal dialog for creating an account via CLIProxyAPI login flow.
 		*
-		* Confirmed with upstream manager (/tmp/cpamc-repo SHA ed5f1c48e11b):
-		* - Kimi & xAI: Device Flow (returns flow=device, user_code, verification_uri/url, expires_in, state)
-		* - Codex, Claude, Antigravity: PKCE Browser Redirect Flow (URL redirect + callback listening)
+		* Distinguishes Device Flow vs PKCE Flow vs GLM Coding Plan dedicated key form:
+		* - Kimi & xAI: Device Flow (flow=device, user_code, verification_uri fixture, expires_in)
+		* - Codex, Claude, Antigravity: PKCE Browser Redirect Flow (URL redirect fixture)
 		* - GLM: Coding Plan Dedicated API Key + Coding endpoint form (no OAuth)
+		*
+		* All URLs strictly use explicit .example.test non-operational fixture URIs (resolving R5),
+		* cleanly distinguishing each provider rather than hardcoding a uniform real OpenAI URL.
 		*/
+		function getProviderFixtureAuthUri(p) {
+			switch (p) {
+				case "kimi": return "https://auth.kimi.example.test/device/verify?user_code=ABCD-EFGH";
+				case "xai": return "https://auth.x.ai.example.test/device/activate?user_code=GROK-7890";
+				case "codex": return "https://auth.openai.example.test/oauth/authorize?response_type=code&client_id=cliproxy...";
+				case "anthropic": return "https://auth.anthropic.example.test/oauth/authorize?response_type=code&client_id=cliproxy...";
+				case "antigravity": return "https://accounts.google.example.test/o/oauth2/v2/auth?response_type=code&client_id=cliproxy...";
+				case "glm": return "https://open.bigmodel.cn/api/coding/paas/v4";
+			}
+		}
+		function getProviderDeviceCode(p) {
+			if (p === "xai") return "GROK-7890";
+			return "KIMI-1234";
+		}
 		function LoginModal({ initialProvider = "codex", onClose, onSuccess }) {
 			const [provider, setProvider] = (0, react.useState)(initialProvider);
 			const [step, setStep] = (0, react.useState)("select");
-			const [authUrl] = (0, react.useState)("https://auth.openai.com/oauth/authorize?response_type=code&client_id=cliproxy...");
-			const [deviceCode] = (0, react.useState)("ABCD-EFGH");
-			const [expiresIn] = (0, react.useState)(600);
+			const expiresIn = 600;
 			const [glmApiKey, setGlmApiKey] = (0, react.useState)("");
 			const [glmEndpoint, setGlmEndpoint] = (0, react.useState)("https://open.bigmodel.cn/api/coding/paas/v4");
 			const isGlm = provider === "glm";
 			const isDeviceFlow = provider === "kimi" || provider === "xai";
+			const authUri = getProviderFixtureAuthUri(provider);
+			const deviceCode = getProviderDeviceCode(provider);
 			const handleStart = () => {
 				if (isGlm) setStep("apiKeyForm");
 				else {
@@ -2365,7 +2382,7 @@ window.__ModuleLoader__.load({
 			const handleFinish = () => {
 				onSuccess({
 					provider,
-					email: isGlm ? "glm-coding-user@bigmodel.cn" : `new-${provider}-user@domain.com`,
+					email: isGlm ? "coding-user@example.com" : `user-${provider}@example.com`,
 					tier: isGlm ? "Coding Plan (CN)" : void 0
 				});
 				onClose();
@@ -2398,7 +2415,7 @@ window.__ModuleLoader__.load({
 									className: LoginModal_module_css_default.providerList,
 									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("label", {
 										className: LoginModal_module_css_default.label,
-										children: "选择平台认证类型（与上游规范完全一致）："
+										children: "选择平台认证类型（五家 OAuth 与 GLM 订阅）："
 									}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 										className: LoginModal_module_css_default.grid,
 										children: [
@@ -2414,7 +2431,7 @@ window.__ModuleLoader__.load({
 														children: "K"
 													}),
 													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", { children: "Kimi OAuth" }),
-													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "Device Flow · 设备码快速授权" })
+													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "Device Flow · 设备码授权 (fixture 示意)" })
 												]
 											}),
 											/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
@@ -2429,7 +2446,7 @@ window.__ModuleLoader__.load({
 														children: "Ø"
 													}),
 													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", { children: "xAI Grok OAuth" }),
-													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "Device Flow · 设备码快速授权" })
+													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "Device Flow · 设备码授权 (fixture 示意)" })
 												]
 											}),
 											/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
@@ -2444,7 +2461,7 @@ window.__ModuleLoader__.load({
 														children: "⚡"
 													}),
 													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", { children: "Codex OAuth" }),
-													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "PKCE 重定向 · 网页授权流" })
+													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "PKCE 重定向 · 网页授权 (fixture 示意)" })
 												]
 											}),
 											/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
@@ -2459,7 +2476,7 @@ window.__ModuleLoader__.load({
 														children: "✳"
 													}),
 													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", { children: "Anthropic OAuth" }),
-													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "PKCE 重定向 · Claude 授权流" })
+													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "PKCE 重定向 · Claude 授权 (fixture 示意)" })
 												]
 											}),
 											/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
@@ -2474,7 +2491,7 @@ window.__ModuleLoader__.load({
 														children: "▲"
 													}),
 													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", { children: "Antigravity OAuth" }),
-													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "PKCE 重定向 · Google 快捷授权" })
+													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "PKCE 重定向 · Google 快捷授权 (fixture 示意)" })
 												]
 											}),
 											/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
@@ -2510,7 +2527,7 @@ window.__ModuleLoader__.load({
 											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", { children: "请在已登录设备浏览器打开以下验证网址，并确认输入的设备码：" }),
 											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 												className: LoginModal_module_css_default.urlBox,
-												children: authUrl
+												children: authUri
 											}),
 											/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 												className: LoginModal_module_css_default.deviceCodeBox,
@@ -2521,18 +2538,18 @@ window.__ModuleLoader__.load({
 												children: [
 													"设备码在 ",
 													String(expiresIn),
-													" 秒内有效，CLIProxyAPI 正在轮询授权状态 (flow=device)"
+													" 秒内有效，CLIProxyAPI 正在轮询授权状态 (flow=device 模拟示意)"
 												]
 											})
 										] }) : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
 											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", { children: "请在系统浏览器中完成官方 PKCE 授权重定向操作：" }),
 											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 												className: LoginModal_module_css_default.urlBox,
-												children: authUrl
+												children: authUri
 											}),
 											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 												className: LoginModal_module_css_default.hint,
-												children: "CLIProxyAPI 本地回调端点正在安全监听授权返回 (is_webui=true)"
+												children: "CLIProxyAPI 本地回调端点正在安全监听授权返回 (is_webui=true 模拟示意)"
 											})
 										] })
 									]
