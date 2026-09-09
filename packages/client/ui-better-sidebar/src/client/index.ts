@@ -28,6 +28,7 @@ import { loadBootDecision } from './prefs.ts'
 import { SideCardSection } from './SideCardSection.tsx'
 import { api } from './api.ts'
 import { registerOfficialFiles } from './official-files/index.ts'
+import { OFFICIAL_RUNTIME_INJECT, registerOfficialRuntimeTabs } from './official-runtime/index.ts'
 import { LOCALE_NS, attachLocale, attachBetterLocale, t, zh, en } from './locales.ts'
 import css from './sidebar.module.css'
 import './layout.css'
@@ -39,8 +40,7 @@ export type { BetterSidebarService } from './context.ts'
  *  (rc.8+) is the client module system the chunk loader resolves its
  *  externals through — Cordis guards service access without inject. */
 export const inject = [
-  'connection', 'remote', 'slots', 'sessions', 'workspaces', 'locale', 'modules', 'uiRenderer',
-  'sidebarRight', 'sidebarRightTabs', 'sidebarRightPreferences',
+  'connection', 'remote', 'locale', 'modules', ...OFFICIAL_RUNTIME_INJECT,
 ]
 
 /**
@@ -65,6 +65,10 @@ function isDesktopOverlayDocument(): boolean {
  */
 export function apply(ctx: SidebarContext): void {
   registerOfficialFiles(ctx)
+  ctx.effect(
+    () => registerOfficialRuntimeTabs(ctx),
+    'dsh-better-sidebar: official Side Chat and Terminal runtimes',
+  )
   ctx.effect(
     () => installSidechatAdmission(ctx),
     'dsh-better-sidebar: Side Chat Session admission',
