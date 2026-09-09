@@ -38,4 +38,6 @@ Required non-secret production variables are `PLATFORM_CERT_RENEWAL_ENABLED`, `P
 
 ## Known Limitations and Deferred Work
 
+The membership maintenance host actions target Linux ECS. Their host integration fixtures run on Linux and macOS with Python 3 and require POSIX ownership, executable shell stubs, and paths. Deadline arithmetic remains tested on Windows with Python 3; the required Docker lifecycle CI runs on Linux.
+
 - Redis and PostgreSQL certificate verification cannot be disabled by product configuration. The product-entry test drives `launchOperatedPlatform` with disposable non-TLS store adapters after validating the operated TLS configuration; it is not live operated acceptance.
