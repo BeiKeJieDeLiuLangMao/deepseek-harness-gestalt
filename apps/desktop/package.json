@@ -2,24 +2,63 @@
   "name": "@deepseek-ai/dsh-desktop",
   "productName": "DeepSeek Gestalt",
   "description": "DeepSeek Gestalt Desktop Host: Electron window around bundled dsh web",
-  "version": "0.1.16",
+  "version": "0.1.17",
   "private": true,
   "type": "module",
   "main": "out/main.mjs",
   "imports": {
-    "#testing/desktop/companion-product": { "types": "./lib/types/src/companion-product.d.ts", "default": "./lib/types/src/companion-product.js" },
-    "#testing/desktop/companion-operation-ledger": { "types": "./lib/types/src/companion-operation-ledger.d.ts", "default": "./lib/types/src/companion-operation-ledger.js" },
-    "#testing/desktop/remote-relay": { "types": "./lib/types/src/remote-relay.d.ts", "default": "./lib/types/src/remote-relay.js" },
-    "#testing/mobile/companion-lifecycle": { "types": "@deepseek-ai/dsh-mobile/lib/types/src/companion-lifecycle.d.ts", "default": "@deepseek-ai/dsh-mobile/lib/types/src/companion-lifecycle.js" },
-    "#testing/mobile/companion-cache": { "types": "@deepseek-ai/dsh-mobile/lib/types/src/companion-cache.d.ts", "default": "@deepseek-ai/dsh-mobile/lib/types/src/companion-cache.js" },
-    "#testing/mobile/companion-surface": { "types": "@deepseek-ai/dsh-mobile/lib/types/src/companion-surface.d.ts", "default": "@deepseek-ai/dsh-mobile/lib/types/src/companion-surface.js" },
-    "#testing/mobile/noise-companion-product": { "types": "@deepseek-ai/dsh-mobile/lib/types/src/noise-companion-product.d.ts", "default": "@deepseek-ai/dsh-mobile/lib/types/src/noise-companion-product.js" },
-    "#testing/mobile/noise-companion": { "types": "@deepseek-ai/dsh-mobile/lib/types/src/noise-companion.d.ts", "default": "@deepseek-ai/dsh-mobile/lib/types/src/noise-companion.js" },
-    "#testing/mobile/MobileBrowse": { "types": "@deepseek-ai/dsh-mobile/lib/types/src/MobileBrowse.d.ts", "default": "@deepseek-ai/dsh-mobile/lib/MobileBrowse.js" },
-    "#testing/mobile/mobile-clock": { "types": "@deepseek-ai/dsh-mobile/lib/types/src/mobile-clock.d.ts", "default": "@deepseek-ai/dsh-mobile/lib/types/src/mobile-clock.js" },
-    "#testing/mobile/companion-keys": { "types": "@deepseek-ai/dsh-mobile/lib/types/src/companion-keys.d.ts", "default": "@deepseek-ai/dsh-mobile/lib/types/src/companion-keys.js" },
-    "#testing/mobile/personal-pairing": { "types": "@deepseek-ai/dsh-mobile/lib/types/src/personal-pairing.d.ts", "default": "@deepseek-ai/dsh-mobile/lib/types/src/personal-pairing.js" },
-    "#testing/mobile/development-keyless-pairing": { "types": "@deepseek-ai/dsh-mobile/lib/types/tests/fixtures/development-keyless-pairing.fixture.d.ts", "default": "@deepseek-ai/dsh-mobile/lib/types/tests/fixtures/development-keyless-pairing.fixture.js" }
+    "#testing/desktop/companion-product": {
+      "types": "./lib/types/src/companion-product.d.ts",
+      "default": "./lib/types/src/companion-product.js"
+    },
+    "#testing/desktop/companion-operation-ledger": {
+      "types": "./lib/types/src/companion-operation-ledger.d.ts",
+      "default": "./lib/types/src/companion-operation-ledger.js"
+    },
+    "#testing/desktop/remote-relay": {
+      "types": "./lib/types/src/remote-relay.d.ts",
+      "default": "./lib/types/src/remote-relay.js"
+    },
+    "#testing/mobile/companion-lifecycle": {
+      "types": "@deepseek-ai/dsh-mobile/lib/types/src/companion-lifecycle.d.ts",
+      "default": "@deepseek-ai/dsh-mobile/lib/types/src/companion-lifecycle.js"
+    },
+    "#testing/mobile/companion-cache": {
+      "types": "@deepseek-ai/dsh-mobile/lib/types/src/companion-cache.d.ts",
+      "default": "@deepseek-ai/dsh-mobile/lib/types/src/companion-cache.js"
+    },
+    "#testing/mobile/companion-surface": {
+      "types": "@deepseek-ai/dsh-mobile/lib/types/src/companion-surface.d.ts",
+      "default": "@deepseek-ai/dsh-mobile/lib/types/src/companion-surface.js"
+    },
+    "#testing/mobile/noise-companion-product": {
+      "types": "@deepseek-ai/dsh-mobile/lib/types/src/noise-companion-product.d.ts",
+      "default": "@deepseek-ai/dsh-mobile/lib/types/src/noise-companion-product.js"
+    },
+    "#testing/mobile/noise-companion": {
+      "types": "@deepseek-ai/dsh-mobile/lib/types/src/noise-companion.d.ts",
+      "default": "@deepseek-ai/dsh-mobile/lib/types/src/noise-companion.js"
+    },
+    "#testing/mobile/MobileBrowse": {
+      "types": "@deepseek-ai/dsh-mobile/lib/types/src/MobileBrowse.d.ts",
+      "default": "@deepseek-ai/dsh-mobile/lib/MobileBrowse.js"
+    },
+    "#testing/mobile/mobile-clock": {
+      "types": "@deepseek-ai/dsh-mobile/lib/types/src/mobile-clock.d.ts",
+      "default": "@deepseek-ai/dsh-mobile/lib/types/src/mobile-clock.js"
+    },
+    "#testing/mobile/companion-keys": {
+      "types": "@deepseek-ai/dsh-mobile/lib/types/src/companion-keys.d.ts",
+      "default": "@deepseek-ai/dsh-mobile/lib/types/src/companion-keys.js"
+    },
+    "#testing/mobile/personal-pairing": {
+      "types": "@deepseek-ai/dsh-mobile/lib/types/src/personal-pairing.d.ts",
+      "default": "@deepseek-ai/dsh-mobile/lib/types/src/personal-pairing.js"
+    },
+    "#testing/mobile/development-keyless-pairing": {
+      "types": "@deepseek-ai/dsh-mobile/lib/types/tests/fixtures/development-keyless-pairing.fixture.d.ts",
+      "default": "@deepseek-ai/dsh-mobile/lib/types/tests/fixtures/development-keyless-pairing.fixture.js"
+    }
   },
   "repository": {
     "type": "git",

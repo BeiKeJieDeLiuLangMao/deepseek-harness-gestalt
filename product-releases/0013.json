@@ -1,0 +1,195 @@
+{
+  "version": 1,
+  "sequence": 13,
+  "intentIds": [
+    "444-desktop-phone-electron-e2e",
+    "451-h264-visible-decoder",
+    "452-overlay-boot-registration",
+    "462-phone-static-gates",
+    "465-docs-mpa-repeat-build",
+    "468-phone-runtime-invariant-chunks",
+    "469-client-export-module-kind",
+    "470-phone-view-dedup",
+    "472-ci-risk-tool-catalog-cli-closure",
+    "473-phone-coverage",
+    "474-windows-fake-mobilecli",
+    "478-phone-contracts-ready-lint",
+    "489-dev-web-tsx-client-entry",
+    "492-phone-settings-stack-ci-convergence",
+    "496-managed-mobilecli-environment",
+    "497-managed-android-environment",
+    "498-managed-ios-environment",
+    "509-phone-stream-real-fallback",
+    "514-phone-ios-wda-swipe",
+    "628-companion-stopped-marker"
+  ],
+  "summaries": [
+    {
+      "en": "Add a keyless Desktop phone Electron acceptance lane and configurable mobilecli server port.",
+      "zh": "新增无需密钥的桌面手机 Electron 验收通道与可配置的 mobilecli 服务端口。"
+    },
+    {
+      "en": "Render the Desktop phone tab's H264 stream as a visible, interactive device picture.",
+      "zh": "在桌面端手机 tab 中把 H264 流渲染为可见且可交互的设备画面。"
+    },
+    {
+      "en": "Wait for Desktop workbench settings registration before serving the phone overlay.",
+      "zh": "桌面端手机浮层在工作台设置注册完成后再提供服务。"
+    },
+    {
+      "en": "Align phone documentation and static-analysis ownership without changing product runtime behavior.",
+      "zh": "校准手机功能文档与静态分析归属，不改变产品运行时行为。"
+    },
+    {
+      "en": "Make consecutive documentation site builds replace their own prior output safely.",
+      "zh": "让连续文档站构建安全替换自身的上次输出。"
+    },
+    {
+      "en": "Include the phone device runtime chunks required by Desktop invariant diagnostics.",
+      "zh": "在 Desktop 产物中携带手机设备运行时不变量诊断所需的分片。"
+    },
+    {
+      "en": "Publish dynamic browser factories with an explicit CommonJS extension while preserving their browser routes.",
+      "zh": "以明确的 CommonJS 扩展名发布动态浏览器 factory，同时保持其浏览器路由。"
+    },
+    {
+      "en": "Share the Desktop phone reconnect card without changing its interaction behavior.",
+      "zh": "复用桌面端手机重连卡片，不改变交互行为。"
+    },
+    {
+      "en": "Complete phone CI and tool-catalog projections and the CLI request-trust and phone-tool runtime dependency closure.",
+      "zh": "补全手机能力的 CI 与工具目录投影，并闭合 CLI 的 request-trust 与手机工具运行时依赖。"
+    },
+    {
+      "en": "Complete behavior coverage without exclusions for every phone-runtime, phone-stream, and ui-phone source file.",
+      "zh": "在不使用排除项的前提下补齐 phone-runtime、phone-stream 与 ui-phone 全部源文件的行为覆盖率。"
+    },
+    {
+      "en": "Make the phone-runtime fake mobilecli launcher executable in native Windows tests.",
+      "zh": "让 phone-runtime 的 fake mobilecli launcher 可在原生 Windows 测试中执行。"
+    },
+    {
+      "en": "Close the contracts-ready lint debt across the delivered Desktop phone surface.",
+      "zh": "清零已交付 Desktop 手机能力面的 contracts-ready lint 债务。"
+    },
+    {
+      "en": "Let the Desktop Web development watcher resolve package-declared TSX client entries.",
+      "zh": "让 Desktop Web 开发 watcher 解析包显式声明的 TSX client 入口。"
+    },
+    {
+      "en": "Align Phone Devices Web snapshots and cross-platform CI fixtures, and complete the Desktop CLI phone-stream installation closure.",
+      "zh": "校准手机设备 Web 快照与跨平台 CI fixture，并补全 Desktop CLI 的 phone-stream 安装闭包。"
+    },
+    {
+      "en": "Let Desktop prepare, verify, and hot-activate the pinned mobilecli runtime from Phone Devices settings.",
+      "zh": "让 Desktop 从「手机设备」设置中准备、校验并热激活固定版本的 mobilecli 运行时。"
+    },
+    {
+      "en": "Let Desktop prepare and start a pinned Android SDK, API 35 image, and private default emulator.",
+      "zh": "让 Desktop 准备并启动固定 Android SDK、API 35 镜像与私有默认模拟器。"
+    },
+    {
+      "en": "Let Desktop prepare and start an iOS Simulator, prepare the iOS device-control agent, and explain actionable physical-iPhone readiness failures.",
+      "zh": "让 Desktop 准备并启动 iOS 模拟器、准备 iOS 设备控制代理，并为 iPhone 真机就绪失败提供可操作说明。"
+    },
+    {
+      "en": "Show each phone once and fall back to a controllable MJPEG picture when its H264 stream is unusable.",
+      "zh": "每台手机只展示一次，并在 H264 画面不可用时回退到可控制的 MJPEG 画面。"
+    },
+    {
+      "en": "Encode Desktop phone-tab swipes as WDA destination-move travel pauses so iOS Simulator UI scrolls.",
+      "zh": "把桌面端手机 tab 的 swipe 编成 WDA 终点位移时长手势，使 iOS Simulator 界面可以滚动。"
+    },
+    {
+      "en": "Preserve durable assistant interruption so Mobile Companion renders the existing stopped marker in paged history and live replacements.",
+      "zh": "保留持久 assistant 中断标记，使 Mobile Companion 在分页历史与实时替换中显示既有停止标记。"
+    }
+  ],
+  "releaseUnits": {
+    "desktop": {
+      "selected": true,
+      "previousVersion": "0.1.16",
+      "version": "0.1.17",
+      "tag": "gestalt-v0.1.17",
+      "bump": "patch",
+      "summaries": [
+        {
+          "en": "Add a keyless Desktop phone Electron acceptance lane and configurable mobilecli server port.",
+          "zh": "新增无需密钥的桌面手机 Electron 验收通道与可配置的 mobilecli 服务端口。"
+        },
+        {
+          "en": "Render the Desktop phone tab's H264 stream as a visible, interactive device picture.",
+          "zh": "在桌面端手机 tab 中把 H264 流渲染为可见且可交互的设备画面。"
+        },
+        {
+          "en": "Wait for Desktop workbench settings registration before serving the phone overlay.",
+          "zh": "桌面端手机浮层在工作台设置注册完成后再提供服务。"
+        },
+        {
+          "en": "Include the phone device runtime chunks required by Desktop invariant diagnostics.",
+          "zh": "在 Desktop 产物中携带手机设备运行时不变量诊断所需的分片。"
+        },
+        {
+          "en": "Publish dynamic browser factories with an explicit CommonJS extension while preserving their browser routes.",
+          "zh": "以明确的 CommonJS 扩展名发布动态浏览器 factory，同时保持其浏览器路由。"
+        },
+        {
+          "en": "Share the Desktop phone reconnect card without changing its interaction behavior.",
+          "zh": "复用桌面端手机重连卡片，不改变交互行为。"
+        },
+        {
+          "en": "Complete phone CI and tool-catalog projections and the CLI request-trust and phone-tool runtime dependency closure.",
+          "zh": "补全手机能力的 CI 与工具目录投影，并闭合 CLI 的 request-trust 与手机工具运行时依赖。"
+        },
+        {
+          "en": "Complete behavior coverage without exclusions for every phone-runtime, phone-stream, and ui-phone source file.",
+          "zh": "在不使用排除项的前提下补齐 phone-runtime、phone-stream 与 ui-phone 全部源文件的行为覆盖率。"
+        },
+        {
+          "en": "Close the contracts-ready lint debt across the delivered Desktop phone surface.",
+          "zh": "清零已交付 Desktop 手机能力面的 contracts-ready lint 债务。"
+        },
+        {
+          "en": "Let the Desktop Web development watcher resolve package-declared TSX client entries.",
+          "zh": "让 Desktop Web 开发 watcher 解析包显式声明的 TSX client 入口。"
+        },
+        {
+          "en": "Align Phone Devices Web snapshots and cross-platform CI fixtures, and complete the Desktop CLI phone-stream installation closure.",
+          "zh": "校准手机设备 Web 快照与跨平台 CI fixture，并补全 Desktop CLI 的 phone-stream 安装闭包。"
+        },
+        {
+          "en": "Let Desktop prepare, verify, and hot-activate the pinned mobilecli runtime from Phone Devices settings.",
+          "zh": "让 Desktop 从「手机设备」设置中准备、校验并热激活固定版本的 mobilecli 运行时。"
+        },
+        {
+          "en": "Let Desktop prepare and start a pinned Android SDK, API 35 image, and private default emulator.",
+          "zh": "让 Desktop 准备并启动固定 Android SDK、API 35 镜像与私有默认模拟器。"
+        },
+        {
+          "en": "Let Desktop prepare and start an iOS Simulator, prepare the iOS device-control agent, and explain actionable physical-iPhone readiness failures.",
+          "zh": "让 Desktop 准备并启动 iOS 模拟器、准备 iOS 设备控制代理，并为 iPhone 真机就绪失败提供可操作说明。"
+        },
+        {
+          "en": "Show each phone once and fall back to a controllable MJPEG picture when its H264 stream is unusable.",
+          "zh": "每台手机只展示一次，并在 H264 画面不可用时回退到可控制的 MJPEG 画面。"
+        },
+        {
+          "en": "Encode Desktop phone-tab swipes as WDA destination-move travel pauses so iOS Simulator UI scrolls.",
+          "zh": "把桌面端手机 tab 的 swipe 编成 WDA 终点位移时长手势，使 iOS Simulator 界面可以滚动。"
+        },
+        {
+          "en": "Preserve durable assistant interruption so Mobile Companion renders the existing stopped marker in paged history and live replacements.",
+          "zh": "保留持久 assistant 中断标记，使 Mobile Companion 在分页历史与实时替换中显示既有停止标记。"
+        }
+      ]
+    },
+    "mobile": {
+      "selected": false,
+      "version": "0.1.3"
+    },
+    "platform": {
+      "selected": false,
+      "version": "0.1.4"
+    }
+  }
+}
