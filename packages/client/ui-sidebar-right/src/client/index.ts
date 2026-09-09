@@ -184,6 +184,7 @@ export function apply(ctx: ClientContext): void {
       openTab: (kind, options) => { void controller.openTab(kind, options) },
       activateTab: (tabId) => { controller.focus(tabId) },
       closeTab: (tabId) => { void controller.close(tabId) },
+      closeTabs: (sessionId, tabIds) => { void controller.closeTabsIn(sessionId, tabIds) },
       hooks: {
         tabTypes: { subscribe: listener => tabs.subscribe(listener), getSnapshot: () => tabs.entries() },
         preferences: preferences,

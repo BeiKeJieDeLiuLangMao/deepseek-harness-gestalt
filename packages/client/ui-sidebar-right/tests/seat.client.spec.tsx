@@ -7,7 +7,7 @@ import { SlotTestRuntime } from '@deepseek-ai/dsh-client-test-runtime'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { PaneId, SplitId, TabId } from '@deepseek-ai/dsh-client-ui-dockkit'
-import { dockPaneIds, getPane } from '@deepseek-ai/dsh-client-ui-dockkit'
+import { dockPaneIds, findTabPane, getPane } from '@deepseek-ai/dsh-client-ui-dockkit'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { apply, inject } from '../src/client/index.ts'
 import { intentsFor } from '../src/client/shell/SidebarRight.tsx'
@@ -172,6 +172,21 @@ function element(container: HTMLElement, selector: string): HTMLElement {
   return node
 }
 
+/** Dispatch one cancelable DOM drag with a minimal DataTransfer type list. */
+function dispatchDrag(target: Element, type: string, types: readonly string[]): Event {
+  const event = new Event(type, { bubbles: true, cancelable: true })
+  Object.defineProperty(event, 'dataTransfer', { value: { types } })
+  target.dispatchEvent(event)
+  return event
+}
+
+/** Find the chip for an opened record by its stable id. */
+function tabChip(tabId: TabId): HTMLElement {
+  const chip = document.querySelector<HTMLElement>(`[data-dockkit-tab="${tabId}"]`)
+  if (chip === null) throw new Error(`expected chip ${tabId}`)
+  return chip
+}
+
 describe('RightbarSeat presentation', () => {
   it('keeps the panel mounted while collapsed and releases the frame on unmount', async () => {
     const h = await mountSeat()
@@ -310,6 +325,140 @@ describe('WorkbenchSeat bottom surface', () => {
     fireEvent.pointerUp(corner, { pointerId: 2, clientX: 550, clientY: 430 })
     expect(h.instance.getSnapshot().bySession[SESSION]?.bottomHeight).toBe(290)
     expect(h.setRightbarWidth).toHaveBeenLastCalledWith(470)
+  })
+})
+
+describe('WorkbenchSeat file-drag ownership', () => {
+  it('consumes the complete OS file-drag sequence before the document composer listener', async () => {
+    const h = await mountSeat()
+    const panel = element(h.view.container, '[data-sidebar-right-panel]')
+    for (const type of ['dragenter', 'dragover', 'dragleave', 'drop']) {
+      const reachedDocument = vi.fn()
+      document.addEventListener(type, reachedDocument)
+      const event = dispatchDrag(panel, type, ['Files'])
+      document.removeEventListener(type, reachedDocument)
+      expect(event.defaultPrevented).toBe(true)
+      expect(reachedDocument).not.toHaveBeenCalled()
+    }
+  })
+
+  it('shields fullscreen, bottom, and floating surfaces while leaving descendant file handlers reachable', async () => {
+    const h = await mountSeat()
+    const right = h.open('right.txt')
+    fireEvent.click(element(h.view.container, '[data-sidebar-right-mode]'))
+    act(() => {
+      void h.controller.openResource('dsh-resource://file/session/s-test/bottom.txt', { surface: 'bottom' })
+      h.controller.float(right.id)
+    })
+    const roots = [
+      element(h.view.container, '[data-sidebar-right-panel="fullscreen"]'),
+      element(h.view.container, '[data-sidebar-bottom-panel]'),
+      element(document.body, '[data-sidebar-right-float-host]'),
+    ]
+    for (const root of roots) {
+      const reachedDocument = vi.fn()
+      document.addEventListener('drop', reachedDocument)
+      const event = dispatchDrag(root, 'drop', ['Files'])
+      document.removeEventListener('drop', reachedDocument)
+      expect(event.defaultPrevented).toBe(true)
+      expect(reachedDocument).not.toHaveBeenCalled()
+    }
+
+    const floatBody = element(document.body, '[data-dockkit-float] [data-tab-body]')
+    const localDrop = vi.fn()
+    const reachedDocument = vi.fn()
+    floatBody.addEventListener('drop', localDrop)
+    document.addEventListener('drop', reachedDocument)
+    dispatchDrag(floatBody, 'drop', ['Files'])
+    floatBody.removeEventListener('drop', localDrop)
+    document.removeEventListener('drop', reachedDocument)
+    expect(localDrop).toHaveBeenCalledOnce()
+    expect(reachedDocument).not.toHaveBeenCalled()
+  })
+
+  it('leaves non-file drags available to DockKit and other document owners', async () => {
+    const h = await mountSeat()
+    const reachedDocument = vi.fn()
+    document.addEventListener('dragover', reachedDocument)
+    const event = dispatchDrag(element(h.view.container, '[data-sidebar-right-panel]'), 'dragover', ['text/plain'])
+    document.removeEventListener('dragover', reachedDocument)
+    expect(event.defaultPrevented).toBe(false)
+    expect(reachedDocument).toHaveBeenCalledOnce()
+  })
+})
+
+describe('WorkbenchSeat tab context menu', () => {
+  it('floats a right-surface tab and omits that action from the bottom surface', async () => {
+    const h = await mountSeat()
+    const right = h.open('right.txt')
+    fireEvent.contextMenu(tabChip(right.id))
+    const float = element(document.body, '[data-sidebar-right-menu-float]')
+    fireEvent.click(float)
+    expect(findTabPane(h.layout(), right.id).host).toBe('float')
+    expect(document.querySelector('[data-dockkit-tab-menu]')).toBeNull()
+
+    let bottom!: TabId
+    await act(async () => {
+      bottom = await h.controller.openResource(
+        'dsh-resource://file/session/s-test/bottom.txt',
+        { surface: 'bottom' },
+      )
+    })
+    fireEvent.contextMenu(tabChip(bottom))
+    expect(document.querySelector('[data-sidebar-right-menu-float]')).toBeNull()
+    expect(document.querySelector('[data-sidebar-right-menu-close-others]')).not.toBeNull()
+  })
+
+  it.each([
+    ['left', '[data-sidebar-right-menu-close-left]', ['guide', 'a'], ['b', 'c']],
+    ['right', '[data-sidebar-right-menu-close-right]', ['c'], ['guide', 'a', 'b']],
+    ['others', '[data-sidebar-right-menu-close-others]', ['guide', 'a', 'c'], ['b']],
+  ] as const)('closes pane-relative tabs to the %s in one recorded batch', async (_name, selector, removed, retained) => {
+    const h = await mountSeat()
+    act(() => { h.actions.setExpanded(SESSION, true) })
+    const paneId = dockPaneIds(h.layout())[0]!
+    const guide = getPane(h.layout(), paneId).tabs[0]!
+    const a = h.open('a.txt')
+    const b = h.open('b.txt')
+    const c = h.open('c.txt')
+    const ids = { guide, a: a.id, b: b.id, c: c.id }
+    const before = h.instance.getSnapshot().bySession[SESSION]!.history.entries.length
+    fireEvent.contextMenu(tabChip(b.id))
+    fireEvent.click(element(document.body, selector))
+    await vi.waitFor(() => {
+      for (const name of removed) expect(h.layout().tabs[ids[name]]).toBeUndefined()
+    })
+    for (const name of retained) expect(h.layout().tabs[ids[name]]).toBeDefined()
+    expect(h.instance.getSnapshot().bySession[SESSION]!.history.entries).toHaveLength(before + 1)
+    expect(document.querySelector('[data-dockkit-tab-menu]')).toBeNull()
+  })
+
+  it('admits every sibling before releasing runtime owners from Close Other Tabs', async () => {
+    const h = await mountSeat()
+    const order: string[] = []
+    await act(async () => {
+      h.runtime.ctx.sidebarRightTabs.register({
+        id: 'test/owned',
+        kind: 'owned',
+        title: address => address.slice(address.lastIndexOf('/') + 1),
+        beforeClose: ({ tab }) => { order.push(`admit:${tab.title}`) },
+        close: ({ tab }) => { order.push(`release:${tab.title}`) },
+      })
+    })
+    let a!: TabId
+    let b!: TabId
+    let c!: TabId
+    await act(async () => {
+      a = await h.controller.openTab('owned', { instanceId: 'a', title: 'a' })
+      b = await h.controller.openTab('owned', { instanceId: 'b', title: 'b' })
+      c = await h.controller.openTab('owned', { instanceId: 'c', title: 'c' })
+    })
+    fireEvent.contextMenu(tabChip(b))
+    fireEvent.click(element(document.body, '[data-sidebar-right-menu-close-others]'))
+    await vi.waitFor(() => { expect(order).toEqual(['admit:a', 'admit:c', 'release:a', 'release:c']) })
+    expect(h.layout().tabs[a]).toBeUndefined()
+    expect(h.layout().tabs[b]).toBeDefined()
+    expect(h.layout().tabs[c]).toBeUndefined()
   })
 })
 
@@ -519,6 +668,10 @@ describe('slot-owned useTabInfo', () => {
       tab: { id: homeTab },
       pin: { scope: 'global', homeSessionId: OTHER },
     })
+    expect(document.querySelector('[data-sidebar-right-menu-float]')).toBeNull()
+    expect(document.querySelector('[data-sidebar-right-menu-close-others]')).toBeNull()
+    expect(document.querySelector('[data-sidebar-right-menu-close-left]')).toBeNull()
+    expect(document.querySelector('[data-sidebar-right-menu-close-right]')).toBeNull()
 
     act(() => { menu?.actions.update({ pin: undefined }) })
     expect(h.controller.getSnapshot().sessions.find(session => session.sessionId === OTHER)

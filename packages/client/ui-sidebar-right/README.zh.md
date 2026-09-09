@@ -33,6 +33,8 @@ kind: "package-reference"
 
 workbench 在框架挂载后解析 `rightHostId` 与 `bottomHostId`，随后从同一棵 React 与 store 树 portal 两个表面。右侧表面支持 push、保留底层轨道的宽屏全屏、低于 768px 的自动全屏、两个横向 pane 及浮动面板。在 Desktop Window Chrome 中，它的顶部条只把未占用区域留作窗口拖动区，而 tab、添加、拆分、全屏和收起控件均显式保留为指针目标。底部表面拥有独立的 split tree、高度、打开状态和全屏模式。它的 push 呈现只占用中栏；全屏时不占中栏行高。底部表面拥有顶部高度拖动，以及同时修改底部高度与右侧宽度的共享角落手势。底部 tab 不会创建 float。
 
+右侧、底部、全屏和浮动 workbench 根会消费外部 OS 文件拖动的完整 enter、over、leave 与 drop 事件序列，阻止事件到达 document 级 composer 导入处理。根级 shield 在冒泡阶段处理事件，因此 Files 正文会先收到自己的 drop。非文件拖动继续传播给 DockKit 和其他 owner。
+
 右侧表面收起后仍保持挂载。它的展开控件位于 `conversation.session.header.corner` 并共享 Session store。没有当前 Session 时，两个表面均不挂载。frame 只接受一次初始宽度：若保留的 `dsh-sidebar:v1:width` 存在则优先采用，否则由 `defaultWidthPercent` 提供。读取这个旧值不会修改或删除回滚 key。
 
 Dock 添加控件在 Web 模式下打开引导页。内置引导页与 Desktop 原生 overlay 菜单投影同一组可观察页面 definition，并排除引导页、隐藏类型与资源类型。每张引导卡默认从对应 definition 读取顺序、标题与图标；可选引导元数据提供描述或额外卡片。不可用条目保持可见并禁用，同时显示原因。用户选择后，系统通过 `ctx.sidebarRight` 在提供锚点的控件所属 pane 中打开页面。
@@ -81,9 +83,11 @@ Dock 添加控件在 Web 模式下打开引导页。内置引导页与 Desktop �
 <a id="close-lifecycle"></a>
 ## 关闭生命周期
 
-每次真正关闭都经过逐 Session 串行 coordinator。批次会先调用所有 `beforeClose(context)`，再修改布局。返回 `false` 或 rejection 会取消整个批次。准入成功后，每个 `close(context)` 独立结算：已成功完成的记录一起移除，失败记录保留，结果报告两者。Replace、reset、undo 与 redo 在可能删除 occurrence 时使用同一路径。运行时 owner 发起的打开和关闭会为可逆历史建立 checkpoint。
+每次真正关闭都经过逐 Session 串行 coordinator。批次会先调用所有 `beforeClose(context)`，再修改布局。返回 `false` 或 rejection 会取消整个批次。准入成功后，每个 `close(context)` 独立结算：已成功完成的记录一起移除，失败记录保留，结果报告两者。Replace、reset、undo、redo 及 tab 菜单的“关闭其他页签”“关闭左侧页签”“关闭右侧页签”操作都使用这条路径。运行时 owner 发起的打开和关闭会为可逆历史建立 checkpoint。
 
 关闭 context 固定原始 Session、表面、记录、payload、pin、signal 和 reason。异步清理期间切换 Session 不会改变目标。重复关闭请求串行执行并读取最新提交记录，因此 owner 只释放一次。组件卸载和 tab 类型注销不是真正关闭，不会调用这些 hook。
+
+pane 相对菜单操作会排除外部 Session 的 pinned view，并保留目标 tab。停靠在右侧的 tab 还可以从菜单移动到浮动面板。底部 tab 和 pinned virtual view 不提供此操作。
 
 <a id="the-tab-domain"></a>
 ## Tab 域
@@ -105,9 +109,8 @@ Tab 域按 `(Session, tab id)` 保留导航、AbortSignal 与绑定 action。sto
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **功能迁移尚未完成。** Better Sidebar 的 viewer 正文、runtime tab、设置 UI 和 consumer 全部迁到这些接口之前，产品仍会挂载第二个 workbench。
 - **官方持久化是 best effort。** 浏览器存储写入失败时，当前内存 Session 仍可使用，但没有面向用户的导出命令。
-- **底部 chrome 复用 Sidebar 文案。** 底部专用标签和首次打开 Terminal 行为留待功能迁移完成。
+- **底部 chrome 复用 Sidebar 文案。** 它没有独立的底部产品标签。
 - **Undo 控件仍为内部功能。** 支持关闭生命周期的 history 方法只用于测试和未来产品控件。
 
 <a id="dev-note"></a>

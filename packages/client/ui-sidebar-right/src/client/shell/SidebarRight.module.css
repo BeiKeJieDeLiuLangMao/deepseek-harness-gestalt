@@ -95,6 +95,28 @@
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
+/* Product actions share the DockKit menu's row geometry inside its portalled body. */
+.menuItem {
+  padding: 5px 8px;
+  color: var(--dsw-alias-label-primary);
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.menuItem:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.menuItem:disabled {
+  color: var(--dsw-alias-label-tertiary);
+  cursor: default;
+  opacity: 0.5;
+}
+
 /* The expand button's glyph, so collapse and expand share one affordance. */
 .collapseGlyph {
   transform: scaleX(-1);

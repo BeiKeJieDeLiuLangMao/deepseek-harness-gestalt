@@ -517,7 +517,18 @@ export class SidebarRightController implements ISidebarRight {
    * @returns admission, committed closes, and release failures.
    */
   closeIn(sessionId: SessionId, tabId: TabId): Promise<SidebarRightCloseOutcome> {
-    return this.closeMany(sessionId, [tabId], 'close')
+    return this.closeTabsIn(sessionId, [tabId])
+  }
+
+  /**
+   * Close one tab-menu batch in its Session through one admission and release transaction.
+   * Not part of `ISidebarRight`: the workbench seat's menu path.
+   * @param sessionId - the session whose pane supplied the menu.
+   * @param tabIds - current occurrence identities selected by the pane-relative action.
+   * @returns admission, committed closes, and release failures.
+   */
+  closeTabsIn(sessionId: SessionId, tabIds: readonly TabId[]): Promise<SidebarRightCloseOutcome> {
+    return this.closeMany(sessionId, tabIds, 'close')
   }
 
   /** Claim a resource and place it in one session; an address outside the scheme or one no type claims throws. */

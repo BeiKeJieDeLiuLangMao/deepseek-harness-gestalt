@@ -28,7 +28,7 @@
  * domain follows each session's store commits, including sessions off screen.
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import type { ReactNode, RefObject } from 'react'
+import type { DragEvent as ReactDragEvent, ReactNode, RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import type {
   HostObservable, InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime, PropsStore,
@@ -36,7 +36,7 @@ import type {
 // The frame declares the `rightbar` seat this component fills.
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { DockIntents, DockMode, FloatRect, TabId, TabRecord, TabRenderer } from '@deepseek-ai/dsh-client-ui-dockkit'
-import { canSplit, dockPaneIds, DockSurface, findPaneContentTab, FloatLayer } from '@deepseek-ai/dsh-client-ui-dockkit'
+import { canSplit, dockPaneIds, DockSurface, findPaneContentTab, findTabPane, FloatLayer } from '@deepseek-ai/dsh-client-ui-dockkit'
 import type { HalvesFit, LayoutState, PaneId } from '@deepseek-ai/dsh-client-ui-dockkit'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
@@ -130,6 +130,8 @@ export interface SidebarRightInjected {
   readonly activateTab: (tabId: TabId) => void
   /** Route true closes through the official admission coordinator. */
   readonly closeTab: (tabId: TabId) => void
+  /** Route one tab-menu batch through one official close transaction. */
+  readonly closeTabs: (sessionId: SessionId, tabIds: readonly TabId[]) => void
   readonly hooks: {
     readonly tabTypes: HostObservable<readonly SidebarRightTabDefinition[]>
     readonly preferences: HostObservable<SidebarRightPreferencesSnapshot>
@@ -159,6 +161,7 @@ interface PanelProps {
   readonly openAddTabMenu: DesktopAddTabMenu
   readonly activateTab: SidebarRightInjected['activateTab']
   readonly closeTab: SidebarRightInjected['closeTab']
+  readonly closeTabs: SidebarRightInjected['closeTabs']
   readonly useTabTypes: WorkbenchSeatProps['useTabTypes']
   readonly useStore: Store['useStore']
   readonly occurrence: SidebarRightInjected['occurrence']
@@ -198,6 +201,21 @@ type DesktopAddTabMenu = (
   paneId: PaneId,
   anchor: HTMLElement | undefined,
 ) => boolean
+
+/** Keep external file drags inside a workbench surface and away from the document-level composer intake. */
+function swallowOsFileDrag(event: ReactDragEvent): void {
+  if (!event.dataTransfer.types.includes('Files')) return
+  event.preventDefault()
+  event.stopPropagation()
+}
+
+/** The complete event sequence consumed for one external file drag. */
+const osFileDragShield = {
+  onDragEnter: swallowOsFileDrag,
+  onDragOver: swallowOsFileDrag,
+  onDragLeave: swallowOsFileDrag,
+  onDrop: swallowOsFileDrag,
+}
 
 function desktopAddTabOverlayOf(value: unknown): DesktopAddTabOverlay | undefined {
   if (typeof value !== 'object' || value === null) return undefined
@@ -472,6 +490,74 @@ function menuOwner(panel: PanelProps, tab: TabRecord, dismiss: () => void): Side
   }
 }
 
+/** Product-owned pane actions appended to DockKit's close item and followed by extension items. */
+function tabMenuItems(panel: PanelProps, tab: TabRecord, dismiss: () => void): ReactNode {
+  const extensionItems = panel.renderSlot('sidebar.right.tab.menu.item', menuOwner(panel, tab, dismiss))
+  if (panel.virtualViews.has(tab.id)) return extensionItems
+  const pane = findTabPane(panel.surface.layout, tab.id)
+  const closable = (ids: readonly TabId[]): readonly TabId[] => ids.filter(id =>
+    id !== tab.id
+    && !panel.virtualViews.has(id)
+    && canCloseTab(panel.surface, id))
+  const index = pane.tabs.indexOf(tab.id)
+  const left = closable(pane.tabs.slice(0, index))
+  const right = closable(pane.tabs.slice(index + 1))
+  const others = [...left, ...right]
+  const close = (tabIds: readonly TabId[]): void => {
+    dismiss()
+    panel.closeTabs(panel.sessionId, tabIds)
+  }
+  return (
+    <>
+      {panel.workbenchSurface === 'right' && pane.host === 'dock' && (
+        <button
+          type="button"
+          role="menuitem"
+          className={css.menuItem}
+          data-sidebar-right-menu-float
+          onClick={() => {
+            dismiss()
+            panel.actions.floatTab(panel.sessionId, tab.id)
+          }}
+        >
+          {panel.t('dock.floatTab')}
+        </button>
+      )}
+      <button
+        type="button"
+        role="menuitem"
+        className={css.menuItem}
+        data-sidebar-right-menu-close-others
+        disabled={others.length === 0}
+        onClick={() => { close(others) }}
+      >
+        {panel.t('dock.closeOtherTabs')}
+      </button>
+      <button
+        type="button"
+        role="menuitem"
+        className={css.menuItem}
+        data-sidebar-right-menu-close-left
+        disabled={left.length === 0}
+        onClick={() => { close(left) }}
+      >
+        {panel.t('dock.closeLeftTabs')}
+      </button>
+      <button
+        type="button"
+        role="menuitem"
+        className={css.menuItem}
+        data-sidebar-right-menu-close-right
+        disabled={right.length === 0}
+        onClick={() => { close(right) }}
+      >
+        {panel.t('dock.closeRightTabs')}
+      </button>
+      {extensionItems}
+    </>
+  )
+}
+
 /** Expand-to-viewport glyph. */
 function FullscreenGlyph(): ReactNode {
   return (
@@ -536,7 +622,7 @@ function PanelChrome({ sessionId, workbenchSurface, fullscreen, autoFullscreen, 
  * anchored to the frame's right edge and slid off it while collapsed.
  */
 function SidebarPanel(panel: PanelProps & { width: number; panelRef: RefObject<HTMLDivElement> }): ReactNode {
-  const { sessionId, surface, actions, t, renderSlot, openTab, width, reportRoom, fullscreen, autoFullscreen, panelRef } = panel
+  const { sessionId, surface, actions, t, openTab, width, reportRoom, fullscreen, autoFullscreen, panelRef } = panel
   const { expanded } = surface.layout
   return (
     <div
@@ -549,6 +635,7 @@ function SidebarPanel(panel: PanelProps & { width: number; panelRef: RefObject<H
       // hidden panel out of the tab order, and this takes it out of the
       // accessibility tree.
       aria-hidden={!expanded || undefined}
+      {...osFileDragShield}
     >
       <div className={css.panelBody}>
         <DockSurface
@@ -566,8 +653,7 @@ function SidebarPanel(panel: PanelProps & { width: number; panelRef: RefObject<H
           labels={dockLabels(t)}
           renderTab={bodiesFor(panel)}
           renderTabTitle={titlesFor(panel)}
-          renderTabMenuItems={(tab, dismiss) =>
-            renderSlot('sidebar.right.tab.menu.item', menuOwner(panel, tab, dismiss))}
+          renderTabMenuItems={(tab, dismiss) => tabMenuItems(panel, tab, dismiss)}
           chrome={(
             <PanelChrome
               sessionId={sessionId}
@@ -590,7 +676,7 @@ function Floats(panel: PanelProps): ReactNode {
   const { sessionId, surface, actions, t, openTab } = panel
   if (surface.layout.floats.length === 0) return null
   return createPortal(
-    <div className={css.floatHost} data-sidebar-right-float-host>
+    <div className={css.floatHost} data-sidebar-right-float-host {...osFileDragShield}>
       <FloatLayer
         state={surface.layout}
         canCloseTab={tabId => canCloseTab(surface, tabId)}
@@ -689,7 +775,7 @@ function BottomPanel(panel: PanelProps & {
   readonly setRightWidth: (width: number) => void
 }): ReactNode {
   const {
-    sessionId, surface, actions, t, renderSlot, openTab, fullscreen, autoFullscreen,
+    sessionId, surface, actions, t, openTab, fullscreen, autoFullscreen,
     height, viewportHeight, rightShown, rightWidth, setHeight, setRightWidth, reportRoom,
   } = panel
   const { expanded } = surface.layout
@@ -700,6 +786,7 @@ function BottomPanel(panel: PanelProps & {
       data-sidebar-bottom-panel={fullscreen ? 'fullscreen' : 'push'}
       data-sidebar-bottom-open={expanded || undefined}
       aria-hidden={!expanded || undefined}
+      {...osFileDragShield}
     >
       {!fullscreen && (
         <BottomResizeHandle
@@ -726,8 +813,7 @@ function BottomPanel(panel: PanelProps & {
           labels={dockLabels(t)}
           renderTab={bodiesFor(panel)}
           renderTabTitle={titlesFor(panel)}
-          renderTabMenuItems={(tab, dismiss) =>
-            renderSlot('sidebar.right.tab.menu.item', menuOwner(panel, tab, dismiss))}
+          renderTabMenuItems={(tab, dismiss) => tabMenuItems(panel, tab, dismiss)}
           chrome={<PanelChrome {...{ sessionId, actions, t, fullscreen, autoFullscreen }} workbenchSurface="bottom" />}
           onRoom={reportRoom}
         />
@@ -749,7 +835,7 @@ const EMPTY_TAB_STATE: SidebarRightTabState = {}
 export function WorkbenchSeat({
   sessionId, rightHostId, bottomHostId, viewportWidth, viewportHeight, rightPanelWidth, rightbarWidth, canShowRight,
   setRightbarWidth, seedRightbarWidth, useStore, actions, t, renderSlot, syncPresentation, syncBottomPresentation,
-  bindService, openTab, activateTab, closeTab, useTabTypes, usePreferences, useWorkbench, useSessions, occurrence,
+  bindService, openTab, activateTab, closeTab, closeTabs, useTabTypes, usePreferences, useWorkbench, useSessions, occurrence,
 }: WorkbenchSeatProps): ReactNode {
   const [hosts, setHosts] = useState<{ right: HTMLElement; bottom: HTMLElement } | null>(null)
   // One store instance per session, so this map holds this session's surface.
@@ -916,7 +1002,7 @@ export function WorkbenchSeat({
     }
   }
   const shared = {
-    sessionId, actions, t, renderSlot, openTab, openAddTabMenu, useTabTypes, useStore, occurrence,
+    sessionId, actions, t, renderSlot, openTab, openAddTabMenu, useTabTypes, useStore, occurrence, closeTabs,
   }
   const rightPanel: PanelProps = {
     ...shared,

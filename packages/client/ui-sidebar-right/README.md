@@ -33,6 +33,8 @@ This package owns the official per-Session workbench and the single browser proj
 
 The workbench resolves `rightHostId` and `bottomHostId` after the frame mounts, then portals both surfaces from one React and store tree. The right surface supports push, wide fullscreen with an underlying track, automatic fullscreen below 768px, two horizontal panes, and floating panels. In Desktop Window Chrome, its top strip leaves the unoccupied fill draggable while tabs, add, split, fullscreen, and collapse controls explicitly remain pointer targets. The bottom surface has an independent split tree, height, open state, and fullscreen mode. Its push presentation consumes only the center column; fullscreen consumes no center-row height. The bottom surface owns its top-edge height drag and the shared corner gesture that can change bottom height and right width together. Bottom tabs never create floats.
 
+Right, bottom, fullscreen, and floating workbench roots consume the complete enter, over, leave, and drop sequence for external OS file drags before it reaches the document-level composer intake. A Files body receives its own drop first because the root shield acts during bubbling. Non-file drags continue to propagate for DockKit and other owners.
+
 The right surface stays mounted while collapsed. Its expand control lives in `conversation.session.header.corner` and shares the Session store. Without a current Session, neither surface mounts. The frame accepts a first-width seed once: the retained `dsh-sidebar:v1:width` value wins when present, otherwise `defaultWidthPercent` supplies it. Reading that legacy value never changes or deletes the rollback key.
 
 The Dock add control opens the guide in Web mode. The shipped guide and Desktop native overlay menu project the same observable page definitions, excluding the guide, hidden types, and resource types. Each guide card defaults its order, title, and icon from that definition; optional guide metadata supplies its description or additional cards. Unavailable entries remain visible and disabled with a reason. A selection opens through `ctx.sidebarRight` in the pane whose control supplied the anchor.
@@ -81,9 +83,11 @@ Both registration methods return exact, idempotent disposers and also live in th
 <a id="close-lifecycle"></a>
 ## Close lifecycle
 
-Every true close runs through one serialized coordinator per Session. A batch calls every `beforeClose(context)` before changing layout. A returned `false` or rejection cancels the complete batch. After admission, every `close(context)` settles independently: fulfilled records are removed together, failed records remain, and the outcome reports both sets. Replace, reset, undo, and redo use the same path when they would remove occurrences. Runtime-owned opens and closes checkpoint reversible history.
+Every true close runs through one serialized coordinator per Session. A batch calls every `beforeClose(context)` before changing layout. A returned `false` or rejection cancels the complete batch. After admission, every `close(context)` settles independently: fulfilled records are removed together, failed records remain, and the outcome reports both sets. Replace, reset, undo, redo, and the tab menu's Close Other Tabs, Close Tabs to the Left, and Close Tabs to the Right actions use this path. Runtime-owned opens and closes checkpoint reversible history.
 
 The close context fixes the original Session, surface, record, payload, pin, signal, and reason. A Session switch during asynchronous cleanup cannot retarget it. Duplicate close requests serialize and observe the latest committed records, so an owner releases once. Component unmount and tab-type unregister are not true closes and do not invoke these hooks.
+
+Pane-relative menu actions exclude foreign pinned views and retain the target tab. A docked right tab can also move to a floating panel from its menu. Bottom tabs and pinned virtual views do not offer that action.
 
 <a id="the-tab-domain"></a>
 ## The Tab domain
@@ -105,9 +109,8 @@ None; this package neither assembles nor sends a provider request.
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **Feature migration is incomplete.** Better Sidebar still mounts a second product workbench until its viewer bodies, runtime tabs, settings UI, and consumers move to these interfaces.
 - **Official persistence is best effort.** Browser storage failure keeps the current in-memory Session usable but does not provide a user-facing export command.
-- **Bottom chrome uses the shared Sidebar vocabulary.** Product-specific bottom labels and first-open Terminal behavior remain with the feature migration.
+- **Bottom chrome uses the shared Sidebar vocabulary.** It has no separate labels for a bottom-specific product.
 - **Undo controls are internal.** The close-aware history methods exist for tests and future product controls.
 
 <a id="dev-note"></a>
