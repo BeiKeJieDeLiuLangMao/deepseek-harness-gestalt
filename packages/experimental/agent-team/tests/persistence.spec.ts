@@ -16,11 +16,14 @@ import * as SubagentSpawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
 import { MockAdapter, textResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
 import TeamService, { foldTeam, TeamId, TeamMessageId } from '../src/index.ts'
 import type { TeamMemberSnapshot, TeamMessageSnapshot, TeamTaskSnapshot } from '../src/index.ts'
+import { TeamJournal } from '../src/journal.ts'
+import { TeamMailbox } from '../src/mailbox.ts'
 
 const SIGNAL = new AbortController().signal
 const PERSISTENCE_TEST_TIMEOUT_MS = 30_000
 const roots: string[] = []
 const contexts = new Set<Context>()
+const recoverySchedulingCleanups: Array<() => void> = []
 
 /** Detached durable Team read: the service exposes views, so assertions fold the Lead log. */
 function durable(agent: Agent): {
@@ -45,6 +48,7 @@ async function disposeContext(ctx: Context): Promise<void> {
 }
 
 afterEach(async () => {
+  for (const cleanup of recoverySchedulingCleanups.splice(0)) cleanup()
   const failures: unknown[] = []
   for (const ctx of [...contexts].reverse()) {
     try {
@@ -118,6 +122,37 @@ function provisioning(childId: SessionId, name: string): TeamMemberSnapshot {
   }
 }
 
+/** Keep startup recovery pending until a sender has durably queued its message. */
+function recoverBeforeSenderDispatch(rootId: SessionId): void {
+  const resume = Promise.withResolvers<undefined>()
+  const entered = Promise.withResolvers<undefined>()
+  const recover = TeamMailbox.prototype.recoverFor
+  const recovery = vi.spyOn(TeamMailbox.prototype, 'recoverFor').mockImplementation(async function (
+    this: TeamMailbox, agent, signal,
+  ) {
+    if (agent.id === rootId) await resume.promise
+    const pending = recover.call(this, agent, signal)
+    if (agent.id === rootId) entered.resolve(undefined)
+    await pending
+  })
+  const append = TeamJournal.prototype.appendAndFlush
+  const queued = vi.spyOn(TeamJournal.prototype, 'appendAndFlush').mockImplementation(async function (
+    this: TeamJournal, root, type, data,
+  ) {
+    await append.call(this, root, type, data)
+    if (root.id === rootId && type === 'team/message/queued') {
+      resume.resolve(undefined)
+      await entered.promise
+    }
+  })
+  recoverySchedulingCleanups.push(() => {
+    resume.resolve(undefined)
+    entered.resolve(undefined)
+    queued.mockRestore()
+    recovery.mockRestore()
+  })
+}
+
 function persistedChild(
   ctx: Context,
   rootId: SessionId,
@@ -145,9 +180,9 @@ function persistedChild(
 
 for (const backend of backends) {
   describe(`${backend.name} Agent Teams recovery`, () => {
-    it('reconciles a persisted child to active and a missing child to durable failed', {
+    it.each(['normal scheduling', 'recovery owns dispatch'] as const)('reconciles a persisted child to active and a missing child to durable failed (%s)', {
       timeout: PERSISTENCE_TEST_TIMEOUT_MS,
-    }, async () => {
+    }, async (scheduling) => {
       const storageRoot = mkdtempSync(join(tmpdir(), `dsh-team-${backend.name.toLowerCase()}-`))
       roots.push(storageRoot)
       const first = await stack(backend, storageRoot, [textResponse('initial child answer')])
@@ -190,6 +225,7 @@ for (const backend of backends) {
         .some(event => event.type === 'user/message')).toBe(true)
       await first.dispose()
 
+      if (scheduling === 'recovery owns dispatch') recoverBeforeSenderDispatch(activeRootId)
       const second = await stack(backend, storageRoot, [textResponse('cold resumed answer')])
       const activeHandle = await second.ctx.agents.resume({
         resumeSessionId: activeRootId,
@@ -212,9 +248,17 @@ for (const backend of backends) {
         delivery: 'wakeup',
         signal: SIGNAL,
       })
-      expect(receipt.status).toBe('accepted')
+      if (scheduling === 'recovery owns dispatch') expect(receipt.status).toBe('queued')
       await vi.waitFor(() => { expect(second.ctx.agents.get(childId)).toBeUndefined() }, { timeout: 5_000 })
       await vi.waitFor(() => { expect(durable(activeHandle.agent).pendingMessages).toEqual([]) })
+      await second.ctx.sessions.flush(activeHandle.agent.session)
+      const child = await second.ctx.sessionPersistence.inspect(childId)
+      expect(child.events.filter(event => event.type === 'user/message'
+        && event.data.source.kind === 'team-message'
+        && event.data.source.messageId === receipt.messageId)).toHaveLength(1)
+      const lead = await second.ctx.sessionPersistence.inspect(activeRootId)
+      expect(lead.events.filter(event => event.type === 'team/message/delivered'
+        && event.data.messageId === receipt.messageId)).toHaveLength(1)
 
       await activeHandle.dispose()
       await failedHandle.dispose()
