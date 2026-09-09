@@ -23,7 +23,7 @@ kind: "package-reference"
 <a id="package-contract"></a>
 ## 包约定
 
-「手机」tab 插件：向 `ctx.betterSidebar` 注册表登记 `phone` tab 类型（id `phone`、+ 菜单标题 手机 / Phone，来自 `settings.phone-devices`、单色内联 SVG 图标、`order: 55`）。入口恒可达——`available` 永不拒绝，零设备的部署同样能打开选择器实例，落到已锁稿的未连接空态：Android/iOS 平台分段选择、分组设备清单（模拟器 / USB 真机）、USB 占位行与「重新检测环境」控件。
+「手机」tab 插件通过 `ctx.sidebarRightTabs` 注册一个内置单例 Phone definition（id `@deepseek-ai/dsh-client-ui-phone/phone`、kind `phone`、+ 菜单标题 手机 / Phone，来自 `settings.phone-devices`、单色图标、`order: 55`）。JSON payload 保留已选设备，occurrence runtime 在正文重挂载期间保留 controller，直到官方记录消失。入口恒可达，因此零设备的部署同样能打开选择器实例，落到已锁稿的未连接空态：Android/iOS 平台分段选择、分组设备清单（模拟器 / USB 真机）、USB 占位行与「重新检测环境」控件。
 
 条上只保留一个「手机」tab（`single: true`）。内容按 `meta` 分流：无 serial 是空态；`{ kind: 'device', serial, name }` 占用同一 tab，标题为 `手机·<name>` / `Phone · <name>`。locale 变化会按该持久化 `meta` 就地重标已打开的选择器或占用 Phone tab；更新只改 `title`，不重新打开、不 remount，也不改写 `meta`。「打开」与设备下拉经 `updateTab` 就地切换（决策矩阵轴 1：单例就地切换）。关闭部署会拒绝切换：检测关闭时无法铸造任何流会话。清单行读取 listing wire（`online` 为推导值，`state` 按 #421 `PhoneDeviceRefWire` 契约原样透传）：空态清单与已连接下拉只列在线设备；`state === 'unauthorized'` 的真机仍在空态渲染设计稿警示臂——「真机未授权调试」+ 下一步动作「重新检测」——且不进入下拉。Android USB 引导说明 USB 调试；iOS 引导说明解锁、信任、Developer Mode 与设备控制代理。在线行带「打开」按钮；`PHONE_UNRESOLVED` 的清单拉取会引导用户前往「设置 → 手机设备」使用托管 mobilecli 准备，不提供全局安装命令。选择器内容经 gate source 响应式跟随持久化开关：在设置卡拨动开关，已挂载的「手机连接未启用」说明条同 tick 刷新（并武装首次清单拉取）。
 
@@ -35,7 +35,7 @@ Host 半边注册持久化 `ui-phone` 命名空间（`enabled`，boolean，默�
 
 Loader `Config.enabled`（boolean，schemastery 校验，默认 `false`）仍是组装默认值。注册不依赖它——关闭时选择器入口仍然可达，选择器内容会在空态上方固定渲染「手机连接未启用」说明条。持久化开关关闭时不发现设备、不拉起 `mobilecli`、不路由任何流。
 
-条状徽标与两块内容读取同一个注入抽象 `PhoneListingSource`（`getBadge(): { onlineCount }` 供每次渲染的徽标读取，`snapshot()` / `refresh()` / `subscribe()` 供两块内容读取）。随包实现消费 Host 的 `GET /phone/devices` 路由：每次拉取都会校验分组清单，emulator 与 simulator 类型归入「模拟器」组、真机归入「USB 真机」组，且只在成功时提交——失败的拉取保留上一份清单。选择器与占用内容各自订阅该源，并在 tab 已挂载且启用开关打开时每 5000 ms（`PHONE_LISTING_POLL_INTERVAL_MS`，Host `phone-runtime` `pollIntervalMs` 默认值）轮询 `GET /phone/devices`；失败的刷新保留上一份已提交清单，因此插入的 USB 真机会出现在 USB 分组与已连接下拉中，无需点「重新检测环境」。选择器仍可由该控件再次拉取。占用内容还提供「选择设备」，经 `updateTab` 清掉 `kind: 'device'` 的 meta，回到带「重新检测环境」的选择器，占用不是死胡同。Desktop overlay 设置页可以保留另一份 listing 实例；PhoneTab 与 PhoneConnectedView 使用的 Session Surface listing 自行轮询。首次检测完成后，设置页清单跟随 listing 提交，并在 ready 期间按同一间隔轮询。徽标取值：存在在线设备时输出在线台数，否则为 `null`。
+条状徽标与两块内容读取同一个注入抽象 `PhoneListingSource`（`getBadge(): { onlineCount }` 供每次渲染的徽标读取，`snapshot()` / `refresh()` / `subscribe()` 供两块内容读取）。随包实现消费 Host 的 `GET /phone/devices` 路由：每次拉取都会校验分组清单，emulator 与 simulator 类型归入「模拟器」组、真机归入「USB 真机」组，且只在成功时提交——失败的拉取保留上一份清单。选择器与占用内容各自订阅该源，并在 tab 已挂载且启用开关打开时每 5000 ms（`PHONE_LISTING_POLL_INTERVAL_MS`，Host `phone-runtime` `pollIntervalMs` 默认值）轮询 `GET /phone/devices`；失败的刷新保留上一份已提交清单，因此插入的 USB 真机会出现在 USB 分组与已连接下拉中，无需点「重新检测环境」。选择器仍可由该控件再次拉取。占用内容还提供「选择设备」，它会把官方单例更新为空的选择器 payload，使占用状态可以返回选择器。Desktop overlay 设置页可以保留另一份 listing 实例；PhoneTab 与 PhoneConnectedView 使用的 Session Surface listing 自行轮询。首次检测完成后，设置页清单跟随 listing 提交，并在 ready 期间按同一间隔轮询。徽标取值：存在在线设备时输出在线台数，否则为 `null`。
 
 组装关系：`tsconfig.client.json` 聚合引用本包；`packages/bundle/web-app/cordis.patch.yml` 携带 `ui-phone` 浏览器行；`packages/bundle/web-app/package.json` 声明依赖。包 invariant 伴生体在同进程 fake 注册表上以真实 cordis fiber 证明 tab 注册/注销对称。
 

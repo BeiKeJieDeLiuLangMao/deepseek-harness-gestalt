@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-使用固定版本的 Better Sidebar 快照提供工作台能力。Host 半区在信任栅栏后提供侧栏数据、媒体、预览、延迟 chunk 和终端 WebSocket；Client 半区通过 `ctx.betterSidebar` 渲染快照面板，并向官方 Sidebar 贡献文件宿主。上游刷新说明与仓库自有修改分别记录。
+使用固定版本的 Better Sidebar 快照提供工作台能力。Host 半区在信任栅栏后提供侧栏数据、媒体、预览、延迟 chunk 和终端 WebSocket；Client 半区把保留的能力注册到官方 Sidebar。上游刷新说明与仓库自有修改分别记录。
 
 ## 目录
 
@@ -23,15 +23,15 @@ kind: "package-reference"
 <a id="package-contract"></a>
 ## 包约定
 
-[omdsh-dev/DSH-better-sidebar](https://github.com/omdsh-dev/DSH-better-sidebar) 的钉死源码快照。宿主半边在 webServer 信任围栏后挂上 `/sidebar` JSON、媒体、HTML 预览、懒加载分块与终端 WebSocket 路由。客户端半边发布 `ctx.betterSidebar`，并绘制右侧栏与底部面板。只有公开 `./client` 入口会用该 Client service 扩充 Cordis；共享快照镜像命名为 `SidebarContext`，避免 Host 类型目录把它误认成 Cordis `Context`。SHA 与更新步骤见 [UPSTREAM.md](UPSTREAM.md)。本仓持有的改动列在 [LOCAL-MODIFICATIONS.md](LOCAL-MODIFICATIONS.md)。
+[omdsh-dev/DSH-better-sidebar](https://github.com/omdsh-dev/DSH-better-sidebar) 的钉死源码快照。Host 半边在 webServer 信任围栏后挂上 `/sidebar` JSON、媒体、HTML 预览、懒加载分块与终端 WebSocket 路由。Client 入口通过 `ctx.sidebarRight`、`ctx.sidebarRightTabs` 与 keyed Slot 贡献文件、viewer、变更、任务、Side Chat、终端、Browser 回退、设置与打开路由。它不再创建自己的 React root、布局 store、标签注册表或布局占位。共享快照镜像命名为 `SidebarContext`，避免 Host 类型目录把它误认成 Cordis `Context`。SHA 与更新步骤见 [UPSTREAM.md](UPSTREAM.md)。本仓持有的改动列在 [LOCAL-MODIFICATIONS.md](LOCAL-MODIFICATIONS.md)。
 
-产品组合挂载本包与 [`dsh-client-ui-workbench`](../ui-workbench/README.zh.md)。适配层启用快照浏览器标签，并发布 [`dsh-client-ui-browser`](../ui-browser/README.zh.md) 的官方 chrome；沙箱 iframe 仍是独立安装时的回退。不要为了改产品行为去改快照源码。
+产品组合挂载本包与 [`dsh-client-ui-workbench`](../ui-workbench/README.zh.md)。Workbench 包通过官方注册表登记更高优先级的 Browser Workspace definition 与正文；沙箱 iframe 仍是独立安装时的回退。不要为了改产品行为去改快照源码。
 
 客户端通过 `ctx.sidebarRightTabs` 为 `dsh-resource://file/**` 注册一个内置 `file` 类型，并通过 keyed `sidebar.right.pane.tab` Slot 提供正文。正文依据标签所属 Session 解析 Session 范围 path，以官方 occurrence action 完成替换、新建标签、分栏、payload、行导航与文件树显露，并嵌入 Better 的 path 输入框和文件树。系统 path 打开、produced-file 行与排队的 `sidebar_open` 请求通过所属 Session 的官方 navigator 定址。文件树保留搜索、显露、重命名、删除、上传、打开方式、对话引用、工作空间围栏，以及合并或分离编辑器行为。未保存草稿、编辑模式、HTML 解锁和滚动状态归官方 occurrence 所有，直到其 signal 中止；真正关闭含脏草稿的标签前会请求确认（[决策](../../../.agents/notes/implemented/feature/2026-09-09-official-sidebar-better-file-host.zh.md)）。
 
 六个与渲染器无关的 viewer definition 分别选择图片、PDF、Markdown、HTML、代码与二进制下载正文。图片与 PDF 使用有界媒体路由；文本 viewer 使用受围栏约束的文件读取路由；二进制结果会先用头字节重新匹配，再进入代码回退。HTML 通过 Host 预览路由在 opaque-origin sandbox 中加载，除非官方警告设置允许该 occurrence 使用不安全模式。Viewer 启用状态、HTML 安全设置、打开方式数据、编辑器布局与工作空间围栏均使用官方 Sidebar 偏好 owner。
 
-新 Session 打开快照侧栏时显示空 pane，其卡片与已启用的 `+` 菜单标签类型一致；任何标签类型都没有隐式优先级。选择「文件」会打开菜单提供的同一个 `editor` 标签类型。成员提问材料芯片会用 receiving Session id 与 receiver 所有的隐藏 Workspace path，通过 `ctx.sidebarRight.forSession(sessionId)` 打开 `fileAddressFor` 资源；Markdown 与沙箱 HTML 使用官方文件宿主，组合中没有文件类型时回退到 Host 系统打开器（[决策](../../../.agents/notes/implemented/architecture/2026-09-03-member-question-files-sidebar.zh.md)）。持久化的用户自建快照标签仍是权威状态，而旧默认值产生的精确自动 Files-home 记录会在加载布局时移除（[决策](../../../.agents/notes/implemented/bug-fix/2026-08-24-sidebar-opens-on-tab-picker.zh.md)）。
+新 Session 打开官方指南，并通过官方 `+` 菜单提供已启用的 definition。选择「文件」会打开资源导航使用的同一个官方 `file` 类型。成员提问材料芯片会用 receiving Session id 与 receiver 所有的隐藏 Workspace path，通过 `ctx.sidebarRight.forSession(sessionId)` 打开 `fileAddressFor` 资源；Markdown 与沙箱 HTML 使用官方文件宿主，组合中没有文件类型时回退到 Host 系统打开器（[决策](../../../.agents/notes/implemented/architecture/2026-09-03-member-question-files-sidebar.zh.md)）。
 
 Session 工作目录、Changes 工具事件视图及 Side Chat preset 或模型恢复所需的冷 Host 读取使用正式 Session Persistence `open(id, 'read')` 句柄，并在继续执行路由专属工作前释放句柄。Side Chat 只从 `inheritedEventCount` 标出的精确 child-owned 后缀折叠持久模型状态，在为冷身份保留模型选择前使用 `stat` 检查其存在性，并仅在关闭时使用 `list` 报告持久化发布状态。Changes 视图把缺失或不可读的冷日志映射为空窗口；工作目录与 Side Chat 失败仍是明确的 API 错误（[决策](../../../.agents/notes/implemented/bug-fix/2026-09-08-better-sidebar-session-persistence-read-handles.zh.md)）。
 

@@ -216,7 +216,10 @@ export function subscribeOfficialBottomTerminal(ctx: OfficialRuntimeContext): ()
  * @param ctx - client services listed in {@link OFFICIAL_RUNTIME_INJECT}.
  * @returns disposer for every definition, Slot contribution, and runtime subscription.
  */
-export function registerOfficialRuntimeTabs(ctx: OfficialRuntimeContext): () => void {
+export function registerOfficialRuntimeTabs(
+  ctx: OfficialRuntimeContext,
+  options: { readonly subscribe?: boolean } = {},
+): () => void {
   let latestHostTitle: string | undefined
   const hostTitleRequest = api.shellGet().then((value) => {
     latestHostTitle = value.name
@@ -226,7 +229,7 @@ export function registerOfficialRuntimeTabs(ctx: OfficialRuntimeContext): () => 
     getSnapshot: () => ctx.sidebarRightPreferences.getSnapshot().preferences,
     subscribe: listener => ctx.sidebarRightPreferences.subscribe(listener),
   }
-  const disposers = [
+  const disposers: (() => void)[] = [
     ctx.sidebarRightTabs.register(sidechatDefinition(ctx)),
     ctx.sidebarRightTabs.register(terminalDefinition(ctx, () => latestHostTitle, () => hostTitleRequest)),
     ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
@@ -244,10 +247,14 @@ export function registerOfficialRuntimeTabs(ctx: OfficialRuntimeContext): () => 
       id: `${OFFICIAL_TERMINAL_DEFINITION_ID}/pin`,
       inject: () => ({ ctx }),
     }, OfficialTerminalPinMenuItem)),
-    subscribeOfficialSidechatRuntime(ctx),
-    subscribeOfficialAgentTerminals(ctx),
-    subscribeOfficialBottomTerminal(ctx),
   ]
+  if (options.subscribe !== false) {
+    disposers.push(
+      subscribeOfficialSidechatRuntime(ctx),
+      subscribeOfficialAgentTerminals(ctx),
+      subscribeOfficialBottomTerminal(ctx),
+    )
+  }
   return () => {
     for (let index = disposers.length - 1; index >= 0; index -= 1) disposers[index]?.()
   }

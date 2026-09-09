@@ -121,7 +121,10 @@ export function registerOfficialBrowserLinkInterception(options: {
 }
 
 /** Register the fallback definition, body, and one official link handler. */
-export function registerOfficialBrowser(ctx: OfficialBrowserContext): () => void {
+export function registerOfficialBrowser(
+  ctx: OfficialBrowserContext,
+  options: { readonly interceptLinks?: boolean } = {},
+): () => void {
   const disposers = [
     ctx.sidebarRightTabs.register(fallbackDefinition()),
     ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
@@ -129,12 +132,14 @@ export function registerOfficialBrowser(ctx: OfficialBrowserContext): () => void
       key: OFFICIAL_BROWSER_FALLBACK_ID,
       inject: () => ({ preferences: ctx.sidebarRightPreferences }),
     }, OfficialIframeBrowserBody)),
-    registerOfficialBrowserLinkInterception({
+  ]
+  if (options.interceptLinks !== false) {
+    disposers.push(registerOfficialBrowserLinkInterception({
       sidebar: ctx.sidebarRight,
       tabs: ctx.sidebarRightTabs,
       preferences: ctx.sidebarRightPreferences,
-    }),
-  ]
+    }))
+  }
   return () => {
     for (let index = disposers.length - 1; index >= 0; index -= 1) disposers[index]?.()
   }

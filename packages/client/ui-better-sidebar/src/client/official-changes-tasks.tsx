@@ -364,7 +364,10 @@ export function subscribeTransientOfficialDiffs(
 }
 
 /** Register official Changes, transient diff, Tasks, bodies, and feed subscriptions. */
-export function registerOfficialChangesTasks(ctx: OfficialChangesTasksContext): () => void {
+export function registerOfficialChangesTasks(
+  ctx: OfficialChangesTasksContext,
+  options: { readonly subscribe?: boolean } = {},
+): () => void {
   const liveDiffs = new Set<string>()
   const body = (component: typeof OfficialChangesBody, key: string) => ctx.slots.inject(
     'sidebar.right.pane.tab',
@@ -374,16 +377,20 @@ export function registerOfficialChangesTasks(ctx: OfficialChangesTasksContext): 
       inject: () => ({ ctx }),
     }, component),
   )
-  const disposers = [
+  const disposers: (() => void)[] = [
     ctx.sidebarRightTabs.register(changesDefinition()),
     ctx.sidebarRightTabs.register(tasksDefinition()),
     ctx.sidebarRightTabs.register(diffDefinition(liveDiffs)),
     body(OfficialChangesBody, OFFICIAL_CHANGES_DEFINITION_ID),
     body(OfficialTasksBody, OFFICIAL_TASKS_DEFINITION_ID),
     body(OfficialDiffBody, OFFICIAL_DIFF_DEFINITION_ID),
-    subscribeOfficialTasksAutoOpen(ctx),
-    subscribeTransientOfficialDiffs(ctx, liveDiffs),
   ]
+  if (options.subscribe !== false) {
+    disposers.push(
+      subscribeOfficialTasksAutoOpen(ctx),
+      subscribeTransientOfficialDiffs(ctx, liveDiffs),
+    )
+  }
   return () => {
     for (let index = disposers.length - 1; index >= 0; index -= 1) disposers[index]?.()
   }
