@@ -12,11 +12,13 @@ DeepSeek Gestalt 当前提供仅限 Desktop 的 Sub2API 组件，用户需要在
 
 ## Proposal
 
-远程协调记录是 [gestaltrun/deepseek-harness-gestalt#649](https://github.com/gestaltrun/deepseek-harness-gestalt/issues/649)。它跟踪本提案及其交付图，但仍是未冻结、未标记 `ready-for-agent` 的 `enhancement`；规划 PR 关联该议题不表示 GUI 稿或体验路线已经冻结。
+远程协调记录是 [gestaltrun/deepseek-harness-gestalt#649](https://github.com/gestaltrun/deepseek-harness-gestalt/issues/649)，用于跟踪本提案及其交付图。[议题 #652 的评论 5609234949](https://github.com/gestaltrun/deepseek-harness-gestalt/issues/652#issuecomment-5609234949) 冻结了下述 GUI 规划输入，但不表示 runtime 或 provider 实现证据已经完成。
 
 DeepSeek Gestalt 将 CLIProxyAPI 作为内置 Desktop 组件交付。首个上游基线是 lightweight tag `v7.2.155`，解析到提交 `7fac6b15bcfe5ea55c18c9eaec8e5b7e6457d974`。Desktop Bundle 将包含基于 [`gestaltrun/CLIProxyAPI`](https://github.com/gestaltrun/CLIProxyAPI) 精确提交构建的平台二进制；该 GitHub fork 的 parent 与 source 保持为 [`router-for-me/CLIProxyAPI`](https://github.com/router-for-me/CLIProxyAPI)。Harness 仓库将用 Git submodule 记录核心钉住点。应用启动时不会下载、安装或启用核心，Settings 也不会保留 Offer 卡。
 
-Manager UI 源码将从 `router-for-me/Cli-Proxy-API-Management-Center` 提交 `ed5f1c48e11ba7335f1e8f676f228c280196af85` 迁入本仓库的第一方 client 包，之后作为 Gestalt 源码独立演化。该来源使用 MIT，并带有已核实的 `Copyright (c) 2026 Router-For.ME` 声明；迁入时将保留适用的版权与许可声明。它将使用现有 Desktop Settings 外壳、slot、组件、locale 与主题。它不会成为 UI submodule、运行时下载、iframe 或远程管理页面。原型结论与体验路线将另行确定最终展示；本提案固定所有权和信任边界，而不固定视觉布局。
+Manager UI 源码将从 `router-for-me/Cli-Proxy-API-Management-Center` 提交 `ed5f1c48e11ba7335f1e8f676f228c280196af85` 迁入本仓库的第一方 client 包，之后作为 Gestalt 源码独立演化。该来源使用 MIT，并带有已核实的 `Copyright (c) 2026 Router-For.ME` 声明；迁入时将保留适用的版权与许可声明。它将使用现有 Desktop Settings 外壳、slot、组件、locale 与主题。它不会成为 UI submodule、运行时下载、iframe 或远程管理页面。
+
+冻结稿使用原型源码 `beaeec5475e4e0d85e957018da677f34e85a94a1` 和外部证据提交 [`8bf4c7cba6c151cca92c7add158af8f3495c985d`](https://github.com/gestaltrun/deepseek-harness-gestalt/tree/8bf4c7cba6c151cca92c7add158af8f3495c985d/issue/649/beaeec5)。其持久输入包括[体验路线](https://github.com/gestaltrun/deepseek-harness-gestalt/blob/8bf4c7cba6c151cca92c7add158af8f3495c985d/issue/649/beaeec5/experience-route.md)、[A 版管理视图](https://github.com/gestaltrun/deepseek-harness-gestalt/blob/8bf4c7cba6c151cca92c7add158af8f3495c985d/issue/649/beaeec5/01-a-management.png)、[额度与未知状态视图](https://github.com/gestaltrun/deepseek-harness-gestalt/blob/8bf4c7cba6c151cca92c7add158af8f3495c985d/issue/649/beaeec5/02-quota-and-unknown.png)和 [Kimi 设备流程视图](https://github.com/gestaltrun/deepseek-harness-gestalt/blob/8bf4c7cba6c151cca92c7add158af8f3495c985d/issue/649/beaeec5/03-kimi-device.png)。生产实现采用 A 版信息层级，并将额度与时间标记放在同一坐标轴；移除原型切换器和仅限 fixture 的 Composite、固定 `8317` 与健康状态声明；准确标注启用与停用操作；遮蔽 GLM secret；改善响应式卡片适配和对比度；并让 needle 与 legend 一致。打包 Electron 的 WDIO fixture 路线只证明指定原型 revision 的组合与交互，不证明真实 CLIProxyAPI 进程、账号、OAuth 流程、凭据、额度响应、模型注册或推理请求。
 
 替代方案从空白 CLIProxyAPI home 开始。它不会读取、转换、导入或兼容 Sub2API 账号、凭据、统计、额度历史、Composite 分组、路由或数据格式。删除旧用户数据是独立的破坏性操作，本提案不隐含该操作。
 
