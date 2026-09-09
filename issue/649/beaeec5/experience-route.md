@@ -26,10 +26,11 @@
 ## Frozen draft PNG set
 
 - `01-variant-a-management.png`: A management-card overview. The visible `PROTOTYPE DRAFT` scaffold identifies this as planning evidence.
-- `05-unknown-empty-quota.png`: quota view with a clear populated timeline next to the empty/unknown state.
+- `05-unknown-empty-quota.png`: full quota view. The right card shows multiple reliable windows with quota bars, red time-comparison markers, and numeric remaining ratios; the left card shows the empty/unknown state without fabricated graphics.
 - `07-kimi-device-consistency.png`: Kimi device fixture URI and code consistency; the URI is display text, not a link.
+- `08a-glm-empty-key-form.png`: GLM form before input, with no fixture value visible.
 
-The available `08-glm-local-key-form.png` contains the literal non-secret test value `issue649-local-only-fixture-value`. It is retained as local test evidence but is intentionally excluded from publication so a field value cannot be mistaken for a credential. No empty-field GLM PNG exists from the completed run, and the application was not restarted solely to create one publication image. The six-provider menu PNG can serve as the safe GLM-entry planning pointer instead if a fourth image is required.
+The available `08-glm-local-key-form.png` contains the literal non-secret test value `issue649-local-only-fixture-value`. It remains local test evidence and is intentionally excluded from publication so a field value cannot be mistaken for a credential. A coherent supplemental run at the same source and unsigned artifact captured the empty GLM form, reran the complete fixture route, and passed cleanup. The focused Codex card crop from that run is retained locally but not published because the floating prototype switcher obscures part of the crop; the full quota screenshot communicates the time/quota comparison more clearly.
 
 ## Required production adjustments
 
