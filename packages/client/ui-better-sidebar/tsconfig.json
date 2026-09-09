@@ -95,6 +95,9 @@
     },
     {
       "path": "../../util/values"
+    },
+    {
+      "path": "../../browser/browser-workspace"
     }
   ]
 }

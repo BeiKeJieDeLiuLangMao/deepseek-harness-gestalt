@@ -3166,6 +3166,9 @@ importers:
       '@deepseek-ai/dsh-api-workspace-files':
         specifier: workspace:^
         version: link:../../api/workspace-files
+      '@deepseek-ai/dsh-browser-workspace':
+        specifier: workspace:^
+        version: link:../../browser/browser-workspace
       '@deepseek-ai/dsh-client-connection':
         specifier: workspace:^
         version: link:../connection
@@ -4308,9 +4311,6 @@ importers:
       '@deepseek-ai/dsh-client-test-runtime':
         specifier: workspace:^
         version: link:../../test-support/client-runtime
-      '@deepseek-ai/dsh-client-ui-better-sidebar':
-        specifier: workspace:^
-        version: link:../ui-better-sidebar
       '@deepseek-ai/dsh-client-ui-desktop':
         specifier: workspace:^
         version: link:../ui-desktop
@@ -4323,6 +4323,9 @@ importers:
       '@deepseek-ai/dsh-client-ui-settings':
         specifier: workspace:^
         version: link:../ui-settings
+      '@deepseek-ai/dsh-client-ui-sidebar-right':
+        specifier: workspace:^
+        version: link:../ui-sidebar-right
       '@deepseek-ai/dsh-client-ui-slots':
         specifier: workspace:^
         version: link:../ui-slots
@@ -5526,12 +5529,24 @@ importers:
       '@deepseek-ai/dsh-browser-workspace':
         specifier: workspace:^
         version: link:../../browser/browser-workspace
+      '@deepseek-ai/dsh-client-locale':
+        specifier: workspace:^
+        version: link:../locale
       '@deepseek-ai/dsh-client-ui-better-sidebar':
         specifier: workspace:^
         version: link:../ui-better-sidebar
       '@deepseek-ai/dsh-client-ui-browser':
         specifier: workspace:^
         version: link:../ui-browser
+      '@deepseek-ai/dsh-client-ui-renderer':
+        specifier: workspace:^
+        version: link:../ui-renderer
+      '@deepseek-ai/dsh-client-ui-sidebar-right':
+        specifier: workspace:^
+        version: link:../ui-sidebar-right
+      '@deepseek-ai/dsh-client-ui-slots':
+        specifier: workspace:^
+        version: link:../ui-slots
       '@deepseek-ai/dsh-session':
         specifier: workspace:^
         version: link:../../core/session

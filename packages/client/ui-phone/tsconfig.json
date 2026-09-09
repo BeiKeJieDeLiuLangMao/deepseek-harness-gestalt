@@ -43,6 +43,9 @@
     },
     {
       "path": "../locale"
+    },
+    {
+      "path": "../ui-sidebar-right"
     }
   ]
 }

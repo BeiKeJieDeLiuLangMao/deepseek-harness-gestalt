@@ -47,6 +47,10 @@ export interface PhoneConnectedViewProps {
   readonly onShowPicker: () => void
   /** Controller factory; the tab owns the created instance for its lifetime. */
   readonly createController: (serial: DeviceId) => PhoneConnectionController
+  /** Occurrence-owned controller supplied by the official workbench. */
+  readonly controller?: PhoneConnectionController
+  /** Whether this React body drives visibility and disposal. Defaults to true. */
+  readonly manageController?: boolean
 }
 
 /** Error-card copy per failure kind, in the design's next-action semantics. */
@@ -237,6 +241,7 @@ function ReconnectAlert({
  */
 export function PhoneConnectedView({
   serial, name, visible, source, onOpenDevice, onShowPicker, createController,
+  controller: ownedController, manageController = true,
 }: PhoneConnectedViewProps): ReactNode {
   const createControllerRef = useRef(createController)
   const h264PlaybackOwnerRef = useRef<PhoneH264PlaybackOwner | undefined>(undefined)
@@ -244,7 +249,10 @@ export function PhoneConnectedView({
   createControllerRef.current = createController
   // The tab is a singleton (U1): a serial change disposes the previous
   // controller and mints a new session for the chosen device.
-  const controller = useMemo(() => createControllerRef.current(serial), [serial])
+  const controller = useMemo(
+    () => ownedController ?? createControllerRef.current(serial),
+    [ownedController, serial],
+  )
   // The controller and the listing source are the owning observables; uSES
   // is the render-side adapter (the better-sidebar tab hosts have no slot
   // hook channel).
@@ -304,12 +312,14 @@ export function PhoneConnectedView({
     if (occupyingPlatform !== undefined) controller.notePlatform(occupyingPlatform)
     controller.noteLogicalDisplay(androidLogicalDisplay)
   }, [androidLogicalDisplay, occupyingPlatform, controller])
-  useEffect(() => { controller.setVisible(visible) }, [controller, visible])
+  useEffect(() => {
+    if (manageController) controller.setVisible(visible)
+  }, [controller, manageController, visible])
   useEffect(() => () => {
     releaseDrag()
     releaseWheel()
-    controller.dispose()
-  }, [controller, releaseDrag, releaseWheel])
+    if (manageController) controller.dispose()
+  }, [controller, manageController, releaseDrag, releaseWheel])
   const liveStreamUrl = phase.kind === 'live' ? phase.streamUrl : undefined
   const surfaceIdentity = phase.kind === 'live' && surfaceSize !== undefined
     ? `${phase.captureId}:${String(surfaceSize.width)}:${String(surfaceSize.height)}:${String(surfaceRotation)}`

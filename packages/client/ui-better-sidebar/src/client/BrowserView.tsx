@@ -89,21 +89,49 @@ export function BrowserView(props: TabComponentProps) {
 
 function SnapshotIframeBrowser(props: TabComponentProps) {
   const { store, tab } = props
+  return (
+    <IframeBrowser
+      initialUrl={tab.path}
+      noSandbox={store.getPrefs().browserNoSandbox === true}
+      allowedLoopback={store.getPrefs().browserAllowedLoopback}
+      onNavigate={(nextUrl) => {
+        let host = nextUrl
+        try { host = new URL(nextUrl).hostname } catch { /* keep the URL as title */ }
+        store.reduce(state => patchTab(state, tab.id, { path: nextUrl, title: host }))
+      }}
+    />
+  )
+}
+
+/** Props shared by the legacy snapshot body and the official Browser fallback. */
+export interface IframeBrowserProps {
+  readonly initialUrl?: string
+  readonly noSandbox: boolean
+  readonly allowedLoopback: string
+  readonly onNavigate: (url: string) => void
+}
+
+/**
+ * Sandboxed iframe Browser body independent of either tab-state owner.
+ * @param props - persisted URL, official preferences, and navigation commit.
+ * @returns the Browser address bar and iframe fallback.
+ */
+export function IframeBrowser({ initialUrl, noSandbox: globallyUnsandboxed, allowedLoopback, onNavigate }: IframeBrowserProps) {
   // The current address (initialized from the persisted tab.path so a
   // reload restores the visited page).
-  const [url, setUrl] = useState<string | undefined>(tab.path)
-  const [input, setInput] = useState<string>(tab.path ?? '')
+  const [url, setUrl] = useState<string | undefined>(initialUrl)
+  const [input, setInput] = useState<string>(initialUrl ?? '')
   /** Blocked/invalid hint shown under the address bar (null = none). */
   const [message, setMessage] = useState<string | null>(null)
   /** Address-bar navigation history (in-frame clicks are not tracked). */
-  const [history, setHistory] = useState<string[]>(tab.path !== undefined ? [tab.path] : [])
-  const [cursor, setCursor] = useState<number>(tab.path !== undefined ? 0 : -1)
+  const [history, setHistory] = useState<string[]>(initialUrl !== undefined ? [initialUrl] : [])
+  const [cursor, setCursor] = useState<number>(initialUrl !== undefined ? 0 : -1)
   /** Bumped on reload to remount the iframe (also remounts on sandbox flip). */
   const [reloadKey, setReloadKey] = useState(0)
   /** TEMPORARY sandbox unlock for THIS surface only (never writes the global
    *  side card setting; lasts until the tab unmounts or the user restores). */
   const [localUnlock, setLocalUnlock] = useState(false)
-  const noSandbox = store.getPrefs().browserNoSandbox === true || localUnlock
+  const noSandbox = globallyUnsandboxed || localUnlock
   /** A site that refuses to be embedded (X-Frame-Options / frame-ancestors):
    *  the probe verdict shown instead of the blank iframe. */
   const [embedBlocked, setEmbedBlocked] = useState<string | null>(null)
@@ -125,14 +153,8 @@ function SnapshotIframeBrowser(props: TabComponentProps) {
     return () => { cancelled = true }
   }, [url])
 
-  const persist = (nextUrl: string): void => {
-    let host = nextUrl
-    try { host = new URL(nextUrl).hostname } catch { /* keep the URL as title */ }
-    store.reduce(state => patchTab(state, tab.id, { path: nextUrl, title: host }))
-  }
-
   const navigateTo = (raw: string): void => {
-    const result = normalizeBrowserUrl(raw, window.location.origin, store.getPrefs().browserAllowedLoopback)
+    const result = normalizeBrowserUrl(raw, window.location.origin, allowedLoopback)
     if (result.kind === 'ok') {
       const next = result.url
       setUrl(next)
@@ -142,7 +164,7 @@ function SnapshotIframeBrowser(props: TabComponentProps) {
       setHistory(previous => [...previous.slice(0, cursor + 1), next])
       setCursor(previous => previous + 1)
       setReloadKey(key => key + 1)
-      persist(next)
+      onNavigate(next)
       return
     }
     setMessage(result.kind === 'invalid'
@@ -254,7 +276,7 @@ function SnapshotIframeBrowser(props: TabComponentProps) {
           key={`${reloadKey}:${noSandbox ? 'ns' : 'sb'}`}
           className={css.browserFrame}
           src={url}
-          sandbox={noSandbox ? undefined : iframeSandboxFor(url, store.getPrefs().browserAllowedLoopback, window.location.origin)}
+          sandbox={noSandbox ? undefined : iframeSandboxFor(url, allowedLoopback, window.location.origin)}
           referrerPolicy="no-referrer"
           allow=""
           title={url}
