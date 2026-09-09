@@ -629,7 +629,7 @@ describe('MemberQuestionCard', () => {
 
   it('keeps the current question failure when an earlier question fails later', async () => {
     const earlier = Promise.withResolvers<undefined>()
-    const openReference = vi.fn(async () => { throw new Error('Current failure') })
+    const openReference = vi.fn(async (_path: string): Promise<void> => { throw new Error('Current failure') })
       .mockImplementationOnce(() => earlier.promise)
     const { carrier } = memberWait()
     const nextId = 'question-2' as PendingMemberQuestionView['questionId']

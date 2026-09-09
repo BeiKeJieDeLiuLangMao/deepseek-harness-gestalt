@@ -202,7 +202,10 @@ describe('official open routing', () => {
   it('wraps the system path funnel and restores it with the registration fiber', async () => {
     let interceptOpenPath = true
     let enabled = true
-    const original = vi.fn(async () => ({ ok: true as const, value: { opened: false } }))
+    const original = vi.fn(async (_request: { readonly path: string }, _signal?: AbortSignal) => ({
+      ok: true as const,
+      value: { opened: false },
+    }))
     const service = { openWorkspacePath: original }
     let stopEffect: (() => void) | undefined
     const disposeFiber = vi.fn(async () => { stopEffect?.() })
