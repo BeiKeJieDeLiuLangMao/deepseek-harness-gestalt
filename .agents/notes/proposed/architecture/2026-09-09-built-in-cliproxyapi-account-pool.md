@@ -22,13 +22,13 @@ The replacement starts with an empty CLIProxyAPI home. It will not read, convert
 
 ## Package and source topology
 
-The CLIProxyAPI source pin will be a catalog child outside `pnpm-workspace.yaml` and TypeScript project references. CI jobs that build or inspect the core will initialize submodules recursively and verify that the gitlink resolves to an existing commit in `gestaltrun/CLIProxyAPI`. Jobs that do not need the core source may retain an uninitialized child.
+The CLIProxyAPI source pin will be a catalog child outside `pnpm-workspace.yaml` and TypeScript project references. CI jobs that build or inspect the core will initialize submodules recursively and verify that the gitlink resolves to an existing commit in `gestaltrun/CLIProxyAPI`. Jobs that do not need the core source may retain an uninitialized child. The existing Desktop `extraResources` assembly and packaged/development path split will carry the core without consulting the user's default config or `PATH`: packaged runs resolve a locked Resources manifest and binary, while development resolves an explicit build output.
 
 Gestalt-owned TypeScript code will remain in the harness repository. It will contain the Desktop process supervisor, the narrow management gateway, the LLM adapter integration, the renderer projection, and the native Settings UI. The Go fork will contain upstream CLIProxyAPI plus the accepted GLM subscription implementation. That core change is owned by the separate `codex/feature-glm-coding-plan` delivery in the fork; this harness proposal consumes its verified capability and final commit pin rather than duplicating Go implementation ownership. No Host or renderer package will import Go source through workspace paths.
 
 A fork update will use a reviewable branch and pull request in `gestaltrun/CLIProxyAPI`. The update will identify the upstream base, retain or deliberately revise the Gestalt GLM delta, and pass the fork's checks before the harness gitlink moves. Moving the harness pin will be a separate reviewed change with Desktop packaging and runtime evidence. Neither repository will float on upstream `main` or the latest release tag.
 
-The existing proposal to catalog out-of-tree plugins remains useful for independently released Harness plugins, but its Sub2API-specific topology is superseded for this account pool by this proposal. The implemented [Sub2API Offer-card decision](../../implemented/architecture/2026-08-28-sub2api-offer-card-installer.md) continues to describe the shipped product until the replacement lands; implementation will then update or consolidate that record rather than rewriting it in advance.
+The existing proposal to catalog out-of-tree plugins remains useful for independently released Harness plugins, but its Sub2API-specific topology is superseded for this account pool by this proposal. The replacement retires `sub2api-sources`, its writer and catalog, installer, profile surgery, and Offer lifecycle; it will not retain a network fallback that downloads the core when packaged resources are absent. The implemented [Sub2API Offer-card decision](../../implemented/architecture/2026-08-28-sub2api-offer-card-installer.md) continues to describe the shipped product until the replacement lands; implementation will then update or consolidate that record rather than rewriting it in advance.
 
 ## Runtime ownership and lifecycle
 
@@ -40,7 +40,9 @@ The runtime ticket must prove the chosen mechanism with a focused ownership test
 
 Desktop startup will admit the account pool only after the core reports readiness from the expected binary and configuration identity. A startup failure will leave the rest of Desktop available with an actionable account-pool failure state. Unexpected exit will enter bounded crash recovery under the same supervisor; repeated failure will stop respawning and preserve diagnostics without claiming that the provider is usable. Desktop shutdown will cancel recovery, terminate only the process tree owned by that instance, and wait for the port and process identities to disappear.
 
-The Desktop Bundle will carry the binary for each supported packaging target. The initial required matrix is macOS arm64, macOS x64, and Windows x64; any additional target requires an explicit product decision and a matching build lane. Packaging will reject a missing binary, an architecture mismatch, or a binary whose recorded source identity does not match the submodule pin. First launch will require no Go toolchain, PostgreSQL, Redis, or core download.
+The Desktop Bundle will carry the binary for each supported packaging target. The initial required matrix is macOS arm64, macOS x64, and Windows x64, matching the existing native release runners. Each target runner will build the core from the initialized submodule on that target rather than assuming a cross-compile path. CGO and dynamic-library requirements are an implementation preflight: a target that is not self-contained must fail packaging with its missing runtime dependencies identified. Any additional target requires an explicit product decision and a matching build lane.
+
+A generated core manifest will bind `sourceSHA`, operating system, architecture, binary resource path, and SHA-256. Packaging and startup will reject a missing manifest or binary, an architecture mismatch, a digest mismatch, or a source identity that does not match the submodule pin. First launch will require no Go toolchain, PostgreSQL, Redis, core download, user `PATH`, or default CLIProxyAPI configuration.
 
 ## Management authority and renderer projection
 
@@ -109,7 +111,7 @@ A static port of the Go implementation remains a permitted alternative rather th
 ## Acceptance criteria
 
 - A fresh recursive checkout resolves the harness gitlink to an existing commit in `gestaltrun/CLIProxyAPI`, whose GitHub parent and source are `router-for-me/CLIProxyAPI`; ordinary TypeScript workspace discovery does not include the Go child.
-- Each supported Desktop package contains the binary built from the recorded pin, starts from a fresh isolated home without a Go toolchain, database service, or core download, and rejects missing, mismatched, or unidentifiable binaries.
+- Each supported Desktop package contains a native-runner-built binary and manifest bound to the recorded pin, target OS/architecture, resource path, and SHA-256; it starts from a fresh isolated home without a Go toolchain, database service, core download, user `PATH`, or default core config, and rejects missing, mismatched, dynamically incomplete, or unidentifiable binaries.
 - One Desktop instance owns one loopback CLIProxyAPI process and dynamic port; readiness, bounded crash recovery, shutdown, and cleanup are observable, and one instance never terminates another instance's process.
 - The renderer receives no management secret, inference API key, auth-file secret, or raw management escape hatch; credential-like values remain absent from logs, session data, screenshots, and retained artifacts.
 - The first-party Settings UI renders the accepted global management/quota switch and per-card flip behavior; PKCE login for Anthropic, Codex, and Antigravity; device authorization for Kimi and xAI; and the separate GLM Coding Plan key entry with explicit China/international and personal/team selection. It renders truthful authorization and quota unknown/partial/stale/failure states without an iframe or runtime UI download.
@@ -120,7 +122,7 @@ A static port of the Go implementation remains a permitted alternative rather th
 
 ## Risks
 
-A built-in binary increases Desktop Bundle size and makes each supported platform part of the core build matrix. The packaging lanes must fail before publication when one target cannot be reproduced from the pin.
+A built-in binary increases Desktop Bundle size and makes each supported platform part of the core build matrix. Native runners must establish CGO and dynamic-library closure instead of assuming cross-compilation. Packaging preparation may build and inspect unsigned artifacts, but codesign, notarization, stapler validation, tag creation, release publication, and deployment remain outside this authorization.
 
 Upstream management endpoints and auth-file fields may change faster than the Gestalt UI. The narrow Host gateway limits the affected code, but every fork update still needs protocol and redaction review.
 

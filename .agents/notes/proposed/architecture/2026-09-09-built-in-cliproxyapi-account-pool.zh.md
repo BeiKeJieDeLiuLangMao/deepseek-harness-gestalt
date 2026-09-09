@@ -22,13 +22,13 @@ Manager UI 源码将从 `router-for-me/Cli-Proxy-API-Management-Center` 提交 `
 
 ## Package and source topology
 
-CLIProxyAPI 源码钉住点将作为 `pnpm-workspace.yaml` 与 TypeScript 工程引用之外的目录子项。构建或检查核心的 CI 任务将递归初始化 submodule，并验证 gitlink 指向 `gestaltrun/CLIProxyAPI` 中存在的提交。不需要核心源码的任务可以保留未初始化子项。
+CLIProxyAPI 源码钉住点将作为 `pnpm-workspace.yaml` 与 TypeScript 工程引用之外的目录子项。构建或检查核心的 CI 任务将递归初始化 submodule，并验证 gitlink 指向 `gestaltrun/CLIProxyAPI` 中存在的提交。不需要核心源码的任务可以保留未初始化子项。现有 Desktop `extraResources` 组装和 packaged/development 路径分离会在不读取用户默认配置或 `PATH` 的情况下携带核心：packaged 运行解析锁定的 Resources manifest 与二进制，development 解析显式构建输出。
 
 Gestalt 自有 TypeScript 代码将留在 Harness 仓库中，包括 Desktop 进程监督器、窄管理网关、LLM 适配器集成、renderer 投影与原生 Settings UI。Go fork 将包含上游 CLIProxyAPI 与已接受的 GLM 订阅实现。该核心变更由 fork 中独立的 `codex/feature-glm-coding-plan` 交付拥有；本 Harness 提案只消费其已验证能力与最终提交钉住点，不重复 Go 实现所有权。Host 或 renderer 包都不会通过 workspace 路径导入 Go 源码。
 
 fork 更新将使用 `gestaltrun/CLIProxyAPI` 中可评审的分支与 PR。更新会标明上游基线，保留或明确修订 Gestalt GLM delta，并在 Harness gitlink 移动前通过 fork 门禁。移动 Harness 钉住点将是独立评审变更，并附带 Desktop 打包与运行时证据。两个仓库都不会浮动跟随上游 `main` 或 latest Release tag。
 
-现有树外插件目录提案对独立发布的 Harness 插件仍有价值，但本提案会取代其中针对该账号池的 Sub2API 拓扑。已实现的 [Sub2API Offer 卡决策](../../implemented/architecture/2026-08-28-sub2api-offer-card-installer.zh.md)在替代方案交付前仍描述当前产品；实现阶段将更新或合并该记录，而不是提前把它改写成未交付事实。
+现有树外插件目录提案对独立发布的 Harness 插件仍有价值，但本提案会取代其中针对该账号池的 Sub2API 拓扑。替代方案会退役 `sub2api-sources`、其 writer 与 catalog、installer、profile 修改和 Offer 生命周期；当 packaged resource 缺失时，不会保留通过网络下载核心的补偿路径。已实现的 [Sub2API Offer 卡决策](../../implemented/architecture/2026-08-28-sub2api-offer-card-installer.zh.md)在替代方案交付前仍描述当前产品；实现阶段将更新或合并该记录，而不是提前把它改写成未交付事实。
 
 ## Runtime ownership and lifecycle
 
@@ -40,7 +40,9 @@ Runtime 票必须在发布 endpoint 或任一 key 前，用聚焦所有权测试
 
 Desktop 只会在核心以预期二进制和配置身份报告 ready 后开放账号池。启动失败时，Desktop 其余部分仍可用，账号池展示可操作的失败状态。异常退出将由同一监督器执行有界崩溃恢复；重复失败后停止 respawn，保留诊断信息，且不声称提供方可用。Desktop 关闭会取消恢复，仅终止该实例拥有的进程树，并等待端口与进程身份消失。
 
-Desktop Bundle 将携带每个受支持打包目标的二进制。首批要求为 macOS arm64、macOS x64 与 Windows x64；增加其他目标需要明确产品决定和对应构建车道。打包会拒绝缺失二进制、架构不匹配，或记录的源码身份与 submodule 钉住点不一致的二进制。首次启动不需要 Go 工具链、PostgreSQL、Redis 或核心下载。
+Desktop Bundle 将携带每个受支持打包目标的二进制。首批要求为 macOS arm64、macOS x64 与 Windows x64，与现有原生 Release runner 一致。每个目标 runner 会在该目标上从已初始化 submodule 构建核心，而不假定 cross-compile 路径。CGO 与动态库需求属于实现 preflight：无法自包含的目标必须让打包失败，并指出缺失运行依赖。增加其他目标需要明确产品决定和对应构建车道。
+
+生成的核心 manifest 会绑定 `sourceSHA`、操作系统、架构、二进制 resource path 与 SHA-256。打包和启动会拒绝缺失 manifest 或二进制、架构不匹配、摘要不匹配，或与 submodule 钉住点不一致的源码身份。首次启动不需要 Go 工具链、PostgreSQL、Redis、核心下载、用户 `PATH` 或默认 CLIProxyAPI 配置。
 
 ## Management authority and renderer projection
 
@@ -109,7 +111,7 @@ Manager 实现已经确定完整 provider 矩阵和解析依据；真实服务�
 ## Acceptance criteria
 
 - 全新递归 checkout 会把 Harness gitlink 解析为 `gestaltrun/CLIProxyAPI` 中存在的提交，且该 fork 的 GitHub parent 与 source 是 `router-for-me/CLIProxyAPI`；普通 TypeScript workspace 发现不会包含 Go 子项。
-- 每个受支持 Desktop 包含从记录钉住点构建的二进制，能从全新隔离 home 启动且不需要 Go 工具链、数据库服务或核心下载，并拒绝缺失、不匹配或无法识别的二进制。
+- 每个受支持 Desktop 包含由原生 runner 构建、并通过 manifest 绑定记录钉住点、目标 OS/架构、resource path 与 SHA-256 的二进制；它能从全新隔离 home 启动且不需要 Go 工具链、数据库服务、核心下载、用户 `PATH` 或默认核心配置，并拒绝缺失、不匹配、动态依赖不完整或无法识别的二进制。
 - 一个 Desktop 实例拥有一个 loopback CLIProxyAPI 进程和动态端口；ready 状态、有界崩溃恢复、关闭与清理均可观察，且一个实例绝不终止另一实例的进程。
 - Renderer 不会收到 management secret、inference API key、auth-file secret 或原始管理逃生口；凭据类值不会进入日志、Session 数据、截图与保留产物。
 - 第一方 Settings UI 会渲染已接受的全局管理/额度切换与单卡翻面；Anthropic、Codex 与 Antigravity 的 PKCE 登录；Kimi 与 xAI 的设备授权；以及带明确中国/国际和个人/团队选择的独立 GLM Coding Plan key 入口。它会渲染真实授权状态与额度 unknown、partial、stale 和 failure 状态，且不使用 iframe 或运行时 UI 下载。
@@ -120,7 +122,7 @@ Manager 实现已经确定完整 provider 矩阵和解析依据；真实服务�
 
 ## Risks
 
-内置二进制会增大 Desktop Bundle，并让每个受支持平台成为核心构建矩阵的一部分。任一目标无法从钉住点复现时，打包车道必须在发布前失败。
+内置二进制会增大 Desktop Bundle，并让每个受支持平台成为核心构建矩阵的一部分。原生 runner 必须确认 CGO 与动态库闭包，不能假定 cross-compile。打包准备可以构建和检查未签名产物，但 codesign、公证、stapler 验证、tag、Release 发布与部署不在本次授权范围。
 
 上游 management 端点和 auth-file 字段可能比 Gestalt UI 变化更快。窄 Host 网关会限制受影响代码，但每次 fork 更新仍需要协议与脱敏评审。
 
