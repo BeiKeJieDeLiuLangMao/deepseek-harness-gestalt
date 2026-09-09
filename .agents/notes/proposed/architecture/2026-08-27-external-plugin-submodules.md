@@ -18,6 +18,8 @@ The first child is [`gestaltrun/dsh-sub2api-sidecar`](https://github.com/gestalt
 
 `vendor/` stays the in-tree Cordis source. `packages/` stays `@deepseek-ai/dsh-*` workspaces. A plugin that Gestalt later ships as a first-party harness package still moves into `packages/`.
 
+The proposed [built-in CLIProxyAPI account pool](2026-09-09-built-in-cliproxyapi-account-pool.md) supersedes the Sub2API-specific child and Offer-card plan above, but not this catalog pattern for independently released plugins. Its core fork remains foreign source pinned by submodule, while Gestalt-owned lifecycle and UI code live in the harness repository.
+
 Default `git clone` leaves catalog children empty until `git submodule update --init --recursive`. CI jobs that need plugin source set `submodules: recursive` on `actions/checkout`. Jobs that only need harness source leave the default empty checkout.
 
 ## Alternatives considered
