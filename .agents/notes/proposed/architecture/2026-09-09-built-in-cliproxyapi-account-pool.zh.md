@@ -62,9 +62,9 @@ Management 与 inference 即使指向同一个本机进程，也保持独立 aut
 
 ## Quota observations
 
-CLIProxyAPI 没有统一的主动额度端点。迁入的 manager 源码包含 provider 专用主动额度实现；其中 React-free data 模块与共享额度工具将适配为 Host 自有策略：`src/features/quota/providers/*/data.ts`、`src/utils/quota/{constants,parsers,builders,resetInstants}` 与 `src/types/quota.ts`。`QuotaTimeline`、`quotaTimelineModel`、`QuotaMeter` 与 `AuthFileQuotaSection` 是迁入第一方账号卡的直接 UI 基础，但不证明原 manager 由浏览器直连 management 的架构应保留。
+CLIProxyAPI 没有统一的主动额度端点。迁入的 manager 源码包含 provider 专用主动额度实现；其中 React-free data 模块与共享额度工具将适配为 Host 自有策略：`src/features/quota/providers/*/data.ts`、`src/utils/quota/{constants,parsers,builders,resetInstants}` 与 `src/types/quota.ts`。最小可迁入闭包还包括额度所需的 `AuthFileItem` 类型、`normalizeAuthIndex`，以及 `DAY_MS`、`HOUR_MS`、`MINUTE_MS` 常量；其 i18next 依赖仅用于类型，将替换成本地翻译函数签名，而不引入该 UI 框架。`QuotaTimeline`、`quotaTimelineModel`、`QuotaMeter` 与 `AuthFileQuotaSection` 是迁入第一方账号卡的直接 UI 基础，但不证明原 manager 由浏览器直连 management 的架构应保留。
 
-首批主动矩阵覆盖全部五个登录 provider。Anthropic 读取 OAuth usage window，包括 `five_hour`、`seven_day` utilization 与 `resets_at`。Codex 读取 wham usage 的 `used_percent`、`limit_window_seconds` 与 reset。Antigravity 读取 `retrieveUserQuotaSummary` bucket 的 `remainingFraction`、window 与 `resetTime`；其 parser 必须把未识别 window enum 保留为 unknown，不得猜测时长。Kimi 读取 `/coding/v1/usages` 的 usage 与 `limits.window` duration/time unit。xAI 从 `cli-chat-proxy.grok.com/v1/billing` 读取周期 usage；任何会产生 inference 请求的 xAI 探活路径都不进入默认额度刷新，只能作为明确授权的诊断。Host 只会归一化已验证响应字段，并保留 provider、来源、采集时间与最后成功观测。
+首批主动矩阵覆盖全部五个登录 provider。Anthropic 读取 OAuth usage window，包括 `five_hour`、`seven_day` utilization 与 `resets_at`。Codex 读取 wham usage 的 `used_percent`、`limit_window_seconds` 与 reset。Antigravity 读取 `retrieveUserQuotaSummary` bucket 的 `remainingFraction`、window 与 `resetTime`；`5h`、`five-hour`、`five_hour` 归一化为五小时，`weekly` 与 `week` 归一化为 168 小时。其他 window 全部保持 `periodHours=null`，保留余额和 reset 事实，但不绘制时间刻度。Kimi 读取 `/coding/v1/usages` 的 usage 与 `limits.window` duration/time unit。xAI 从 `cli-chat-proxy.grok.com/v1/billing` 读取周期 usage；manager 中会付费的 `POST` chat `max_tokens: 1` ping 不会迁入。Billing 或 `/me` 无法确认额度时保持 unknown，不发送 inference 请求。Host 只会归一化已验证响应字段，并保留 provider、来源、采集时间与最后成功观测。
 
 额度值将区分 known、partial、probing、stale、unknown、unsupported 与 failed 状态。Unknown 或 unsupported 数据绝不会渲染为零、满额或虚构余额。只有来源提供所需分子与分母时，额度线才可以展示剩余容量。只有来源提供足够信息确定窗口时长和重置位置时，才可以计算叠加的时间窗口百分比；只有 reset timestamp 而没有时长时，不生成时间百分比。
 
@@ -72,7 +72,7 @@ CLIProxyAPI 没有统一的主动额度端点。迁入的 manager 源码包含 p
 
 GLM 额度优先采用 `TOKENS_LIMIT`，只有完全没有 token limit 时才使用 `CREDIT_LIMIT`。Unit `3` 表示五小时窗口，unit `6` 表示每周窗口。投影保留 `used_percent`、`reset_at` 与 `updated_at`；它依据已验证的使用百分比推导剩余额度，并且仅在窗口时长与重置位置成立时绘制时间对比。订阅 base 的 `/models` 响应是 GLM 模型可用性的权威来源，因此集成不会虚构静态 GLM 目录。
 
-Manager 实现确定了 provider 矩阵和解析依据，但本次交付尚未用真实服务验证。首期产品因此会把未经验证、失败或过期的观测标为 unknown 或 stale，在鉴权或传输失败时保留最后有效 snapshot，也不会宣称每个账号当前都会返回全部已记录字段。刷新节奏与缓存寿命将由有界 Host 策略决定，以避免重复上游调用；实现票会用 provider 专用测试固定数值，而不是暴露 renderer 轮询间隔。额度观测只用于展示与诊断。Codex reset-credit 主动消耗与重置操作不在本次交付范围；Gestalt 不会自创剩余百分比阈值来停用账号或改变路由，CLIProxyAPI 标准的资格、cooldown 与 scheduler 行为保持权威。UI 原型可以为各状态使用明确标注的 fixture，但不能暗示某个 fixture 字段已经通过真实服务验证。
+Manager 实现确定了 provider 矩阵和解析依据，但本次交付尚未用真实服务验证。首期产品因此会把未经验证、失败或过期的观测标为 unknown 或 stale，在鉴权或传输失败时保留最后有效 snapshot，也不会宣称每个账号当前都会返回全部已记录字段。刷新节奏与缓存寿命将由有界 Host 策略决定，以避免重复上游调用；实现票会用 provider 专用测试固定数值，而不是暴露 renderer 轮询间隔。额度观测只用于展示与诊断。Codex reset-credit 数量可以读取并展示，但主动消耗与重置操作不在本次交付范围；Gestalt 不会自创剩余百分比阈值来停用账号或改变路由，CLIProxyAPI 标准的资格、cooldown 与 scheduler 行为保持权威。UI 原型可以为各状态使用明确标注的 fixture，但不能暗示某个 fixture 字段已经通过真实服务验证。
 
 ## GLM subscription status
 
