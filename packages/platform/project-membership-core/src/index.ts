@@ -157,12 +157,10 @@ export class ProjectMembership extends ProjectMembershipService {
   private chain: Promise<unknown> = Promise.resolve()
   private disposed = false
   /**
-   * Corruption error from the one document load. Cordis cannot await a
-   * constructor-era effect, so the store itself must carry the rejection to
-   * every caller; non-Error throw values are normalized so the stored reason
-   * is always an Error.
+   * Retain the first document-admission failure so later operations cannot
+   * treat a corrupt corpus as empty.
    */
-  private loadFailure: { reason: Error } | undefined
+  private loadFailure: { reason: unknown } | undefined
 
   /**
    * @param ctx - Cordis context receiving the `projectMembership` service.
@@ -207,8 +205,8 @@ export class ProjectMembership extends ProjectMembershipService {
           continue
         }
         if (deleting.role === 'owner' && this.ownerCount(projectId) === 1) {
-          const successorMembershipId = selected.get(projectId)
-          if (successorMembershipId === undefined) throw new Error('validated deletion successor is missing')
+          // The transaction's validated plan supplies this sole owner's successor.
+          const successorMembershipId = selected.get(projectId) as MembershipId
           await this.changeRoleOp(accountId, { membershipId: successorMembershipId, role: 'owner' })
         }
         memberships.delete(deleting.id)
@@ -340,9 +338,8 @@ export class ProjectMembership extends ProjectMembershipService {
       const invalidations: RosterInvalidation[] = []
       const result = await this.persistence.transact(async (transaction) => {
         try { this.loadDocument(transaction.document) } catch (error) {
-          const reason = error instanceof Error ? error : new Error(String(error))
-          this.loadFailure = { reason }
-          throw reason
+          this.loadFailure = { reason: error }
+          throw error
         }
         this.changed = false
         this.pendingInvalidations = invalidations

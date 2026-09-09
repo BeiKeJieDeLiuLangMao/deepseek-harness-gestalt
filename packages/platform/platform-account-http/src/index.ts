@@ -309,12 +309,14 @@ function requiredDeletionReceipt(body: Record<string, unknown>) {
   try {
     return { operationId: parseAccountDeletionId(body.operationId), recoveryToken: parseAccountDeletionRecoveryToken(body.recoveryToken) }
   } catch (error) {
-    throw new HttpError(400, 'INVALID_REQUEST', error instanceof Error ? error.message : 'invalid deletion receipt')
+    // The owned deletion parsers reject decoded JSON only with TypeError.
+    throw new HttpError(400, 'INVALID_REQUEST', (error as Error).message)
   }
 }
 
 function requiredDeletionSuccessors(value: unknown) {
   try { return parseAccountDeletionSuccessors(value) } catch (error) {
-    throw new HttpError(400, 'INVALID_REQUEST', error instanceof Error ? error.message : 'invalid deletion successors')
+    // The owned successor parser rejects decoded JSON only with TypeError.
+    throw new HttpError(400, 'INVALID_REQUEST', (error as Error).message)
   }
 }
