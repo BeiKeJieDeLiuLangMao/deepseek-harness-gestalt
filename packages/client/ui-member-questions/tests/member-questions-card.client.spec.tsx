@@ -309,7 +309,7 @@ function receivingProps(
 
 function renderCard(
   carrier: PendingMemberQuestionView,
-  openReference: MemberQuestionComposerProps['openReference'] = () => {},
+  openReference: MemberQuestionComposerProps['openReference'] = async () => {},
   useReferenceView: MemberQuestionComposerProps['useReferenceView'] = selector => selector({ paths: [] }),
 ) {
   return render(
@@ -347,7 +347,7 @@ describe('member-question routing', () => {
     const props = {
       ...kit,
       t: seat('member-question'),
-      openReference: () => {},
+      openReference: async () => {},
       ...receivingProps(carrier),
     } satisfies MemberQuestionDockProps
     const pending = render(<MemberQuestionDock {...props} />)
@@ -546,7 +546,7 @@ describe('MemberQuestionCard', () => {
   })
 
   it('folds only for this Session\'s visible referenced Files viewer and restores beside it', async () => {
-    const openReference = vi.fn()
+    const openReference = vi.fn(async () => {})
     const { carrier } = memberWait()
     let referenceView: MemberQuestionReferenceView = { paths: [] }
     const listeners = new Set<() => void>()
@@ -595,8 +595,57 @@ describe('MemberQuestionCard', () => {
     await waitFor(() => { expect(container.querySelector('[data-folded]')).toBeTruthy() })
   })
 
+  it('shows material navigation failure and clears it when the user retries', async () => {
+    const openReference = vi.fn(async () => {})
+    openReference.mockRejectedValueOnce(new Error('Viewer unavailable'))
+    const { carrier } = memberWait()
+    renderCard(carrier, openReference)
+    fireEvent.click(screen.getByRole('button', { name: /roster\.md/ }))
+    await waitFor(() => { expect(screen.getByRole('alert').textContent).toContain('Viewer unavailable') })
+    fireEvent.click(screen.getByRole('button', { name: /roster\.md/ }))
+    await waitFor(() => { expect(screen.queryByRole('alert')).toBeNull() })
+    expect(openReference).toHaveBeenCalledTimes(2)
+  })
+
+  it('ignores an earlier material failure after a successful retry', async () => {
+    const earlier = Promise.withResolvers<undefined>()
+    const openReference = vi.fn(async () => {}).mockImplementationOnce(() => earlier.promise)
+    const { carrier } = memberWait()
+    renderCard(carrier, openReference)
+    fireEvent.click(screen.getByRole('button', { name: /roster\.md/ }))
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /roster\.md/ })) })
+    await act(async () => { earlier.reject(new Error('Outdated failure')) })
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(openReference).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps the current question failure when an earlier question fails later', async () => {
+    const earlier = Promise.withResolvers<undefined>()
+    const openReference = vi.fn(async () => { throw new Error('Current failure') })
+      .mockImplementationOnce(() => earlier.promise)
+    const { carrier } = memberWait()
+    const nextId = 'question-2' as PendingMemberQuestionView['questionId']
+    const next = { ...carrier, questionId: nextId, operation: { ...carrier.operation, questionId: nextId } }
+    const card = (matched: PendingMemberQuestionView) => (
+      <MemberQuestionCard
+        matched={matched}
+        {...kit}
+        {...receivingProps(matched)}
+        t={seat('member-question')}
+        openReference={openReference}
+      />
+    )
+    const { rerender } = render(card(carrier))
+    fireEvent.click(screen.getByRole('button', { name: /roster\.md/ }))
+    rerender(card(next))
+    fireEvent.click(screen.getByRole('button', { name: /roster\.md/ }))
+    await waitFor(() => { expect(screen.getByRole('alert').textContent).toContain('Current failure') })
+    await act(async () => { earlier.reject(new Error('Outdated failure')) })
+    expect(screen.getByRole('alert').textContent).toContain('Current failure')
+  })
+
   it('does not open a chip without a receiver-owned cached path', () => {
-    const openReference = vi.fn()
+    const openReference = vi.fn(async () => {})
     const { carrier } = memberWait({
       origin: projection().origin,
       references: [{ path: 'docs/roster.md', reason: '当前成员名单与角色' }],
@@ -690,7 +739,7 @@ describe('MemberQuestionCard', () => {
           {...kit}
           {...receivingProps(carrier, [], seatEn('question'))}
           t={seatEn('member-question')}
-          openReference={() => {}}
+          openReference={async () => {}}
         />,
       )
       expect(screen.getByText('Remote')).toBeTruthy()
@@ -714,7 +763,7 @@ describe('MemberQuestionCard', () => {
         {...kit}
         {...extras}
         t={seat('member-question')}
-        openReference={() => {}}
+        openReference={async () => {}}
       />,
     )
     fireEvent.click(screen.getByRole('radio', { name: '移出' }))
@@ -735,14 +784,14 @@ describe('MemberQuestionCard', () => {
       {...kit}
       {...receivingProps(carrier)}
       t={seat('member-question')}
-      openReference={() => {}}
+      openReference={async () => {}}
     />)
     expect(pending.container.querySelector('[data-member-presentation]')).not.toBeNull()
     pending.rerender(<MemberQuestionDock
       {...kit}
       {...receivingProps(undefined, [recordOf('expired', 'question-1', 200)])}
       t={seat('member-question')}
-      openReference={() => {}}
+      openReference={async () => {}}
     />)
     expect(pending.container.querySelector('[data-member-presentation]')).toBeNull()
     expect(pending.container.querySelector('[data-record-state="expired"]')).not.toBeNull()

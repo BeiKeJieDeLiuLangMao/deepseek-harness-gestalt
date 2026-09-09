@@ -129,19 +129,27 @@ describe.skipIf(MODE === 'record')('web e2e: Host-owned member-question receivin
     await receiverWorkspace.setTitle('Atlas Bound Workspace')
     const projectId = 'project-atlas'
     await bindReceiverWorkspace(receiver, projectId, receiverWorkspace.id)
-    const create = vi.spyOn(scaffold.ctx.sessionController, 'create')
-    const prompt = vi.spyOn(scaffold.ctx.sessionController, 'prompt')
     const ingress = createAuthenticatedMemberQuestionIngress(receiver)
     const workspaceRoot = receiverWorkspacePath
     await mkdir(join(workspaceRoot, 'docs'), { recursive: true })
     await writeFile(join(workspaceRoot, 'docs', 'receiver-decision.md'), 'LOCAL WORKSPACE COPY\n')
+    const create = vi.spyOn(scaffold.ctx.sessionController, 'create')
+    const prompt = vi.spyOn(scaffold.ctx.sessionController, 'prompt')
+    const readWorkspaceFile = vi.spyOn(scaffold.ctx.workspaceFiles, 'read')
     try {
+      const firstOperation = operation('mq-web-host-1', 'mq-web-operation-1', projectId)
       const first = await ingress({
         authority: { accountId: 'account:receiver' as PlatformAccountId },
-        operation: operation('mq-web-host-1', 'mq-web-operation-1', projectId),
+        operation: {
+          ...firstOperation,
+          references: [...firstOperation.references, { path: 'docs/receiver-dashboard.html', reason: 'Preview the decision' }],
+        },
         documents: [{
           path: 'docs/receiver-decision.md',
           bytes: Buffer.from('# transferred receiver brief\n'),
+        }, {
+          path: 'docs/receiver-dashboard.html',
+          bytes: Buffer.from('<!doctype html><h1>Transferred receiver dashboard</h1>'),
         }],
       })
       expect(first.receivingSessionId).not.toMatch(/^mq-recv:/u)
@@ -184,20 +192,33 @@ describe.skipIf(MODE === 'record')('web e2e: Host-owned member-question receivin
           /* Swallow non-JSON sidebar posts; only fs.read JSON bodies name the opened path. */
         }
       })
+      const readPaths = (): string[] => [...filesReads, ...readWorkspaceFile.mock.calls.map(([, path]) => path)]
       await card.getByRole('button', { name: /receiver-decision\.md/ }).click()
-      await expect.poll(() => filesReads.find(path => path.includes('.dsh/member-questions/mq-web-host-1/receiver-decision.md')))
+      await expect.poll(() => readPaths().find(path => path.includes('.dsh/member-questions/mq-web-host-1/receiver-decision.md')))
         .toBeDefined()
-      expect(filesReads.some(path => path.endsWith('/docs/receiver-decision.md') || path.endsWith('\\docs\\receiver-decision.md')))
-        .toBe(false)
-      await expect.poll(() => page.locator('input[title*=".dsh/member-questions/mq-web-host-1/receiver-decision.md"]').count())
+      expect(readPaths().some((path) => {
+        const normalized = path.replaceAll('\\', '/').replace(/^\.\//, '')
+        return normalized === 'docs/receiver-decision.md' || normalized.endsWith('/docs/receiver-decision.md')
+      })).toBe(false)
+      await expect.poll(() => page.locator('[data-dockkit-tab]').filter({ hasText: 'receiver-decision.md' }).count())
+        .toBeGreaterThan(0)
+      await expect.poll(() => page.getByRole('heading', { name: 'transferred receiver brief', exact: true }).count())
         .toBeGreaterThan(0)
       await expect.poll(() => card.getAttribute('data-folded')).toBe('true')
       await card.getByRole('button', { name: 'Remote · Alice', exact: true }).click()
       await expect.poll(() => card.getAttribute('data-folded')).toBeNull()
-      expect(await page.locator('input[title*="/docs/receiver-decision.md"], input[title*="\\docs\\receiver-decision.md"]').count())
-        .toBe(0)
       expect(await readFile(join(workspaceRoot, 'docs', 'receiver-decision.md'), 'utf8'))
         .toBe('LOCAL WORKSPACE COPY\n')
+      await card.getByRole('button', { name: /receiver-dashboard\.html/ }).click()
+      const htmlPreview = page.locator('iframe[title$="receiver-dashboard.html"]')
+      await htmlPreview.waitFor({ timeout: 15_000 })
+      expect(await htmlPreview.getAttribute('sandbox')).toContain('allow-scripts')
+      expect(await htmlPreview.getAttribute('sandbox')).not.toContain('allow-same-origin')
+      expect(await htmlPreview.getAttribute('srcdoc')).toBeNull()
+      await htmlPreview.contentFrame().getByRole('heading', { name: 'Transferred receiver dashboard' }).waitFor()
+      await expect.poll(() => card.getAttribute('data-folded')).toBe('true')
+      await card.getByRole('button', { name: 'Remote · Alice', exact: true }).click()
+      await expect.poll(() => card.getAttribute('data-folded')).toBeNull()
       const agentComposer = page.locator('[data-composer-card]')
       const composer = agentComposer.locator('[data-composer-input]')
       await writeComposerDraft(page, composer, 'Help me evaluate the rollout tradeoffs before I answer.')
@@ -335,6 +356,7 @@ describe.skipIf(MODE === 'record')('web e2e: Host-owned member-question receivin
     } finally {
       create.mockRestore()
       prompt.mockRestore()
+      readWorkspaceFile.mockRestore()
     }
   }, 90_000)
 

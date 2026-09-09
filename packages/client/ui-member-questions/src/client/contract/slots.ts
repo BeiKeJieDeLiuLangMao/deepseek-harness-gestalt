@@ -184,9 +184,10 @@ export interface MemberQuestionDockInjected {
    * Open the receiver-owned cached copy through the registered Files viewer,
    * or the Host system opener when no Files viewer is registered. Callers
    * pass only `cachedPath`; a missing cache is a no-op so a same-named
-   * Workspace file is never opened.
+   * Workspace file is never opened. Navigation failures reject for the card
+   * to display; a registered viewer failure does not use the system opener.
    */
-  openReference: (sessionId: SessionId, path: string, title?: string) => void
+  openReference: (sessionId: SessionId, path: string, title?: string) => Promise<void>
   /** Resolve a receiver-owned cached path exactly as {@link openReference} does. */
   referencePath: (sessionId: SessionId, path: string) => string
   /** Sources bound to selector hooks before the dock component renders. */

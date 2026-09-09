@@ -7,12 +7,12 @@
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type { ReceivingQuestionBook } from '@deepseek-ai/dsh-api-session-controller/client'
-import { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
-import type { BetterSidebarService } from '@deepseek-ai/dsh-client-ui-better-sidebar/client'
+import type { ISidebarRight } from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
-import { resolveWorkspacePath } from '@deepseek-ai/dsh-util-workspace-path'
+import { fileAddressFor, parseFileAddress, resolveWorkspacePath } from '@deepseek-ai/dsh-util-workspace-path'
 import type { MemberQuestionDockInjected, MemberQuestionReferenceView } from './contract/slots.ts'
 import { MemberQuestionDock } from './MemberQuestionCard.tsx'
 import { en, zh, type MemberQuestionKey } from './locales.ts'
@@ -47,55 +47,52 @@ const NS = 'member-question'
 /** Required services: slots, dictionaries, Sessions, Host Remote, and receiving projection. */
 export const inject = ['slots', 'locale', 'sessions', 'receivingQuestions', 'remote', 'remote.session']
 
-type SidebarSnapshot = ReturnType<BetterSidebarService['getSnapshot']>
-type SidebarNode = NonNullable<SidebarSnapshot['state']>['splits']
+type SidebarSnapshot = ReturnType<ISidebarRight['getSnapshot']>
+type SidebarRegistry = ClientContext['sidebarRightTabs']
 
-/** Collect the active editor path from every visible pane in one split tree. */
-function activeEditorPaths(node: SidebarNode, paths: string[]): void {
-  if (node.kind === 'split') {
-    for (const child of node.children) activeEditorPaths(child, paths)
-    return
-  }
-  const tab = node.tabs.find(candidate => candidate.id === node.active)
-  if (tab?.type === 'editor' && tab.path !== undefined) paths.push(tab.path)
-}
-
-/** Project only visible Files viewers while the editor descriptor owns their tabs. */
+/** Visible registered file occurrences in the mounted workbench Session. */
 function projectReferenceView(
   snapshot: SidebarSnapshot | undefined,
-  editorAvailable: boolean,
+  registry: SidebarRegistry | undefined,
+  cwd: string | undefined,
 ): MemberQuestionReferenceView {
-  const state = snapshot?.state
-  if (snapshot?.sessionId === undefined || state === undefined || !editorAvailable) return { paths: [] }
+  const sessionId = snapshot?.mountedSessionId
+  const session = snapshot?.sessions.find(entry => entry.sessionId === sessionId)
+  if (sessionId === undefined || session === undefined || registry === undefined) return { paths: [] }
   const paths: string[] = []
-  if (state.panelOpen) activeEditorPaths(state.splits, paths)
-  if (state.bottomOpen) activeEditorPaths(state.bottomSplits, paths)
-  for (const floating of state.floats) {
-    if (floating.tab.type === 'editor' && floating.tab.path !== undefined) paths.push(floating.tab.path)
+  for (const tab of session.tabs) {
+    if (!tab.visible || registry.get(tab.record.kind) === undefined) continue
+    const file = parseFileAddress(tab.record.contentId)
+    if (file === undefined || (file.scope === 'session' && file.sessionId !== sessionId)) continue
+    paths.push(file.scope === 'absolute' ? file.path : resolveWorkspacePath(cwd, file.path))
   }
-  return { sessionId: SessionId(snapshot.sessionId), paths }
+  return { sessionId, paths }
 }
 
-/** Optional Better Sidebar state as one stable renderer source, including late provider changes. */
+/** Official workbench projection with late service and viewer registration changes. */
 function referenceViewSource(ctx: ClientContext): HostObservable<MemberQuestionReferenceView> {
-  let previousService: BetterSidebarService | undefined
+  let previousService: ISidebarRight | undefined
   let previousSnapshot: SidebarSnapshot | undefined
-  let previousEditorAvailable = false
+  let previousRegistry: SidebarRegistry | undefined
+  let previousEntries: ReturnType<SidebarRegistry['entries']> | undefined
+  let previousCwd: string | undefined
   let previousView: MemberQuestionReferenceView = { paths: [] }
   return {
     getSnapshot: () => {
-      const service = ctx.get('betterSidebar')
+      const service = ctx.get('sidebarRight')
       const snapshot = service?.getSnapshot()
-      const editorAvailable = service?.getTab('editor') !== undefined
-      if (
-        service === previousService
-        && snapshot === previousSnapshot
-        && editorAvailable === previousEditorAvailable
-      ) return previousView
+      const registry = ctx.get('sidebarRightTabs')
+      const entries = registry?.entries()
+      const sessionId = snapshot?.mountedSessionId
+      const cwd = sessionId === undefined ? undefined : ctx.sessions.list.getSnapshot().byId[sessionId]?.cwd
+      if (service === previousService && snapshot === previousSnapshot
+        && registry === previousRegistry && entries === previousEntries && cwd === previousCwd) return previousView
       previousService = service
       previousSnapshot = snapshot
-      previousEditorAvailable = editorAvailable
-      previousView = projectReferenceView(snapshot, editorAvailable)
+      previousRegistry = registry
+      previousEntries = entries
+      previousCwd = cwd
+      previousView = projectReferenceView(snapshot, registry, cwd)
       return previousView
     },
     subscribe: (listener) => {
@@ -104,18 +101,19 @@ function referenceViewSource(ctx: ClientContext): HostObservable<MemberQuestionR
       const bind = (): void => {
         releaseState?.()
         releaseRegistry?.()
-        const service = ctx.get('betterSidebar')
-        releaseState = service?.subscribeState(listener)
-        releaseRegistry = service?.subscribe(listener)
+        releaseState = ctx.get('sidebarRight')?.subscribe(listener)
+        releaseRegistry = ctx.get('sidebarRightTabs')?.subscribe(listener)
       }
       bind()
+      const releaseSessions = ctx.sessions.list.subscribe(listener)
       const releaseService = ctx.on('internal/service', (name: string) => {
-        if (name !== 'betterSidebar') return
+        if (name !== 'sidebarRight' && name !== 'sidebarRightTabs') return
         bind()
         listener()
       })
       return () => {
         releaseService()
+        releaseSessions()
         releaseState?.()
         releaseRegistry?.()
       }
@@ -137,15 +135,19 @@ export function apply(ctx: ClientContext): void {
     const cwd = ctx.sessions.list.getSnapshot().byId[sessionId]?.cwd
     return resolveWorkspacePath(cwd, path)
   }
-  const openReference = (sessionId: SessionId, path: string, title?: string): void => {
+  const openReference = async (sessionId: SessionId, path: string, title?: string): Promise<void> => {
     const cwd = ctx.sessions.list.getSnapshot().byId[sessionId]?.cwd
     const absolute = referencePath(sessionId, path)
-    const sidebar = ctx.get('betterSidebar')
-    if (sidebar?.getTab('editor') !== undefined) {
-      sidebar.openFile(cwd === undefined ? { sessionId } : { sessionId, cwd }, absolute, title)
+    const sidebar = ctx.get('sidebarRight')
+    const address = fileAddressFor(sessionId, cwd, absolute)
+    if (sidebar !== undefined && (ctx.get('sidebarRightTabs')?.candidates(address).length ?? 0) > 0) {
+      const navigator = sidebar.forSession(sessionId)
+      const tabId = await navigator.openResource(address)
+      if (title !== undefined) navigator.update(tabId, { title })
       return
     }
-    void ctx.remote.session.openWorkspacePath({ path: absolute })
+    const result = await ctx.remote.session.openWorkspacePath({ path: absolute })
+    if (!result.ok) throw new Error(result.error.message)
   }
   const referenceView = referenceViewSource(ctx)
 

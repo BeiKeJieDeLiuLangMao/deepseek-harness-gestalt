@@ -101,6 +101,10 @@ export function MemberQuestionCard(props: MemberQuestionComposerProps) {
   const [innerCollapsed, setInnerCollapsed] = useState(false)
   const [innerRevealed, setInnerRevealed] = useState(false)
   const [referenceRevealed, setReferenceRevealed] = useState(false)
+  const [referenceError, setReferenceError] = useState<{ questionId: string; message: string }>()
+  const referenceAttempt = useRef(0)
+
+  useEffect(() => () => { referenceAttempt.current += 1 }, [props.matched.questionId])
 
   useEffect(() => {
     const body = bodyRef.current
@@ -221,7 +225,15 @@ export function MemberQuestionCard(props: MemberQuestionComposerProps) {
                       key={`${chip.filename}-${chip.reason}`}
                       onClick={() => {
                         if (chip.cachedPath === undefined) return
-                        props.openReference(props.sessionId, chip.cachedPath, chip.filename)
+                        const attempt = ++referenceAttempt.current
+                        setReferenceError(undefined)
+                        void props.openReference(props.sessionId, chip.cachedPath, chip.filename).catch((error: unknown) => {
+                          if (attempt !== referenceAttempt.current) return
+                          setReferenceError({
+                            questionId: props.matched.questionId,
+                            message: error instanceof Error ? error.message : String(error),
+                          })
+                        })
                       }}
                     >
                       <span className={css.chipFilename}>{chip.filename}</span>
@@ -229,6 +241,9 @@ export function MemberQuestionCard(props: MemberQuestionComposerProps) {
                     </button>
                   ))}
                 </div>
+                {referenceError?.questionId === props.matched.questionId && (
+                  <p role="alert">{props.t('references.openFailed', { message: referenceError.message })}</p>
+                )}
               </div>
             )}
           </header>

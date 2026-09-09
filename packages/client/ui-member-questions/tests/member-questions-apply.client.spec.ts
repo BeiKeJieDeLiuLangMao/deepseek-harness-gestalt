@@ -16,7 +16,7 @@ import { apply as nodeApply } from '../src/index.ts'
 import { en as questionEn, zh as questionZh } from '@deepseek-ai/dsh-client-ui-user-questions/src/client/locales.ts'
 
 async function bench(sessions?: {
-  list: { getSnapshot: () => { byId: Record<string, { cwd?: string } | undefined> } }
+  list: { getSnapshot: () => { byId: Record<string, { cwd?: string } | undefined> }; subscribe: (listener: () => void) => () => void }
 }) {
   const ctx = new Context()
   const openWorkspacePath = vi.fn(async () => ({
@@ -25,7 +25,7 @@ async function bench(sessions?: {
   }))
   new TestRemote(ctx, { session: { openWorkspacePath } })
   ctx.provide('sessions', sessions ?? {
-    list: { getSnapshot: () => ({ byId: {} }) },
+    list: { getSnapshot: () => ({ byId: {} }), subscribe: () => () => {} },
   })
   await ctx.plugin(SlotRegistry).await()
   ctx.slots.register({
@@ -96,112 +96,186 @@ describe('ui-member-questions browser apply', () => {
     expect(ctx.slots.entries('conversation.input.dock')).toHaveLength(0)
   })
 
-  it('uses a late Files viewer per gesture and falls back after provider disposal', async () => {
+  it('opens a receiver-scoped resource through late official viewers and falls back after disposal', async () => {
     const byId: Record<string, { cwd?: string } | undefined> = {}
     const { ctx, fiber, openWorkspacePath } = await bench({
-      list: { getSnapshot: () => ({ byId }) },
+      list: { getSnapshot: () => ({ byId }), subscribe: () => () => {} },
     })
     const entry = ctx.slots.entries('conversation.input.dock')[0]!
     const injected = (entry.inject as unknown as () => {
-      openReference: (sessionId: SessionId, path: string, title?: string) => void
+      openReference: (sessionId: SessionId, path: string, title?: string) => Promise<void>
     })()
     const sessionId = 'receiving-session' as SessionId
-    const openFile = vi.fn()
+    const openResource = vi.fn(async () => 'resource-tab')
+    const update = vi.fn()
+    const forSession = vi.fn(() => ({ openResource, update }))
+    const candidates = vi.fn(() => [{ kind: 'text' }])
+    const disposeRegistry = ctx.reflect.provide('sidebarRightTabs', { candidates })
+    const disposeSidebar = ctx.reflect.provide('sidebarRight', { forSession })
     try {
       byId[sessionId] = { cwd: '/bound-workspace' }
-      const disposeSidebar = ctx.reflect.provide('betterSidebar', {
-        openFile, getTab: () => ({ id: 'editor' }),
-      })
-      injected.openReference(sessionId, '.dsh/member-questions/question-1/brief.html', 'brief.html')
-      expect(openFile).toHaveBeenCalledWith(
-        { sessionId, cwd: '/bound-workspace' },
-        '/bound-workspace/.dsh/member-questions/question-1/brief.html',
-        'brief.html',
+      await injected.openReference(sessionId, '.dsh/member-questions/question-1/brief #1.html', 'brief.html')
+      expect(forSession).toHaveBeenCalledWith(sessionId)
+      expect(openResource).toHaveBeenCalledWith(
+        'dsh-resource://file/session/receiving-session/.dsh/member-questions/question-1/brief%20%231.html',
       )
+      expect(update).toHaveBeenCalledWith('resource-tab', { title: 'brief.html' })
       expect(openWorkspacePath).not.toHaveBeenCalled()
-
-      await disposeSidebar()
-      injected.openReference(sessionId, '.dsh/member-questions/question-1/brief.html', 'brief.html')
-      expect(openWorkspacePath).toHaveBeenCalledWith({
-        path: '/bound-workspace/.dsh/member-questions/question-1/brief.html',
-      })
-      expect(openFile).toHaveBeenCalledTimes(1)
 
       const unscopedId = 'receiving-session-unscoped' as SessionId
       byId[unscopedId] = {}
-      const disposeSidebarWithoutCwd = ctx.reflect.provide('betterSidebar', {
-        openFile, getTab: () => ({ id: 'editor' }),
-      })
-      injected.openReference(unscopedId, '.dsh/member-questions/question-1/brief.html', 'brief.html')
-      expect(openFile).toHaveBeenLastCalledWith(
-        { sessionId: unscopedId },
-        '.dsh/member-questions/question-1/brief.html',
-        'brief.html',
+      await injected.openReference(unscopedId, '.dsh/member-questions/question-1/brief.html')
+      expect(forSession).toHaveBeenLastCalledWith(unscopedId)
+      expect(openResource).toHaveBeenLastCalledWith(
+        'dsh-resource://file/session/receiving-session-unscoped/.dsh/member-questions/question-1/brief.html',
       )
-      await disposeSidebarWithoutCwd()
+      expect(update).toHaveBeenCalledTimes(1)
+
+      candidates.mockReturnValue([])
+      await injected.openReference(sessionId, '.dsh/member-questions/question-1/brief.html')
+      expect(openWorkspacePath).toHaveBeenLastCalledWith({
+        path: '/bound-workspace/.dsh/member-questions/question-1/brief.html',
+      })
+      await disposeSidebar()
+      await injected.openReference(sessionId, '.dsh/member-questions/question-1/brief.html')
+      expect(openWorkspacePath).toHaveBeenCalledTimes(2)
+      expect(openResource).toHaveBeenCalledTimes(2)
     } finally {
+      await disposeSidebar()
+      await disposeRegistry()
       await fiber.dispose()
     }
-    expect(ctx.slots.entries('conversation.input.dock')).toHaveLength(0)
   })
 
-  it('tracks only visible active Files paths in their owning Session and releases subscriptions', async () => {
-    const { ctx, fiber } = await bench()
+  it('propagates navigation failures without opening the same material outside the workbench', async () => {
+    const { ctx, fiber, openWorkspacePath } = await bench()
+    const entry = ctx.slots.entries('conversation.input.dock')[0]!
+    const injected = (entry.inject as unknown as () => {
+      openReference: (sessionId: SessionId, path: string, title?: string) => Promise<void>
+    })()
+    const failure = new Error('Reference navigation failed')
+    const openResource = vi.fn(() => Promise.reject(failure))
+    const forSession = vi.fn(() => ({ openResource, update: vi.fn() }))
+    const disposeRegistry = ctx.reflect.provide('sidebarRightTabs', { candidates: () => [{ kind: 'text' }] })
+    const disposeSidebar = ctx.reflect.provide('sidebarRight', { forSession })
+    try {
+      await expect(injected.openReference('receiver' as SessionId, 'cached.md')).rejects.toBe(failure)
+      forSession.mockImplementation(() => { throw failure })
+      await expect(injected.openReference('receiver' as SessionId, 'cached.md')).rejects.toBe(failure)
+      expect(openWorkspacePath).not.toHaveBeenCalled()
+    } finally {
+      await disposeSidebar()
+      await disposeRegistry()
+      await fiber.dispose()
+    }
+  })
+
+  it('tracks visible file occurrences only in the mounted Session and releases every source', async () => {
+    const sessionListeners = new Set<() => void>()
+    const stateListeners = new Set<() => void>()
+    const registryListeners = new Set<() => void>()
+    const subscribe = (listeners: Set<() => void>) => (listener: () => void) => {
+      listeners.add(listener)
+      return () => { listeners.delete(listener) }
+    }
+    let cwd = '/workspace'
+    const { ctx, fiber } = await bench({
+      list: {
+        getSnapshot: () => ({ byId: { 'receiving-session': { cwd } } }),
+        subscribe: subscribe(sessionListeners),
+      },
+    })
     const entry = ctx.slots.entries('conversation.input.dock')[0]!
     const injected = (entry.inject as unknown as () => {
       hooks: { referenceView: { getSnapshot: () => MemberQuestionReferenceView; subscribe: (listener: () => void) => () => void } }
     })()
+    const source = injected.hooks.referenceView
     const listener = vi.fn()
-    const release = injected.hooks.referenceView.subscribe(listener)
-    const stateListener = vi.fn()
-    const registryListener = vi.fn()
-    const releaseState = vi.fn()
-    const releaseRegistry = vi.fn()
-    let editorRegistered = true
+    const release = source.subscribe(listener)
+    expect(source.getSnapshot()).toEqual({ paths: [] })
     const sessionId = 'receiving-session'
-    const snapshot = {
-      sessionId,
-      state: {
-        panelOpen: true,
-        bottomOpen: false,
-        splits: {
-          kind: 'leaf', id: 'right', active: 'reference',
-          tabs: [{ id: 'reference', type: 'editor', title: 'brief', path: '/workspace/brief.md' }],
-        },
-        bottomSplits: { kind: 'leaf', id: 'bottom', active: null, tabs: [] },
-        floats: [],
-      },
+    let entries = [{ kind: 'text' }]
+    const tab = (contentId: string, visible = true) => ({
+      record: { kind: 'text', contentId }, visible, active: false,
+    })
+    const tabs = [
+      tab('dsh-resource://file/session/receiving-session/brief.md'),
+      tab('dsh-resource://file/absolute/workspace/floating.html'),
+      tab('dsh-resource://file/session/receiving-session/inactive.md', false),
+      tab('dsh-resource://file/session/other-session/brief.md'),
+      tab('sidebar://guide'),
+    ]
+    let snapshot = {
+      mountedSessionId: sessionId as string | undefined,
+      sessions: [
+        { sessionId, tabs },
+        { sessionId: 'cold-session', tabs: [tab('dsh-resource://file/absolute/workspace/cold.md')] },
+      ],
     }
-    const disposeSidebar = ctx.reflect.provide('betterSidebar', {
+    let disposeRegistry = ctx.reflect.provide('sidebarRightTabs', {
+      entries: () => entries,
+      get: (kind: string) => entries.find(entry => entry.kind === kind),
+      subscribe: subscribe(registryListeners),
+    })
+    let disposeSidebar = ctx.reflect.provide('sidebarRight', {
       getSnapshot: () => snapshot,
-      getTab: (id: string) => id === 'editor' && editorRegistered ? { id: 'editor' } : undefined,
-      subscribeState: (next: () => void) => { stateListener.mockImplementation(next); return releaseState },
-      subscribe: (next: () => void) => { registryListener.mockImplementation(next); return releaseRegistry },
+      subscribe: subscribe(stateListeners),
     })
     try {
-      expect(injected.hooks.referenceView.getSnapshot()).toEqual({
-        sessionId,
-        paths: ['/workspace/brief.md'],
-      })
-      expect(listener).toHaveBeenCalledTimes(1)
-      stateListener()
-      expect(listener).toHaveBeenCalledTimes(2)
+      expect(source.getSnapshot()).toEqual({ sessionId, paths: ['/workspace/brief.md', '/workspace/floating.html'] })
+      expect(source.getSnapshot()).toBe(source.getSnapshot())
+      const beforeState = listener.mock.calls.length
+      for (const notify of stateListeners) notify()
+      expect(listener).toHaveBeenCalledTimes(beforeState + 1)
 
-      editorRegistered = false
-      registryListener()
-      expect(injected.hooks.referenceView.getSnapshot()).toEqual({ paths: [] })
-      editorRegistered = true
-      registryListener()
-      expect(injected.hooks.referenceView.getSnapshot()).toEqual({
-        sessionId,
-        paths: ['/workspace/brief.md'],
-      })
-    } finally {
+      entries = []
+      for (const notify of registryListeners) notify()
+      expect(source.getSnapshot()).toEqual({ sessionId, paths: [] })
+      entries = [{ kind: 'text' }]
+      for (const notify of registryListeners) notify()
+      expect(source.getSnapshot().paths).toHaveLength(2)
+
+      cwd = '/moved-workspace'
+      for (const notify of sessionListeners) notify()
+      expect(source.getSnapshot().paths).toEqual(['/moved-workspace/brief.md', '/workspace/floating.html'])
+      snapshot = { ...snapshot, mountedSessionId: undefined }
+      expect(source.getSnapshot()).toEqual({ paths: [] })
+      snapshot = {
+        ...snapshot, mountedSessionId: sessionId,
+        sessions: [{ sessionId, tabs: tabs.map(entry => ({ ...entry, visible: false })) }],
+      }
+      expect(source.getSnapshot()).toEqual({ sessionId, paths: [] })
       await disposeSidebar()
+      await disposeRegistry()
+      expect(stateListeners.size).toBe(0)
+      expect(registryListeners.size).toBe(0)
+      expect(source.getSnapshot()).toEqual({ paths: [] })
+      disposeRegistry = ctx.reflect.provide('sidebarRightTabs', {
+        entries: () => entries,
+        get: (kind: string) => entries.find(entry => entry.kind === kind),
+        subscribe: subscribe(registryListeners),
+      })
+      snapshot = { ...snapshot, sessions: [{ sessionId, tabs }] }
+      disposeSidebar = ctx.reflect.provide('sidebarRight', {
+        getSnapshot: () => snapshot,
+        subscribe: subscribe(stateListeners),
+      })
+      expect(source.getSnapshot().paths).toHaveLength(2)
+      expect(stateListeners.size).toBe(1)
+      expect(registryListeners.size).toBe(1)
+      expect(sessionListeners.size).toBe(1)
       release()
+      expect(stateListeners.size).toBe(0)
+      expect(registryListeners.size).toBe(0)
+      expect(sessionListeners.size).toBe(0)
+      const releasedCalls = listener.mock.calls.length
+      for (const notify of [...stateListeners, ...registryListeners, ...sessionListeners]) notify()
+      expect(listener).toHaveBeenCalledTimes(releasedCalls)
+    } finally {
+      release()
+      await disposeSidebar()
+      await disposeRegistry()
       await fiber.dispose()
     }
-    expect(releaseState).toHaveBeenCalledTimes(1)
-    expect(releaseRegistry).toHaveBeenCalledTimes(1)
   })
 })
