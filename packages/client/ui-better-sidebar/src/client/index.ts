@@ -27,6 +27,10 @@ import { registerSettingsNavIcon } from './settings-nav-icon.ts'
 import { loadBootDecision } from './prefs.ts'
 import { SideCardSection } from './SideCardSection.tsx'
 import { api } from './api.ts'
+import {
+  OFFICIAL_CHANGES_TASKS_INJECT,
+  registerOfficialChangesTasks,
+} from './official-changes-tasks.tsx'
 import { registerOfficialFiles } from './official-files/index.ts'
 import { OFFICIAL_RUNTIME_INJECT, registerOfficialRuntimeTabs } from './official-runtime/index.ts'
 import { LOCALE_NS, attachLocale, attachBetterLocale, t, zh, en } from './locales.ts'
@@ -35,12 +39,17 @@ import './layout.css'
 
 export type { BetterSidebarService } from './context.ts'
 
+const officialInject = [...new Set([
+  ...OFFICIAL_RUNTIME_INJECT,
+  ...OFFICIAL_CHANGES_TASKS_INJECT,
+])]
+
 /** Services required before mounting (provided by the client runtime; the
  *  locale service backs the sidebar's copy — see locales.ts). `modules`
  *  (rc.8+) is the client module system the chunk loader resolves its
  *  externals through — Cordis guards service access without inject. */
 export const inject = [
-  'connection', 'remote', 'locale', 'modules', ...OFFICIAL_RUNTIME_INJECT,
+  'connection', 'remote', 'locale', 'modules', ...officialInject,
 ]
 
 /**
@@ -68,6 +77,10 @@ export function apply(ctx: SidebarContext): void {
   ctx.effect(
     () => registerOfficialRuntimeTabs(ctx),
     'dsh-better-sidebar: official Side Chat and Terminal runtimes',
+  )
+  ctx.effect(
+    () => registerOfficialChangesTasks(ctx),
+    'dsh-better-sidebar: official Changes and Tasks tabs',
   )
   ctx.effect(
     () => installSidechatAdmission(ctx),
