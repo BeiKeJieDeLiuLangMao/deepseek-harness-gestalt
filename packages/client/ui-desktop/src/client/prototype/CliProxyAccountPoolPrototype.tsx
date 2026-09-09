@@ -43,7 +43,7 @@ export function CliProxyAccountPoolPrototype() {
     glm: accounts.filter(a => a.provider === 'glm').length,
   }
 
-  const handleCreateAccount = (newAcc: { provider: ProviderType; email: string; tier?: string }) => {
+  const handleCreateAccount = (newAcc: { provider: ProviderType; email: string; tier?: string | undefined }) => {
     const item: AccountPoolItem = {
       id: `${newAcc.provider}-${String(Date.now())}`,
       filename: `${newAcc.provider}-${newAcc.email}.json`,
@@ -76,9 +76,9 @@ export function CliProxyAccountPoolPrototype() {
   }
 
   const handleRefreshQuota = (id: string) => {
-    setAccounts(prev => prev.map(a => {
+    setAccounts(prev => prev.map((a: AccountPoolItem) => {
       if (a.id !== id) return a
-      return {
+      const updated: AccountPoolItem = {
         ...a,
         status: 'active',
         statusMessage: undefined,
@@ -94,6 +94,7 @@ export function CliProxyAccountPoolPrototype() {
           },
         ],
       }
+      return updated
     }))
   }
 

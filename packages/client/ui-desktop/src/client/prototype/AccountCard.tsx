@@ -12,12 +12,13 @@ import { QuotaBarWithTimeline } from './QuotaBarWithTimeline.tsx'
 import css from './AccountCard.module.css'
 
 export interface AccountCardProps {
+  key?: string
   item: AccountPoolItem
-  forcedFace?: 'A' | 'B' | null
-  styleVariant?: 'needle' | 'band' | 'compact'
-  onToggleStatus?: (id: string) => void
-  onRefreshQuota?: (id: string) => void
-  onDelete?: (id: string) => void
+  forcedFace?: 'A' | 'B' | null | undefined
+  styleVariant?: 'needle' | 'band' | 'compact' | undefined
+  onToggleStatus?: ((id: string) => void) | undefined
+  onRefreshQuota?: ((id: string) => void) | undefined
+  onDelete?: ((id: string) => void) | undefined
 }
 
 export function AccountCard({
@@ -31,7 +32,6 @@ export function AccountCard({
   // Internal face state if not forced globally
   const [localFace, setLocalFace] = useState<'A' | 'B'>('A')
   const [enabled, setEnabled] = useState(item.status !== 'expired' && item.status !== 'error')
-  const [activeTab] = useState<'all' | '5h' | '7d'>('all')
 
   const currentFace = forcedFace !== null ? forcedFace : localFace
 

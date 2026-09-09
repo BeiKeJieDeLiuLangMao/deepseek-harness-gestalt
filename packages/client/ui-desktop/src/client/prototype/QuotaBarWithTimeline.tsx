@@ -7,14 +7,15 @@
 import css from './QuotaBarWithTimeline.module.css'
 
 export interface QuotaBarWithTimelineProps {
+  key?: string
   percentRemaining: number // 0-100
-  timeRemainingPercent?: number // 0-100
+  timeRemainingPercent?: number | undefined // 0-100
   name: string
   windowLabel: string
   resetText: string
   isReliable: boolean
-  isExceeded?: boolean
-  styleVariant?: 'needle' | 'band' | 'compact'
+  isExceeded?: boolean | undefined
+  styleVariant?: 'needle' | 'band' | 'compact' | undefined
 }
 
 export function QuotaBarWithTimeline({

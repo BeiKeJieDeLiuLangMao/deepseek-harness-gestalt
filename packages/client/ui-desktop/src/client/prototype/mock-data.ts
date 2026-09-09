@@ -24,7 +24,7 @@ export interface AccountPoolItem {
   accountEmail: string
   tier: string
   status: 'active' | 'expired' | 'warning' | 'error'
-  statusMessage?: string
+  statusMessage?: string | undefined
   successCount: number
   failCount: number
   healthHistory: boolean[] // 20-slot activity ticks (true=success, false=fail, null/empty for idle)

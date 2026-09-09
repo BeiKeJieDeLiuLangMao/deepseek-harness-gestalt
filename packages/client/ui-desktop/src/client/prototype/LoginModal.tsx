@@ -10,9 +10,9 @@ import type { ProviderType } from './mock-data.ts'
 import css from './LoginModal.module.css'
 
 export interface LoginModalProps {
-  initialProvider?: ProviderType
+  initialProvider?: ProviderType | undefined
   onClose: () => void
-  onSuccess: (newAccount: { provider: ProviderType; email: string; tier?: string }) => void
+  onSuccess: (newAccount: { provider: ProviderType; email: string; tier?: string | undefined }) => void
 }
 
 export function LoginModal({ initialProvider = 'codex', onClose, onSuccess }: LoginModalProps) {

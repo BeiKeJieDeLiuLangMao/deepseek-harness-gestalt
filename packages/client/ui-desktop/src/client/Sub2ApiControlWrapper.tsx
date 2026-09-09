@@ -5,8 +5,8 @@
  */
 
 import { useMemo } from 'react'
-import type { Sub2ApiControlProps } from '../Sub2ApiControl.tsx'
-import { Sub2ApiControl as OriginalSub2ApiControl } from '../Sub2ApiControl.tsx'
+import type { Sub2ApiControlProps } from './Sub2ApiControl.tsx'
+import { Sub2ApiControl as OriginalSub2ApiControl } from './Sub2ApiControl.tsx'
 import { CliProxyAccountPoolPrototype } from './prototype/CliProxyAccountPoolPrototype.tsx'
 
 export function Sub2ApiControlWrapper(props: Sub2ApiControlProps) {

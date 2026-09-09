@@ -3,7 +3,6 @@
  * Strictly scaffolding; hidden in production or when not in prototype mode.
  */
 
-import clsx from 'clsx'
 import css from './PrototypeSwitcher.module.css'
 
 export interface PrototypeSwitcherProps {
@@ -13,17 +12,20 @@ export interface PrototypeSwitcherProps {
 }
 
 export function PrototypeSwitcher({ current, variants, onChange }: PrototypeSwitcherProps) {
-  const currentIndex = variants.findIndex(v => v.id === current)
+  const currentIndex = Math.max(0, variants.findIndex(v => v.id === current))
   const prev = () => {
     const nextIdx = (currentIndex - 1 + variants.length) % variants.length
-    onChange(variants[nextIdx].id)
+    const target = variants[nextIdx]
+    if (target !== undefined) onChange(target.id)
   }
   const next = () => {
     const nextIdx = (currentIndex + 1) % variants.length
-    onChange(variants[nextIdx].id)
+    const target = variants[nextIdx]
+    if (target !== undefined) onChange(target.id)
   }
 
   const active = variants[currentIndex] ?? variants[0]
+  if (active === undefined) return null
 
   return (
     <aside className={css.switcher} aria-label="Prototype Variant Switcher">
@@ -45,7 +47,7 @@ export function PrototypeSwitcher({ current, variants, onChange }: PrototypeSwit
           <button
             key={v.id}
             type="button"
-            className={clsx(css.pill, v.id === current && css.pillActive)}
+            className={`${css.pill} ${v.id === current ? css.pillActive : ''}`}
             onClick={() => { onChange(v.id) }}
           >
             {v.id}
