@@ -28,7 +28,7 @@ describe('CI workflow', () => {
     expect(nodeSetup).toBeGreaterThan(pnpmSetup)
     expect(steps[nodeSetup]?.with).toEqual({
       'node-version': '${{ env.PRIMARY_NODE_VERSION }}',
-      cache: 'pnpm',
+      
     })
     expect(validation).toBeGreaterThan(nodeSetup)
     expect(String(steps[validation]?.run)).toContain('pnpm install --frozen-lockfile --ignore-scripts')

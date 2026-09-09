@@ -1,0 +1,15 @@
+{
+  "$schema": "./schema.json",
+  "version": 1,
+  "id": "628-companion-stopped-marker",
+  "summary": {
+    "en": "Preserve durable assistant interruption so Mobile Companion renders the existing stopped marker in paged history and live replacements.",
+    "zh": "保留持久 assistant 中断标记，使 Mobile Companion 在分页历史与实时替换中显示既有停止标记。"
+  },
+  "releases": {
+    "desktop": "patch",
+    "mobile": "none",
+    "platform": "none"
+  },
+  "compatibilityExceptions": []
+}
