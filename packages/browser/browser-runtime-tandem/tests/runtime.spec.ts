@@ -7,7 +7,12 @@ import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import TandemBrowserRuntime from '@deepseek-ai/dsh-browser-runtime-tandem'
-import { BrowserProfileName, BrowserRuntimeError, BrowserWorkspaceId } from '@deepseek-ai/dsh-browser-runtime'
+import {
+  BrowserProfileName,
+  BrowserRuntimeError,
+  BrowserWorkspaceId,
+  type BrowserRuntimeState,
+} from '@deepseek-ai/dsh-browser-runtime'
 import SubprocessLocal from '@deepseek-ai/dsh-subprocess-local'
 
 const FIXTURE = join(dirname(fileURLToPath(import.meta.url)), 'fixtures/tandem-http-fixture.mjs')
