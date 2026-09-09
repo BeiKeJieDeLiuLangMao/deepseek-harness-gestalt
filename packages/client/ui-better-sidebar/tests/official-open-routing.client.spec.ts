@@ -26,7 +26,7 @@ function flush(): Promise<void> {
 }
 
 function bench(cwd: string | null = '/work') {
-  const openResource = vi.fn(async () => TAB)
+  const openResource = vi.fn(async (_address: string, _options?: unknown) => TAB)
   const update = vi.fn()
   const forSession = vi.fn(() => ({ openResource, update }))
   const ctx = {
