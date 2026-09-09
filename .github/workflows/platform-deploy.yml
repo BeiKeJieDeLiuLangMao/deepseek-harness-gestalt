@@ -195,6 +195,9 @@ jobs:
           PLATFORM_APSARADB_CA_BASE64: ${{ secrets.PLATFORM_APSARADB_CA_BASE64 }}
           PLATFORM_POSTGRES_DATABASE: ${{ vars.PLATFORM_POSTGRES_DATABASE }}
           PLATFORM_IDENTITY_NAMESPACE: ${{ vars.PLATFORM_IDENTITY_NAMESPACE }}
+          PLATFORM_MEMBERSHIP_BACKEND: ${{ vars.PLATFORM_MEMBERSHIP_BACKEND || 'file' }}
+          PLATFORM_ACCOUNT_DELETION_RETRY_INTERVAL_MS: ${{ vars.PLATFORM_ACCOUNT_DELETION_RETRY_INTERVAL_MS }}
+          PLATFORM_ACCOUNT_DELETION_RECEIPT_LIFETIME_MS: ${{ vars.PLATFORM_ACCOUNT_DELETION_RECEIPT_LIFETIME_MS }}
           PLATFORM_REDIS_HOST: ${{ vars.PLATFORM_REDIS_HOST }}
           PLATFORM_REDIS_USER: ${{ secrets.PLATFORM_REDIS_USER }}
           PLATFORM_REDIS_PASSWORD: ${{ secrets.PLATFORM_REDIS_PASSWORD }}
@@ -408,6 +411,9 @@ jobs:
           PLATFORM_POSTGRES_SSL: require
           PLATFORM_POSTGRES_DATABASE: ${{ vars.PLATFORM_POSTGRES_DATABASE }}
           PLATFORM_IDENTITY_NAMESPACE: ${{ vars.PLATFORM_IDENTITY_NAMESPACE }}
+          PLATFORM_MEMBERSHIP_BACKEND: ${{ vars.PLATFORM_MEMBERSHIP_BACKEND || 'file' }}
+          PLATFORM_ACCOUNT_DELETION_RETRY_INTERVAL_MS: ${{ vars.PLATFORM_ACCOUNT_DELETION_RETRY_INTERVAL_MS }}
+          PLATFORM_ACCOUNT_DELETION_RECEIPT_LIFETIME_MS: ${{ vars.PLATFORM_ACCOUNT_DELETION_RECEIPT_LIFETIME_MS }}
           PLATFORM_REDIS_HOST: ${{ vars.PLATFORM_REDIS_HOST }}
           PLATFORM_REDIS_USER: ${{ secrets.PLATFORM_REDIS_USER }}
           PLATFORM_REDIS_PASSWORD: ${{ secrets.PLATFORM_REDIS_PASSWORD }}
@@ -453,6 +459,8 @@ jobs:
             -e PLATFORM_POSTGRES_USER -e PLATFORM_POSTGRES_PASSWORD \
             -e PLATFORM_APSARADB_CA_BASE64 -e PLATFORM_POSTGRES_SSL \
             -e PLATFORM_POSTGRES_DATABASE -e PLATFORM_IDENTITY_NAMESPACE -e PLATFORM_REDIS_HOST \
+            -e PLATFORM_MEMBERSHIP_BACKEND -e PLATFORM_ACCOUNT_DELETION_RETRY_INTERVAL_MS \
+            -e PLATFORM_ACCOUNT_DELETION_RECEIPT_LIFETIME_MS \
             -e PLATFORM_REDIS_USER -e PLATFORM_REDIS_PASSWORD -e PLATFORM_REDIS_TLS \
             -e PLATFORM_OSS_ENDPOINT -e PLATFORM_OSS_BUCKET -e PLATFORM_OSS_AUTH \
             -e PLATFORM_OSS_OBJECT_PREFIX -e PLATFORM_OSS_TIMEOUT_MS \
@@ -504,6 +512,7 @@ jobs:
           PLATFORM_DEPLOY_OSS_UPLOAD_ENDPOINT: ${{ vars.PLATFORM_DEPLOY_OSS_UPLOAD_ENDPOINT }}
           PLATFORM_DEPLOY_OSS_OBJECT_PREFIX: ${{ vars.PLATFORM_DEPLOY_OSS_OBJECT_PREFIX }}
           PLATFORM_REMOTE_ATTACHMENT_STORAGE: ${{ inputs.attachment_storage }}
+          PLATFORM_MEMBERSHIP_BACKEND: ${{ vars.PLATFORM_MEMBERSHIP_BACKEND || 'file' }}
           PLATFORM_BOOTSTRAP: ${{ inputs.bootstrap }}
           PLATFORM_BOOTSTRAP_EIP_ADDRESSES: ${{ inputs.bootstrap_eip_addresses }}
         run: |
@@ -592,6 +601,7 @@ jobs:
               printf 'export DSH_DEPLOY_IMAGE=%q\n' "$IMAGE"
               printf 'export DSH_DEPLOY_CANDIDATE=%q\n' "${{ inputs.candidate_sha }}"
               printf 'export DSH_DEPLOY_STORAGE=%q\n' "$PLATFORM_REMOTE_ATTACHMENT_STORAGE"
+              printf 'export DSH_DEPLOY_MEMBERSHIP=%q\n' "$PLATFORM_MEMBERSHIP_BACKEND"
               printf 'export DSH_RELAY_INSTANCE_ID=%q\n' "$relay_instance"
               # shellcheck disable=SC2016
               printf 'bash "$workdir/platform-host-deploy.sh" %q\n' "$action"
@@ -641,6 +651,10 @@ jobs:
           if [ "$PLATFORM_BOOTSTRAP" = true ]; then
             for index in "${!instance_ids[@]}"; do
               remote_action "${instance_ids[$index]}" "relay-$((index + 1))" verify-bootstrap-bare
+            done
+          else
+            for index in "${!instance_ids[@]}"; do
+              remote_action "${instance_ids[$index]}" "relay-$((index + 1))" verify-membership-authority
             done
           fi
           for index in "${!instance_ids[@]}"; do

@@ -7,11 +7,36 @@ candidate_env=/run/dsh-platform-candidate.env
 exec 9>/run/dsh-platform-deploy.lock
 flock -x 9
 
+membership_ready() {
+  local body="$1" expected="${DSH_DEPLOY_MEMBERSHIP:-file}" deletion=false
+  if [ "$expected" = postgres ]; then deletion=true; fi
+  printf '%s' "$body" | grep -Fq '"membershipStorage":"'"$expected"'"' \
+    && printf '%s' "$body" | grep -Fq '"accountDeletion":'"$deletion"
+}
+
+require_membership_authority() {
+  local body
+  body=$(curl -fsS --max-time 5 http://127.0.0.1:80/readyz) || return 1
+  printf '%s' "$body" | grep -Fq '"ok":true' || return 1
+  if [ "${DSH_DEPLOY_MEMBERSHIP:-file}" = postgres ]; then
+    if ! membership_ready "$body"; then
+      echo 'platform: PostgreSQL membership requires completed all-writer cutover before rolling deployment' >&2
+      return 1
+    fi
+  elif printf '%s' "$body" | grep -Fq '"membershipStorage":"postgres"'; then
+    echo 'platform: file membership requires writer-fenced current export before activation' >&2
+    return 1
+  fi
+}
+
 wait_for_storage() {
   local port="$1" expected_storage="$2" body attempt
   for attempt in $(seq 1 30); do
     if body=$(curl -fsS --max-time 2 "http://127.0.0.1:${port}/readyz") \
-      && printf '%s' "$body" | grep -Fq '"attachmentStorage":"'"$expected_storage"'"'; then
+      && printf '%s' "$body" | grep -Fq '"attachmentStorage":"'"$expected_storage"'"' \
+      && printf '%s' "$body" | grep -Fq '"ok":true' \
+      && membership_ready "$body" \
+      && printf '%s' "$body" | grep -Fq '"instanceId":"'"$DSH_RELAY_INSTANCE_ID"'"'; then
       return 0
     fi
     sleep 1
@@ -71,6 +96,9 @@ case "$action" in
       echo 'platform: bootstrap target is not bare: candidate environment exists' >&2
       exit 1
     fi
+    ;;
+  verify-membership-authority)
+    require_membership_authority
     ;;
   prepare)
     : "${DSH_DEPLOY_IMAGE_URL:?}" "${DSH_DEPLOY_IMAGE_SHA256:?}" "${DSH_DEPLOY_ENV_URL:?}"

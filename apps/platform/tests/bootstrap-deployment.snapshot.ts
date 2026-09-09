@@ -24,7 +24,7 @@ describe('Platform bootstrap deployment entry snapshot', () => {
       '    *) exit 22 ;;',
       '  esac',
       '  printf \'probe=%s origin=%s\\n\' "$address" "$origin" >&2',
-      '  printf \'{"ok":true,"attachmentStorage":"oss","instanceId":"%s"}\' "$relay"',
+      '  printf \'{"ok":true,"membershipStorage":"file","accountDeletion":false,"attachmentStorage":"oss","instanceId":"%s"}\' "$relay"',
       '}',
       'sleep() { :; }',
       'source "$READINESS_SCRIPT"',

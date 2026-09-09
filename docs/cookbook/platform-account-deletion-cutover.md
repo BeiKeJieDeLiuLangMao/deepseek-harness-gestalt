@@ -4,6 +4,10 @@ English | [中文](platform-account-deletion-cutover.zh.md)
 
 This procedure switches the operated two-instance deployment from host-local membership files to one PostgreSQL authority. It requires an approved Platform candidate, access to each instance's private membership volume, a private backup directory, and permission to stop all membership writers. [Platform deployment](../../apps/platform/README.md) owns image promotion; [the deletion decision](../../.agents/notes/implemented/feature/2026-09-09-mobile-account-deletion.md) owns account and cleanup semantics. These commands do not authorize production cutover or deletion of a normal user account.
 
+Ordinary Platform Deploy verifies every predecessor before starting any candidate and refuses file-to-PostgreSQL or PostgreSQL-to-file membership changes. Its healthy-backend prerequisite and rolling replacement do not perform this maintenance procedure. Reserve a maintenance window and prevent concurrent deployments; the operator must stop all writers, capture and approve the source, import it, install the same candidate and runtime configuration on both stopped instances, and verify both before restoring traffic. The window interrupts Platform login, pairing, Relay and cloud membership access.
+
+Set Environment `production` variables `PLATFORM_MEMBERSHIP_BACKEND=postgres`, `PLATFORM_ACCOUNT_DELETION_RETRY_INTERVAL_MS` and `PLATFORM_ACCOUNT_DELETION_RECEIPT_LIFETIME_MS` to match the activated runtime configuration before subsequent normal deployments. Both budgets must be positive safe integers. Leaving the backend variable unset selects `file`; setting it does not authorize or execute migration.
+
 ## Prepare immutable source evidence
 
 1. Inventory every serving Platform instance and any candidate or rollback container capable of writing membership state. Stop all such writers before taking the final snapshots. Copy each `<storagePath>/production/project-membership.json` into a separate private evidence directory. Preserve the original volumes. A missing file is not evidence of an empty account corpus.

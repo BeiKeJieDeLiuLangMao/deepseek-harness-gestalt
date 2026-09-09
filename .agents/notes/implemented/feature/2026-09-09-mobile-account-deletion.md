@@ -24,6 +24,8 @@ Owner transactions acquire their document lock before shared locks on newly refe
 
 Membership import accepts only an approved immutable snapshot into an uninitialized target. A separate source-digest marker makes identical re-import a no-op after subsequent writes; startup never imports. [The cutover procedure](../../../../docs/cookbook/platform-account-deletion-cutover.md) owns all-writer fencing, source reconciliation, backup, activation and current-authority rollback export.
 
+Deployment configuration carries the membership backend and deletion budgets explicitly from the protected Environment to every container. Readiness binds the selected membership authority to account-deletion availability. Ordinary rolling deployment cannot establish a shared membership authority: it refuses authority changes before candidate startup, because concurrent file and PostgreSQL writers would split project state and image rollback could restore deleted references. The separate all-writer maintenance procedure owns source approval, import and current-state export.
+
 ## Attachment ownership
 
 Publication retains Account-to-pairing ownership independently of later unpairing. OSS metadata retirement, including consume, expiry and revoke, commits pairing-owned object and quota cleanup records before external deletion. Those records survive object deletion failure and process restart; account completion waits for them. A per-publication PostgreSQL advisory lock spans upload and finalization, and retirement cannot discard a live publication. PostgreSQL ciphertext cleanup likewise waits for publication recovery and durable quota releases. These records belong to existing attachment owners; there is no generic job service.

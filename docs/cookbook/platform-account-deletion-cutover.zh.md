@@ -4,6 +4,10 @@
 
 本流程将双实例生产部署从主机本地成员文件切换到统一的 PostgreSQL 权威存储。执行前需要已获批准的 Platform 候选版本、各实例私有成员卷的访问权限、私有备份目录，以及停止全部成员写入者的权限。[Platform 部署](../../apps/platform/README.zh.md)负责镜像晋级；[删除决策](../../.agents/notes/implemented/feature/2026-09-09-mobile-account-deletion.zh.md)负责账号和清理语义。这些命令不构成生产切换或删除普通用户账号的授权。
 
+普通 Platform Deploy 在启动任何候选实例前检查所有前任实例，并拒绝 file 与 PostgreSQL 成员关系权威之间的切换。其健康后端前置条件和滚动替换不执行本维护流程。操作方必须安排维护窗口、阻止并发部署，停止全部写入方，捕获并批准源文档、导入，在两台已停止实例上安装相同候选与运行配置，并在恢复流量前验证两台实例。维护窗口会中断 Platform 登录、配对、Relay 和云端成员关系访问。
+
+后续普通部署前，将 Environment `production` 中的 `PLATFORM_MEMBERSHIP_BACKEND=postgres`、`PLATFORM_ACCOUNT_DELETION_RETRY_INTERVAL_MS` 和 `PLATFORM_ACCOUNT_DELETION_RECEIPT_LIFETIME_MS` 配置为与已启用运行配置一致。两个预算必须为正的安全整数。未设置 backend 变量时选择 `file`；设置变量不授权或执行迁移。
+
 ## 准备不可变的源证据
 
 1. 清点所有提供服务的 Platform 实例，以及能够写入成员状态的候选和回滚容器。取得最终快照前停止全部写入者。将各实例的 `<storagePath>/production/project-membership.json` 复制到独立私有证据目录，保留原卷。文件缺失不能证明账号数据为空。
