@@ -49,7 +49,11 @@ export interface ILayout {
   openRightbar(track: boolean, fullscreen: boolean): void
   /** Report the right panel as hidden: no track, no handle. */
   closeRightbar(): void
-  /** Report the bottom workbench surface and its requested height. */
+  /**
+   * Report the bottom workbench surface and its requested height.
+   * @param height - requested bottom surface height in CSS pixels.
+   * @param fullscreen - whether the bottom surface covers the frame.
+   */
   openBottombar(height: number, fullscreen: boolean): void
   /** Report the bottom workbench surface as hidden. */
   closeBottombar(): void

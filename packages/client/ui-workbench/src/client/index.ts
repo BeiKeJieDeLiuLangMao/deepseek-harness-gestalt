@@ -23,7 +23,10 @@ export const inject = [
 
 /** Preview navigation face published by this adapter. */
 export interface WorkbenchBrowserFace {
-  /** Expand and focus the occurrence bound to the active Browser page. */
+  /**
+   * Expand and focus the occurrence bound to the active Browser page.
+   * @param sessionId - Session whose active Browser page should be revealed.
+   */
   reveal(sessionId: string): void
 }
 
