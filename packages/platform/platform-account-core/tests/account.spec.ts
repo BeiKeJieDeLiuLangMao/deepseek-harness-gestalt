@@ -1085,6 +1085,17 @@ describe('PlatformAccount', () => {
       accessToken: ownedMobile.session.accessToken,
       proof: ownedMobile.key.proof('list-mobile-installations', hashAccountToken(ownedMobile.session.accessToken)),
     })).rejects.toMatchObject({ code: 'INSTALLATION_FORBIDDEN' })
+    await expect(first.revokeMobileInstallation({
+      accessToken: ownedMobile.session.accessToken,
+      installationId: parseInstallationId('owned-mobile'),
+      proof: ownedMobile.key.proof(
+        'revoke-mobile-installation',
+        mobileInstallationRevocationBinding(
+          hashAccountToken(ownedMobile.session.accessToken),
+          parseInstallationId('owned-mobile'),
+        ),
+      ),
+    })).rejects.toMatchObject({ code: 'INSTALLATION_FORBIDDEN' })
     providerSubject = 7
     await login(first, installationKey(), parseInstallationId('foreign-mobile'), 'mobile')
     for (const target of ['owner-desktop', 'foreign-mobile', 'absent-mobile']) {
@@ -1233,6 +1244,129 @@ describe('PlatformAccount', () => {
       await sender.dispose()
       await recovered?.dispose()
       await receiver.dispose()
+      vi.useRealTimers()
+    }
+  })
+
+  it('retries only the matching committed Mobile invalidation after removal already committed', async () => {
+    const backend = new MemoryAccountBackend(ENVIRONMENT.databaseIdentity)
+    const invalidation = new MemoryAccountInvalidationBus()
+    const { first, second } = accountHarness({ backend, invalidation })
+    try {
+      const desktop = await login(first, installationKey(), parseInstallationId('idempotent-manager'))
+      const mobile = await login(first, installationKey(), parseInstallationId('idempotent-mobile'), 'mobile')
+      const publish = vi.spyOn(invalidation, 'publish')
+        .mockRejectedValueOnce(new Error('Redis publish unavailable'))
+      const request = () => ({
+        accessToken: desktop.session.accessToken,
+        installationId: parseInstallationId('idempotent-mobile'),
+        proof: desktop.key.proof(
+          'revoke-mobile-installation',
+          mobileInstallationRevocationBinding(
+            hashAccountToken(desktop.session.accessToken),
+            parseInstallationId('idempotent-mobile'),
+          ),
+        ),
+      })
+
+      await expect(first.revokeMobileInstallation(request())).rejects.toThrow('not fully published')
+      const foreignSessionId = 'foreign-pending-session' as AccountSessionId
+      const internals = backend as unknown as { pendingMobileInvalidations: Map<AccountSessionId, {
+        identityNamespace: string
+        accountId: PlatformAccountId
+        installationId: ReturnType<typeof parseInstallationId>
+      }> }
+      internals.pendingMobileInvalidations.set(foreignSessionId, {
+        identityNamespace: ENVIRONMENT.identityNamespace,
+        accountId: 'foreign-account' as PlatformAccountId,
+        installationId: parseInstallationId('idempotent-mobile'),
+      })
+
+      await expect(first.revokeMobileInstallation(request())).resolves.toEqual([])
+      expect(publish).toHaveBeenLastCalledWith(mobile.session.sessionId)
+      await expect(backend.pendingMobileSessionInvalidations(ENVIRONMENT.identityNamespace))
+        .resolves.toEqual([foreignSessionId])
+    } finally {
+      await first.dispose()
+      await second.dispose()
+    }
+  })
+
+  it('rejects Mobile removal when the initiating Session lost its Account relationship', async () => {
+    const backend = new MemoryAccountBackend(ENVIRONMENT.databaseIdentity)
+    const { first, second } = accountHarness({ backend })
+    try {
+      const desktop = await login(first, installationKey(), parseInstallationId('orphan-manager'))
+      await login(first, installationKey(), parseInstallationId('orphan-mobile'), 'mobile')
+      const initiating = await backend.getSession(desktop.session.sessionId)
+      if (initiating === undefined) throw new Error('expected initiating Session')
+      const internals = backend as unknown as { accounts: Map<PlatformAccountId, unknown> }
+      internals.accounts.delete(initiating.accountId)
+
+      await expect(backend.revokeMobileInstallation(
+        initiating,
+        parseInstallationId('orphan-mobile'),
+      )).rejects.toMatchObject({ code: 'SESSION_REVOKED' })
+    } finally {
+      await first.dispose()
+      await second.dispose()
+    }
+  })
+
+  it('contains a failed Mobile invalidation recovery inventory read', async () => {
+    vi.useFakeTimers()
+    const backend = new MemoryAccountBackend(ENVIRONMENT.databaseIdentity)
+    const context = new Context()
+    const warn = vi.spyOn(context.logger, 'warn').mockImplementation(() => {})
+    vi.spyOn(backend, 'pendingMobileSessionInvalidations')
+      .mockRejectedValueOnce(new Error('database unavailable'))
+    const account = new PlatformAccount(context, {
+      backend,
+      invalidation: new MemoryAccountInvalidationBus(),
+      github: github(),
+      environment: ENVIRONMENT,
+      clock: { now: () => NOW },
+      config: { ...CONFIG, sessionInvalidationRetryIntervalMs: 100 },
+    })
+    try {
+      await vi.advanceTimersByTimeAsync(100)
+      expect(warn).toHaveBeenCalledWith(
+        'Account Session invalidation recovery failed: Error: database unavailable',
+      )
+    } finally {
+      await account.dispose()
+      warn.mockRestore()
+      vi.useRealTimers()
+    }
+  })
+
+  it('drains an in-flight Mobile invalidation inventory without rearming after disposal', async () => {
+    vi.useFakeTimers()
+    const backend = new MemoryAccountBackend(ENVIRONMENT.databaseIdentity)
+    let resolveInventory!: (ids: readonly AccountSessionId[]) => void
+    const inventory = new Promise<readonly AccountSessionId[]>((resolve) => { resolveInventory = resolve })
+    vi.spyOn(backend, 'pendingMobileSessionInvalidations').mockReturnValueOnce(inventory)
+    const account = new PlatformAccount(new Context(), {
+      backend,
+      invalidation: new MemoryAccountInvalidationBus(),
+      github: github(),
+      environment: ENVIRONMENT,
+      clock: { now: () => NOW },
+      config: { ...CONFIG, sessionInvalidationRetryIntervalMs: 100 },
+    })
+    try {
+      await vi.advanceTimersByTimeAsync(100)
+      let disposalSettled = false
+      const disposal = account.dispose().finally(() => { disposalSettled = true })
+      await vi.advanceTimersByTimeAsync(0)
+      expect(disposalSettled).toBe(false)
+      resolveInventory([])
+      await disposal
+      expect(disposalSettled).toBe(true)
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      resolveInventory([])
+      await account.dispose()
       vi.useRealTimers()
     }
   })

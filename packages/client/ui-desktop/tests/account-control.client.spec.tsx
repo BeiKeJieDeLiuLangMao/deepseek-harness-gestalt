@@ -213,6 +213,53 @@ describe('AccountControl', () => {
     expect(desktop.accountRefreshMobileInstallations).toHaveBeenCalledOnce()
   })
 
+  it('shows the default load failure, empty state, and active removal', () => {
+    const account = {
+      id: 'account-1' as never,
+      githubId: 1,
+      githubLogin: 'octocat',
+      avatarUrl: 'https://avatars.example/octocat',
+    }
+    const failed: DesktopAccountSnapshot = {
+      status: 'signed-in',
+      privacyAccepted: true,
+      account,
+      mobileInstallations: { status: 'error', installations: [] },
+    }
+    window.dshDesktop = bridge(failed)
+    renderControl(failed)
+    expect(screen.getByRole('alert').textContent).toContain(t('account.installations.error'))
+
+    cleanup()
+    const empty: DesktopAccountSnapshot = {
+      status: 'signed-in',
+      privacyAccepted: true,
+      account,
+      mobileInstallations: { status: 'ready', installations: [] },
+    }
+    renderControl(empty)
+    expect(screen.getByText(t('account.installations.empty'))).toBeTruthy()
+
+    cleanup()
+    const removing: DesktopAccountSnapshot = {
+      status: 'signed-in',
+      privacyAccepted: true,
+      account,
+      mobileInstallations: {
+        status: 'removing',
+        installations: [{
+          id: 'removing-mobile' as never,
+          reference: '123456789abc',
+          name: 'Removing phone',
+          platform: 'ios',
+        }],
+        removingInstallationId: 'removing-mobile',
+      },
+    }
+    renderControl(removing)
+    expect(screen.getByRole('button', { name: t('account.installations.removing') }).hasAttribute('disabled')).toBe(true)
+  })
+
   it('projects every Account state and renders nothing without the Desktop bridge', () => {
     const idle: DesktopAccountSnapshot = { status: 'idle', privacyAccepted: false }
     const empty = renderControl(idle)

@@ -80,11 +80,6 @@ function MobileInstallationsPanel({ desktop, snapshot, t }: {
     setAcknowledged(false)
     setSelected(undefined)
   }
-  const confirm = (): void => {
-    if (selected === undefined) return
-    void desktop.accountRevokeMobileInstallation(selected.id)
-    close()
-  }
   return (
     <div className={css.installations} data-mobile-installations={state.status}>
       <div className={css.sectionHeading}>
@@ -125,19 +120,24 @@ function MobileInstallationsPanel({ desktop, snapshot, t }: {
           </Button>
         </div>
       ))}
-      <RiskConfirmation
-        open={selected !== undefined}
-        title={t('account.installations.confirmTitle')}
-        description={t('account.installations.confirmDescription')}
-        acknowledgeLabel={t('account.installations.acknowledge')}
-        cancelLabel={t('account.installations.cancel')}
-        confirmLabel={t('account.installations.confirm')}
-        acknowledged={acknowledged}
-        disabled={removing}
-        onAcknowledgedChange={setAcknowledged}
-        onCancel={close}
-        onConfirm={confirm}
-      />
+      {selected !== undefined && (
+        <RiskConfirmation
+          open
+          title={t('account.installations.confirmTitle')}
+          description={t('account.installations.confirmDescription')}
+          acknowledgeLabel={t('account.installations.acknowledge')}
+          cancelLabel={t('account.installations.cancel')}
+          confirmLabel={t('account.installations.confirm')}
+          acknowledged={acknowledged}
+          disabled={removing}
+          onAcknowledgedChange={setAcknowledged}
+          onCancel={close}
+          onConfirm={() => {
+            void desktop.accountRevokeMobileInstallation(selected.id)
+            close()
+          }}
+        />
+      )}
     </div>
   )
 }
