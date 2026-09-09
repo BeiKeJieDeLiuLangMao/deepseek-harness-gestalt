@@ -1,12 +1,13 @@
 // Keyless assembled-browser coverage for Side Chat sizing and ownership inside
 // the official workbench. The child stays blank so its empty layout is observed
 // before its first Agent or durable event exists.
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Browser, Locator, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
-import { LlmAdapter } from '@deepseek-ai/dsh-llm'
+import { LlmAdapter, ToolCallId } from '@deepseek-ai/dsh-llm'
 import type {
   GenerateOptions, LlmModelInfo, LlmProviderInfo, LlmResolvedModelInfo, StreamChunk,
 } from '@deepseek-ai/dsh-llm'
@@ -18,9 +19,16 @@ const MODEL = 'layout-model'
 const MODEL_NAME = 'Side Chat Layout Test'
 const RESPONSE = 'The Side Chat remains anchored after its first response.'
 const MAIN_DRAFT = 'Keep this main draft unchanged.'
+const CREATE_PROMPT = 'Create and inspect the child-owned files.'
+const FILE_RESPONSE = 'The child-owned files are ready.'
+const CHILD_FILE = 'child-owned.md'
+const CHILD_CONTENT = '# Child file\nSelected child line two.\nLast child line.\n'
+const CHILD_FILES = [CHILD_FILE, ...Array.from({ length: 6 }, (_, index) => `child-extra-${String(index + 1)}.txt`)]
 const SHOT_DIR = fileURLToPath(new URL('../../../.artifacts/screenshots/sidechat-layout', import.meta.url))
 
 class SideChatLayoutAdapter extends LlmAdapter {
+  private childFileStage = 0
+
   override providerInfo(provider: string): LlmProviderInfo {
     return { id: provider, name: MODEL_NAME }
   }
@@ -33,7 +41,38 @@ class SideChatLayoutAdapter extends LlmAdapter {
     return Promise.resolve({ provider, id: model, name: MODEL_NAME })
   }
 
-  override async * stream(_options: GenerateOptions): AsyncIterable<StreamChunk> {
+  override async * stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
+    if (JSON.stringify(options.messages).includes(CREATE_PROMPT) && this.childFileStage === 0) {
+      this.childFileStage = 1
+      for (const [index, path] of CHILD_FILES.entries()) {
+        const id = ToolCallId(`sidechat-write-${String(index)}`)
+        const args = JSON.stringify({
+          file_path: path,
+          content: path === CHILD_FILE ? CHILD_CONTENT : `Extra child file ${String(index)}.\n`,
+        })
+        yield { type: 'block-start', index, blockType: 'tool-call' }
+        yield { type: 'tool-call-delta', index, id, name: 'write', argumentsDelta: args }
+        yield { type: 'block-end', index, block: { type: 'tool-call', id, name: 'write', arguments: args } }
+      }
+      yield { type: 'finish', reason: { kind: 'tool-calls' } }
+      return
+    }
+    if (JSON.stringify(options.messages).includes(CREATE_PROMPT) && this.childFileStage === 1) {
+      this.childFileStage = 2
+      const id = ToolCallId('sidechat-read-child-line')
+      const args = JSON.stringify({ file_path: CHILD_FILE, offset: 2, limit: 1 })
+      yield { type: 'block-start', index: 0, blockType: 'tool-call' }
+      yield { type: 'tool-call-delta', index: 0, id, name: 'read', argumentsDelta: args }
+      yield { type: 'block-end', index: 0, block: { type: 'tool-call', id, name: 'read', arguments: args } }
+      yield { type: 'finish', reason: { kind: 'tool-calls' } }
+      return
+    }
+    if (JSON.stringify(options.messages).includes(CREATE_PROMPT)) {
+      yield { type: 'block-start', index: 0, blockType: 'text' }
+      yield { type: 'block-end', index: 0, block: { type: 'text', text: FILE_RESPONSE } }
+      yield { type: 'finish', reason: { kind: 'stop' } }
+      return
+    }
     yield { type: 'block-start', index: 0, blockType: 'text' }
     yield { type: 'block-end', index: 0, block: { type: 'text', text: RESPONSE } }
     yield { type: 'finish', reason: { kind: 'stop' } }
@@ -157,7 +196,7 @@ describe('web e2e: Side Chat fills the official workbench', () => {
     await scaffold?.close()
   })
 
-  it('keeps empty and nonempty Side Chat content full-height in push and fullscreen modes', async () => {
+  it('fills every workbench mode and keeps file actions on the Side Chat Session', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-sidechat-layout'))
     const mainComposer = page.locator('[data-composer-input][contenteditable="true"]').first()
     const mainModel = page.getByRole('button', { name: /^Select model, current /u }).first()
@@ -168,7 +207,7 @@ describe('web e2e: Side Chat fills the official workbench', () => {
     const parentSettled = scaffold.whenTurnSettled()
     await mainComposer.fill('Establish the parent session.')
     await mainComposer.press('Enter')
-    await parentSettled
+    const parentId = await parentSettled
     await page.getByText(RESPONSE, { exact: true }).waitFor({ timeout: 30_000 })
     await mainComposer.fill(MAIN_DRAFT)
 
@@ -211,12 +250,64 @@ describe('web e2e: Side Chat fills the official workbench', () => {
     const childSettled = scaffold.whenTurnSettled()
     await sideComposer.fill('Confirm this Side Chat layout.')
     await sideComposer.press('Enter')
-    await childSettled
+    const childId = await childSettled
+    expect(childId).not.toBe(parentId)
     await sidechat.getByText(RESPONSE, { exact: true }).waitFor({ timeout: 30_000 })
     expectAnchored(await geometry(sidechat))
     expect(await mainComposer.textContent()).toBe(MAIN_DRAFT)
     expect(await sidechat.getByText(/seeded session constructor seed/u).count()).toBe(0)
     await shot(page, '04-nonempty-push')
+
+    const sidechatTabId = await panel.locator('[data-dockkit-tab][aria-selected="true"]')
+      .getAttribute('data-dockkit-tab')
+    if (sidechatTabId === null) throw new Error('Side Chat tab has no durable tab id')
+    const fileSettled = scaffold.whenTurnSettled()
+    await sideComposer.fill(CREATE_PROMPT)
+    await sideComposer.press('Enter')
+    expect(await fileSettled).toBe(childId)
+    await sidechat.getByText(FILE_RESPONSE, { exact: true }).waitFor({ timeout: 30_000 })
+    expect(readFileSync(join(scaffold.workspaceCwd, 'workspace', CHILD_FILE), 'utf8')).toBe(CHILD_CONTENT)
+    const process = sidechat.locator('[data-turn-process]').last()
+    if (await process.getAttribute('aria-expanded') !== 'true') await process.click()
+    const readRow = sidechat.locator('[data-variant="read"]').last()
+    await readRow.waitFor({ timeout: 15_000 })
+    await readRow.getByRole('button', { name: CHILD_FILE, exact: true }).click()
+
+    const fileHost = panel.locator('[data-official-file-host]')
+    await fileHost.waitFor({ timeout: 15_000 })
+    expect(await fileHost.getAttribute('data-official-file-host'))
+      .toContain(`/session/${encodeURIComponent(String(childId))}/${CHILD_FILE}`)
+    const pathInput = fileHost.locator(`input[title$="/${CHILD_FILE}"]`)
+    await pathInput.waitFor({ timeout: 15_000 })
+    await expect.poll(() => pathInput.inputValue()).toBe(CHILD_FILE)
+    const secondLine = fileHost.locator('.cm-line').nth(1)
+    await expect.poll(() => secondLine.textContent()).toContain('Selected child line two.')
+    const editMode = fileHost.getByRole('button', { name: 'Edit', exact: true })
+    const previewMode = fileHost.getByRole('button', { name: 'Preview', exact: true })
+    expect(await editMode.getAttribute('class')).not.toBe(await previewMode.getAttribute('class'))
+    await secondLine.click()
+    await page.keyboard.press('Home')
+    await page.keyboard.down('Shift')
+    await page.keyboard.press('End')
+    await page.keyboard.up('Shift')
+    const addSelection = page.getByRole('button', { name: 'Add to conversation', exact: true })
+    await addSelection.waitFor({ timeout: 15_000 })
+    await addSelection.click()
+
+    await panel.locator(`[data-dockkit-tab="${sidechatTabId}"]`).click()
+    await sideComposer.waitFor({ timeout: 15_000 })
+    await expect.poll(() => sideComposer.textContent()).toContain(`${CHILD_FILE}:2`)
+    expect(await sideComposer.textContent()).toContain('Selected')
+    expect(await mainComposer.textContent()).toBe(MAIN_DRAFT)
+    await shot(page, '05-child-selection-routed')
+
+    await sidechat.getByText('Show in folder', { exact: true }).click()
+    const revealed = panel.locator('[data-dsh-revealed="true"]')
+    await expect.poll(() => revealed.count(), { timeout: 15_000 })
+      .toBe(CHILD_FILES.length)
+    expect(await revealed.filter({ hasText: CHILD_FILE }).count()).toBe(1)
+    expect(await mainComposer.textContent()).toBe(MAIN_DRAFT)
+    await shot(page, '06-child-files-revealed')
 
     await page.locator('[data-sidebar-bottom-toggle]').first().click()
     const bottom = page.locator('[data-sidebar-bottom-panel][data-sidebar-bottom-open]')
@@ -229,7 +320,7 @@ describe('web e2e: Side Chat fills the official workbench', () => {
     expectAnchored(bottomGeometry, 120)
     expect(bottomGeometry.host.height).toBeGreaterThan(150)
     expect(bottomGeometry.host.height).toBeLessThan(500)
-    await shot(page, '05-empty-bottom')
+    await shot(page, '07-empty-bottom')
 
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
