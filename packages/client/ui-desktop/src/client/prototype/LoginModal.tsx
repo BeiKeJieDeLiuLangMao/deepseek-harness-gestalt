@@ -24,7 +24,7 @@ export interface LoginModalProps {
 function getProviderFixtureAuthUri(p: ProviderType): string {
   switch (p) {
     case 'kimi':
-      return 'https://auth.kimi.example.test/device/verify?user_code=ABCD-EFGH'
+      return 'https://auth.kimi.example.test/device/verify?user_code=KIMI-1234'
     case 'xai':
       return 'https://auth.x.ai.example.test/device/activate?user_code=GROK-7890'
     case 'codex':
@@ -86,7 +86,7 @@ export function LoginModal({ initialProvider = 'codex', onClose, onSuccess }: Lo
 
   return (
     <div className={css.backdrop} onClick={onClose}>
-      <div className={css.dialog} onClick={e => { e.stopPropagation() }}>
+      <div className={css.dialog} onClick={(e) => { e.stopPropagation() }}>
         <header className={css.header}>
           <div className={css.headerTitle}>
             <h3>添加账号凭证 · CLIProxyAPI</h3>
@@ -203,7 +203,7 @@ export function LoginModal({ initialProvider = 'codex', onClose, onSuccess }: Lo
                   type="text"
                   className={css.textInput}
                   value={glmApiKey}
-                  onChange={e => { setGlmApiKey(e.target.value) }}
+                  onChange={(e) => { setGlmApiKey(e.target.value) }}
                   placeholder="请输入 GLM Coding 订阅专属 API Key (原型演示不保存真实密钥)"
                 />
                 <span className={css.fieldTip}>原型演示环境为内存 Mock，不持久化或外传任何密钥。</span>
@@ -215,7 +215,7 @@ export function LoginModal({ initialProvider = 'codex', onClose, onSuccess }: Lo
                   type="text"
                   className={css.textInput}
                   value={glmEndpoint}
-                  onChange={e => { setGlmEndpoint(e.target.value) }}
+                  onChange={(e) => { setGlmEndpoint(e.target.value) }}
                   placeholder="https://open.bigmodel.cn/api/coding/paas/v4"
                 />
                 <span className={css.fieldTip}>

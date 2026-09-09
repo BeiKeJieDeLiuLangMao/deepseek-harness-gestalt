@@ -9,9 +9,9 @@ import { MOCK_ACCOUNTS } from '../src/client/prototype/mock-data.ts'
 describe('v3 Core Behavior & Integrity Tests', () => {
   // Test v3-1: AccountCard face state controlled by globalFace, overrideable by local flip, resettable by globalEpoch
   it('v3-1: AccountCard flips independently and resets on globalEpoch change', () => {
-    const item = MOCK_ACCOUNTS[1] // Antigravity Workspace
+    const item = MOCK_ACCOUNTS[1]! // Antigravity Workspace
     const { getByTestId, rerender } = render(
-      <AccountCard item={item} globalFace="A" globalEpoch={0} />
+      <AccountCard item={item} globalFace="A" globalEpoch={0} />,
     )
 
     const card = getByTestId(`account-card-${item.id}`)
@@ -40,7 +40,7 @@ describe('v3 Core Behavior & Integrity Tests', () => {
         windowLabel="5h"
         resetText="待刷新"
         isReliable={false}
-      />
+      />,
     )
 
     // Should display '未知' text
@@ -67,11 +67,13 @@ describe('v3 Core Behavior & Integrity Tests', () => {
   it('v3-4: LoginModal renders provider-specific .example.test URIs and avoids hardcoded OpenAI URL', () => {
     // Kimi Device Flow
     const { getByText, unmount } = render(
-      <LoginModal initialProvider="kimi" onClose={() => {}} onSuccess={() => {}} />
+      <LoginModal initialProvider="kimi" onClose={() => {}} onSuccess={() => {}} />,
     )
     fireEvent.click(getByText('开始 KIMI 登录'))
-    expect(getByText(/auth\.kimi\.example\.test/)).toBeDefined()
-    expect(getByText('KIMI-1234')).toBeDefined()
+    const kimiFixtureUri = getByText(/auth\.kimi\.example\.test/).textContent
+    expect(kimiFixtureUri).toBe('https://auth.kimi.example.test/device/verify?user_code=KIMI-1234')
+    expect(new URL(kimiFixtureUri ?? '').searchParams.get('user_code')).toBe(getByText('KIMI-1234').textContent)
+    expect(new URL(kimiFixtureUri ?? '').hostname.endsWith('.example.test')).toBe(true)
     unmount()
 
     // xAI Device Flow
