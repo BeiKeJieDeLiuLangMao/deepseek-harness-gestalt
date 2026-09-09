@@ -280,13 +280,13 @@ describe('model list editing', () => {
     expect(firstMutate(mutate)).toMatchObject({
       ns: 'llm-pi-ai',
       expectedRevision: 3,
-      ops: expect.arrayContaining([
-        { op: 'set', path: ['providers', 'openai', 'defaultInput'], value: ['text', 'image'] },
-        { op: 'set', path: ['providers', 'openai', 'models'], value: [{
-          id: 'custom-model', input: ['text', 'image'], reasoningEfforts: { low: 'vendor-low', xhigh: 'xhigh' }, contextWindow: 65536,
-        }] },
-      ]),
     })
+    expect(firstMutate(mutate).ops).toEqual(expect.arrayContaining([
+      { op: 'set', path: ['providers', 'openai', 'defaultInput'], value: ['text', 'image'] },
+      { op: 'set', path: ['providers', 'openai', 'models'], value: [{
+        id: 'custom-model', input: ['text', 'image'], reasoningEfforts: { low: 'vendor-low', xhigh: 'xhigh' }, contextWindow: 65536,
+      }] },
+    ]))
   })
 
   it('clears capability overrides to inheritance without saving empty arrays or effort maps', async () => {

@@ -67,18 +67,18 @@ describe('providerUsable', () => {
 })
 
 describe('onboardingReadiness', () => {
-  it('waits for the first join and prompts when nothing can serve requests', () => {
+  it('distinguishes an absent adapter from a missing credential after loading', () => {
     expect(onboardingReadiness(state({ status: 'idle', rows: [] }))).toEqual({ kind: 'loading' })
     expect(onboardingReadiness(state({ status: 'loading', rows: [] }))).toEqual({ kind: 'loading' })
-    expect(onboardingReadiness(state({ rows: [] }))).toEqual({ kind: 'needs-config' })
-    expect(onboardingReadiness(state())).toEqual({ kind: 'needs-config' })
+    expect(onboardingReadiness(state({ rows: [] }))).toEqual({ kind: 'adapter-absent' })
+    expect(onboardingReadiness(state())).toEqual({ kind: 'credential-missing' })
   })
 
   it('ends onboarding once any registered provider can serve requests', () => {
     expect(onboardingReadiness(state({ rows: [row(), otherRow()] }))).toEqual({ kind: 'provider-ready' })
     expect(onboardingReadiness(state({
       rows: [row(), otherRow({ credential: missingCredential })],
-    }))).toEqual({ kind: 'needs-config' })
+    }))).toEqual({ kind: 'credential-missing' })
   })
 
   it('accepts file and process-environment credentials without prompting', () => {
