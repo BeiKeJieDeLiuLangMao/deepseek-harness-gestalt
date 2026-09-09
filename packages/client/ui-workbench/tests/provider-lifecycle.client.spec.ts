@@ -17,6 +17,11 @@ function harness(payload: unknown, operation: Promise<{ ok: true; value: Browser
     state: { payload },
   }
   const listeners = new Set<() => void>()
+  const browserWorkspace = {
+    create: vi.fn(() => operation),
+    close: vi.fn(async () => ({ ok: true as const, value: undefined })),
+    observe: vi.fn(async () => ({ ok: true as const, value: PAGE })),
+  }
   const ctx = {
     sidebarRight: {
       getSnapshot: () => ({ sessions: [{ sessionId: 's1', tabs: [tab] }], pinned: [] }),
@@ -27,7 +32,7 @@ function harness(payload: unknown, operation: Promise<{ ok: true; value: Browser
       getSnapshot: () => ({ current: 's1', byId: { s1: { projectionValues: {} } } }),
       subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener) } },
     } },
-    remote: { browserWorkspace: { create: vi.fn(() => operation) } },
+    remote: { browserWorkspace },
     browserUi: {
       createRequest: () => ({ profile: 'shared' }),
       recoverListedMutation: async (mutate: (...args: never[]) => Promise<unknown>, _observe: unknown, ...args: never[]) =>

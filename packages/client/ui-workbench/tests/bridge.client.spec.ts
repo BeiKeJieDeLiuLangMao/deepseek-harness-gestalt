@@ -79,6 +79,7 @@ function bench(input: {
   const remote: BoundBrowserWorkspace = {
     create: vi.fn(async () => page()),
     close: vi.fn(async () => undefined),
+    focus: vi.fn(async () => page()),
     refresh: vi.fn(async () => page()),
     observe: vi.fn(async () => page()),
     screenshot: vi.fn(async () => ({

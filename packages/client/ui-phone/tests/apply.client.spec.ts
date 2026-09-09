@@ -53,7 +53,8 @@ class SidebarUnderTest {
       ...this.descriptor,
       available: () => true,
       icon: () => ({ type: 'phone-icon' }),
-      component: (props: { tab: { id: string; meta?: unknown }; visible: boolean }) => {
+      component: (input: unknown) => {
+        const props = input as { tab: { id: string; meta?: unknown }; visible: boolean }
         const injected = this.bodyInjected as {
           gate: unknown
           source: unknown
