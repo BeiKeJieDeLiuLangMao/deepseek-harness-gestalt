@@ -46,3 +46,12 @@
 - **Authorized Testing Boundary**:
   - Offline / mock fixtures remain default.
   - Any authorized live test strictly limited to designated self-owned test accounts without external broadcast or business side-effects.
+
+## Desktop Architecture Memo (Candidate Head Alignment)
+- **Source Architecture Baseline**: `docs/architecture.md` (lines 47-51 in candidate combined base).
+- **Desktop Host Pipeline Invariants**:
+  - Desktop uses reserved profiles, private host byte pipe, and `dsh-app://` custom protocol scheme.
+  - Loopback web server ports are explicitly NOT opened for desktop instances.
+  - Verification & deployment tests must NOT apply outdated installed-app web URL (`http://127.0.0.1:58181` or standalone 5176 preview) flows.
+  - GUI acceptance requires authentic native Desktop computer-use execution through the candidate architecture, preventing legacy standalone previews from masquerading as product evidence.
+  - This constraint applies strictly to T7/T8 acceptance and does not block T1~T6 headless core implementation.
