@@ -167,7 +167,7 @@ async function mount(
   await fiber.await()
   const body = ctx.slots.entries('sidebar.right.pane.tab')
     .find(entry => entry.options.key === PHONE_DEFINITION_ID)
-  sidebar.bodyInjected = (body?.inject as (() => Record<string, unknown>) | undefined)?.()
+  sidebar.bodyInjected = body?.inject?.()
   return { ctx, fiber, host }
 }
 

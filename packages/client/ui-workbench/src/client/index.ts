@@ -11,7 +11,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import {
   OfficialBrowserRuntime, OfficialWorkbenchBrowserBody, OFFICIAL_BROWSER_KIND,
   OFFICIAL_WORKBENCH_BROWSER_ID, officialBrowserTargetKey, officialBrowserTargetOf,
-  officialBrowserPayloadOf, workbenchBrowserDefinition, type OfficialWorkbenchBrowserContext,
+  officialBrowserPayloadOf, workbenchBrowserDefinition,
 } from './official-browser.tsx'
 import { isDesktopOverlayDocument } from '../desktop-overlay-document.ts'
 
@@ -45,7 +45,7 @@ interface SessionListRow {
  * @param ctx - Browser Workspace and official Sidebar client services.
  */
 export function apply(ctx: Context): void {
-  const officialCtx = ctx as OfficialWorkbenchBrowserContext
+  const officialCtx = ctx
   const runtime = new OfficialBrowserRuntime(officialCtx)
   ctx.provide('workbenchBrowser', {
     reveal: (rawSessionId) => {
