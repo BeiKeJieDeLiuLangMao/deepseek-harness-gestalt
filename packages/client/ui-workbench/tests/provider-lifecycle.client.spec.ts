@@ -106,8 +106,15 @@ describe('workbench provider lifecycle', () => {
     ctx.remote.browserWorkspace.observe = vi.fn()
     ctx.sessions.list.getSnapshot = () => ({
       current: 's1', byId: { s1: { projectionValues: { browserWorkspace: {
-        activeWorkspaceId: 'w', workspaces: [{ workspaceId: 'w', profileId: 'p', activeBrowserId: 'b',
-          browsers: [{ browserId: 'b', activeTabId: 't', tabs: [{ tabId: 't', revision: 1 }] }],
+        activeWorkspaceId: TARGET.workspaceId, workspaces: [{
+          workspaceId: TARGET.workspaceId,
+          profileId: TARGET.profileId,
+          activeBrowserId: TARGET.browserId,
+          browsers: [{
+            browserId: TARGET.browserId,
+            activeTabId: TARGET.tabId,
+            tabs: [{ tabId: TARGET.tabId, revision: 1, url: PAGE.url }],
+          }],
         }],
       } } } },
     })
