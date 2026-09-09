@@ -223,19 +223,6 @@
   color: var(--dsw-alias-label-primary, #334155);
 }
 
-.tierRadioGroup {
-  display: flex;
-  gap: 16px;
-  font-size: 13px;
-}
-
-.radioItem {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  cursor: pointer;
-}
-
 .textInput {
   width: 100%;
   padding: 8px 12px;

@@ -2,6 +2,9 @@
  * Modal dialog for creating an account via CLIProxyAPI login flow.
  * Accurately distinguishes the five OAuth providers (Kimi, Codex, Anthropic, Antigravity, xAI)
  * from the 'GLM Coding Plan' API-key/endpoint subscription form (fixture mode, no real key saved).
+ *
+ * Specific OAuth mechanisms & endpoints for each vendor remain pending official manager verification;
+ * presented strictly as UI fixtures without fabricating unverified product endpoints or plan tiers.
  */
 
 import { useState } from 'react'
@@ -21,10 +24,9 @@ export function LoginModal({ initialProvider = 'codex', onClose, onSuccess }: Lo
   const [authUrl] = useState('https://auth.openai.com/oauth/authorize?response_type=code&client_id=cliproxy...')
   const [deviceCode] = useState('ABCD-EFGH')
 
-  // GLM Coding Plan fixture form state
-  const [glmApiKey, setGlmApiKey] = useState('glm-sub-fixture-key-xxxx')
-  const [glmEndpoint, setGlmEndpoint] = useState('https://open.bigmodel.cn/api/paas/v4')
-  const [glmTier, setGlmTier] = useState<'Coding Plus' | 'Coding Pro'>('Coding Pro')
+  // GLM Coding Plan fixture form state (no hardcoded unverified tiers or real endpoints)
+  const [glmApiKey, setGlmApiKey] = useState('')
+  const [glmEndpoint, setGlmEndpoint] = useState('')
 
   const isGlm = provider === 'glm'
 
@@ -47,8 +49,8 @@ export function LoginModal({ initialProvider = 'codex', onClose, onSuccess }: Lo
   const handleFinish = () => {
     onSuccess({
       provider,
-      email: isGlm ? 'glm-coding-plan@bigmodel.cn' : `new-${provider}-user@domain.com`,
-      tier: isGlm ? glmTier : undefined,
+      email: isGlm ? 'glm-coding-plan@user-domain.cn' : `new-${provider}-user@domain.com`,
+      tier: isGlm ? 'Coding Plan' : undefined,
     })
     onClose()
   }
@@ -76,7 +78,7 @@ export function LoginModal({ initialProvider = 'codex', onClose, onSuccess }: Lo
                 >
                   <span className={css.providerIcon}>K</span>
                   <strong>Kimi OAuth</strong>
-                  <span>设备授权快速登录流</span>
+                  <span>设备授权登录 (流程待 manager 源码核验)</span>
                 </button>
                 <button
                   type="button"
@@ -85,7 +87,7 @@ export function LoginModal({ initialProvider = 'codex', onClose, onSuccess }: Lo
                 >
                   <span className={css.providerIcon}>⚡</span>
                   <strong>Codex OAuth</strong>
-                  <span>网页 OAuth 流程登录</span>
+                  <span>网页 OAuth 登录 (流程待 manager 源码核验)</span>
                 </button>
                 <button
                   type="button"
@@ -94,7 +96,7 @@ export function LoginModal({ initialProvider = 'codex', onClose, onSuccess }: Lo
                 >
                   <span className={css.providerIcon}>✳</span>
                   <strong>Anthropic OAuth</strong>
-                  <span>Claude 服务官方回调</span>
+                  <span>网页 OAuth 登录 (流程待 manager 源码核验)</span>
                 </button>
                 <button
                   type="button"
@@ -103,7 +105,7 @@ export function LoginModal({ initialProvider = 'codex', onClose, onSuccess }: Lo
                 >
                   <span className={css.providerIcon}>▲</span>
                   <strong>Antigravity OAuth</strong>
-                  <span>Google 账号快捷关联</span>
+                  <span>Google 快捷授权 (流程待 manager 源码核验)</span>
                 </button>
                 <button
                   type="button"
@@ -112,7 +114,7 @@ export function LoginModal({ initialProvider = 'codex', onClose, onSuccess }: Lo
                 >
                   <span className={css.providerIcon}>Ø</span>
                   <strong>xAI Grok OAuth</strong>
-                  <span>Grok 服务认证文件</span>
+                  <span>OAuth 授权流程 (流程待 manager 源码核验)</span>
                 </button>
                 <button
                   type="button"
@@ -121,7 +123,7 @@ export function LoginModal({ initialProvider = 'codex', onClose, onSuccess }: Lo
                 >
                   <span className={css.providerIcon}>◈</span>
                   <strong>GLM Coding Plan</strong>
-                  <span>订阅专用 API Key + Coding 端点 (非 OAuth)</span>
+                  <span>订阅专用 API Key 表单接入 (非 OAuth 网页回调)</span>
                 </button>
               </div>
             </div>
@@ -139,7 +141,9 @@ export function LoginModal({ initialProvider = 'codex', onClose, onSuccess }: Lo
                   <strong>{deviceCode}</strong>
                 </div>
               )}
-              <span className={css.hint}>CLIProxyAPI 本地回调服务正在监听授权返回</span>
+              <span className={css.hint}>
+                CLIProxyAPI 本地回调服务正在监听授权返回（具体流程待 manager 上游事实核验）
+              </span>
             </div>
           )}
 
@@ -148,43 +152,19 @@ export function LoginModal({ initialProvider = 'codex', onClose, onSuccess }: Lo
               <div className={css.formBadge}>Sub2API Coding Plan 订阅模式</div>
               <h4 className={css.formTitle}>输入智谱 GLM Coding 订阅凭据</h4>
               <p className={css.formDesc}>
-                基于 Sub2API 移植实现，GLM 订阅采用专属 API Key 与代码端点，无需 OAuth 网页回调。
+                基于 Sub2API 移植实现，GLM 订阅采用专属 API Key 与 Coding 端点，无需 OAuth 网页回调。
               </p>
 
               <div className={css.fieldGroup}>
-                <label className={css.fieldLabel}>订阅类型：</label>
-                <div className={css.tierRadioGroup}>
-                  <label className={css.radioItem}>
-                    <input
-                      type="radio"
-                      name="tier"
-                      checked={glmTier === 'Coding Pro'}
-                      onChange={() => { setGlmTier('Coding Pro') }}
-                    />
-                    <span>Coding Pro (专业版)</span>
-                  </label>
-                  <label className={css.radioItem}>
-                    <input
-                      type="radio"
-                      name="tier"
-                      checked={glmTier === 'Coding Plus'}
-                      onChange={() => { setGlmTier('Coding Plus') }}
-                    />
-                    <span>Coding Plus</span>
-                  </label>
-                </div>
-              </div>
-
-              <div className={css.fieldGroup}>
-                <label className={css.fieldLabel}>订阅 API Key：</label>
+                <label className={css.fieldLabel}>订阅专用 API Key：</label>
                 <input
                   type="text"
                   className={css.textInput}
                   value={glmApiKey}
                   onChange={e => { setGlmApiKey(e.target.value) }}
-                  placeholder="请输入 GLM 订阅专有 API 密钥 (fixture 模式)"
+                  placeholder="请输入 GLM Coding 订阅专属 API Key (原型演示不保存真实密钥)"
                 />
-                <span className={css.fieldTip}>原型演示环境不会持久化或保存真实密钥。</span>
+                <span className={css.fieldTip}>原型演示环境为内存 Mock，不持久化或外传任何密钥。</span>
               </div>
 
               <div className={css.fieldGroup}>
@@ -194,8 +174,11 @@ export function LoginModal({ initialProvider = 'codex', onClose, onSuccess }: Lo
                   className={css.textInput}
                   value={glmEndpoint}
                   onChange={e => { setGlmEndpoint(e.target.value) }}
-                  placeholder="https://open.bigmodel.cn/api/paas/v4"
+                  placeholder="订阅端点待独立调查确定，留空使用核心默认"
                 />
+                <span className={css.fieldTip}>
+                  端点地址待 Sub2API 来源事实核验给出，不预置未经证实的普通通用 API 地址。
+                </span>
               </div>
             </div>
           )}
@@ -203,10 +186,10 @@ export function LoginModal({ initialProvider = 'codex', onClose, onSuccess }: Lo
           {step === 'success' && (
             <div className={css.resultStep}>
               <div className={css.successIcon}>✓</div>
-              <h4>{isGlm ? 'GLM 订阅凭据接入成功！' : 'OAuth 授权成功并已保存认证文件！'}</h4>
+              <h4>{isGlm ? 'GLM 订阅凭据配置就绪！' : 'OAuth 授权成功并已保存认证文件！'}</h4>
               <p>
                 {isGlm
-                  ? '已将 GLM Coding Plan 注入 CLIProxyAPI 路由池，GLM-4 / GLM-5.3 模型已就绪。'
+                  ? '已接入 GLM Coding Plan 订阅路由，模型目录就绪（具体参数由移植调查确定）。'
                   : '账号凭证已由 CLIProxyAPI 加密暂存，模型目录已就绪。'}
               </p>
             </div>
@@ -218,7 +201,7 @@ export function LoginModal({ initialProvider = 'codex', onClose, onSuccess }: Lo
             <>
               <Button variant="ghost" onClick={onClose}>取消</Button>
               <Button variant="primary" onClick={handleStart}>
-                {isGlm ? '配置 GLM 订阅密钥' : `开始 ${provider.toUpperCase()} 登录`}
+                {isGlm ? '配置 GLM 订阅凭据' : `开始 ${provider.toUpperCase()} 登录`}
               </Button>
             </>
           )}
