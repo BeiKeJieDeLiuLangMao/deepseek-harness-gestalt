@@ -1,0 +1,24 @@
+{
+  "$schema": "./schema.json",
+  "version": 1,
+  "id": "636-account-deletion-platform",
+  "summary": {
+    "en": "Enable account deletion, Mobile installation revocation, and PostgreSQL-backed Project Membership in the operated Platform.",
+    "zh": "在生产 Platform 启用账号删除、Mobile 安装撤销和 PostgreSQL 项目成员持久化。"
+  },
+  "releases": {
+    "desktop": "none",
+    "mobile": "none",
+    "platform": "patch"
+  },
+  "compatibilityExceptions": [
+    {
+      "releaseUnit": "desktop",
+      "reason": "This is the Platform-first deployment phase; Desktop UI delivery is deferred to a later separately reviewed, signed, and accepted Desktop release."
+    },
+    {
+      "releaseUnit": "mobile",
+      "reason": "This is the Platform-first deployment phase; Mobile UI delivery is deferred to a later separately reviewed, signed, and accepted Mobile release."
+    }
+  ]
+}
