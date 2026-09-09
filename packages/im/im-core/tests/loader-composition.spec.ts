@@ -16,6 +16,7 @@ import Storage from '@deepseek-ai/dsh-storage'
 import * as StorageJson from '@deepseek-ai/dsh-storage-json'
 import * as StorageDomain from '@deepseek-ai/dsh-storage-domain'
 import { brandString } from '@deepseek-ai/dsh-brand'
+import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 import ImConfigService from '../src/index.ts'
 import type { ImAccountId, ImRouteRuleId } from '../src/types.ts'
@@ -94,7 +95,7 @@ describe('im-core real Loader cordis.yml composition and persistence reload', ()
       id: accountId,
       platform: 'dingtalk',
       displayName: 'Loader DingTalk Account',
-      credentialRef: brandString('CRED_LOADER_TOKEN'),
+      credentialRef: brandString<CredentialRef>('CRED_LOADER_TOKEN'),
       status: 'connected',
       paused: false,
     })
