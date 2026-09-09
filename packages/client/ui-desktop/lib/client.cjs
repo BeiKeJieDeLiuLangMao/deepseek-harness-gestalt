@@ -2306,7 +2306,7 @@ window.__ModuleLoader__.load({
 		}
 		//#endregion
 		//#region \0dsh-css:/Users/yishu.cy/IdeaProjects/deepseek-harness/packages/client/ui-desktop/src/client/prototype/LoginModal.module.css.mjs
-		const css$2 = ".Yv7jna_backdrop{z-index:10000;background:var(--dsw-alias-bg-mask-1,#00000073);backdrop-filter:blur(4px);justify-content:center;align-items:center;padding:20px;display:flex;position:fixed;inset:0}.Yv7jna_dialog{background:var(--dsw-alias-bg-layer-2,#fff);border:1px solid var(--dsw-alias-border-inverted,#0000001a);border-radius:16px;flex-direction:column;width:min(640px,100%);display:flex;overflow:hidden;box-shadow:0 20px 48px #00000047}.Yv7jna_header{border-bottom:1px solid var(--dsw-alias-border-l2,#00000014);justify-content:space-between;align-items:flex-start;padding:20px 24px 16px;display:flex}.Yv7jna_headerTitle h3{color:var(--dsw-alias-label-primary,#0f172a);margin:0;font-size:16px;font-weight:600}.Yv7jna_headerTitle p{color:var(--dsw-alias-label-secondary,#64748b);margin:4px 0 0;font-size:13px}.Yv7jna_closeBtn{cursor:pointer;color:var(--dsw-alias-label-tertiary,#94a3b8);background:0 0;border:none;padding:4px;font-size:16px}.Yv7jna_body{flex-direction:column;gap:16px;padding:24px;display:flex}.Yv7jna_label{color:var(--dsw-alias-label-secondary,#475569);margin-bottom:8px;font-size:13px;font-weight:500;display:block}.Yv7jna_grid{grid-template-columns:repeat(2,1fr);gap:12px;display:grid}.Yv7jna_providerCard{border:1px solid var(--dsw-alias-border-l2,#0000001a);background:var(--dsw-alias-bg-layer-1,#f8fafc);cursor:pointer;text-align:left;border-radius:10px;flex-direction:column;align-items:flex-start;gap:4px;padding:14px;transition:all .15s;display:flex}.Yv7jna_providerCard:hover{background:#10b9810a;border-color:#10b981}.Yv7jna_selected{background:#10b98114;border-color:#10b981;box-shadow:0 0 0 1px #10b981}.Yv7jna_glmCard{border-style:dashed}.Yv7jna_providerIcon{color:#10b981;margin-bottom:2px;font-size:16px;font-weight:700}.Yv7jna_providerCard strong{color:var(--dsw-alias-label-primary,#0f172a);font-size:13px}.Yv7jna_providerCard span{color:var(--dsw-alias-label-secondary,#64748b);font-size:11px}.Yv7jna_authStep,.Yv7jna_resultStep{text-align:center;flex-direction:column;align-items:center;gap:12px;padding:20px 0;display:flex}.Yv7jna_spinner{border:3px solid #10b98133;border-top-color:#10b981;border-radius:999px;width:32px;height:32px;animation:.8s linear infinite Yv7jna_spin}@keyframes Yv7jna_spin{to{transform:rotate(360deg)}}.Yv7jna_urlBox{background:var(--dsw-alias-interactive-bg-subtle,#0000000a);word-break:break-all;border-radius:6px;max-width:90%;padding:8px 12px;font-family:monospace;font-size:11px}.Yv7jna_deviceCodeBox{color:#92400e;background:#fef3c7;border-radius:8px;align-items:center;gap:8px;padding:8px 16px;font-size:13px;display:flex}.Yv7jna_hint{color:var(--dsw-alias-label-tertiary,#94a3b8);font-size:12px}.Yv7jna_successIcon{color:#fff;background:#10b981;border-radius:999px;justify-content:center;align-items:center;width:44px;height:44px;font-size:20px;font-weight:700;display:flex}.Yv7jna_formStep{flex-direction:column;gap:16px;padding:8px 0;display:flex}.Yv7jna_formBadge{color:#065f46;background:#10b98126;border-radius:4px;align-self:flex-start;padding:2px 6px;font-size:10px;font-weight:700}.Yv7jna_formTitle{color:var(--dsw-alias-label-primary,#0f172a);margin:0;font-size:15px;font-weight:600}.Yv7jna_formDesc{color:var(--dsw-alias-label-secondary,#64748b);margin:-8px 0 4px;font-size:12px;line-height:1.5}.Yv7jna_fieldGroup{flex-direction:column;gap:6px;display:flex}.Yv7jna_fieldLabel{color:var(--dsw-alias-label-primary,#334155);font-size:12px;font-weight:500}.Yv7jna_textInput{border:1px solid var(--dsw-alias-border-l2,#00000026);background:var(--dsw-alias-bg-layer-1,#f8fafc);width:100%;color:var(--dsw-alias-label-primary,#0f172a);box-sizing:border-box;border-radius:8px;padding:8px 12px;font-family:inherit;font-size:13px}.Yv7jna_textInput:focus{border-color:#10b981;outline:none;box-shadow:0 0 0 2px #10b98133}.Yv7jna_fieldTip{color:var(--dsw-alias-label-tertiary,#94a3b8);font-size:11px}.Yv7jna_footer{border-top:1px solid var(--dsw-alias-border-l2,#00000014);background:var(--dsw-alias-bg-layer-1,#f8fafc);justify-content:flex-end;gap:12px;padding:16px 24px;display:flex}";
+		const css$2 = ".Yv7jna_backdrop{z-index:10000;background:var(--dsw-alias-bg-mask-1,#00000073);backdrop-filter:blur(4px);justify-content:center;align-items:center;padding:20px;display:flex;position:fixed;inset:0}.Yv7jna_dialog{background:var(--dsw-alias-bg-layer-2,#fff);border:1px solid var(--dsw-alias-border-inverted,#0000001a);border-radius:16px;flex-direction:column;width:min(640px,100%);display:flex;overflow:hidden;box-shadow:0 20px 48px #00000047}.Yv7jna_header{border-bottom:1px solid var(--dsw-alias-border-l2,#00000014);justify-content:space-between;align-items:flex-start;padding:20px 24px 16px;display:flex}.Yv7jna_headerTitle h3{color:var(--dsw-alias-label-primary,#0f172a);margin:0;font-size:16px;font-weight:600}.Yv7jna_headerTitle p{color:var(--dsw-alias-label-secondary,#64748b);margin:4px 0 0;font-size:13px}.Yv7jna_closeBtn{cursor:pointer;color:var(--dsw-alias-label-tertiary,#94a3b8);background:0 0;border:none;padding:4px;font-size:16px}.Yv7jna_body{flex-direction:column;gap:16px;padding:24px;display:flex}.Yv7jna_label{color:var(--dsw-alias-label-secondary,#475569);margin-bottom:8px;font-size:13px;font-weight:500;display:block}.Yv7jna_grid{grid-template-columns:repeat(2,1fr);gap:12px;display:grid}.Yv7jna_providerCard{border:1px solid var(--dsw-alias-border-l2,#0000001a);background:var(--dsw-alias-bg-layer-1,#f8fafc);cursor:pointer;text-align:left;border-radius:10px;flex-direction:column;align-items:flex-start;gap:4px;padding:14px;transition:all .15s;display:flex}.Yv7jna_providerCard:hover{background:#10b9810a;border-color:#10b981}.Yv7jna_selected{background:#10b98114;border-color:#10b981;box-shadow:0 0 0 1px #10b981}.Yv7jna_glmCard{border-style:dashed}.Yv7jna_providerIcon{color:#10b981;margin-bottom:2px;font-size:16px;font-weight:700}.Yv7jna_providerCard strong{color:var(--dsw-alias-label-primary,#0f172a);font-size:13px}.Yv7jna_providerCard span{color:var(--dsw-alias-label-secondary,#64748b);font-size:11px}.Yv7jna_authStep,.Yv7jna_resultStep{text-align:center;flex-direction:column;align-items:center;gap:12px;padding:20px 0;display:flex}.Yv7jna_simNotice{color:#991b1b;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;max-width:90%;padding:8px 12px;font-size:12px;font-weight:500;line-height:1.4}.Yv7jna_spinner{border:3px solid #10b98133;border-top-color:#10b981;border-radius:999px;width:32px;height:32px;animation:.8s linear infinite Yv7jna_spin}@keyframes Yv7jna_spin{to{transform:rotate(360deg)}}.Yv7jna_urlBox{background:var(--dsw-alias-interactive-bg-subtle,#0000000a);border:1px dashed var(--dsw-alias-border-l2,#00000026);word-break:break-all;max-width:90%;color:var(--dsw-alias-label-primary,#0f172a);user-select:all;border-radius:6px;padding:8px 12px;font-family:monospace;font-size:12px}.Yv7jna_deviceCodeBox{color:#92400e;background:#fef3c7;border-radius:8px;align-items:center;gap:8px;padding:8px 16px;font-size:13px;display:flex}.Yv7jna_hint{color:var(--dsw-alias-label-tertiary,#94a3b8);font-size:12px}.Yv7jna_successIcon{color:#fff;background:#10b981;border-radius:999px;justify-content:center;align-items:center;width:44px;height:44px;font-size:20px;font-weight:700;display:flex}.Yv7jna_formStep{flex-direction:column;gap:16px;padding:8px 0;display:flex}.Yv7jna_formBadge{color:#065f46;background:#10b98126;border-radius:4px;align-self:flex-start;padding:2px 6px;font-size:10px;font-weight:700}.Yv7jna_formTitle{color:var(--dsw-alias-label-primary,#0f172a);margin:0;font-size:15px;font-weight:600}.Yv7jna_formDesc{color:var(--dsw-alias-label-secondary,#64748b);margin:-8px 0 4px;font-size:12px;line-height:1.5}.Yv7jna_fieldGroup{flex-direction:column;gap:6px;display:flex}.Yv7jna_fieldLabel{color:var(--dsw-alias-label-primary,#334155);font-size:12px;font-weight:500}.Yv7jna_textInput{border:1px solid var(--dsw-alias-border-l2,#00000026);background:var(--dsw-alias-bg-layer-1,#f8fafc);width:100%;color:var(--dsw-alias-label-primary,#0f172a);box-sizing:border-box;border-radius:8px;padding:8px 12px;font-family:inherit;font-size:13px}.Yv7jna_textInput:focus{border-color:#10b981;outline:none;box-shadow:0 0 0 2px #10b98133}.Yv7jna_fieldTip{color:var(--dsw-alias-label-tertiary,#94a3b8);font-size:11px}.Yv7jna_footer{border-top:1px solid var(--dsw-alias-border-l2,#00000014);background:var(--dsw-alias-bg-layer-1,#f8fafc);justify-content:flex-end;gap:12px;padding:16px 24px;display:flex}";
 		const tagId$2 = "@deepseek-ai/dsh-client-ui-desktop/LoginModal.module.css";
 		if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=" + JSON.stringify(tagId$2) + "]") === null) {
 			const tag = document.createElement("style");
@@ -2340,6 +2340,7 @@ window.__ModuleLoader__.load({
 			"providerIcon": "Yv7jna_providerIcon",
 			"resultStep": "Yv7jna_resultStep",
 			"selected": "Yv7jna_selected",
+			"simNotice": "Yv7jna_simNotice",
 			"spin": "Yv7jna_spin",
 			"spinner": "Yv7jna_spinner",
 			"successIcon": "Yv7jna_successIcon",
@@ -2356,16 +2357,17 @@ window.__ModuleLoader__.load({
 		* - Codex, Claude, Antigravity: PKCE Browser Redirect Flow (URL redirect fixture)
 		* - GLM: Coding Plan Dedicated API Key + Coding endpoint form (no OAuth)
 		*
-		* All URLs strictly use explicit .example.test non-operational fixture URIs (resolving R5),
-		* cleanly distinguishing each provider rather than hardcoding a uniform real OpenAI URL.
+		* All URLs strictly use explicit non-operational https://<provider>.example.test/verify
+		* fixture links. Prominently labeled as simulated authorization; clicking only advances
+		* the fixture simulation without navigating to real third-party endpoints (resolving R5).
 		*/
 		function getProviderFixtureAuthUri(p) {
 			switch (p) {
-				case "kimi": return "https://auth.kimi.example.test/device/verify?user_code=ABCD-EFGH";
-				case "xai": return "https://auth.x.ai.example.test/device/activate?user_code=GROK-7890";
-				case "codex": return "https://auth.openai.example.test/oauth/authorize?response_type=code&client_id=cliproxy...";
-				case "anthropic": return "https://auth.anthropic.example.test/oauth/authorize?response_type=code&client_id=cliproxy...";
-				case "antigravity": return "https://accounts.google.example.test/o/oauth2/v2/auth?response_type=code&client_id=cliproxy...";
+				case "kimi": return "https://kimi.example.test/verify";
+				case "xai": return "https://xai.example.test/verify";
+				case "codex": return "https://codex.example.test/verify";
+				case "anthropic": return "https://anthropic.example.test/verify";
+				case "antigravity": return "https://antigravity.example.test/verify";
 				case "glm": return "https://open.bigmodel.cn/api/coding/paas/v4";
 			}
 		}
@@ -2416,7 +2418,7 @@ window.__ModuleLoader__.load({
 							className: LoginModal_module_css_default.header,
 							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 								className: LoginModal_module_css_default.headerTitle,
-								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h3", { children: "添加账号凭证 · CLIProxyAPI" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", { children: "基于官方 Manager 流程规范：Device Flow 设备码、PKCE 浏览器重定向与专用订阅密钥。" })]
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h3", { children: "添加账号凭证 · CLIProxyAPI (原型模拟)" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", { children: "基于官方 Manager 流程规范：Device Flow 设备码、PKCE 浏览器重定向与专用订阅密钥。" })]
 							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 								type: "button",
 								className: LoginModal_module_css_default.closeBtn,
@@ -2447,7 +2449,7 @@ window.__ModuleLoader__.load({
 														children: "K"
 													}),
 													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", { children: "Kimi OAuth" }),
-													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "Device Flow · 设备码授权 (fixture 示意)" })
+													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "Device Flow · 设备码授权 (模拟示意)" })
 												]
 											}),
 											/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
@@ -2462,7 +2464,7 @@ window.__ModuleLoader__.load({
 														children: "Ø"
 													}),
 													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", { children: "xAI Grok OAuth" }),
-													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "Device Flow · 设备码授权 (fixture 示意)" })
+													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "Device Flow · 设备码授权 (模拟示意)" })
 												]
 											}),
 											/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
@@ -2477,7 +2479,7 @@ window.__ModuleLoader__.load({
 														children: "⚡"
 													}),
 													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", { children: "Codex OAuth" }),
-													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "PKCE 重定向 · 网页授权 (fixture 示意)" })
+													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "PKCE 重定向 · 网页授权 (模拟示意)" })
 												]
 											}),
 											/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
@@ -2492,7 +2494,7 @@ window.__ModuleLoader__.load({
 														children: "✳"
 													}),
 													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", { children: "Anthropic OAuth" }),
-													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "PKCE 重定向 · Claude 授权 (fixture 示意)" })
+													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "PKCE 重定向 · Claude 授权 (模拟示意)" })
 												]
 											}),
 											/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
@@ -2507,7 +2509,7 @@ window.__ModuleLoader__.load({
 														children: "▲"
 													}),
 													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", { children: "Antigravity OAuth" }),
-													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "PKCE 重定向 · Google 快捷授权 (fixture 示意)" })
+													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "PKCE 重定向 · Google 快捷授权 (模拟示意)" })
 												]
 											}),
 											/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
@@ -2539,10 +2541,15 @@ window.__ModuleLoader__.load({
 											isDeviceFlow ? "设备授权码确认" : "浏览器授权完成",
 											"…"
 										] }),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+											className: LoginModal_module_css_default.simNotice,
+											children: "⚠️ 【模拟授权】本界面为原型演示环境，不可真实登录，不会向第三方发起外部网络请求。"
+										}),
 										isDeviceFlow ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
-											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", { children: "请在已登录设备浏览器打开以下验证网址，并确认输入的设备码：" }),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", { children: "模拟验证网址（不可导航，点击仅用于展示原型）：" }),
 											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 												className: LoginModal_module_css_default.urlBox,
+												"data-testid": "auth-fixture-url",
 												children: authUri
 											}),
 											/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
@@ -2558,14 +2565,15 @@ window.__ModuleLoader__.load({
 												]
 											})
 										] }) : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
-											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", { children: "请在系统浏览器中完成官方 PKCE 授权重定向操作：" }),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", { children: "模拟授权重定向地址（不可导航，点击仅用于展示原型）：" }),
 											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 												className: LoginModal_module_css_default.urlBox,
+												"data-testid": "auth-fixture-url",
 												children: authUri
 											}),
 											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 												className: LoginModal_module_css_default.hint,
-												children: "CLIProxyAPI 本地回调端点正在安全监听授权返回 (is_webui=true 模拟示意)"
+												children: "CLIProxyAPI 本地回调端点正在监听授权返回 (is_webui=true 模拟示意)"
 											})
 										] })
 									]

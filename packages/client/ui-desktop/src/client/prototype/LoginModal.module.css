@@ -127,6 +127,18 @@
   gap: 12px;
 }
 
+.simNotice {
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #991b1b;
+  font-size: 12px;
+  font-weight: 500;
+  max-width: 90%;
+  line-height: 1.4;
+}
+
 .spinner {
   width: 32px;
   height: 32px;
@@ -142,12 +154,15 @@
 
 .urlBox {
   font-family: monospace;
-  font-size: 11px;
+  font-size: 12px;
   padding: 8px 12px;
   background: var(--dsw-alias-interactive-bg-subtle, rgba(0, 0, 0, 0.04));
+  border: 1px dashed var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.15));
   border-radius: 6px;
   max-width: 90%;
   word-break: break-all;
+  color: var(--dsw-alias-label-primary, #0f172a);
+  user-select: all;
 }
 
 .deviceCodeBox {

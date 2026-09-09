@@ -6,8 +6,9 @@
  * - Codex, Claude, Antigravity: PKCE Browser Redirect Flow (URL redirect fixture)
  * - GLM: Coding Plan Dedicated API Key + Coding endpoint form (no OAuth)
  *
- * All URLs strictly use explicit .example.test non-operational fixture URIs (resolving R5),
- * cleanly distinguishing each provider rather than hardcoding a uniform real OpenAI URL.
+ * All URLs strictly use explicit non-operational https://<provider>.example.test/verify
+ * fixture links. Prominently labeled as simulated authorization; clicking only advances
+ * the fixture simulation without navigating to real third-party endpoints (resolving R5).
  */
 
 import { useState } from 'react'
@@ -24,15 +25,15 @@ export interface LoginModalProps {
 function getProviderFixtureAuthUri(p: ProviderType): string {
   switch (p) {
     case 'kimi':
-      return 'https://auth.kimi.example.test/device/verify?user_code=ABCD-EFGH'
+      return 'https://kimi.example.test/verify'
     case 'xai':
-      return 'https://auth.x.ai.example.test/device/activate?user_code=GROK-7890'
+      return 'https://xai.example.test/verify'
     case 'codex':
-      return 'https://auth.openai.example.test/oauth/authorize?response_type=code&client_id=cliproxy...'
+      return 'https://codex.example.test/verify'
     case 'anthropic':
-      return 'https://auth.anthropic.example.test/oauth/authorize?response_type=code&client_id=cliproxy...'
+      return 'https://anthropic.example.test/verify'
     case 'antigravity':
-      return 'https://accounts.google.example.test/o/oauth2/v2/auth?response_type=code&client_id=cliproxy...'
+      return 'https://antigravity.example.test/verify'
     case 'glm':
       return 'https://open.bigmodel.cn/api/coding/paas/v4'
   }
@@ -89,7 +90,7 @@ export function LoginModal({ initialProvider = 'codex', onClose, onSuccess }: Lo
       <div className={css.dialog} onClick={e => { e.stopPropagation() }}>
         <header className={css.header}>
           <div className={css.headerTitle}>
-            <h3>添加账号凭证 · CLIProxyAPI</h3>
+            <h3>添加账号凭证 · CLIProxyAPI (原型模拟)</h3>
             <p>基于官方 Manager 流程规范：Device Flow 设备码、PKCE 浏览器重定向与专用订阅密钥。</p>
           </div>
           <button type="button" className={css.closeBtn} onClick={onClose}>✕</button>
@@ -107,7 +108,7 @@ export function LoginModal({ initialProvider = 'codex', onClose, onSuccess }: Lo
                 >
                   <span className={css.providerIcon}>K</span>
                   <strong>Kimi OAuth</strong>
-                  <span>Device Flow · 设备码授权 (fixture 示意)</span>
+                  <span>Device Flow · 设备码授权 (模拟示意)</span>
                 </button>
                 <button
                   type="button"
@@ -116,7 +117,7 @@ export function LoginModal({ initialProvider = 'codex', onClose, onSuccess }: Lo
                 >
                   <span className={css.providerIcon}>Ø</span>
                   <strong>xAI Grok OAuth</strong>
-                  <span>Device Flow · 设备码授权 (fixture 示意)</span>
+                  <span>Device Flow · 设备码授权 (模拟示意)</span>
                 </button>
                 <button
                   type="button"
@@ -125,7 +126,7 @@ export function LoginModal({ initialProvider = 'codex', onClose, onSuccess }: Lo
                 >
                   <span className={css.providerIcon}>⚡</span>
                   <strong>Codex OAuth</strong>
-                  <span>PKCE 重定向 · 网页授权 (fixture 示意)</span>
+                  <span>PKCE 重定向 · 网页授权 (模拟示意)</span>
                 </button>
                 <button
                   type="button"
@@ -134,7 +135,7 @@ export function LoginModal({ initialProvider = 'codex', onClose, onSuccess }: Lo
                 >
                   <span className={css.providerIcon}>✳</span>
                   <strong>Anthropic OAuth</strong>
-                  <span>PKCE 重定向 · Claude 授权 (fixture 示意)</span>
+                  <span>PKCE 重定向 · Claude 授权 (模拟示意)</span>
                 </button>
                 <button
                   type="button"
@@ -143,7 +144,7 @@ export function LoginModal({ initialProvider = 'codex', onClose, onSuccess }: Lo
                 >
                   <span className={css.providerIcon}>▲</span>
                   <strong>Antigravity OAuth</strong>
-                  <span>PKCE 重定向 · Google 快捷授权 (fixture 示意)</span>
+                  <span>PKCE 重定向 · Google 快捷授权 (模拟示意)</span>
                 </button>
                 <button
                   type="button"
@@ -165,10 +166,14 @@ export function LoginModal({ initialProvider = 'codex', onClose, onSuccess }: Lo
                 正在等待 {provider.toUpperCase()} {isDeviceFlow ? '设备授权码确认' : '浏览器授权完成'}…
               </h4>
 
+              <div className={css.simNotice}>
+                ⚠️ 【模拟授权】本界面为原型演示环境，不可真实登录，不会向第三方发起外部网络请求。
+              </div>
+
               {isDeviceFlow ? (
                 <>
-                  <p>请在已登录设备浏览器打开以下验证网址，并确认输入的设备码：</p>
-                  <div className={css.urlBox}>{authUri}</div>
+                  <p>模拟验证网址（不可导航，点击仅用于展示原型）：</p>
+                  <div className={css.urlBox} data-testid="auth-fixture-url">{authUri}</div>
                   <div className={css.deviceCodeBox}>
                     <span>设备用户码：</span>
                     <strong>{deviceCode}</strong>
@@ -179,10 +184,10 @@ export function LoginModal({ initialProvider = 'codex', onClose, onSuccess }: Lo
                 </>
               ) : (
                 <>
-                  <p>请在系统浏览器中完成官方 PKCE 授权重定向操作：</p>
-                  <div className={css.urlBox}>{authUri}</div>
+                  <p>模拟授权重定向地址（不可导航，点击仅用于展示原型）：</p>
+                  <div className={css.urlBox} data-testid="auth-fixture-url">{authUri}</div>
                   <span className={css.hint}>
-                    CLIProxyAPI 本地回调端点正在安全监听授权返回 (is_webui=true 模拟示意)
+                    CLIProxyAPI 本地回调端点正在监听授权返回 (is_webui=true 模拟示意)
                   </span>
                 </>
               )}

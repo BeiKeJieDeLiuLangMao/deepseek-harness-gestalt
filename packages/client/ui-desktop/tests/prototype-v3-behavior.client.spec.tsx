@@ -6,9 +6,9 @@ import { QuotaBarWithTimeline } from '../src/client/prototype/QuotaBarWithTimeli
 import { LoginModal } from '../src/client/prototype/LoginModal.tsx'
 import { MOCK_ACCOUNTS } from '../src/client/prototype/mock-data.ts'
 
-describe('v3 Core Behavior & Integrity Tests', () => {
-  // Test v3-1: AccountCard face state controlled by globalFace, overrideable by local flip, resettable by globalEpoch
-  it('v3-1: AccountCard flips independently and resets on globalEpoch change', () => {
+describe('v3 Core Behavior & Integrity Tests (Final Strict Gate)', () => {
+  // Test 1: AccountCard local override is independent and reset by globalEpoch
+  it('v3-1: AccountCard local flip overrides globalFace, and resets on globalEpoch bump', () => {
     const item = MOCK_ACCOUNTS[1] // Antigravity Workspace
     const { getByTestId, rerender } = render(
       <AccountCard item={item} globalFace="A" globalEpoch={0} />
@@ -18,19 +18,19 @@ describe('v3 Core Behavior & Integrity Tests', () => {
     expect(card.getAttribute('data-current-face')).toBe('A')
     expect(getByTestId('card-face-a')).toBeDefined()
 
-    // Flip single card to B
+    // Flip single card to B independently
     const flipBtn = getByTestId(`card-flip-btn-${item.id}`)
     fireEvent.click(flipBtn)
     expect(card.getAttribute('data-current-face')).toBe('B')
     expect(getByTestId('card-face-b')).toBeDefined()
 
-    // Rerender with globalFace="A" and new epoch -> resets to A
+    // Parent stays at globalFace="A" but bumps epoch (e.g. user clicked global 'A') -> resets card override to A
     rerender(<AccountCard item={item} globalFace="A" globalEpoch={1} />)
     expect(card.getAttribute('data-current-face')).toBe('A')
     expect(getByTestId('card-face-a')).toBeDefined()
   })
 
-  // Test v3-2: QuotaBarWithTimeline does NOT render any fill/marker/legend when isReliable is false
+  // Test 2: QuotaBarWithTimeline unreliable metrics do NOT render fill/marker/legend
   it('v3-2: QuotaBarWithTimeline renders no fill, needle, or legend when unreliable', () => {
     const { container, getByText } = render(
       <QuotaBarWithTimeline
@@ -53,7 +53,7 @@ describe('v3 Core Behavior & Integrity Tests', () => {
     expect(container.querySelector('[class*="legendRow"]')).toBeNull()
   })
 
-  // Test v3-3: mock-data all accounts use @example.com and generalized filenames
+  // Test 3: mock-data all accounts strictly use @example.com and generalized filenames
   it('v3-3: All mock-data accounts strictly use @example.com without personal leakage', () => {
     expect(MOCK_ACCOUNTS.length).toBeGreaterThan(0)
     for (const acc of MOCK_ACCOUNTS) {
@@ -63,34 +63,48 @@ describe('v3 Core Behavior & Integrity Tests', () => {
     }
   })
 
-  // Test v3-4: LoginModal uses provider-specific .example.test URIs and fixture indicators
-  it('v3-4: LoginModal renders provider-specific .example.test URIs and avoids hardcoded OpenAI URL', () => {
+  // Test 4: LoginModal uses provider-specific .example.test/verify and prominent simulation notices
+  it('v3-4: LoginModal renders non-operational provider-specific .example.test/verify URIs with simulation warning', () => {
     // Kimi Device Flow
-    const { getByText, unmount } = render(
+    const { getByText, getByTestId, unmount } = render(
       <LoginModal initialProvider="kimi" onClose={() => {}} onSuccess={() => {}} />
     )
     fireEvent.click(getByText('开始 KIMI 登录'))
-    expect(getByText(/auth\.kimi\.example\.test/)).toBeDefined()
+    expect(getByTestId('auth-fixture-url').textContent).toBe('https://kimi.example.test/verify')
+    expect(getByText(/模拟授权.*不可真实登录/)).toBeDefined()
     expect(getByText('KIMI-1234')).toBeDefined()
     unmount()
 
     // xAI Device Flow
-    const xaiRender = render(<LoginModal initialProvider="xai" onClose={() => {}} onSuccess={() => {}} />)
-    fireEvent.click(xaiRender.getByText('开始 XAI 登录'))
-    expect(xaiRender.getByText(/auth\.x\.ai\.example\.test/)).toBeDefined()
-    expect(xaiRender.getByText('GROK-7890')).toBeDefined()
-    xaiRender.unmount()
+    const xai = render(<LoginModal initialProvider="xai" onClose={() => {}} onSuccess={() => {}} />)
+    fireEvent.click(xai.getByText('开始 XAI 登录'))
+    expect(xai.getByTestId('auth-fixture-url').textContent).toBe('https://xai.example.test/verify')
+    expect(xai.getByText('GROK-7890')).toBeDefined()
+    xai.unmount()
 
     // Codex PKCE Flow
-    const codexRender = render(<LoginModal initialProvider="codex" onClose={() => {}} onSuccess={() => {}} />)
-    fireEvent.click(codexRender.getByText('开始 CODEX 登录'))
-    expect(codexRender.getByText(/auth\.openai\.example\.test/)).toBeDefined()
-    codexRender.unmount()
+    const codex = render(<LoginModal initialProvider="codex" onClose={() => {}} onSuccess={() => {}} />)
+    fireEvent.click(codex.getByText('开始 CODEX 登录'))
+    expect(codex.getByTestId('auth-fixture-url').textContent).toBe('https://codex.example.test/verify')
+    codex.unmount()
+
+    // Anthropic PKCE Flow
+    const claude = render(<LoginModal initialProvider="anthropic" onClose={() => {}} onSuccess={() => {}} />)
+    fireEvent.click(claude.getByText('开始 ANTHROPIC 登录'))
+    expect(claude.getByTestId('auth-fixture-url').textContent).toBe('https://anthropic.example.test/verify')
+    claude.unmount()
+
+    // Antigravity PKCE Flow
+    const antigravity = render(<LoginModal initialProvider="antigravity" onClose={() => {}} onSuccess={() => {}} />)
+    fireEvent.click(antigravity.getByText('开始 ANTIGRAVITY 登录'))
+    expect(antigravity.getByTestId('auth-fixture-url').textContent).toBe('https://antigravity.example.test/verify')
+    antigravity.unmount()
 
     // GLM Coding Plan dedicated endpoint form
-    const glmRender = render(<LoginModal initialProvider="glm" onClose={() => {}} onSuccess={() => {}} />)
-    fireEvent.click(glmRender.getByText('配置 GLM 订阅凭据'))
-    expect(glmRender.getByText('输入智谱 GLM Coding 订阅凭据 (CN个人订阅)')).toBeDefined()
-    glmRender.unmount()
+    const glm = render(<LoginModal initialProvider="glm" onClose={() => {}} onSuccess={() => {}} />)
+    fireEvent.click(glm.getByText('配置 GLM 订阅凭据'))
+    expect(glm.getByText('输入智谱 GLM Coding 订阅凭据 (CN个人订阅)')).toBeDefined()
+    expect(glm.getByDisplayValue('https://open.bigmodel.cn/api/coding/paas/v4')).toBeDefined()
+    glm.unmount()
   })
 })
