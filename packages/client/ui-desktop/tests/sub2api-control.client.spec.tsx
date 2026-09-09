@@ -236,6 +236,7 @@ function renderControl(snapshot: DesktopSub2ApiSnapshot): ReturnType<typeof rend
     <Sub2ApiControl
       t={t as never}
       useResource={useResource}
+      usePanelInfo={selector => selector({ activePanelId: null })}
       useSessions={(() => { throw new Error('unused') })}
       useSessionPendingInteraction={(() => { throw new Error('unused') })}
       useWorkspaces={(() => { throw new Error('unused') })}

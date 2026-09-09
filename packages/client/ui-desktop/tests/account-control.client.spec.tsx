@@ -198,6 +198,7 @@ function renderControl(
     <AccountControl
       t={t as never}
       useResource={useResource}
+      usePanelInfo={selector => selector({ activePanelId: null })}
       useSessions={(() => { throw new Error('unused') })}
       useSessionPendingInteraction={(() => { throw new Error('unused') })}
       useWorkspaces={(() => { throw new Error('unused') })}

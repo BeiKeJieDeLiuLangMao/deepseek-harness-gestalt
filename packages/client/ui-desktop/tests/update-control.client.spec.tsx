@@ -28,6 +28,7 @@ function mount(status: UpdaterStatus, bridge?: Partial<DesktopBridge>) {
       wide
       t={t as never}
       useResource={useResource}
+      usePanelInfo={selector => selector({ activePanelId: null })}
       useSessions={(() => { throw new Error('unused') })}
       useSessionPendingInteraction={(() => { throw new Error('unused') })}
       useWorkspaces={(() => { throw new Error('unused') })}
@@ -44,6 +45,7 @@ describe('UpdateControl', () => {
         wide
         t={t as never}
         useResource={useResource}
+        usePanelInfo={selector => selector({ activePanelId: null })}
         useSessions={(() => { throw new Error('unused') })}
         useSessionPendingInteraction={(() => { throw new Error('unused') })}
         useWorkspaces={(() => { throw new Error('unused') })}
@@ -88,6 +90,7 @@ describe('UpdateControl', () => {
         wide
         t={t as never}
         useResource={useResource}
+        usePanelInfo={selector => selector({ activePanelId: null })}
         useSessions={(() => { throw new Error('unused') })}
         useSessionPendingInteraction={(() => { throw new Error('unused') })}
         useWorkspaces={(() => { throw new Error('unused') })}
@@ -188,6 +191,7 @@ describe('UpdateControl', () => {
         wide={false}
         t={t as never}
         useResource={useResource}
+        usePanelInfo={selector => selector({ activePanelId: null })}
         useSessions={(() => { throw new Error('unused') })}
         useSessionPendingInteraction={(() => { throw new Error('unused') })}
         useWorkspaces={(() => { throw new Error('unused') })}

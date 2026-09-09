@@ -65,7 +65,10 @@ async function bench() {
   await slotsFiber.await()
   const slots = ctx.get('slots') as SlotRegistry
   let host: SlotRendererHost | undefined
-  slots.install({ renderRoot: (value) => { host = value; return null } })
+  slots.install({
+    renderRoot: (value) => { host = value; return null },
+    renderSession: () => null,
+  })
   const rendererHost = (): SlotRendererHost => {
     slots.renderSlot('root', {})
     if (host === undefined) throw new Error('the root renderer did not receive its host')

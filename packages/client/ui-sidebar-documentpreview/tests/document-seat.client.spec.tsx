@@ -2,7 +2,7 @@
 /** Document extension registration and dispatch through the production Sidebar and Slot renderer. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, screen, waitFor } from '@testing-library/react'
-import { SlotTestRuntime } from '@deepseek-ai/dsh-client-test-runtime'
+import { SlotTestRuntime, stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { ClientRemote } from '@deepseek-ai/dsh-api-gateway/client'
@@ -28,6 +28,7 @@ afterEach(async () => {
     await runtime?.dispose()
     runtime = undefined
   } finally {
+    document.querySelector('[data-test-workbench-host-root]')?.remove()
     if (animations === undefined) Reflect.deleteProperty(Element.prototype, 'getAnimations')
     else Object.defineProperty(Element.prototype, 'getAnimations', animations)
   }
@@ -36,12 +37,16 @@ afterEach(async () => {
 async function boot() {
   const rt = await SlotTestRuntime.create()
   runtime = rt
-  rt.ctx.provide('layout', { openRightbar: vi.fn(), closeRightbar: vi.fn() } as never)
+  rt.ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
+  rt.ctx.provide('layout', {
+    openRightbar: vi.fn(), closeRightbar: vi.fn(),
+    openBottombar: vi.fn(), closeBottombar: vi.fn(),
+  } as never)
   const locale = new LocaleRuntime(rt.ctx)
   rt.ctx.provide('locale', locale)
   rt.slots.installLocale(locale)
   await rt.declare({
-    rightbar: { kind: 'single', scope: 'root' },
+    workbench: { kind: 'single', scope: 'session' },
     'conversation.session.header.corner': { kind: 'single', scope: 'session' },
   })
   await rt.sessions.add({ id: SESSION })
@@ -64,7 +69,27 @@ async function boot() {
   }))
   await rt.mount({ inject: [...sidebarInject], apply: sidebarApply })
   await rt.mount({ inject: [...inject], apply })
-  const view = rt.renderSlot('rightbar', { width: 600, viewportWidth: 1440, canShow: true })
+  const hostRoot = document.createElement('div')
+  hostRoot.dataset.testWorkbenchHostRoot = 'true'
+  const rightHost = document.createElement('div')
+  rightHost.id = 'document-test-workbench-right'
+  const bottomHost = document.createElement('div')
+  bottomHost.id = 'document-test-workbench-bottom'
+  hostRoot.append(rightHost, bottomHost)
+  document.body.append(hostRoot)
+  const rendered = rt.renderSlot('workbench', {
+    rightHostId: rightHost.id,
+    bottomHostId: bottomHost.id,
+    viewportWidth: 1440,
+    viewportHeight: 900,
+    centerWidth: 1020,
+    rightPanelWidth: 420,
+    rightbarWidth: 420,
+    canShowRight: true,
+    setRightbarWidth: vi.fn(),
+    seedRightbarWidth: vi.fn(),
+  })
+  const view = { ...rendered, container: hostRoot }
   const open = (name: string): void => {
     act(() => { rt.ctx.sidebarRight.openResource('dsh-resource://file/session/documents/' + name) })
   }

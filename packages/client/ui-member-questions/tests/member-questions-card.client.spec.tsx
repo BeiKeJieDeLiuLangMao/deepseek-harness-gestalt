@@ -74,6 +74,7 @@ const kit = {
   useSession: unusedHook<SessionSnapshot>(),
   useResource,
   useSessions: unusedHook<SessionListState>(),
+  usePanelInfo: selector => selector({ activePanelId: null }),
   useSessionPendingInteraction: unusedHook<HookSnapshot<MemberQuestionComposerProps['useSessionPendingInteraction']>>(),
   useWorkspaces: unusedHook<HookSnapshot<MemberQuestionComposerProps['useWorkspaces']>>(),
   useConversation: unusedHook<HookSnapshot<MemberQuestionComposerProps['useConversation']>>(),
@@ -98,7 +99,7 @@ const kit = {
 } satisfies Pick<
   MemberQuestionComposerProps,
   | 'sessionId' | 'session' | 'input' | 'SessionProvider'
-  | 'useSession' | 'useResource' | 'useSessions' | 'useSessionPendingInteraction'
+  | 'useSession' | 'useResource' | 'useSessions' | 'usePanelInfo' | 'useSessionPendingInteraction'
   | 'useWorkspaces' | 'useConversation' | 'useChat' | 'useTrajectory'
   | 'useProjection' | 'useInput' | 'inputActions'
 >

@@ -12,6 +12,7 @@ describe('BrandSeat', () => {
     const { container } = render(
       <BrandSeat
         useResource={useResource}
+        usePanelInfo={selector => selector({ activePanelId: null })}
         useSessions={(() => { throw new Error('unused') })}
         useSessionPendingInteraction={(() => { throw new Error('unused') })}
         useWorkspaces={(() => { throw new Error('unused') })}

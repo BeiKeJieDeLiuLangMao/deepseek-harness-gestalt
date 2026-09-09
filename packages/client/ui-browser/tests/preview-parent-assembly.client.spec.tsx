@@ -67,6 +67,7 @@ beforeEach(() => {
 async function bench() {
   const runtime = await SlotTestRuntime.create()
   runtime.ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
+  runtime.ctx.provide('sidebarRight', { openResource: vi.fn() } as never)
   runtime.ctx.provide('layout', { openDetails: vi.fn(), closeDetails: vi.fn() } as never)
   runtime.ctx.provide('uiWorkspace', { connectWorkspace: vi.fn(async () => ALPHA) } as never)
   new TestRemote(runtime.ctx, {
@@ -81,13 +82,13 @@ async function bench() {
   runtime.ctx.provide('locale', locale)
   runtime.slots.installLocale(locale)
   await runtime.root.declare({
-    'conversation': { kind: 'single', scope: 'session-maybe' },
+    'main': { kind: 'keyed', scope: 'root' },
     'details': { kind: 'single', scope: 'session' },
     'conversation.approval.detail': { kind: 'single', scope: 'session' },
     'settings.general.item': { kind: 'list', scope: 'root' },
     'settings.section': { kind: 'list', scope: 'root' },
   }, ({ renderSlot }) => (
-    <>{renderSlot('conversation', {})}</>
+    <>{renderSlot('main', {}, { entryKey: 'conversation' })}</>
   ))
   await runtime.sessions.add({ id: ALPHA, summary: { title: 'Alpha', displayTitle: 'Alpha' } })
   await runtime.sessions.add({ id: BETA, summary: { title: 'Beta', displayTitle: 'Beta' } }, { current: false })
@@ -127,7 +128,7 @@ describe('Chat-declared Browser preview occupancy', () => {
     expect(b.runtime.slots.spec('conversation.browser.preview')).toBeUndefined()
     expect(b.runtime.slots.entries('conversation.browser.preview')).toHaveLength(0)
     expect(b.view.container.querySelector('[data-browser-preview]')).toBeNull()
-    expect(b.runtime.slots.entries('conversation')).toHaveLength(1)
+    expect(b.runtime.slots.entries('main.conversation')).toHaveLength(1)
     await b.runtime.dispose()
   })
 })

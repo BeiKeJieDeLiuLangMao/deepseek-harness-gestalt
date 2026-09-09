@@ -400,7 +400,7 @@ describe('ui-model-selection dual entry', () => {
         groups: [],
       })
     })
-    await expect(b.contribution().ui.options(
+    await expect(b.popup().options(
       projection('existing'),
       new AbortController().signal,
     )).resolves.toEqual([])
@@ -413,7 +413,7 @@ describe('ui-model-selection dual entry', () => {
       routable: false,
       groups: [],
     })
-    await expect(b.contribution().ui.options(
+    await expect(b.popup().options(
       projection('new'),
       new AbortController().signal,
     )).resolves.toEqual([])
@@ -544,8 +544,10 @@ describe('ui-model-selection dual entry', () => {
     const b = await bench()
     b.mint('s1')
     expect(b.contribution().available(projection('s1'))).toBe(true)
-    const options = await b.contribution().ui.options(projection('s1'), new AbortController().signal)
-    expect(options.map((o: SelectOption) => o.label)).toEqual(['DeepSeek-V4-Flash', 'DeepSeek-V4-Pro'])
+    const options = await b.popup().options(projection('s1'), new AbortController().signal)
+    expect(options.map((o: SelectOption) => o.label)).toEqual([
+      'DeepSeek-V4-Flash', 'DeepSeek-V4-Pro', 'External Flash',
+    ])
     const face = b.seat().inject!(sid('s1'))
     expect(face.directory.getSnapshot().available).toBe(true)
     expect(await face.select({
