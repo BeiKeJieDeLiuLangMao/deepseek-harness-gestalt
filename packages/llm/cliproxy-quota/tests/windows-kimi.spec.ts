@@ -1,0 +1,131 @@
+import { describe, expect, it } from 'vitest'
+import { buildKimiWindows } from '../src/windows-kimi.ts'
+
+const NOW = 1_800_000_000_000
+const RESET = '2027-01-02T03:04:05Z'
+const RESET_MS = Date.parse(RESET)
+
+describe('buildKimiWindows', () => {
+  it('extracts limit rows with explicit duration metadata', () => {
+    const payload = {
+      limits: [
+        {
+          name: 'Weekly quota',
+          detail: { used: 300, limit: 1000, remaining: 700, reset_at: RESET },
+          window: { duration: 7, timeUnit: 'TIME_UNIT_DAY' },
+        },
+      ],
+    }
+    const windows = buildKimiWindows(payload, NOW)
+    expect(windows).toHaveLength(1)
+    expect(windows[0]).toMatchObject({
+      key: 'limit-0',
+      label: 'Weekly quota',
+      used: 300,
+      limit: 1000,
+      remaining: 700,
+      usedPercent: 30,
+      resetAtMs: RESET_MS,
+      periodHours: 168,
+    })
+  })
+
+  it('normalizes every protobuf time unit spelling', () => {
+    const cases: Array<[string, number, number]> = [
+      ['TIME_UNIT_SECOND', 7200, 2],
+      ['SECONDS', 1800, 0.5],
+      ['TIME_UNIT_MINUTE', 120, 2],
+      ['MINUTES', 60, 1],
+      ['TIME_UNIT_HOUR', 5, 5],
+      ['HOURS', 3, 3],
+      ['TIME_UNIT_DAY', 2, 48],
+      ['DAYS', 1, 24],
+      ['TIME_UNIT_WEEK', 1, 168],
+      ['WEEKS', 2, 336],
+      ['', 90, 1.5],
+      ['FORTNIGHT', 120, 2],
+    ]
+    for (const [timeUnit, duration, expectedHours] of cases) {
+      const payload = {
+        limits: [{ used: 1, limit: 2, window: { duration, timeUnit } }],
+      }
+      const windows = buildKimiWindows(payload, NOW)
+      expect(windows[0]?.periodHours, `timeUnit=${timeUnit}`).toBe(expectedHours)
+    }
+  })
+
+  it('derives period from source label keywords only when no duration exists', () => {
+    const cases: Array<[string, number]> = [
+      ['daily quota', 24],
+      ['Weekly plan', 168],
+      ['Monthly cap', 720],
+      ['5h burst', 5],
+      ['hourly refill', 5],
+    ]
+    for (const [label, expectedHours] of cases) {
+      const payload = { limits: [{ title: label, used: 1, limit: 2 }] }
+      expect(buildKimiWindows(payload, NOW)[0]?.periodHours, label).toBe(expectedHours)
+    }
+    const unlabeled = { limits: [{ used: 1, limit: 2, scope: 'compute' }] }
+    const windows = buildKimiWindows(unlabeled, NOW)
+    expect(windows[0]).toMatchObject({ label: 'compute', periodHours: null })
+  })
+
+  it('derives used from remaining plus limit and never invents counters', () => {
+    const derived = buildKimiWindows({ limits: [{ remaining: 250, limit: 1000 }] }, NOW)
+    expect(derived[0]).toMatchObject({ used: 750, remaining: 250, usedPercent: 75 })
+
+    const limitOnly = buildKimiWindows({ limits: [{ limit: 100 }] }, NOW)
+    expect(limitOnly[0]).toMatchObject({ limit: 100 })
+    expect(limitOnly[0]).not.toHaveProperty('used')
+    expect(limitOnly[0]).not.toHaveProperty('usedPercent')
+
+    const remainingOnly = buildKimiWindows({ limits: [{ remaining: 40 }] }, NOW)
+    expect(remainingOnly[0]).toMatchObject({ remaining: 40 })
+    expect(remainingOnly[0]).not.toHaveProperty('usedPercent')
+
+    expect(buildKimiWindows({ limits: [{ name: 'empty' }] }, NOW)).toHaveLength(0)
+  })
+
+  it('resolves relative reset hints against the reference instant', () => {
+    const payload = { limits: [{ used: 1, limit: 2, reset_in: 3600 }] }
+    expect(buildKimiWindows(payload, NOW)[0]?.resetAtMs).toBe(NOW + 3_600_000)
+    const ttl = { limits: [{ used: 1, limit: 2, ttl: '60' }] }
+    expect(buildKimiWindows(ttl, NOW)[0]?.resetAtMs).toBe(NOW + 60_000)
+    const none = { limits: [{ used: 1, limit: 2 }] }
+    expect(buildKimiWindows(none, NOW)[0]?.resetAtMs).toBeNull()
+  })
+
+  it('reads counters from the item itself when no detail object exists', () => {
+    const payload = { limits: [{ used: 5, limit: 10, duration: 2, timeUnit: 'HOUR' }] }
+    const windows = buildKimiWindows(payload, NOW)
+    expect(windows[0]).toMatchObject({ used: 5, limit: 10, periodHours: 2 })
+  })
+
+  it('adds the summary row from usage and skips unusable entries', () => {
+    const payload = {
+      usage: { used: 9, limit: 10 },
+      limits: ['not-an-item', { used: 1, limit: 2 }],
+    }
+    const windows = buildKimiWindows(payload, NOW)
+    expect(windows.map(window => window.key)).toEqual(['limit-1', 'summary'])
+    expect(windows[1]).toMatchObject({ used: 9, limit: 10, usedPercent: 90 })
+    expect(windows[1]).not.toHaveProperty('label')
+  })
+
+  it('treats a non-string time unit as minutes and skips a counterless summary', () => {
+    const payload = {
+      usage: { name: 'nothing countable' },
+      limits: [{ used: 1, limit: 2, window: { duration: 120, timeUnit: 5 } }],
+    }
+    const windows = buildKimiWindows(payload, NOW)
+    expect(windows).toHaveLength(1)
+    expect(windows[0]?.periodHours).toBe(2)
+  })
+
+  it('omits usedPercent when the limit is zero', () => {
+    const payload = { limits: [{ used: 0, limit: 0 }] }
+    const windows = buildKimiWindows(payload, NOW)
+    expect(windows[0]).not.toHaveProperty('usedPercent')
+  })
+})

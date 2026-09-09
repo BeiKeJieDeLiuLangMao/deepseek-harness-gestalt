@@ -159,6 +159,7 @@
     { "path": "./packages/util/request-trust" },
     { "path": "./packages/attachment/attachment" },
     { "path": "./packages/attachment/attachment-local" },
+    { "path": "./packages/llm/cliproxy-quota" },
     { "path": "./packages/llm/llm" },
     { "path": "./packages/llm/token-meter" },
     { "path": "./packages/core/session" },
