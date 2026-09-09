@@ -51,7 +51,10 @@ async function bench() {
   runtime.ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
   const layout = { closeRightbar: vi.fn(), openRightbar: vi.fn() }
   runtime.ctx.provide('layout', layout as never)
-  const sidebarRight = { openResource: vi.fn<(address: string) => void>() }
+  const openResource = vi.fn<(address: string, options?: unknown) => void>()
+  const openResourceForSession = vi.fn<(address: string, options?: unknown) => void>()
+  const forSession = vi.fn(() => ({ openResource: openResourceForSession }))
+  const sidebarRight = { openResource, forSession }
   runtime.ctx.provide('sidebarRight', sidebarRight as never)
   const openWorkspacePath = vi.fn<ClientRemote['session']['openWorkspacePath']>(
     () => Promise.resolve({ ok: true, value: { opened: true } }),
@@ -89,7 +92,10 @@ async function bench() {
     ) => ChatViewInjected)(id, instance.actions)
     return { instance, injected }
   }
-  return { runtime, layout, openWorkspacePath, sidebarRight, session, chatViewApi }
+  return {
+    runtime, layout, openWorkspacePath, sidebarRight, openResourceForSession, forSession,
+    session, chatViewApi,
+  }
 }
 
 describe('Chat inject API', () => {
@@ -157,6 +163,30 @@ describe('Chat inject API', () => {
     // An absolute path outside every known root still names its Session.
     await injected.openFile('/abs/a.ts')
     expect(b.sidebarRight.openResource).toHaveBeenLastCalledWith('dsh-resource://file/session/root-2//abs/a.ts')
+    await b.runtime.dispose()
+  })
+
+  it('opens a child-owned file in the explicitly addressed parent workbench', async () => {
+    const b = await bench()
+    const CHILD = 'side-child' as SessionId
+    await b.runtime.sessions.add({
+      id: CHILD,
+      summary: {
+        title: 'Side', displayTitle: 'Side', cwd: '/child-work',
+        origin: 'subagent', parentId: ROOT,
+      },
+      session: sessionFakeFor(),
+    }, { current: false })
+    const { injected } = b.chatViewApi(CHILD)
+
+    await injected.openFile('src/a.ts', { line: 9 }, ROOT)
+
+    expect(b.forSession).toHaveBeenCalledWith(ROOT)
+    expect(b.openResourceForSession).toHaveBeenCalledWith(
+      'dsh-resource://file/session/side-child/src/a.ts',
+      { params: { line: 9 } },
+    )
+    expect(b.sidebarRight.openResource).not.toHaveBeenCalled()
     await b.runtime.dispose()
   })
 

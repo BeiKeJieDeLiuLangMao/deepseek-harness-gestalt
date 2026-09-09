@@ -55,10 +55,11 @@ export async function openOfficialFile(
   sessionId: SessionId,
   path: string,
   title?: string,
+  displayHostSessionId: SessionId = sessionId,
 ): Promise<void> {
   const cwd = sessionCwd(ctx, sessionId)
   const absolute = resolveSidebarPath(cwd, path)
-  const navigator = ctx.sidebarRight.forSession(sessionId)
+  const navigator = ctx.sidebarRight.forSession(displayHostSessionId)
   const tabId = await navigator.openResource(officialFileAddress(sessionId, cwd, absolute))
   if (title !== undefined && title !== '') navigator.update(tabId, { title })
 }
@@ -69,10 +70,11 @@ export async function openOfficialFolder(
   sessionId: SessionId,
   path: string,
   title?: string,
+  displayHostSessionId: SessionId = sessionId,
 ): Promise<void> {
   const cwd = sessionCwd(ctx, sessionId)
   const absolute = resolveSidebarPath(cwd, path)
-  const navigator = ctx.sidebarRight.forSession(sessionId)
+  const navigator = ctx.sidebarRight.forSession(displayHostSessionId)
   const tabId = await navigator.openResource<'file'>(officialFileAddress(sessionId, cwd, absolute), {
     kind: OFFICIAL_FILE_KIND,
     payload: { dir: true },
@@ -85,13 +87,14 @@ export async function revealOfficialFiles(
   ctx: OfficialOpenRoutingContext,
   sessionId: SessionId,
   files: readonly string[],
+  displayHostSessionId: SessionId = sessionId,
 ): Promise<void> {
   const cwd = sessionCwd(ctx, sessionId)
   const targets = files.length === 0
     ? cwd === undefined ? [] : [cwd]
     : files.map(path => resolveSidebarPath(cwd, path))
   const root = cwd ?? ''
-  const navigator = ctx.sidebarRight.forSession(sessionId)
+  const navigator = ctx.sidebarRight.forSession(displayHostSessionId)
   const tabId = await navigator.openResource<'file'>(officialFileAddress(sessionId, cwd, root), {
     kind: OFFICIAL_FILE_KIND,
     params: { reveal: targets },
@@ -103,8 +106,9 @@ export async function revealOfficialFiles(
 /** The official turn-tail row retains the existing product copy and gestures. */
 export function OfficialProducedFiles(props: {
   readonly matched: readonly string[]
-  readonly openInSidebar: (path: string) => void
-  readonly onShowInFolder: (files: readonly string[]) => void
+  readonly displayHostSessionId?: SessionId
+  readonly openInSidebar: (path: string, displayHostSessionId?: SessionId) => void
+  readonly onShowInFolder: (files: readonly string[], displayHostSessionId?: SessionId) => void
 }) {
   const shown = props.matched.slice(0, 6)
   const hidden = props.matched.length - shown.length
@@ -117,7 +121,10 @@ export function OfficialProducedFiles(props: {
           type="button"
           className={css.producedChip}
           title={path}
-          onClick={() => { props.openInSidebar(path) }}
+          onClick={() => {
+            if (props.displayHostSessionId === undefined) props.openInSidebar(path)
+            else props.openInSidebar(path, props.displayHostSessionId)
+          }}
         >
           <IconCodeOutline16 size={12} />
           <span>{fileTitle(path)}</span>
@@ -128,7 +135,10 @@ export function OfficialProducedFiles(props: {
         <button
           type="button"
           className={css.producedFolder}
-          onClick={() => { props.onShowInFolder(props.matched) }}
+          onClick={() => {
+            if (props.displayHostSessionId === undefined) props.onShowInFolder(props.matched)
+            else props.onShowInFolder(props.matched, props.displayHostSessionId)
+          }}
         >
           {t('showInFolder')}
         </button>
@@ -153,11 +163,13 @@ export function registerOfficialTurnTail(ctx: OfficialOpenRoutingContext): () =>
     priority: -1,
     registrant: 'dsh-better-sidebar',
     inject: (sessionId: string) => ({
-      openInSidebar: (path: string) => {
-        void openOfficialFile(ctx, SessionId(sessionId), path).catch(error => { reportOpenFailure('open file', error) })
+      openInSidebar: (path: string, displayHostSessionId?: SessionId) => {
+        void openOfficialFile(ctx, SessionId(sessionId), path, undefined, displayHostSessionId)
+          .catch(error => { reportOpenFailure('open file', error) })
       },
-      onShowInFolder: (files: readonly string[]) => {
-        void revealOfficialFiles(ctx, SessionId(sessionId), files).catch(error => { reportOpenFailure('reveal files', error) })
+      onShowInFolder: (files: readonly string[], displayHostSessionId?: SessionId) => {
+        void revealOfficialFiles(ctx, SessionId(sessionId), files, displayHostSessionId)
+          .catch(error => { reportOpenFailure('reveal files', error) })
       },
     }),
   }, OfficialProducedFiles))

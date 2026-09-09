@@ -17,6 +17,7 @@ import {
 } from '../src/client/official-open-routing.tsx'
 
 const SESSION = SessionId('inactive-session')
+const DISPLAY = SessionId('display-session')
 const TAB = 'official-tab' as TabId
 
 function flush(): Promise<void> {
@@ -56,7 +57,7 @@ describe('official open routing', () => {
 
     update.mockClear()
     await openOfficialFile(ctx, SESSION, '/outside/a.md')
-    expect(openResource).toHaveBeenLastCalledWith('dsh-resource://file/absolute/outside/a.md')
+    expect(openResource).toHaveBeenLastCalledWith('dsh-resource://file/session/inactive-session//outside/a.md')
     expect(update).not.toHaveBeenCalled()
 
     await openOfficialFolder(ctx, SESSION, 'reports')
@@ -124,6 +125,27 @@ describe('official open routing', () => {
     expect(openUrl).toHaveBeenCalledWith(SESSION, 'https://example.test', 'Example')
   })
 
+  it('keeps the resource owner in the address while opening in another Session workbench', async () => {
+    const { ctx, forSession, openResource } = bench('/child-work')
+
+    await openOfficialFile(ctx, SESSION, 'src/a.ts', undefined, DISPLAY)
+    expect(forSession).toHaveBeenLastCalledWith(DISPLAY)
+    expect(openResource).toHaveBeenLastCalledWith(
+      'dsh-resource://file/session/inactive-session/src/a.ts',
+    )
+
+    await revealOfficialFiles(ctx, SESSION, ['src/a.ts'], DISPLAY)
+    expect(forSession).toHaveBeenLastCalledWith(DISPLAY)
+    expect(openResource).toHaveBeenLastCalledWith(
+      'dsh-resource://file/session/inactive-session/',
+      {
+        kind: 'file',
+        params: { reveal: ['/child-work/src/a.ts'] },
+        payload: { dir: true },
+      },
+    )
+  })
+
   it('renders produced files and preserves every row gesture', () => {
     const openInSidebar = vi.fn()
     const onShowInFolder = vi.fn()
@@ -157,12 +179,12 @@ describe('official open routing', () => {
     let definition: {
       select: (owner: unknown) => readonly string[] | null
       inject: (sessionId: string) => {
-        openInSidebar: (path: string) => void
-        onShowInFolder: (files: readonly string[]) => void
+        openInSidebar: (path: string, displayHostSessionId?: SessionId) => void
+        onShowInFolder: (files: readonly string[], displayHostSessionId?: SessionId) => void
       }
     } | undefined
     const dispose = vi.fn()
-    const { ctx, openResource } = bench()
+    const { ctx, forSession, openResource } = bench()
     Object.assign(ctx as object, {
       sidebarRightPreferences: {
         getSnapshot: () => ({ preferences: { interceptOpenPath } }),
@@ -195,6 +217,12 @@ describe('official open routing', () => {
     await flush()
     await flush()
     expect(openResource).toHaveBeenCalledTimes(2)
+    injected.openInSidebar('src/b.ts', DISPLAY)
+    injected.onShowInFolder(['src/b.ts'], DISPLAY)
+    await flush()
+    await flush()
+    expect(forSession).toHaveBeenLastCalledWith(DISPLAY)
+    expect(openResource).toHaveBeenCalledTimes(4)
     release()
     expect(dispose).toHaveBeenCalledOnce()
   })

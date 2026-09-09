@@ -26,6 +26,12 @@ Chat 与 Trajectory 可以识别同一个持久事件族，但各自保留 Defin
 
 Shell 拥有 View 选择：binding 创建、被选为 current 或 View roster 变化时，它解析已注册的 preferred View 或 Chat fallback。Assembler 只接收已解析 target id，不自行选择 Chat 或其他默认 target。第三方 View 通过相同的选择与激活操作参与。
 
+## 呈现归属
+
+`main.conversation` 在可选 Session binding 下拥有完整 Conversation 内容树。它的 `ConversationPresentationOwnerProps` 可以选择紧凑 `sidechat` 渲染、使用 occurrence 所有的回调替换下级导航，并指定 `displayHostSessionId`。`conversation.session` 接收范围更窄的 `ConversationDisplayOwnerProps`；shell 再把其中的显示宿主复制到所选 View 的 `ConvViewOwnerProps`。所选 Session 仍拥有 Conversation 状态、工作目录解析与资源授权。显示宿主只决定由哪个 Session workbench 显示这些资源。主呈现不提供这些可选值；嵌入式 Side Chat 则绑定 child Session，并把 parent Session 作为显示宿主（[决策](../../.agents/notes/implemented/bug-fix/2026-09-10-side-chat-resource-display-ownership.zh.md)）。
+
+空白 Session 通常渲染 Hero phase。紧凑 Side Chat 呈现会改为保留 active body 与 composer，让临时 child 在出现第一条持久 event 前仍可直接使用。
+
 ## 可回放事件族
 
 编写 Definition 前先选定稳定的业务 id。构成同一个 Node 的每条事件都必须携带该 id，或只凭自身 payload 独立推导出该 id；Client 绝不能把 update 猜测为属于“最近一个未完成”的 Context。

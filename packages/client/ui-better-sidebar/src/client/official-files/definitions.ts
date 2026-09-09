@@ -20,7 +20,7 @@ export function officialFileDefinition(runtime: OfficialFileRuntime): SidebarRig
     kind: OFFICIAL_FILE_KIND,
     patterns: ['dsh-resource://file/**'],
     priority: 'builtin',
-    canOpen: address => parseOfficialFileAddress(address) !== undefined,
+    canOpen: address => parseOfficialFileAddress(address)?.scope === 'session',
     title: officialFileTitle,
     settings: {
       settingsId: 'editor',

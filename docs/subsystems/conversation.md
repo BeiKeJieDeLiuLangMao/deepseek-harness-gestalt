@@ -26,6 +26,12 @@ Each Session keeps a monotonic set of active targets. Creating or reading a targ
 
 The shell owns View selection and resolves the registered preferred View or Chat fallback before rendering when a binding is created or selected as current, and after View-roster changes. The assembler receives only the resolved target id and does not select Chat or another default target. A third-party View participates through the same selection and activation operations.
 
+## Presentation ownership
+
+`main.conversation` owns the complete Conversation content tree under an optional Session binding. Its `ConversationPresentationOwnerProps` can select compact `sidechat` rendering, replace descendant navigation with an occurrence-owned callback, and name a `displayHostSessionId`. `conversation.session` receives the narrower `ConversationDisplayOwnerProps`; the shell then copies its display host to the selected View's `ConvViewOwnerProps`. The selected Session remains the owner of Conversation state, working-directory resolution, and resource authorization. The display host only selects which Session workbench shows those resources. Main presentation omits these optional values, while an embedded Side Chat binds the child Session and supplies the parent Session as display host ([decision](../../.agents/notes/implemented/bug-fix/2026-09-10-side-chat-resource-display-ownership.md)).
+
+A blank Session usually renders the Hero phase. Compact Side Chat presentation instead keeps the active body and composer so a provisional child remains directly usable before its first durable event.
+
 ## Replayable event families
 
 Choose one stable business id before writing the Definition. Every event that contributes to the same Node must carry that id or derive it independently from its own payload; the client must never assign an update to “the latest unfinished” Context.

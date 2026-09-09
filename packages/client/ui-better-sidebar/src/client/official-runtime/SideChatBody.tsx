@@ -44,6 +44,7 @@ export function OfficialSidechatBody({ useTabInfo, ctx }: OfficialSidechatBodyPr
     <SideChatSessionView
       ctx={ctx}
       threadId={SessionId(payload.threadId)}
+      displayHostSessionId={tab.sessionId}
       openSession={openSession}
     />
   )

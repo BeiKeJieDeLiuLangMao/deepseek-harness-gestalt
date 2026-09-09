@@ -41,6 +41,8 @@ export interface TurnTailOwnerProps {
   turn: TurnLocation
   seq: number
   openFile: (path: string) => void
+  /** Session whose workbench displays files owned by this Conversation. */
+  displayHostSessionId?: SessionId
 }
 
 /** Owner currency of finalized-assistant actions. */
@@ -80,6 +82,8 @@ export interface ChatNodeTurnDataInjected {
 export interface ChatNodeOwnerProps {
   cwd?: string | undefined
   openFile: (path: string, options?: OpenFileOptions) => void
+  /** Session whose workbench displays files owned by this Conversation. */
+  displayHostSessionId?: SessionId
   inspectCall: (callId: ToolCallId) => void
   forkAt: (seq: number) => void
   /**
@@ -138,7 +142,11 @@ export interface ChatViewInjected {
     /** Resolve the stable Turn-process source for one Chat Node key. */
     chatNodeProcess: (key: string) => ChatNodeProcessSource
   }
-  openFile: (path: string, options?: OpenFileOptions) => Promise<void>
+  openFile: (
+    path: string,
+    options?: OpenFileOptions,
+    displayHostSessionId?: SessionId,
+  ) => Promise<void>
   loadOlder: () => void
   /** Jump loader: page history back through seq; resolves when the window covers it. */
   loadThrough: (seq: SessionSeq) => Promise<void>

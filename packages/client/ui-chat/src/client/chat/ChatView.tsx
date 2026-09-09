@@ -218,7 +218,7 @@ const ChatNodeList = memo(function ChatNodeList({ order, ...seatProps }: ChatNod
 export function ChatView({
   useSession, useChat, useChatNode, useChatNodeProcess, useSessions, useStore, actions, renderSlot,
   sessionId, openFile, loadOlder, loadThrough, loadImage, openView, chatScroll, forkAt, fileMentions,
-  useTranscriptView, useProjection, t,
+  displayHostSessionId, useTranscriptView, useProjection, t,
 }: ChatViewSlotProps) {
   const order = useChat(s => s.order)
   const nodeStore = useChat(s => s.nodes)
@@ -255,7 +255,7 @@ export function ChatView({
   const requestOpenFile = useCallback((path: string, options?: OpenFileOptions) => {
     const id = ++fileOpenRequest.current
     setFileOpenBusy(true)
-    void (options === undefined ? openFile(path) : openFile(path, options)).then(
+    void openFile(path, options, displayHostSessionId).then(
       () => {
         if (id !== fileOpenRequest.current) return
         setFileOpenError(null)
@@ -273,7 +273,7 @@ export function ChatView({
         setFileOpenBusy(false)
       },
     )
-  }, [openFile, t])
+  }, [displayHostSessionId, openFile, t])
 
   const closeFileOpenError = useCallback(() => {
     fileOpenRequest.current += 1
@@ -798,6 +798,7 @@ export function ChatView({
             actions={actions}
             cwd={cwd}
             openFile={requestOpenFile}
+            {...(displayHostSessionId === undefined ? {} : { displayHostSessionId })}
             inspectCall={inspectCall}
             forkAt={forkAt}
             loadImage={loadImage}

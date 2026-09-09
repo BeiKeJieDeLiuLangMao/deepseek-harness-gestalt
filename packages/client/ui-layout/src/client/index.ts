@@ -8,7 +8,6 @@
  * presenter, which projects ctx.theme snapshots onto document.body.
  */
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
-import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
@@ -105,14 +104,6 @@ export interface SidebarOwnerProps {
   collapsed: boolean
   /** Rendered column width in px (SIDEBAR_COLLAPSED when collapsed). */
   width: number
-}
-
-/** Conversation owner share for alternate Session presentation and navigation. */
-export interface ConvOwnerProps {
-  /** Compact presentation used by an independently mounted Side Chat. */
-  renderMode?: 'sidechat'
-  /** Retarget the owning Session surface without changing shell selection. */
-  openSession?: (sessionId: SessionId) => void
 }
 
 /** Official right and bottom workbench geometry. */

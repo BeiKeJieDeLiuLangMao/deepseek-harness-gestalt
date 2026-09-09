@@ -221,9 +221,13 @@ describe('SideChatView', () => {
 
     expect(mountSession).toHaveBeenCalledWith(
       expect.any(HTMLDivElement),
-      'conversation',
+      'main.conversation',
       sideThread,
-      { renderMode: 'sidechat', openSession: expect.any(Function) },
+      {
+        renderMode: 'sidechat',
+        displayHostSessionId: mainThread,
+        openSession: expect.any(Function),
+      },
     )
     const owner = mountSession.mock.calls[0]?.[3] as {
       openSession?: (sessionId: SessionId) => void

@@ -551,6 +551,7 @@ describe('ConversationRoot resident composer', () => {
     )
 
     expect(b.view.getByRole('textbox').getAttribute('contenteditable')).toBe('true')
+    expect(b.view.container.querySelector('[data-phase]')?.getAttribute('data-phase')).toBe('active')
     expect(b.view.queryByRole('button', { name: '选择工作区' })).toBeNull()
     expect(b.slotCalls).not.toContain('conversation.hero.workspace')
     expect(b.slotCalls).not.toContain('conversation.hero.agentPreset')

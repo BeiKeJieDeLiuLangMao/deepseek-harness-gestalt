@@ -130,12 +130,14 @@ export function apply(ctx: Context): void {
           // address: the file is one piece of content whether it is opened at
           // its top or at line 400, so the same tab is revealed and told where
           // to land.
-          openFile: async (path, options) => {
+          openFile: async (path, options, displayHostSessionId) => {
             const cwd = ctx.sessions.list.getSnapshot().byId[sessionId]?.cwd
             const url = fileAddressFor(sessionId, cwd, path)
-            if (options?.line === undefined) ctx.sidebarRight.openResource(url)
-            else ctx.sidebarRight.openResource(url, { params: { line: options.line } })
-            await Promise.resolve()
+            const navigator = displayHostSessionId === undefined
+              ? ctx.sidebarRight
+              : ctx.sidebarRight.forSession(displayHostSessionId)
+            if (options?.line === undefined) await navigator.openResource(url)
+            else await navigator.openResource(url, { params: { line: options.line } })
           },
           loadOlder: () => { void session.loadOlder() },
           loadThrough: seq => session.loadThrough(seq),

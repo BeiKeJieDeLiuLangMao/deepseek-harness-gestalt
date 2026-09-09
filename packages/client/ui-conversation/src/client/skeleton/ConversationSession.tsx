@@ -174,6 +174,7 @@ export function ConversationSessionHeader({
 export function ConversationSession({
   useSession, useConversation, useConversationViews, useInput, inputActions, useStore, actions,
   renderSlot, bindDraftMirror, bindAnnotationMirror, restoreAnnotationDraft, openView,
+  displayHostSessionId,
 }: ConversationSessionProps) {
   const tabs = useConversationViews(value => value)
   const selectedId = useStore(s => s.view)
@@ -207,6 +208,7 @@ export function ConversationSession({
         viewRequest,
         openView,
         completeViewRequest: actions.completeViewRequest,
+        ...(displayHostSessionId !== undefined ? { displayHostSessionId } : {}),
       }, { only: active.id })}
     </div>
   )

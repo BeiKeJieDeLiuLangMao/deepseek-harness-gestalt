@@ -11,7 +11,7 @@ import type {
   InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime, PropsStore,
 } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SessionPendingInteraction } from '@deepseek-ai/dsh-client-ui-session/client'
-import type { ConvOwnerProps } from '@deepseek-ai/dsh-client-ui-layout/client'
+import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 import type { ComposerBlock } from './composer-blocks.ts'
@@ -136,11 +136,23 @@ export type UseConversationViews = SnapshotSelectorHook<readonly ViewTab[]>
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface SlotMap {
     /** Conversation shell beneath its root-scoped main-panel entry. */
-    'main.conversation': { kind: 'single'; scope: 'session-maybe' }
+    'main.conversation': {
+      kind: 'single'
+      scope: 'session-maybe'
+      owner: ConversationPresentationOwnerProps
+    }
     /** Strict per-Session Conversation body. */
-    'conversation.session': { kind: 'single'; scope: 'session' }
+    'conversation.session': {
+      kind: 'single'
+      scope: 'session'
+      owner: ConversationDisplayOwnerProps
+    }
     /** Strict per-Session title, actions, and View navigation. */
-    'conversation.session.header': { kind: 'single'; scope: 'session'; owner: ConvOwnerProps }
+    'conversation.session.header': {
+      kind: 'single'
+      scope: 'session'
+      owner: ConversationPresentationOwnerProps
+    }
     /** Optional replacement for one Session breadcrumb title. */
     'conversation.session.header.lineage': {
       kind: 'single'
@@ -234,9 +246,25 @@ export interface HeroAgentPresetOwnerProps {
   children?: never
 }
 
-/** Header actions inherit Conversation owner props for compact Side Chat presentation. */
-export interface ConversationHeaderActionOwnerProps extends ConvOwnerProps {
-  /** Marker field: compact presentation and retargeting arrive through ConvOwnerProps. */
+/** Alternate presentation of the same Conversation content entry. */
+export interface ConversationPresentationOwnerProps {
+  /** Compact presentation used by an independently mounted Side Chat. */
+  renderMode?: 'sidechat'
+  /** Retarget the owning Side Chat occurrence without changing the selected main Session. */
+  openSession?: (sessionId: SessionId) => void
+  /** Session whose workbench displays resources owned by this Conversation. */
+  displayHostSessionId?: SessionId
+}
+
+/** Resource-display address passed from the Conversation shell to its selected View. */
+export interface ConversationDisplayOwnerProps {
+  /** Session whose workbench displays resources owned by this Conversation. */
+  displayHostSessionId?: SessionId
+}
+
+/** Header actions inherit compact Side Chat presentation and navigation. */
+export interface ConversationHeaderActionOwnerProps extends ConversationPresentationOwnerProps {
+  /** Marker field: the inherited presentation values are the complete owner share. */
   children?: never
 }
 
@@ -270,6 +298,8 @@ export interface ConvViewOwnerProps {
   openView: (view: string, focus: string) => void
   /** Acknowledge the current one-shot focus request. */
   completeViewRequest: () => void
+  /** Session whose workbench displays resources owned by this Conversation. */
+  displayHostSessionId?: SessionId
 }
 
 /** Base props of one target-owned Conversation View entry. */

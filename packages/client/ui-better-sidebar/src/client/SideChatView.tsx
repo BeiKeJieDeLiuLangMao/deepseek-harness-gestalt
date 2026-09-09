@@ -40,16 +40,21 @@ function threadDisplayTitle(title: string): string {
 export function SideChatSessionView(props: {
   ctx: SidebarContext
   threadId: SessionIdType
+  displayHostSessionId: SessionIdType
   openSession(sessionId: SessionIdType): void
 }): React.ReactNode {
-  const { ctx, threadId, openSession } = props
+  const { ctx, threadId, displayHostSessionId, openSession } = props
   const conversationHost = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     const host = conversationHost.current
     if (host === null) return
-    return ctx.uiRenderer.mountSession(host, 'conversation', threadId, { renderMode: 'sidechat', openSession })
-  }, [ctx.uiRenderer, openSession, threadId])
+    return ctx.uiRenderer.mountSession(host, 'main.conversation', threadId, {
+      renderMode: 'sidechat',
+      displayHostSessionId,
+      openSession,
+    })
+  }, [ctx.uiRenderer, displayHostSessionId, openSession, threadId])
 
   return (
     <div className={css.sidechat}>
@@ -119,5 +124,12 @@ export function SideChatView(props: {
   }, [summary, published, tab.id, tab.title, ctx])
 
   if (threadId === undefined) return null
-  return <SideChatSessionView ctx={ctx} threadId={threadId} openSession={openSession} />
+  return (
+    <SideChatSessionView
+      ctx={ctx}
+      threadId={threadId}
+      displayHostSessionId={SessionId(scope.sessionId)}
+      openSession={openSession}
+    />
+  )
 }

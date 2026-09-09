@@ -13,13 +13,13 @@ describe('official file addresses', () => {
     expect(officialFileTitle(address)).toBe('a #1.md')
   })
 
-  it('keeps POSIX, Windows, and UNC paths absolute outside the workspace', () => {
+  it('keeps POSIX, Windows, and UNC paths under the authorizing Session', () => {
     expect(parseOfficialFileAddress(officialFileAddress('s', '/work', '/other/a.txt')))
-      .toEqual({ scope: 'absolute', path: '/other/a.txt' })
+      .toEqual({ scope: 'session', sessionId: 's', path: '/other/a.txt' })
     expect(parseOfficialFileAddress(officialFileAddress('s', 'C:\\work', 'D:\\other\\a.txt')))
-      .toEqual({ scope: 'absolute', path: 'D:/other/a.txt' })
+      .toEqual({ scope: 'session', sessionId: 's', path: 'D:/other/a.txt' })
     expect(parseOfficialFileAddress(officialFileAddress('s', '/work', '\\\\server\\share\\a.txt')))
-      .toEqual({ scope: 'absolute', path: '//server/share/a.txt' })
+      .toEqual({ scope: 'session', sessionId: 's', path: '//server/share/a.txt' })
   })
 
   it('rejects foreign schemes and malformed encoding', () => {

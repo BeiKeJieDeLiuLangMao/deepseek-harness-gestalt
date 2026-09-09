@@ -69,13 +69,15 @@ describe('sidechat route lifecycle', () => {
   it('creates the requested child only when the first prompt reaches the route', async () => {
     const inject = vi.fn()
     const followup = vi.fn()
+    const append = vi.fn()
+    const childCtx = new CordisContext()
     const child = {
       id: 'draft-child',
-      ctx: { effect: vi.fn() },
+      ctx: childCtx,
       inject,
       followup,
       options: { provider: 'deepseek', model: 'chat' },
-      session: { events: [], snapshotEvents: () => [], header: {} },
+      session: { events: [], append, snapshotEvents: () => [], header: {} },
     } as unknown as Agent
     const parent = {
       id: 'parent',
@@ -85,7 +87,10 @@ describe('sidechat route lifecycle', () => {
     const create = vi.fn<(options: CreateAgentOptions) => Promise<{
       agent: Agent
       dispose(): Promise<void>
-    }>>((_options) => Promise.resolve({ agent: child, dispose: () => Promise.resolve() }))
+    }>>(async (options) => {
+      await options.setup?.(childCtx, child)
+      return { agent: child, dispose: () => Promise.resolve() }
+    })
     const ctx = {
       get: (name: string) => name === 'agents'
         ? { get: (id: string) => id === 'parent' ? parent : undefined, create }
@@ -107,10 +112,12 @@ describe('sidechat route lifecycle', () => {
       agentOptions: expect.objectContaining({ provider: 'deepseek', model: 'chat' }),
     }))
     const createOptions = create.mock.calls[0]![0]
-    expect(createOptions.seed?.at(-1)).toMatchObject({
-      type: 'subagent/descriptor',
-      seq: createOptions.inheritedEventCount,
-    })
+    expect(createOptions.seed).toHaveLength(createOptions.inheritedEventCount ?? 0)
+    expect(append).toHaveBeenCalledWith('subagent/descriptor', expect.objectContaining({
+      mode: 'continuable',
+      provider: 'sidechat',
+      label: 'Side: first question',
+    }))
     expect(inject).toHaveBeenCalledOnce()
     expect(followup).toHaveBeenCalledWith(expect.objectContaining({
       source: { kind: 'user', rpcId: 'request-sidechat-first' },

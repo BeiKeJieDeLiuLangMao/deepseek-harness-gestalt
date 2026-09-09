@@ -35,12 +35,23 @@ export interface OfficialFileInjected {
   readonly htmlSafety: () => { readonly forceUnsandboxed: boolean; readonly defaultUnsandboxed: boolean }
   readonly setOpenWith: (value: JsonValue) => Promise<void>
   readonly disableWorkspaceFence: () => Promise<void>
-  readonly writeFile: (homeSessionId: SessionId, cwd: string | undefined, path: string, content: string) => Promise<void>
+  readonly writeFile: (resourceSessionId: SessionId, cwd: string | undefined, path: string, content: string) => Promise<void>
   readonly openExternal: typeof api.openExternal
-  readonly reference: (homeSessionId: SessionId, path: string, isDir: boolean, cwd: string | undefined) => void
-  readonly insertText: (homeSessionId: SessionId, text: string) => void
-  readonly renamed: (homeSessionId: SessionId, oldPath: string, newPath: string, cwd: string | undefined) => void
-  readonly removed: (homeSessionId: SessionId, path: string, cwd: string | undefined) => void
+  readonly reference: (resourceSessionId: SessionId, path: string, isDir: boolean, cwd: string | undefined) => void
+  readonly insertText: (resourceSessionId: SessionId, text: string) => void
+  readonly renamed: (
+    displayHostSessionId: SessionId,
+    resourceSessionId: SessionId,
+    oldPath: string,
+    newPath: string,
+    cwd: string | undefined,
+  ) => void
+  readonly removed: (
+    displayHostSessionId: SessionId,
+    resourceSessionId: SessionId,
+    path: string,
+    cwd: string | undefined,
+  ) => void
   readonly armEditor: (homeSessionId: SessionId, tabId: TabId, signal: AbortSignal) => void
   readonly retainedEditor: (homeSessionId: SessionId, tabId: TabId) => RetainedEditorState | undefined
   readonly retainEditor: (homeSessionId: SessionId, tabId: TabId, state: RetainedEditorState) => void
@@ -64,29 +75,36 @@ export function officialFileFace(
     subscribe: listener => ctx.sidebarRightTabs.subscribe(listener),
   }
   return (_renderSessionId, actions) => {
-    const absolutePath = (homeSessionId: SessionId, address: string, cwd: string | undefined): string | undefined => {
+    const absolutePath = (resourceSessionId: SessionId, address: string, cwd: string | undefined): string | undefined => {
       const parsed = parseOfficialFileAddress(address)
-      if (parsed === undefined) return undefined
-      if (parsed.scope === 'absolute') return parsed.path
-      if (parsed.sessionId !== homeSessionId) return undefined
+      if (parsed?.scope !== 'session' || parsed.sessionId !== resourceSessionId) return undefined
       if (cwd === undefined || cwd === '') return parsed.path
+      if (parsed.path.startsWith('/') || /^[A-Za-z]:\//u.test(parsed.path) || parsed.path.startsWith('//')) {
+        return parsed.path
+      }
       const separator = cwd.includes('\\') ? '\\' : '/'
       return `${cwd.replace(/[\\/]+$/, '')}${separator}${parsed.path}`
     }
-    const reconcile = (homeSessionId: SessionId, oldPath: string, newPath: string | undefined, cwd: string | undefined): void => {
-      const navigator = ctx.sidebarRight.forSession(homeSessionId)
-      const session = ctx.sidebarRight.getSnapshot().sessions.find(entry => entry.sessionId === homeSessionId)
+    const reconcile = (
+      displayHostSessionId: SessionId,
+      resourceSessionId: SessionId,
+      oldPath: string,
+      newPath: string | undefined,
+      cwd: string | undefined,
+    ): void => {
+      const navigator = ctx.sidebarRight.forSession(displayHostSessionId)
+      const session = ctx.sidebarRight.getSnapshot().sessions.find(entry => entry.sessionId === displayHostSessionId)
       if (session === undefined) return
       for (const occurrence of session.tabs) {
         if (occurrence.record.kind !== OFFICIAL_FILE_KIND) continue
-        const current = absolutePath(homeSessionId, occurrence.record.contentId, cwd)
+        const current = absolutePath(resourceSessionId, occurrence.record.contentId, cwd)
         if (current === undefined || !pathUnder(current, oldPath)) continue
         if (newPath === undefined) {
           void navigator.close(occurrence.record.id)
           continue
         }
         const target = `${newPath}${current.slice(oldPath.length)}`
-        void navigator.openResource(officialFileAddress(homeSessionId, cwd, target), {
+        void navigator.openResource(officialFileAddress(resourceSessionId, cwd, target), {
           replaceTab: occurrence.record.id,
           payload: occurrence.state.payload as OfficialFileTabPayload | undefined,
         })
@@ -106,24 +124,24 @@ export function officialFileFace(
       htmlSafety: () => ctx.sidebarRightPreferences.htmlViewerSafety(),
       setOpenWith: value => ctx.sidebarRightPreferences.setPluginSetting('editor', 'openWith', value),
       disableWorkspaceFence: () => ctx.sidebarRightPreferences.update({ workspaceFence: false }),
-      writeFile: (homeSessionId, cwd, path, content) => api.fsWrite({
-        sessionId: homeSessionId,
+      writeFile: (resourceSessionId, cwd, path, content) => api.fsWrite({
+        sessionId: resourceSessionId,
         ...(cwd === undefined ? {} : { cwd }),
       }, path, content).then(() => undefined),
       openExternal: api.openExternal,
-      reference(homeSessionId, path, isDir, cwd) {
+      reference(resourceSessionId, path, isDir, cwd) {
         const relative = cwd === undefined ? path : relativeTo(cwd, path)
-        if (!isDir && insertFileReference(ctx as never, homeSessionId, relative)) return
-        appendToDraft(ctx as never, homeSessionId, `@${relative}${isDir && !relative.endsWith('/') ? '/' : ''}`)
+        if (!isDir && insertFileReference(ctx as never, resourceSessionId, relative)) return
+        appendToDraft(ctx as never, resourceSessionId, `@${relative}${isDir && !relative.endsWith('/') ? '/' : ''}`)
       },
-      insertText: (homeSessionId, text) => { appendToDraft(ctx as never, homeSessionId, text) },
-      renamed(homeSessionId, oldPath, newPath, cwd) {
+      insertText: (resourceSessionId, text) => { appendToDraft(ctx as never, resourceSessionId, text) },
+      renamed(displayHostSessionId, resourceSessionId, oldPath, newPath, cwd) {
         actions.rename(oldPath, newPath)
-        reconcile(homeSessionId, oldPath, newPath, cwd)
+        reconcile(displayHostSessionId, resourceSessionId, oldPath, newPath, cwd)
       },
-      removed(homeSessionId, path, cwd) {
+      removed(displayHostSessionId, resourceSessionId, path, cwd) {
         actions.remove(path)
-        reconcile(homeSessionId, path, undefined, cwd)
+        reconcile(displayHostSessionId, resourceSessionId, path, undefined, cwd)
       },
       armEditor: (homeSessionId, tabId, signal) => { runtime.arm(homeSessionId, tabId, signal) },
       retainedEditor: (homeSessionId, tabId) => runtime.editor(homeSessionId, tabId),

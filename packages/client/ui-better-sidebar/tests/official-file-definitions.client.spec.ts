@@ -39,6 +39,7 @@ describe('official file definitions', () => {
     const definition = officialFileDefinition(new OfficialFileRuntime())
     expect(definition.priority).toBe('builtin')
     expect(definition.canOpen?.('https://example.test/a.md')).toBe(false)
+    expect(definition.canOpen?.('dsh-resource://file/absolute/etc/hosts')).toBe(false)
     expect(definition.settings?.fields.map(field => field.key)).toEqual(['editorExplorer', 'workspaceFence'])
     const html = officialBuiltinViewers().find(viewer => viewer.id === 'html')
     expect(html?.settings?.fields.map(field => [field.key, field.unsafe])).toEqual([

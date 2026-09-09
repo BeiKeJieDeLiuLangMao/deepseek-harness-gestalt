@@ -6,6 +6,7 @@ import type {
 } from '@deepseek-ai/dsh-client-ui-slots'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type { SidebarRightViewerDefinition } from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
+import { SessionId } from '@deepseek-ai/dsh-session/types'
 import { IconCheckOutline16, IconFolderOpen16, IconRefreshOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { api, isOutsideWorkspaceMessage, mediaUrl, type SessionScope } from '../api.ts'
 import { BinaryDownload } from '../binary-download.tsx'
@@ -89,11 +90,14 @@ export function OfficialEditorHost(props: OfficialFileBodyProps): ReactNode {
   const { panel, tab } = useTabInfo()
   const homeSessionId = tab.sessionId
   const parsed = useMemo(() => parseOfficialFileAddress(tab.contentId), [tab.contentId])
-  const cwd = useSessions(sessions => sessions.byId[homeSessionId]?.cwd)
-  const path = parsed?.scope === 'absolute'
-    ? parsed.path
-    : parsed?.sessionId === homeSessionId ? resolveSidebarPath(cwd, parsed.path) : undefined
-  const scope: SessionScope = { sessionId: homeSessionId, ...(cwd === undefined ? {} : { cwd }) }
+  const resourceSessionId = parsed?.scope === 'session' ? SessionId(parsed.sessionId) : undefined
+  const cwd = useSessions(sessions => resourceSessionId === undefined
+    ? undefined
+    : sessions.byId[resourceSessionId]?.cwd)
+  const path = parsed?.scope === 'session' ? resolveSidebarPath(cwd, parsed.path) : undefined
+  const scope: SessionScope | undefined = resourceSessionId === undefined
+    ? undefined
+    : { sessionId: resourceSessionId, ...(cwd === undefined ? {} : { cwd }) }
   const payload = payloadOf(tab.payload)
   const treeRoot = payload.dir === true ? path : cwd
   const state = useStore(snapshot => snapshot.byTab[tab.id])
@@ -122,9 +126,12 @@ export function OfficialEditorHost(props: OfficialFileBodyProps): ReactNode {
 
   useEffect(() => { armEditor(homeSessionId, tab.id, tab.signal) }, [armEditor, homeSessionId, tab.id, tab.signal])
 
-  const addressFor = (absolute: string): string => officialFileAddress(homeSessionId, cwd, absolute)
+  const addressFor = (absolute: string): string | undefined => resourceSessionId === undefined
+    ? undefined
+    : officialFileAddress(resourceSessionId, cwd, absolute)
   const openFile = (absolute: string): void => {
     const address = addressFor(absolute)
+    if (address === undefined) return
     if (inPlace) {
       tab.actions.openResource(address, { replaceTab: true, payload: { ...payload, dir: false } })
     } else {
@@ -132,14 +139,18 @@ export function OfficialEditorHost(props: OfficialFileBodyProps): ReactNode {
     }
   }
   const openFileNewTab = (absolute: string): void => {
-    tab.actions.openResource(addressFor(absolute), {
+    const address = addressFor(absolute)
+    if (address === undefined) return
+    tab.actions.openResource(address, {
       payload: { treeOpen: false, treeWidth: TREE_WIDTH_DEFAULT, dir: false },
     })
   }
   const openFileSide = (absolute: string): void => {
+    const address = addressFor(absolute)
+    if (address === undefined) return
     const paneId = split(panel.id)
     if (paneId !== undefined) {
-      tab.actions.openResource(addressFor(absolute), {
+      tab.actions.openResource(address, {
         paneId,
         revealIfOpened: false,
         payload: { treeOpen: false, treeWidth: TREE_WIDTH_DEFAULT, dir: false },
@@ -217,7 +228,7 @@ export function OfficialEditorHost(props: OfficialFileBodyProps): ReactNode {
 
   useEffect(() => {
     setToolbar(null)
-    if (path === undefined || payload.dir === true) return
+    if (path === undefined || scope === undefined || payload.dir === true) return
     const controller = new AbortController()
     const abort = (): void => { controller.abort() }
     tab.signal.addEventListener('abort', abort, { once: true })
@@ -236,7 +247,7 @@ export function OfficialEditorHost(props: OfficialFileBodyProps): ReactNode {
           const customData = await viewer.load({
             address: tab.contentId,
             path,
-            sessionId: homeSessionId,
+            sessionId: resourceSessionId,
             signal: controller.signal,
             settings: viewerSettings(viewer.id),
           })
@@ -268,7 +279,7 @@ export function OfficialEditorHost(props: OfficialFileBodyProps): ReactNode {
       tab.signal.removeEventListener('abort', abort)
       controller.abort()
     }
-  }, [homeSessionId, cwd, tab.contentId, tab.signal, path, payload.dir, reloadSeq, viewerRevision])
+  }, [resourceSessionId, cwd, tab.contentId, tab.signal, path, payload.dir, reloadSeq, viewerRevision])
 
   const previousSaveState = useRef<EditorToolbarState['saveState']>()
   useEffect(() => {
@@ -279,7 +290,7 @@ export function OfficialEditorHost(props: OfficialFileBodyProps): ReactNode {
     previousSaveState.current = current
   }, [toolbar?.mode, toolbar?.saveState])
 
-  if (path === undefined) {
+  if (path === undefined || resourceSessionId === undefined || scope === undefined) {
     return <div className={css.editorError}>{t('error')}</div>
   }
 
@@ -293,7 +304,7 @@ export function OfficialEditorHost(props: OfficialFileBodyProps): ReactNode {
   const tree = (
     <TreePanel
       full={payload.dir === true}
-      sessionId={homeSessionId}
+      sessionId={resourceSessionId}
       cwd={treeRoot}
       disableWorkspaceFence={disableWorkspaceFence}
       expanded={state?.expanded ?? []}
@@ -307,9 +318,11 @@ export function OfficialEditorHost(props: OfficialFileBodyProps): ReactNode {
       openWithSsh={openWithSshActive(openWithConfig)}
       onOpenWith={openWith}
       onToggleOpenWithPin={toggleOpenWithPin}
-      onReferenceFile={(entry, isDir) => { reference(homeSessionId, entry, isDir, cwd) }}
-      onPathRenamed={(oldPath, newPath) => { renamed(homeSessionId, oldPath, newPath, cwd) }}
-      onPathDeleted={(entry) => { removed(homeSessionId, entry, cwd) }}
+      onReferenceFile={(entry, isDir) => { reference(resourceSessionId, entry, isDir, cwd) }}
+      onPathRenamed={(oldPath, newPath) => {
+        renamed(homeSessionId, resourceSessionId, oldPath, newPath, cwd)
+      }}
+      onPathDeleted={(entry) => { removed(homeSessionId, resourceSessionId, entry, cwd) }}
     />
   )
   if (payload.dir === true) return <div className={css.editor}>{tree}</div>
@@ -337,8 +350,8 @@ export function OfficialEditorHost(props: OfficialFileBodyProps): ReactNode {
       toolbar: 'host',
       onToolbarState,
       onToolbarControls,
-      writeFile: content => writeFile(homeSessionId, cwd, path, content),
-      insertIntoConversation: text => { insertText(homeSessionId, text) },
+      writeFile: content => writeFile(resourceSessionId, cwd, path, content),
+      insertIntoConversation: text => { insertText(resourceSessionId, text) },
       htmlSafety: htmlSafety(),
       retained: retainedEditor(homeSessionId, tab.id),
       onRetain: retained => { retainEditor(homeSessionId, tab.id, retained) },

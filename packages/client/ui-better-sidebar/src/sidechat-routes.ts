@@ -48,7 +48,6 @@ import {
   SIDE_BOUNDARY_PROMPT,
   SIDE_INJECTION_PLUGIN,
   sideLabel,
-  type SeedEvent,
   type SidechatLogEvent,
 } from './sidechat-core.ts'
 import { readPersistedSession } from './session-persistence-read.ts'
@@ -206,11 +205,16 @@ function currentModelSelection(agent: Agent): ModelSelection {
 }
 
 /** Mount the model-selection ref inside the unpublished Agent scope. */
+/** Append the child descriptor during setup so the constructor seed remains the exact inherited prefix. */
 function withModelSelection(
   base: AgentSetup,
   selection: ModelSelectionRef,
+  freshDescriptor?: ReturnType<typeof snapshotSubagentDescriptor>,
 ): AgentSetup {
   return async (agentCtx, agent) => {
+    if (freshDescriptor !== undefined) {
+      agent.session.append('subagent/descriptor', freshDescriptor)
+    }
     await base(agentCtx, agent)
     agentCtx.effect(
       () => installModelSelection(agentCtx, selection),
@@ -407,13 +411,6 @@ export function buildSidechatApi(ctx: SidebarContext): SidechatApi {
         agentProvider: selected.provider,
         agentModel: selected.model,
       })
-      const descriptorEvent: SeedEvent = {
-        type: 'subagent/descriptor',
-        seq: inheritance.seed.length,
-        time: Date.now(),
-        data: descriptor as unknown as Record<string, unknown>,
-      }
-      const seed = [...inheritance.seed, descriptorEvent]
       const options: CreateAgentOptions = {
         sessionId: childId,
         meta: {
@@ -424,10 +421,10 @@ export function buildSidechatApi(ctx: SidebarContext): SidechatApi {
           delegationDepth: (parentSession.header.delegationDepth ?? 0) + 1,
           ...(agentPreset === undefined ? {} : { agentPreset }),
         },
-        seed: seed as unknown as readonly SessionEvent[],
+        seed: inheritance.seed as unknown as readonly SessionEvent[],
         inheritedEventCount: SessionLogOffset(inheritance.seed.length),
         agentOptions: { ...parent.options, provider: selected.provider, model: selected.model },
-        setup: withModelSelection(setup, selectionRef),
+        setup: withModelSelection(setup, selectionRef, descriptor),
         signal: AbortSignal.timeout(CREATE_TIMEOUT_MS),
       }
       const agents = ctx.get('agents') as { create(options: CreateAgentOptions): Promise<{ agent: Agent; dispose(): Promise<void> }> } | undefined
