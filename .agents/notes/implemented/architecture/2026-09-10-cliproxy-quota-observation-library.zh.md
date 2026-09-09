@@ -18,6 +18,8 @@ Status: implemented
 
 观测真值语义遵循提案：`known` / `partial` / `unsupported` / `failure` 加采样时刻；来源未提供的窗口字段保持缺失，来源未确立时长时 `periodHours: null`（Antigravity 仅接受 `5h`/`five-hour`/`five_hour` 与 `weekly`/`week`）。消费方通过比较 `observedAt` 保留过期样本；observer 不重试、不缓存、不虚构。错误信息有界且经凭据脱敏——尽管探测从不接收凭据。
 
+GLM 不带探测地加入 provider 联合：fork 核心自行轮询 GLM 额度并记录在 auth-file 的被动额度信封上，因此 observer 的 `glm` 路径只解析作为探测输入提供的 `quotaSignals` 信封（`GLM-Quota-Status` ready→known、stale→partial 保留最后良好窗口、error→failure 带脱敏上游细节；5h/weekly 百分比+重置窗口；`GLM-Plan-Level` 作套餐标记），绝不触碰 transport。信号键跟随 `gestaltrun/CLIProxyAPI` head `68278c54` 的实现，在评审后的最终 pin 落定前保持暂定。
+
 ## Alternatives considered
 
 **注册 cordis 服务让消费方经 `ctx` 发现 observer。** 不采用：不存在第二个消费方为 Service Definition / Provider / Consumer seam 提供正当性，且 transport 无论如何都必须归 Host 持有。
@@ -26,6 +28,8 @@ Status: implemented
 
 **移植管理中心用于套餐元数据的 Claude profile 请求。** 不采用：Codex 的 usage payload 自带 `plan_type`，提案也未要求其他 provider 的套餐标记；每次探测少一个请求让探测矩阵更诚实。
 
+**像其他五家一样主动探测 GLM 额度。** 不采用：fork 核心已自行轮询 GLM 并在 auth-file 上记录被动信号；第二条请求路径会重复轮询，还可能与核心自身的状态语义漂移。
+
 ## Consequences
 
-测试经 fake trusted transport 覆盖每个 provider 的真实数据路径——允许的 URL、方法与请求字段，畸形与超限 payload，含凭据形态的错误文本，以及五家完整的探测到观测组装——104 个测试，逐文件 100% 覆盖。fake 是 transport 契约的测试替身，不构成对真实 provider 端点的证据：Kimi、xAI、Antigravity 的 payload 形态仍只对上游管理中心的解析器验证过，漂移将以 `failure` 或 `partial` 呈现而非虚构数值。本包冻结的接口——探测输入、transport、观测——是交给 #650 运行时拥有方的交接契约。
+测试经 fake trusted transport 覆盖每个 provider 的真实数据路径——允许的 URL、方法与请求字段，畸形与超限 payload，含凭据形态的错误文本，五家探测的完整探测到观测组装，以及零请求的 GLM 信封组装——116 个测试，逐文件 100% 覆盖。fake 是 transport 契约的测试替身，不构成对真实 provider 端点的证据：Kimi、xAI、Antigravity 的 payload 形态仍只对上游管理中心的解析器验证过，GLM 信号键在评审后的 fork pin 落定前保持暂定，漂移将以 `failure` 或 `partial` 呈现而非虚构数值。本包冻结的接口——探测输入、transport、观测——是交给 #650 运行时拥有方的交接契约。

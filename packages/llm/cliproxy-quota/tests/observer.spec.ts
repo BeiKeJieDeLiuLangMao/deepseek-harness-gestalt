@@ -422,6 +422,63 @@ describe('xai assembly', () => {
   })
 })
 
+describe('glm assembly', () => {
+  const glmSignals = {
+    signals: {
+      'GLM-Quota-Status': 'ready',
+      'GLM-Credential-Valid': 'true',
+      'GLM-Quota-Last-Success-At': '2027-01-02T03:04:05Z',
+      'GLM-Plan-Level': 'pro',
+      'GLM-Quota-5h-Used-Percent': '35',
+      'GLM-Quota-5h-Reset-At': '2027-01-02T08:04:05Z',
+      'GLM-Quota-Weekly-Used-Percent': '61',
+      'GLM-Quota-Weekly-Reset-At': '2027-01-09T03:04:05Z',
+    },
+  }
+
+  it('parses the core-polled envelope without touching the transport', async () => {
+    const transport = createUrlTableTransport({})
+    const observation = await createTestObserver(transport).observe(
+      input({ provider: 'glm', quotaSignals: glmSignals }),
+    )
+    expect(transport.requests).toHaveLength(0)
+    expect(observation).toMatchObject({
+      provider: 'glm',
+      status: 'known',
+      planType: 'pro',
+      observedAt: Date.parse('2027-01-02T03:04:05Z'),
+    })
+    expect(observation.windows.map(window => window.key)).toEqual(['five-hour', 'weekly'])
+  })
+
+  it('surfaces stale polls without a plan marker through the observer', async () => {
+    const transport = createUrlTableTransport({})
+    const staleSignals = {
+      signals: {
+        'GLM-Quota-Status': 'stale',
+        'GLM-Quota-5h-Used-Percent': '10',
+      },
+    }
+    const observation = await createTestObserver(transport).observe(
+      input({ provider: 'glm', quotaSignals: staleSignals }),
+    )
+    expect(observation).toMatchObject({ status: 'partial' })
+    expect(observation.error).toContain('stale')
+    expect(observation).not.toHaveProperty('planType')
+    expect(transport.requests).toHaveLength(0)
+  })
+
+  it('fails when the envelope is absent and still issues no request', async () => {
+    const transport = createUrlTableTransport({})
+    const observation = await createTestObserver(transport).observe(input({ provider: 'glm' }))
+    expect(transport.requests).toHaveLength(0)
+    expect(observation).toMatchObject({
+      status: 'failure',
+      error: 'glm observation requires the core-polled quota signals envelope',
+    })
+  })
+})
+
 describe('observer boundary behavior', () => {
   it('converts transport throws and status-0 failures into sanitized failure observations', async () => {
     const throwing = createFakeTransport(() => {

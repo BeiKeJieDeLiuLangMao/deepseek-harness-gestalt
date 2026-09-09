@@ -25,6 +25,9 @@ Window fields the source did not supply stay absent — nothing reads as zero, f
 | Antigravity | `POST cloudcode-pa…/v1internal:retrieveUserQuotaSummary` (daily, sandbox, prod fallback chain) | buckets with `remainingFraction`, explicit `window`, `resetTime`; requires the auth-file `projectId` metadata |
 | Kimi | `GET api.kimi.com/coding/v1/usages` | `usage` summary plus `limits[]` rows with counters, explicit `duration`+`timeUnit` or label-keyword periods |
 | xAI | `GET cli-chat-proxy.grok.com/v1/billing[?format=credits]` | weekly credit percent and monthly cent counters; period length from the payload's own start→end span |
+| GLM | none — parses the fork core's passive quota envelope (`observed_at` + `signals`) supplied as probe input | `GLM-Quota-Status` (`ready`→known, `stale`→partial, `error`→failure), 5h/weekly percent+reset windows, `GLM-Plan-Level`; the core polls, this package never re-requests |
+
+The GLM path is the follow-up integration point for the fork's GLM subscription account source: signal keys follow the fork implementation at `gestaltrun/CLIProxyAPI` head `68278c54` and remain provisional until the reviewed final pin lands.
 
 Probe construction and payload normalization are ported from the official CLIProxyAPI management center ([router-for-me/Cli-Proxy-API-Management-Center](https://github.com/router-for-me/Cli-Proxy-API-Management-Center) at `ed5f1c48e11ba7335f1e8f676f228c280196af85`, MIT); [NOTICE](NOTICE) carries the license text and the module-level import map. `isPaidXaiCredential` is exported for the Host to derive the non-secret `xaiAccountKind` metadata from an auth-file record.
 

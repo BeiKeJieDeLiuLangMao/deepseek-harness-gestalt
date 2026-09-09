@@ -41,6 +41,7 @@ import {
   buildXaiWindow,
 } from './windows-xai.ts'
 import { parseCodexResetCredits } from './reset-credits.ts'
+import { parseGlmQuotaSignals } from './signals-glm.ts'
 import { assertNever } from './assert-never.ts'
 import type {
   CodexResetCreditsObservation,
@@ -296,6 +297,21 @@ async function observeXai(ctx: ProbeContext, input: QuotaProbeInput): Promise<Qu
   })
 }
 
+function observeGlm(ctx: ProbeContext, input: QuotaProbeInput): QuotaObservation {
+  // The fork core polls GLM quota itself; this path only parses the existing
+  // envelope and never touches the transport.
+  if (input.quotaSignals === undefined) {
+    return observation(input, ctx.now, 'failure', [], {
+      error: 'glm observation requires the core-polled quota signals envelope',
+    })
+  }
+  const parsed = parseGlmQuotaSignals(input.quotaSignals, ctx.now())
+  return observation(input, () => parsed.observedAt, parsed.status, parsed.windows, {
+    ...(parsed.planType === undefined ? {} : { planType: parsed.planType }),
+    ...(parsed.error === undefined ? {} : { error: parsed.error }),
+  })
+}
+
 /**
  * Assemble a read-only quota observer over an injected trusted transport.
  * @param options - transport and optional reference clock.
@@ -317,6 +333,8 @@ export function createQuotaObserver(options: QuotaObserverOptions): QuotaObserve
             return await observeKimi(ctx, input)
           case 'xai':
             return await observeXai(ctx, input)
+          case 'glm':
+            return observeGlm(ctx, input)
           default:
             return assertNever(input.provider)
         }

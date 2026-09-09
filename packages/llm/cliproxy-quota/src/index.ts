@@ -24,6 +24,12 @@ export {
   type QuotaProbeResponse,
 } from './transport.ts'
 export { isPaidXaiCredential } from './xai-tier.ts'
+export {
+  GLM_QUOTA_SIGNAL_KEYS,
+  parseGlmQuotaSignals,
+  type GlmQuotaEnvelope,
+  type GlmQuotaSignalParse,
+} from './signals-glm.ts'
 export type {
   CodexResetCreditsObservation,
   QuotaObservation,

@@ -18,6 +18,8 @@ The port is read-only by construction. The upstream xAI paid health check pairs 
 
 Observation truth semantics follow the proposal: `known` / `partial` / `unsupported` / `failure` plus the sampling instant, with window fields absent when the source did not supply them and `periodHours: null` when the source left the duration undetermined (Antigravity accepts only `5h`/`five-hour`/`five_hour` and `weekly`/`week`). Consumers keep stale samples by comparing `observedAt`; the observer never retries, caches, or fabricates. Errors are bounded and credential-redacted even though probes never receive credentials.
 
+GLM joins the provider union without a probe: the fork core polls GLM quota itself and records it on the auth file's passive quota envelope, so the observer's `glm` path only parses the `quotaSignals` envelope supplied as probe input (`GLM-Quota-Status` ready→known, stale→partial with the last good windows, error→failure with the sanitized upstream detail; 5h/weekly percent+reset windows; `GLM-Plan-Level` as plan marker) and never touches the transport. The signal keys follow the fork implementation at `gestaltrun/CLIProxyAPI` head `68278c54` and remain provisional until the reviewed final pin lands.
+
 ## Alternatives considered
 
 **Register a cordis service so consumers discover the observer through `ctx`.** Rejected because no second consumer exists to justify a Service Definition / Provider / Consumer seam, and the transport must stay Host-owned regardless of the observer's packaging.
@@ -26,6 +28,8 @@ Observation truth semantics follow the proposal: `known` / `partial` / `unsuppor
 
 **Port the management center's Claude profile request for plan metadata.** Rejected because Codex already carries `plan_type` in its usage payload and the proposal requires no other provider's plan marker; one fewer request per probe keeps the matrix honest.
 
+**Probe GLM quota actively like the five management-center providers.** Rejected because the fork core already polls GLM and records passive signals on the auth file; a second request path would duplicate the poll and could drift from the core's own status semantics.
+
 ## Consequences
 
-The suite covers every provider's real data path through a fake trusted transport — allowed URLs, methods, and request fields, malformed and oversized payloads, credential-shaped error text, and the full probe-to-observation assembly for all five providers — 104 tests with per-file 100% coverage. The fake is a test double for the transport contract, not evidence about live provider endpoints: Kimi, xAI, and Antigravity payload shapes remain verified only against the upstream management center's parsers, and drift will surface as `failure` or `partial` rather than fabricated numbers. The interface this package freezes — probe input, transport, observation — is the handoff contract for the #650 runtime owner.
+The suite covers every provider's real data path through a fake trusted transport — allowed URLs, methods, and request fields, malformed and oversized payloads, credential-shaped error text, the full probe-to-observation assembly for the five probed providers, and the zero-request GLM envelope assembly — 116 tests with per-file 100% coverage. The fake is a test double for the transport contract, not evidence about live provider endpoints: Kimi, xAI, and Antigravity payload shapes remain verified only against the upstream management center's parsers, the GLM signal keys are provisional until the reviewed fork pin lands, and drift will surface as `failure` or `partial` rather than fabricated numbers. The interface this package freezes — probe input, transport, observation — is the handoff contract for the #650 runtime owner.

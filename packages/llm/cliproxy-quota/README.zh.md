@@ -25,6 +25,9 @@ CLIProxyAPI 账号池凭据的只读额度观测。唯一入口 `createQuotaObse
 | Antigravity | `POST cloudcode-pa…/v1internal:retrieveUserQuotaSummary`（daily、sandbox、prod 回退链） | bucket 含 `remainingFraction`、显式 `window`、`resetTime`；需要 auth-file 的 `projectId` 元数据 |
 | Kimi | `GET api.kimi.com/coding/v1/usages` | `usage` 汇总加 `limits[]` 行，含计数器、显式 `duration`+`timeUnit` 或标签关键词推导的周期 |
 | xAI | `GET cli-chat-proxy.grok.com/v1/billing[?format=credits]` | 周额度百分比与月度美分计数；周期长度取自 payload 自身的起止区间 |
+| GLM | 无——解析 fork 核心被动额度信封（`observed_at` + `signals`），由探测输入提供 | `GLM-Quota-Status`（`ready`→known、`stale`→partial、`error`→failure）、5h/weekly 百分比+重置窗口、`GLM-Plan-Level`；核心负责轮询，本包绝不重复请求 |
+
+GLM 路径是 fork GLM 订阅账号源的后续集成点：信号键跟随 `gestaltrun/CLIProxyAPI` head `68278c54` 的实现，在评审后的最终 pin 落定前保持暂定。
 
 探测构造与 payload 归一移植自官方 CLIProxyAPI 管理中心（[router-for-me/Cli-Proxy-API-Management-Center](https://github.com/router-for-me/Cli-Proxy-API-Management-Center)，提交 `ed5f1c48e11ba7335f1e8f676f228c280196af85`，MIT）；[NOTICE](NOTICE) 携带许可证全文与模块级迁移映射。`isPaidXaiCredential` 导出供 Host 从 auth-file 记录推导非秘密的 `xaiAccountKind` 元数据。
 

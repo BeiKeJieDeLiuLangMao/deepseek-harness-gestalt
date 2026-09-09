@@ -12,8 +12,8 @@
  * @module @deepseek-ai/dsh-cliproxy-quota/types
  */
 
-/** Account-pool providers with a verified read-only quota probe. */
-export type QuotaProvider = 'claude' | 'codex' | 'antigravity' | 'kimi' | 'xai'
+/** Account-pool providers with a verified read-only quota observation path. */
+export type QuotaProvider = 'claude' | 'codex' | 'antigravity' | 'kimi' | 'xai' | 'glm'
 
 /**
  * Narrow observation input: one provider, one opaque account reference, and
@@ -35,6 +35,15 @@ export interface QuotaProbeInput {
   readonly xaiAccountKind?: 'free' | 'paid' | 'unknown'
   /** xAI user id from auth-file metadata, sent as the `x-userid` header when present. */
   readonly xaiUserId?: string
+  /**
+   * GLM only: the core-polled passive quota envelope from the auth file
+   * (`observed_at` plus the string `signals` map). The GLM path parses this
+   * envelope and issues no probe request; every other provider ignores it.
+   */
+  readonly quotaSignals?: {
+    readonly observedAt?: string
+    readonly signals: Record<string, string>
+  }
 }
 
 /** Truth state of one observation. */
