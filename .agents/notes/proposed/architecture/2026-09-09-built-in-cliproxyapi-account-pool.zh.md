@@ -8,7 +8,7 @@ Status: proposed
 
 DeepSeek Gestalt 当前提供仅限 Desktop 的 Sub2API 组件，用户需要在安装应用后另行下载并启用。Desktop Host 会安装一个树外 Harness 插件和运行时包、重启 Web Host，并在 Settings 中渲染 sidecar 的管理工作区。用户添加账号前，这一设计已经引入独立插件发布、PostgreSQL 与 Redis、安装状态机和外部 UI 嵌入。
 
-替代方案需要让账号池成为 Desktop Bundle 的组成部分。它必须监督一个本机 CLIProxyAPI 核心，提供 Gestalt 自有的账号与额度体验，并发布一个可用的模型提供方，同时不向 renderer 暴露管理凭据。产品还需要与上游核心保持可追溯的源码关系，并承载一项 Gestalt GLM 订阅扩展；该扩展的来源与许可仍在调查。
+替代方案需要让账号池成为 Desktop Bundle 的组成部分。它必须监督一个本机 CLIProxyAPI 核心，提供 Gestalt 自有的账号与额度体验，并发布一个可用的模型提供方，同时不向 renderer 暴露管理凭据。产品还需要与上游核心保持可追溯的源码关系，并通过 Gestalt fork 中单独评审的洁净实现承载必需的 GLM Coding Plan 能力。
 
 ## Proposal
 
@@ -34,7 +34,9 @@ fork 更新将使用 `gestaltrun/CLIProxyAPI` 中可评审的分支与 PR。更�
 
 Desktop Host 将为每个隔离 Desktop 实例拥有一个 CLIProxyAPI 进程。一个接口较小的监督器将隐藏二进制选择、配置生成、loopback 寻址、进程 spawn、ready 状态、崩溃恢复、关闭与诊断身份。Renderer 与 Web Host 不会各自 spawn 或发现该进程。
 
-该进程将只绑定 loopback 上的实例级动态端口。具体分配机制取决于对核心命令行能力的验证：监督器可以要求核心使用端口零，也可以在 spawn 前安全预留 loopback 端口且不提前发布。最终机制必须避免产品固定端口，并在无法建立所有权时明确失败。
+该进程将只绑定 loopback 上的实例级动态端口。已检查的上游配置默认端口是 `8317`；端口零行为尚未成立，因为核心不会通过配置回报实际分配端口。Host 预留端口后在 spawn 前释放也不能证明独占所有权，不能作为无竞争设计接受。
+
+Runtime 票必须在发布 endpoint 或任一 key 前，用聚焦所有权测试证明所选机制：竞争监听者不能收到 management 或 inference 凭据，监督器必须确认监听者就是自己 spawn 的进程，无法建立所有权时必须在不泄露凭据的情况下启动失败。实现可以在 fork 增加显式继承 listener 或 assigned-port handshake，也可以采用其他满足该证据的机制；不能仅凭 reserve-then-release 宣称安全。
 
 Desktop 只会在核心以预期二进制和配置身份报告 ready 后开放账号池。启动失败时，Desktop 其余部分仍可用，账号池展示可操作的失败状态。异常退出将由同一监督器执行有界崩溃恢复；重复失败后停止 respawn，保留诊断信息，且不声称提供方可用。Desktop 关闭会取消恢复，仅终止该实例拥有的进程树，并等待端口与进程身份消失。
 
@@ -56,7 +58,7 @@ Anthropic、Codex 与 Antigravity 默认启动 PKCE redirect 流程。Kimi 与 x
 
 集成将为 CLIProxyAPI 发布一个稳定的 DSH provider route，而不是按账号来源创建多个 route 或保留替代性的 Composite 概念。Kimi、Codex、Anthropic、Antigravity、xAI 与拟议 GLM 订阅都是该 route 背后的账号池来源。CLIProxyAPI 负责为模型请求选择符合条件的账号。
 
-适配器将从本机核心的 `/v1/models` 响应取得模型目录，并通过 `ctx.llm` 原子注册、替换或撤回这一条 route。提供方拓扑通知将让 Models 与 Composer 消费方重新读取现有提供方和模型目录。空账号池、核心不可用，或无法证明存在可用模型的目录，都不会发布虚假的可用 route。产品自有 route id 固定为 `gestalt-cliproxyapi`；它与用户常用的自配置 `cliproxyapi` id 分离，若同一产品 id 已存在则明确失败，而不是替换已有 route。
+适配器将从本机核心的 `/v1/models` 响应取得模型目录，并通过 `ctx.llm` 原子注册、替换或撤回这一条 route。提供方拓扑通知将让 Models 与 Composer 消费方重新读取现有提供方和模型目录。空账号池、核心不可用，或无法证明存在可用模型的目录，都不会发布虚假的可用 route。产品自有 route id 固定为 `gestalt-account-pool`；它与用户常用的自配置 `cliproxyapi` id 分离，若同一产品 id 已存在则明确失败，而不是替换已有 route。
 
 Management 与 inference 即使指向同一个本机进程，也保持独立 authority。适配器取得有效端点和 key 后，普通 inference 不应依赖 UI 账号变更操作；inference 消费方也不能因拥有请求配置而获得管理操作。
 
@@ -72,7 +74,7 @@ CLIProxyAPI 没有统一的主动额度端点。迁入的 manager 源码包含 p
 
 GLM 额度优先采用 `TOKENS_LIMIT`，只有完全没有 token limit 时才使用 `CREDIT_LIMIT`。Unit `3` 表示五小时窗口，unit `6` 表示每周窗口。投影保留 `used_percent`、`reset_at` 与 `updated_at`；它依据已验证的使用百分比推导剩余额度，并且仅在窗口时长与重置位置成立时绘制时间对比。订阅 base 的 `/models` 响应是 GLM 模型可用性的权威来源，因此集成不会虚构静态 GLM 目录。
 
-Manager 实现确定了 provider 矩阵和解析依据，但本次交付尚未用真实服务验证。首期产品因此会把未经验证、失败或过期的观测标为 unknown 或 stale，在鉴权或传输失败时保留最后有效 snapshot，也不会宣称每个账号当前都会返回全部已记录字段。刷新节奏与缓存寿命将由有界 Host 策略决定，以避免重复上游调用；实现票会用 provider 专用测试固定数值，而不是暴露 renderer 轮询间隔。额度观测只用于展示与诊断。Codex reset-credit 数量可以读取并展示，但主动消耗与重置操作不在本次交付范围；Gestalt 不会自创剩余百分比阈值来停用账号或改变路由，CLIProxyAPI 标准的资格、cooldown 与 scheduler 行为保持权威。UI 原型可以为各状态使用明确标注的 fixture，但不能暗示某个 fixture 字段已经通过真实服务验证。
+Manager 实现已经确定完整 provider 矩阵和解析依据；真实服务验证属于验收证据，不再是缺失的设计输入。首期产品因此会把未经验证、失败或过期的观测标为 unknown 或 stale，在鉴权或传输失败时保留最后有效 snapshot，也不会宣称每个账号当前都会返回全部已记录字段。刷新节奏与缓存寿命将由有界 Host 策略决定，以避免重复上游调用；实现票会用 provider 专用测试固定数值，而不是暴露 renderer 轮询间隔。额度观测只用于展示与诊断。Codex reset-credit 数量可以读取并展示，但主动消耗与重置操作不在本次交付范围；Gestalt 不会自创剩余百分比阈值来停用账号或改变路由，CLIProxyAPI 标准的资格、cooldown 与 scheduler 行为保持权威。UI 原型可以为各状态使用明确标注的 fixture，但不能暗示某个 fixture 字段已经通过真实服务验证。
 
 ## GLM subscription status
 
@@ -80,7 +82,7 @@ Manager 实现确定了 provider 矩阵和解析依据，但本次交付尚未�
 
 因此 Gestalt UI 将提供专用 GLM Coding Plan key 入口，而不会把 GLM 加入五个 OAuth 登录动作。该入口会明确选择区域（中国或国际）与账号范围（个人或团队），不会从 key 猜测，也不会静默降级成按量付费。团队账号还必须填写组织 id，并可选填写项目 id。Host 将通过拥有凭据的路径存储这些值，只把产生的 authority 交给核心。除非经过验证的协议约束要求独立 route，GLM 将保持为单一 CLIProxyAPI provider 背后的账号来源。其 OpenAI-compatible effort 归一化把普通 `low`、`medium`、`high` 请求映射到 GLM `high`，把 `xhigh` 或 `max` 映射到 GLM `max`；精确模型 `glm-5.3` 会保留显式 `low`。Anthropic-compatible GLM 5.3 请求同样保留对应的 `low`、`high` 与 `max` 档位，而不会透传上游不支持的拼写。
 
-首期产品路径优先支持中国个人与国际个人 Coding Plan key。相同凭据模型会在用户提供既有组织 id 和可选项目 id 字段时支持中国团队与国际团队；产品不新增订阅购买、组织发现、项目发现、邀请或账单管理。已验证的中国 Chat Completions base 是 `https://open.bigmodel.cn/api/coding/paas/v4`；普通 `https://open.bigmodel.cn/api/paas/v4` 是不同的按量付费产品，不能替代。已验证的中国 Anthropic-compatible base 是 `https://open.bigmodel.cn/api/anthropic`。国际额度使用 `api.z.ai` origin，但准确的国际 inference 与 Anthropic-compatible base 仍是启用该区域前必须记录的协议事实。缺少区域端点会阻止该组合，而不是把它重定向到中国或按量付费。
+首期产品路径优先支持中国个人与国际个人 Coding Plan key。相同凭据模型会在用户提供既有组织 id 和可选项目 id 字段时支持中国团队与国际团队；产品不新增订阅购买、组织发现、项目发现、邀请或账单管理。已验证的中国 Chat Completions base 是 `https://open.bigmodel.cn/api/coding/paas/v4`；普通 `https://open.bigmodel.cn/api/paas/v4` 是不同的按量付费产品，不能替代。已验证的中国 Anthropic-compatible base 是 `https://open.bigmodel.cn/api/anthropic`。国际额度使用 `api.z.ai` origin。国际 inference 与 Anthropic-compatible base 是核心中显式核实的设置，而不是 Gestalt 猜测的默认值；缺少设置时该账号不可用，不会重定向到中国或按量付费。
 
 来源当前识别为 LGPL-3.0，目标核心使用 MIT。推荐实现把官方 Sub2API 行为作为协议事实，并基于 CLIProxyAPI 现有 MIT executor、translator、auth 与 model 扩展点独立实现 Coding Plan；不复制 Sub2API 源代码、注释、测试或表达结构。在该路径下，GLM 仍是必需产品范围。
 
@@ -111,7 +113,7 @@ Manager 实现确定了 provider 矩阵和解析依据，但本次交付尚未�
 - 一个 Desktop 实例拥有一个 loopback CLIProxyAPI 进程和动态端口；ready 状态、有界崩溃恢复、关闭与清理均可观察，且一个实例绝不终止另一实例的进程。
 - Renderer 不会收到 management secret、inference API key、auth-file secret 或原始管理逃生口；凭据类值不会进入日志、Session 数据、截图与保留产物。
 - 第一方 Settings UI 会渲染已接受的全局管理/额度切换与单卡翻面；Anthropic、Codex 与 Antigravity 的 PKCE 登录；Kimi 与 xAI 的设备授权；以及带明确中国/国际和个人/团队选择的独立 GLM Coding Plan key 入口。它会渲染真实授权状态与额度 unknown、partial、stale 和 failure 状态，且不使用 iframe 或运行时 UI 下载。
-- LLM 集成只会根据实时本机模型目录发布 `gestalt-cliproxyapi`，在核心无法服务模型时撤回或标为不可用，保持用户自有 `cliproxyapi` route 不变，并能完成一项单独授权的真实模型请求。
+- LLM 集成只会根据实时本机模型目录发布 `gestalt-account-pool`，在核心无法服务模型时撤回或标为不可用，保持用户自有 `cliproxyapi` route 不变，并能完成一项单独授权的真实模型请求。
 - 替代路径不会读取或转换 Sub2API 数据。若之后授权删除旧文件，该行为会作为独立操作验证。
 - fork 同步会保留可审计的上游基线与已接受 Gestalt delta；Harness 钉住点仅在 fork、打包、确定性 UI 和必需原生证据通过后移动。
 - 冻结 UI 稿与体验路线覆盖空状态、登录取消/成功/失败、全局切换、单卡翻面、额度新鲜度差异、provider 目录变化、核心故障与重启恢复。
@@ -122,8 +124,8 @@ Manager 实现确定了 provider 矩阵和解析依据，但本次交付尚未�
 
 上游 management 端点和 auth-file 字段可能比 Gestalt UI 变化更快。窄 Host 网关会限制受影响代码，但每次 fork 更新仍需要协议与脱敏评审。
 
-Fork 承载的 GLM 实现会增加上游同步冲突。独立实现会减少混合许可负担，但仍要求准确协议事实和洁净实现纪律；静态移植仍可选，只是需要承担核实后的 LGPL 分发义务。最终字段与许可报告是冻结输入，不是把 GLM 移出范围的理由。
+Fork 承载的 GLM 实现会增加上游同步冲突。独立实现会减少混合许可负担，但仍要求准确协议事实和洁净实现纪律；静态移植仍可选，只是需要承担核实后的 LGPL 分发义务。已核实的字段与许可报告固定了该选择，且不把 GLM 移出范围。
 
-Provider 专用额度探测可能消耗上游请求、触发 rate limit，或只提供近似数据。在调查固定矩阵与节奏前，产品必须优先展示明确 unknown，而不是激进刷新。
+Provider 专用额度探测可能消耗上游请求、触发 rate limit，或只提供近似数据。固定 Host 策略会排除付费 inference 探测、保持有界刷新与缓存，并优先展示明确 unknown 或 stale，而不是激进刷新。
 
 原生原型与最终验收会先尽力使用合法可调用的 Codex computer-use 会话。已经观察到 DSH 注册，但 delegated native 调用当前被固定 sandbox 拒绝，且没有可调用的 Codex task connector。若连接 owner 最终确认不存在合法 Codex 路径，用户授权把真实隔离 Electron 自动化作为后备证据车道；owner 必须记录该路线变更及其限制，原型 writer 不得自行切换 driver。该可用性判断阻塞原生走查，不阻塞本提案评审或 fixture 原型工作。
