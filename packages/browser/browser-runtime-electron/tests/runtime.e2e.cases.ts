@@ -66,9 +66,12 @@ export async function recoverAfterStalledNavigation(): Promise<void> {
   const ctx = new Context()
   let parent: NativeBrowserWindow | undefined
   try {
+    const requestTimeoutMs = 2_000
+    const cancelTimeoutMs = 200
     await ctx.plugin(ElectronBrowserRuntime, {
       idPrefix: 'electron-e2e-stall',
-      requestTimeoutMs: 500,
+      requestTimeoutMs,
+      cancelTimeoutMs,
     })
     const stalled = await ctx.browserRuntime.create({ profile: 'temporary' })
     const { BrowserWindow } = await import('electron')
@@ -89,7 +92,10 @@ export async function recoverAfterStalledNavigation(): Promise<void> {
       && 'code' in error
       && error.code === 'BROWSER_RUNTIME_UNAVAILABLE'
     ))
-    assert.ok(Date.now() - startedAt < 1_500, 'presented stalled navigation must settle at its Runtime timeout')
+    assert.ok(
+      Date.now() - startedAt < requestTimeoutMs + cancelTimeoutMs + 500,
+      'presented stalled navigation must settle within its request and cancellation bounds',
+    )
     const recovered = await ctx.browserRuntime.observe({ target: stalled.target })
     assert.equal(recovered.status, 'open')
     assert.equal(recovered.revision, 2)
