@@ -16,6 +16,12 @@ Web 组合目前挂载了两个右侧工作台。`ui-sidebar-right` 持有框架
 
 Host route 可在其能力迁入正式 provider/consumer 归属时保留。本提案不要求仅为改名而替换正常工作的 Host 文件、Git、PTY、jobs、Side Chat、Phone 或 Browser transport。每条保留 route 继续遵守 Session owner、浏览器信任、工作区 fence、有界 I/O 和 teardown 规则，而且每项能力只有一个 provider owner。
 
+## 已交付 foundation
+
+官方包现在持有右侧与底部表面、float、版本化 Session 持久化、Better 状态转换、定向导航、关闭协调、occurrence signal、投影与全局偏好文档。Tab definition 包含清单元数据、availability、create、dedupe、`onOpen`/`onActivate`、badge、URL claim、settings 与真正关闭 hook。同一个 registry 持有不依赖 renderer 的 viewer definition；keyed slot 承载正文、标题、自定义 icon、自定义 settings、引导替换与菜单 action。`activate: false` 恢复冷 occurrence 时不改变 focus 或展开。跨 Session pin 以指向 home occurrence 的临时 view 呈现，因此 update 与 close 始终作用于唯一权威 record 和 runtime owner。
+
+保留的 `dsh-better-sidebar` settings namespace 只有一个浏览器 controller 与一份 30 字段 snapshot。官方 frame 消费初始展开、宽度、title bar、HTML 安全、Browser 安全、Terminal、文件系统、enablement 与 plugin setting。旧拖动宽度 key 只读且不改写；settings 写入使用 path operation，保留同级 descriptor 项。
+
 ## 所有权与生命周期
 
 官方 Session 工作台持有右侧与底部 DockKit 布局、浮动 pane、放置、焦点、tab record、occurrence 状态、持久化和关闭准入。tab 类型通过 keyed slot注册持有自己的正文 store、数据加载和运行时 manager。一个 occurrence 存续期间，tab 正文可以多次挂载与卸载。
@@ -156,3 +162,5 @@ Better extension service 在仓库之外存在第三方 consumer。直接移除�
 未沙箱化 HTML 与 iframe Browser fallback 可以访问敏感 GUI 状态。settings migration、默认值和逐 occurrence unsafe state 需要显式 invalid/default fixture；缺失值必须保持安全。
 
 最终原地转换会触及同时承载长寿命 runtime work 的 userData。合成转换成功不构成中断 live work 的授权。即使全部代码测试通过，操作 gate 与 rollback backup 仍然必须执行。
+
+现有 profile 依赖浏览器本地官方状态前，Desktop 必须建立稳定 GUI origin。启动 owner 在 Web storage 之外持久保存一个已选 loopback port，后续启动复用；若其他进程占用它，则以恢复诊断失败。显式配置 port 优先；否则采用有效的已存 port；仍不存在时才分配一次并持久化。53353 等已知旧 origin 必须作为显式迁移来源，不能通过扫描猜测。稳定 origin 启动后，迁移只读取点名旧 origin，记录完成状态，保留旧数据，而且不复制 Sidebar key 之外的 Session、workspace、Browser 或 application state。

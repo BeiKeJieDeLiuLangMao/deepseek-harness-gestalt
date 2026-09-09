@@ -199,6 +199,7 @@ export const SERVICE_WALK_EXEMPTIONS: Record<string, string> = {
   resources: 'client-side resource model (protocol providers, pins, live sources) — packages/client/resources/README.md owns the API',
   sidebarRight: 'client-side right-Sidebar navigation face — packages/client/ui-sidebar-right/README.md owns the API',
   sidebarRightTabs: 'client-side right-Sidebar tab-type registry — packages/client/ui-sidebar-right/README.md owns the API',
+  sidebarRightPreferences: 'client-side right-Sidebar preference controller — packages/client/ui-sidebar-right/README.md owns the API',
 }
 
 /**

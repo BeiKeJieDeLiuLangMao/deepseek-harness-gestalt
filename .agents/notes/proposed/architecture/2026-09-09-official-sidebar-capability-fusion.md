@@ -16,6 +16,12 @@ Make `@deepseek-ai/dsh-client-ui-sidebar-right` the only visible workbench and l
 
 Host routes can remain while their capabilities move to formal provider/consumer ownership. This proposal does not require replacing a working Host file, Git, PTY, jobs, Side Chat, Phone, or Browser transport merely to rename it. Every retained route keeps its Session owner, browser trust, workspace fence, bounded-I/O, and teardown rules, and exactly one provider owns each capability.
 
+## Delivered foundation
+
+The official package now owns the right and bottom surfaces, floats, versioned Session persistence, Better-state conversion, targeted navigation, close coordination, occurrence signals, projection, and global preference document. Its tab definition includes inventory metadata, availability, creation, deduplication, `onOpen`/`onActivate`, badge, URL claim, settings, and true-close hooks. The same registry owns renderer-independent viewer definitions; keyed slots carry bodies, titles, custom icons, custom settings, guide replacement, and menu actions. `activate: false` restores a cold occurrence without changing focus or expansion. Cross-Session pins render as ephemeral views over the home occurrence, so update and close still target one authoritative record and runtime owner.
+
+The retained `dsh-better-sidebar` settings namespace has one browser controller and one 30-field snapshot. The official frame consumes its initial-open, width, title-bar, HTML safety, Browser safety, Terminal, filesystem, enablement, and plugin settings. The legacy dragged-width key is read without mutation, while settings writes use path operations that preserve sibling descriptor entries.
+
 ## Ownership and lifecycle
 
 The official Session workbench owns right and bottom DockKit layouts, floating panes, placement, focus, tab records, occurrence state, persistence, and close admission. A tab type owns its body store, data loading, and runtime manager through the keyed Slot registration. A tab body may mount and unmount many times while one occurrence remains alive.
@@ -156,3 +162,5 @@ The Better extension service has third-party consumers outside this repository. 
 Unsandboxed HTML and the iframe Browser fallback can access sensitive GUI state. Settings migration, defaulting, and per-occurrence unsafe state require explicit invalid and default fixtures; a missing value must remain safe.
 
 The final in-place conversion touches userData that also holds long-lived runtime work. A successful synthetic conversion does not authorize interrupting live work. The operational gate and rollback backup remain required even after all code tests pass.
+
+Desktop must establish a stable GUI origin before an existing profile can rely on browser-local official state. The launch owner persists one chosen loopback port outside Web storage, reuses it on later starts, and fails with a recovery diagnostic when another process occupies it. An explicit configured port wins; otherwise a valid stored port wins; otherwise the owner allocates and persists once. A known legacy origin such as port 53353 is an explicit migration source, never an inferred scan. Migration reads only the named old origin after the stable origin is active, records completion, preserves the old data, and does not copy Session, workspace, Browser, or application state outside the Sidebar keys.

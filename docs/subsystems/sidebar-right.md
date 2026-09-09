@@ -19,6 +19,7 @@ One session-scoped `workbench` entry owns both dock surfaces and one store insta
 | `rightbarWidth` | Width currently reserved by the right track; zero when no track is requested. |
 | `canShowRight` | Whether a normal right panel can retain its minimum beside the protected center. |
 | `setRightbarWidth(width)` | Frame-owned clamped width write used by workbench resize gestures. |
+| `seedRightbarWidth(width)` | One-time initial width; ignored after a seed, open, or drag. |
 
 The right surface supports push, wide fullscreen with a retained track, automatic fullscreen below 768px, two horizontal panes, and floats. The bottom surface has independent panes, history, height, expansion, and fullscreen state. Bottom fullscreen reserves zero row height, and bottom tabs do not float. Both surfaces share one minted-id cursor and occurrence domain.
 
@@ -38,10 +39,19 @@ An occurrence is one tab record with a unique `TabId`. `revealIfOpened: true` fo
 |---|---|
 | `id` | Globally unique implementation identity and keyed body/title registration key. |
 | `kind` | Page or resource discriminator named by `openTab` and stored on records. |
+| `order`, `hidden`, `icon` | Add/settings inventory order, ordinary-action visibility, and renderer-independent icon token. |
 | `patterns` | Optional resource-address globs. A page type omits them. |
 | `priority` | `extension`, `builtin`, or `fallback`; omitted means `extension`. |
 | `canOpen(address)` | Optional synchronous veto after a resource pattern matches. |
 | `title(address)` | Initial record title captured when an occurrence opens. |
+| `available(context)` | Pure availability hint for add actions. Direct navigation remains authoritative. |
+| `single`, `dedupeKey(tab)` | Definition-wide or keyed occurrence identity across right, bottom, and floats. |
+| `create(request)` | Pure identity/title/payload settlement before placement; `false` refuses creation. |
+| `onOpen(tab, context)` | Notification after a new occurrence commits, exactly once for that creation. |
+| `onActivate(tab, context)` | Notification after dedupe, content reveal, or tab-strip focus. |
+| `badge(tab, context)` | Pure tab-strip badge value. |
+| `settings` | Declarative preference/plugin rows and optional keyed custom settings body. |
+| `urlTarget(url)` | Ordered external-URL claim; throwing predicates are isolated. |
 | `guide` | Optional ordered guide entries. |
 | `beforeClose(context)` | Optional asynchronous admission. `false` or rejection cancels the whole batch. |
 | `close(context)` | Optional asynchronous owner release. A rejected release keeps that record. |
@@ -49,6 +59,10 @@ An occurrence is one tab record with a unique `TabId`. `revealIfOpened: true` fo
 Resource candidates rank by priority band, longest matching pattern, and registration order. A pattern containing `:` matches the complete address; another pattern matches the URI path. A named kind bypasses pattern ranking but still runs `canOpen`.
 
 A definition's body registers under `sidebar.right.pane.tab` with `key: definition.id`; a live title may register under `sidebar.right.pane.tab.title`. `sidebar.right.tab.guide` is a chain replacement for the shipped guide body. `sidebar.right.tab.menu.item` appends content actions after DockKit's layout actions.
+
+`sidebar.right.tab.icon` and `sidebar.right.viewer.icon` are keyed custom-icon seats. The matching `.settings` seats provide custom settings bodies when the descriptor declares `settings.custom`; renderer-independent string icons and declarative rows remain in the registry. Menu entries receive the authoritative home `sessionId`, surface, record, payload, pin, and tab actions, including `update` for unpinning a foreign view.
+
+`registerViewer(definition)` owns the file-viewer inventory. A viewer declares a stable id, text/icon token, lowercase extensions, numeric priority, fetch strategy, optional leading-byte detector, optional abortable JSON/byte loader, and settings. `matchViewer` sorts by priority then registration order, tries each detector before that viewer's extensions, lets detector-only catch-alls wait for bytes, and skips explicitly disabled viewer ids.
 
 `useTabInfo()` returns `workbench.surface`, right-sidebar presentation, the containing pane, and the occurrence. The occurrence includes its record, visibility, navigation, persistent `payload`, optional `pin`, `AbortSignal`, and Session-bound actions. A kind extends `SidebarRightTabPayloadMap` to type `openTab<K>` and `update<K>` payloads. The value must be lossless JSON.
 
@@ -65,9 +79,9 @@ A definition's body registers under `sidebar.right.pane.tab` with `key: definiti
 | `setData(key, value)` | Stores or deletes namespaced Session JSON. |
 | `reset()` | Closes all current occurrences through lifecycle hooks, then creates fresh surfaces if every release succeeds. |
 
-Placement options are `surface`, `paneId`, `replaceTab`, and `revealIfOpened`. Resource options additionally carry claiming `kind`, typed `params`, payload, and pin. Page options additionally carry `instanceId`, title, typed payload, and pin. Replacing a tab waits for its close outcome before committing the new occurrence.
+Placement options are `surface`, `paneId`, `replaceTab`, `revealIfOpened`, and `activate`. `activate: false` creates or reveals without changing focus or expansion and cannot replace a tab; cold restore uses this path. Resource options additionally carry claiming `kind`, typed `params`, payload, and pin. Page options additionally carry `instanceId`, title, typed payload, and pin. Replacing a tab waits for its close outcome before committing the new occurrence.
 
-`getSnapshot()` and `subscribe()` expose `SidebarRightProjection`: materialized Sessions, `mountedSessionId`, right and bottom expansion, bottom height, namespaced data, pins, and every tab's Session, surface, pane, floating, visible and active flags, record, and persistent state. `visible` means the record is its pane's selected tab and its surface is expanded, or it is a right-side float; consumers combine it with `mountedSessionId` to select current rendered content. `active` additionally means the pane has focus. DockKit nodes and operation history are not public. Mounted-Session compatibility methods retain right-side active, expansion, focus, split, float, and dock behavior.
+`getSnapshot()` and `subscribe()` expose `SidebarRightProjection`: materialized Sessions, `mountedSessionId`, right and bottom expansion, bottom height, namespaced data, pins, and every tab's Session, surface, pane, floating, visible and active flags, record, and persistent state. `visible` means the record is its pane's selected tab and its surface is expanded, or it is a right-side float; consumers combine it with `mountedSessionId` to select current rendered content. `active` additionally means the pane has focus. The official seat projects visible foreign pins into the viewer's first right pane without storing another record. `useTabInfo().tab` exposes the authoritative home Session and occurrence plus a `virtual` marker; global pins appear in every foreign Session, while workspace pins follow the viewer cwd after hydration. DockKit nodes and operation history are not public. Mounted-Session compatibility methods retain right-side active, expansion, focus, split, float, and dock behavior.
 
 ## Close and occurrence lifecycle
 
@@ -76,6 +90,12 @@ One serialized coordinator per Session owns all record-removal transactions. It 
 `SidebarRightTabCloseContext` contains the original `sessionId`, `surface`, tab record, payload, pin, occurrence signal, and reason (`close`, `replace`, `reset`, `undo`, or `redo`). Session switches cannot retarget pending cleanup. Duplicate requests serialize against the latest committed state.
 
 Store adoption reconciles both layouts after every commit, including Sessions that are not rendered. An occurrence signal aborts when its record disappears or the plugin unloads. Hiding, Session switching, split, float, fullscreen, and body remount do not abort it. Definition unload shows the unavailable fallback while preserving the record and payload; it is not a user close.
+
+## Global preferences and frame
+
+`ctx.sidebarRightPreferences` is the only browser owner of the retained `dsh-better-sidebar` settings namespace. `getSnapshot()` returns `{ status, preferences, revision, writable }`; the complete value contains the 30 migrated fields. Missing tab/viewer enable entries mean enabled. Preference, enablement, viewer safety, and descriptor-plugin reads use this face, while path mutations keep sibling map/blob entries intact. An established blob can remain under a retained key such as `editor` through `settings.settingsId`.
+
+The official workbench also applies frame preferences. Explicit Web mode disables adaptation; otherwise Window Controls Overlay geometry wins, followed by a Desktop URL inset, the selected DSH Desktop preset, or the custom inset. Custom CSS and compatibility markers have one effect-scoped owner. The frame seeds its width once from the read-only legacy `dsh-sidebar:v1:width` value or `defaultWidthPercent`; the legacy value remains untouched for rollback.
 
 ## Persistence
 
@@ -94,5 +114,5 @@ When the official key is absent, the adapter may convert `dsh-sidebar:v1:<sessio
 
 - The Better Sidebar capability migration is incomplete, so the product composition still has a second workbench owner until its consumers and runtime tabs move.
 - The official document is browser-local best-effort persistence and has no user-facing import/export command.
-- Bottom-specific copy, first-open Terminal policy, tab icons, enablement inventory, URL claims, viewer inventory, and settings declarations remain part of the capability migration.
+- Bottom-specific copy, first-open Terminal policy, descriptor presentation, viewer bodies, settings UI, and runtime-tab consumers remain part of the capability migration.
 - Close failures are returned to callers; a shared user-facing error presentation is not yet registered.
