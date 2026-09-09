@@ -31,7 +31,7 @@ kind: "package-reference"
 
 `ui-dockkit` 仍是纯布局引擎。本包为 tab kind 赋予产品含义、用引导页播种空 pane、通过 keyed slot 渲染 tab 正文，并拥有跨组件重挂载保留的状态。右侧、底部与浮动呈现共享一个 id 游标和一个 occurrence 域，因此一条记录在完整 Session workbench 中只有一个身份。
 
-workbench 在框架挂载后解析 `rightHostId` 与 `bottomHostId`，随后从同一棵 React 与 store 树 portal 两个表面。右侧表面支持 push、保留底层轨道的宽屏全屏、低于 768px 的自动全屏、两个横向 pane 及浮动面板。底部表面拥有独立的 split tree、高度、打开状态和全屏模式。它的 push 呈现只占用中栏；全屏时不占中栏行高。底部表面拥有顶部高度拖动，以及同时修改底部高度与右侧宽度的共享角落手势。底部 tab 不会创建 float。
+workbench 在框架挂载后解析 `rightHostId` 与 `bottomHostId`，随后从同一棵 React 与 store 树 portal 两个表面。右侧表面支持 push、保留底层轨道的宽屏全屏、低于 768px 的自动全屏、两个横向 pane 及浮动面板。在 Desktop Window Chrome 中，它的顶部条只把未占用区域留作窗口拖动区，而 tab、添加、拆分、全屏和收起控件均显式保留为指针目标。底部表面拥有独立的 split tree、高度、打开状态和全屏模式。它的 push 呈现只占用中栏；全屏时不占中栏行高。底部表面拥有顶部高度拖动，以及同时修改底部高度与右侧宽度的共享角落手势。底部 tab 不会创建 float。
 
 右侧表面收起后仍保持挂载。它的展开控件位于 `conversation.session.header.corner` 并共享 Session store。没有当前 Session 时，两个表面均不挂载。frame 只接受一次初始宽度：若保留的 `dsh-sidebar:v1:width` 存在则优先采用，否则由 `defaultWidthPercent` 提供。读取这个旧值不会修改或删除回滚 key。
 

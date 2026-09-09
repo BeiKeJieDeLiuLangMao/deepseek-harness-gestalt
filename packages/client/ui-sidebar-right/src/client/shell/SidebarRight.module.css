@@ -106,6 +106,19 @@
   min-height: 0;
 }
 
+/* The top Workbench shares Desktop Window Chrome. Only the unoccupied strip
+   may drag the window; tabs and every strip control remain pointer targets. */
+.panel :global([data-dockkit-strip]) {
+  -webkit-app-region: drag;
+}
+
+.panel :global([data-dockkit-strip-tabs]),
+.panel :global([data-dockkit-add-tab]),
+.panel :global([data-dockkit-split-button]),
+.panel :global([data-dockkit-strip-chrome]) {
+  -webkit-app-region: no-drag;
+}
+
 .bottomPanel {
   position: absolute;
   right: 0;
