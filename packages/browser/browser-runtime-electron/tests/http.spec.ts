@@ -63,6 +63,52 @@ describe('Electron Browser HTTP protocol', () => {
     }
   })
 
+  it('preserves runtime unavailability for page-content clients', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-electron-http-unavailable-'))
+    temps.push(root)
+    const tokenFile = join(root, 'api-token')
+    const ctx = new Context()
+    contexts.push(ctx)
+    installElectronTestHost(new FakeElectronHost())
+    await ctx.plugin(ElectronBrowserRuntime, { idPrefix: 'electron-http-unavailable' })
+    const server = await listenElectronBrowserHttp({
+      context: ctx,
+      runtime: ctx.browserRuntime,
+      tokenFile,
+      idPrefix: 'electron-http-unavailable',
+    })
+    servers.push(server)
+    const token = (await readFile(tokenFile, 'utf8')).trim()
+    let target: BrowserTarget | undefined
+    ctx.on('browser/runtime-state', (state) => { target = state.target })
+    const created = await json(server.origin, '/sessions/create', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'electron-http-unavailable-tmp-1' }),
+    })
+    const tabId = (created.body as { tab: { id: string } }).tab.id
+    if (target === undefined) throw new Error('expected created target')
+    const unavailableTarget = target
+    const originalObserve = ctx.browserRuntime.observe.bind(ctx.browserRuntime)
+    ctx.browserRuntime.observe = async () => ({
+      status: 'unavailable',
+      target: unavailableTarget,
+      revision: 1,
+      reason: 'unhealthy',
+      reconnecting: true,
+    })
+    try {
+      await expect(json(server.origin, '/page-content', {
+        headers: { authorization: `Bearer ${token}`, 'x-tab-id': tabId },
+      })).resolves.toEqual({
+        status: 503,
+        body: { error: 'tab runtime is unavailable', code: 'BROWSER_RUNTIME_UNAVAILABLE' },
+      })
+    } finally {
+      ctx.browserRuntime.observe = originalObserve
+    }
+  })
+
   it('serves Tandem-shaped session, tab, content, screenshot, focus, and destroy operations', async () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-electron-http-'))
     temps.push(root)

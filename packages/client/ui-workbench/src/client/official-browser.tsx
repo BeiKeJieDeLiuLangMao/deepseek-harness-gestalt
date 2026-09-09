@@ -149,9 +149,7 @@ export class OfficialBrowserRuntime {
     if (this.disposed) return
     const projection = this.ctx.sidebarRight.getSnapshot()
     const tabs = browserTabs(projection)
-    const sessionIds = new Set<SessionId>(tabs.map(tab => tab.sessionId))
-    const current = sessionList(this.ctx).getSnapshot().current
-    if (current !== undefined) sessionIds.add(current)
+    const sessionIds = new Set<SessionId>(projection.sessions.map(session => session.sessionId))
     for (const sessionId of sessionIds) {
       const sessionTabs = tabs.filter(tab => tab.sessionId === sessionId)
       const claimed = new Set(sessionTabs.flatMap((tab) => {
@@ -164,6 +162,10 @@ export class OfficialBrowserRuntime {
           this.ensure(sessionId, tab.record.id)
         }
       }
+      const hasPendingOccurrence = sessionTabs.some(tab =>
+        officialBrowserTargetOf(tab.state.payload) === undefined
+        && this.pending.has(`${sessionId}\u0000${tab.record.id}`))
+      if (hasPendingOccurrence) continue
       for (const page of listBrowserWorkspacePages(workspaceProjection(this.ctx, sessionId))) {
         const key = officialBrowserTargetKey(page.target)
         if (claimed.has(key) || this.closing.has(key)) continue
@@ -190,7 +192,10 @@ export class OfficialBrowserRuntime {
   ensure(sessionId: SessionId, tabId: string): void {
     const key = `${sessionId}\u0000${tabId}`
     if (this.disposed || this.pending.has(key)) return
-    const operation = this.create(sessionId, tabId).finally(() => { this.pending.delete(key) })
+    const operation = this.create(sessionId, tabId).finally(() => {
+      this.pending.delete(key)
+      this.sync()
+    })
     this.pending.set(key, operation)
   }
 

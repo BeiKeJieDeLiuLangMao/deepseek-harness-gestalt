@@ -8,10 +8,28 @@ const PAGE: BrowserPageState = {
   chrome: { kind: 'shared', partition: 'persist:shared' },
   storage: { cookies: '', localStorage: '', indexedDb: '', cache: '', serviceWorker: '' },
 }
+const SECOND_TARGET = { ...TARGET, tabId: 't2' } as BrowserTarget
+const SECOND_PAGE: BrowserPageState = { ...PAGE, target: SECOND_TARGET }
 
-function harness(payload: unknown, operation: Promise<{ ok: true; value: BrowserPageState }>) {
-  const update = vi.fn()
-  const tab = {
+function harness(
+  payload: unknown,
+  operation: Promise<{ ok: true; value: BrowserPageState }>,
+  options: { materialized?: boolean; workspace?: BrowserPageState } = {},
+) {
+  const update = vi.fn((_tabId: string, patch: { payload?: unknown }) => {
+    if (Object.hasOwn(patch, 'payload')) tab.state.payload = patch.payload
+  })
+  const openTab = vi.fn(async () => 'browser:restored')
+  const tab: {
+    sessionId: string
+    surface: string
+    paneId: string
+    floating: boolean
+    active: boolean
+    visible: boolean
+    record: { id: string; kind: string; contentId: string; title: string }
+    state: { payload: unknown }
+  } = {
     sessionId: 's1', surface: 'right', paneId: 'pane', floating: false, active: true, visible: true,
     record: { id: 'browser:1', kind: 'browser', contentId: 'sidebar://browser/1', title: 'Browser' },
     state: { payload },
@@ -24,12 +42,25 @@ function harness(payload: unknown, operation: Promise<{ ok: true; value: Browser
   }
   const ctx = {
     sidebarRight: {
-      getSnapshot: () => ({ sessions: [{ sessionId: 's1', tabs: [tab] }], pinned: [] }),
+      getSnapshot: () => ({
+        sessions: options.materialized === false ? [] : [{ sessionId: 's1', tabs: [tab] }],
+        pinned: [],
+      }),
       subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener) } },
-      forSession: () => ({ update, openTab: vi.fn() }),
+      forSession: () => ({ update, openTab }),
     },
     sessions: { list: {
-      getSnapshot: () => ({ current: 's1', byId: { s1: { projectionValues: {} } } }),
+      getSnapshot: () => ({ current: 's1', byId: { s1: { projectionValues: {
+        ...(options.workspace === undefined ? {} : { browserWorkspace: {
+          activeWorkspaceId: 'w', workspaces: [{ workspaceId: 'w', profileId: 'p', activeBrowserId: 'b',
+            browsers: [{ browserId: 'b', activeTabId: 't', tabs: [{
+              tabId: options.workspace.target.tabId,
+              revision: options.workspace.revision,
+              url: options.workspace.url,
+            }] }],
+          }],
+        } }),
+      } } } }),
       subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener) } },
     } },
     remote: { browserWorkspace },
@@ -39,7 +70,7 @@ function harness(payload: unknown, operation: Promise<{ ok: true; value: Browser
         await mutate(...args),
     },
   }
-  return { runtime: new OfficialBrowserRuntime(ctx as never), update, ctx }
+  return { runtime: new OfficialBrowserRuntime(ctx as never), update, openTab, ctx }
 }
 
 describe('workbench provider lifecycle', () => {
@@ -81,5 +112,57 @@ describe('workbench provider lifecycle', () => {
       } } } },
     })
     await expect(runtime.close({ sessionId: 's1', payload: { target: TARGET } } as never)).rejects.toThrow('close failed')
+  })
+
+  it('waits for the Sidebar Session to materialize before restoring a projected page', () => {
+    const { runtime, openTab } = harness(
+      { target: TARGET },
+      Promise.resolve({ ok: true, value: PAGE }),
+      { materialized: false, workspace: PAGE },
+    )
+    runtime.subscribe()
+    expect(openTab).not.toHaveBeenCalled()
+  })
+
+  it('lets an unbound occurrence claim its pending page before restoring unclaimed pages', async () => {
+    const reply = Promise.withResolvers<{ ok: true; value: BrowserPageState }>()
+    const { runtime, update, openTab } = harness({}, reply.promise, { workspace: PAGE })
+    runtime.subscribe()
+    expect(openTab).not.toHaveBeenCalled()
+    reply.resolve({ ok: true, value: PAGE })
+    await reply.promise
+    await Promise.resolve()
+    expect(update).toHaveBeenCalledWith('browser:1', {
+      payload: {
+        target: TARGET,
+        profile: { kind: 'shared' },
+        url: 'https://example.test/',
+      },
+      title: 'Created',
+    })
+    expect(openTab).not.toHaveBeenCalled()
+  })
+
+  it('restores other pages after an unbound occurrence finishes or fails', async () => {
+    const created = Promise.withResolvers<{ ok: true; value: BrowserPageState }>()
+    const successful = harness({}, created.promise, { workspace: PAGE })
+    successful.runtime.subscribe()
+    created.resolve({ ok: true, value: SECOND_PAGE })
+    await created.promise
+    await vi.waitFor(() => { expect(successful.openTab).toHaveBeenCalledOnce() })
+    expect(successful.openTab).toHaveBeenCalledWith('browser', expect.objectContaining({
+      instanceId: 'p/w/b/t',
+    }))
+
+    const rejected = Promise.reject(new Error('create failed'))
+    rejected.catch(() => undefined)
+    const failed = harness({}, rejected, { workspace: PAGE })
+    failed.runtime.subscribe()
+    await vi.waitFor(() => {
+      expect(failed.update).toHaveBeenCalledWith('browser:1', {
+        payload: { createError: 'create failed' },
+      })
+      expect(failed.openTab).toHaveBeenCalledOnce()
+    })
   })
 })

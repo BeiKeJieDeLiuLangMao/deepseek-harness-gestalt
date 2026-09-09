@@ -244,6 +244,68 @@ describe('Tandem Browser Runtime configuration', () => {
     }
   })
 
+  it('polls an externally managed runtime and republishes the recovered target', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-tandem-external-recovery-'))
+    const port = await freePort()
+    const tokenFile = join(root, 'api-token')
+    const child = spawn(process.execPath, [FIXTURE], {
+      cwd: root,
+      env: {
+        ...process.env,
+        TANDEM_FIXTURE_PORT: String(port),
+        TANDEM_FIXTURE_TOKEN_FILE: tokenFile,
+        TANDEM_FIXTURE_FAULTS: JSON.stringify({ navigate: 'runtime-unavailable' }),
+      },
+      stdio: 'ignore',
+    })
+    const ctx = new Context()
+    contexts.push(ctx)
+    try {
+      await ctx.plugin(TandemBrowserRuntime, {
+        baseUrl: `http://127.0.0.1:${String(port)}`,
+        tokenFile,
+        idPrefix: 'external-recovery',
+        sidecar: false,
+        startupTimeoutMs: 5_000,
+        requestTimeoutMs: 2_000,
+        healthPollMs: 10,
+        reconnectAttempts: 0,
+        processGraceMs: 100,
+      })
+      const projections: BrowserRuntimeState[] = []
+      ctx.on('browser/runtime-state', (state) => { projections.push(state) })
+      const created = await ctx.browserRuntime.create({ profile: 'temporary' })
+      await expect(ctx.browserRuntime.navigate({
+        target: created.target,
+        expectedRevision: created.revision,
+        url: 'https://external-recover.test/',
+      })).rejects.toMatchObject({ code: 'BROWSER_RUNTIME_UNAVAILABLE' })
+      await expect(ctx.browserRuntime.observe({ target: created.target })).resolves.toMatchObject({
+        status: 'open',
+        target: created.target,
+        revision: 2,
+        url: 'about:blank',
+      })
+      expect(projections).toContainEqual(expect.objectContaining({
+        status: 'unavailable',
+        target: created.target,
+        revision: 1,
+        reconnecting: true,
+      }))
+      expect(projections.at(-1)).toEqual(expect.objectContaining({
+        status: 'open',
+        target: created.target,
+        revision: 2,
+      }))
+    } finally {
+      const index = contexts.indexOf(ctx)
+      if (index !== -1) contexts.splice(index, 1)
+      await ctx.fiber.dispose()
+      await joinSpawnedChild(child)
+      await rmWhenIdle(root)
+    }
+  })
+
   it('rejects a fixture command when subprocess is not composed', async () => {
     const ctx = new Context()
     contexts.push(ctx)

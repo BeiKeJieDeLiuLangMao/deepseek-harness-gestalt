@@ -43,7 +43,7 @@ kind: "package-reference"
 
 渲染进程崩溃会提交 reason 为 `crashed` 的 `BrowserUnavailableState`，并为同一 target 重建隐藏窗口。导航或页面观察丢失 Electron runtime 时，会提交 reason 为 `unhealthy` 的状态、释放串行操作队列，并在最后提交的 URL 上重建隐藏窗口。Chromium 操作中断后，Provider 会调用 `webContents.stop()` 并等待最多 `cancelTimeoutMs`；操作仍未结束时，会先销毁其页面窗口再推进队列。调用方取消仍以 `BROWSER_ABORTED` 拒绝，被销毁的 target 同时进入恢复流程。已展示页面恢复后会回到相同的 Host parent 和 bounds，除非恢复期间 `conceal` 撤回展示。恢复耗尽则提交 `reason: 'reconnect-failed'`。格式错误的 Chromium 结果会以 `BROWSER_PROTOCOL` 拒绝。
 
-`listenElectronBrowserHttp` 绑定一个 loopback HTTP 服务器，复制 Tandem 的 session、tab、navigate、input、page-content、screenshot、focus 与 destroy 操作，使 Web Host 可以驱动该引擎，而不嵌入第二个 Electron 应用。navigate、input 与 focus 会把客户端的 `expectedRevision` 与引擎修订号比较，不匹配时以 409 `BROWSER_REVISION_CONFLICT` 拒绝，并返回引擎已提交的修订号。无需认证的 `/status` 路由通过 `browser/runtime-state` 同步的已提交标签回执报告服务就绪状态；它绝不观察 Chromium，因此卡住的页面无法阻塞启动健康检查。`/tabs/list` 与 `/page-content` 仍执行实时页面观察。
+`listenElectronBrowserHttp` 绑定一个 loopback HTTP 服务器，复制 Tandem 的 session、tab、navigate、input、page-content、screenshot、focus 与 destroy 操作，使 Web Host 可以驱动该引擎，而不嵌入第二个 Electron 应用。navigate、input 与 focus 会把客户端的 `expectedRevision` 与引擎修订号比较，不匹配时以 409 `BROWSER_REVISION_CONFLICT` 拒绝，并返回引擎已提交的修订号。无需认证的 `/status` 路由通过 `browser/runtime-state` 同步的已提交标签回执报告服务就绪状态；它绝不观察 Chromium，因此卡住的页面无法阻塞启动健康检查。`/tabs/list` 与 `/page-content` 仍执行实时页面观察；page-content 会以 503 `BROWSER_RUNTIME_UNAVAILABLE` 报告不可用 target，使 HTTP 客户端保留其生命周期语义。
 
 <a id="model-experience"></a>
 ## 模型体验

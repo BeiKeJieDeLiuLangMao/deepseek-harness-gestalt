@@ -197,6 +197,15 @@ const server = createServer(async (request, response) => {
     }
     const input = await body(request)
     const session = [...sessions.values()].find(value => value.tab.id === input.tabId) ?? [...sessions.values()].at(-1)
+    if (faults.navigate === 'runtime-unavailable' && session !== undefined) {
+      session.tab = { ...session.tab, url: 'about:blank', title: titleFor('about:blank') }
+      session.revision = 2
+      json(response, 503, {
+        error: 'Electron browser runtime is unavailable',
+        code: 'BROWSER_RUNTIME_UNAVAILABLE',
+      })
+      return
+    }
     if (session !== undefined) {
       session.tab = { ...session.tab, url: input.url, title: titleFor(input.url) }
       if (input.url === 'https://login.test/' || input.url === 'https://example.test/') {
