@@ -82,9 +82,9 @@ Manager 实现已经确定完整 provider 矩阵和解析依据；真实服务�
 
 候选 GLM Coding Plan 行为来自官方 `Wei-Shaw/sub2api` 源码的提交 `98d86915becae9fe9491a91ffc6defd5235c8d2b`。它使用用户提供的订阅数据面 API key，并通过 `account_mode=coding` 选择 Coding Plan 专用端点与额度语义。它没有 OAuth token provider、浏览器登录或 refresh-token 流程。
 
-因此 Gestalt UI 将提供专用 GLM Coding Plan key 入口，而不会把 GLM 加入五个 OAuth 登录动作。该入口会明确选择区域（中国或国际）与账号范围（个人或团队），不会从 key 猜测，也不会静默降级成按量付费。团队账号还必须填写组织 id，并可选填写项目 id。Host 将通过拥有凭据的路径存储这些值，只把产生的 authority 交给核心。除非经过验证的协议约束要求独立 route，GLM 将保持为单一 CLIProxyAPI provider 背后的账号来源。其 OpenAI-compatible effort 归一化把普通 `low`、`medium`、`high` 请求映射到 GLM `high`，把 `xhigh` 或 `max` 映射到 GLM `max`；精确模型 `glm-5.3` 会保留显式 `low`。Anthropic-compatible GLM 5.3 请求同样保留对应的 `low`、`high` 与 `max` 档位，而不会透传上游不支持的拼写。
+因此 Gestalt UI 将提供专用 GLM Coding Plan key 入口，而不会把 GLM 加入五个 OAuth 登录动作。该入口会明确选择区域（中国或国际）与账号范围（个人或团队），不会从 key 猜测，也不会静默降级成按量付费。团队账号还必须填写组织 id，并可选填写项目 id。Host 将通过拥有凭据的路径存储这些值，只把产生的 authority 交给核心。GLM 保持为单一 CLIProxyAPI provider 背后的账号来源。核心 Chat translator 已满足 DSH 协议，因此 Gestalt 不要求单独的 GLM Anthropic 专用端点。其 OpenAI-compatible effort 归一化把普通 `low`、`medium`、`high` 请求映射到 GLM `high`，把 `xhigh` 或 `max` 映射到 GLM `max`；精确模型 `glm-5.3` 会保留显式 `low`。Anthropic-compatible GLM 5.3 请求同样保留对应的 `low`、`high` 与 `max` 档位，而不会透传上游不支持的拼写。
 
-首期产品路径优先支持中国个人与国际个人 Coding Plan key。相同凭据模型会在用户提供既有组织 id 和可选项目 id 字段时支持中国团队与国际团队；产品不新增订阅购买、组织发现、项目发现、邀请或账单管理。已验证的中国 Chat Completions base 是 `https://open.bigmodel.cn/api/coding/paas/v4`；普通 `https://open.bigmodel.cn/api/paas/v4` 是不同的按量付费产品，不能替代。已验证的中国 Anthropic-compatible base 是 `https://open.bigmodel.cn/api/anthropic`。国际额度使用 `api.z.ai` origin。国际 inference 与 Anthropic-compatible base 是核心中显式核实的设置，而不是 Gestalt 猜测的默认值；缺少设置时该账号不可用，不会重定向到中国或按量付费。
+中国个人与国际个人 Coding Plan key 是可选择的 live 路径。用户提供组织 id 和可选项目 id 时，团队输入使用相同凭据模型，但本次交付只用 fixture 证明其请求构造，不宣称所有区域与账号范围组合都已真实服务通过。产品不新增订阅购买、组织发现、项目发现、邀请或账单管理。已验证的中国 Coding base 是 `https://open.bigmodel.cn/api/coding/paas/v4`；普通 `https://open.bigmodel.cn/api/paas/v4` 是不同的按量付费产品，不能替代。已验证的国际 Coding base 是 `https://api.z.ai/api/coding/paas/v4`。国际额度使用 `api.z.ai` origin。缺少区域配置时该账号不可用，不会重定向到中国或按量付费。
 
 来源当前识别为 LGPL-3.0，目标核心使用 MIT。推荐实现把官方 Sub2API 行为作为协议事实，并基于 CLIProxyAPI 现有 MIT executor、translator、auth 与 model 扩展点独立实现 Coding Plan；不复制 Sub2API 源代码、注释、测试或表达结构。在该路径下，GLM 仍是必需产品范围。
 
@@ -130,4 +130,4 @@ Fork 承载的 GLM 实现会增加上游同步冲突。独立实现会减少混�
 
 Provider 专用额度探测可能消耗上游请求、触发 rate limit，或只提供近似数据。固定 Host 策略会排除付费 inference 探测、保持有界刷新与缓存，并优先展示明确 unknown 或 stale，而不是激进刷新。
 
-原生原型与最终验收会先在验证 owner 当前获授权的环境中尝试合法可调用的 Codex computer-use 会话。若记录的 probe 最终确认没有合法 Codex 路径，用户授权把真实隔离 Electron 自动化作为后备证据车道。验证 owner 必须记录所选 driver 及其限制，原型 writer 不得自行切换 driver。Driver 可用性不阻塞非 GUI runtime 或 provider 基础。
+已接受的 GUI 证据模式是通过 WDIO 执行真实隔离 Electron 自动化，只由指定验收 owner 驱动精确评审过的产品或原型 revision。该用户授权模式不表示 native computer use 永久不可用。证据会记录 driver 及其限制；GUI 截图与体验路线仍是 UI 规格冻结前的必需输入。该走查不阻塞非 GUI runtime 或 provider 基础。
