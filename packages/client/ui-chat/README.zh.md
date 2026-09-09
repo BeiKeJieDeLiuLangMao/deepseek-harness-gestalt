@@ -12,6 +12,8 @@ kind: "package-reference"
 
 文件引用提供方同时接收当前查看的 Session ID 与收尾 turn 的 owner，因此继承历史中的链接可以指向 fork。
 
+Chat 的 `openFile` inject 始终把当前查看的 Session 编码为资源 owner。嵌入式 Conversation 还可提供显示宿主 Session；该值只选择文件标签所在的右侧 Sidebar navigator，不会改变授权并解析 path 的 Session。
+
 ## 目录
 
 - [系统提示词行](#system-prompt-row)

@@ -1,9 +1,10 @@
 /** Browser-safe file-address helpers used by the official file tab. */
+import { SessionId } from '@deepseek-ai/dsh-session/types'
 
 /** Parsed `dsh-resource://file` identity with an explicit authorizing Session. */
 export type OfficialFileAddress = {
   readonly scope: 'session'
-  readonly sessionId: string
+  readonly sessionId: SessionId
   readonly path: string
 }
 
@@ -21,7 +22,7 @@ export function parseOfficialFileAddress(address: string): OfficialFileAddress |
     if (path.split('/').map(encodeSegment).join('/') !== encoded.slice(separator + 1)) return undefined
     return {
       scope: 'session',
-      sessionId,
+      sessionId: SessionId(sessionId),
       path,
     }
   } catch {
@@ -34,7 +35,7 @@ function encodeSegment(segment: string): string {
 }
 
 /** Address one path under the Session that authorizes its filesystem access. */
-export function officialFileAddress(sessionId: string, cwd: string | undefined, path: string): string {
+export function officialFileAddress(sessionId: SessionId, cwd: string | undefined, path: string): string {
   const normalized = path.replace(/\\/g, '/')
   const root = cwd?.replace(/\\/g, '/').replace(/\/+$/, '') ?? ''
   const absolute = normalized.startsWith('/') || /^[A-Za-z]:\//u.test(normalized) || normalized.startsWith('//')

@@ -29,7 +29,7 @@ import type { HeroShellProps } from '../src/client/skeleton/EmptyHero.tsx'
 import { InputBar } from '../src/client/skeleton/InputBar.tsx'
 import type { InputBarProps } from '../src/client/skeleton/InputBar.tsx'
 import type {
-  ComposerBarOwnerProps, ConversationHeaderLineageOwnerProps,
+  ComposerBarOwnerProps, ConversationHeaderActionOwnerProps, ConversationHeaderLineageOwnerProps,
 } from '../src/client/contract/slots.ts'
 import type { ViewTab } from '../src/client/contract/views.ts'
 
@@ -131,6 +131,7 @@ function mount(
     /** Compact Side Chat owner props forwarded to the Session header. */
     renderMode?: 'sidechat'
     openSession?: (sessionId: SessionId) => void
+    displayHostSessionId?: SessionId
   } = {},
 ) {
   const root = sid('root')
@@ -176,6 +177,7 @@ function mount(
   const open = vi.fn()
   const slotCalls: string[] = []
   const lineageOwners: ConversationHeaderLineageOwnerProps[] = []
+  const headerActionOwners: ConversationHeaderActionOwnerProps[] = []
   const viewTabs = options.viewTabs ?? [
     { id: 'chat', label: 'Chat' },
     { id: 'trajectory', label: 'Trajectory' },
@@ -193,6 +195,10 @@ function mount(
     if (key === 'conversation.session.header.lineage') {
       lineageOwners.push(owner as ConversationHeaderLineageOwnerProps)
       return opts?.fallback ?? null
+    }
+    if (key === 'conversation.session.header.actions' || key === 'conversation.session.header.utilities') {
+      headerActionOwners.push(owner)
+      return null
     }
     if (key === 'conversation.session.header') {
       return (
@@ -325,11 +331,13 @@ function mount(
     selectWorkspace: retargetWorkspace,
     ...(options.renderMode === undefined ? {} : { renderMode: options.renderMode }),
     ...(options.openSession === undefined ? {} : { openSession: options.openSession }),
+    ...(options.displayHostSessionId === undefined ? {} : { displayHostSessionId: options.displayHostSessionId }),
     t,
   }
   const view = render(<ConversationRoot {...props} />)
   return {
-    view, store, wiring, sink, retargetWorkspace, session, conversation, slotCalls, lineageOwners, seatOwners, open,
+    view, store, wiring, sink, retargetWorkspace, session, conversation, slotCalls, lineageOwners,
+    headerActionOwners, seatOwners, open,
     pickerOwner: () => pickerOwner,
     rerender: () => { view.rerender(<ConversationRoot {...props} />) },
   }
@@ -429,17 +437,23 @@ describe('ConversationRoot resident composer', () => {
     expect(b.open).toHaveBeenCalledWith(sid('root'))
   })
 
-  it('omits breadcrumb navigation in compact Side Chat and forwards owner props to header actions', () => {
+  it('omits compact breadcrumbs and forwards every presentation owner field to header actions', () => {
     const openSession = vi.fn()
+    const displayHostSessionId = sid('display-host')
     const b = mount(sessionSnapshotOf(), undefined, undefined, {
       summaryOrigin: 'subagent',
       renderMode: 'sidechat',
       openSession,
+      displayHostSessionId,
     })
     expect(b.view.queryByRole('navigation')).toBeNull()
     expect(b.view.queryByRole('button', { name: 'Root' })).toBeNull()
     expect(b.slotCalls).toContain('conversation.session.header.actions')
     expect(b.slotCalls).not.toContain('conversation.session.header.corner')
+    expect(b.headerActionOwners.length).toBeGreaterThan(0)
+    for (const owner of b.headerActionOwners) {
+      expect(owner).toEqual({ renderMode: 'sidechat', openSession, displayHostSessionId })
+    }
   })
 
   it('keeps intermediate subagent breadcrumbs at the compact title size', () => {

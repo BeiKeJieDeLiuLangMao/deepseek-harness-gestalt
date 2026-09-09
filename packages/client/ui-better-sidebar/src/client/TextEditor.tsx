@@ -52,6 +52,18 @@ type ViewMode = 'preview' | 'edit'
 const previewScrollMemory = new Map<string, number>()
 const previewScrollKey = (scope: { sessionId: string }, path: string): string => `${scope.sessionId}::${path}`
 
+/** Run after a hidden editor has completed its visible layout, with disposal cancelling either pending frame. */
+function afterEditorReveal(callback: () => void): () => void {
+  let secondFrame: number | undefined
+  const firstFrame = requestAnimationFrame(() => {
+    secondFrame = requestAnimationFrame(callback)
+  })
+  return () => {
+    cancelAnimationFrame(firstFrame)
+    if (secondFrame !== undefined) cancelAnimationFrame(secondFrame)
+  }
+}
+
 /** Editor state retained by the tab occurrence while its body is not mounted. */
 export interface RetainedEditorState {
   readonly content: string
@@ -295,12 +307,11 @@ export function TextEditorCore(props: TextEditorCoreProps) {
     view.dispatch({ selection: { anchor: target } })
     view.requestMeasure()
     // The first frame commits edit mode; the second reads measurable line geometry.
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        const block = view.lineBlockAt(target)
-        view.scrollDOM.scrollTop = Math.max(0, block.top - 8)
-        view.requestMeasure()
-      })
+    return afterEditorReveal(() => {
+      if (viewRef.current !== view) return
+      const block = view.lineBlockAt(target)
+      view.scrollDOM.scrollTop = Math.max(0, block.top - 8)
+      view.requestMeasure()
     })
   }, [props.line, props.navigationRevision, content])
 
@@ -348,15 +359,14 @@ export function TextEditorCore(props: TextEditorCoreProps) {
     // touch anything outside the editor.
     view.requestMeasure()
     view.dispatch({ selection: { anchor: target } })
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        const block = view.lineBlockAt(target)
-        view.scrollDOM.scrollTop = Math.max(0, block.top - 8)
-        // Force CodeMirror to re-measure and re-render its virtualized
-        // viewport at the NEW scroll position (its scroll-observer is async
-        // and can lag a direct write).
-        view.requestMeasure()
-      })
+    return afterEditorReveal(() => {
+      if (viewRef.current !== view) return
+      const block = view.lineBlockAt(target)
+      view.scrollDOM.scrollTop = Math.max(0, block.top - 8)
+      // Force CodeMirror to re-measure and re-render its virtualized
+      // viewport at the NEW scroll position (its scroll-observer is async
+      // and can lag a direct write).
+      view.requestMeasure()
     })
     // The reveal reads the live document/view refs; only the flip into
     // preview triggers it.

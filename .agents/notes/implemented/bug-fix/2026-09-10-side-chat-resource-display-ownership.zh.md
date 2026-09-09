@@ -10,9 +10,9 @@ Side Chat 曾在 workbench 内挂载布局层级的 conversation entry，因此�
 
 ## 决策
 
-`main.conversation` 是可复用的 Conversation 内容 entry。`ConversationPresentationOwnerProps` 携带紧凑呈现、下级导航与可选的显示宿主 Session。Shell 会让显示宿主依次通过 `conversation.session`、选中的 View、Chat node 与 Turn tail，但不改变被渲染的 Session binding。紧凑呈现会省略层级导航与 workbench 控件，因为外围 occurrence 拥有导航和 panel chrome。空白 Side Chat 保持 active 布局，其 composer 会先占用剩余垂直空间，再固定在底部。
+`main.conversation` 是可复用的 Conversation 内容 entry。`ConversationPresentationOwnerProps` 携带紧凑呈现、下级导航与可选的显示宿主 Session。Shell 会让显示宿主依次通过 Session header action 与 utility、Session body、选中的 View、Chat node 与 Turn tail，但不改变被渲染的 Session binding。紧凑呈现会省略层级导航与 workbench 控件，因为外围 occurrence 拥有导航和 panel chrome。空白 Side Chat 保持 active 布局，其 composer 会先占用剩余垂直空间，再固定在底部。
 
-文件路由把被渲染的 child 视为资源 Session，把 parent 视为显示宿主 Session。Chat 文件链接与 produced-file 操作根据 child 工作目录构造 `dsh-resource://file/session/<resource>/...` 地址，再通过 parent 的 `sidebarRight` navigator 打开该地址。官方解码器会直接分割并解码原始组件，不构造 WHATWG `URL`；相对 `.` 和 `..` 路径段因此会留在资源 path 中，不会改变 Session 组件。官方文件宿主根据编码的资源 Session 执行读取、写入、viewer 加载、文件树操作、引用与对话插入。标签 occurrence 状态、编辑器保留状态，以及重命名或删除后的协调仍归 parent workbench 所有。官方文件 definition 拒绝没有 owner 的绝对地址。
+文件路由把被渲染的 child 视为资源 Session，把 parent 视为显示宿主 Session。Chat 文件链接与 produced-file 操作根据 child 工作目录构造 `dsh-resource://file/session/<resource>/...` 地址，再通过 parent 的 `sidebarRight` navigator 打开该地址。官方类型的完整地址 pattern 会接纳 encoder 的 URI 字符集（包括字面点路径段），再由 canonical parser 判定 claim。解码器会直接分割并解码原始组件，不构造 WHATWG `URL`；相对 `.` 和 `..` 路径段因此会留在资源 path 中，不会改变 Session 组件。官方文件宿主根据编码的资源 Session 执行读取、写入、viewer 加载、文件树操作、引用与对话插入。标签 occurrence 状态、编辑器保留状态，以及重命名或删除后的协调仍归 parent workbench 所有。官方文件 definition 拒绝没有 owner 的绝对地址。
 
 Better Sidebar bundle 导入共享 Client `INLINE_SAFE` 策略。因此，其浏览器安全 Workspace path helper 与官方 Client bundle 使用相同的无运行时身份规则，而不维护另一份 allowlist。
 
@@ -32,4 +32,4 @@ Side Chat 会复用完整 Conversation 内容树，不嵌套应用 chrome，也�
 
 ## 测试
 
-聚焦 Client 测试覆盖内容 slot 挂载、空白 Side Chat phase、constructor seed 长度、descriptor 追加顺序、child 地址与 parent navigator 路由、行参数、produced-file 与文件夹操作、编辑器读取/写入/插入归属，以及主 conversation 路由保持不变。Better Sidebar bundle 与完整 Client build 会在 Client purity 策略下执行共享 Workspace path helper。组装完整的 Web E2E 会在 parent workbench 中打开 child 所有的文件第 80 行，验证标记内容在已滚动的 CodeMirror viewport 内可见，并且只把该选区插入 child 草稿。
+聚焦 Client 测试覆盖内容 slot 挂载、header 与 View 的显示宿主转发、空白 Side Chat phase、constructor seed 长度、descriptor 追加顺序、官方 registry 对点路径的 claim、child 地址与 parent navigator 路由、行参数、produced-file 与文件夹操作、编辑器读取/写入/插入归属、延迟的编辑器导航取消，以及主 conversation 路由保持不变。Better Sidebar bundle 与完整 Client build 会在 Client purity 策略下执行共享 Workspace path helper。组装完整的 Web E2E 会在 parent workbench 中打开 child 所有的 `dir/../child-owned.md` 地址第 80 行，验证标记内容在已滚动的 CodeMirror viewport 内可见，并且只把该选区插入 child 草稿。

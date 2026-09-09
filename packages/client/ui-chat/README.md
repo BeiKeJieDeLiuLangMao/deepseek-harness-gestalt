@@ -12,6 +12,8 @@ Render Session conversations with images, localized actions, and restored scroll
 
 File-mention providers receive the viewed Session ID and closing-turn owner, so inherited-history links can address the fork.
 
+The Chat `openFile` injection always encodes the viewed Session as the resource owner. An embedded Conversation may also supply a display-host Session; that value selects the right-Sidebar navigator where the file tab appears without changing which Session authorizes and resolves the path.
+
 ## Table of Contents
 
 - [System prompt row](#system-prompt-row)
