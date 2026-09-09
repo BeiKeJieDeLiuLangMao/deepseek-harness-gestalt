@@ -12,7 +12,9 @@ CLIProxyAPI 账号池凭据的只读额度观测。唯一入口 `createQuotaObse
 
 ## 观测语义
 
-来源未提供的窗口字段保持缺失——没有任何值会被读成零、满额或虚构的余额。`periodHours: null` 表示来源未确立窗口时长（Antigravity 接受 `5h`/`five-hour`/`five_hour` 与 `weekly`/`week`；其他拼写保留余额与重置事实但不给时长）。重置时刻从 ISO-8601、Unix 秒或毫秒、或相对采样时钟的秒偏移解析。消费方通过比较 `observedAt` 保留过期样本；observer 自身不重试、不缓存、不调度。
+来源未提供的窗口字段保持缺失——没有任何值会被读成零、满额或虚构的余额。`periodHours: null` 表示来源未确立窗口时长（Antigravity 接受 `5h`/`five-hour`/`five_hour` 与 `weekly`/`week`；其他拼写保留余额与重置事实但不给时长；Kimi 仅从显式 `duration`+`timeUnit` 推导周期；只有周期没有任何额度计数器的 payload 不是额度事实）。重置时刻从 ISO-8601、Unix 秒或毫秒、或相对采样时钟的秒偏移解析。消费方通过比较 `observedAt` 保留过期样本；observer 自身不重试、不缓存、不调度。
+
+所有保留值均有界：超过 1 MiB UTF-8 字节的探测响应使观测失败（原始文本按编码字节计量，多字节正文无法从字符计数下钻空子，已解码 body 在重新序列化后计量）；声称超过 256 个额度窗口的 payload 大声失败而不是发出无界数组。账号引用是 branded `QuotaAccountRef`；空引用在 observe 边界拒绝。
 
 `known` 表示该 provider 探测期望的事实全部到达；`partial` 表示部分到达（Claude 命名窗口缺失、Codex reset-credits 列表失败、xAI 两个 billing 周期只得其一）；`failure` 表示无可用事实（错误信息有界且经凭据脱敏）；`unsupported` 表示该账号状态没有只读探测。
 
@@ -23,7 +25,7 @@ CLIProxyAPI 账号池凭据的只读额度观测。唯一入口 `createQuotaObse
 | Provider | 端点 | 窗口事实 |
 | --- | --- | --- |
 | Claude | `GET api.anthropic.com/api/oauth/usage` | 命名窗口（`five_hour`、`seven_day*`）含 `utilization` + `resets_at`；`weekly_scoped` 的 Fable 限额取代 `iguana_necktie` |
-| Codex | `GET chatgpt.com/backend-api/wham/usage`、`GET …/rate-limit-reset-credits` | 按 `limit_window_seconds` 分类的 `primary`/`secondary` 窗口（5h / 周 / 月）、`plan_type`、只读 reset-credit 计数 |
+| Codex | `GET chatgpt.com/backend-api/wham/usage`、`GET …/rate-limit-reset-credits` | 按 `limit_window_seconds` 分类的窗口（5h / 周 / 月键名）；缺时长的 payload 保留位置键 `primary`/`secondary` 且 `periodHours: null`；`plan_type`；只读 reset-credit 计数 |
 | Antigravity | `POST cloudcode-pa…/v1internal:retrieveUserQuotaSummary`（daily、sandbox、prod 回退链） | bucket 含 `remainingFraction`、显式 `window`、`resetTime`；需要 auth-file 的 `projectId` 元数据 |
 | Kimi | `GET api.kimi.com/coding/v1/usages` | `usage` 汇总加 `limits[]` 行，含计数器；周期仅取显式 `duration`+`timeUnit`（绝不从标签关键词推导） |
 | xAI | `GET cli-chat-proxy.grok.com/v1/billing[?format=credits]` | 周额度百分比与月度美分计数；周期长度取自 payload 自身的起止区间 |
@@ -38,4 +40,4 @@ GLM 路径是 fork GLM 订阅账号源的后续集成点：信号键跟随 `gest
 - Kimi、xAI、Antigravity 的 provider payload 形态取自上游管理中心的解析器，未在本仓库对真实端点复验；漂移以 `failure` 或 `partial` 呈现，绝不虚构数值。
 - Antigravity 探测依赖 auth-file 携带 GCP 项目 id；缺少该元数据的账号报告 `failure`（`antigravity account metadata lacks a project id`），直至账号名册提供该字段。
 - Codex 窗口分类对缺少 `limit_window_seconds` 的 payload 保留上游的 primary/secondary 顺序回退；未来若上游发出多个无法分类的窗口对，会坍缩到同样两个键。
-- Kimi 的 `periodHours` 仅取显式 `duration`+`timeUnit` 元数据；上游的标签关键词回退被刻意移除——展示标签不是时间依据——因此仅有关键词的窗口报告 `periodHours: null`（标签与行序不受影响）。Codex 经旧版 primary/secondary 顺序回退分类的窗口同样携带 `periodHours: null`，直至 payload 给出 `limit_window_seconds`。
+- Kimi 的 `periodHours` 仅取显式 `duration`+`timeUnit` 元数据；上游的标签关键词回退与未知单位默认分钟被刻意移除——二者都不是时间依据——因此仅有关键词或无单位的窗口报告 `periodHours: null`（标签与行序不受影响）。Codex 经旧版 primary/secondary 顺序回退分类的窗口保留位置键 `primary`/`secondary` 并携带 `periodHours: null`，直至 payload 给出 `limit_window_seconds`。

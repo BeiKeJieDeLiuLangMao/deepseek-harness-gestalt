@@ -132,30 +132,50 @@ export function buildCodexWindows(
 
   const pushPair = (
     info: CodexRateLimitInfo | null | undefined,
-    fiveHourKey: string,
-    weeklyKey: string,
-    monthlyKey: string,
+    keys: { fiveHour: string; weekly: string; monthly: string; primary: string; secondary: string },
   ): void => {
     const { fiveHour, span } = classifyWindows(info)
     const { limitReached } = rateLimitFlags(info)
-    const first = toWindowObservation(fiveHourKey, fiveHour, limitReached, now)
+    // A duration-derived window carries its semantic name; the legacy ordering
+    // fallback names positions only — `primary`/`secondary` — and never claims
+    // a 5-hour or weekly period the payload did not state.
+    const firstKey = windowSeconds(fiveHour) === FIVE_HOUR_SECONDS ? keys.fiveHour : keys.primary
+    const first = toWindowObservation(firstKey, fiveHour, limitReached, now)
     if (first !== null) windows.push(first)
-    const spanKey = isMonthlyWindow(span) ? monthlyKey : weeklyKey
-    const second = toWindowObservation(spanKey, span, limitReached, now)
+    const secondKey =
+      windowSeconds(span) === WEEK_SECONDS
+        ? keys.weekly
+        : isMonthlyWindow(span)
+          ? keys.monthly
+          : keys.secondary
+    const second = toWindowObservation(secondKey, span, limitReached, now)
     if (second !== null) windows.push(second)
   }
 
-  pushPair(rateLimit, 'five-hour', 'weekly', 'monthly')
-  pushPair(codeReview, 'code-review-five-hour', 'code-review-weekly', 'code-review-monthly')
+  pushPair(rateLimit, {
+    fiveHour: 'five-hour',
+    weekly: 'weekly',
+    monthly: 'monthly',
+    primary: 'primary',
+    secondary: 'secondary',
+  })
+  pushPair(codeReview, {
+    fiveHour: 'code-review-five-hour',
+    weekly: 'code-review-weekly',
+    monthly: 'code-review-monthly',
+    primary: 'code-review-primary',
+    secondary: 'code-review-secondary',
+  })
 
   for (const [index, limit] of additional.entries()) {
     const name = additionalLimitName(limit, index)
-    pushPair(
-      limit.rate_limit ?? limit.rateLimit,
-      `additional-${name}-five-hour`,
-      `additional-${name}-weekly`,
-      `additional-${name}-monthly`,
-    )
+    pushPair(limit.rate_limit ?? limit.rateLimit, {
+      fiveHour: `additional-${name}-five-hour`,
+      weekly: `additional-${name}-weekly`,
+      monthly: `additional-${name}-monthly`,
+      primary: `additional-${name}-primary`,
+      secondary: `additional-${name}-secondary`,
+    })
   }
 
   const planType = normalizePlanType(payload.plan_type ?? payload.planType) ?? undefined

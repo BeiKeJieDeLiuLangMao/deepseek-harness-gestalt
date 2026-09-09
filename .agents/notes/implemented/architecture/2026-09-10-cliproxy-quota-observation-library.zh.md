@@ -34,4 +34,4 @@ GLM 不带探测地加入 provider 联合：fork 核心自行轮询 GLM 额度�
 
 ## Consequences
 
-测试经 fake trusted transport 覆盖每个 provider 的真实数据路径——允许的 URL、方法与请求字段，畸形与超限 payload，含凭据形态的错误文本，五家探测的完整探测到观测组装，以及零请求的 GLM 信封组装——116 个测试，逐文件 100% 覆盖。fake 是 transport 契约的测试替身，不构成对真实 provider 端点的证据：Kimi、xAI、Antigravity 的 payload 形态仍只对上游管理中心的解析器验证过，GLM 信号键在评审后的 fork pin 落定前保持暂定，漂移将以 `failure` 或 `partial` 呈现而非虚构数值。本包冻结的接口——探测输入、transport、观测——是交给 #650 运行时拥有方的交接契约。
+测试经 fake trusted transport 覆盖每个 provider 的真实数据路径——允许的 URL、方法与请求字段，畸形与超限 payload（字节精确、多字节、已解码、超窗口数边界），含凭据形态的错误文本，五家探测的完整探测到观测组装，以及零请求的 GLM 信封组装——125 个测试，逐文件 100% 覆盖。fake 是 transport 契约的测试替身，不构成对真实 provider 端点的证据：Kimi、xAI、Antigravity 的 payload 形态仍只对上游管理中心的解析器验证过，GLM 信号键在评审后的 fork pin 落定前保持暂定，漂移将以 `failure` 或 `partial` 呈现而非虚构数值。本包冻结的接口——branded `QuotaAccountRef` 探测输入、transport、观测——是交给 #650 运行时拥有方的交接契约。独立评审在上游之上收紧了真值规则：Kimi 周期仅从显式 `duration`+`timeUnit` 推导，Codex 缺时长窗口保留位置键 `primary`/`secondary`，无额度计数器的 xAI 周期不是额度事实。

@@ -36,6 +36,9 @@ export function parseCodexResetCredits(payload: unknown): CodexResetCreditsParse
     'availableCount' in record ||
     'applicable_available_count' in record ||
     'applicableAvailableCount' in record
+  // A present-but-non-array `credits` is a shape violation, not an empty list:
+  // reporting zero credits as a known fact would misrepresent the account.
+  const creditsFieldValid = !('credits' in record) || Array.isArray(record['credits'])
   const credits = Array.isArray(record['credits']) ? record['credits'] : []
 
   return {
@@ -46,6 +49,6 @@ export function parseCodexResetCredits(payload: unknown): CodexResetCreditsParse
       ),
       creditCount: credits.length,
     },
-    invalidPayload: !hasExpectedShape,
+    invalidPayload: !hasExpectedShape || !creditsFieldValid,
   }
 }

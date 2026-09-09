@@ -36,14 +36,13 @@ describe('buildKimiWindows', () => {
       ['SECONDS', 1800, 0.5],
       ['TIME_UNIT_MINUTE', 120, 2],
       ['MINUTES', 60, 1],
+      ['MINUTE', 30, 0.5],
       ['TIME_UNIT_HOUR', 5, 5],
       ['HOURS', 3, 3],
       ['TIME_UNIT_DAY', 2, 48],
       ['DAYS', 1, 24],
       ['TIME_UNIT_WEEK', 1, 168],
       ['WEEKS', 2, 336],
-      ['', 90, 1.5],
-      ['FORTNIGHT', 120, 2],
     ]
     for (const [timeUnit, duration, expectedHours] of cases) {
       const payload = {
@@ -52,6 +51,17 @@ describe('buildKimiWindows', () => {
       const windows = buildKimiWindows(payload, NOW)
       expect(windows[0]?.periodHours, `timeUnit=${timeUnit}`).toBe(expectedHours)
     }
+  })
+
+  it('never defaults an absent or unknown time unit to minutes', () => {
+    for (const timeUnit of ['', 'FORTNIGHT', 'nonsense']) {
+      const payload = {
+        limits: [{ used: 1, limit: 2, window: { duration: 120, timeUnit } }],
+      }
+      expect(buildKimiWindows(payload, NOW)[0]?.periodHours, `timeUnit=${timeUnit}`).toBeNull()
+    }
+    const noUnit = { limits: [{ used: 1, limit: 2, duration: 120 }] }
+    expect(buildKimiWindows(noUnit, NOW)[0]?.periodHours).toBeNull()
   })
 
   it('never derives a period from label keywords, keeping labels but null durations', () => {
@@ -109,14 +119,14 @@ describe('buildKimiWindows', () => {
     expect(windows[1]).not.toHaveProperty('label')
   })
 
-  it('treats a non-string time unit as minutes and skips a counterless summary', () => {
+  it('rejects a non-string time unit and skips a counterless summary', () => {
     const payload = {
       usage: { name: 'nothing countable' },
       limits: [{ used: 1, limit: 2, window: { duration: 120, timeUnit: 5 } }],
     }
     const windows = buildKimiWindows(payload, NOW)
     expect(windows).toHaveLength(1)
-    expect(windows[0]?.periodHours).toBe(2)
+    expect(windows[0]?.periodHours).toBeNull()
   })
 
   it('omits usedPercent when the limit is zero', () => {

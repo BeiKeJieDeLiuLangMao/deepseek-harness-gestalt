@@ -42,7 +42,7 @@ describe('buildCodexWindows', () => {
     expect(windows.map(window => window.key)).toEqual(['monthly'])
   })
 
-  it('falls back to source ordering when durations are absent', () => {
+  it('falls back to positional names without durations, never claiming a period', () => {
     const payload = {
       rate_limit: {
         primary_window: { used_percent: 1 },
@@ -50,8 +50,9 @@ describe('buildCodexWindows', () => {
       },
     }
     const { windows } = buildCodexWindows(payload, NOW)
-    expect(windows.map(window => window.key)).toEqual(['five-hour', 'weekly'])
+    expect(windows.map(window => window.key)).toEqual(['primary', 'secondary'])
     expect(windows[0]?.periodHours).toBeNull()
+    expect(windows[1]?.periodHours).toBeNull()
   })
 
   it('uses 100 only when the source says the limit is reached and a reset exists', () => {

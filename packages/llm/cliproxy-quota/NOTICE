@@ -35,6 +35,15 @@ missing counters are never defaulted to zero; the xAI paid health probe
 (/v1/me plus chat completion) and the Codex reset-credit consume operation are
 not ported — this package is read-only and never sends an inference request.
 
+Further divergences required by this repository's review: Kimi label-keyword
+period derivation and the unknown-unit minute default are dropped (a display
+label is not a time basis); Codex windows without `limit_window_seconds` keep
+positional `primary`/`secondary` keys instead of claiming 5-hour/weekly
+periods; an xAI payload whose period carries no quota counter produces no
+window; a non-array `credits` field is a shape violation rather than a zero
+count; response bounds are byte-exact (UTF-8) and also cover already-decoded
+bodies; and one observation retains at most 256 windows.
+
 The MIT license text follows.
 
 ---

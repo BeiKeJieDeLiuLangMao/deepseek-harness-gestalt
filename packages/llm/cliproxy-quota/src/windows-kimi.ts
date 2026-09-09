@@ -24,14 +24,18 @@ export const KIMI_PROBE_HEADERS: Record<string, string> = {
 
 type KimiTimeUnit = 'second' | 'minute' | 'hour' | 'day' | 'week'
 
-/** Kimi sends protobuf-style values such as `TIME_UNIT_MINUTE`. */
+/**
+ * Kimi sends protobuf-style values such as `TIME_UNIT_MINUTE`. An absent or
+ * unrecognized unit is not a fact: unlike the upstream display default, it is
+ * never read as minutes.
+ */
 function normalizeKimiTimeUnit(rawTimeUnit: unknown): KimiTimeUnit | null {
   const unit =
     typeof rawTimeUnit === 'string'
       ? rawTimeUnit.trim().toUpperCase().replace(/^TIME_UNIT_/, '')
       : ''
   if (unit === 'SECONDS' || unit === 'SECOND') return 'second'
-  if (unit === '' || unit === 'MINUTES' || unit === 'MINUTE') return 'minute'
+  if (unit === 'MINUTES' || unit === 'MINUTE') return 'minute'
   if (unit === 'HOURS' || unit === 'HOUR') return 'hour'
   if (unit === 'DAYS' || unit === 'DAY') return 'day'
   if (unit === 'WEEKS' || unit === 'WEEK') return 'week'
@@ -56,12 +60,12 @@ function kimiResetMs(data: Record<string, unknown>, now: number): number | null 
 function kimiPeriodHours(duration: number | null, rawTimeUnit: unknown): number | null {
   if (duration === null || duration <= 0) return null
   const unit = normalizeKimiTimeUnit(rawTimeUnit)
+  if (unit === null) return null
   if (unit === 'second') return duration / 3600
+  if (unit === 'minute') return duration / 60
   if (unit === 'hour') return duration
   if (unit === 'day') return duration * 24
-  if (unit === 'week') return duration * 7 * 24
-  // Matches the upstream fallback: an absent or unknown unit reads as minutes.
-  return duration / 60
+  return duration * 7 * 24
 }
 
 function toKimiWindow(

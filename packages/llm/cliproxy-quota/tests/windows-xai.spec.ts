@@ -57,12 +57,13 @@ describe('buildXaiWindow', () => {
     expect(buildXaiWindow({ config: {} }, 'weekly')).toBeNull()
   })
 
-  it('keeps a bare reset hint and an inverted span honest', () => {
+  it('keeps a bare reset hint and an inverted span honest when counters exist', () => {
     const bareEnd = buildXaiWindow(
-      { config: { billing_period_end: '2027-03-01T00:00:00Z' } },
+      { config: { used: 100, billing_period_end: '2027-03-01T00:00:00Z' } },
       'monthly',
     )
     expect(bareEnd).toMatchObject({
+      used: 100,
       resetAtMs: Date.parse('2027-03-01T00:00:00Z'),
       periodHours: null,
     })
@@ -70,6 +71,7 @@ describe('buildXaiWindow', () => {
     const inverted = buildXaiWindow(
       {
         config: {
+          used: 100,
           billingPeriodStart: '2027-03-02T00:00:00Z',
           billingPeriodEnd: '2027-03-01T00:00:00Z',
         },
@@ -77,5 +79,17 @@ describe('buildXaiWindow', () => {
       'monthly',
     )
     expect(inverted?.periodHours).toBeNull()
+  })
+
+  it('refuses a period-only payload as a quota fact', () => {
+    expect(
+      buildXaiWindow(
+        { config: { currentPeriod: { type: 'weekly', end: '2027-01-08T00:00:00Z' } } },
+        'weekly',
+      ),
+    ).toBeNull()
+    expect(
+      buildXaiWindow({ config: { billing_period_end: '2027-03-01T00:00:00Z' } }, 'monthly'),
+    ).toBeNull()
   })
 })

@@ -11,9 +11,11 @@
 
 import { sanitizeProbeError } from './sanitize.ts'
 import {
-  QUOTA_PROBE_MAX_BODY_CHARS,
+  QUOTA_MAX_WINDOWS,
+  QUOTA_PROBE_MAX_BODY_BYTES,
   type QuotaObservationTransport,
   type QuotaProbeRequest,
+  type QuotaProbeResponse,
 } from './transport.ts'
 import { asRecord } from './normalize.ts'
 import {
@@ -80,13 +82,42 @@ interface ProbeContext {
   readonly now: () => number
 }
 
-function decodePayload(body: unknown, bodyText: string | undefined): unknown {
-  if (body !== undefined && body !== null && typeof body === 'object') return body
-  if (typeof bodyText !== 'string' || bodyText.trim() === '') return undefined
+const textEncoder = new TextEncoder()
+
+type DecodeOutcome =
+  | { readonly ok: true; readonly payload: unknown }
+  | { readonly ok: false; readonly error: string }
+
+function decodeBoundedPayload(response: QuotaProbeResponse): DecodeOutcome {
+  if (response.body !== undefined && response.body !== null && typeof response.body === 'object') {
+    // An already-decoded body bypasses the raw-text bound, so the complete
+    // retained result is measured after re-serialization.
+    let serialized: string
+    try {
+      serialized = JSON.stringify(response.body)
+    } catch {
+      return { ok: false, error: 'provider response was not parseable JSON' }
+    }
+    if (textEncoder.encode(serialized).length > QUOTA_PROBE_MAX_BODY_BYTES) {
+      return { ok: false, error: 'provider response exceeded the bounded body limit' }
+    }
+    return { ok: true, payload: response.body }
+  }
+  if (typeof response.bodyText !== 'string' || response.bodyText.trim() === '') {
+    return { ok: false, error: 'provider response was not parseable JSON' }
+  }
+  // A char count over the byte bound rejects without encoding; the exact
+  // multibyte length decides otherwise.
+  if (
+    response.bodyText.length > QUOTA_PROBE_MAX_BODY_BYTES ||
+    textEncoder.encode(response.bodyText).length > QUOTA_PROBE_MAX_BODY_BYTES
+  ) {
+    return { ok: false, error: 'provider response exceeded the bounded body limit' }
+  }
   try {
-    return JSON.parse(bodyText) as unknown
+    return { ok: true, payload: JSON.parse(response.bodyText) as unknown }
   } catch {
-    return undefined
+    return { ok: false, error: 'provider response was not parseable JSON' }
   }
 }
 
@@ -103,12 +134,7 @@ async function callProbe(ctx: ProbeContext, request: QuotaProbeRequest): Promise
   if (response.statusCode < 200 || response.statusCode >= 300) {
     return { ok: false, error: `provider answered status ${String(response.statusCode)}` }
   }
-  if (typeof response.bodyText === 'string' && response.bodyText.length > QUOTA_PROBE_MAX_BODY_CHARS) {
-    return { ok: false, error: 'provider response exceeded the bounded body limit' }
-  }
-  const payload = decodePayload(response.body, response.bodyText)
-  if (payload === undefined) return { ok: false, error: 'provider response was not parseable JSON' }
-  return { ok: true, payload }
+  return decodeBoundedPayload(response)
 }
 
 function observation(
@@ -118,6 +144,18 @@ function observation(
   windows: readonly QuotaWindowObservation[],
   extras: Partial<Pick<QuotaObservation, 'planType' | 'resetCredits' | 'error'>> = {},
 ): QuotaObservation {
+  // The retained output is bounded like the input: an over-limit window set
+  // fails loud instead of emitting an unbounded array.
+  if (windows.length > QUOTA_MAX_WINDOWS) {
+    return {
+      provider: input.provider,
+      accountRef: input.authIndex,
+      status: 'failure',
+      observedAt: now(),
+      windows: [],
+      error: `provider payload claimed more than ${String(QUOTA_MAX_WINDOWS)} quota windows`,
+    }
+  }
   return {
     provider: input.provider,
     accountRef: input.authIndex,
@@ -321,6 +359,11 @@ export function createQuotaObserver(options: QuotaObserverOptions): QuotaObserve
   const ctx: ProbeContext = { transport: options.transport, now: options.now ?? Date.now }
   return {
     observe: async (input) => {
+      // The one runtime boundary check on caller input: a branded reference
+      // can still be an empty string, and probing with one is meaningless.
+      if (input.authIndex.trim() === '') {
+        return observation(input, ctx.now, 'failure', [], { error: 'empty account reference' })
+      }
       try {
         switch (input.provider) {
           case 'claude':

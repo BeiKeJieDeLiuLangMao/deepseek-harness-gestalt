@@ -12,19 +12,34 @@
  * @module @deepseek-ai/dsh-cliproxy-quota/types
  */
 
+import type { Branded } from '@deepseek-ai/dsh-brand'
+
 /** Account-pool providers with a verified read-only quota observation path. */
 export type QuotaProvider = 'claude' | 'codex' | 'antigravity' | 'kimi' | 'xai' | 'glm'
+
+/**
+ * Opaque CLIProxyAPI account reference (`auth_index`), branded because it
+ * crosses the Host/transport boundary. The owning supervisor maps it to one
+ * auth file it supervises; this package never resolves it itself.
+ */
+export type QuotaAccountRef = Branded<'QuotaAccountRef'>
 
 /**
  * Narrow observation input: one provider, one opaque account reference, and
  * non-secret metadata. Credentials never enter this structure; the trusted
  * transport substitutes the CLIProxyAPI `$TOKEN$` placeholder server-side.
+ *
+ * This is a Host-side-only structure. The metadata fields are derived by the
+ * Host from the same auth file `authIndex` names, and the transport belongs
+ * to the supervisor that owns that account; nothing here is renderer-reachable
+ * and no caller-supplied field is forwarded upstream verbatim (probe headers
+ * are fixed per-provider constants).
  */
 export interface QuotaProbeInput {
   /** Provider selecting the probe. */
   readonly provider: QuotaProvider
   /** CLIProxyAPI `auth_index`: an opaque account reference, never a secret. */
-  readonly authIndex: string
+  readonly authIndex: QuotaAccountRef
   /** Antigravity GCP project id from auth-file metadata; required for that provider's probe. */
   readonly projectId?: string
   /**
@@ -100,7 +115,7 @@ export interface QuotaObservation {
   /** Probed provider. */
   readonly provider: QuotaProvider
   /** Echo of the input `authIndex` for consumer correlation. */
-  readonly accountRef: string
+  readonly accountRef: QuotaAccountRef
   /** Truth state of this observation. */
   readonly status: QuotaObservationStatus
   /** Sampling instant in epoch ms; consumers derive staleness from it. */

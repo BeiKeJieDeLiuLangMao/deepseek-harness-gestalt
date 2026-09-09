@@ -90,12 +90,10 @@ export function buildXaiWindow(
       : null
 
   const effectivePercent = creditUsagePercent ?? usedPercent
+  // A period without any quota counter is not a quota fact: it must not
+  // produce a window that reads as known or partial balance.
   const hasCounters =
-    effectivePercent !== null ||
-    monthlyLimitCents !== null ||
-    usedCents !== null ||
-    periodType !== 'unknown' ||
-    periodEnd !== null
+    effectivePercent !== null || monthlyLimitCents !== null || usedCents !== null
   if (!hasCounters) return null
 
   const { resetAtMs, periodHours } = periodInstants(periodStart, periodEnd)

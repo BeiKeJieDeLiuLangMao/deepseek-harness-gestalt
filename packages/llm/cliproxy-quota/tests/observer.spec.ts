@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createQuotaObserver } from '../src/observer.ts'
-import type { QuotaProbeInput } from '../src/types.ts'
+import type { QuotaAccountRef, QuotaProbeInput } from '../src/types.ts'
 import {
   FIXED_NOW,
   createFakeTransport,
@@ -22,7 +22,7 @@ const CLAUDE_WINDOWS: Record<string, unknown> = {
 }
 
 function input(partial: Partial<QuotaProbeInput> & Pick<QuotaProbeInput, 'provider'>): QuotaProbeInput {
-  return { authIndex: 'auth-7', ...partial }
+  return { authIndex: 'auth-7' as QuotaAccountRef, ...partial }
 }
 
 describe('claude assembly', () => {
@@ -480,6 +480,89 @@ describe('glm assembly', () => {
 })
 
 describe('observer boundary behavior', () => {
+  it('rejects an empty account reference without probing', async () => {
+    const transport = createUrlTableTransport({})
+    const observation = await createTestObserver(transport).observe(
+      input({ provider: 'claude', authIndex: '   ' as QuotaAccountRef }),
+    )
+    expect(observation).toMatchObject({ status: 'failure', error: 'empty account reference' })
+    expect(transport.requests).toHaveLength(0)
+  })
+
+  it('bounds raw text by UTF-8 bytes, not characters', async () => {
+    // 400k euro signs are 400k chars but 1.2M bytes: over the 1 MiB bound.
+    const multibyte = createUrlTableTransport({
+      'api.anthropic.com': textReply(`{"pad":"${'€'.repeat(400_000)}"}`),
+    })
+    const observation = await createTestObserver(multibyte).observe(input({ provider: 'claude' }))
+    expect(observation).toMatchObject({
+      status: 'failure',
+      error: 'provider response exceeded the bounded body limit',
+    })
+  })
+
+  it('accepts a body exactly at the byte bound', async () => {
+    // '{"pad":"' + 'x'.repeat(N) + '"}' totals exactly 1 MiB of ASCII bytes.
+    const exact = `{"pad":"${'x'.repeat(1_048_576 - 10)}"}`
+    const transport = createUrlTableTransport({ 'api.anthropic.com': textReply(exact) })
+    const observation = await createTestObserver(transport).observe(input({ provider: 'claude' }))
+    expect(observation.error).toBe('usage payload carried no windows')
+  })
+
+  it('rejects an unserializable decoded body', async () => {
+    const circular: Record<string, unknown> = {}
+    circular['self'] = circular
+    const transport = createFakeTransport(() => ({ statusCode: 200, body: circular }))
+    const observation = await createTestObserver(transport).observe(input({ provider: 'claude' }))
+    expect(observation).toMatchObject({
+      status: 'failure',
+      error: 'provider response was not parseable JSON',
+    })
+  })
+
+  it('bounds an already-decoded body that bypasses raw text', async () => {
+    const transport = createFakeTransport(() => ({
+      statusCode: 200,
+      body: { pad: 'x'.repeat(1_100_000) },
+    }))
+    const observation = await createTestObserver(transport).observe(input({ provider: 'claude' }))
+    expect(observation).toMatchObject({
+      status: 'failure',
+      error: 'provider response exceeded the bounded body limit',
+    })
+  })
+
+  it('fails loud when a payload claims more windows than the retained bound', async () => {
+    const makeBuckets = (count: number) => ({
+      groups: [
+        {
+          displayName: 'G',
+          buckets: Array.from({ length: count }, (_, index) => ({
+            bucketId: `b-${String(index)}`,
+            remainingFraction: 0.5,
+            window: '5h',
+          })),
+        },
+      ],
+    })
+    const over = createUrlTableTransport({ retrieveUserQuotaSummary: jsonReply(makeBuckets(257)) })
+    const failed = await createTestObserver(over).observe(
+      input({ provider: 'antigravity', projectId: 'proj-1' }),
+    )
+    expect(failed).toMatchObject({
+      status: 'failure',
+      windows: [],
+      error: 'provider payload claimed more than 256 quota windows',
+    })
+
+    const atBound = createUrlTableTransport({ retrieveUserQuotaSummary: jsonReply(makeBuckets(256)) })
+    const ok = await createTestObserver(atBound).observe(
+      input({ provider: 'antigravity', projectId: 'proj-1' }),
+    )
+    expect(ok.status).toBe('known')
+    expect(ok.windows).toHaveLength(256)
+  })
+
   it('converts transport throws and status-0 failures into sanitized failure observations', async () => {
     const throwing = createFakeTransport(() => {
       throw new Error('dial tcp: Authorization: Bearer super-secret-token-123 refused')

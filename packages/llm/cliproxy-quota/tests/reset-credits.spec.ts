@@ -17,8 +17,18 @@ describe('parseCodexResetCredits', () => {
   })
 
   it('accepts camelCase fields and a credits-only shape', () => {
-    const parsed = parseCodexResetCredits({ availableCount: '5', credits: 'not-an-array' })
+    const parsed = parseCodexResetCredits({ availableCount: '5', applicableAvailableCount: 2 })
     expect(parsed.invalidPayload).toBe(false)
+    expect(parsed.observation).toEqual({
+      availableCount: 5,
+      applicableAvailableCount: 2,
+      creditCount: 0,
+    })
+  })
+
+  it('flags a present-but-non-array credits field instead of counting zero', () => {
+    const parsed = parseCodexResetCredits({ availableCount: '5', credits: 'not-an-array' })
+    expect(parsed.invalidPayload).toBe(true)
     expect(parsed.observation).toEqual({
       availableCount: 5,
       applicableAvailableCount: null,

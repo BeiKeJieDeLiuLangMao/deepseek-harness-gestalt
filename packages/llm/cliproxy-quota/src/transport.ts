@@ -16,15 +16,26 @@
 export const QUOTA_TOKEN_PLACEHOLDER = '$TOKEN$'
 
 /**
- * Maximum response text the observer parses, in characters. A larger body is a
- * bounded `failure`, never a partial parse. Security invariant, not a tunable.
+ * Maximum response the observer retains from one probe, in UTF-8 bytes. The
+ * bound applies to the complete decoded result: raw text is measured by
+ * encoded byte length (multibyte-safe), and an already-decoded body is
+ * measured after re-serialization. A larger body is a bounded `failure`,
+ * never a partial parse. Security invariant, not a tunable.
  */
-export const QUOTA_PROBE_MAX_BODY_CHARS = 1_048_576
+export const QUOTA_PROBE_MAX_BODY_BYTES = 1_048_576
+
+/**
+ * Maximum windows one observation retains. A payload claiming more fails loud
+ * instead of emitting an unbounded array. Security invariant, not a tunable.
+ */
+export const QUOTA_MAX_WINDOWS = 256
+
+import type { QuotaAccountRef } from './types.ts'
 
 /** One read-only probe request handed to the trusted transport. */
 export interface QuotaProbeRequest {
   /** CLIProxyAPI `auth_index` selecting the account the transport authenticates as. */
-  readonly authIndex: string
+  readonly authIndex: QuotaAccountRef
   /** HTTP method; probes are read-only, so only GET and POST exist. */
   readonly method: 'GET' | 'POST'
   /** Absolute provider URL; each provider's probe builds only its verified endpoints. */
