@@ -12,6 +12,7 @@
 
 import { normalizeIntValue, normalizeStringValue, asRecord } from './normalize.ts'
 import { parseOffsetSecondsToMs, resolveResetMs } from './reset-instants.ts'
+import { QUOTA_TOKEN_PLACEHOLDER } from './transport.ts'
 import type { KimiUsagePayload, QuotaWindowObservation } from './types.ts'
 
 /** Usage endpoint probed for Kimi accounts. */
@@ -19,7 +20,7 @@ export const KIMI_USAGE_URL = 'https://api.kimi.com/coding/v1/usages'
 
 /** Headers for the Kimi usage probe; the token placeholder stays literal. */
 export const KIMI_PROBE_HEADERS: Record<string, string> = {
-  Authorization: 'Bearer $TOKEN$',
+  Authorization: `Bearer ${QUOTA_TOKEN_PLACEHOLDER}`,
 }
 
 type KimiTimeUnit = 'second' | 'minute' | 'hour' | 'day' | 'week'

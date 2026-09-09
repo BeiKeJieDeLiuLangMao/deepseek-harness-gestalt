@@ -10,6 +10,7 @@
 
 import { normalizeNumberValue, normalizeStringValue, asRecord } from './normalize.ts'
 import { resolveResetMs } from './reset-instants.ts'
+import { QUOTA_TOKEN_PLACEHOLDER } from './transport.ts'
 import type { XaiBillingConfig, XaiBillingPayload, QuotaWindowObservation } from './types.ts'
 
 /** Weekly-credits billing endpoint (read-only). */
@@ -23,7 +24,7 @@ export const XAI_GROK_CLIENT_VERSION = '0.2.91'
 
 /** Headers for xAI billing probes; the token placeholder stays literal. */
 export const XAI_PROBE_HEADERS: Record<string, string> = {
-  Authorization: 'Bearer $TOKEN$',
+  Authorization: `Bearer ${QUOTA_TOKEN_PLACEHOLDER}`,
   'x-xai-token-auth': 'xai-grok-cli',
   'x-grok-client-version': XAI_GROK_CLIENT_VERSION,
   accept: '*/*',

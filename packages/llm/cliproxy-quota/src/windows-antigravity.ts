@@ -10,6 +10,7 @@
 
 import { normalizeQuotaFraction, normalizeStringValue, asRecord } from './normalize.ts'
 import { resolveResetMs } from './reset-instants.ts'
+import { QUOTA_TOKEN_PLACEHOLDER } from './transport.ts'
 import type { QuotaWindowObservation } from './types.ts'
 
 /** Quota-summary endpoints probed in order until one answers with groups. */
@@ -24,7 +25,7 @@ export const ANTIGRAVITY_USER_AGENT = 'antigravity/cli/1.0.13 (aidev_client; os_
 
 /** Headers for the Antigravity quota probe; the token placeholder stays literal. */
 export const ANTIGRAVITY_PROBE_HEADERS: Record<string, string> = {
-  Authorization: 'Bearer $TOKEN$',
+  Authorization: `Bearer ${QUOTA_TOKEN_PLACEHOLDER}`,
   'Content-Type': 'application/json',
   'User-Agent': ANTIGRAVITY_USER_AGENT,
 }

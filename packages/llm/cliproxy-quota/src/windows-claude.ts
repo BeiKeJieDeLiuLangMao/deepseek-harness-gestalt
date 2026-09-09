@@ -8,6 +8,7 @@
 
 import { normalizeNumberValue, normalizeStringValue, asRecord } from './normalize.ts'
 import { claudePeriodHours, resolveResetMs } from './reset-instants.ts'
+import { QUOTA_TOKEN_PLACEHOLDER } from './transport.ts'
 import type { ClaudeUsagePayload, QuotaWindowObservation } from './types.ts'
 
 /** Usage endpoint probed for Claude accounts. */
@@ -15,7 +16,7 @@ export const CLAUDE_USAGE_URL = 'https://api.anthropic.com/api/oauth/usage'
 
 /** Headers for the Claude usage probe; the token placeholder stays literal. */
 export const CLAUDE_PROBE_HEADERS: Record<string, string> = {
-  Authorization: 'Bearer $TOKEN$',
+  Authorization: `Bearer ${QUOTA_TOKEN_PLACEHOLDER}`,
   'Content-Type': 'application/json',
   'anthropic-beta': 'oauth-2025-04-20',
 }

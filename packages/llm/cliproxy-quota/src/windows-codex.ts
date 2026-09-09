@@ -13,6 +13,7 @@ import {
   periodHoursFromSeconds,
   resolveResetMs,
 } from './reset-instants.ts'
+import { QUOTA_TOKEN_PLACEHOLDER } from './transport.ts'
 import type {
   CodexAdditionalRateLimit,
   CodexRateLimitInfo,
@@ -30,7 +31,7 @@ export const CODEX_RATE_LIMIT_RESET_CREDITS_URL =
 
 /** Headers for Codex probes; the token placeholder stays literal. */
 export const CODEX_PROBE_HEADERS: Record<string, string> = {
-  Authorization: 'Bearer $TOKEN$',
+  Authorization: `Bearer ${QUOTA_TOKEN_PLACEHOLDER}`,
   'Content-Type': 'application/json',
   'User-Agent': 'codex-tui/0.149.1 (Mac OS 26.5.2; arm64) iTerm.app/3.6.11 (codex-tui; 0.149.1)',
 }
