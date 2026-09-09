@@ -50,6 +50,32 @@ describe('Desktop Platform HTTP system-Node helper', () => {
     expect(resolveProxy).toHaveBeenCalledWith(`${endpoint.origin}/v1/account/login-attempts`)
   })
 
+  it('reaches explicit DIRECT after unsupported PAC candidates for an Account request', async () => {
+    const endpoint = await httpsEndpoint()
+    const resolveProxy = vi.fn(async () => (
+      'SOCKS5 first.example:1080; SOCKS second.example:1080; DIRECT'
+    ))
+    const fetch = createDesktopSystemNodeFetch({
+      nodePath: process.execPath,
+      helperPath,
+      execArgv: ['--import', import.meta.resolve('tsx/esm')],
+      environment: { NODE_EXTRA_CA_CERTS: cert },
+      resolveProxy,
+      timeoutMs: 5_000,
+    })
+
+    const response = await fetch(`${endpoint.origin}/v1/account/login-attempts`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ operation: 'login' }),
+      redirect: 'error',
+    })
+
+    expect(response.status).toBe(201)
+    expect(await response.json()).toEqual({ operation: 'login' })
+    expect(resolveProxy).toHaveBeenCalledWith(`${endpoint.origin}/v1/account/login-attempts`)
+  })
+
   it('reconstructs HTTP 204 without a Fetch body', async () => {
     const endpoint = await httpsNoContentEndpoint()
     const fetch = createDesktopSystemNodeFetch({
