@@ -83,3 +83,7 @@ DeepSeek Harness 的 IM 领域配置、账号与路由核心服务。
 - **Steer 与 Flush 推进事务性**：必须在 `agent.steer` 与会话 flush 均成功后才调用 `markSubmitted` 推进游标。任何失败绝不推进游标。
 - **AI 回显与外部授权限制**：AI 出站回显绝不触发 steer，亦不计入 everyN 计数。外部 IM 文本绝不授予执行或审批权限。
 - **无需独立 Invariant 伴生插件**：`im-core` 借助 `StorageDomain` 管理持久化状态与单 root 原子一致性，不存在分歧观察或跨进程桥接，因此无需导出独立的 `./invariant`。
+
+## 装配验收
+
+`tests/assembled-acceptance.spec.ts` 是账号接管的无密钥装配场景：一个已配置钉钉账号、一条指定群规则、夹具适配器、模拟用户工作区、被测工作区、发送者分类、真实/模拟出站对等，以及停止隔离。它把真实钉钉登录、真实旺旺读取、真实出站、真实模型调用和原生 Desktop GUI computer-use 列为需另行授权的 live lane。

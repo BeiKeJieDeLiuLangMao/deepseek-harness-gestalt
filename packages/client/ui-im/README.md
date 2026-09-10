@@ -62,7 +62,7 @@ None; UI state never alters a model request prefix.
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **In-memory GUI snapshot** — the three surfaces share a client store seeded from the accepted prototype. Host remotes for `imConfig` / `imDelivery` remain a later ticket; this GUI does not claim live account reads or outbound delivery.
+- **In-memory GUI snapshot** — the three surfaces share a client store seeded from the accepted prototype. Host remotes for `imConfig` / `imDelivery` remain a later ticket; this GUI does not claim live account reads or outbound delivery. `presentation.ts` maps assembled domain records onto sender badges and delivery states; `result_unknown` is never success. `IM_LIVE_LANE_BEHAVIORS` names live DingTalk login, live Wangwang reads, live outbound, real model calls, and native Desktop GUI computer-use.
 - **No operations board** — native approval is the only approval surface.
 - **No Feishu** — first-period platforms are DingTalk and Wangwang only.
 

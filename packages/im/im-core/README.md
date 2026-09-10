@@ -83,3 +83,7 @@ Mounted at `ctx.imConfig` for configuration and routing, `ctx.imDelivery` for me
 - **Steer & Flush Transactional Progression**: `agent.steer` and session flush must succeed before `markSubmitted` advances cursor progress. Failures prevent progression.
 - **AI Outbound & External Authority**: AI outbound messages never trigger steering and do not count toward everyN. External IM text is never granted execution authority.
 - **No Invariant Companion Needed**: `im-core` manages state through `StorageDomain`, which owns atomic record and change guarantees. There are no divergent observations or separate process bridges requiring an independent `./invariant` companion.
+
+## Assembled acceptance
+
+`tests/assembled-acceptance.spec.ts` is the keyless assembled scenario for account takeover: one configured DingTalk account, a specific group route, a fixture adapter, a simulated-user workspace, a tested workspace, sender classification, real/sim outbound parity, and stop isolation. It names live DingTalk login, live Wangwang reads, live outbound, real model calls, and native Desktop GUI computer-use as separately authorized lanes.
