@@ -221,42 +221,31 @@ export function registerImTools(ctx: Context): () => void {
               text: args.text,
               isAi: true,
             })
-            if (sent.status === 'result_unknown') {
-              const settled = await ctx.imDelivery.settleOutbound({
-                requestId,
-                status: 'result_unknown',
-                receipt: {
-                  ...(sent.error !== undefined ? { errorMessage: sent.error } : {}),
-                  rawStatus: sent.status,
-                },
-              })
-              return {
-                status: settled.status,
-                requestId: settled.requestId,
-                scopeId: settled.scopeId,
-                sent: false,
-              }
-            }
-            if (sent.status !== 'sent') {
-              await ctx.imDelivery.settleOutbound({
-                requestId,
-                status: 'confirmed_failed',
-                receipt: {
-                  ...(sent.error !== undefined ? { errorMessage: sent.error } : {}),
-                  rawStatus: sent.status,
-                },
-              })
-              throw new Error(`DingTalk send failed: ${sent.error ?? sent.status}`)
-            }
             const settled = await ctx.imDelivery.settleOutbound({
               requestId,
-              status: 'sent',
+              status: sent.status === 'sent'
+                ? 'sent'
+                : sent.status === 'result_unknown'
+                  ? 'result_unknown'
+                  : 'confirmed_failed',
               receipt: {
                 ...(sent.openTaskId !== undefined ? { externalReceiptId: sent.openTaskId } : {}),
-                rawStatus: 'sent',
+                ...(sent.error !== undefined ? { errorMessage: sent.error } : {}),
+                rawStatus: sent.status,
               },
               ...(sent.openTaskId !== undefined ? { externalMessageId: sent.openTaskId } : {}),
             })
+            if (settled.status !== 'sent') {
+              if (settled.status === 'result_unknown') {
+                return {
+                  status: settled.status,
+                  requestId: settled.requestId,
+                  scopeId: settled.scopeId,
+                  sent: false,
+                }
+              }
+              throw new Error(`DingTalk send failed: ${sent.error ?? sent.status}`)
+            }
             return {
               status: settled.status,
               requestId: settled.requestId,
