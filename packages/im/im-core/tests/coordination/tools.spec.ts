@@ -174,6 +174,45 @@ describe('IM Tools - im_send_message and im_query_history', () => {
     expect(outbound?.status).toBe('sent')
   })
 
+  it('im_send_message returns result_unknown without throwing', async () => {
+    const accountId = brandString<ImAccountId>('acc-send-unknown')
+    const workspaceId = brandString<WorkspaceId>('ws-send-unknown')
+    await configService.upsertAccount({
+      id: accountId,
+      platform: 'dingtalk',
+      displayName: 'Unknown Result Account',
+      status: 'connected',
+      paused: false,
+    })
+    await configService.createRouteRule({
+      id: brandString<ImRouteRuleId>('rule-send-unknown'),
+      accountId,
+      conversationKind: 'direct',
+      target: { kind: 'all' },
+      workspaceId,
+      enabled: true,
+    })
+    const scopeId = encodeScopeId({
+      kind: 'real',
+      platform: 'dingtalk',
+      accountId,
+      conversationId: 'conv-send-unknown',
+    })
+    ctx.provide('imDingtalk' as never, {
+      sendMessage: async () => ({ status: 'result_unknown' as const, error: 'timeout' }),
+    })
+    const result = (await ctx.tools.get('im_send_message')!.execute(
+      { scopeId, text: 'Maybe delivered' },
+      mockExec,
+    )) as { status: string; sent: boolean; requestId: string }
+    expect(result.status).toBe('result_unknown')
+    expect(result.sent).toBe(false)
+    const outbound = await deliveryService.getOutbound(
+      brandString<ImOutboundRequestId>(result.requestId),
+    )
+    expect(outbound?.status).toBe('result_unknown')
+  })
+
   it('im_send_message throws when DingTalk adapter is missing', async () => {
     const accountId = brandString<ImAccountId>('acc-send-no-dt')
     const workspaceId = brandString<WorkspaceId>('ws-send-no-dt')

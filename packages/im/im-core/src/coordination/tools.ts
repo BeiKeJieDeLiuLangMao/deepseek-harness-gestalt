@@ -173,6 +173,9 @@ export function registerImTools(ctx: Context): () => void {
               requestId,
               isAi: true,
             })
+            if (sendResult.status === 'result_unknown') {
+              return { status: 'result_unknown', requestId, scopeId: args.scopeId, sent: false }
+            }
             if (sendResult.status !== 'sent') {
               throw new Error(`Wangwang send failed: ${sendResult.error ?? sendResult.status}`)
             }
@@ -218,10 +221,26 @@ export function registerImTools(ctx: Context): () => void {
               text: args.text,
               isAi: true,
             })
+            if (sent.status === 'result_unknown') {
+              const settled = await ctx.imDelivery.settleOutbound({
+                requestId,
+                status: 'result_unknown',
+                receipt: {
+                  ...(sent.error !== undefined ? { errorMessage: sent.error } : {}),
+                  rawStatus: sent.status,
+                },
+              })
+              return {
+                status: settled.status,
+                requestId: settled.requestId,
+                scopeId: settled.scopeId,
+                sent: false,
+              }
+            }
             if (sent.status !== 'sent') {
               await ctx.imDelivery.settleOutbound({
                 requestId,
-                status: sent.status === 'result_unknown' ? 'result_unknown' : 'confirmed_failed',
+                status: 'confirmed_failed',
                 receipt: {
                   ...(sent.error !== undefined ? { errorMessage: sent.error } : {}),
                   rawStatus: sent.status,
