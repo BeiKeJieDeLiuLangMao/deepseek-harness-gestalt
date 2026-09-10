@@ -7,7 +7,14 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { CLIProxyAPISupervisor, verifyCLIProxyAPIResource } from '../src/cliproxyapi-runtime.ts'
 
 const roots: string[] = []
-afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))) })
+afterEach(async () => {
+  await Promise.all(roots.splice(0).map(root => rm(root, {
+    recursive: true,
+    force: true,
+    maxRetries: 10,
+    retryDelay: 100,
+  })))
+})
 
 describe('CLIProxyAPI packaged resource', () => {
   it('accepts only the current platform/arch and exact digest', async () => {

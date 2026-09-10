@@ -614,8 +614,10 @@ async function stopProcessTree(
   const pid = child.pid
   if (pid === undefined) throw new Error('CLIProxyAPI child has no process id')
   if (process.platform === 'win32') {
-    await execFileAsync('taskkill', ['/pid', String(pid), '/t'])
-    if (!await settlesWithin(exited, graceMs)) await execFileAsync('taskkill', ['/pid', String(pid), '/t', '/f'])
+    await execFileAsync('taskkill', ['/pid', String(pid), '/t']).catch(() => undefined)
+    if (!await settlesWithin(exited, graceMs)) {
+      await execFileAsync('taskkill', ['/pid', String(pid), '/t', '/f']).catch(() => undefined)
+    }
   } else {
     process.kill(-pid, 'SIGTERM')
     if (!await settlesWithin(exited, graceMs)) process.kill(-pid, 'SIGKILL')
