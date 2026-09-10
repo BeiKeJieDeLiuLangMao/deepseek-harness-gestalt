@@ -534,7 +534,11 @@
       "@deepseek-ai/dsh-im-core": ["./packages/im/im-core/src"],
       "@deepseek-ai/dsh-im-core/types": ["./packages/im/im-core/src/types.ts"],
       "@deepseek-ai/dsh-im-core/spec": ["./packages/im/im-core/src/spec.ts"],
-      "@deepseek-ai/dsh-im-core/delivery": ["./packages/im/im-core/src/delivery/index.ts"]
+      "@deepseek-ai/dsh-im-core/delivery": ["./packages/im/im-core/src/delivery/index.ts"],
+      "@deepseek-ai/dsh-im-wangwang": ["./packages/im/im-wangwang/src"],
+      "@deepseek-ai/dsh-im-wangwang/types": ["./packages/im/im-wangwang/src/types.ts"],
+      "@deepseek-ai/dsh-im-wangwang/spec": ["./packages/im/im-wangwang/src/spec.ts"],
+      "@deepseek-ai/dsh-im-wangwang/service": ["./packages/im/im-wangwang/src/service.ts"]
       // END generated package aliases
     }
   }
