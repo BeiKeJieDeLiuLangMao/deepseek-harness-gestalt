@@ -24,6 +24,7 @@ IM 组为外部通讯平台（如钉钉、旺旺）提供账号接管与消息�
 | 软件包 | 职责 | ctx 属性 |
 |---|---|---|
 | [`im-core`](im-core/README.zh.md) | 领域配置、账号元数据、路由规则与模拟目标绑定 | `ctx.imConfig` |
+| [`im-wangwang`](im-wangwang/README.zh.md) | 旺旺/千牛 IM 适配器，支持账号接管、消息拉取与可靠出站 | `ctx.imWangwang` |
 
 -----
 

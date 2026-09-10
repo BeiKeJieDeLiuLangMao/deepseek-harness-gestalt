@@ -24,6 +24,7 @@ The IM group provides account takeover and message routing capabilities for exte
 | Package | Role | ctx key |
 |---|---|---|
 | [`im-core`](im-core/README.md) | Domain configuration, account metadata, route rules, and simulation target binding | `ctx.imConfig` |
+| [`im-wangwang`](im-wangwang/README.md) | Wangwang / QianNiu adapter for external IM account takeover | `ctx.imWangwang` |
 
 -----
 
