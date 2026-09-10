@@ -39,7 +39,6 @@ const CLIENT_ARTIFACT_PATTERNS = [
   `packages/*/*/${DYNAMIC_CLIENT_ARTIFACT.sourceMapPath}`,
 ] as const
 const DYNAMIC_CLIENT_SOURCE_MAP_PATTERN = `packages/*/*/${DYNAMIC_CLIENT_ARTIFACT.sourceMapPath}`
-const DYNAMIC_CLIENT_BUNDLE_PATTERN = `packages/*/*/${DYNAMIC_CLIENT_ARTIFACT.relativePath}`
 const CLIENT_MANIFEST_PATTERNS = ['packages/*/*/package.json', 'apps/*/package.json', 'vendor/*/package.json']
 
 /** Public values embedded in one set of client artifacts. */
@@ -300,17 +299,16 @@ export function writeClientBuildRecord(
 }
 
 /**
- * Find dynamic client maps whose browser frames stop at emitted tsc JavaScript.
+ * Find loader-delivered `dsh.client` maps that are missing or whose browser
+ * frames stop at emitted tsc JavaScript. Packages that emit a `lib/client.js`
+ * page-half or types bundle without `dsh.client` are not HTTP `/client.js`
+ * graph rows and do not require a sibling map.
  * @param root - repository root containing generated dynamic client bundles.
  * @returns sorted map-and-source diagnostics for invalid artifacts.
  */
 export function collectDynamicClientSourceMapViolations(root: string): string[] {
   const violations: string[] = []
   const paths = globSync(DYNAMIC_CLIENT_SOURCE_MAP_PATTERN, { cwd: root })
-    .map(path => path.replaceAll('\\', '/'))
-    .sort()
-  const sourceMapPaths = new Set(paths)
-  const bundlePaths = globSync(DYNAMIC_CLIENT_BUNDLE_PATTERN, { cwd: root })
     .map(path => path.replaceAll('\\', '/'))
     .sort()
 
@@ -322,11 +320,6 @@ export function collectDynamicClientSourceMapViolations(root: string): string[] 
     const sourceMapPath = `${packageDirectory}/${DYNAMIC_CLIENT_ARTIFACT.sourceMapPath}`
     if (!existsSync(resolve(root, bundlePath))) violations.push(`${bundlePath}: missing`)
     if (!existsSync(resolve(root, sourceMapPath))) violations.push(`${sourceMapPath}: missing`)
-  }
-
-  for (const bundlePath of bundlePaths) {
-    const sourceMapPath = `${bundlePath}.map`
-    if (!sourceMapPaths.has(sourceMapPath)) violations.push(`${sourceMapPath}: missing`)
   }
 
   for (const path of paths) {

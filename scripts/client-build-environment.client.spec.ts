@@ -320,6 +320,39 @@ describe('client build environment', () => {
     expect(collectDynamicClientSourceMapViolations(fixtureRoot)).toEqual([])
   })
 
+  it('requires client.js maps only for dsh.client plugins', () => {
+    const fixtureRoot = mkdtempSync(join(tmpdir(), 'dsh-client-sourcemap-dsh-client-'))
+    roots.push(fixtureRoot)
+    write(join(fixtureRoot, 'packages/schedule/schedule/package.json'), `${JSON.stringify({
+      name: '@deepseek-ai/dsh-schedule',
+    })}\n`)
+    write(join(fixtureRoot, 'packages/schedule/schedule/lib/client.js'), 'export {}\n')
+    write(join(fixtureRoot, 'packages/experimental/webworker-runtime/package.json'), `${JSON.stringify({
+      name: '@deepseek-ai/dsh-experimental-webworker-runtime',
+    })}\n`)
+    write(join(fixtureRoot, 'packages/experimental/webworker-runtime/lib/client.js'), 'export {}\n')
+    write(join(fixtureRoot, 'packages/client/ui-sidebar/package.json'), `${JSON.stringify({
+      name: '@deepseek-ai/dsh-client-ui-sidebar',
+      dsh: { client: {} },
+    })}\n`)
+    write(join(fixtureRoot, 'packages/client/ui-sidebar/lib/client.js'), 'module.exports = {}\n')
+    write(join(fixtureRoot, 'apps/web/dist/index.html'), '<main></main>')
+
+    expect(collectDynamicClientSourceMapViolations(fixtureRoot)).toEqual([
+      'packages/client/ui-sidebar/lib/client.js.map: missing',
+    ])
+
+    write(join(fixtureRoot, 'packages/client/ui-sidebar/lib/client.js.map'), `${JSON.stringify({
+      version: 3,
+      names: [],
+      mappings: 'AAAA',
+      sources: ['../../../packages/client/ui-sidebar/src/client/index.ts'],
+      sourcesContent: ['export {}\n'],
+    })}\n`)
+    expect(collectDynamicClientSourceMapViolations(fixtureRoot)).toEqual([])
+    expect(() => { writeClientBuildRecord(fixtureRoot, {}) }).not.toThrow()
+  })
+
   it('keeps public client values out of workflow-wide environments', () => {
     for (const name of dshBuildWorkflows) {
       const path = `.github/workflows/${name}`
