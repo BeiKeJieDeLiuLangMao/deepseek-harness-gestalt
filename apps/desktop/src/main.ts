@@ -148,19 +148,12 @@ function smokeLog(line: string): void {
 }
 
 function electronNativeStagePort(): NativeStagePort {
-  const port: NativeStagePort = {
-    on(event, listener) {
-      if (event === 'update-downloaded') electronAutoUpdater.on('update-downloaded', listener)
-      else electronAutoUpdater.on('error', listener)
-      return port
-    },
-    removeListener(event, listener) {
-      if (event === 'update-downloaded') electronAutoUpdater.removeListener('update-downloaded', listener)
-      else electronAutoUpdater.removeListener('error', listener)
-      return port
-    },
+  return {
+    addDownloadedListener: (listener) => { electronAutoUpdater.on('update-downloaded', listener) },
+    removeDownloadedListener: (listener) => { electronAutoUpdater.removeListener('update-downloaded', listener) },
+    addErrorListener: (listener) => { electronAutoUpdater.on('error', listener) },
+    removeErrorListener: (listener) => { electronAutoUpdater.removeListener('error', listener) },
   }
-  return port
 }
 
 let host: RunningWebHost | undefined

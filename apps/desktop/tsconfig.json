@@ -16,6 +16,7 @@
     "tests/member-question-e2e",
     "tests/critical-path-e2e",
     "tests/e2e-sub2api",
+    "tests/e2e-electron",
     "scripts/run-e2e-sub2api.mjs"
   ],
   "references": [
