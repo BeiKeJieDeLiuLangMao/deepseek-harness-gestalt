@@ -361,6 +361,26 @@ describe('DingTalk DWS Adapter Service Lifecycle and Outbound Seam', () => {
     expect(result.error).toContain('Execution timeout; request may or may not have reached DingTalk')
   })
 
+  it('guards exit0 with completely empty stdout (stdout="") by resolving to result_unknown instead of sent', async () => {
+    const { service, ctx } = setupTestContext()
+
+    ctx.subprocess.spawn = vi.fn((spec: SubprocessSpawnSpec) => {
+      return createMockSubprocessHandle(spec, 'exited', 0, '')
+    })
+
+    const result = await service.sendMessage({
+      accountId: accId,
+      conversationKind: 'group',
+      targetId: 'cid-target-group-99',
+      text: 'Message with empty stdout',
+    })
+
+    expect(result.status).toBe('result_unknown')
+    expect(result.status).not.toBe('sent')
+    expect(result.error).toContain('no openTaskId receipt')
+    expect(result.rawOutput).toBe('')
+  })
+
   it('guards exit0 without openTaskId receipt by resolving to result_unknown instead of sent', async () => {
     const { service, ctx } = setupTestContext()
 
