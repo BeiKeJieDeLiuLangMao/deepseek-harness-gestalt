@@ -6983,6 +6983,18 @@ importers:
         specifier: workspace:^
         version: link:../../core/tools
 
+  packages/llm/cliproxy-quota:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-brand':
+        specifier: workspace:^
+        version: link:../../util/brand
+      '@deepseek-ai/dsh-invariants':
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
+
   packages/llm/llm:
     dependencies:
       '@deepseek-ai/schemastery':
@@ -23233,7 +23245,7 @@ snapshots:
       '@wdio/native-cdp-bridge': 1.1.0(tsx@4.22.4)
       '@wdio/native-core': 1.1.0(supports-color@8.1.1)(tsx@4.22.4)
       '@wdio/native-types': 2.5.0
-      '@wdio/native-utils': 2.6.0(tsx@4.22.4)
+      '@wdio/native-utils': 2.6.0(supports-color@8.1.1)(tsx@4.22.4)
       compare-versions: 6.1.1
       debug: 4.4.3(supports-color@8.1.1)
       deepmerge-ts: 7.1.6
@@ -23320,7 +23332,7 @@ snapshots:
 
   '@wdio/native-cdp-bridge@1.1.0(tsx@4.22.4)':
     dependencies:
-      '@wdio/native-utils': 2.6.0(tsx@4.22.4)
+      '@wdio/native-utils': 2.6.0(supports-color@8.1.1)(tsx@4.22.4)
       wait-port: 1.1.0
       ws: 8.21.3
     transitivePeerDependencies:
@@ -23359,7 +23371,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@wdio/native-utils@2.6.0(tsx@4.22.4)':
+  '@wdio/native-utils@2.6.0(supports-color@8.1.1)(tsx@4.22.4)':
     dependencies:
       '@wdio/logger': 9.29.1
       debug: 4.4.3(supports-color@8.1.1)
