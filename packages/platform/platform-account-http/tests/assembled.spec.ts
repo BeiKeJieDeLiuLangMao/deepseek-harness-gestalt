@@ -106,7 +106,7 @@ describe('real Platform Account HTTP composition', () => {
     const options = { environment: ENVIRONMENT, installationId: parseInstallationId('deletion-recovering-mobile'),
       installationKind: 'mobile' as const, presentation: { name: 'Deletion recovery', platform: 'ios' as const },
       transport: new PlatformAccountHttpTransport({ environment: ENVIRONMENT, fetch: networkFetch }), store,
-      systemBrowser: { open() {} }, crypto: webcrypto as Crypto }
+      systemBrowser: { open() {} }, crypto: webcrypto as typeof webcrypto }
     const first = new PlatformAccountInstallation(options)
     first.acceptPrivacy()
     await first.beginLogin()
