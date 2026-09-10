@@ -16,8 +16,12 @@
     "tests/member-question-e2e",
     "tests/critical-path-e2e",
     "tests/e2e-sub2api",
+    "scripts/run-e2e-sub2api.mjs",
+    "tests/companion-host-assembled.spec.ts",
+    "tests/companion-fixture",
     "tests/e2e-electron",
-    "scripts/run-e2e-sub2api.mjs"
+    "scripts/e2e-electron-runner-support.*",
+    "scripts/run-e2e-electron.mjs"
   ],
   "references": [
     { "path": "../../packages/attachment/attachment" },
