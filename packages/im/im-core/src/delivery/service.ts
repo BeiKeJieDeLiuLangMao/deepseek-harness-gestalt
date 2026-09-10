@@ -140,7 +140,7 @@ export class ImDeliveryService extends Service {
       if (maxReceivedSeq === 0) return undefined
       const created: ImConversationCursor = {
         scopeId,
-        lastReceivedExternalMessageId: lastExternalId,
+        ...(lastExternalId !== undefined ? { lastReceivedExternalMessageId: lastExternalId } : {}),
         lastReceivedSequenceNumber: maxReceivedSeq,
         lastSubmittedSequenceNumber: maxSubmittedSeq,
         lastSentSequenceNumber: 0,
@@ -160,7 +160,7 @@ export class ImDeliveryService extends Service {
       const reconciled: ImConversationCursor = {
         ...stored,
         lastReceivedSequenceNumber: Math.max(stored.lastReceivedSequenceNumber, maxReceivedSeq),
-        lastReceivedExternalMessageId: lastExternalId,
+        ...(lastExternalId !== undefined ? { lastReceivedExternalMessageId: lastExternalId } : {}),
         lastSubmittedSequenceNumber: Math.max(stored.lastSubmittedSequenceNumber, maxSubmittedSeq),
         unsubmittedCount,
         updatedAt: new Date().toISOString(),
