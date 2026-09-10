@@ -85,6 +85,25 @@ function sessionGroupHeader(row: Locator) {
   return row.locator('xpath=ancestor::div[contains(@class,"groupSection")][1]').getByRole('treeitem').first()
 }
 
+/** Count copies of one human-turn id; one splice plus one claimed `user/message` is still one turn. */
+function humanTurnCopies(
+  events: readonly { readonly type: string; readonly data: unknown }[] | undefined,
+  humanId: string,
+): number {
+  let userMessages = 0
+  let splices = 0
+  for (const event of events ?? []) {
+    if (event.type === 'user/message' && (event.data as { id: string }).id === humanId) {
+      userMessages += 1
+      continue
+    }
+    if (event.type !== 'agent/inbox/spliced') continue
+    const inserted = (event.data as { inserted: readonly { id: string }[] }).inserted
+    if (inserted.some(message => message.id === humanId)) splices += 1
+  }
+  return Math.max(userMessages, splices)
+}
+
 describe.skipIf(MODE === 'record')('web e2e: Host-owned member-question receiving session', () => {
   let scaffold: WebScaffold
   let browser: Browser
@@ -416,10 +435,7 @@ describe.skipIf(MODE === 'record')('web e2e: Host-owned member-question receivin
       const session = restartScaffold.ctx.sessions.get(arrived.receivingSessionId as never)
       const events = session?.snapshotEvents()
       expect(events?.filter(event => event.type === 'turn/start')).toHaveLength(1)
-      expect(events?.filter(event => event.type === 'user/message'
-        ? event.data.id === `member-question-human:${rpcId}`
-        : event.type === 'agent/inbox/spliced'
-          && event.data.inserted.some(message => message.id === `member-question-human:${rpcId}`))).toHaveLength(1)
+      expect(humanTurnCopies(events, `member-question-human:${rpcId}`)).toBe(1)
       const humanContent = events?.flatMap((event) => {
         if (event.type === 'user/message' && event.data.id === `member-question-human:${rpcId}`) {
           return [event.data.content]
@@ -589,12 +605,10 @@ describe.skipIf(MODE === 'record')('web e2e: Host-owned member-question receivin
       await expect(faultReceiver.admitHumanTurn(request)).resolves.toMatchObject({ accepted: true })
       await expect.poll(() => faultScaffold.ctx.sessions.get(arrived.receivingSessionId as never)?.snapshotEvents()
         .filter(event => event.type === 'turn/start').length).toBe(1)
-      await expect.poll(() => faultScaffold.ctx.sessions.get(arrived.receivingSessionId as never)?.snapshotEvents()
-        .filter(event => event.type === 'user/message'
-          ? event.data.id === `member-question-human:rpc-${stage}`
-          : event.type === 'agent/inbox/spliced'
-            && event.data.inserted.some(message => message.id === `member-question-human:rpc-${stage}`)).length)
-        .toBe(1)
+      await expect.poll(() => humanTurnCopies(
+        faultScaffold.ctx.sessions.get(arrived.receivingSessionId as never)?.snapshotEvents(),
+        `member-question-human:rpc-${stage}`,
+      )).toBe(1)
 
       const materialized = faultScaffold.ctx.sessions.get(arrived.receivingSessionId as never)
       expect(materialized).toBeDefined()
@@ -602,11 +616,7 @@ describe.skipIf(MODE === 'record')('web e2e: Host-owned member-question receivin
         .filter(session => String(session.id) === String(arrived.receivingSessionId))).toHaveLength(1)
       expect(materialized?.snapshotEvents().filter(event => event.type === 'member-question/received'
         && event.data.questionId === `mq-web-${stage}`)).toHaveLength(1)
-      expect(materialized?.snapshotEvents().filter(event => event.type === 'user/message'
-        ? event.data.id === `member-question-human:rpc-${stage}`
-        : event.type === 'agent/inbox/spliced'
-          && event.data.inserted.some(message => message.id === `member-question-human:rpc-${stage}`)))
-        .toHaveLength(1)
+      expect(humanTurnCopies(materialized?.snapshotEvents(), `member-question-human:rpc-${stage}`)).toBe(1)
     } finally {
       vi.restoreAllMocks()
       await faultScaffold.close()

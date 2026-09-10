@@ -8,6 +8,7 @@ import type {
   LoginAttemptView,
   LoginPollResult,
   MobileInstallationPresentation,
+  MobileAccountInstallationView,
   PlatformAccountId,
   PlatformAccountView,
 } from './types.ts'
@@ -51,6 +52,15 @@ export function parseMobileInstallationPresentation(value: unknown): MobileInsta
  */
 export function parseAccountProofJti(value: unknown): AccountProofJti {
   return nonEmptyString(value, 'proof jti') as AccountProofJti
+}
+
+/**
+ * Parse an Account Session id at a wire or durable boundary.
+ * @param value - Untrusted session identifier.
+ * @returns Branded non-empty session id.
+ */
+export function parseAccountSessionId(value: unknown): AccountSessionId {
+  return nonEmptyString(value, 'Account Session id') as AccountSessionId
 }
 
 /**
@@ -147,6 +157,33 @@ export function parseLoginPollResult(value: unknown): LoginPollResult {
   if (record.status === 'pending') return { status: 'pending' }
   if (record.status === 'complete') return { status: 'complete', ...parseAccountSessionView(record) }
   throw new TypeError('Login Poll status must be pending or complete')
+}
+
+/**
+ * Validate active Mobile Installation rows returned to Desktop.
+ * @param value - Untrusted HTTP response value.
+ * @returns Unique opaque targets with authenticated presentation and stable display references.
+ */
+export function parseMobileAccountInstallationViews(value: unknown): readonly MobileAccountInstallationView[] {
+  if (!Array.isArray(value)) throw new TypeError('Mobile Account Installations must be an array')
+  const ids = new Set<string>()
+  return value.map((entry: unknown) => {
+    const record = object(entry, 'Mobile Account Installation')
+    const id = parseInstallationId(record.id)
+    if (ids.has(id)) throw new TypeError('Mobile Account Installation ids must be unique')
+    ids.add(id)
+    if (typeof record.reference !== 'string' || !/^[a-f0-9]{12}$/u.test(record.reference)) {
+      throw new TypeError('Mobile Account Installation reference must be twelve lowercase hexadecimal characters')
+    }
+    const hasName = record.name !== undefined
+    const hasPlatform = record.platform !== undefined
+    if (hasName !== hasPlatform) {
+      throw new TypeError('Mobile Account Installation name and platform must be present together')
+    }
+    if (!hasName) return { id, reference: record.reference }
+    const presentation = parseMobileInstallationPresentation({ name: record.name, platform: record.platform })
+    return { id, reference: record.reference, ...presentation }
+  })
 }
 
 function object(value: unknown, name: string): Record<string, unknown> {

@@ -33,6 +33,8 @@ Stable failure codes: `DUPLICATE_INVITEE`, `ROLE_REQUIRED`, `NOT_A_MEMBER`, `PRO
 
 `normalizeGitRemoteUrl` produces the canonical binding form from `https://host/path[.git]`, scp-like `user@host:path[.git]`, and `local://workspace/<id>`: scheme/host lower-cased for Git spellings, one terminal `.git` suffix dropped case-insensitively, trailing slashes trimmed, mid-path segments and the Workspace identity left case-exact. `localWorkspaceRemoteUrl(workspaceId)` is the Git-less constructor. Browser bundles that need only this pure operation import `@deepseek-ai/dsh-project-membership/remote-url`; the invitation grant policy lives at `@deepseek-ai/dsh-project-membership/invite-role`. Neither subpath carries Service or registry identity.
 
+The trusted Account deletion owner uses `accountDeletionProjects` to obtain sole-owner projects and joined successor candidates, then `deleteAccountMemberships` to apply explicit transfers and remove personal references. An unavailable successor returns unresolved projects without committing removals. The operation never leaves a project ownerless or deletes another member’s workspace files. These owner methods are not general membership HTTP routes.
+
 <a id="model-experience"></a>
 ## Model Experience
 

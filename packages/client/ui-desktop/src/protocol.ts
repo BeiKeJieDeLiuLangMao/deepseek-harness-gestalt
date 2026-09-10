@@ -10,6 +10,7 @@ import type {
   PersonalPairingId,
 } from '@deepseek-ai/dsh-remote-access'
 import type { ProjectMembershipClient } from '@deepseek-ai/dsh-project-membership-client'
+import type { MobileAccountInstallationView } from '@deepseek-ai/dsh-platform-account'
 
 /** IPC / preload channel for the current updater snapshot. */
 export const UPDATER_GET_STATUS = 'updater:getStatus'
@@ -37,6 +38,10 @@ export const ACCOUNT_BEGIN_LOGIN = 'account:beginLogin'
 export const ACCOUNT_CANCEL_LOGIN = 'account:cancelLogin'
 /** IPC / preload channel revoking the current installation Account Session. */
 export const ACCOUNT_SIGN_OUT = 'account:signOut'
+/** IPC / preload channel refreshing Account-owned active Mobile Installations. */
+export const ACCOUNT_REFRESH_MOBILE_INSTALLATIONS = 'account:refreshMobileInstallations'
+/** IPC / preload channel remotely signing one Mobile Installation out. */
+export const ACCOUNT_REVOKE_MOBILE_INSTALLATION = 'account:revokeMobileInstallation'
 /** IPC event pushed for every current-installation Account transition. */
 export const ACCOUNT_SNAPSHOT_CHANGED = 'account:snapshot-changed'
 /** IPC / preload channel creating one Cloud Project. */
@@ -199,11 +204,20 @@ export interface DesktopPlatformAccount {
   readonly avatarUrl: string
 }
 
+/** Desktop Host-owned projection of active Mobile Account Installations. */
+export interface DesktopMobileInstallationsSnapshot {
+  readonly status: 'loading' | 'ready' | 'removing' | 'error'
+  readonly installations: readonly MobileAccountInstallationView[]
+  readonly removingInstallationId?: string
+  readonly error?: string
+}
+
 /** Desktop Host-owned current-installation Account lifecycle. */
 export interface DesktopAccountSnapshot {
   readonly status: 'unavailable' | 'idle' | 'authorizing' | 'polling' | 'signed-in' | 'signing-out' | 'failed'
   readonly privacyAccepted: boolean
   readonly account?: DesktopPlatformAccount
+  readonly mobileInstallations?: DesktopMobileInstallationsSnapshot
   readonly error?: string
 }
 
@@ -303,6 +317,10 @@ export interface DesktopBridge {
   readonly accountCancelLogin: () => Promise<DesktopAccountSnapshot>
   /** Revoke only this installation's Account Session. */
   readonly accountSignOut: () => Promise<DesktopAccountSnapshot>
+  /** Refresh active Mobile Installations owned by the signed-in Account. */
+  readonly accountRefreshMobileInstallations: () => Promise<DesktopAccountSnapshot>
+  /** Remotely sign one opaque Mobile Installation target out. */
+  readonly accountRevokeMobileInstallation: (installationId: string) => Promise<DesktopAccountSnapshot>
   /** Subscribe to current-installation Account transitions. */
   readonly onAccountSnapshot: (listener: (snapshot: DesktopAccountSnapshot) => void) => () => void
   /** Authenticated Project Membership operations owned by the Desktop Host. */

@@ -27,11 +27,54 @@
   object-fit: cover;
 }
 
-.pairing {
+.pairing,
+.installations {
   display: grid;
   gap: 16px;
   padding-top: 18px;
   border-top: 1px solid var(--dsw-alias-border-l2);
+}
+
+.sectionHeading {
+  display: grid;
+  gap: 4px;
+}
+
+.sectionHeading > strong {
+  font-size: 15px;
+}
+
+.sectionHeading p,
+.secondary {
+  margin: 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.installation {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px 20px;
+  padding: 16px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 14px;
+  background: var(--dsw-alias-bg-module-platform);
+}
+
+.installation code {
+  color: inherit;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.inlineError {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--dsw-alias-state-error-primary);
+  font-size: 13px;
 }
 
 .mobileAccess {
@@ -181,7 +224,8 @@
 .deviceMetadata dd { margin: 3px 0 0; overflow-wrap: anywhere; font-size: 12px; line-height: 1.45; }
 
 @media (max-width: 480px) {
-  .device { grid-template-columns: 1fr; }
+  .device,
+  .installation { grid-template-columns: 1fr; }
   .deviceAction { justify-self: start; }
   .deviceMetadata { grid-column: 1; grid-template-columns: 1fr; }
 }

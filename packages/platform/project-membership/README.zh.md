@@ -33,6 +33,8 @@ kind: "package-reference"
 
 `normalizeGitRemoteUrl` 将 `https://host/path[.git]`、scp 形式的 `user@host:path[.git]` 与 `local://workspace/<id>` 规范化为唯一绑定形态:Git 拼写的 scheme/host 小写,忽略大小写地去掉一个末尾 `.git` 后缀,修剪尾部斜杠,路径中段与 Workspace identity 保持原样。`localWorkspaceRemoteUrl(workspaceId)` 是无 Git 构造函数。只需要该纯操作的浏览器 bundle 会导入 `@deepseek-ai/dsh-project-membership/remote-url`;邀请授予策略位于 `@deepseek-ai/dsh-project-membership/invite-role`。两个 subpath 都不携带 Service 或 registry identity。
 
+受信任的 Account 删除 owner 使用 `accountDeletionProjects` 取得独占所有者项目及已加入的接任候选，再通过 `deleteAccountMemberships` 执行明确转移并移除个人引用。接任者不可用时返回未解决项目，不提交移除。该操作不会留下无所有者项目，也不删除其他成员的工作区文件。这些 owner 方法不是普通成员 HTTP 路由。
+
 <a id="model-experience"></a>
 ## Model Experience
 

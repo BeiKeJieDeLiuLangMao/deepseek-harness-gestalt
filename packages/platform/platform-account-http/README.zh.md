@@ -9,9 +9,11 @@ kind: "package-reference"
 
 ## 概述
 
-本包是 `ctx.platformAccount` 的 HTTP 消费方。它注册登录尝试创建、固定的 `/v1/account/oauth/github/callback`、签名轮询、刷新、当前账号和当前安装退出路由。响应禁用缓存，错误使用稳定 JSON 信封。`QUOTA` 与 `PLATFORM_CAPACITY` 返回 HTTP 429、`Retry-After` 响应头，以及秒级 JSON `retryAfter`。必填且非空的 `origins` 配置必须包含账号提供方选中的已校验环境 origin；每个额外的标准或自定义元组 origin 都会被精确校验，带路径的 origin 与 opaque `null` 会在路由注册前被拒绝。请求体上限为 64 KiB，经 `@deepseek-ai/dsh-host-webserver` 的 JSON 助手解析，错误码与文案仍由 Account 持有；访问令牌操作通过专用请求头携带品牌化的单次证明 id。
+本包是 `ctx.platformAccount` 的 HTTP 消费方。它注册登录尝试创建、固定的 `/v1/account/oauth/github/callback`、签名轮询、刷新、当前账号、当前安装退出和 Desktop Mobile Installation 管理路由。`GET /v1/account/mobile-installations` 列出已认证 Desktop Account 的活跃 Mobile 目标；`POST /v1/account/mobile-installations/revoke` 把一个 opaque 目标绑定到随请求提供的证明。`INSTALLATION_FORBIDDEN` 返回 HTTP 403，`INSTALLATION_NOT_FOUND` 返回 404。响应禁用缓存，错误使用稳定 JSON 信封。`QUOTA` 与 `PLATFORM_CAPACITY` 返回 HTTP 429、`Retry-After` 响应头，以及秒级 JSON `retryAfter`。必填且非空的 `origins` 配置必须包含账号提供方选中的已校验环境 origin；每个额外的标准或自定义元组 origin 都会被精确校验，带路径的 origin 与 opaque `null` 会在路由注册前被拒绝。请求体上限为 64 KiB，经 `@deepseek-ai/dsh-host-webserver` 的 JSON 助手解析，错误码与文案仍由 Account 持有；访问令牌操作通过专用请求头携带品牌化的单次证明 id。
 
 回调返回中英文完成页，绝不会把 OAuth code 或提供方令牌重定向到应用 URL。
+
+`POST /v1/account/deletion/plan` 与 `POST /v1/account/deletion` 要求 Account bearer 及 Installation 证明请求头。删除请求体包含操作 id、随机恢复令牌及明确的项目接任成员。`POST /v1/account/deletion/recovery` 使用 JSON 中的凭据和发起 Installation 证明，不授予普通会话权限，仅能在 action-required 后替换接任者。所有路由沿用相同的精确 origin、请求体上限和禁止缓存响应政策。
 
 ## 目录
 

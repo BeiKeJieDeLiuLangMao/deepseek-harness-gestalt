@@ -133,6 +133,13 @@ export interface PersonalPairingComposition {
   provider: PersonalPairingProvider
   /** Private quota closures passed directly to the operated attachment composition. */
   attachmentQuota: PersonalPairingAttachmentQuotaAuthority
+  /** Trusted account-deletion owner, kept out of the public Remote Access service. */
+  accountDeletion: {
+    /** Reuse staged route and pairing revocation after Account Sessions have been revoked. */
+    revoke(accountId: PlatformAccountId, desktopInstallationIds: readonly InstallationId[]): Promise<void>
+    /** Erase this Account's settled handshake and quota records after attachments are removed. */
+    cleanup(accountId: PlatformAccountId, desktopInstallationIds: readonly InstallationId[]): Promise<void>
+  }
 }
 /** Opaque provider reference for one active Personal Pairing key. */
 export type PersonalPairingKeyReference = Branded<'PersonalPairingKeyReference'>
@@ -1135,6 +1142,10 @@ export class PersonalPairingProvider extends RemoteAccessService {
     const provider = new PersonalPairingProvider(ctx, options)
     return {
       provider,
+      accountDeletion: {
+        revoke: async (accountId, installationIds) => { await provider.revokeDeletedAccount(accountId, installationIds) },
+        cleanup: async (accountId, installationIds) => { await provider.cleanupDeletedAccount(accountId, installationIds) },
+      },
       attachmentQuota: {
         admit: async input => await provider.admitAuthenticatedAttachmentBlob(input),
         release: async (input) => { await provider.releaseAuthenticatedAttachmentBlob(input) },
@@ -1672,59 +1683,99 @@ export class PersonalPairingProvider extends RemoteAccessService {
           return { enabled: true }
         })
       } else {
-        await this.runTransaction(() => {
-          const { account, installation } = owner
-          this.stageStoredEndpointRevocations(account.id, installation.id)
-        })
-        return await this.runTransaction(async () => {
-          const { account, installation } = owner
-          this.evictExpiredRecords()
-          this.acknowledgeStoredEndpointRevocations(account.id, installation.id, 'desktop')
-          const routeIds = await this.requireTransactionAccess().disableDesktop(account.id, installation.id)
-          const accessKeyValue = accessKey(account.id, installation.id)
-          const retainedAccess = this.requireTransactions().endpointAccessGenerations.get(accessKeyValue)
-          this.requireTransactions().endpointAccessGenerations.set(accessKeyValue, {
-            generation: (retainedAccess?.generation ?? 0) + 1, phase: 'disabled',
-          })
-          for (const publication of this.requireTransactions().endpointPublications.values()) {
-            if (publication.accountId === account.id && publication.desktopInstallationId === installation.id) {
-              this.stageEndpointPublicationRevocation(this.requireTransactions(), publication)
-            }
-          }
-          if (this.options.relay !== undefined) {
-            await cleanupAll(routeIds.map(routeId => async () => {
-              await this.options.relay?.revokeRoute(routeId)
-              await this.requireTransactionAccess().completeRouteRevocation(account.id, installation.id, routeId)
-            }))
-          } else {
-            await cleanupAll(routeIds.map(routeId => async () => {
-              await this.requireTransactionAccess().completeRouteRevocation(account.id, installation.id, routeId)
-            }))
-          }
-          for (const challenge of [...this.challenges.values()]) {
-            if (challenge.accountId === account.id && challenge.desktopInstallationId === installation.id) {
-              this.settleChallenge(challenge, 'disabled')
-            }
-          }
-          const endpointMailbox = this.endpointMailbox()
-          endpointMailbox.disable(account.id, installation.id, this.clock.now())
-          this.commitEndpointMailbox(endpointMailbox)
-          for (const [id, record] of [...this.pending]) {
-            if (record.accountId === account.id && record.desktopInstallationId === installation.id) {
-              this.settlePending(id, record, 'disabled')
-            }
-          }
-          for (const [pairingId, pairing] of [...this.pairings]) {
-            if (pairing.devicePrincipal.accountId === account.id
+        return await this.disableOwnedDesktop(owner.account.id, owner.installation.id)
+      }
+    })
+  }
+
+  private async disableOwnedDesktop(accountId: PlatformAccountId, installationId: InstallationId): Promise<MobileAccessState> {
+    const account = { id: accountId }
+    const installation = { id: installationId }
+    await this.runTransaction(() => {
+      this.stageStoredEndpointRevocations(account.id, installation.id)
+    })
+    return await this.runTransaction(async () => {
+      this.evictExpiredRecords()
+      this.acknowledgeStoredEndpointRevocations(account.id, installation.id, 'desktop')
+      const routeIds = await this.requireTransactionAccess().disableDesktop(account.id, installation.id)
+      const accessKeyValue = accessKey(account.id, installation.id)
+      const retainedAccess = this.requireTransactions().endpointAccessGenerations.get(accessKeyValue)
+      this.requireTransactions().endpointAccessGenerations.set(accessKeyValue, {
+        generation: (retainedAccess?.generation ?? 0) + 1, phase: 'disabled',
+      })
+      for (const publication of this.requireTransactions().endpointPublications.values()) {
+        if (publication.accountId === account.id && publication.desktopInstallationId === installation.id) {
+          this.stageEndpointPublicationRevocation(this.requireTransactions(), publication)
+        }
+      }
+      if (this.options.relay !== undefined) {
+        await cleanupAll(routeIds.map(routeId => async () => {
+          await this.options.relay?.revokeRoute(routeId)
+          await this.requireTransactionAccess().completeRouteRevocation(account.id, installation.id, routeId)
+        }))
+      } else {
+        await cleanupAll(routeIds.map(routeId => async () => {
+          await this.requireTransactionAccess().completeRouteRevocation(account.id, installation.id, routeId)
+        }))
+      }
+      for (const challenge of [...this.challenges.values()]) {
+        if (challenge.accountId === account.id && challenge.desktopInstallationId === installation.id) {
+          this.settleChallenge(challenge, 'disabled')
+        }
+      }
+      const endpointMailbox = this.endpointMailbox()
+      endpointMailbox.disable(account.id, installation.id, this.clock.now())
+      this.commitEndpointMailbox(endpointMailbox)
+      for (const [id, record] of [...this.pending]) {
+        if (record.accountId === account.id && record.desktopInstallationId === installation.id) {
+          this.settlePending(id, record, 'disabled')
+        }
+      }
+      for (const [pairingId, pairing] of [...this.pairings]) {
+        if (pairing.devicePrincipal.accountId === account.id
             && pairing.desktopInstallationId === installation.id) {
-              this.pairings.delete(pairingId)
-              this.principalIds.delete(pairing.devicePrincipal.id)
-              if (pairing.cleanup !== undefined) await this.cleanupActive(pairing.cleanup)
-            }
-          }
-          await this.cleanupOwner(account.id, installation.id)
-          return { enabled: false }
-        })
+          this.pairings.delete(pairingId)
+          this.principalIds.delete(pairing.devicePrincipal.id)
+          if (pairing.cleanup !== undefined) await this.cleanupActive(pairing.cleanup)
+        }
+      }
+      await this.cleanupOwner(account.id, installation.id)
+      return { enabled: false }
+    })
+  }
+
+  private async revokeDeletedAccount(accountId: PlatformAccountId, installationIds: readonly InstallationId[]): Promise<void> {
+    await this.serialized(async () => {
+      await cleanupAll(installationIds.map(installationId => async () => { await this.disableOwnedDesktop(accountId, installationId) }))
+    })
+  }
+
+  private async cleanupDeletedAccount(accountId: PlatformAccountId, installationIds: readonly InstallationId[]): Promise<void> {
+    await this.exclusive(async () => {
+      const state = this.requireTransactions()
+      for (const record of state.settledChallenges.values()) {
+        if (record.accountId === accountId) await this.cleanupChallenge(record.cleanup)
+      }
+      for (const record of state.settledPending.values()) {
+        if (record.accountId === accountId) await this.cleanupSettledPending(record)
+      }
+      for (const record of state.completions.values()) {
+        if (record.accountId === accountId) await this.cleanupChallenge(record.challengeCleanup)
+      }
+      for (const record of state.orphanPendingCleanups.values()) {
+        if (record.accountId === accountId) await this.cleanupPending(record.cleanup)
+      }
+      eraseAccountRecords(state.settledChallenges, accountId)
+      eraseAccountRecords(state.settledPending, accountId)
+      eraseAccountRecords(state.completions, accountId)
+      eraseAccountRecords(state.orphanPendingCleanups, accountId)
+      eraseAccountRecords(state.blobs, accountId)
+      state.accountChallengeAt.delete(accountId)
+      state.blobUploads.delete(accountId)
+      for (const installationId of installationIds) state.endpointAccessGenerations.delete(accessKey(accountId, installationId))
+      state.endpointMailbox = {
+        challenges: state.endpointMailbox.challenges.filter(record => record.accountId !== accountId),
+        pending: state.endpointMailbox.pending.filter(record => record.accountId !== accountId),
       }
     })
   }
@@ -3618,3 +3669,7 @@ function hasProjectPeerRelay(
 }
 
 export default RemoteAccessService
+
+function eraseAccountRecords<Key, Value extends { accountId: string }>(records: Map<Key, Value>, accountId: PlatformAccountId): void {
+  for (const [key, value] of records) if (value.accountId === accountId) records.delete(key)
+}

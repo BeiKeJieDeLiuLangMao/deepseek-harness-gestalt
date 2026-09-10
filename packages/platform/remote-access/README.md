@@ -25,6 +25,8 @@ The project peer grant surface runs beside Personal Pairing and lets one member'
 
 Persistent deployment state is limited to route identity, credential digest, monotonic revision, and revocation/association state. Ephemeral coordination is limited to expiring attachment locations, invalidation events, and direct ciphertext Pub/Sub. Instance exit closes its sockets; Mobile and Desktop acquire a fresh non-sticky connection, and Desktop sends an authoritative encrypted resynchronization instead of migrating a live socket. Every capacity, directory, heartbeat, buffer, connection, and attach timeout is an explicit validated composition value.
 
+The operated Account deletion composition receives a trusted `accountDeletion` owner distinct from public Personal Pairing authentication. It disables captured Desktop authorities, awaits Relay and endpoint revocation, then removes the deleted account’s pairing, mailbox, replay, quota and challenge references. Public tokens are already revoked when this owner runs; it cannot restore a login or grant a new pairing. Attachment ciphertext belongs to the separate attachment owner and must finish cleanup before Account completion.
+
 ## Table of Contents
 
 - [Model Experience](#model-experience)

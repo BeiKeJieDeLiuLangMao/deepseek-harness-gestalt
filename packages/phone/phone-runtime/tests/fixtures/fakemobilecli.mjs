@@ -37,7 +37,7 @@ if (knobs.ignoreTerm === true) {
 }
 
 if (knobs.exitFast === true) {
-  process.stderr.write('fakemobilecli exiting immediately\n')
+  if (knobs.quiet !== true) process.stderr.write('fakemobilecli exiting immediately\n')
   process.exit(9)
 }
 
@@ -499,7 +499,7 @@ const server = http.createServer((req, res) => {
 
 // Server startup never runs in agent or screenshot CLI mode, which exit from their own timers.
 if (args[0] !== 'agent' && args[0] !== 'screenshot') {
-  process.stderr.write(`fakemobilecli listening on ${address}\n`)
+  if (knobs.quiet !== true) process.stderr.write(`fakemobilecli listening on ${address}\n`)
   let listenAttempts = 0
   server.on('error', (error) => {
     // The staged port is claimed, but a straggler can still hold it briefly.

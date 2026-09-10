@@ -24,6 +24,8 @@ The user has asked for a **retrospective**. You are suggesting improvements to t
 
 4. Present these candidates to the user, in order of severity.
 
+5. After the user keep-or-drop decision, record each **kept** item under gitignored `.agents/local/lessons/`. Layout: `index.json` holds `{ "lessons": [ { "id", "skill", "phase", "count", "lastSessionId", "lastHarness", "lastAt" } ] }`. One markdown file per first occurrence: `{skill-or-phase}/{yyyy-mm-dd}-{id}.md` with harness, session id, skill/phase, and the lesson. A repeated `id` increments `count` and updates `lastSessionId` / `lastHarness` / `lastAt`; do not duplicate the markdown file. Never put secrets in this archive.
+
 ## Reference
 
 ### Implementation vs Review

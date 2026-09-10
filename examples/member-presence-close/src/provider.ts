@@ -56,7 +56,11 @@ export async function apply(ctx: Context): Promise<void> {
     invalidation: new MemoryAccountInvalidationBus(),
     github,
     environment: ENVIRONMENT,
-    config: { tokenSigningKey: Buffer.alloc(32, 7), pollingSigningKey: Buffer.alloc(32, 9) },
+    config: {
+      tokenSigningKey: Buffer.alloc(32, 7),
+      pollingSigningKey: Buffer.alloc(32, 9),
+      sessionInvalidationRetryIntervalMs: 60_000,
+    },
   })
   const storagePath = await mkdtemp(join(tmpdir(), 'dsh-member-presence-close-'))
   new ProjectMembershipCore(ctx, { storagePath, environment: 'development' })

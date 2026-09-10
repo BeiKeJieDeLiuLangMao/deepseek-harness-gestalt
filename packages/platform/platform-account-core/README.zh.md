@@ -11,9 +11,11 @@ kind: "package-reference"
 
 本包是 Platform 账号提供方。登录尝试有效期为五分钟，携带随机 OAuth state 与 S256 PKCE，只能凭签名轮询令牌和 P-256 安装证明消费一次。GitHub OAuth 适配器不请求 scope，拒绝继承得到的非空 scope，只保留不可变数字 id、公开登录名和头像，并在身份查询后丢弃提供方令牌。
 
-完成新安装时，同一账号的第 11 个在线 Desktop 或 Mobile 会话会被拒绝；同一安装的再次登录会替换当前会话。`AccountBackend.consumeAuthorizedAttempt` 在插入会话的同一事务内统计该类型。`trackConnection` 通过后端解析未绑定会话，为每个账号接纳 20 个 closer，并在会话缺失、已停用或到达第 21 个 closer 时以 `QUOTA` 或 `SESSION_REVOKED` 拒绝。注入的 `PlatformCapacityState` 会以 `PLATFORM_CAPACITY` 拒绝 `beginLogin` 和正在完成的 `pollLogin`；`apps/platform` 启动时不会注入该水位。
+完成新安装时，同一账号的第 11 个在线 Desktop 或 Mobile 会话会被拒绝；同一安装的再次登录会替换当前会话。`AccountBackend.consumeAuthorizedAttempt` 在插入会话的同一事务内统计该类型。`trackConnection` 通过后端检查每次会话接入，为每个账号接纳 20 个 closer，并在会话缺失、已停用或到达第 21 个 closer 时以 `QUOTA` 或 `SESSION_REVOKED` 拒绝。注入的 `PlatformCapacityState` 会以 `PLATFORM_CAPACITY` 拒绝 `beginLogin` 和正在完成的 `pollLogin`；`apps/platform` 启动时不会注入该水位。
 
-账号会话把一个账号绑定到一个安装密钥及不可变的安装类型。访问令牌有效期为 15 分钟；刷新令牌在每次接受的使用中轮换，最长有效期为 30 天，且到期时间点本身已经无效。只有绝对期限内还能容纳完整 15 分钟访问令牌时才允许刷新，否则会在消费证明或轮换前拒绝。当前账号读取、当前安装读取、刷新和退出都要求新鲜且未重放的证明。证明时间戳允许客户端时钟最多偏移五分钟；签名仍会绑定操作与令牌，共享后端则会把每个已消费 `jti` 保留到该证明的最后有效时刻。安装读取会返回会话拥有的 id 与类型，而不是从调用方接收这两个值。持久化 Mobile 会话缺少 Installation 展示时，持久层允许 core 读取该记录；core 在验证证明后撤销它并返回 `SESSION_REVOKED`，客户端会清除本地状态，并要求以真实原生展示重新登录。替换、迁移或退出会话会先提交撤销，再等待失效投递。总线与每个实例都会分别隔离订阅方和连接关闭失败、运行全部回调，并汇总报告完成错误。
+账号会话把一个账号绑定到一个安装密钥及不可变的安装类型。访问令牌有效期为 15 分钟；刷新令牌在每次接受的使用中轮换，最长有效期为 30 天，且到期时间点本身已经无效。只有绝对期限内还能容纳完整 15 分钟访问令牌时才允许刷新，否则会在消费证明或轮换前拒绝。当前账号读取、当前安装读取、刷新和退出都要求新鲜且未重放的证明。证明时间戳允许客户端时钟最多偏移五分钟；签名仍会绑定操作与令牌，共享后端则会把每个已消费 `jti` 保留到该证明的最后有效时刻。安装读取会返回会话拥有的 id 与类型，而不是从调用方接收这两个值。缺少 Installation 展示的持久 Mobile 会话仍可通过 Desktop 列表移除，但该 Mobile 使用当前安装证明时会被撤销并收到 `SESSION_REVOKED`；客户端会清除本地状态，并要求以真实原生展示重新登录。替换、迁移或退出会话会先提交撤销，再等待失效投递。总线与每个实例都会分别隔离订阅方和连接关闭失败、运行全部回调，并汇总报告完成错误。
+
+Desktop Mobile 移除先于 Account 和 Session 行锁定已经授权的 attempt，重新检查 Desktop 调用方及删除状态，并在一个事务中撤销全部匹配的活跃 Mobile Session 和 refresh credential。每个 Session id 都在该事务中写入持久失效 outbox。发布会分别尝试全部 id，只确认总线已接受的投递；发布或确认失败时可以安全重复同一个 id。Outbox 记录不带 Account 或 Session 外键，因此账号删除后仍会保留。必填的 `PlatformAccountConfig.sessionInvalidationRetryIntervalMs` 在每个 composition 中驱动独立且受 namespace 限制的恢复定时器，包括未配置账号删除的 composition，并在进程重启后继续投递。
 
 `loadPlatformEnvironment` 要求并选择完整环境对。开发与生产不能共享 origin、回调、GitHub OAuth App id、凭证引用、数据库身份或身份命名空间。提供方会在处理流量前拒绝与所选身份不匹配的 GitHub 适配器或后端。
 
@@ -29,7 +31,9 @@ kind: "package-reference"
 <a id="extension-points"></a>
 ## 扩展点
 
-`AccountBackend` 提供原子持久化，`AccountInvalidationBus` 提供跨实例投递，`GitHubIdentityProvider` 拥有提供方交换。生产 composition root 提供三者；内存实现只用于无密钥验收与开发。
+`AccountBackend` 提供原子持久化与待投递失效记录，`AccountInvalidationBus` 提供幂等跨实例投递，`GitHubIdentityProvider` 拥有提供方交换。生产 composition root 提供三者及明确的失效重试间隔；内存实现只用于无密钥验收与开发。
+
+`configureAccountDeletion` 绑定现有产品数据 owner 及明确的重试、已完成凭据期限。接受操作时原子持久化进度并撤销全部会话；owner 撤销先于失效通知，未完成清理保持可恢复。正在删除的账号无法完成登录或刷新。只有发起 Installation 的密钥能通过恢复凭据查询或替换接任成员。完成时移除 Account 与会话记录，重新注册取得新 id。后台扫描报告每个失败账号，并继续其他清理与已完成凭据的过期删除。未配置此 owner 的组合以 `DELETION_UNAVAILABLE` 拒绝删除。[删除决策](../../../.agents/notes/implemented/feature/2026-09-09-mobile-account-deletion.zh.md)定义归属、顺序和验证。
 
 <a id="model-experience"></a>
 ## 模型体验

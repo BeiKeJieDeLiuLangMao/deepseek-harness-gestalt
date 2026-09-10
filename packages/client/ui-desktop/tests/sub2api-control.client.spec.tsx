@@ -256,6 +256,8 @@ function bridge(): DesktopBridge {
     accountAcceptPrivacy: vi.fn(),
     accountBeginLogin: vi.fn(),
     accountCancelLogin: vi.fn(),
+    accountRefreshMobileInstallations: vi.fn(),
+    accountRevokeMobileInstallation: vi.fn(),
     accountSignOut: vi.fn(),
     onAccountSnapshot: () => () => {},
     pairingGetSnapshot: vi.fn(),

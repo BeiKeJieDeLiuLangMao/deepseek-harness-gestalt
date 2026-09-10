@@ -86,7 +86,11 @@ describe('assembled open-registration Account quotas', () => {
       apply(ctx: Context) {
         account = new PlatformAccount(ctx, {
           backend, invalidation, github, environment: ENVIRONMENT, capacity,
-          config: { tokenSigningKey: Buffer.alloc(32, 7), pollingSigningKey: Buffer.alloc(32, 9) },
+          config: {
+            tokenSigningKey: Buffer.alloc(32, 7),
+            pollingSigningKey: Buffer.alloc(32, 9),
+            sessionInvalidationRetryIntervalMs: 60_000,
+          },
           clock: { now: () => now.value },
         })
       },

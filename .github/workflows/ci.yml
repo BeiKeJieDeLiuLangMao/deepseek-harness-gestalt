@@ -245,6 +245,11 @@ jobs:
       - name: Run compatibility, snapshot, and artifact gates
         run: pnpm run check:ci:consumers
 
+      - name: Verify membership CLI cleanup with the Docker daemon
+        env:
+          DSH_MEMBERSHIP_DOCKER_TEST_IMAGE: node:24-bookworm-slim
+        run: pnpm exec vitest run apps/platform/tests/membership-docker-lifecycle.spec.ts
+
 
   node-compat:
     if: github.event_name == 'pull_request'

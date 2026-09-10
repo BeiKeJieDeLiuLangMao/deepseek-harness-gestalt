@@ -83,6 +83,14 @@ export function installDesktopBridgeFixture(platform: 'darwin' | 'win32'): Deskt
       notifyAccount(account)
       return account
     },
+    accountRefreshMobileInstallations: async () => {
+      notifyAccount(account)
+      return account
+    },
+    accountRevokeMobileInstallation: async () => {
+      notifyAccount(account)
+      return account
+    },
     onAccountSnapshot: (listener) => {
       accountListeners.add(listener)
       listener(account)

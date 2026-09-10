@@ -6,6 +6,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
+import { validateProjectMembershipDocument } from '../src/index.ts'
 import type { PlatformAccountId } from '@deepseek-ai/dsh-platform-account'
 import type { ProjectRole } from '@deepseek-ai/dsh-project-membership'
 import {
@@ -154,5 +155,38 @@ describe('durable document validation', () => {
     document.memberships[0]!.link = { workspaceName: 'w', normalizedRemoteUrl: 42 }
     expect(() => parse(JSON.stringify(document)))
       .toThrow('durable state normalizedRemoteUrl must be undefined or a non-empty string')
+  })
+})
+
+
+describe('membership import admission', () => {
+  it('accepts populated snapshots with an owner for each project', () => {
+    expect(() =>{  validateProjectMembershipDocument(serialize(validState())) }).not.toThrow()
+  })
+
+  it.each(['project-id', 'project-name', 'project-remote', 'membership-id', 'member-account', 'invitation-id'] as const)(
+    'refuses ambiguous %s indexes before import', (index) => {
+      const original = validState()
+      const state = { ...original, projects: [...original.projects], memberships: [...original.memberships],
+        invitations: [...original.invitations] }
+      const project = state.projects[0]!
+      const member = state.memberships[0]!
+      if (index === 'project-id') state.projects.push({ ...project, name: 'Other', boundRemoteUrl: 'https://example.com/other' })
+      if (index === 'project-name') state.projects.push({ ...project, id: 'other', boundRemoteUrl: 'https://example.com/other' })
+      if (index === 'project-remote') state.projects.push({ ...project, id: 'other', name: 'Other' })
+      if (index === 'membership-id') state.memberships.push({ ...member, accountId: bob })
+      if (index === 'member-account') state.memberships.push({ ...member, id: 'other-member' })
+      if (index === 'invitation-id') state.invitations.push({ ...state.invitations[0]! })
+      expect(() =>{  validateProjectMembershipDocument(serialize(state)) }).toThrow('duplicate indexed records')
+    },
+  )
+
+  it('refuses ownerless projects even if another project still has its owner', () => {
+    const original = validState()
+    const state = { ...original, projects: [...original.projects], memberships: [...original.memberships],
+      invitations: [...original.invitations] }
+    state.projects.push({ ...state.projects[0]!, id: 'ownerless', name: 'Ownerless', boundRemoteUrl: 'https://example.com/ownerless' })
+    state.memberships.push({ ...state.memberships[0]!, id: 'non-owner', projectId: 'ownerless', role: 'member' })
+    expect(() =>{  validateProjectMembershipDocument(serialize(state)) }).toThrow('project without an owner')
   })
 })

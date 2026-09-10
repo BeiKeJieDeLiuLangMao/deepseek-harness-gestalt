@@ -2,7 +2,7 @@ import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
 import { createHash, generateKeyPairSync } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { createServer as createHttpServer, type IncomingMessage, type ServerResponse } from 'node:http'
-import { chmod, mkdtemp, readFile, rm } from 'node:fs/promises'
+import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -25,6 +25,8 @@ import {
 } from '@deepseek-ai/dsh-remote-attachments/http'
 import type { RemoteAttachmentStoreService } from '@deepseek-ai/dsh-remote-attachments'
 import pg from 'pg'
+import { fileURLToPath } from 'node:url'
+import { inspectMembershipMaintenanceTarget } from '../src/membership-maintenance.ts'
 import { createClient } from 'redis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { connectRedis } from '../src/redis-bus.ts'
@@ -69,6 +71,92 @@ afterEach(async () => {
 })
 
 describe.skipIf(!durableProgramsAvailable)('operated Platform resource entry with disposable durable fixtures', () => {
+  it('terminates a real PostgreSQL import lock wait at the maintenance deadline without later writes', async () => {
+    const tls = await createTlsFixture()
+    const postgres = await startPostgresFixture(tls)
+    const ca = await readFile(tls.cert, 'utf8')
+    const pool = new pg.Pool({ host: '127.0.0.1', port: postgres.port, user: 'fixture', database: 'postgres', ssl: { ca, rejectUnauthorized: true } })
+    cleanups.push(async () => { await pool.end() })
+    const locker = await pool.connect()
+    const key = 'project-membership:identity-fixture'
+    await locker.query('SELECT pg_advisory_lock(hashtextextended($1, 0))', [key])
+    const root = await mkdtemp(join(tmpdir(), 'dsh-membership-lock-deadline-'))
+    cleanups.push(async () => { await rm(root, { recursive: true, force: true }) })
+    const document = '{"formatVersion":1,"projects":[],"memberships":[],"invitations":[]}'
+    const digest = createHash('sha256').update(document).digest('hex')
+    const source = join(root, 'source.json')
+    await writeFile(source, document, { mode: 0o600 })
+    const child = spawn(process.execPath, ['--import', 'tsx/esm',
+      fileURLToPath(new URL('../src/membership-cutover-cli.ts', import.meta.url)),
+      'import', '--source', source, '--sha256', digest, '--writers-fenced'], {
+      stdio: ['ignore', 'ignore', 'pipe'], env: { PATH: process.env.PATH, ...operatedFixtureEnv(),
+        PLATFORM_POSTGRES_HOST: '127.0.0.1', PLATFORM_POSTGRES_PORT: String(postgres.port), PLATFORM_POSTGRES_DATABASE: 'postgres',
+        PLATFORM_APSARADB_CA_BASE64: Buffer.from(ca).toString('base64'), PLATFORM_MEMBERSHIP_BACKEND: 'postgres',
+        PLATFORM_ACCOUNT_DELETION_RETRY_INTERVAL_MS: '5000', PLATFORM_ACCOUNT_DELETION_RECEIPT_LIFETIME_MS: '604800000',
+        DSH_MEMBERSHIP_DEADLINE: String(Math.floor(Date.now() / 1000) + 2),
+      },
+    })
+    const output = captureStderr(child)
+    const exited = new Promise<number | null>((resolve) => { child.once('exit', resolve) })
+    let expiredBeforeUnlock = false
+    try {
+      await new Promise((resolve) => { setTimeout(resolve, 3500) })
+      expiredBeforeUnlock = child.exitCode !== null
+    } finally {
+      await locker.query('SELECT pg_advisory_unlock(hashtextextended($1, 0))', [key])
+      locker.release()
+    }
+    const code = await exited
+    expect(expiredBeforeUnlock, output()).toBe(true)
+    expect(code).not.toBe(0)
+    const table = await pool.query<{ name: string | null }>("SELECT to_regclass('project_membership_documents') AS name")
+    if (table.rows[0]?.name !== null) {
+      expect((await pool.query<{ count: number }>('SELECT count(*)::int AS count FROM project_membership_documents')).rows[0]?.count).toBe(0)
+    }
+  }, 60_000)
+
+  it('preserves approved source bytes through the real TLS PostgreSQL import CLI and read-only maintenance check', async () => {
+    const tls = await createTlsFixture()
+    const postgres = await startPostgresFixture(tls)
+    const ca = await readFile(tls.cert, 'utf8')
+    const pool = new pg.Pool({ host: '127.0.0.1', port: postgres.port, user: 'fixture', database: 'postgres', ssl: { ca, rejectUnauthorized: true } })
+    cleanups.push(async () => { await pool.end() })
+    await pool.query(`
+      CREATE TABLE remote_attachment_storage_phase (database_identity text PRIMARY KEY, phase text NOT NULL);
+      INSERT INTO remote_attachment_storage_phase VALUES ('postgres', 'oss');
+      CREATE TABLE remote_attachment_objects (database_identity text NOT NULL);
+      CREATE TABLE remote_attachment_publish_intents (database_identity text NOT NULL);
+    `)
+    await expect(inspectMembershipMaintenanceTarget(pool, 'postgres', 'identity-fixture', undefined)).resolves.toBeNull()
+    expect((await pool.query<{ name: string | null }>("SELECT to_regclass('project_membership_documents') AS name")).rows[0]?.name).toBeNull()
+    const root = await mkdtemp(join(tmpdir(), 'dsh-membership-cli-'))
+    cleanups.push(async () => { await rm(root, { recursive: true, force: true }) })
+    const source = '{\n  "invitations": [], "memberships": [], "projects": [], "formatVersion": 1\n}\n'
+    const digest = createHash('sha256').update(source).digest('hex')
+    const sourcePath = join(root, 'approved.json')
+    await writeFile(sourcePath, source, { mode: 0o600 })
+    const result = spawnSync(process.execPath, ['--import', 'tsx/esm',
+      fileURLToPath(new URL('../src/membership-cutover-cli.ts', import.meta.url)),
+      'import', '--source', sourcePath, '--sha256', digest, '--writers-fenced'], {
+      encoding: 'utf8', env: { PATH: process.env.PATH, ...operatedFixtureEnv(),
+        PLATFORM_POSTGRES_HOST: '127.0.0.1', PLATFORM_POSTGRES_PORT: String(postgres.port), PLATFORM_POSTGRES_DATABASE: 'postgres',
+        PLATFORM_APSARADB_CA_BASE64: Buffer.from(ca).toString('base64'), PLATFORM_MEMBERSHIP_BACKEND: 'postgres',
+        PLATFORM_ACCOUNT_DELETION_RETRY_INTERVAL_MS: '5000', PLATFORM_ACCOUNT_DELETION_RECEIPT_LIFETIME_MS: '604800000',
+      },
+    })
+    expect(result.status, result.stderr).toBe(0)
+    expect(result.stdout).toContain(`imported ${digest}`)
+    expect((await pool.query('SELECT document, pg_typeof(document)::text AS type FROM project_membership_documents')).rows[0])
+      .toEqual({ document: source, type: 'text' })
+    await expect(inspectMembershipMaintenanceTarget(pool, 'postgres', 'identity-fixture', digest)).resolves.toBe(digest)
+    await expect(inspectMembershipMaintenanceTarget(pool, 'postgres', 'identity-fixture', undefined)).rejects.toThrow('already initialized')
+    await pool.query('UPDATE project_membership_documents SET document = $1', [JSON.stringify(JSON.parse(source))])
+    await expect(inspectMembershipMaintenanceTarget(pool, 'postgres', 'identity-fixture', digest)).rejects.toThrow('current document differs')
+    await pool.query('UPDATE project_membership_documents SET document = $1', [source])
+    await pool.query("INSERT INTO remote_attachment_objects VALUES ('postgres')")
+    await expect(inspectMembershipMaintenanceTarget(pool, 'postgres', 'identity-fixture', digest)).rejects.toThrow('Attachment metadata changed')
+  }, 60_000)
+
   it('keeps legacy PostgreSQL and OSS binaries mutually readable during rolling deployment', async () => {
     const postgres = await startPostgresFixture()
     const pool = new pg.Pool({ host: '127.0.0.1', port: postgres.port, user: 'fixture', database: 'postgres' })
@@ -1480,6 +1568,7 @@ function operatedFixtureEnv(): NodeJS.Dict<string> {
     PLATFORM_APSARADB_CA_BASE64: Buffer.from(APSARADB_CA).toString('base64'),
     PLATFORM_POSTGRES_DATABASE: 'product-entry-fixture',
     PLATFORM_IDENTITY_NAMESPACE: 'identity-fixture',
+    PLATFORM_ACCOUNT_SESSION_INVALIDATION_RETRY_INTERVAL_MS: '5000',
     PLATFORM_REDIS_HOST: 'redis.operated.fixture',
     PLATFORM_REDIS_USER: 'fixture',
     PLATFORM_REDIS_PASSWORD: 'redis-secret-fixture',
