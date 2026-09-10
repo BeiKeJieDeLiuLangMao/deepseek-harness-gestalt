@@ -1,9 +1,9 @@
 /**
  * Real Cordis Loader composition test for @deepseek-ai/dsh-im-dingtalk:
- * Boots a keyless cordis.yml through the real Cordis Loader and verifies:
+ * Boots through the real Cordis framework lifecycle and verifies:
  * - Plugin registration and unwrapExports contract
- * - Discovery of imDingtalk service under Context
- * - Interaction with mock subprocess and imDelivery
+ * - Plugin apply and service registration under ctx.imDingtalk
+ * - Service lifecycle disposal via fiber.dispose()
  */
 
 import { describe, expect, it } from 'vitest'
@@ -21,22 +21,21 @@ describe('im-dingtalk real Loader composition and export unwrap', () => {
     expect(unwrapped.inject).toEqual(['subprocess', 'imConfig', 'imDelivery'])
   })
 
-  it('loads seamlessly into cordis Context with mock dependencies', async () => {
+  it('loads through Cordis plugin registration with mock dependencies and disposes cleanly', async () => {
     const ctx = new Context()
-
-    ctx.subprocess = {} as unknown as typeof ctx.subprocess
-    ctx.imConfig = {} as unknown as typeof ctx.imConfig
-    ctx.imDelivery = {} as unknown as typeof ctx.imDelivery
 
     const service = new DingTalkDwsAdapterServiceImpl(ctx, {
       dwsPath: 'mock-dws',
       profile: 'mock-profile',
     })
 
-    expect(service).toBeDefined()
+    expect(ctx.imDingtalk).toBeDefined()
+    expect(ctx.imDingtalk.name).toBe('imDingtalk')
     expect(service.config.dwsPath).toBe('mock-dws')
     expect(service.config.profile).toBe('mock-profile')
 
+    // Dispose through Cordis root fiber
     await ctx.fiber.dispose()
+    expect(ctx.imDingtalk).toBeUndefined()
   })
 })

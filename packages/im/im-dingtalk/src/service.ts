@@ -24,6 +24,7 @@ interface ActiveConsumer {
   stopped: boolean
   reconnectCount: number
   reconnectTimer?: ReturnType<typeof setTimeout> | undefined
+  lastError?: string | undefined
 }
 
 /**
@@ -40,8 +41,10 @@ export class DingTalkDwsAdapterServiceImpl extends DingTalkDwsAdapterService {
   private readonly defaultMaxReconnectAttempts: number
   private isDisposed = false
 
+  private readonly consumerStates = new Map<ImAccountId, DingTalkConsumerState>()
+
   constructor(ctx: Context, readonly config: DingTalkDwsAdapterConfig = {}) {
-    super(ctx)
+    super(ctx, 'imDingtalk')
     this.defaultDwsPath = config.dwsPath || 'dws'
     this.defaultGraceMs = config.graceMs ?? 5000
     this.defaultReconnectDelayMs = config.reconnectDelayMs ?? 1000
@@ -53,17 +56,22 @@ export class DingTalkDwsAdapterServiceImpl extends DingTalkDwsAdapterService {
 
   getConsumerState(accountId: ImAccountId): DingTalkConsumerState {
     const active = this.consumers.get(accountId)
-    if (!active) {
+    if (active) {
       return {
         accountId,
-        isRunning: false,
-        reconnectAttempts: 0,
+        isRunning: !active.stopped,
+        reconnectAttempts: active.reconnectCount,
+        lastError: active.lastError,
       }
+    }
+    const historical = this.consumerStates.get(accountId)
+    if (historical) {
+      return historical
     }
     return {
       accountId,
-      isRunning: !active.stopped,
-      reconnectAttempts: active.reconnectCount,
+      isRunning: false,
+      reconnectAttempts: 0,
     }
   }
 
@@ -125,7 +133,11 @@ export class DingTalkDwsAdapterServiceImpl extends DingTalkDwsAdapterService {
           const inboundOptions = parseDwsEventLine(line, accountId, managedUserId)
           if (inboundOptions) {
             this.ctx.imDelivery.receiveInbound(inboundOptions).catch((err) => {
-              this.ctx.logger('imDingtalk').warn(`receiveInbound error: ${String(err)}`)
+              const errMsg = String(err)
+              consumer.lastError = errMsg
+              consumer.stopped = true
+              this.ctx.logger('imDingtalk').warn(`receiveInbound failed, terminating consumer: ${errMsg}`)
+              this.stopConsumer(accountId).catch(() => {})
             })
           }
         }
@@ -175,8 +187,17 @@ export class DingTalkDwsAdapterServiceImpl extends DingTalkDwsAdapterService {
     }
     consumer.handle.stdin?.end()
     consumer.handle.terminate()
-    await consumer.handle.waitForExit(consumer.handle.spec.graceMs)
+    const exited = await consumer.handle.waitForExit(consumer.handle.spec.graceMs)
+    this.consumerStates.set(accountId, {
+      accountId,
+      isRunning: false,
+      reconnectAttempts: consumer.reconnectCount,
+      lastError: consumer.lastError,
+    })
     this.consumers.delete(accountId)
+    if (!exited) {
+      throw new Error(`Consumer child process for account ${accountId} failed to terminate within grace period`)
+    }
   }
 
   /**

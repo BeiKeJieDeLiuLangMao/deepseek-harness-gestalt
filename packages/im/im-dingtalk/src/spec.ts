@@ -23,8 +23,8 @@ declare module '@deepseek-ai/cordis' {
  * Service Definition for DingTalk DWS adapter.
  */
 export abstract class DingTalkDwsAdapterService extends Service {
-  constructor(ctx: Context) {
-    super(ctx, 'imDingtalk')
+  constructor(ctx: Context, name = 'imDingtalk') {
+    super(ctx, name)
   }
 
   /** Start event consumer stream for an account. */
