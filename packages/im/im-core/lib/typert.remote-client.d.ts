@@ -3,7 +3,7 @@ import type {
   RemoteResult,
   TypertRemoteContribution,
 } from '@deepseek-ai/dsh-typert-protocol'
-import type { CreateImAccountOptions, CreateImRouteRuleOptions, ImAccountId, ImAccountMetadata, ImGuiHistoryQueryOptions, ImGuiInboundView, ImGuiListOutboundOptions, ImGuiOutboundView, ImGuiRegisterManualOutboundOptions, ImRouteRule, ImRouteRuleId, ImWorkspaceSimulationConfig, SetWorkspaceSimulationTargetOptions, UpdateImRouteRuleOptions } from '@deepseek-ai/dsh-im-core/client'
+import type { CreateImAccountOptions, CreateImRouteRuleOptions, ImAccountId, ImAccountMetadata, ImGuiCancelPendingAiOutboundOptions, ImGuiHistoryQueryOptions, ImGuiInboundView, ImGuiListOutboundOptions, ImGuiOutboundView, ImGuiRegisterManualOutboundOptions, ImRouteRule, ImRouteRuleId, ImWorkspaceSimulationConfig, SetWorkspaceSimulationTargetOptions, UpdateImRouteRuleOptions } from '@deepseek-ai/dsh-im-core/client'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 
 declare module '@deepseek-ai/dsh-typert-protocol' {
@@ -22,6 +22,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     upsertAccount: (options: CreateImAccountOptions) => Promise<RemoteResult<ImAccountMetadata>>
   }
   interface TypertRemoteNamespace$696d44656c6976657279 {
+    cancelPendingAiOutbound: (options: ImGuiCancelPendingAiOutboundOptions) => Promise<RemoteResult<ImGuiOutboundView[]>>
     listOutbound: (options: ImGuiListOutboundOptions) => Promise<RemoteResult<ImGuiOutboundView[]>>
     queryHistory: (options: ImGuiHistoryQueryOptions) => Promise<RemoteResult<ImGuiInboundView[]>>
     registerManualOutbound: (options: ImGuiRegisterManualOutboundOptions) => Promise<RemoteResult<ImGuiOutboundView>>
@@ -39,6 +40,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'imConfig/setSimulationConfig': (options: SetWorkspaceSimulationTargetOptions) => Promise<RemoteResult<ImWorkspaceSimulationConfig>>
     'imConfig/updateRouteRule': (id: ImRouteRuleId, updates: UpdateImRouteRuleOptions) => Promise<RemoteResult<ImRouteRule>>
     'imConfig/upsertAccount': (options: CreateImAccountOptions) => Promise<RemoteResult<ImAccountMetadata>>
+    'imDelivery/cancelPendingAiOutbound': (options: ImGuiCancelPendingAiOutboundOptions) => Promise<RemoteResult<ImGuiOutboundView[]>>
     'imDelivery/listOutbound': (options: ImGuiListOutboundOptions) => Promise<RemoteResult<ImGuiOutboundView[]>>
     'imDelivery/queryHistory': (options: ImGuiHistoryQueryOptions) => Promise<RemoteResult<ImGuiInboundView[]>>
     'imDelivery/registerManualOutbound': (options: ImGuiRegisterManualOutboundOptions) => Promise<RemoteResult<ImGuiOutboundView>>

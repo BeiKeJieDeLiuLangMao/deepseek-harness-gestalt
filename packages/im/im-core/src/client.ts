@@ -7,6 +7,7 @@
 export type * from './types.ts'
 export type {
   ImDeliveryScope,
+  ImGuiCancelPendingAiOutboundOptions,
   ImGuiHistoryQueryOptions,
   ImGuiInboundView,
   ImGuiListOutboundOptions,

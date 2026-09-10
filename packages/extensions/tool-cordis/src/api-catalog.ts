@@ -1479,7 +1479,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       {
         signature: '@Remote(\'queryHistory\') async remoteExportQueryHistory(options: ImGuiHistoryQueryOptions): Promise<ImGuiInboundView[]>',
         description: 'GUI Remote history: text and sender facts only.',
-        parameters: [{ name: 'options', description: 'branded conversation scope.' }],
+        parameters: [{ name: 'options', description: 'real or simulation conversation scope.' }],
         returns: 'inbound rows oldest first.',
       },
       {
@@ -1490,15 +1490,21 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: '@Remote(\'registerManualOutbound\') async remoteExportRegisterManualOutbound( options: ImGuiRegisterManualOutboundOptions, ): Promise<ImGuiOutboundView>',
-        description: 'GUI Remote manual send: queues `human_manual` outbound and does not flush adapters.',
+        description: 'GUI Remote manual send: queues `human_manual` outbound; does not flush adapters.',
         parameters: [{ name: 'options', description: 'request id, target scope, and text.' }],
         returns: 'the queued outbound row.',
       },
       {
         signature: 'async cancelPendingAiOutbound(scopeId: ImScopeId, reason: string): Promise<OutboundMessageRecord[]>',
-        description: 'Cancel pending outbound AI messages for a specific scope. Disabling a conversation cancels pending AI messages without batch flushing on re-enable.',
-        parameters: [{ name: 'scopeId', description: 'Conversation scope whose pending AI outbound should be cancelled.' }, { name: 'reason', description: 'Pre-send failure reason recorded on each cancelled request.' }],
-        returns: 'The cancelled outbound records.',
+        description: 'Cancel pending AI outbound for one scope. Does not batch-flush on re-enable.',
+        parameters: [{ name: 'scopeId', description: 'conversation scope.' }, { name: 'reason', description: 'pre-send failure reason.' }],
+        returns: 'cancelled records.',
+      },
+      {
+        signature: '@Remote(\'cancelPendingAiOutbound\') async remoteExportCancelPendingAiOutbound( options: ImGuiCancelPendingAiOutboundOptions, ): Promise<ImGuiOutboundView[]>',
+        description: 'GUI Remote cancel of pending AI outbound. Host encodes the scope.',
+        parameters: [{ name: 'options', description: 'conversation scope and failure reason.' }],
+        returns: 'cancelled outbound rows.',
       },
     ],
   },
@@ -6231,6 +6237,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ImGroupTriggerConfig',
     declaration: 'export interface ImGroupTriggerConfig {\n    readonly mention?: boolean;\n    readonly everyN?: number;\n    readonly fixedIntervalSeconds?: number;\n}',
+  },
+  {
+    name: 'ImGuiCancelPendingAiOutboundOptions',
+    declaration: 'export interface ImGuiCancelPendingAiOutboundOptions {\n    readonly scope: ImDeliveryScope;\n    readonly reason: string;\n}',
   },
   {
     name: 'ImGuiHistoryQueryOptions',

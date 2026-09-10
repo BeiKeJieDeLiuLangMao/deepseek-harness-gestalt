@@ -220,6 +220,12 @@ export interface ImGuiRegisterManualOutboundOptions {
   readonly text: string
 }
 
+/** GUI Remote cancel of pending AI outbound. Does not flush adapters. */
+export interface ImGuiCancelPendingAiOutboundOptions {
+  readonly scope: ImDeliveryScope
+  readonly reason: string
+}
+
 /**
  * Inbound delivery input request.
  */

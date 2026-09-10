@@ -18,6 +18,7 @@ import {
 } from './spec.ts'
 import type {
   ImConversationCursor,
+  ImGuiCancelPendingAiOutboundOptions,
   ImGuiHistoryQueryOptions,
   ImGuiInboundView,
   ImGuiListOutboundOptions,
@@ -84,8 +85,6 @@ export class ImDeliveryService extends TypertRemoteService {
   private async getOrReconcileCursor(scopeId: ImScopeId): Promise<ImConversationCursor | undefined> {
     const { inboundTable, cursorsTable } = this.requireDomain()
     const stored = cursorsTable.get(scopeId)
-
-    // Compute derived ground truth from inbound_messages
     let maxReceivedSeq = 0
     let lastExternalId = stored?.lastReceivedExternalMessageId
     let unsubmittedCount = 0
@@ -118,8 +117,6 @@ export class ImDeliveryService extends TypertRemoteService {
       await cursorsTable.put(scopeId, created)
       return created
     }
-
-    // If stored cursor lags behind due to a crash window, reconcile it
     if (
       stored.lastReceivedSequenceNumber < maxReceivedSeq ||
       stored.unsubmittedCount !== unsubmittedCount ||
@@ -389,7 +386,6 @@ export class ImDeliveryService extends TypertRemoteService {
     }))
 
     if (options.status === 'sent') {
-      // Advance cursor lastSentSequenceNumber if cursor exists
       const cursor = cursorsTable.get(record.scopeId)
       if (cursor) {
         await cursorsTable.update(record.scopeId, c => ({
@@ -428,7 +424,7 @@ export class ImDeliveryService extends TypertRemoteService {
 
   /**
    * GUI Remote history: text and sender facts only.
-   * @param options - branded conversation scope.
+   * @param options - real or simulation conversation scope.
    * @returns inbound rows oldest first.
    */
   @Remote('queryHistory')
@@ -447,7 +443,7 @@ export class ImDeliveryService extends TypertRemoteService {
   }
 
   /**
-   * GUI Remote manual send: queues `human_manual` outbound and does not flush adapters.
+   * GUI Remote manual send: queues `human_manual` outbound; does not flush adapters.
    * @param options - request id, target scope, and text.
    * @returns the queued outbound row.
    */
@@ -464,28 +460,38 @@ export class ImDeliveryService extends TypertRemoteService {
   }
 
   /**
-   * Cancel pending outbound AI messages for a specific scope.
-   * Disabling a conversation cancels pending AI messages without batch flushing on re-enable.
-   * @param scopeId - Conversation scope whose pending AI outbound should be cancelled.
-   * @param reason - Pre-send failure reason recorded on each cancelled request.
-   * @returns The cancelled outbound records.
+   * Cancel pending AI outbound for one scope. Does not batch-flush on re-enable.
+   * @param scopeId - conversation scope.
+   * @param reason - pre-send failure reason.
+   * @returns cancelled records.
    */
   async cancelPendingAiOutbound(scopeId: ImScopeId, reason: string): Promise<OutboundMessageRecord[]> {
     const { outboundTable } = this.requireDomain()
     const cancelled: OutboundMessageRecord[] = []
     const now = new Date().toISOString()
-
     for (const [id, record] of outboundTable.entries()) {
       if (record.scopeId === scopeId && record.intent === 'ai' && record.status === 'pending') {
-        const updated = await outboundTable.update(id, prev => ({
+        cancelled.push(await outboundTable.update(id, prev => ({
           ...prev,
           status: 'pre_send_failed',
           preSendFailureReason: reason,
           updatedAt: now,
-        }))
-        cancelled.push(updated)
+        })))
       }
     }
     return cancelled
+  }
+
+  /**
+   * GUI Remote cancel of pending AI outbound. Host encodes the scope.
+   * @param options - conversation scope and failure reason.
+   * @returns cancelled outbound rows.
+   */
+  @Remote('cancelPendingAiOutbound')
+  async remoteExportCancelPendingAiOutbound(
+    options: ImGuiCancelPendingAiOutboundOptions,
+  ): Promise<ImGuiOutboundView[]> {
+    return (await this.cancelPendingAiOutbound(encodeScopeId(options.scope), options.reason))
+      .map(guiOutboundViewOf)
   }
 }

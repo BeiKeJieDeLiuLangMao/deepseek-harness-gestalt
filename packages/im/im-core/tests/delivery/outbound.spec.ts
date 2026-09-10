@@ -293,4 +293,49 @@ describe('ImDeliveryService - Outbound Delivery & Safety', () => {
     expect(listed.map(record => record.requestId)).toEqual(['req-list-1'])
     expect(listed[0]?.status).toBe('pending')
   })
+
+  it('cancels pending AI outbound for a GUI scope without flushing adapters', async () => {
+    const accountId = brandString<ImAccountId>('acc-cancel-gui')
+    await configService.upsertAccount({
+      id: accountId,
+      platform: 'dingtalk',
+      displayName: 'Cancel Account',
+      paused: false,
+    })
+    await configService.createRouteRule({
+      id: brandString<ImRouteRuleId>('rule-cancel-gui'),
+      accountId,
+      conversationKind: 'direct',
+      target: { kind: 'all' },
+      workspaceId: brandString<WorkspaceId>('ws-cancel-gui'),
+      enabled: true,
+    })
+    const scope: ImDeliveryScope = {
+      kind: 'real',
+      platform: 'dingtalk',
+      accountId,
+      conversationId: 'gui-all',
+      conversationKind: 'direct',
+    }
+    await deliveryService.registerOutbound({
+      requestId: brandString<ImOutboundRequestId>('req-ai-gui'),
+      scope,
+      intent: 'ai',
+      content: { text: 'pending ai' },
+    })
+    await deliveryService.registerOutbound({
+      requestId: brandString<ImOutboundRequestId>('req-human-gui'),
+      scope,
+      intent: 'human_manual',
+      content: { text: 'manual stays' },
+    })
+    const cancelled = await deliveryService.remoteExportCancelPendingAiOutbound({
+      scope,
+      reason: 'conversation_route_disabled',
+    })
+    expect(cancelled.map(row => row.requestId)).toEqual(['req-ai-gui'])
+    expect(cancelled[0]?.status).toBe('pre_send_failed')
+    const remaining = await deliveryService.listOutbound({ scopeId: encodeScopeId(scope) })
+    expect(remaining.find(row => row.requestId === 'req-human-gui')?.status).toBe('pending')
+  })
 })

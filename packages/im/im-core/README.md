@@ -40,7 +40,7 @@ Mounted at `ctx.imConfig` for configuration and routing, `ctx.imDelivery` for me
 - `settleOutbound(options: SettleOutboundOptions): Promise<OutboundMessageRecord>`
 - `getOutbound(requestId: ImOutboundRequestId): Promise<OutboundMessageRecord | undefined>`
 - `listOutbound(options: ListImOutboundOptions): Promise<OutboundMessageRecord[]>` — GUI Remote `listOutbound` returns `ImGuiOutboundView[]` and does not flush adapters
-- `cancelPendingAiOutbound(scopeId: ImScopeId, reason: string): Promise<OutboundMessageRecord[]>`
+- `cancelPendingAiOutbound(scopeId: ImScopeId, reason: string): Promise<OutboundMessageRecord[]>` — GUI Remote `cancelPendingAiOutbound` takes `{ scope, reason }`
 
 ### Public Methods: imExecution
 

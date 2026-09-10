@@ -35,7 +35,7 @@ Connect a DingTalk or Wangwang account under Settings → IM Accounts. Add takeo
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-`apply` registers `settings.section` id `im-accounts`, two `workspace.settings.section` cards (`im-takeover`, `im-simulation`), and one official Sidebar tab (`@deepseek-ai/dsh-client-ui-im/conversation`). Accounts, routes, and simulation targets persist through `ctx.remote.imConfig`. The conversation stream refreshes from `ctx.remote.imDelivery` (`queryHistory`, `listOutbound`); manual send calls `registerManualOutbound` and does not flush adapters. Wangwang secrets mint a credential reference and are discarded. Feishu is not offered. Composition: `tsconfig.client.json` references the package; `packages/bundle/web-app/cordis.patch.yml` carries the `ui-im` browser row.
+`apply` registers `settings.section` id `im-accounts`, two `workspace.settings.section` cards (`im-takeover`, `im-simulation`), and one official Sidebar tab (`@deepseek-ai/dsh-client-ui-im/conversation`). Accounts, routes, and simulation targets persist through `ctx.remote.imConfig`. The conversation stream refreshes from `ctx.remote.imDelivery` (`queryHistory`, `listOutbound`); manual send calls `registerManualOutbound` and does not flush adapters. The strip Enable/Disable affordance writes `updateRouteRule({ enabled })` and, on disable, `cancelPendingAiOutbound`. Wangwang secrets mint a credential reference and are discarded. Feishu is not offered. Composition: `tsconfig.client.json` references the package; `packages/bundle/web-app/cordis.patch.yml` carries the `ui-im` browser row.
 
 </details>
 

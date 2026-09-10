@@ -18,6 +18,7 @@ import {
   conversationFromHost,
   createAccountOptions,
   createRouteOptionsFromDraft,
+  matchingRouteForScope,
   selectedConversationScope,
   snapshotFromHost,
   simulationOptionsFromKey,
@@ -162,7 +163,32 @@ export function createHostImGuiFace(
       })()
     },
     setPanel: (panel) => {
-      store.update((draft) => { draft.conversation.panel = panel })
+      if (panel !== 'live' && panel !== 'disabled') {
+        store.update((draft) => { draft.conversation.panel = panel })
+        return
+      }
+      void (async () => {
+        const [accounts, routes, simulations] = await Promise.all([
+          remote.listAccounts(),
+          remote.listRouteRules(),
+          remote.listSimulationConfigs(),
+        ])
+        if (!accounts.ok || !routes.ok || !simulations.ok) return
+        const scope = selectedConversationScope(accounts.value, routes.value, simulations.value)
+        if (scope === undefined || scope.kind !== 'real') return
+        const route = matchingRouteForScope(routes.value, scope)
+        if (route === undefined) return
+        const enabled = panel === 'live'
+        const updated = await remote.updateRouteRule(route.id, { enabled })
+        if (!updated.ok) return
+        if (!enabled) {
+          await delivery.cancelPendingAiOutbound({
+            scope,
+            reason: 'conversation_route_disabled',
+          })
+        }
+        await refresh()
+      })()
     },
     setRole: (role) => {
       store.update((draft) => { draft.conversation.role = role })

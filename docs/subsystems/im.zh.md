@@ -465,7 +465,7 @@ async listOutbound(options: ListImOutboundOptions): Promise<OutboundMessageRecor
 
 /**
  * GUI Remote history: text and sender facts only.
- * @param options - branded conversation scope.
+ * @param options - real or simulation conversation scope.
  * @returns inbound rows oldest first.
  */
 @Remote('queryHistory') async remoteExportQueryHistory(options: ImGuiHistoryQueryOptions): Promise<ImGuiInboundView[]>
@@ -478,20 +478,26 @@ async listOutbound(options: ListImOutboundOptions): Promise<OutboundMessageRecor
 @Remote('listOutbound') async remoteExportListOutbound(options: ImGuiListOutboundOptions): Promise<ImGuiOutboundView[]>
 
 /**
- * GUI Remote manual send: queues `human_manual` outbound and does not flush adapters.
+ * GUI Remote manual send: queues `human_manual` outbound; does not flush adapters.
  * @param options - request id, target scope, and text.
  * @returns the queued outbound row.
  */
 @Remote('registerManualOutbound') async remoteExportRegisterManualOutbound( options: ImGuiRegisterManualOutboundOptions, ): Promise<ImGuiOutboundView>
 
 /**
- * Cancel pending outbound AI messages for a specific scope.
- * Disabling a conversation cancels pending AI messages without batch flushing on re-enable.
- * @param scopeId - Conversation scope whose pending AI outbound should be cancelled.
- * @param reason - Pre-send failure reason recorded on each cancelled request.
- * @returns The cancelled outbound records.
+ * Cancel pending AI outbound for one scope. Does not batch-flush on re-enable.
+ * @param scopeId - conversation scope.
+ * @param reason - pre-send failure reason.
+ * @returns cancelled records.
  */
 async cancelPendingAiOutbound(scopeId: ImScopeId, reason: string): Promise<OutboundMessageRecord[]>
+
+/**
+ * GUI Remote cancel of pending AI outbound. Host encodes the scope.
+ * @param options - conversation scope and failure reason.
+ * @returns cancelled outbound rows.
+ */
+@Remote('cancelPendingAiOutbound') async remoteExportCancelPendingAiOutbound( options: ImGuiCancelPendingAiOutboundOptions, ): Promise<ImGuiOutboundView[]>
 ```
 
 Source: [`packages/im/im-core/src/delivery/service.ts`](../../packages/im/im-core/src/delivery/service.ts)

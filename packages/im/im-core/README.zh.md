@@ -40,7 +40,7 @@ DeepSeek Harness 的 IM 领域配置、账号与路由核心服务。
 - `settleOutbound(options: SettleOutboundOptions): Promise<OutboundMessageRecord>`
 - `getOutbound(requestId: ImOutboundRequestId): Promise<OutboundMessageRecord | undefined>`
 - `listOutbound(options: ListImOutboundOptions): Promise<OutboundMessageRecord[]>` — GUI Remote `listOutbound` 返回 `ImGuiOutboundView[]`，不 flush 适配器
-- `cancelPendingAiOutbound(scopeId: ImScopeId, reason: string): Promise<OutboundMessageRecord[]>`
+- `cancelPendingAiOutbound(scopeId: ImScopeId, reason: string): Promise<OutboundMessageRecord[]>` — GUI Remote `cancelPendingAiOutbound` 收 `{ scope, reason }`
 
 ### 公共方法：imExecution
 

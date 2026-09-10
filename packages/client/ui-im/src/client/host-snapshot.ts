@@ -234,6 +234,25 @@ export function selectedConversationScope(
 }
 
 /**
+ * Find the takeover rule that covers a real GUI conversation scope.
+ * @param routes - durable takeover rules.
+ * @param scope - selected real conversation.
+ * @returns the matching rule, or undefined.
+ */
+export function matchingRouteForScope(
+  routes: readonly ImRouteRule[],
+  scope: ImDeliveryScope,
+): ImRouteRule | undefined {
+  if (scope.kind !== 'real') return undefined
+  return routes.find((row) => {
+    if (row.accountId !== scope.accountId) return false
+    if (row.conversationKind !== (scope.conversationKind ?? 'direct')) return false
+    if (row.target.kind === 'all') return scope.conversationId === 'gui-all'
+    return row.target.conversationId === scope.conversationId
+  })
+}
+
+/**
  * Map inbound and outbound Host records onto one Sidebar stream.
  * Outbound `result_unknown` stays distinct from `sent`.
  * @param inbound - history for the selected scope.
@@ -293,12 +312,7 @@ export function conversationFromHost(
     }
   }
   const account = accounts.find(row => row.id === scope.accountId)
-  const route = routes.find((row) => {
-    if (row.accountId !== scope.accountId) return false
-    if (row.conversationKind !== (scope.conversationKind ?? 'direct')) return false
-    if (row.target.kind === 'all') return scope.conversationId === 'gui-all'
-    return row.target.conversationId === scope.conversationId
-  })
+  const route = matchingRouteForScope(routes, scope)
   const panel: ImPanelMode = account?.status !== 'connected'
     ? 'offline'
     : route === undefined

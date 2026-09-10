@@ -35,7 +35,7 @@ kind: "package-reference"
 <details>
 <summary>实现细节——点击展开</summary>
 
-`apply` 注册 `settings.section`（id `im-accounts`）、两张 `workspace.settings.section` 卡片（`im-takeover`、`im-simulation`），以及一个官方 Sidebar 标签（`@deepseek-ai/dsh-client-ui-im/conversation`）。账号、路由与模拟目标经 `ctx.remote.imConfig` 持久化。对话流从 `ctx.remote.imDelivery`（`queryHistory`、`listOutbound`）刷新；人工发送调用 `registerManualOutbound`，不 flush 适配器。旺旺密钥只用于生成凭据引用后即丢弃。不提供飞书。组合：`tsconfig.client.json` 引用本包；`packages/bundle/web-app/cordis.patch.yml` 带有 `ui-im` 浏览器行。
+`apply` 注册 `settings.section`（id `im-accounts`）、两张 `workspace.settings.section` 卡片（`im-takeover`、`im-simulation`），以及一个官方 Sidebar 标签（`@deepseek-ai/dsh-client-ui-im/conversation`）。账号、路由与模拟目标经 `ctx.remote.imConfig` 持久化。对话流从 `ctx.remote.imDelivery`（`queryHistory`、`listOutbound`）刷新；人工发送调用 `registerManualOutbound`，不 flush 适配器。条上的启用/停用写入 `updateRouteRule({ enabled })`，停用时再调 `cancelPendingAiOutbound`。旺旺密钥只用于生成凭据引用后即丢弃。不提供飞书。组合：`tsconfig.client.json` 引用本包；`packages/bundle/web-app/cordis.patch.yml` 带有 `ui-im` 浏览器行。
 
 </details>
 

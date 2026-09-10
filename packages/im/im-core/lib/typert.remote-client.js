@@ -167,6 +167,29 @@ const _deepseek_ai_dsh_im_core_imConfig_upsertAccount_result$schema = z.object({
   'createdAt': z.string().readonly(),
   'updatedAt': z.string().readonly(),
 })
+const _deepseek_ai_dsh_im_core_imDelivery_cancelPendingAiOutbound_parameter_0$schema = z.object({
+  'scope': z.union([z.object({
+  'kind': z.literal("real").readonly(),
+  'platform': z.union([z.literal("dingtalk"), z.literal("wangwang")]).readonly(),
+  'accountId': z.intersection(z.string(), z.unknown()).readonly(),
+  'conversationId': z.string().readonly(),
+  'conversationKind': z.union([z.literal("direct"), z.literal("group")]).readonly().optional(),
+}), z.object({
+  'kind': z.literal("sim").readonly(),
+  'instanceId': z.string().readonly(),
+  'conversationId': z.string().readonly(),
+  'conversationKind': z.union([z.literal("direct"), z.literal("group")]).readonly().optional(),
+})]).readonly(),
+  'reason': z.string().readonly(),
+})
+const _deepseek_ai_dsh_im_core_imDelivery_cancelPendingAiOutbound_result$schema = z.array(z.object({
+  'requestId': z.intersection(z.string(), z.unknown()).readonly(),
+  'scopeId': z.intersection(z.string(), z.unknown()).readonly(),
+  'intent': z.union([z.literal("ai"), z.literal("human_manual")]).readonly(),
+  'text': z.string().readonly(),
+  'status': z.union([z.literal("pending"), z.literal("sent"), z.literal("pre_send_failed"), z.literal("result_unknown"), z.literal("confirmed_failed")]).readonly(),
+  'createdAt': z.string().readonly(),
+}))
 const _deepseek_ai_dsh_im_core_imDelivery_listOutbound_parameter_0$schema = z.object({
   'scope': z.union([z.object({
   'kind': z.literal("real").readonly(),
@@ -534,6 +557,32 @@ export const TYPERT_REMOTE = {
       sourceLocation: {"file":"packages/im/im-core/src/service.ts","line":108,"column":9},
     },
     {
+      id: '@deepseek-ai/dsh-im-core#imDelivery/cancelPendingAiOutbound',
+      service: 'imDelivery',
+      namespace: 'imDelivery',
+      method: 'cancelPendingAiOutbound',
+      implementation: 'remoteExportCancelPendingAiOutbound',
+      invocation: { kind: 'direct' },
+      parameters: [
+        {
+          name: 'options',
+          wire: 'options',
+          source: 'json',
+          codec: {
+            mode: 'strict',
+            typeSymbol: '@deepseek-ai/dsh-im-core/client#ImGuiCancelPendingAiOutboundOptions',
+            schema: _deepseek_ai_dsh_im_core_imDelivery_cancelPendingAiOutbound_parameter_0$schema,
+          },
+        },
+      ],
+      result: {
+        mode: 'strict',
+        typeSymbol: '@deepseek-ai/dsh-im-core#imDelivery/cancelPendingAiOutbound:result',
+        schema: _deepseek_ai_dsh_im_core_imDelivery_cancelPendingAiOutbound_result$schema,
+      },
+      sourceLocation: {"file":"packages/im/im-core/src/delivery/service.ts","line":491,"column":9},
+    },
+    {
       id: '@deepseek-ai/dsh-im-core#imDelivery/listOutbound',
       service: 'imDelivery',
       namespace: 'imDelivery',
@@ -557,7 +606,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@deepseek-ai/dsh-im-core#imDelivery/listOutbound:result',
         schema: _deepseek_ai_dsh_im_core_imDelivery_listOutbound_result$schema,
       },
-      sourceLocation: {"file":"packages/im/im-core/src/delivery/service.ts","line":445,"column":9},
+      sourceLocation: {"file":"packages/im/im-core/src/delivery/service.ts","line":441,"column":9},
     },
     {
       id: '@deepseek-ai/dsh-im-core#imDelivery/queryHistory',
@@ -583,7 +632,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@deepseek-ai/dsh-im-core#imDelivery/queryHistory:result',
         schema: _deepseek_ai_dsh_im_core_imDelivery_queryHistory_result$schema,
       },
-      sourceLocation: {"file":"packages/im/im-core/src/delivery/service.ts","line":435,"column":9},
+      sourceLocation: {"file":"packages/im/im-core/src/delivery/service.ts","line":431,"column":9},
     },
     {
       id: '@deepseek-ai/dsh-im-core#imDelivery/registerManualOutbound',
@@ -609,7 +658,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@deepseek-ai/dsh-im-core/client#ImGuiOutboundView',
         schema: _deepseek_ai_dsh_im_core_imDelivery_registerManualOutbound_result$schema,
       },
-      sourceLocation: {"file":"packages/im/im-core/src/delivery/service.ts","line":455,"column":9},
+      sourceLocation: {"file":"packages/im/im-core/src/delivery/service.ts","line":451,"column":9},
     },
   ],
 }

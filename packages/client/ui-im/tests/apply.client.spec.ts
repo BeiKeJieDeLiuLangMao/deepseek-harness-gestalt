@@ -49,6 +49,7 @@ async function mount() {
     queryHistory: () => ok([]),
     listOutbound: () => ok([]),
     registerManualOutbound: () => ok(undefined),
+    cancelPendingAiOutbound: () => ok([]),
   }
   ctx.provide('remote', { imConfig, imDelivery })
   ctx.provide('remote.imConfig', imConfig)

@@ -10,6 +10,7 @@ function emptyDelivery(): ImDeliveryRemote {
     queryHistory: async () => ({ ok: true as const, value: [] }),
     listOutbound: async () => ({ ok: true as const, value: [] }),
     registerManualOutbound: async () => ({ ok: true as const, value: undefined as never }),
+    cancelPendingAiOutbound: async () => ({ ok: true as const, value: [] }),
   } as unknown as ImDeliveryRemote
 }
 
@@ -153,5 +154,70 @@ describe('IM Host GUI controller', () => {
         conversationId: '度假开发联调群',
       },
     })
+  })
+
+  it('disables the matching Host route and cancels pending AI outbound', async () => {
+    const updates: unknown[] = []
+    const cancelled: unknown[] = []
+    const remote = {
+      listAccounts: async () => ({ ok: true as const, value: [{
+        id: 'acc-dt',
+        platform: 'dingtalk' as const,
+        displayName: '陈小宇',
+        status: 'connected' as const,
+        paused: false,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      }] }),
+      listRouteRules: async () => ({ ok: true as const, value: [{
+        id: 'route-group',
+        accountId: 'acc-dt',
+        conversationKind: 'group' as const,
+        target: { kind: 'all' as const },
+        workspaceId: 'ws-tested',
+        enabled: true,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      }] }),
+      listSimulationConfigs: async () => ({ ok: true as const, value: [] }),
+      upsertAccount: async () => ({ ok: true as const, value: undefined as never }),
+      pauseAccount: async () => ({ ok: true as const, value: undefined as never }),
+      deleteAccount: async () => ({ ok: true as const, value: false }),
+      deleteRouteRule: async () => ({ ok: true as const, value: false }),
+      getSimulationConfig: async () => ({ ok: true as const, value: undefined }),
+      createRouteRule: async () => ({ ok: true as const, value: undefined as never }),
+      updateRouteRule: async (id: unknown, patch: unknown) => {
+        updates.push({ id, patch })
+        return { ok: true as const, value: undefined as never }
+      },
+      setSimulationConfig: async () => ({ ok: true as const, value: undefined as never }),
+      deleteSimulationConfig: async () => ({ ok: true as const, value: false }),
+    } as unknown as ImConfigRemote
+    const delivery = {
+      queryHistory: async () => ({ ok: true as const, value: [] }),
+      listOutbound: async () => ({ ok: true as const, value: [] }),
+      registerManualOutbound: async () => ({ ok: true as const, value: undefined as never }),
+      cancelPendingAiOutbound: async (options: unknown) => {
+        cancelled.push(options)
+        return { ok: true as const, value: [] }
+      },
+    } as unknown as ImDeliveryRemote
+    const face = createHostImGuiFace(createImGuiStore(emptyGuiSnapshot()), remote, delivery)
+    await Promise.resolve()
+    face.setPanel('disabled')
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(updates).toEqual([{ id: 'route-group', patch: { enabled: false } }])
+    expect(cancelled).toEqual([{
+      scope: {
+        kind: 'real',
+        platform: 'dingtalk',
+        accountId: 'acc-dt',
+        conversationId: 'gui-all',
+        conversationKind: 'group',
+      },
+      reason: 'conversation_route_disabled',
+    }])
   })
 })
