@@ -246,4 +246,31 @@ describe('DingTalk DWS Adapter Counter-Example Defenses', () => {
     expect(result.status).not.toBe('result_unknown')
     expect(result.error).toContain('Local process spawn failed before transmission')
   })
+
+  it('counter-example 6: exit 0 with completely empty stdout (rawOutput="") is ambiguous/unknown, NOT sent', async () => {
+    const ctx = new Context()
+    ctx.imConfig = {
+      getAccount: vi.fn(async () => ({ id: accId, paused: false })),
+    } as unknown as typeof ctx.imConfig
+
+    // dws exits 0 with completely empty stdout
+    ctx.subprocess = {
+      spawn: vi.fn((spec: SubprocessSpawnSpec) => {
+        return createMockHandle(spec, '', 0)
+      }),
+    } as unknown as typeof ctx.subprocess
+
+    const service = new DingTalkDwsAdapterServiceImpl(ctx)
+    const result = await service.sendMessage({
+      accountId: accId,
+      conversationKind: 'group',
+      targetId: 'cid-group-empty-out',
+      text: 'Message that produced empty stdout',
+    })
+
+    expect(result.status).toBe('result_unknown')
+    expect(result.status).not.toBe('sent')
+    expect(result.rawOutput).toBe('')
+    expect(result.error).toContain('no openTaskId receipt')
+  })
 })
