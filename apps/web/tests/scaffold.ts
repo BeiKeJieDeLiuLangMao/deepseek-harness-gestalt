@@ -358,6 +358,8 @@ export interface LaunchOptions {
   persistenceSeed?: string
   /** Copy an existing storage-domain tree before the Host boots and reads it. */
   storageSeed?: string
+  /** Force the Host native-path capability for platform-independent UI assertions. */
+  nativeOpen?: boolean
 }
 
 /** Dispose the booted tree and remove both owned temp roots, reporting every independent cleanup failure. */
@@ -514,6 +516,12 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     // to an absolute temp root (removed with the workspace at close) so tests
     // never write the user's harness home.
     { id: 'storage-json', config: { root: storageRoot } },
+    ...options.nativeOpen === undefined
+      ? []
+      : [
+        { id: 'session-controller', config: { nativeOpen: options.nativeOpen } },
+        { id: 'settings-controller', config: { nativeOpen: options.nativeOpen } },
+      ],
     // Skill discovery is model-visible input. Pin every host-level root inside
     // the owned temp world so ~/.dsh, ~/.agents, and a bundled-root env setting
     // cannot change replay requests or conversation goldens. Project roots stay

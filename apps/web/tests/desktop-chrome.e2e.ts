@@ -231,7 +231,9 @@ describe('web e2e: Desktop Session Surface overlay', () => {
         return [rect.x, rect.y, rect.width, rect.height, window.innerWidth, window.innerHeight]
       })).toEqual([0, 0, 1280, 800, 1280, 800])
       await dialog.getByRole('button', { name: 'Models', exact: true }).click()
-      await dialog.getByRole('button', { name: 'Add a custom provider', exact: true }).waitFor()
+      const addCustom = dialog.getByRole('button', { name: 'Add a custom provider', exact: true })
+      await addCustom.waitFor()
+      await expect.poll(() => addCustom.isEnabled(), { timeout: 10_000 }).toBe(true)
       await compareOrRefreshGolden(SETTINGS_EXPECTED, await captureStableAria(
         overlay, '[role="dialog"]', scaffold.workspaceCwd,
       ), MODE)

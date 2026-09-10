@@ -3,20 +3,19 @@
 // assembled lane adapts from a coarse width budget and keeps a capability-gated folder handoff.
 // The folder request is intercepted so one real browser click can exercise
 // the full client carrier without launching a native application in CI.
-import { fileURLToPath } from 'node:url'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed, vi } from 'vitest'
 import { ToolCallId, createAssistantMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SESSION_FORMAT_VERSION, Session, SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-title'
+import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import {
   launchWebScaffold, seedSession, watchConsole, webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
 import { newEnglishPage, saveFailureShot } from './support.ts'
 
 const MODE = webSnapshotMode()
-const OVERLAY = fileURLToPath(new URL('./produced-files.overlay.yml', import.meta.url))
 const SEED_ID = 'produced-files-web-e2e'
 const DONE = 'PRODUCED_FILES_DONE'
 
@@ -110,7 +109,8 @@ describe('web e2e: a finished turn ends with the files it produced', () => {
   let tripwire: ReturnType<typeof watchConsole>
 
   beforeAll(async () => {
-    scaffold = await launchWebScaffold({ extraOverlayPath: OVERLAY })
+    scaffold = await launchWebScaffold({ nativeOpen: true })
+    await scaffold.ctx.settings.update(settingsNamespace('dsh-better-sidebar'), { interceptOpenPath: false })
     await seedSession(scaffold, producedFixture(), SEED_ID)
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
@@ -149,8 +149,8 @@ describe('web e2e: a finished turn ends with the files it produced', () => {
     const row = page.locator('[data-produced-files-row]')
     await row.waitFor({ timeout: 15_000 })
     const chips = row.getByRole('button')
-    await expect.poll(() => chips.count()).toBe(6)
-    await expect.poll(() => row.getByText('+ 4 files', { exact: true }).isVisible()).toBe(true)
+    await expect.poll(() => chips.count()).toBe(3)
+    await expect.poll(() => row.getByText('+ 7 files', { exact: true }).isVisible()).toBe(true)
 
     await page.setViewportSize({ width: 780, height: 900 })
     await expect.poll(() => chips.count()).toBe(5)
