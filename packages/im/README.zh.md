@@ -34,3 +34,4 @@ IM 组为外部通讯平台（如钉钉、旺旺）提供账号接管与消息�
 
 - [IM 账号接管规范](../../.agents/design/im-takeover/specification.md) — 问题背景、架构契约与用户故事。
 - [IM 接管 Agent Note](../../.agents/notes/proposed/feature/2026-09-07-im-account-takeover.zh.md) — 架构不变量与 B0 复核结论。
+- [ui-im](../client/ui-im/README.zh.md) — 设置中的 IM 账号、工作区接管/模拟卡片，以及侧栏 IM 对话标签页。

@@ -352,6 +352,10 @@
     - id: ui-phone
       name: '@deepseek-ai/dsh-client-ui-phone'
 
+    # IM Accounts settings, workspace takeover/simulation cards, Sidebar IM tab.
+    - id: ui-im
+      name: '@deepseek-ai/dsh-client-ui-im'
+
     # Goal surface: GoalBar in the input dock over the goal session projection.
     - id: ui-goal
       name: '@deepseek-ai/dsh-client-ui-goal'

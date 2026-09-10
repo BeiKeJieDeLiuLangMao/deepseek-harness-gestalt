@@ -14,10 +14,10 @@
  * A decide that reports the invitation is no longer pending closes the wizard
  * and drops that id from the poll so a retracted card cannot submit again.
  */
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Button, Modal, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { WorkspaceId } from '@deepseek-ai/dsh-api-workspace-controller/client'
-import type { WorkspaceBrowserProps } from './contract/slots.ts'
+import type { WorkspaceBrowserProps, WorkspaceSettingsSectionOwnerProps } from './contract/slots.ts'
 import { grantableInviteRoles } from '@deepseek-ai/dsh-project-membership/invite-role'
 import type {
   ProjectMembershipGateway, WorkspaceIssuedInvitation, WorkspaceMemberRow,
@@ -98,7 +98,7 @@ function membershipFailureCode(text: string): keyof typeof MEMBERSHIP_ERROR_COPY
  * The workspace settings modal. Unmounted when closed; the bound project and
  * its roster live in local state so a reopened modal re-reads fresh facts.
  */
-export function WorkspaceSettingsModal({ workspaceId, workspaceTitle, workspacePath, gateway, onClose, t }: {
+export function WorkspaceSettingsModal({ workspaceId, workspaceTitle, workspacePath, gateway, onClose, t, renderSlot }: {
   /** Exact local Workspace whose Cloud Project relationship is being managed. */
   workspaceId: WorkspaceId
   /** Title of the workspace being configured (heading context only). */
@@ -108,6 +108,11 @@ export function WorkspaceSettingsModal({ workspaceId, workspaceTitle, workspaceP
   gateway: ProjectMembershipGateway
   onClose: () => void
   t: SettingsTranslate
+  /**
+   * Contributed cards after repository and collaboration. Omitted in
+   * isolation tests that only exercise the membership body.
+   */
+  renderSlot?: (owner: WorkspaceSettingsSectionOwnerProps) => ReactNode
 }) {
   const [project, setProject] = useState<WorkspaceProjectView | null | undefined>(undefined)
   const [name, setName] = useState('')
@@ -204,6 +209,7 @@ export function WorkspaceSettingsModal({ workspaceId, workspaceTitle, workspaceP
                 </div>
               )}
         </section>
+        {renderSlot?.({ workspaceId })}
       </article>
     </Modal>
   )

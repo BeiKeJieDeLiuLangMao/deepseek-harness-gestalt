@@ -34,3 +34,4 @@ The IM group provides account takeover and message routing capabilities for exte
 
 - [IM Account Takeover Specification](../../.agents/design/im-takeover/specification.md) — canonical problem statement, architecture contracts, and user stories.
 - [IM Takeover Agent Note](../../.agents/notes/proposed/feature/2026-09-07-im-account-takeover.md) — architectural invariants and B0 grounding review.
+- [ui-im](../client/ui-im/README.md) — Settings IM Accounts, workspace takeover/simulation cards, and the Sidebar conversation tab.

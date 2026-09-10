@@ -40,6 +40,7 @@ export type {
   ProjectMembershipGateway, WorkspaceBrowserInjected, WorkspaceBrowserProps,
   WorkspaceIssuedInvitation, WorkspaceMemberRow, WorkspacePendingInvitation,
   WorkspacePickerInjected, WorkspacePickerProps, WorkspaceProjectRole, WorkspaceProjectView,
+  WorkspaceSettingsSectionOwnerProps,
 } from './contract/slots.ts'
 export type { WorkspaceKey } from './locales.ts'
 export { Config } from '../config.ts'
@@ -177,7 +178,10 @@ export function apply(ctx: Context, config?: WorkspaceConfig): void {
   ctx.slots.inject('sidebar.workspaces', () => ctx.slots.register(
     {
       name: 'sidebar.workspaces',
-      children: { 'sidebar.workspaces.directoryFlow': { kind: 'single', scope: 'root' } },
+      children: {
+        'sidebar.workspaces.directoryFlow': { kind: 'single', scope: 'root' },
+        'workspace.settings.section': { kind: 'list', scope: 'root' },
+      },
       store: createWorkspaceViewStore(),
       inject: browserInjected,
       locale: NS,
