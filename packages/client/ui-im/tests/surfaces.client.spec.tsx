@@ -17,30 +17,45 @@ import {
   routeDraftError, wangwangCredError,
 } from '../src/client/model.ts'
 import { zh } from '../src/client/locales.ts'
+import type { AccountsSectionProps } from '../src/client/AccountsSection.tsx'
+import type { TakeoverSectionProps } from '../src/client/TakeoverSection.tsx'
+import type { SimulationSectionProps } from '../src/client/SimulationSection.tsx'
+import type { ConversationTabProps } from '../src/client/ConversationTab.tsx'
 
 afterEach(cleanup)
 
 const t = makeTranslate(zh)
+const workspace = (id: string) => id as TakeoverSectionProps['workspaceId']
 
 function bind(store = createImGuiStore(prototypeGuiSnapshot())) {
   const face = createImGuiFace(store)
+  const shared = {
+    t,
+    close: () => {},
+    useGui: bindSnapshotSelector(store),
+    connect: face.connect,
+    setPaused: face.setPaused,
+    disconnect: face.disconnect,
+    saveRoute: face.saveRoute,
+    setRouteEnabled: face.setRouteEnabled,
+    setSimulationTarget: face.setSimulationTarget,
+    manualSend: face.manualSend,
+    setPanel: face.setPanel,
+    setRole: face.setRole,
+  }
   return {
     store,
     face,
-    props: {
-      t,
-      close: () => {},
-      useGui: bindSnapshotSelector(store),
-      connect: face.connect,
-      setPaused: face.setPaused,
-      disconnect: face.disconnect,
-      saveRoute: face.saveRoute,
-      setRouteEnabled: face.setRouteEnabled,
-      setSimulationTarget: face.setSimulationTarget,
-      manualSend: face.manualSend,
-      setPanel: face.setPanel,
-      setRole: face.setRole,
-    } as never,
+    accounts: shared as unknown as AccountsSectionProps,
+    takeover: (workspaceId: string) => ({
+      ...shared,
+      workspaceId: workspace(workspaceId),
+    } as unknown as TakeoverSectionProps),
+    simulation: (workspaceId: string) => ({
+      ...shared,
+      workspaceId: workspace(workspaceId),
+    } as unknown as SimulationSectionProps),
+    conversation: shared as unknown as ConversationTabProps,
   }
 }
 
@@ -61,8 +76,8 @@ describe('IM GUI surfaces', () => {
   })
 
   it('edits a specific group route and keeps the binding when disabled', () => {
-    const { props, store } = bind()
-    render(<TakeoverSection workspaceId="ws-tested" {...props} />)
+    const { takeover, store } = bind()
+    render(<TakeoverSection {...takeover('ws-tested')} />)
     fireEvent.click(screen.getAllByRole('button', { name: zh.editRoute })[0]!)
     fireEvent.click(screen.getByLabelText(zh.scopeSpecific))
     const targets = screen.getByLabelText(zh.targetsPlaceholder)
@@ -72,7 +87,7 @@ describe('IM GUI surfaces', () => {
     expect(route?.scope).toBe('specific')
     expect(route?.targets).toEqual(['度假开发联调群', '支付值班群'])
     cleanup()
-    render(<TakeoverSection workspaceId="ws-tested" {...props} />)
+    render(<TakeoverSection {...takeover('ws-tested')} />)
     fireEvent.click(screen.getAllByRole('switch', { name: zh.enabled })[0]!)
     const disabled = store.getSnapshot().routes.find(row => row.id === 'route-group')
     expect(disabled?.enabled).toBe(false)
@@ -81,11 +96,11 @@ describe('IM GUI surfaces', () => {
   })
 
   it('keeps simulation tools unavailable until a configured target is selected', () => {
-    const { props, store } = bind(createImGuiStore({
+    const { simulation, store } = bind(createImGuiStore({
       ...prototypeGuiSnapshot(),
       simulationByWorkspace: {},
     }))
-    render(<SimulationSection workspaceId="ws-simuser" {...props} />)
+    render(<SimulationSection {...simulation('ws-simuser')} />)
     expect(screen.getByText(zh.toolsUnavailable)).toBeTruthy()
     fireEvent.change(screen.getByLabelText(zh.simulationSelect), { target: { value: 'all:route-dm' } })
     expect(store.getSnapshot().simulationByWorkspace['ws-simuser']).toBe('all:route-dm')
@@ -93,8 +108,8 @@ describe('IM GUI surfaces', () => {
   })
 
   it('renders sender badges and does not treat result_unknown as sent', () => {
-    const { props } = bind()
-    render(<ConversationTab {...props} />)
+    const { conversation } = bind()
+    render(<ConversationTab {...conversation} />)
     expect(screen.getByText(zh.senderExternal)).toBeTruthy()
     expect(screen.getByText(zh.senderAi)).toBeTruthy()
     expect(screen.getByText(zh.senderNative)).toBeTruthy()
@@ -108,8 +123,8 @@ describe('IM GUI surfaces', () => {
   })
 
   it('sends manually as human_dsh while automatic handling is off', () => {
-    const { props, store } = bind()
-    render(<ConversationTab {...props} />)
+    const { conversation, store } = bind()
+    render(<ConversationTab {...conversation} />)
     fireEvent.click(screen.getByRole('button', { name: zh.liveDisable }))
     expect(store.getSnapshot().conversation.panel).toBe('disabled')
     fireEvent.change(screen.getByLabelText(zh.composerHint), { target: { value: '我来跟进' } })
@@ -119,8 +134,8 @@ describe('IM GUI surfaces', () => {
   })
 
   it('navigates both simulated-user and tested-agent sessions', () => {
-    const { props, store } = bind()
-    render(<ConversationTab {...props} />)
+    const { conversation, store } = bind()
+    render(<ConversationTab {...conversation} />)
     fireEvent.click(screen.getByRole('button', { name: zh.openSimuser }))
     expect(store.getSnapshot().conversation.role).toBe('simuser')
     fireEvent.click(screen.getByRole('button', { name: zh.openTested }))
@@ -128,8 +143,8 @@ describe('IM GUI surfaces', () => {
   })
 
   it('walks the prototype experience route across the three surfaces', () => {
-    const { props, store } = bind(createImGuiStore(emptyGuiSnapshot()))
-    render(<AccountsSection close={() => {}} {...props} />)
+    const { accounts, takeover, simulation, conversation, store } = bind(createImGuiStore(emptyGuiSnapshot()))
+    render(<AccountsSection {...accounts} />)
     fireEvent.click(screen.getByRole('button', { name: zh.addAccount }))
     fireEvent.click(screen.getByRole('button', { name: zh.dingtalk }))
     fireEvent.click(screen.getByRole('button', { name: zh.next }))
@@ -138,14 +153,14 @@ describe('IM GUI surfaces', () => {
     expect(store.getSnapshot().accounts[0]?.credentialRef).toMatch(/^cred:/)
     expect(JSON.stringify(store.getSnapshot())).not.toMatch(/secret/i)
     cleanup()
-    render(<TakeoverSection workspaceId="ws-tested" {...props} />)
+    render(<TakeoverSection {...takeover('ws-tested')} />)
     fireEvent.click(screen.getByRole('button', { name: zh.addRoute }))
     fireEvent.click(screen.getByRole('button', { name: zh.addRouteDisabled }))
     const added = store.getSnapshot().routes[0]
     expect(added?.enabled).toBe(false)
     expect(added?.workspaceId).toBe('ws-tested')
     cleanup()
-    render(<SimulationSection workspaceId="ws-tested" {...props} />)
+    render(<SimulationSection {...simulation('ws-tested')} />)
     fireEvent.change(screen.getByLabelText(zh.simulationSelect), {
       target: { value: `all:${added?.id ?? ''}` },
     })
@@ -158,7 +173,7 @@ describe('IM GUI surfaces', () => {
         role: 'simuser',
       }
     })
-    render(<ConversationTab {...props} />)
+    render(<ConversationTab {...conversation} />)
     expect(screen.getByText(zh.senderExternal)).toBeTruthy()
     expect(screen.getByText(zh.deliveryUnknown)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: zh.openTested }))
