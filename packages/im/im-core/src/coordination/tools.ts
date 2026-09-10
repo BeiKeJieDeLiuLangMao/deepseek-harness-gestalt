@@ -105,6 +105,7 @@ export function registerImTools(ctx: Context): () => void {
           }
 
           let workspaceId: WorkspaceId | undefined
+          let conversationKind = parsedScope.conversationKind ?? 'direct'
 
           if (parsedScope.kind === 'real') {
             const rules = await ctx.imConfig.listRouteRules()
@@ -114,7 +115,7 @@ export function registerImTools(ctx: Context): () => void {
                 ((r.target.kind === 'specific' && r.target.conversationId === parsedScope.conversationId) ||
                   r.target.kind === 'all'),
             )
-            const conversationKind = parsedScope.conversationKind ?? matchedRule?.conversationKind ?? 'direct'
+            conversationKind = parsedScope.conversationKind ?? matchedRule?.conversationKind ?? 'direct'
             const routeResult = await ctx.imConfig.resolveRoute({
               accountId: parsedScope.accountId,
               conversationKind,
@@ -145,6 +146,39 @@ export function registerImTools(ctx: Context): () => void {
             `out-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
           )
 
+          // Wangwang.sendMessage owns registerOutbound; calling it here would double-register.
+          if (parsedScope.kind === 'real' && parsedScope.platform === 'wangwang') {
+            const wangwang = ctx.get('imWangwang') as
+              | {
+                getAdmittedMerchantByAccount?: (accountId: ImAccountId) => {
+                  merchantId: string
+                  mainServiceAccountId?: string
+                }
+                sendMessage: (request: Record<string, unknown>) => Promise<{
+                  status: string
+                  error?: string
+                }>
+              }
+              | undefined
+            if (!wangwang) {
+              throw new Error('Wangwang adapter (imWangwang) is not available; cannot send real outbound')
+            }
+            const merchant = wangwang.getAdmittedMerchantByAccount?.(parsedScope.accountId)
+            const sendResult = await wangwang.sendMessage({
+              accountId: parsedScope.accountId,
+              merchantId: merchant?.merchantId ?? String(parsedScope.accountId),
+              customerId: parsedScope.conversationId,
+              content: args.text,
+              userId: merchant?.mainServiceAccountId ?? String(parsedScope.accountId),
+              requestId,
+              isAi: true,
+            })
+            if (sendResult.status !== 'sent') {
+              throw new Error(`Wangwang send failed: ${sendResult.error ?? sendResult.status}`)
+            }
+            return { status: 'sent', requestId, scopeId: args.scopeId, sent: true }
+          }
+
           const outbound = await ctx.imDelivery.registerOutbound({
             requestId,
             scope: parsedScope,
@@ -160,6 +194,60 @@ export function registerImTools(ctx: Context): () => void {
             throw new Error(
               `Outbound message pre-send validation failed: ${outbound.preSendFailureReason ?? 'unknown reason'}`,
             )
+          }
+
+          if (parsedScope.kind === 'real' && parsedScope.platform === 'dingtalk') {
+            const dingtalk = ctx.get('imDingtalk') as
+              | {
+                sendMessage: (request: {
+                  accountId: ImAccountId
+                  conversationKind: typeof conversationKind
+                  targetId: string
+                  text: string
+                  isAi: true
+                }) => Promise<{ status: string; openTaskId?: string; error?: string }>
+              }
+              | undefined
+            if (!dingtalk) {
+              throw new Error('DingTalk adapter (imDingtalk) is not available; cannot send real outbound')
+            }
+            const sent = await dingtalk.sendMessage({
+              accountId: parsedScope.accountId,
+              conversationKind,
+              targetId: parsedScope.conversationId,
+              text: args.text,
+              isAi: true,
+            })
+            if (sent.status !== 'sent') {
+              await ctx.imDelivery.settleOutbound({
+                requestId,
+                status: sent.status === 'result_unknown' ? 'result_unknown' : 'confirmed_failed',
+                receipt: {
+                  ...(sent.error !== undefined ? { errorMessage: sent.error } : {}),
+                  rawStatus: sent.status,
+                },
+              })
+              throw new Error(`DingTalk send failed: ${sent.error ?? sent.status}`)
+            }
+            const settled = await ctx.imDelivery.settleOutbound({
+              requestId,
+              status: 'sent',
+              receipt: {
+                ...(sent.openTaskId !== undefined ? { externalReceiptId: sent.openTaskId } : {}),
+                rawStatus: 'sent',
+              },
+              ...(sent.openTaskId !== undefined ? { externalMessageId: sent.openTaskId } : {}),
+            })
+            return {
+              status: settled.status,
+              requestId: settled.requestId,
+              scopeId: settled.scopeId,
+              sent: true,
+            }
+          }
+
+          if (parsedScope.kind === 'real') {
+            throw new Error(`Unsupported IM platform for real send: ${parsedScope.platform}`)
           }
 
           return {

@@ -160,7 +160,7 @@ export class ImExecutionService extends Service {
         mentionTriggered = incoming.some((m) => {
           if (m.senderClassification === 'ai_outbound') return false
           const text = m.content.text || ''
-          if (text.includes('@bot') || text.includes('@')) return true
+          if (text.includes('@bot') || /@(bot|dsh)\b/i.test(text)) return true
           const raw = m.content.rawPayload as Record<string, unknown> | undefined
           if (raw) {
             if (Array.isArray(raw.atUsers) && raw.atUsers.length > 0) return true
@@ -274,22 +274,22 @@ export class ImExecutionService extends Service {
     })
 
     const agent = options.agent
-    if (agent) {
-      agent.steer(userMessage)
+    if (!agent) return { triggered: false, workspaceId }
 
-      if (!agent.session) throw new Error('agent.session required to admit IM inbound')
-      const sessions = this.ctx.sessions
-      if (!sessions) throw new Error('sessions service required before admitting IM inbound')
-      const flushed = await sessions.flush(agent.session)
-      if (!flushed) throw new Error('session flush did not persist IM inbound')
-      await this.ctx.imDelivery.markSubmitted({
-        scopeId,
-        messageIds: messagesToSubmit.map(m => m.messageId),
-        ...(options.now !== undefined ? { submittedAt: new Date(options.now).toISOString() } : {}),
-      })
+    agent.steer(userMessage)
 
-      this.resetIntervalTracker(scopeId, nowMs)
-    }
+    if (!agent.session) throw new Error('agent.session required to admit IM inbound')
+    const sessions = this.ctx.sessions
+    if (!sessions) throw new Error('sessions service required before admitting IM inbound')
+    const flushed = await sessions.flush(agent.session)
+    if (!flushed) throw new Error('session flush did not persist IM inbound')
+    await this.ctx.imDelivery.markSubmitted({
+      scopeId,
+      messageIds: messagesToSubmit.map(m => m.messageId),
+      ...(options.now !== undefined ? { submittedAt: new Date(options.now).toISOString() } : {}),
+    })
+
+    this.resetIntervalTracker(scopeId, nowMs)
 
     return {
       triggered: true,

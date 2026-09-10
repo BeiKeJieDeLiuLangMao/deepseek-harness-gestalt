@@ -124,6 +124,45 @@ describe('IM Execution Coordination - Group Trigger OR', () => {
     expect(steerSpy).toHaveBeenCalledTimes(1)
   })
 
+  it('email addresses do not count as mention', async () => {
+    const scope = await setupGroup('acc-dt-email', 'ws-email', 'group-email', {
+      mention: true,
+      everyN: 5,
+    })
+    const inbound = await deliveryService.receiveInbound({
+      scope,
+      externalMessageId: 'ext-email-1',
+      senderClassification: 'external',
+      senderEvidence: {},
+      content: { text: 'please mail support@example.com about this' },
+    })
+    const steerSpy = vi.fn()
+    const result = await ctx.imExecution.admitInbound({
+      message: inbound.message,
+      agent: createMockAgent(steerSpy, 'mock-session-email'),
+    })
+    expect(result.triggered).toBe(false)
+    expect(steerSpy).not.toHaveBeenCalled()
+  })
+
+  it('does not report triggered without an agent', async () => {
+    const scope = await setupGroup('acc-dt-no-agent', 'ws-no-agent', 'group-no-agent', {
+      mention: true,
+    })
+    const inbound = await deliveryService.receiveInbound({
+      scope,
+      externalMessageId: 'ext-no-agent-1',
+      senderClassification: 'external',
+      senderEvidence: {},
+      content: { text: '@bot ping' },
+    })
+    const result = await ctx.imExecution.admitInbound({
+      message: inbound.message,
+    })
+    expect(result.triggered).toBe(false)
+    expect(result.workspaceId).toBe(brandString<WorkspaceId>('ws-no-agent'))
+  })
+
   it('everyN triggers steer when unsubmittedCount reaches threshold without mention', async () => {
     const scope = await setupGroup('acc-dt-2', 'ws-2', 'group-200', {
       mention: false,

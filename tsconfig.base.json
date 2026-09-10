@@ -278,6 +278,16 @@
       "@deepseek-ai/dsh-util-time": ["./packages/util/time/src"],
       // Public leaves under lib/types need hand-written source-plane aliases;
       // the generator emits only bare package and /invariant entries.
+      "@deepseek-ai/dsh-im-core/types": ["./packages/im/im-core/src/types.ts"],
+      "@deepseek-ai/dsh-im-core/spec": ["./packages/im/im-core/src/spec.ts"],
+      "@deepseek-ai/dsh-im-core/delivery": ["./packages/im/im-core/src/delivery/index.ts"],
+      "@deepseek-ai/dsh-im-core/coordination": ["./packages/im/im-core/src/coordination/index.ts"],
+      "@deepseek-ai/dsh-im-dingtalk/types": ["./packages/im/im-dingtalk/src/types.ts"],
+      "@deepseek-ai/dsh-im-dingtalk/spec": ["./packages/im/im-dingtalk/src/spec.ts"],
+      "@deepseek-ai/dsh-im-dingtalk/service": ["./packages/im/im-dingtalk/src/service.ts"],
+      "@deepseek-ai/dsh-im-wangwang/types": ["./packages/im/im-wangwang/src/types.ts"],
+      "@deepseek-ai/dsh-im-wangwang/spec": ["./packages/im/im-wangwang/src/spec.ts"],
+      "@deepseek-ai/dsh-im-wangwang/service": ["./packages/im/im-wangwang/src/service.ts"],
       "@deepseek-ai/dsh-platform-account/privacy": ["./packages/platform/platform-account/src/privacy.ts"],
       "@deepseek-ai/dsh-project-membership/invite-role": ["./packages/platform/project-membership/src/invite-role.ts"],
       // BEGIN generated package aliases — pnpm run gen-tsconfig-paths
@@ -348,6 +358,9 @@
       "@deepseek-ai/dsh-hooks-claude-code": ["./packages/hooks/hooks-claude-code/src"],
       "@deepseek-ai/dsh-hooks-codex": ["./packages/hooks/hooks-codex/src"],
       "@deepseek-ai/dsh-http-proxy": ["./packages/util/http-proxy/src"],
+      "@deepseek-ai/dsh-im-core": ["./packages/im/im-core/src"],
+      "@deepseek-ai/dsh-im-dingtalk": ["./packages/im/im-dingtalk/src"],
+      "@deepseek-ai/dsh-im-wangwang": ["./packages/im/im-wangwang/src"],
       "@deepseek-ai/dsh-jobs": ["./packages/jobs/jobs/src"],
       "@deepseek-ai/dsh-jobs/invariant": ["./packages/jobs/jobs/src/invariant.ts"],
       "@deepseek-ai/dsh-jobs-local": ["./packages/jobs/jobs-local/src"],
@@ -530,19 +543,7 @@
       "@deepseek-ai/dsh-workflow/invariant": ["./packages/workflow/workflow/src/invariant.ts"],
       "@deepseek-ai/dsh-workflow-worker-thread": ["./packages/workflow/workflow-worker-thread/src"],
       "@deepseek-ai/dsh-workspace": ["./packages/workspace/workspace/src"],
-      "@deepseek-ai/dsh-workspace/invariant": ["./packages/workspace/workspace/src/invariant.ts"],
-      "@deepseek-ai/dsh-im-core": ["./packages/im/im-core/src"],
-      "@deepseek-ai/dsh-im-core/types": ["./packages/im/im-core/src/types.ts"],
-      "@deepseek-ai/dsh-im-core/spec": ["./packages/im/im-core/src/spec.ts"],
-      "@deepseek-ai/dsh-im-core/delivery": ["./packages/im/im-core/src/delivery/index.ts"],
-      "@deepseek-ai/dsh-im-dingtalk": ["./packages/im/im-dingtalk/src"],
-      "@deepseek-ai/dsh-im-dingtalk/types": ["./packages/im/im-dingtalk/src/types.ts"],
-      "@deepseek-ai/dsh-im-dingtalk/spec": ["./packages/im/im-dingtalk/src/spec.ts"],
-      "@deepseek-ai/dsh-im-dingtalk/service": ["./packages/im/im-dingtalk/src/service.ts"],
-      "@deepseek-ai/dsh-im-wangwang": ["./packages/im/im-wangwang/src"],
-      "@deepseek-ai/dsh-im-wangwang/types": ["./packages/im/im-wangwang/src/types.ts"],
-      "@deepseek-ai/dsh-im-wangwang/spec": ["./packages/im/im-wangwang/src/spec.ts"],
-      "@deepseek-ai/dsh-im-wangwang/service": ["./packages/im/im-wangwang/src/service.ts"]
+      "@deepseek-ai/dsh-workspace/invariant": ["./packages/workspace/workspace/src/invariant.ts"]
       // END generated package aliases
     }
   }

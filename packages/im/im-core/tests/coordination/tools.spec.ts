@@ -12,6 +12,7 @@ import type { ImAccountId, ImRouteRuleId } from '../../src/types.ts'
 import {
   ImDeliveryService,
   type ImDeliveryScope,
+  type ImOutboundRequestId,
   encodeScopeId,
 } from '../../src/delivery/index.ts'
 import { ImExecutionService } from '../../src/coordination/index.ts'
@@ -141,14 +142,68 @@ describe('IM Tools - im_send_message and im_query_history', () => {
     }
     const scopeId = encodeScopeId(scope)
 
+    const sendMessage = async (request: {
+      accountId: ImAccountId
+      conversationKind: string
+      targetId: string
+      text: string
+      isAi: boolean
+    }) => {
+      expect(request.accountId).toBe(accountId)
+      expect(request.conversationKind).toBe('direct')
+      expect(request.targetId).toBe(conversationId)
+      expect(request.text).toBe('Agent reply message')
+      expect(request.isAi).toBe(true)
+      return { status: 'sent' as const, openTaskId: 'task-send-1' }
+    }
+    ctx.provide('imDingtalk' as never, { sendMessage })
+
     const sendTool = ctx.tools.get('im_send_message')!
     const result = (await sendTool.execute(
       { scopeId, text: 'Agent reply message' },
       mockExec,
-    )) as { status: string; scopeId: string }
+    )) as { status: string; scopeId: string; sent: boolean; requestId: string }
 
-    expect(result.status).toBe('pending')
+    expect(result.status).toBe('sent')
+    expect(result.sent).toBe(true)
     expect(result.scopeId).toBe(scopeId)
+
+    const outbound = await deliveryService.getOutbound(
+      brandString<ImOutboundRequestId>(result.requestId),
+    )
+    expect(outbound?.status).toBe('sent')
+  })
+
+  it('im_send_message throws when DingTalk adapter is missing', async () => {
+    const accountId = brandString<ImAccountId>('acc-send-no-dt')
+    const workspaceId = brandString<WorkspaceId>('ws-send-no-dt')
+    await configService.upsertAccount({
+      id: accountId,
+      platform: 'dingtalk',
+      displayName: 'No Adapter',
+      status: 'connected',
+      paused: false,
+    })
+    await configService.createRouteRule({
+      id: brandString<ImRouteRuleId>('rule-send-no-dt'),
+      accountId,
+      conversationKind: 'direct',
+      target: { kind: 'all' },
+      workspaceId,
+      enabled: true,
+    })
+    const scopeId = encodeScopeId({
+      kind: 'real',
+      platform: 'dingtalk',
+      accountId,
+      conversationId: 'conv-send-no-dt',
+    })
+    await expect(
+      ctx.tools.get('im_send_message')!.execute(
+        { scopeId, text: 'Cannot send' },
+        mockExec,
+      ),
+    ).rejects.toThrow(/imDingtalk/)
   })
 
   it('im_send_message fails loud when route is disabled or unconfigured', async () => {
@@ -203,5 +258,37 @@ describe('IM Tools - im_send_message and im_query_history', () => {
         mockExec,
       ),
     ).rejects.toThrow(/simulation is not configured/)
+  })
+
+  it('configured simulation scope may remain pending', async () => {
+    const accountId = brandString<ImAccountId>('acc-sim-ok')
+    const workspaceId = brandString<WorkspaceId>('ws-sim-ok')
+    await configService.upsertAccount({
+      id: accountId,
+      platform: 'dingtalk',
+      displayName: 'Sim Account',
+      status: 'connected',
+      paused: false,
+    })
+    await configService.createRouteRule({
+      id: brandString<ImRouteRuleId>('rule-sim-ok'),
+      accountId,
+      conversationKind: 'direct',
+      target: { kind: 'all' },
+      workspaceId,
+      enabled: true,
+    })
+    await configService.setSimulationConfig({
+      workspaceId,
+      targetAccountId: accountId,
+      conversationKind: 'direct',
+    })
+    const sendTool = ctx.tools.get('im_send_message')!
+    const result = (await sendTool.execute(
+      { scopeId: `sim:${workspaceId}:conv-sim-ok`, text: 'Simulated reply' },
+      mockExec,
+    )) as { status: string; sent: boolean }
+    expect(result.status).toBe('pending')
+    expect(result.sent).toBe(false)
   })
 })
