@@ -7,8 +7,9 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 const source = readFileSync(new URL('../scripts/platform-host-deploy.sh', import.meta.url), 'utf8')
-const python = source.split("<<'MEMBERSHIP_PY'\n")[1]?.split('\nMEMBERSHIP_PY')[0]
-if (python === undefined) throw new Error('shipped membership host entry is missing')
+const extractedPython = source.split("<<'MEMBERSHIP_PY'\n")[1]?.split('\nMEMBERSHIP_PY')[0]
+if (extractedPython === undefined) throw new Error('shipped membership host entry is missing')
+const python: string = extractedPython
 const dockerFixture = fileURLToPath(new URL('./fixtures/membership-docker.cjs', import.meta.url))
 const repo = resolve(import.meta.dirname, '../../..')
 const available = spawnSync('python3', ['--version']).status === 0
