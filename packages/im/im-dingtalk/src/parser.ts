@@ -15,8 +15,13 @@ import type { DwsEventRawPayload } from './types.ts'
 /**
  * Classifies the sender and produces justified evidence according to strict facts.
  * Invariants:
- * - Never guess unknown sender facts.
- * - Distinguish human_native, human_dsh, ai_outbound, and external.
+ * - Never guess unknown sender facts (User Story 18).
+ * - Distinguish human_native, human_dsh, ai_outbound, external, and unknown.
+ * - If self account has no explicit clientSource evidence, classify as unknown instead of assuming human_native.
+ *
+ * @param payload - Raw DWS event payload.
+ * @param managedUserId - Optional managed user identifier for self account match.
+ * @returns Classification tag and structured evidence object.
  */
 export function classifySender(
   payload: DwsEventRawPayload,
@@ -68,7 +73,7 @@ export function classifySender(
     }
   }
 
-  if (clientSource === 'native_app' || !clientSource) {
+  if (clientSource === 'native_app') {
     return {
       classification: 'human_native',
       evidence: {
@@ -80,19 +85,23 @@ export function classifySender(
     }
   }
 
+  // Self account without explicit clientSource evidence must remain unknown (Spec Story 18)
   return {
     classification: 'unknown',
     evidence: {
       rawSenderId: senderId,
       rawSenderNick: senderNick,
       isSelfAccount: true,
-      notes: 'Ambiguous self message evidence',
+      notes: 'Ambiguous self message evidence: clientSource absent or unrecognized',
     },
   }
 }
 
 /**
  * Extracts plain text content from a raw payload text or structured object.
+ *
+ * @param content - Unknown raw content object or string.
+ * @returns Plain text representation.
  */
 export function extractTextContent(content: unknown): string {
   if (typeof content === 'string') return content
@@ -107,6 +116,11 @@ export function extractTextContent(content: unknown): string {
 
 /**
  * Parses one raw NDJSON line from DWS into ReceiveInboundOptions, or null if line is ignorable/not a chat message.
+ *
+ * @param line - Raw line text from DWS stdout.
+ * @param accountId - Associated IM account ID.
+ * @param managedUserId - Optional managed user ID.
+ * @returns Inbound delivery options or null if line is ignorable.
  */
 export function parseDwsEventLine(
   line: string,

@@ -88,7 +88,20 @@ describe('DingTalk DWS Parser and Sender Classification', () => {
     expect(evidence.clientSource).toBe('ai_agent')
   })
 
-  it('classifies human native when self account speaks natively without AI tag', () => {
+  it('classifies unknown when self account speaks without explicit clientSource evidence (Spec Story 18)', () => {
+    const payload = {
+      msgId: 'msg-unknown-self',
+      openConversationId: 'cid-group-1',
+      senderId: 'user-self-1',
+      content: 'I spoke without clientSource header',
+    }
+    const { classification, evidence } = classifySender(payload, 'user-self-1')
+    expect(classification).toBe('unknown')
+    expect(evidence.isSelfAccount).toBe(true)
+    expect(evidence.notes).toContain('clientSource absent or unrecognized')
+  })
+
+  it('classifies human native when self account speaks natively with native_app clientSource', () => {
     const payload = {
       msgId: 'msg-human-102',
       openConversationId: 'cid-group-1',

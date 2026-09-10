@@ -79,6 +79,10 @@ export class DingTalkDwsAdapterServiceImpl extends DingTalkDwsAdapterService {
    * Starts event consume stream for the given account via `dws event consume --format ndjson --ephemeral`.
    */
   async startConsumer(accountId: ImAccountId, configOverride?: DingTalkDwsAdapterConfig): Promise<void> {
+    if (this.isDisposed) {
+      throw new Error(`Cannot start consumer for account ${accountId}: DingTalk DWS adapter service is disposed`)
+    }
+
     const existing = this.consumers.get(accountId)
     if (existing && !existing.stopped) {
       return
@@ -155,6 +159,17 @@ export class DingTalkDwsAdapterServiceImpl extends DingTalkDwsAdapterService {
         return
       }
       // Abnormal exit: attempt reconnect if below limit and service is not disposed
+      const stderr = handle.stderrReader !== undefined ? handle.stderrReader.read().text : ''
+      if (stderr !== '') {
+        consumer.lastError = stderr
+        this.consumerStates.set(accountId, {
+          accountId,
+          isRunning: false,
+          reconnectAttempts: consumer.reconnectCount,
+          lastError: stderr,
+        })
+      }
+
       if (consumer.reconnectCount < this.defaultMaxReconnectAttempts && !this.isDisposed) {
         consumer.reconnectCount++
         consumer.stopped = true

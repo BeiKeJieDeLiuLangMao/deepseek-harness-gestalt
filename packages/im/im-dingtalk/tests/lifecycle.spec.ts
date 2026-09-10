@@ -98,7 +98,7 @@ describe('DingTalk DWS Adapter Defensive Lifecycle and Error Handling', () => {
     await service.startConsumer(accId)
     expect(spawnCount).toBe(1)
 
-    // Simulate child crash with exitCode 1
+    // Simulate child crash with exitCode 1 and stderr message
     exitPromiseResolve!({ status: 'exited', exitCode: 1 })
 
     // Wait for reconnect delay
@@ -106,6 +106,55 @@ describe('DingTalk DWS Adapter Defensive Lifecycle and Error Handling', () => {
     expect(spawnCount).toBe(2)
 
     await service.stopConsumer(accId)
+  })
+
+  it('records stderr in consumer state upon abnormal exit and rejects startConsumer when disposed', async () => {
+    const ctx = new Context()
+    let exitPromiseResolve: (outcome: SubprocessOutcome) => void
+
+    ctx.subprocess = {
+      spawn: vi.fn((spec: SubprocessSpawnSpec) => {
+        return {
+          spec,
+          stdin: new Writable({ write(_c, _e, cb) { cb() } }),
+          stdout: new Readable({ read() { this.push(null) } }),
+          stderr: new Readable({ read() { this.push(null) } }),
+          stdoutReader: { read: () => ({ text: '', truncated: false }) },
+          stderrReader: { read: () => ({ text: 'OAuth token expired or invalid', truncated: false }) },
+          terminate: vi.fn(),
+          waitForExit: vi.fn(async () => true),
+          done: new Promise<SubprocessOutcome>((resolve) => {
+            exitPromiseResolve = resolve
+          }),
+        } as unknown as SubprocessHandle
+      }),
+    } as unknown as typeof ctx.subprocess
+
+    ctx.imConfig = {
+      getAccount: vi.fn(async () => ({ id: accId })),
+    } as unknown as typeof ctx.imConfig
+
+    ctx.imDelivery = {
+      receiveInbound: vi.fn(async () => ({} as unknown as ReceiveInboundResult)),
+    } as unknown as typeof ctx.imDelivery
+
+    const service = new DingTalkDwsAdapterServiceImpl(ctx, {
+      reconnectDelayMs: 100,
+      maxReconnectAttempts: 2,
+    })
+
+    await service.startConsumer(accId)
+
+    // Crash with exitCode 2: stderr should populate lastError
+    exitPromiseResolve!({ status: 'exited', exitCode: 2 })
+    await new Promise(resolve => setTimeout(resolve, 10))
+
+    const state = service.getConsumerState(accId)
+    expect(state.lastError).toBe('OAuth token expired or invalid')
+
+    // Dispose context: subsequent startConsumer must immediately reject
+    await ctx.fiber.dispose()
+    await expect(service.startConsumer(accId)).rejects.toThrow('service is disposed')
   })
 
   it('cancels pending reconnect timer and does not spawn new process if stopped or disposed', async () => {
