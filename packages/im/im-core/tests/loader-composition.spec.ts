@@ -74,6 +74,7 @@ describe('im-core real Loader cordis.yml composition and persistence reload', ()
       '  config:',
       "    backend: 'memory'",
       "- name: '@deepseek-ai/dsh-im-core'",
+      "- name: '@deepseek-ai/dsh-im-core/delivery'",
       '',
     ].join('\n')
     await writeFile(configPath, yml)
@@ -88,6 +89,8 @@ describe('im-core real Loader cordis.yml composition and persistence reload', ()
       ruleId: 'rule-loader-1',
       workspaceId: 'ws-loader-1',
       routeStatus: 'matched',
+      inboundMessageId: 'real:dingtalk:acc-loader-dt:group-dyn-101::ext-msg-loader-1',
+      cursorLastReceived: 1,
     })
 
     // Process 2: boots another fresh process through real Loader and reloads config
@@ -120,5 +123,12 @@ describe('im-core real Loader cordis.yml composition and persistence reload', ()
       enabled: true,
       groupTrigger: { mention: true, everyN: 3 },
     })
+    expect(report2.cursor).toMatchObject({
+      scopeId: 'real:dingtalk:acc-loader-dt:group-dyn-101',
+      lastReceivedSequenceNumber: 1,
+      unsubmittedCount: 1,
+    })
+    expect(report2.historyLength).toBe(1)
+    expect(report2.dupeDetected).toBe(true)
   })
 })

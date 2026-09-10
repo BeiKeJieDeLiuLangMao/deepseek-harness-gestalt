@@ -10,9 +10,9 @@ IM domain configuration, accounts, and routing core service for DeepSeek Harness
 
 ## Service
 
-Mounted at `ctx.imConfig`.
+Mounted at `ctx.imConfig` for configuration and routing, and `ctx.imDelivery` for message history, cursor progress, and outbound lifecycle tracking.
 
-### Public Methods
+### Public Methods: imConfig
 
 - `getAccount(id: ImAccountId): Promise<ImAccountMetadata | undefined>`
 - `listAccounts(): Promise<ImAccountMetadata[]>`
@@ -29,6 +29,17 @@ Mounted at `ctx.imConfig`.
 - `setSimulationConfig(options: SetWorkspaceSimulationTargetOptions): Promise<ImWorkspaceSimulationConfig>`
 - `deleteSimulationConfig(workspaceId: WorkspaceId): Promise<boolean>`
 
+### Public Methods: imDelivery
+
+- `receiveInbound(options: ReceiveInboundOptions): Promise<ReceiveInboundResult>`
+- `markSubmitted(options: MarkSubmittedOptions): Promise<ImConversationCursor>`
+- `getCursor(scopeId: ImScopeId): Promise<ImConversationCursor | undefined>`
+- `queryHistory(options: ImHistoryQueryOptions): Promise<InboundMessageRecord[]>`
+- `registerOutbound(options: RegisterOutboundOptions): Promise<OutboundMessageRecord>`
+- `settleOutbound(options: SettleOutboundOptions): Promise<OutboundMessageRecord>`
+- `getOutbound(requestId: ImOutboundRequestId): Promise<OutboundMessageRecord | undefined>`
+- `cancelPendingAiOutbound(scopeId: ImScopeId, reason: string): Promise<OutboundMessageRecord[]>`
+
 ## Invariants
 
 - **Credential Reference**: Only opaque nominal `CredentialRef` is stored; secrets are kept behind the credential seam.
@@ -38,4 +49,7 @@ Mounted at `ctx.imConfig`.
 - **Unconfigured No-Trigger**: Unmatched conversations resolve to `unconfigured` to prevent accidental access.
 - **Group Trigger Invariant**: Group routes require at least one trigger condition (mention, everyN, or fixedIntervalSeconds) with positive numbers.
 - **Simulation Target Restriction**: Workspace simulation targets must reference existing configured accounts and match a configured route rule for that target conversation. Route rules may belong to another workspace, and paused accounts or disabled rules still permit simulation.
+- **Delivery Stages & Cursor Ordering**: Distinct stages (`received` != `submitted` != `sent`). Inbound messages are written to domain storage before advancing cursor sequence numbers.
+- **Deduplication & Scope Isolation**: Messages are deduplicated on `(scopeId, externalMessageId)`. Colon-safe encoding prevents collision between real scopes and simulation scopes.
+- **Outbound Safety & Result-Unknown**: Ambiguous receipts resolve to `result_unknown` and are never blindly retried automatically. Disabling a conversation cancels pending AI outbound messages without batch flushing on re-enable.
 - **No Invariant Companion Needed**: `im-core` manages state through `StorageDomain`, which owns atomic record and change guarantees. There are no divergent observations or separate process bridges requiring an independent `./invariant` companion.

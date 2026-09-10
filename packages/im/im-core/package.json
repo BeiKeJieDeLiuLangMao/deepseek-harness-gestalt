@@ -26,6 +26,10 @@
       "types": "./lib/types/spec.d.ts",
       "default": "./lib/types/spec.js"
     },
+    "./delivery": {
+      "types": "./lib/types/delivery/index.d.ts",
+      "default": "./lib/types/delivery/index.js"
+    },
     "./src/*": "./src/*",
     "./package.json": "./package.json"
   },

@@ -7,6 +7,7 @@
 export * from './types.ts'
 export * from './spec.ts'
 export * from './service.ts'
+export * from './delivery/index.ts'
 
 import { ImConfigService } from './service.ts'
 export default ImConfigService
