@@ -2158,7 +2158,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/phone/phone-environment/src/index.ts:82`](../packages/phone/phone-environment/src/index.ts)
+Source: [`packages/phone/phone-environment/src/index.ts:83`](../packages/phone/phone-environment/src/index.ts)
 
 <a id="deepseek-aidsh-phone-environment-android"></a>
 
@@ -2234,7 +2234,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/phone/phone-stream/src/index.ts:65`](../packages/phone/phone-stream/src/index.ts)
+Source: [`packages/phone/phone-stream/src/index.ts:66`](../packages/phone/phone-stream/src/index.ts)
 
 <a id="deepseek-aidsh-plan-mode"></a>
 
@@ -2520,7 +2520,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/platform/platform-account-http/src/index.ts:32`](../packages/platform/platform-account-http/src/index.ts)
+Source: [`packages/platform/platform-account-http/src/index.ts:35`](../packages/platform/platform-account-http/src/index.ts)
 
 <a id="deepseek-aidsh-plugin-package-inventory-deepseek"></a>
 

@@ -53,6 +53,7 @@ import * as ToolFsSearch from '@deepseek-ai/dsh-tool-fs-search'
 import * as ToolStrReplaceEditor from '@deepseek-ai/dsh-tool-str-replace-editor'
 import TerminalSessionService from '@deepseek-ai/dsh-terminal'
 import * as ToolProjectMembers from '@deepseek-ai/dsh-tool-project-members'
+import { ProjectMembershipService } from '@deepseek-ai/dsh-project-membership'
 import * as ToolPty from '@deepseek-ai/dsh-tool-terminal'
 import * as ToolGoal from '@deepseek-ai/dsh-tool-goal'
 import * as ToolSchedule from '@deepseek-ai/dsh-schedule'
@@ -94,6 +95,80 @@ class CatalogAttachmentStore extends AttachmentStore {
   override readImage(_ref: ImageAttachmentRef): Promise<StoredImageAttachment> {
     return Promise.reject(new Error('gen-tool-catalog: attachment reads are unreachable during schema harvest'))
   }
+}
+
+/**
+ * Membership seam marker that lets the roster tool's `projectMembership`
+ * inject resolve during schema harvest. Registration never reads a roster.
+ */
+class CatalogProjectMembership extends ProjectMembershipService {
+  override accountDeletionProjects(): Promise<never> {
+    return Promise.reject(unreachable('account deletion planning'))
+  }
+
+  override deleteAccountMemberships(): Promise<never> {
+    return Promise.reject(unreachable('account deletion'))
+  }
+
+  override roster(): Promise<never> {
+    return Promise.reject(unreachable('roster reads'))
+  }
+
+  override createProject(): Promise<never> {
+    return Promise.reject(unreachable('project creation'))
+  }
+
+  override invite(): Promise<never> {
+    return Promise.reject(unreachable('invitations'))
+  }
+
+  override retractInvitation(): Promise<never> {
+    return Promise.reject(unreachable('invitation retraction'))
+  }
+
+  override acceptInvitation(): Promise<never> {
+    return Promise.reject(unreachable('invitation acceptance'))
+  }
+
+  override declineInvitation(): Promise<never> {
+    return Promise.reject(unreachable('invitation decline'))
+  }
+
+  override changeRole(): Promise<never> {
+    return Promise.reject(unreachable('role changes'))
+  }
+
+  override setMemberTags(): Promise<never> {
+    return Promise.reject(unreachable('tag edits'))
+  }
+
+  override removeMember(): Promise<never> {
+    return Promise.reject(unreachable('member removal'))
+  }
+
+  override pendingInvitationsFor(): Promise<never> {
+    return Promise.reject(unreachable('invitation enumeration'))
+  }
+
+  override pendingInvitationContextsFor(): Promise<never> {
+    return Promise.reject(unreachable('invitation context enumeration'))
+  }
+
+  override pendingInvitationsIssuedBy(): Promise<never> {
+    return Promise.reject(unreachable('issued invitation enumeration'))
+  }
+
+  override projectByRemote(): Promise<never> {
+    return Promise.reject(unreachable('remote lookups'))
+  }
+
+  override rosterVersion(): Promise<never> {
+    return Promise.reject(unreachable('roster version reads'))
+  }
+}
+
+function unreachable(operation: string): Error {
+  return new Error(`gen-tool-catalog: ${operation} are unreachable during schema harvest`)
 }
 
 const root = resolve(import.meta.dirname, '..')
@@ -456,6 +531,7 @@ const TOOL_PACKAGES: ToolPackage[] = [
     requires: ['ctx.tools', 'optional ctx.projectMembership or injected rosterResolver'],
     writes: ['tool/call', 'tool/result'],
     async mount(ctx) {
+      await ctx.plugin(CatalogProjectMembership)
       await ctx.plugin(ToolProjectMembers)
     },
     note:
