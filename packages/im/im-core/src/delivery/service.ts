@@ -28,12 +28,6 @@ import type {
   SettleOutboundOptions,
 } from './types.ts'
 
-declare module '@deepseek-ai/cordis' {
-  interface Context {
-    imDelivery: ImDeliveryService
-  }
-}
-
 /**
  * Validated scope encoder avoiding delimiter collision via strict component escaping.
  * Escapes `%` -> `%25` and `:` -> `%3A`.
@@ -455,6 +449,7 @@ export class ImDeliveryService extends Service {
   /**
    * Get outbound message record by requestId.
    * @param requestId - Outbound request identifier.
+   * @returns The outbound record if found, or undefined.
    */
   async getOutbound(requestId: ImOutboundRequestId): Promise<OutboundMessageRecord | undefined> {
     const { outboundTable } = this.requireDomain()
@@ -462,8 +457,11 @@ export class ImDeliveryService extends Service {
   }
 
   /**
-   * List pending outbound AI messages for a specific scope that should be aborted or flushed.
-   * Used to ensure disabling conversation cancels pending AI messages without batch flushing on re-enable.
+   * Cancel pending outbound AI messages for a specific scope.
+   * Disabling a conversation cancels pending AI messages without batch flushing on re-enable.
+   * @param scopeId - Conversation scope whose pending AI outbound should be cancelled.
+   * @param reason - Pre-send failure reason recorded on each cancelled request.
+   * @returns The cancelled outbound records.
    */
   async cancelPendingAiOutbound(scopeId: ImScopeId, reason: string): Promise<OutboundMessageRecord[]> {
     const { outboundTable } = this.requireDomain()

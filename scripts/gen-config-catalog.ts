@@ -545,18 +545,46 @@ function findInject(ctx: FileCtx, pluginClass: ts.ClassDeclaration | null, viola
 }
 
 /** Resolve the entry file's default export to its class/function declaration
- * (mirroring the Loader's `unwrapExports`), or null when there is none. */
-function defaultExport(ctx: FileCtx): ts.ClassDeclaration | ts.FunctionDeclaration | null {
+ * (mirroring the Loader's `unwrapExports`), following a package-local relative
+ * import when the entry re-exports an implementation from another file. */
+function defaultExport(
+  ctx: FileCtx,
+  cache: Map<string, FileCtx>,
+  seen: Set<string> = new Set(),
+): { decl: ts.ClassDeclaration | ts.FunctionDeclaration; ctx: FileCtx } | null {
+  if (seen.has(ctx.abs)) return null
+  seen.add(ctx.abs)
+  const localDecl = (name: string): ts.ClassDeclaration | ts.FunctionDeclaration | null => {
+    for (const stmt of ctx.sf.statements) {
+      if ((ts.isClassDeclaration(stmt) || ts.isFunctionDeclaration(stmt)) && stmt.name?.text === name) return stmt
+    }
+    return null
+  }
+  const followImport = (name: string): { decl: ts.ClassDeclaration | ts.FunctionDeclaration; ctx: FileCtx } | null => {
+    const imp = ctx.imports.get(name)
+    if (!imp || !imp.specifier.startsWith('.') || !imp.specifier.endsWith('.ts')) return null
+    const abs = resolve(dirname(ctx.abs), imp.specifier)
+    const rel = `${dirname(ctx.rel)}/${imp.specifier.replace(/^\.\//, '')}`
+    const target = loadFile(abs, rel, cache)
+    if (imp.imported === 'default') return defaultExport(target, cache, seen)
+    for (const stmt of target.sf.statements) {
+      if ((ts.isClassDeclaration(stmt) || ts.isFunctionDeclaration(stmt)) && stmt.name?.text === imp.imported) {
+        return { decl: stmt, ctx: target }
+      }
+    }
+    return null
+  }
   for (const stmt of ctx.sf.statements) {
     if (ts.isExportAssignment(stmt) && !stmt.isExportEquals && ts.isIdentifier(stmt.expression)) {
       const name = stmt.expression.text
-      for (const s of ctx.sf.statements) {
-        if ((ts.isClassDeclaration(s) || ts.isFunctionDeclaration(s)) && s.name?.text === name) return s
-      }
-      return null
+      const local = localDecl(name)
+      if (local) return { decl: local, ctx }
+      return followImport(name)
     }
     if ((ts.isClassDeclaration(stmt) || ts.isFunctionDeclaration(stmt))
-      && stmt.modifiers?.some(m => m.kind === ts.SyntaxKind.DefaultKeyword)) return stmt
+      && stmt.modifiers?.some(m => m.kind === ts.SyntaxKind.DefaultKeyword)) {
+      return { decl: stmt, ctx }
+    }
   }
   return null
 }
@@ -617,24 +645,27 @@ export function collectConfigCatalog(scanRoot: string = root): CatalogEntry[] {
     // Classify, mirroring the Loader's unwrapExports: the default export IS
     // the plugin when present; else an exported `apply` makes the module
     // namespace the plugin; else the package is a plain library.
-    const dflt = defaultExport(ctx)
+    const dflt = defaultExport(ctx, cache)
     const apply = applyExport(ctx)
     let pluginClass: ts.ClassDeclaration | null = null
+    let pluginCtx = ctx
     let configParam: ts.ParameterDeclaration | undefined
     let kind: Kind
     let className: string | undefined
-    if (dflt && ts.isClassDeclaration(dflt)) {
-      className = dflt.name?.text
-      if (dflt.modifiers?.some(m => m.kind === ts.SyntaxKind.AbstractKeyword)) {
+    if (dflt && ts.isClassDeclaration(dflt.decl)) {
+      className = dflt.decl.name?.text
+      pluginCtx = dflt.ctx
+      if (dflt.decl.modifiers?.some(m => m.kind === ts.SyntaxKind.AbstractKeyword)) {
         kind = 'seam'
       } else {
-        pluginClass = dflt
-        const ctor = dflt.members.find(ts.isConstructorDeclaration)
+        pluginClass = dflt.decl
+        const ctor = dflt.decl.members.find(ts.isConstructorDeclaration)
         configParam = ctor?.parameters[1]
         kind = configParam ? 'config' : 'no-config'
       }
-    } else if (dflt) {
-      configParam = dflt.parameters[1]
+    } else if (dflt && ts.isFunctionDeclaration(dflt.decl)) {
+      pluginCtx = dflt.ctx
+      configParam = dflt.decl.parameters[1]
       kind = configParam ? 'config' : 'no-config'
     } else if (apply) {
       configParam = apply.parameters[1]
@@ -648,7 +679,7 @@ export function collectConfigCatalog(scanRoot: string = root): CatalogEntry[] {
       dir,
       entry: entryRel,
       kind,
-      inject: kind === 'library' || kind === 'seam' ? [] : findInject(ctx, pluginClass, violations),
+      inject: kind === 'library' || kind === 'seam' ? [] : findInject(pluginCtx, pluginClass, violations),
       ...className !== undefined ? { className } : {},
     }
     entries.push(entry)
@@ -656,7 +687,7 @@ export function collectConfigCatalog(scanRoot: string = root): CatalogEntry[] {
 
     // Resolve the config type and paste its package-local transitive closure.
     if (!configParam.type || !ts.isTypeReferenceNode(configParam.type) || !ts.isIdentifier(configParam.type.typeName)) {
-      violations.push(`${pkg}: config parameter type (${pointer(entryRel, ctx.sf, configParam)}) is not a plain type-name reference; declare a named config type.`)
+      violations.push(`${pkg}: config parameter type (${pointer(pluginCtx.rel, pluginCtx.sf, configParam)}) is not a plain type-name reference; declare a named config type.`)
       continue
     }
     const typeName = configParam.type.typeName.text
@@ -668,7 +699,7 @@ export function collectConfigCatalog(scanRoot: string = root): CatalogEntry[] {
     // cannot both render unambiguously, so every resolution is identity-checked
     // by source pointer and a collision is a violation, never a silent skip.
     const pastedDeclByName = new Map<string, string>()
-    const queue: { name: string; from: FileCtx }[] = [{ name: typeName, from: ctx }]
+    const queue: { name: string; from: FileCtx }[] = [{ name: typeName, from: pluginCtx }]
     for (let item = queue.shift(); item !== undefined; item = queue.shift()) {
       const { name, from } = item
       const resolved = resolveTypeName(from, name, cache, violations)
@@ -718,7 +749,7 @@ export function collectConfigCatalog(scanRoot: string = root): CatalogEntry[] {
     entry.refs = [...refs.values()].sort((a, b) => a.alias.localeCompare(b.alias))
 
     // Statically walk the runtime schema (when one exists) for the subset check.
-    const schemaExpr = findSchemaExpr(ctx, pluginClass)
+    const schemaExpr = findSchemaExpr(pluginCtx, pluginClass)
     if (schemaExpr) {
       const { keys, composes } = walkSchemaExpr(ctx, unwrapExpr(schemaExpr), `${pkg} (${entryRel})`, violations)
       entry.schemaKeys = keys

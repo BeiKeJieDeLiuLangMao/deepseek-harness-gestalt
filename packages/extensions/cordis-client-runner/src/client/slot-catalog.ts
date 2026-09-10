@@ -2095,6 +2095,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       'client-ui-browser BrowserSettingsSection id \'browser\'',
       'client-ui-desktop AccountControl id \'mobile-pairing\'',
       'client-ui-desktop Sub2ApiControl id \'sub2api\'',
+      'client-ui-im AccountsSection id \'im-accounts\'',
       'client-ui-phone PhoneSettingsSection id \'phone-devices\'',
       'client-ui-settings-general GeneralSection id \'general\'',
       'client-ui-settings-models ModelsSection id \'models\'',
@@ -2453,6 +2454,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     slotInject: 'SidebarRightTabInjected',
     declaredBy: 'an entry in \'workbench\' (client-ui-sidebar-right), so it exists while that entry is mounted',
     occupants: [
+      'client-ui-im ConversationTab',
       'client-ui-phone OfficialPhoneBody',
       'client-ui-sidebar-documentpreview TextPreview',
       'client-ui-sidebar-files FilesBody',
@@ -3101,6 +3103,58 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'workbench\', () => ctx.slots.register(\n      { name: \'workbench\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
     source: 'packages/client/ui-layout/src/client/index.ts:80',
+  },
+  {
+    key: 'workspace.settings.section',
+    kind: 'list',
+    scope: 'root',
+    summary: 'Extra cards inside the workspace settings modal, after repository and collaboration.',
+    doc: 'Extra cards inside the workspace settings modal, after repository and\ncollaboration. Feature plugins (IM takeover, IM simulation) register\nlist entries; the modal supplies the Workspace id as owner share.',
+    registerOptions: [
+      {
+        name: 'id',
+        requirement: 'required',
+        type: 'string',
+        doc: 'Your cell key. Use an id of your own: a fresh id is added beside the shipped entries, while reusing a shipped id puts you in THAT cell and replaces it. Owners that filter by id address you by it.',
+      },
+      {
+        name: 'order',
+        requirement: 'optional',
+        type: 'number',
+        doc: 'Position among the entries, ascending (default 0).',
+      },
+      {
+        name: 'label',
+        requirement: 'optional',
+        type: 'string | (() => string)',
+        doc: 'Display text where the owner projects one (nav rows, tabs). A thunk is re-read on every projection, so localized text follows the active locale without re-registering.',
+      },
+    ],
+    ownerProps: [
+      '/** Owner share of one contributed workspace-settings card. */\nexport interface WorkspaceSettingsSectionOwnerProps {\n  /** Workspace whose takeover and simulation cards are being edited. */\n  workspaceId: WorkspaceId\n}',
+    ],
+    ownerPropsReferences: [
+      'Workspace',
+    ],
+    standardProps: [
+      'useResource: UseResource',
+      'useWorkspaces: SnapshotSelectorHook<WorkspaceSnapshot>',
+      'usePanelInfo: UsePanelInfo',
+      'useSessions: UseSessions',
+      'useSessionPendingInteraction: UseSessionPendingInteraction',
+      'useWorkspaces: SnapshotSelectorHook<WorkspaceSnapshot>',
+    ],
+    keyDomain: '',
+    hookContext: '',
+    slotInject: '',
+    declaredBy: 'an entry in \'sidebar.workspaces\' (client-ui-workspace), so it exists while that entry is mounted',
+    occupants: [
+      'client-ui-im TakeoverSection id \'im-takeover\'',
+      'client-ui-im SimulationSection id \'im-simulation\'',
+    ],
+    replaceRisk: 'none',
+    example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'workspace.settings.section\', () => ctx.slots.register(\n      { name: \'workspace.settings.section\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
+    source: 'packages/client/ui-workspace/src/client/contract/slots.ts:67',
   },
 ]
 /* jscpd:ignore-end */

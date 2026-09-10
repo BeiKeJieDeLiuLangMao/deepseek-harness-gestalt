@@ -23,12 +23,6 @@ import type {
   ImTriggerReason,
 } from './types.ts'
 
-declare module '@deepseek-ai/cordis' {
-  interface Context {
-    imExecution: ImExecutionService
-  }
-}
-
 /**
  * Service orchestrating IM inbound message admission, trigger evaluation,
  * and steering into target agent workspace.
@@ -60,7 +54,7 @@ export class ImExecutionService extends Service {
    * @param scopeId - Conversation scope ID.
    * @param nowMs - Optional current epoch timestamp in milliseconds.
    */
-  resetIntervalTracker(scopeId: ImScopeId, nowMs = Date.now()): void {
+  resetIntervalTracker(scopeId: ImScopeId, nowMs: number = Date.now()): void {
     this.intervalTrackers.set(scopeId, { lastTriggeredAt: nowMs })
   }
 

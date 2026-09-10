@@ -27,7 +27,7 @@ describe('dsh-base bundle', () => {
     )
     expect(Array.isArray(parsed)).toBe(true)
     // The base layer is one insert list over the empty profile root.
-    const rows = (parsed as { insert?: { id?: string; config?: Record<string, unknown>; disabled?: boolean }[] }[]).flatMap(
+    const rows = (parsed as { insert?: { id?: string; name?: string; config?: Record<string, unknown>; disabled?: boolean }[] }[]).flatMap(
       patch => patch.insert ?? [],
     )
     expect(rows.length).toBeGreaterThan(50)
@@ -45,6 +45,18 @@ describe('dsh-base bundle', () => {
     expect(rows.find(row => row.id === 'web')?.config).toMatchObject({ fetchProvider: 'http' })
     expect(rows.find(row => row.id === 'web-fetch-http')).toBeDefined()
     expect(rows.find(row => row.id === 'tool-web')?.config).toMatchObject({ fetch: true })
+    expect(rows.map(row => row.id)).toEqual(expect.arrayContaining([
+      'im-config', 'im-delivery', 'im-execution', 'im-simulation', 'im-dingtalk',
+    ]))
+    expect(rows.find(row => row.id === 'im-config')?.name).toBe('@deepseek-ai/dsh-im-core')
+    expect(rows.find(row => row.id === 'im-delivery')?.name).toBe('@deepseek-ai/dsh-im-core/delivery')
+    expect(rows.find(row => row.id === 'im-execution')?.name).toBe('@deepseek-ai/dsh-im-core/coordination')
+    expect(rows.find(row => row.id === 'im-simulation')?.name).toBe('@deepseek-ai/dsh-im-core/simulation')
+    expect(rows.find(row => row.id === 'im-dingtalk')?.name).toBe('@deepseek-ai/dsh-im-dingtalk')
+    expect(rows.filter(row => row.id === 'im-wangwang')).toHaveLength(0)
+    expect(manifest.dependencies).toHaveProperty('@deepseek-ai/dsh-im-core')
+    expect(manifest.dependencies).toHaveProperty('@deepseek-ai/dsh-im-dingtalk')
+    expect(manifest.dependencies).not.toHaveProperty('@deepseek-ai/dsh-im-wangwang')
     expect(manifest.dependencies).not.toHaveProperty('@deepseek-ai/dsh-subagent-codex')
     expect(manifest.dependencies).not.toHaveProperty('@deepseek-ai/dsh-subagent-claude-code')
     expect(manifest.dependencies).toHaveProperty('@deepseek-ai/dsh-web-fetch-http')

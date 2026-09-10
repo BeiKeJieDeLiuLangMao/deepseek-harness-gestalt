@@ -22,12 +22,6 @@ import type {
   InjectMemberMessageOptions,
 } from './types.ts'
 
-declare module '@deepseek-ai/cordis' {
-  interface Context {
-    imSimulation: ImSimulationService
-  }
-}
-
 /**
  * Service managing IM simulation instances, local bidirectional delivery,
  * and test message injections.

@@ -1157,6 +1157,77 @@ export interface Config {
 
 Source: [`packages/host/webserver/src/index.ts:59`](../packages/host/webserver/src/index.ts)
 
+<a id="deepseek-aidsh-im-dingtalk"></a>
+
+## `@deepseek-ai/dsh-im-dingtalk`
+
+Requires: `subprocess` · `imConfig` · `imDelivery`
+
+```ts config-catalog
+/** Configuration for DingTalk DWS adapter instance. */
+export interface DingTalkDwsAdapterConfig {
+  /** Optional custom path or command name for dws executable. Defaults to 'dws'. */
+  readonly dwsPath?: string
+  /** Optional DWS organization profile name or corpId. */
+  readonly profile?: string
+  /** Subprocess spawn grace in milliseconds. Defaults to 5000ms. */
+  readonly graceMs?: number
+  /** Working directory for dws child process. Defaults to process.cwd(). */
+  readonly cwd?: string
+  /** Reconnection delay in milliseconds on abnormal consumer stream exit. Defaults to 3000ms. */
+  readonly reconnectDelayMs?: number
+  /** Max reconnection attempts before failing or pausing. Defaults to 5. */
+  readonly maxReconnectAttempts?: number
+}
+```
+
+Source: [`packages/im/im-dingtalk/src/types.ts:10`](../packages/im/im-dingtalk/src/types.ts)
+
+<a id="deepseek-aidsh-im-wangwang"></a>
+
+## `@deepseek-ai/dsh-im-wangwang`
+
+Requires: `credentials` · `storageDomain` · `imDelivery`
+
+```ts config-catalog
+/**
+ * Adapter configuration for Wangwang / QianNiu.
+ */
+export interface WangwangAdapterConfig {
+  /** Target OpenAPI endpoint URL. */
+  readonly endpoint: string
+  /** Pre-configured admitted merchant directory. Runtime addition or UI guessing forbidden. */
+  readonly admittedMerchants: readonly WangwangAdmittedMerchant[]
+  /** Clock drift tolerance in milliseconds. Defaults to 300,000ms (5 mins). */
+  readonly timestampToleranceMs?: number
+  /** Polling batch limit. Defaults to 50, maximum 100. */
+  readonly pollLimit?: number
+}
+
+/**
+ * Static configuration of an admitted merchant in directory.
+ * Runtime self-discovery / guessing is disallowed.
+ */
+export interface WangwangAdmittedMerchant {
+  /** Merchant identifier admitted by platform. */
+  readonly merchantId: string
+  /** Harness account identifier mapping to this merchant. */
+  readonly accountId: ImAccountId
+  /** Display name for merchant. */
+  readonly displayName?: string
+  /** Reference to AccessKey in CredentialProvider. Never plaintext. */
+  readonly accessKeyRef: CredentialRef
+  /** Reference to SecretKey in CredentialProvider. Never plaintext. */
+  readonly secretKeyRef: CredentialRef
+  /** Merchant main service account id for echo/identity matching. */
+  readonly mainServiceAccountId?: string
+}
+```
+
+Depends on: [`CredentialRef`](subsystems/credentials.md) · [`ImAccountId`](subsystems/im.md)
+
+Source: [`packages/im/im-wangwang/src/types.ts:33`](../packages/im/im-wangwang/src/types.ts)
+
 <a id="deepseek-aidsh-invariants"></a>
 
 ## `@deepseek-ai/dsh-invariants`
@@ -4680,6 +4751,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-client-ui-directory-picker-browse` ([`packages/client/ui-directory-picker-browse/src/index.ts`](../packages/client/ui-directory-picker-browse/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-directory-picker-native` ([`packages/client/ui-directory-picker-native/src/index.ts`](../packages/client/ui-directory-picker-native/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-goal` ([`packages/client/ui-goal/src/index.ts`](../packages/client/ui-goal/src/index.ts))
+- `@deepseek-ai/dsh-client-ui-im` ([`packages/client/ui-im/src/index.ts`](../packages/client/ui-im/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-input-trigger` ([`packages/client/ui-input-trigger/src/index.ts`](../packages/client/ui-input-trigger/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-jobs` ([`packages/client/ui-jobs/src/index.ts`](../packages/client/ui-jobs/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-layout` ([`packages/client/ui-layout/src/index.ts`](../packages/client/ui-layout/src/index.ts))
@@ -4725,6 +4797,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-host-directory-picker-auto` — requires `webServer` · `loader` ([`packages/host/directory-picker-auto/src/index.ts`](../packages/host/directory-picker-auto/src/index.ts))
 - `@deepseek-ai/dsh-host-directory-picker-native` ([`packages/host/directory-picker-native/src/index.ts`](../packages/host/directory-picker-native/src/index.ts))
 - `@deepseek-ai/dsh-host-plugin-inventory` — requires `loader` ([`packages/host/plugin-inventory/src/index.ts`](../packages/host/plugin-inventory/src/index.ts))
+- `@deepseek-ai/dsh-im-core` — requires `storageDomain` ([`packages/im/im-core/src/index.ts`](../packages/im/im-core/src/index.ts))
 - `@deepseek-ai/dsh-llm` ([`packages/llm/llm/src/index.ts`](../packages/llm/llm/src/index.ts))
 - `@deepseek-ai/dsh-lsp` ([`packages/lsp/lsp/src/index.ts`](../packages/lsp/lsp/src/index.ts))
 - `@deepseek-ai/dsh-phone-environment-ios` — requires `phoneEnvironment` ([`packages/phone/phone-environment-ios/src/index.ts`](../packages/phone/phone-environment-ios/src/index.ts))

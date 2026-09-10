@@ -23,3 +23,4 @@ kind: "package"
 - **发送者证据判定**：严格分类入站消息为 `external`、`ai_outbound`、`human_native`、`human_dsh` 或 `unknown`，杜绝臆测。
 - **出站防盲重试**：发送前验证 AI 消息的账号暂停状态。未决或超时结果标记为 `result_unknown`，禁止无确认重发。
 - **引用回复规范**：引用回复严格使用 `--conversation-id`、`--ref-msg-id` 与 `--ref-sender`，绝不传入 `--group`。
+- **默认空闲挂载**：`@deepseek-ai/dsh-base` 挂载本适配器时不调用 `startConsumer`，因此空 profile 不会拉起 DWS。

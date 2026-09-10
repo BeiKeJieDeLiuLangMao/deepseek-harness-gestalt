@@ -199,6 +199,25 @@
     - id: subprocess
       name: '@deepseek-ai/dsh-subprocess-local'
 
+    # IM domain: durable accounts, routes, delivery, coordination, and
+    # simulation. DingTalk mounts idle — `startConsumer` is explicit, so an
+    # empty profile does not spawn DWS. Wangwang stays out of the shared core
+    # because its adapter fails loud without an admitted merchant directory.
+    - id: im-config
+      name: '@deepseek-ai/dsh-im-core'
+
+    - id: im-delivery
+      name: '@deepseek-ai/dsh-im-core/delivery'
+
+    - id: im-execution
+      name: '@deepseek-ai/dsh-im-core/coordination'
+
+    - id: im-simulation
+      name: '@deepseek-ai/dsh-im-core/simulation'
+
+    - id: im-dingtalk
+      name: '@deepseek-ai/dsh-im-dingtalk'
+
     # Every shipped CLI mode starts with the same file-effect boundary.
     # The environment remains an explicit deployment override; otherwise fresh
     # sessions pin workspace-write + ask through the permission service below.

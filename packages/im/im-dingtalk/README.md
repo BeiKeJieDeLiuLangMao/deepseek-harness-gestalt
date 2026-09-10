@@ -23,3 +23,4 @@ Registers as `ctx.imDingtalk` under Cordis:
 - **Evidence classification**: Strictly classifies inbound messages into `external`, `ai_outbound`, `human_native`, `human_dsh`, or `unknown` without guessing.
 - **Outbound safety**: Pre-send checks account pause states for AI messages. Unknown outbound delivery receipts (`timeout`, `signalled`) settle as `result_unknown` to prevent duplicate sends.
 - **Reply command compliance**: Quotation replies strictly require `--conversation-id`, `--ref-msg-id`, and `--ref-sender`, and never pass `--group`.
+- **Idle default mount**: `@deepseek-ai/dsh-base` mounts this adapter without calling `startConsumer`, so an empty profile does not spawn DWS.

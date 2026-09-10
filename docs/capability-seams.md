@@ -270,6 +270,15 @@ flowchart LR
   pkg_subagent_route_preauthorization["subagent-route-preauthorization"]
   svc_subagentRoutePreauthorization["ctx.subagentRoutePreauthorization<br/>Subagent route preauthorization seam"]
   pkg_subagent_route_preauthorization_static["subagent-route-preauthorization-static"]
+  pkg_im_core["im-core"]
+  svc_imConfig["ctx.imConfig<br/>IM account and route configuration"]
+  pkg_im_dingtalk["im-dingtalk"]
+  svc_imDelivery["ctx.imDelivery<br/>IM delivery and outbound lifecycle"]
+  pkg_im_wangwang["im-wangwang"]
+  svc_imExecution["ctx.imExecution<br/>IM trigger admission and tools"]
+  svc_imSimulation["ctx.imSimulation<br/>IM local simulation transport"]
+  svc_imDingtalk["ctx.imDingtalk<br/>DingTalk DWS adapter"]
+  svc_imWangwang["ctx.imWangwang<br/>Wangwang OpenAPI adapter"]
   pkg_agent --> svc_agents
   pkg_agent_default_model --> svc_agentDefaultModel
   pkg_agent_loop --> svc_agentLoop
@@ -323,6 +332,12 @@ flowchart LR
   pkg_host_directory_picker_browse --> svc_directoryPicker
   pkg_host_directory_picker_native --> svc_directoryPicker
   pkg_host_webserver --> svc_webServer
+  pkg_im_core --> svc_imConfig
+  pkg_im_core --> svc_imDelivery
+  pkg_im_core --> svc_imExecution
+  pkg_im_core --> svc_imSimulation
+  pkg_im_dingtalk --> svc_imDingtalk
+  pkg_im_wangwang --> svc_imWangwang
   pkg_inspector --> svc_inspector
   pkg_invariants --> svc_invariants
   pkg_jobs --> svc_jobs
@@ -452,6 +467,9 @@ flowchart LR
   svc_fileReferences --> pkg_api_session_controller
   svc_fileUploads --> pkg_api_session_controller
   svc_fs --> pkg_tool_fs
+  svc_imConfig --> pkg_im_dingtalk
+  svc_imDelivery --> pkg_im_dingtalk
+  svc_imDelivery --> pkg_im_wangwang
   svc_invariants --> pkg_agent
   svc_invariants --> pkg_agent_loop
   svc_invariants --> pkg_scope
@@ -655,5 +673,11 @@ flowchart LR
 | `ctx.memberQuestionReceiver` | `seam` | [`member-question-receiver`](../packages/interaction/member-question-receiver) | [`member-question-receiver`](../packages/interaction/member-question-receiver) | [`api-session-controller`](../packages/api/session-controller) | - | Authenticates member answers, settles pending questions, and supplies the Session controller materializer. |
 | `ctx.memberQuestionWorkspaceBinding` | `core` | [`member-question-receiver`](../packages/interaction/member-question-receiver) | - | - | - | Publishes the receiver-owned Workspace binding registry; no current production package calls this key directly. |
 | `ctx.subagentRoutePreauthorization` | `seam` | [`subagent-route-preauthorization`](../packages/subagent/subagent-route-preauthorization) | [`subagent-route-preauthorization-static`](../packages/subagent/subagent-route-preauthorization-static) | [`tool-subagent`](../packages/subagent/tool-subagent) | - | Resolves route-specific preauthorization before tool-subagent starts a delegated run. |
+| `ctx.imConfig` | `core` | [`im-core`](../packages/im/im-core) | - | [`im-dingtalk`](../packages/im/im-dingtalk) | - | Owns durable IM accounts, workspace route rules, group triggers, and simulation target bindings over StorageDomain. |
+| `ctx.imDelivery` | `core` | [`im-core`](../packages/im/im-core) | - | [`im-dingtalk`](../packages/im/im-dingtalk), [`im-wangwang`](../packages/im/im-wangwang) | - | Owns inbound deduplication, conversation cursors, and outbound settlement including result_unknown. |
+| `ctx.imExecution` | `core` | [`im-core`](../packages/im/im-core) | - | - | - | Admits inbound messages into the target workspace Agent and registers im_send_message plus im_query_history. |
+| `ctx.imSimulation` | `core` | [`im-core`](../packages/im/im-core) | - | - | - | Owns in-process simulation instances against a configured workspace target and never calls live adapters. |
+| `ctx.imDingtalk` | `seam` | [`im-dingtalk`](../packages/im/im-dingtalk) | [`im-dingtalk`](../packages/im/im-dingtalk) | - | - | Idle DWS adapter: startConsumer is explicit, so an empty profile does not spawn dws. |
+| `ctx.imWangwang` | `seam` | [`im-wangwang`](../packages/im/im-wangwang) | [`im-wangwang`](../packages/im/im-wangwang) | - | - | Admitted-merchant overlay; the adapter fails loud without a merchant directory and is not a dsh-base row. |
 
 Maintenance mode: hybrid: services are discovered from Cordis declarations; interface/implementation/consumer roles are classified in `scripts/gen-doc-graphs.ts` with a completeness guard.

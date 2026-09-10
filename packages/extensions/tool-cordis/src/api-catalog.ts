@@ -1321,6 +1321,314 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'imConfig',
+    summary: 'IM configuration service managing accounts, route rules, and simulation target binding.',
+    description: 'IM configuration service managing accounts, route rules, and simulation target binding.',
+    methods: [
+      {
+        signature: 'async getAccount(id: ImAccountId): Promise<ImAccountMetadata | undefined>',
+        description: 'Look up one IM account by its opaque identifier.',
+        parameters: [{ name: 'id', description: 'Opaque account identifier.' }],
+        returns: 'The account metadata if found, or undefined.',
+      },
+      {
+        signature: 'async listAccounts(): Promise<ImAccountMetadata[]>',
+        description: 'List all registered IM accounts.',
+        parameters: [],
+        returns: 'Array of registered account metadata records.',
+      },
+      {
+        signature: 'async upsertAccount(options: CreateImAccountOptions): Promise<ImAccountMetadata>',
+        description: 'Create or update an IM account record.',
+        parameters: [{ name: 'options', description: 'Account creation/update parameters.' }],
+        returns: 'The saved account metadata.',
+      },
+      {
+        signature: 'async pauseAccount(id: ImAccountId, paused: boolean): Promise<ImAccountMetadata>',
+        description: 'Pause or resume an IM account.',
+        parameters: [{ name: 'id', description: 'Account identifier to update.' }, { name: 'paused', description: 'Whether automated handling should be paused.' }],
+        returns: 'The updated account metadata.',
+      },
+      {
+        signature: 'async deleteAccount(id: ImAccountId): Promise<boolean>',
+        description: 'Delete an IM account and cascade delete its associated route rules.',
+        parameters: [{ name: 'id', description: 'Account identifier to delete.' }],
+        returns: 'True if deleted, false if the account did not exist.',
+      },
+      {
+        signature: 'async getRouteRule(id: ImRouteRuleId): Promise<ImRouteRule | undefined>',
+        description: 'Look up one route rule by its identifier.',
+        parameters: [{ name: 'id', description: 'Route rule identifier.' }],
+        returns: 'The route rule record if found, or undefined.',
+      },
+      {
+        signature: 'async listRouteRules(workspaceId?: WorkspaceId): Promise<ImRouteRule[]>',
+        description: 'List route rules, optionally filtered by workspace identifier.',
+        parameters: [{ name: 'workspaceId', description: 'Optional workspace identifier filter.' }],
+        returns: 'Array of matching route rules.',
+      },
+      {
+        signature: 'async createRouteRule(options: CreateImRouteRuleOptions): Promise<ImRouteRule>',
+        description: 'Create a new route rule for an account and conversation target.',
+        parameters: [{ name: 'options', description: 'Route rule definition options.' }],
+        returns: 'The created route rule.',
+      },
+      {
+        signature: 'async updateRouteRule( id: ImRouteRuleId, updates: Partial<Pick<ImRouteRule, \'workspaceId\' | \'enabled\' | \'groupTrigger\'>>, ): Promise<ImRouteRule>',
+        description: 'Update mutable settings of an existing route rule.',
+        parameters: [{ name: 'id', description: 'Route rule identifier.' }, { name: 'updates', description: 'Partial updates for workspace, enabled state, or trigger conditions.' }],
+        returns: 'The updated route rule.',
+      },
+      {
+        signature: 'async deleteRouteRule(id: ImRouteRuleId): Promise<boolean>',
+        description: 'Delete an existing route rule.',
+        parameters: [{ name: 'id', description: 'Route rule identifier.' }],
+        returns: 'True if deleted, false if the rule did not exist.',
+      },
+      {
+        signature: 'async resolveRoute(request: ImResolveRouteRequest): Promise<ImResolveRouteResult>',
+        description: 'Resolves the route rule for an incoming conversation.\n\nResolution precedence: 1. Check account pause: if paused, returns \'account_paused\' (suspending automatic handling). 2. Specific conversation rule match: - If enabled: returns \'matched\' - If disabled: returns \'disabled\' (retains workspace binding, DOES NOT fallback to \'all\') 3. \'All\' conversation rule match: - Dynamically covers future unmapped conversations for this account and kind. - Returns \'matched\' if enabled, \'disabled\' if disabled. 4. Unmatched: returns \'unconfigured\' (prevents routing to sensitive workspaces).',
+        parameters: [{ name: 'request', description: 'Incoming conversation resolution request.' }],
+        returns: 'Resolution outcome including matched status, ruleId, workspaceId, or disabled/paused indicators.',
+      },
+      {
+        signature: 'async getSimulationConfig(workspaceId: WorkspaceId): Promise<ImWorkspaceSimulationConfig | undefined>',
+        description: 'Get the simulation configuration for a workspace.',
+        parameters: [{ name: 'workspaceId', description: 'Workspace identifier.' }],
+        returns: 'The simulation configuration if set, or undefined.',
+      },
+      {
+        signature: 'async setSimulationConfig(options: SetWorkspaceSimulationTargetOptions): Promise<ImWorkspaceSimulationConfig>',
+        description: 'Configure the IM simulation target for a workspace. Target account must exist, and a configured route rule must cover the target conversation.\n\nNote: The route rule may belong to any workspace (e.g. testing an agent in another workspace). Disabled or account-paused route rules still permit simulation testing.',
+        parameters: [{ name: 'options', description: 'Target account and conversation options.' }],
+        returns: 'The saved simulation configuration.',
+      },
+      {
+        signature: 'async deleteSimulationConfig(workspaceId: WorkspaceId): Promise<boolean>',
+        description: 'Delete the simulation configuration for a workspace.',
+        parameters: [{ name: 'workspaceId', description: 'Workspace identifier.' }],
+        returns: 'True if deleted, false if none existed.',
+      },
+    ],
+  },
+  {
+    key: 'imDelivery',
+    summary: 'Service managing IM message delivery, deduplication, cursor progress, and outbound safety.',
+    description: 'Service managing IM message delivery, deduplication, cursor progress, and outbound safety.',
+    methods: [
+      {
+        signature: 'async receiveInbound(options: ReceiveInboundOptions): Promise<ReceiveInboundResult>',
+        description: 'Receive an incoming message from external platform or simulation.\n\nInvariants: 1. Check deduplication by (scopeId, externalMessageId) using deterministic key or dedupTable. 2. If already exists, return duplicate = true, the existing record, and reconciled cursor. 3. If new: a. Write inbound record first with deterministic primary key `scopeId::externalMessageId`. b. Record dedup entry. c. Advance cursor and reconcile unsubmittedCount.',
+        parameters: [{ name: 'options', description: 'Message payload, sender classification, and external ID.' }],
+        returns: 'ReceiveInboundResult containing deduplication flag, stored record, and updated cursor.',
+      },
+      {
+        signature: 'async markSubmitted(options: MarkSubmittedOptions): Promise<ImConversationCursor>',
+        description: 'Mark messages as submitted to the agent workspace / queue. Updates message stage to \'submitted\' and advances lastSubmittedSequenceNumber on the cursor.',
+        parameters: [{ name: 'options', description: 'Scope ID and array of message IDs.' }],
+        returns: 'Updated cursor.',
+      },
+      {
+        signature: 'async getCursor(scopeId: ImScopeId): Promise<ImConversationCursor | undefined>',
+        description: 'Get cursor for a given scope. Reconciles cursor if any crash window discrepancy exists.',
+        parameters: [{ name: 'scopeId', description: 'Branded scope ID.' }],
+        returns: 'Current cursor or undefined.',
+      },
+      {
+        signature: 'async queryHistory(options: ImHistoryQueryOptions): Promise<InboundMessageRecord[]>',
+        description: 'Query conversation history within a validated scope. Prevents cross-scope access: only messages belonging to options.scopeId are returned.',
+        parameters: [{ name: 'options', description: 'Scope ID, limits, pagination criteria, and optional stage filters.' }],
+        returns: 'Array of message records sorted by sequenceNumber ascending.',
+      },
+      {
+        signature: 'async registerOutbound(options: RegisterOutboundOptions): Promise<OutboundMessageRecord>',
+        description: 'Register an outbound message request and perform pre-send validation.\n\nInvariants: 1. If intent === \'ai\' and scope is real: - Check if the account is paused -> pre_send_failed - Resolve route rule for the conversation: - If status === \'disabled\' or \'unconfigured\' -> pre_send_failed (never flush disabled conversations) - If rule exists but enabled === false -> pre_send_failed 2. If pre-send validation fails, record status: \'pre_send_failed\' with reason. 3. Otherwise status: \'pending\'. 4. Human manual sends (intent === \'human_manual\') are permitted even if account is paused or rule is disabled. 5. Simulation scopes are never blocked by account-level pause or disabled real routes.',
+        parameters: [{ name: 'options', description: 'Request ID, target scope, workspace, intent, and message content.' }],
+        returns: 'Stored OutboundMessageRecord.',
+      },
+      {
+        signature: 'async settleOutbound(options: SettleOutboundOptions): Promise<OutboundMessageRecord>',
+        description: 'Settle an outbound request after external delivery attempt.\n\nInvariants:\n\n- If status === \'result_unknown\': ambiguous receipt, platform state undetermined. Must NOT automatically retry.\n- If status === \'sent\': mark sent, record receipt.\n- If status === \'confirmed_failed\': terminal failure.',
+        parameters: [{ name: 'options', description: 'Settle parameters with receipt and final status.' }],
+        returns: 'Updated OutboundMessageRecord.',
+      },
+      {
+        signature: 'async getOutbound(requestId: ImOutboundRequestId): Promise<OutboundMessageRecord | undefined>',
+        description: 'Get outbound message record by requestId.',
+        parameters: [{ name: 'requestId', description: 'Outbound request identifier.' }],
+        returns: 'The outbound record if found, or undefined.',
+      },
+      {
+        signature: 'async cancelPendingAiOutbound(scopeId: ImScopeId, reason: string): Promise<OutboundMessageRecord[]>',
+        description: 'Cancel pending outbound AI messages for a specific scope. Disabling a conversation cancels pending AI messages without batch flushing on re-enable.',
+        parameters: [{ name: 'scopeId', description: 'Conversation scope whose pending AI outbound should be cancelled.' }, { name: 'reason', description: 'Pre-send failure reason recorded on each cancelled request.' }],
+        returns: 'The cancelled outbound records.',
+      },
+    ],
+  },
+  {
+    key: 'imDingtalk',
+    summary: 'Service Definition for DingTalk DWS adapter.',
+    description: 'Service Definition for DingTalk DWS adapter.',
+    methods: [
+      {
+        signature: 'abstract startConsumer(accountId: ImAccountId, config?: DingTalkDwsAdapterConfig): Promise<void>',
+        description: 'Start event consumer stream for an account.',
+        parameters: [{ name: 'accountId', description: 'Connected DingTalk account.' }, { name: 'config', description: 'Optional DWS spawn override for this consumer.' }],
+      },
+      {
+        signature: 'abstract stopConsumer(accountId: ImAccountId): Promise<void>',
+        description: 'Stop event consumer stream for an account.',
+        parameters: [{ name: 'accountId', description: 'Connected DingTalk account.' }],
+      },
+      {
+        signature: 'abstract sendMessage(request: DingTalkSendMessageRequest): Promise<DingTalkSendMessageResult>',
+        description: 'Send a message through DWS CLI.',
+        parameters: [{ name: 'request', description: 'Outbound send request.' }],
+        returns: 'Settled send result, including `result_unknown`.',
+      },
+      {
+        signature: 'abstract querySendStatus(openTaskId: string, accountId?: ImAccountId): Promise<DingTalkSendStatusResult>',
+        description: 'Query send status for an openTaskId.',
+        parameters: [{ name: 'openTaskId', description: 'DWS outbound task id.' }, { name: 'accountId', description: 'Optional account that owns the task.' }],
+        returns: 'Current send-status snapshot.',
+      },
+      {
+        signature: 'abstract getConsumerState(accountId: ImAccountId): DingTalkConsumerState',
+        description: 'Snapshot of one account\'s consumer stream.',
+        parameters: [{ name: 'accountId', description: 'Connected DingTalk account.' }],
+        returns: 'Current consumer running state.',
+      },
+    ],
+  },
+  {
+    key: 'imExecution',
+    summary: 'Service orchestrating IM inbound message admission, trigger evaluation, and steering into target agent workspace.',
+    description: 'Service orchestrating IM inbound message admission, trigger evaluation, and steering into target agent workspace.',
+    methods: [
+      {
+        signature: 'resetIntervalTracker(scopeId: ImScopeId, nowMs: number = Date.now()): void',
+        description: 'Reset the fixed-interval tracking timestamp for a scope.',
+        parameters: [{ name: 'scopeId', description: 'Conversation scope ID.' }, { name: 'nowMs', description: 'Optional current epoch timestamp in milliseconds.' }],
+      },
+      {
+        signature: 'async admitInbound(options: AdmitInboundOptions): Promise<AdmitInboundResult>',
+        description: 'Evaluate trigger conditions and admit inbound messages into the workspace agent context.\n\nInvariants: 1. Group trigger OR logic: mention, everyN, fixedInterval. 2. Multiple trigger conditions in the same batch trigger steer exactly once. 3. Message IDs deduplicated; messages sorted by sequenceNumber ascending. 4. ai_outbound messages never trigger and are not counted towards everyN. 5. human_native and human_dsh messages enter context without pausing/disabling. 6. External IM text is never authorized. 7. agent.steer is called first, session flush is awaited, and markSubmitted runs only after success.',
+        parameters: [{ name: 'options', description: 'Message records, delivery scope, agent, and optional timestamp.' }],
+        returns: 'Admission outcome with trigger flags and steered message IDs.',
+      },
+    ],
+  },
+  {
+    key: 'imSimulation',
+    summary: 'Service managing IM simulation instances, local bidirectional delivery, and test message injections.',
+    description: 'Service managing IM simulation instances, local bidirectional delivery, and test message injections.',
+    methods: [
+      {
+        signature: 'getInstance(instanceId: ImSimulationInstanceId): ImSimulationInstance | undefined',
+        description: 'Look up a simulation instance by its unique identifier.',
+        parameters: [{ name: 'instanceId', description: 'Instance identifier.' }],
+        returns: 'The simulation instance if found, or undefined.',
+      },
+      {
+        signature: 'listInstances(): ImSimulationInstance[]',
+        description: 'List all known simulation instances.',
+        parameters: [],
+        returns: 'Array of simulation instance records.',
+      },
+      {
+        signature: 'async createInstance(options: CreateSimulationInstanceOptions): Promise<ImSimulationInstance>',
+        description: 'Create a new simulation instance against the workspace\'s configured simulation target.\n\nInvariants: 1. Workspace must have configured simulation target in imConfig; throws if unconfigured. 2. Instance target snapshot (accountId, conversationKind, conversationId) is frozen at creation. Subsequent changes to workspace simulation config will not alter this instance.',
+        parameters: [{ name: 'options', description: 'Workspace ID, conversation ID, optional conversation kind, instance ID, and speaking members.' }],
+        returns: 'Created simulation instance with frozen target snapshot.',
+      },
+      {
+        signature: 'async stopInstance(instanceId: ImSimulationInstanceId): Promise<ImSimulationInstance>',
+        description: 'Explicitly stop a simulation instance. Stop is terminal; stopped instances cannot be resumed.',
+        parameters: [{ name: 'instanceId', description: 'Identifier of the instance to stop.' }],
+        returns: 'Updated simulation instance with status: \'stopped\'.',
+      },
+      {
+        signature: 'async injectMemberMessage(options: InjectMemberMessageOptions): Promise<InboundMessageRecord>',
+        description: 'Inject a message from a speaking group member into the simulation scope.',
+        parameters: [{ name: 'options', description: 'Target instance ID, member ID, nick, and text content.' }],
+        returns: 'Inbound message delivery record.',
+      },
+      {
+        signature: 'async injectManagedHumanMessage(options: InjectManagedHumanMessageOptions): Promise<InboundMessageRecord>',
+        description: 'Inject a message from the managed account human identity (human_dsh). Invariant: senderClassification is \'human_dsh\', never \'ai_outbound\'.',
+        parameters: [{ name: 'options', description: 'Target instance ID, human nick, and text content.' }],
+        returns: 'Inbound message delivery record.',
+      },
+      {
+        signature: 'async importJsonlHistory(options: ImportJsonlHistoryOptions): Promise<{ importedCount: number; messageIds: ImMessageId[] }>',
+        description: 'Import historical background messages from JSONL text.\n\nInvariant: Historical messages are immediately marked as submitted. They are queryable via im_query_history, but will NOT trigger admitInbound.',
+        parameters: [{ name: 'options', description: 'Target instance ID and JSONL text.' }],
+        returns: 'Count and IDs of imported messages.',
+      },
+      {
+        signature: 'async handleSimOutbound( outbound: OutboundMessageRecord, instanceId: string, _conversationId: string, ): Promise<OutboundMessageRecord>',
+        description: 'Settle a simulated outbound message locally and echo it back into the simulation scope.\n\nInvariants: 1. If instance is stopped, outbound fails. 2. Outbound is settled to \'sent\' via imDelivery.settleOutbound. 3. Message is echoed back to the simulation instance via imDelivery.receiveInbound as ai_outbound. 4. External platform adapters (DingTalk, Wangwang) are NEVER called.',
+        parameters: [{ name: 'outbound', description: 'Registered outbound message record.' }, { name: 'instanceId', description: 'Simulation instance identifier.' }, { name: '_conversationId', description: 'Encoded conversation id from the outbound scope; the frozen instance target is authoritative.' }],
+        returns: 'Settled outbound message record.',
+      },
+    ],
+  },
+  {
+    key: 'imWangwang',
+    summary: 'Wangwang / QianNiu IM adapter service: admitted merchant directory, on-demand credential resolution, durable cursor polling, and outbox-verified sender identity.',
+    description: 'Wangwang / QianNiu IM adapter service: admitted merchant directory, on-demand credential resolution, durable cursor polling, and outbox-verified sender identity.',
+    methods: [
+      {
+        signature: 'getAdmittedMerchant(merchantId: string): WangwangAdmittedMerchant',
+        description: 'Get admitted merchant by platform merchantId. Throws if merchant is not in the admitted directory (no runtime guessing).',
+        parameters: [{ name: 'merchantId', description: 'Platform merchant identifier.' }],
+        returns: 'The admitted merchant record.',
+      },
+      {
+        signature: 'getAdmittedMerchantByAccount(accountId: ImAccountId): WangwangAdmittedMerchant',
+        description: 'Get admitted merchant by Harness ImAccountId.',
+        parameters: [{ name: 'accountId', description: 'Harness IM account identifier.' }],
+        returns: 'The admitted merchant record.',
+      },
+      {
+        signature: 'async resolveCredentials(merchant: WangwangAdmittedMerchant): Promise<ResolvedWangwangCredentials>',
+        description: 'Resolve secret credentials on demand per call via CredentialProvider. Credentials are never stored on instance fields or logged.',
+        parameters: [{ name: 'merchant', description: 'Admitted merchant whose CredentialRefs are resolved.' }],
+        returns: 'The resolved access/secret key pair.',
+      },
+      {
+        signature: 'resolveSenderWithOutboxEvidence( event: WangwangRawEvent, merchant: WangwangAdmittedMerchant, ): WangwangSenderResolution',
+        description: 'Resolve inbound sender identity against the durable local outbox echo index. The echo index is the adapter\'s own durable record of settled DSH sends; upstream senderType claims are only trusted when they agree with it. See resolveWangwangSender for the classification invariants.',
+        parameters: [{ name: 'event', description: 'Raw Wangwang event from the OpenAPI events poll.' }, { name: 'merchant', description: 'Admitted merchant the event belongs to.' }],
+        returns: 'Sender classification plus factual evidence.',
+      },
+      {
+        signature: 'getDurableCursor(merchantId: string): number',
+        description: 'Get durable channel cursor from persistent domain table. Survives host restarts and crashes.',
+        parameters: [{ name: 'merchantId', description: 'Platform merchant identifier.' }],
+        returns: 'The last durably advanced sinceId, or 0 when never pulled.',
+      },
+      {
+        signature: 'async setDurableCursor(merchantId: string, sinceId: number): Promise<void>',
+        description: 'Set durable channel cursor directly in persistent domain table.',
+        parameters: [{ name: 'merchantId', description: 'Platform merchant identifier.' }, { name: 'sinceId', description: 'New cursor position.' }],
+      },
+      {
+        signature: 'async pullAndDeliver(merchantId: string): Promise<{ processedCount: number nextSinceId: number hasMore: boolean }>',
+        description: 'Pull incremental events page for an admitted merchant and deliver to ImDeliveryService.\n\nInvariant: the whole pull runs under the per-merchant mutex, so the durable cursor read -> fetch -> advance cycle is atomic against concurrent pulls. Invariant: Whole page must be processed and persisted BEFORE advancing the durable channel cursor. Invariant: Cursor backward movement is safely rejected with CHANNEL_CURSOR_REGRESSION.',
+        parameters: [{ name: 'merchantId', description: 'Platform merchant identifier.' }],
+        returns: 'Processed event count, next cursor position, and hasMore flag.',
+      },
+      {
+        signature: 'async sendMessage(request: WangwangSendMessageRequest): Promise<WangwangSendMessageResult>',
+        description: 'Send outbound message to Wangwang with strict status classification:\n\n- pre_send_failed: validation error, unconfigured/disabled route, paused account for AI (owned by ImDeliveryService.registerOutbound, never duplicated here)\n- sent: successfully delivered with receipt; a durable local outbox echo record is written so later inbound echoes classify from local evidence\n- result_unknown: network timeout, 5xx, or ambiguous receipt (MUST NOT blindly retry)',
+        parameters: [{ name: 'request', description: 'Outbound send request with account, customer, content, and requestId.' }],
+        returns: 'The strict send status classification and receipt facts.',
+      },
+    ],
+  },
+  {
     key: 'inspector',
     summary: 'Shared Host/Client service façade over the realm\'s source publisher.',
     description: 'Shared Host/Client service façade over the realm\'s source publisher.',
@@ -4697,6 +5005,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface AdapterRegistrationHandle {\n    (): void;\n    replace(providers: string[]): void;\n}',
   },
   {
+    name: 'AdmitInboundOptions',
+    declaration: 'export interface AdmitInboundOptions {\n    readonly message?: InboundMessageRecord;\n    readonly messages?: readonly InboundMessageRecord[];\n    readonly scope?: ImDeliveryScope;\n    readonly scopeId?: ImScopeId;\n    readonly agent?: Pick<Agent, \'steer\' | \'session\'>;\n    readonly now?: Date | string | number;\n}',
+  },
+  {
+    name: 'AdmitInboundResult',
+    declaration: 'export interface AdmitInboundResult {\n    readonly triggered: boolean;\n    readonly triggerReason?: ImTriggerReason | undefined;\n    readonly steeredCount?: number | undefined;\n    readonly messageIds?: readonly ImMessageId[] | undefined;\n    readonly workspaceId?: WorkspaceId | undefined;\n}',
+  },
+  {
     name: 'AdmitMemberQuestionHumanTurnInput',
     declaration: 'export interface AdmitMemberQuestionHumanTurnInput {\n    readonly receivingSessionId: ReceivingSessionId;\n    readonly revision: number;\n    readonly rpcId: MemberQuestionReceiverRpcId;\n    readonly content: readonly MemberQuestionHumanTurnContent[];\n    readonly mode: \'queue\' | \'steer\';\n}',
   },
@@ -5401,12 +5717,24 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface CreateGoalResult {\n    readonly ref: GoalRef;\n}',
   },
   {
+    name: 'CreateImAccountOptions',
+    declaration: 'export interface CreateImAccountOptions {\n    id: ImAccountId;\n    platform: \'dingtalk\' | \'wangwang\';\n    displayName: string;\n    credentialRef?: ImAccountMetadata[\'credentialRef\'];\n    status?: ImAccountStatus;\n    paused?: boolean;\n    platformMetadata?: Record<string, string>;\n}',
+  },
+  {
+    name: 'CreateImRouteRuleOptions',
+    declaration: 'export interface CreateImRouteRuleOptions {\n    id: ImRouteRuleId;\n    accountId: ImAccountId;\n    conversationKind: ImConversationKind;\n    target: ImRouteTarget;\n    workspaceId: WorkspaceId;\n    enabled?: boolean;\n    groupTrigger?: ImGroupTriggerConfig;\n}',
+  },
+  {
     name: 'CreateProjectInput',
     declaration: 'export interface CreateProjectInput {\n    readonly name: string;\n    readonly remoteUrl: string;\n}',
   },
   {
     name: 'CreateSessionOptions',
     declaration: 'export interface CreateSessionOptions {\n    readonly seed?: readonly SessionEvent[];\n    readonly inheritedEventCount?: SessionLogOffset;\n    readonly meta?: {\n        readonly cwd?: string;\n        readonly parentSession?: SessionId;\n        readonly createdAt?: number;\n        readonly isSeeded?: boolean;\n        readonly origin?: \'subagent\';\n        readonly delegationDepth?: number;\n        readonly agentPreset?: string;\n    };\n}',
+  },
+  {
+    name: 'CreateSimulationInstanceOptions',
+    declaration: 'export interface CreateSimulationInstanceOptions {\n    readonly workspaceId: WorkspaceId;\n    readonly conversationId: string;\n    readonly conversationKind?: ImConversationKind;\n    readonly instanceId?: ImSimulationInstanceId;\n    readonly speakingMembers?: readonly string[];\n}',
   },
   {
     name: 'CreateTeamTaskRequest',
@@ -5487,6 +5815,26 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'DiffResultView',
     declaration: 'export interface DiffResultView {\n    card: \'diff\';\n    title?: string;\n    diffs: FileDiff[];\n}',
+  },
+  {
+    name: 'DingTalkConsumerState',
+    declaration: 'export interface DingTalkConsumerState {\n    readonly accountId: ImAccountId;\n    readonly isRunning: boolean;\n    readonly reconnectAttempts: number;\n    readonly lastError?: string;\n    readonly lastEventAt?: string;\n}',
+  },
+  {
+    name: 'DingTalkDwsAdapterConfig',
+    declaration: 'export interface DingTalkDwsAdapterConfig {\n    readonly dwsPath?: string;\n    readonly profile?: string;\n    readonly graceMs?: number;\n    readonly cwd?: string;\n    readonly reconnectDelayMs?: number;\n    readonly maxReconnectAttempts?: number;\n}',
+  },
+  {
+    name: 'DingTalkSendMessageRequest',
+    declaration: 'export interface DingTalkSendMessageRequest {\n    readonly accountId: ImAccountId;\n    readonly conversationKind: ImConversationKind;\n    readonly targetId: string;\n    readonly targetIdType?: \'group\' | \'user\' | \'open-dingtalk-id\';\n    readonly text: string;\n    readonly title?: string;\n    readonly isAi?: boolean;\n    readonly replyTo?: {\n        readonly conversationId: string;\n        readonly refMsgId: string;\n        readonly refSenderOpenDingTalkId: string;\n    };\n    readonly uuid?: string;\n}',
+  },
+  {
+    name: 'DingTalkSendMessageResult',
+    declaration: 'export interface DingTalkSendMessageResult {\n    readonly status: \'sent\' | \'result_unknown\' | \'pre_send_failed\';\n    readonly openTaskId?: string;\n    readonly error?: string;\n    readonly rawOutput?: string;\n}',
+  },
+  {
+    name: 'DingTalkSendStatusResult',
+    declaration: 'export interface DingTalkSendStatusResult {\n    readonly openTaskId: string;\n    readonly status: \'sent\' | \'failed\' | \'pending\' | \'unknown\';\n    readonly rawStatus?: string;\n    readonly errorCode?: string;\n    readonly errorMessage?: string;\n}',
   },
   {
     name: 'DirectoryEntry',
@@ -5797,6 +6145,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface IgnorableEventIntent {\n    ignorable: true;\n}',
   },
   {
+    name: 'ImAccountId',
+    declaration: 'export type ImAccountId = Branded<\'ImAccountId\'>;',
+  },
+  {
+    name: 'ImAccountMetadata',
+    declaration: 'export interface ImAccountMetadata {\n    readonly id: ImAccountId;\n    readonly platform: ImPlatform;\n    readonly displayName: string;\n    readonly credentialRef?: CredentialRef;\n    readonly status: ImAccountStatus;\n    readonly paused: boolean;\n    readonly platformMetadata?: Readonly<Record<string, string>>;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
+  },
+  {
+    name: 'ImAccountStatus',
+    declaration: 'export type ImAccountStatus = \'connected\' | \'disconnected\' | \'error\';',
+  },
+  {
     name: 'ImageAttachmentLimits',
     declaration: 'export interface ImageAttachmentLimits {\n    maxImageBytes: number;\n    maxImagesPerMessage: number;\n    maxMessageImageBytes: number;\n    maxImagePixels: number;\n    maxImageDimension: number;\n    mediaTypes: readonly ImageMediaType[];\n}',
   },
@@ -5821,12 +6181,144 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type ImageVariantId = Branded<\'ImageVariantId\'>;',
   },
   {
+    name: 'ImConversationCursor',
+    declaration: 'export interface ImConversationCursor {\n    readonly scopeId: ImScopeId;\n    readonly lastReceivedExternalMessageId?: string;\n    readonly lastReceivedSequenceNumber: number;\n    readonly lastSubmittedSequenceNumber: number;\n    readonly lastSentSequenceNumber: number;\n    readonly unsubmittedCount: number;\n    readonly updatedAt: string;\n}',
+  },
+  {
+    name: 'ImConversationKind',
+    declaration: 'export type ImConversationKind = \'direct\' | \'group\';',
+  },
+  {
+    name: 'ImDeliveryScope',
+    declaration: 'export type ImDeliveryScope = ImRealDeliveryScope | ImSimDeliveryScope;',
+  },
+  {
+    name: 'ImGroupTriggerConfig',
+    declaration: 'export interface ImGroupTriggerConfig {\n    readonly mention?: boolean;\n    readonly everyN?: number;\n    readonly fixedIntervalSeconds?: number;\n}',
+  },
+  {
+    name: 'ImHistoryQueryOptions',
+    declaration: 'export interface ImHistoryQueryOptions {\n    readonly scopeId: ImScopeId;\n    readonly limit?: number;\n    readonly beforeSequenceNumber?: number;\n    readonly afterSequenceNumber?: number;\n    readonly stages?: ImMessageStage[];\n}',
+  },
+  {
+    name: 'ImMessageContent',
+    declaration: 'export interface ImMessageContent {\n    readonly text: string;\n    readonly contentType?: \'text\' | \'markdown\' | \'unsupported\';\n    readonly rawPayload?: Readonly<Record<string, unknown>>;\n}',
+  },
+  {
+    name: 'ImMessageId',
+    declaration: 'export type ImMessageId = Branded<\'ImMessageId\'>;',
+  },
+  {
+    name: 'ImMessageStage',
+    declaration: 'export type ImMessageStage = \'received\' | \'submitted\' | \'sent\';',
+  },
+  {
+    name: 'ImOutboundIntent',
+    declaration: 'export type ImOutboundIntent = \'ai\' | \'human_manual\';',
+  },
+  {
+    name: 'ImOutboundReceipt',
+    declaration: 'export interface ImOutboundReceipt {\n    readonly externalReceiptId?: string;\n    readonly timestamp?: string;\n    readonly rawStatus?: string;\n    readonly errorCode?: string;\n    readonly errorMessage?: string;\n}',
+  },
+  {
+    name: 'ImOutboundRequestId',
+    declaration: 'export type ImOutboundRequestId = Branded<\'ImOutboundRequestId\'>;',
+  },
+  {
+    name: 'ImOutboundStatus',
+    declaration: 'export type ImOutboundStatus = \'pending\' | \'pre_send_failed\' | \'sent\' | \'result_unknown\' | \'confirmed_failed\';',
+  },
+  {
+    name: 'ImPlatform',
+    declaration: 'export type ImPlatform = \'dingtalk\' | \'wangwang\';',
+  },
+  {
+    name: 'ImportJsonlHistoryOptions',
+    declaration: 'export interface ImportJsonlHistoryOptions {\n    readonly instanceId: ImSimulationInstanceId;\n    readonly jsonl: string;\n}',
+  },
+  {
+    name: 'ImRealDeliveryScope',
+    declaration: 'export interface ImRealDeliveryScope {\n    readonly kind: \'real\';\n    readonly platform: ImPlatform;\n    readonly accountId: ImAccountId;\n    readonly conversationId: string;\n    readonly conversationKind?: ImConversationKind;\n}',
+  },
+  {
+    name: 'ImResolveRouteRequest',
+    declaration: 'export interface ImResolveRouteRequest {\n    readonly accountId: ImAccountId;\n    readonly conversationKind: ImConversationKind;\n    readonly conversationId: string;\n}',
+  },
+  {
+    name: 'ImResolveRouteResult',
+    declaration: 'export type ImResolveRouteResult = {\n    readonly status: \'matched\';\n    readonly ruleId: ImRouteRuleId;\n    readonly workspaceId: WorkspaceId;\n    readonly enabled: boolean;\n    readonly groupTrigger?: ImGroupTriggerConfig;\n} | {\n    readonly status: \'disabled\';\n    readonly ruleId: ImRouteRuleId;\n    readonly workspaceId: WorkspaceId;\n    readonly groupTrigger?: ImGroupTriggerConfig;\n} | {\n    readonly status: \'account_paused\';\n    readonly accountId: ImAccountId;\n    readonly ruleId?: ImRouteRuleId;\n    readonly workspaceId?: WorkspaceId;\n} | {\n    readonly status: \'unconfigured\';\n};',
+  },
+  {
+    name: 'ImRouteRule',
+    declaration: 'export interface ImRouteRule {\n    readonly id: ImRouteRuleId;\n    readonly accountId: ImAccountId;\n    readonly conversationKind: ImConversationKind;\n    readonly target: ImRouteTarget;\n    readonly workspaceId: WorkspaceId;\n    readonly enabled: boolean;\n    readonly groupTrigger?: ImGroupTriggerConfig;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
+  },
+  {
+    name: 'ImRouteRuleId',
+    declaration: 'export type ImRouteRuleId = Branded<\'ImRouteRuleId\'>;',
+  },
+  {
+    name: 'ImRouteTarget',
+    declaration: 'export type ImRouteTarget = {\n    readonly kind: \'all\';\n} | {\n    readonly kind: \'specific\';\n    readonly conversationId: string;\n};',
+  },
+  {
+    name: 'ImScopeId',
+    declaration: 'export type ImScopeId = Branded<\'ImScopeId\'>;',
+  },
+  {
+    name: 'ImSenderClassification',
+    declaration: 'export type ImSenderClassification = \'external\' | \'ai_outbound\' | \'human_native\' | \'human_dsh\' | \'unknown\';',
+  },
+  {
+    name: 'ImSenderEvidence',
+    declaration: 'export interface ImSenderEvidence {\n    readonly rawSenderId?: string;\n    readonly rawSenderNick?: string;\n    readonly matchedOutboundRequestId?: ImOutboundRequestId;\n    readonly isSelfAccount?: boolean;\n    readonly clientSource?: \'native_app\' | \'dsh_manual\' | \'ai_agent\' | \'external\';\n    readonly notes?: string;\n}',
+  },
+  {
+    name: 'ImSimDeliveryScope',
+    declaration: 'export interface ImSimDeliveryScope {\n    readonly kind: \'sim\';\n    readonly instanceId: string;\n    readonly conversationId: string;\n    readonly conversationKind?: ImConversationKind;\n}',
+  },
+  {
+    name: 'ImSimulationInstance',
+    declaration: 'export interface ImSimulationInstance {\n    readonly instanceId: ImSimulationInstanceId;\n    readonly workspaceId: WorkspaceId;\n    readonly testedWorkspaceId: WorkspaceId;\n    readonly target: ImSimulationTargetSnapshot;\n    readonly speakingMembers?: readonly string[];\n    readonly status: ImSimulationInstanceStatus;\n    readonly createdAt: string;\n    readonly stoppedAt?: string;\n}',
+  },
+  {
+    name: 'ImSimulationInstanceId',
+    declaration: 'export type ImSimulationInstanceId = Branded<\'ImSimulationInstanceId\'>;',
+  },
+  {
+    name: 'ImSimulationInstanceStatus',
+    declaration: 'export type ImSimulationInstanceStatus = \'running\' | \'stopped\';',
+  },
+  {
+    name: 'ImSimulationTargetSnapshot',
+    declaration: 'export interface ImSimulationTargetSnapshot {\n    readonly accountId: ImAccountId;\n    readonly conversationKind: ImConversationKind;\n    readonly conversationId: string;\n}',
+  },
+  {
+    name: 'ImTriggerReason',
+    declaration: 'export type ImTriggerReason = \'mention\' | \'everyN\' | \'fixedInterval\' | \'direct\';',
+  },
+  {
+    name: 'ImWorkspaceSimulationConfig',
+    declaration: 'export interface ImWorkspaceSimulationConfig {\n    readonly workspaceId: WorkspaceId;\n    readonly targetAccountId: ImAccountId;\n    readonly conversationKind: ImConversationKind;\n    readonly targetConversationId?: string;\n    readonly updatedAt: string;\n}',
+  },
+  {
+    name: 'InboundMessageRecord',
+    declaration: 'export interface InboundMessageRecord {\n    readonly messageId: ImMessageId;\n    readonly scopeId: ImScopeId;\n    readonly externalMessageId: string;\n    readonly senderClassification: ImSenderClassification;\n    readonly senderEvidence: ImSenderEvidence;\n    readonly stage: ImMessageStage;\n    readonly content: ImMessageContent;\n    readonly sequenceNumber: number;\n    readonly receivedAt: string;\n    readonly submittedAt?: string;\n    readonly metadata?: Readonly<Record<string, string>>;\n}',
+  },
+  {
     name: 'IndexInjection',
     declaration: 'export type IndexInjection = {\n    kind: \'global\';\n    name: string;\n    value: unknown;\n} | {\n    kind: \'script\';\n    placement: IndexInjectionPlacement;\n    text: string;\n} | {\n    kind: \'script-src\';\n    placement: IndexInjectionPlacement;\n    src: string;\n} | {\n    kind: \'script-preload\';\n    src: string;\n} | {\n    kind: \'style\';\n    text: string;\n} | {\n    kind: \'html\';\n    placement: IndexInjectionPlacement;\n    html: string;\n};',
   },
   {
     name: 'IndexInjectionPlacement',
     declaration: 'export type IndexInjectionPlacement = \'head\' | \'body\';',
+  },
+  {
+    name: 'InjectManagedHumanMessageOptions',
+    declaration: 'export interface InjectManagedHumanMessageOptions {\n    readonly instanceId: ImSimulationInstanceId;\n    readonly text: string;\n    readonly humanNick?: string;\n    readonly externalMessageId?: string;\n}',
+  },
+  {
+    name: 'InjectMemberMessageOptions',
+    declaration: 'export interface InjectMemberMessageOptions {\n    readonly instanceId: ImSimulationInstanceId;\n    readonly memberId: string;\n    readonly text: string;\n    readonly memberNick?: string;\n    readonly externalMessageId?: string;\n}',
   },
   {
     name: 'InspectorId',
@@ -6111,6 +6603,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ManualCompactAgentContext',
     declaration: 'export interface ManualCompactAgentContext extends CompactionAgentContext {\n    runMaintenance<T>(task: (signal: AbortSignal) => Promise<T>): Promise<T>;\n}',
+  },
+  {
+    name: 'MarkSubmittedOptions',
+    declaration: 'export interface MarkSubmittedOptions {\n    readonly scopeId: ImScopeId;\n    readonly messageIds: ImMessageId[];\n    readonly submittedAt?: string;\n}',
   },
   {
     name: 'MaterializeMemberQuestionSessionInput',
@@ -6399,6 +6895,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'OptionalSessionSeq',
     declaration: 'export type OptionalSessionSeq = SessionSeq | null;',
+  },
+  {
+    name: 'OutboundMessageRecord',
+    declaration: 'export interface OutboundMessageRecord {\n    readonly requestId: ImOutboundRequestId;\n    readonly messageId?: ImMessageId;\n    readonly scopeId: ImScopeId;\n    readonly workspaceId?: WorkspaceId;\n    readonly intent: ImOutboundIntent;\n    readonly content: ImMessageContent;\n    readonly status: ImOutboundStatus;\n    readonly preSendFailureReason?: string;\n    readonly receipt?: ImOutboundReceipt;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n    readonly replyToExternalMessageId?: string;\n}',
   },
   {
     name: 'PairingAccountAuthentication',
@@ -6701,12 +7201,24 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type ReasoningEffortId = Branded<\'ReasoningEffortId\'>;',
   },
   {
+    name: 'ReceiveInboundOptions',
+    declaration: 'export interface ReceiveInboundOptions {\n    readonly scope: ImDeliveryScope;\n    readonly externalMessageId: string;\n    readonly senderClassification: ImSenderClassification;\n    readonly senderEvidence: ImSenderEvidence;\n    readonly content: ImMessageContent;\n    readonly receivedAt?: string;\n    readonly metadata?: Record<string, string>;\n}',
+  },
+  {
+    name: 'ReceiveInboundResult',
+    declaration: 'export interface ReceiveInboundResult {\n    readonly duplicate: boolean;\n    readonly message: InboundMessageRecord;\n    readonly cursor: ImConversationCursor;\n}',
+  },
+  {
     name: 'ReceivingSessionId',
     declaration: 'export type ReceivingSessionId = Branded<\'ReceivingSessionId\'>;',
   },
   {
     name: 'RedactedSecret',
     declaration: 'export interface RedactedSecret {\n    path: string[];\n    set: boolean;\n}',
+  },
+  {
+    name: 'RegisterOutboundOptions',
+    declaration: 'export interface RegisterOutboundOptions {\n    readonly requestId: ImOutboundRequestId;\n    readonly scope: ImDeliveryScope;\n    readonly workspaceId?: WorkspaceId;\n    readonly intent: ImOutboundIntent;\n    readonly content: ImMessageContent;\n    readonly replyToExternalMessageId?: string;\n}',
   },
   {
     name: 'RelayAttachChallengeId',
@@ -6847,6 +7359,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ResolvedSubagentStartRequest',
     declaration: 'export interface ResolvedSubagentStartRequest extends SubagentStartRequest {\n    readonly descriptor: SubagentDescriptorData;\n}',
+  },
+  {
+    name: 'ResolvedWangwangCredentials',
+    declaration: 'export interface ResolvedWangwangCredentials {\n    readonly accessKey: string;\n    readonly secretKey: string;\n}',
   },
   {
     name: 'RestoredSessionOptions',
@@ -7565,6 +8081,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface SettingsWebSearchProbeValue {\n    readonly count: number;\n    readonly title?: string;\n    readonly url?: string;\n}',
   },
   {
+    name: 'SettleOutboundOptions',
+    declaration: 'export interface SettleOutboundOptions {\n    readonly requestId: ImOutboundRequestId;\n    readonly status: \'sent\' | \'result_unknown\' | \'confirmed_failed\';\n    readonly receipt?: ImOutboundReceipt;\n    readonly externalMessageId?: string;\n}',
+  },
+  {
+    name: 'SetWorkspaceSimulationTargetOptions',
+    declaration: 'export interface SetWorkspaceSimulationTargetOptions {\n    workspaceId: WorkspaceId;\n    targetAccountId: ImAccountId;\n    conversationKind: ImConversationKind;\n    targetConversationId?: string;\n}',
+  },
+  {
     name: 'ShellExecRequest',
     declaration: 'export interface ShellExecRequest {\n    command: string;\n    workdir?: string | undefined;\n    timeoutMs?: number | undefined;\n    stdoutMaxBytes?: number | undefined;\n    signal?: AbortSignal | undefined;\n    stdin?: string | undefined;\n    env?: Record<string, string> | undefined;\n    dshEnv?: DshEnvironment | undefined;\n    sandboxPolicy?: SandboxExecutionPolicy | undefined;\n}',
   },
@@ -8263,6 +8787,26 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'VerifiedWebhookDelivery',
     declaration: 'export interface VerifiedWebhookDelivery<K extends string = string> {\n    readonly kind: K;\n    readonly source: WebhookSourceId;\n    readonly deliveryId: WebhookDeliveryId;\n    readonly event: WebhookEventOf<K>;\n    readonly receivedAt: number;\n}',
+  },
+  {
+    name: 'WangwangAdmittedMerchant',
+    declaration: 'export interface WangwangAdmittedMerchant {\n    readonly merchantId: string;\n    readonly accountId: ImAccountId;\n    readonly displayName?: string;\n    readonly accessKeyRef: CredentialRef;\n    readonly secretKeyRef: CredentialRef;\n    readonly mainServiceAccountId?: string;\n}',
+  },
+  {
+    name: 'WangwangRawEvent',
+    declaration: 'export interface WangwangRawEvent {\n    readonly eventId: string;\n    readonly merchantId: string;\n    readonly senderType: 1 | 2 | 3;\n    readonly messageId: string;\n    readonly customerId: string;\n    readonly customerNick?: string;\n    readonly customerAvatar?: string;\n    readonly conversationId: string;\n    readonly msgType: 1 | 2;\n    readonly textContent: string;\n    readonly attachments?: readonly {\n        readonly mediaType: string;\n        readonly mediaUrl: string;\n        readonly label?: string;\n    }[];\n    readonly msgTime: number;\n    readonly producerId?: string;\n    readonly raw: Readonly<Record<string, unknown>>;\n}',
+  },
+  {
+    name: 'WangwangSenderResolution',
+    declaration: 'export interface WangwangSenderResolution {\n    readonly classification: ImSenderClassification;\n    readonly evidence: ImSenderEvidence;\n}',
+  },
+  {
+    name: 'WangwangSendMessageRequest',
+    declaration: 'export interface WangwangSendMessageRequest {\n    readonly accountId: ImAccountId;\n    readonly merchantId: string;\n    readonly customerId: string;\n    readonly content: string;\n    readonly userId: string;\n    readonly producerId?: string;\n    readonly producerRevision?: string;\n    readonly requestId: ImOutboundRequestId;\n    readonly isAi?: boolean;\n}',
+  },
+  {
+    name: 'WangwangSendMessageResult',
+    declaration: 'export interface WangwangSendMessageResult {\n    readonly status: \'sent\' | \'result_unknown\' | \'pre_send_failed\';\n    readonly messageId?: string;\n    readonly receiptId?: string;\n    readonly producerId?: string;\n    readonly producerRevision?: string;\n    readonly error?: string;\n    readonly rawResponse?: unknown;\n}',
   },
   {
     name: 'WebBootBatch',

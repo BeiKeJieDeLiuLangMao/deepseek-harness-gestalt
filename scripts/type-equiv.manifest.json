@@ -2285,6 +2285,71 @@
       "doc": "docs/subsystems/feedback.md",
       "symbol": "SessionFeedbackRecordResult",
       "source": "packages/feedback/command-feedback/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/im.md",
+      "symbol": "ImAccountId",
+      "source": "packages/im/im-core/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/im.md",
+      "symbol": "ImRouteRuleId",
+      "source": "packages/im/im-core/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/im.md",
+      "symbol": "ImAccountMetadata",
+      "source": "packages/im/im-core/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/im.md",
+      "symbol": "ImRouteRule",
+      "source": "packages/im/im-core/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/im.md",
+      "symbol": "ImResolveRouteResult",
+      "source": "packages/im/im-core/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/im.md",
+      "symbol": "ImWorkspaceSimulationConfig",
+      "source": "packages/im/im-core/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/im.md",
+      "symbol": "ImSenderClassification",
+      "source": "packages/im/im-core/src/delivery/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/im.md",
+      "symbol": "InboundMessageRecord",
+      "source": "packages/im/im-core/src/delivery/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/im.md",
+      "symbol": "OutboundMessageRecord",
+      "source": "packages/im/im-core/src/delivery/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/im.md",
+      "symbol": "ImConversationCursor",
+      "source": "packages/im/im-core/src/delivery/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/im.md",
+      "symbol": "ImSimulationInstance",
+      "source": "packages/im/im-core/src/simulation/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/im.md",
+      "symbol": "DingTalkConsumerState",
+      "source": "packages/im/im-dingtalk/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/im.md",
+      "symbol": "WangwangAdmittedMerchant",
+      "source": "packages/im/im-wangwang/src/types.ts"
     }
   ]
 }

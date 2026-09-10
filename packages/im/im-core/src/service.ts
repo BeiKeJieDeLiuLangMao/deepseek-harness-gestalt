@@ -22,12 +22,6 @@ import type {
   ImWorkspaceSimulationConfig,
 } from './types.ts'
 
-declare module '@deepseek-ai/cordis' {
-  interface Context {
-    imConfig: ImConfigService
-  }
-}
-
 export interface CreateImAccountOptions {
   id: ImAccountId
   platform: 'dingtalk' | 'wangwang'

@@ -87,3 +87,5 @@ Mounted at `ctx.imConfig` for configuration and routing, `ctx.imDelivery` for me
 ## Assembled acceptance
 
 `tests/assembled-acceptance.spec.tsx` is the keyless assembled scenario: a real Loader `cordis.yml` of im-core and the DingTalk fixture adapter, a production tested Agent, a simulated-user workspace, sender classification, real/sim outbound parity, stop isolation, and Sidebar presentation of the same records. It names live DingTalk login, live Wangwang reads, live outbound, real model calls, and native Desktop GUI computer-use as separately authorized lanes.
+
+`@deepseek-ai/dsh-base` mounts `im-config`, `im-delivery`, `im-execution`, `im-simulation`, and idle DingTalk. Wangwang stays an overlay because its adapter fails loud without an admitted merchant directory.

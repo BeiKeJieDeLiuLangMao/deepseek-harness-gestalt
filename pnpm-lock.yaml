@@ -2050,6 +2050,12 @@ importers:
       '@deepseek-ai/dsh-goal-round-driver':
         specifier: workspace:^
         version: link:../../goal/goal-round-driver
+      '@deepseek-ai/dsh-im-core':
+        specifier: workspace:^
+        version: link:../../im/im-core
+      '@deepseek-ai/dsh-im-dingtalk':
+        specifier: workspace:^
+        version: link:../../im/im-dingtalk
       '@deepseek-ai/dsh-jobs-local':
         specifier: workspace:^
         version: link:../../jobs/jobs-local
