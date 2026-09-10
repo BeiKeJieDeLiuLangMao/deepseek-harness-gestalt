@@ -13,24 +13,25 @@ export class FakeLoaderCredentialProvider extends CredentialProvider {
   ])
 
   async resolve(ref: CredentialRef): Promise<ResolvedCredential | undefined> {
-    const val = this.store.get(ref as string)
+    const val = this.store.get(ref)
     if (!val) return undefined
     return { value: val, source: 'fake-loader' }
   }
 
   async describe(ref: CredentialRef): Promise<CredentialInfo> {
-    const exists = this.store.has(ref as string)
-    return { configured: exists, source: exists ? 'fake-loader' : undefined, writable: true }
+    const exists = this.store.has(ref)
+    return { configured: exists, ...(exists ? { source: 'fake-loader' } : {}), writable: true }
   }
 
   async set(ref: CredentialRef, value: string): Promise<void> {
-    this.store.set(ref as string, value)
+    this.store.set(ref, value)
   }
   async unset(ref: CredentialRef): Promise<void> {
-    this.store.delete(ref as string)
+    this.store.delete(ref)
   }
+  async readRecord(): Promise<undefined> { return undefined }
+  async describeRecord(): Promise<never> { throw new Error('not implemented') }
   async modifyRecord(): Promise<never> { throw new Error('not implemented') }
-  async getRecord(): Promise<undefined> { return undefined }
   async deleteRecord(): Promise<void> {}
   async listRecords(): Promise<[]> { return [] }
 }

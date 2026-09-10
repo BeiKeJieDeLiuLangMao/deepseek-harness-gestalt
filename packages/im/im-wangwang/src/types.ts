@@ -78,7 +78,8 @@ export interface WangwangRawEvent {
   }[]
   readonly msgTime: number
   readonly producerId?: string
-  readonly raw?: Readonly<Record<string, unknown>>
+  /** Raw upstream payload, always populated by the OpenAPI client. */
+  readonly raw: Readonly<Record<string, unknown>>
 }
 
 /**

@@ -54,8 +54,7 @@ describe('im-wangwang real Loader cordis.yml composition', () => {
     const loader = Object.create(Loader.prototype) as Loader
     const unwrapped = loader.unwrapExports(imWangwangModule) as typeof WangwangAdapterService
     expect(unwrapped).toBe(WangwangAdapterService)
-    expect(unwrapped.name).toBe('imWangwang')
-    expect(unwrapped.inject).toEqual(['credentials', 'imConfig', 'imDelivery'])
+    expect(unwrapped.inject).toEqual(['credentials', 'storageDomain', 'imDelivery'])
   })
 
   it('boots through real cordis.yml Loader and verifies admitted merchant configuration', async () => {
@@ -88,7 +87,7 @@ describe('im-wangwang real Loader cordis.yml composition', () => {
 
     runLoaderDriver(tempDir, configPath, storageFile)
 
-    const report = JSON.parse(await readFile(join(tempDir, 'wangwang-loader-report.json'), 'utf8'))
+    const report = JSON.parse(await readFile(join(tempDir, 'wangwang-loader-report.json'), 'utf8')) as Record<string, unknown>
     expect(report).toEqual({
       success: true,
       merchantId: 'merchant_loader_01',

@@ -42,7 +42,8 @@
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/dsh-credentials": "workspace:^",
-    "@deepseek-ai/dsh-im-core": "workspace:^"
+    "@deepseek-ai/dsh-im-core": "workspace:^",
+    "@deepseek-ai/dsh-storage-domain": "workspace:^"
   },
   "dependencies": {
     "@deepseek-ai/dsh-brand": "workspace:^",

@@ -14,6 +14,7 @@
 import { createHmac } from 'node:crypto'
 import type { ResolvedWangwangCredentials, SignedWangwangRequest } from './types.ts'
 
+/** Canonical Wangwang OpenAPI authentication header names. */
 export const WANGWANG_HEADERS = Object.freeze({
   accessKey: 'x-api-access-key',
   timestamp: 'x-api-timestamp',
@@ -21,10 +22,13 @@ export const WANGWANG_HEADERS = Object.freeze({
   requestId: 'x-api-request-id',
 } as const)
 
+/** Allowed query parameter value before canonical encoding. */
 export type WangwangQueryValue = string | number | bigint | boolean | null | undefined
 
 /**
  * Builds canonical sorted query string according to Wangwang protocol.
+ * @param query - Query parameters; null/undefined values are dropped.
+ * @returns URL-encoded query string sorted by encoded key.
  */
 export function buildWangwangSortedQuery(
   query: Readonly<Record<string, WangwangQueryValue>> = {},
@@ -43,6 +47,8 @@ export function buildWangwangSortedQuery(
 /**
  * Computes deterministic HMAC-SHA256 signature for a request.
  * String to sign: `${method}\n${path}\n${queryString}\n${timestamp}`
+ * @param input - Method, path, canonical query string, timestamp, and secret key.
+ * @returns Base64-encoded HMAC-SHA256 signature.
  */
 export function computeWangwangSignature(input: {
   readonly method: string
@@ -57,6 +63,8 @@ export function computeWangwangSignature(input: {
 
 /**
  * Signs a Wangwang request and returns headers and query string.
+ * @param input - Credentials, method, path, optional query, timestamp, and optional request id.
+ * @returns Canonical query string plus the `x-api-*` authentication headers.
  */
 export function signWangwangRequest(input: {
   readonly credentials: ResolvedWangwangCredentials

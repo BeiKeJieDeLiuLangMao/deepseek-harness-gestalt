@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-10-im-wangwang-adapter.md
-2026-09-10-im-wangwang-adapter.md: a22b4dc357306f1ea0314af69b1402529720601b
-2026-09-10-im-wangwang-adapter.zh.md: 2446d952a72513e71bcfd4888bc4ca2fdb33fedb
+2026-09-10-im-wangwang-adapter.md: e97a647aa2e93c87726e7cee52f49e40ea0f78f0
+2026-09-10-im-wangwang-adapter.zh.md: 542ab6468a421d5ffe0f7929f961b48cda5636e0

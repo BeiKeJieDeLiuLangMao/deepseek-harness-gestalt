@@ -5,6 +5,8 @@
 export * from './types.ts'
 export * from './spec.ts'
 export * from './auth.ts'
+export * from './errors.ts'
+export * from './identity.ts'
 export * from './client.ts'
 export * from './service.ts'
 
