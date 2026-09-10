@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "sequence": 14,
+  "intentIds": [
+    "636-account-deletion-platform"
+  ],
+  "summaries": [
+    {
+      "en": "Enable account deletion, Mobile installation revocation, and PostgreSQL-backed Project Membership in the operated Platform.",
+      "zh": "在生产 Platform 启用账号删除、Mobile 安装撤销和 PostgreSQL 项目成员持久化。"
+    }
+  ],
+  "releaseUnits": {
+    "desktop": {
+      "selected": false,
+      "version": "0.1.17"
+    },
+    "mobile": {
+      "selected": false,
+      "version": "0.1.3"
+    },
+    "platform": {
+      "selected": true,
+      "previousVersion": "0.1.4",
+      "version": "0.1.5",
+      "tag": "platform-v0.1.5",
+      "bump": "patch",
+      "summaries": [
+        {
+          "en": "Enable account deletion, Mobile installation revocation, and PostgreSQL-backed Project Membership in the operated Platform.",
+          "zh": "在生产 Platform 启用账号删除、Mobile 安装撤销和 PostgreSQL 项目成员持久化。"
+        }
+      ]
+    }
+  }
+}
