@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "nextSequence": 14,
+  "nextSequence": 15,
   "consumedIntentIds": [
     "226-sidebar-browser",
     "414-desktop-recovery-version",
@@ -36,6 +36,7 @@
     "555-platform-membership-http",
     "608-filed-domain-reissue",
     "628-companion-stopped-marker",
+    "636-account-deletion-platform",
     "desktop-updater-available-recheck"
   ]
 }
