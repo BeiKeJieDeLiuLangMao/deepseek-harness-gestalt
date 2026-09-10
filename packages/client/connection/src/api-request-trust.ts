@@ -13,7 +13,7 @@
  * belongs to the webserver config, and this fence is not an auth layer.
  */
 
-import { isLoopbackHostname } from './loopback-hostname.ts'
+import { isLoopbackHostname } from '@deepseek-ai/dsh-request-trust'
 import type { ConnectionTrustRequest } from './rpc.ts'
 
 function header(headers: ConnectionTrustRequest['headers'], name: string): string | undefined {

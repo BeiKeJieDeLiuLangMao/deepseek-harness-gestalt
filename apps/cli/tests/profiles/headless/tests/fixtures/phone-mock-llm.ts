@@ -2,7 +2,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import {
-  CallId,
+  ToolCallId,
   LlmAdapter,
   ReasoningEffortId,
   type GenerateOptions,
@@ -19,8 +19,8 @@ const ACT_OK_MARKER = '"status": "ok"'
 function toolCallChunks(id: string, name: string, args: string): StreamChunk[] {
   return [
     { type: 'block-start', index: 0, blockType: 'tool-call' },
-    { type: 'tool-call-delta', index: 0, id: CallId(id), name, argumentsDelta: args },
-    { type: 'block-end', index: 0, block: { type: 'tool-call', id: CallId(id), name, arguments: args } },
+    { type: 'tool-call-delta', index: 0, id: ToolCallId(id), name, argumentsDelta: args },
+    { type: 'block-end', index: 0, block: { type: 'tool-call', id: ToolCallId(id), name, arguments: args } },
     { type: 'usage', usage: { inputTokens: 1, outputTokens: 1 } },
     { type: 'finish', reason: { kind: 'tool-calls' } },
   ]

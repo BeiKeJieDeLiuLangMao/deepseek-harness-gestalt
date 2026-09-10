@@ -74,6 +74,14 @@ async function buildDocSite(siteRoot: string, mpa: boolean): Promise<void> {
   await build(root, docSiteBuildOptions(root, mpa))
 }
 
+/**
+ * Build the documentation website from a clean, resolved output directory.
+ * @param mpa - Whether to enable VitePress MPA mode.
+ */
+export async function buildDocumentationSite(mpa: boolean): Promise<void> {
+  await buildDocSite(websiteRoot, mpa)
+}
+
 function parseMpa(args: string[]): boolean {
   if (args.length === 0) return false
   if (args.length === 1 && args[0] === '--mpa') return true

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { CallId, createToolResultMessage, createUserMessage, HarnessError } from '@deepseek-ai/dsh-llm'
+import { ToolCallId, createToolResultMessage, createUserMessage, HarnessError } from '@deepseek-ai/dsh-llm'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
@@ -161,7 +161,7 @@ describe('deferred phone device Consumer', () => {
       .toEqual(['tool_search'])
 
     const discovery = await ctx.tools.execute({
-      callId: CallId('search-device'),
+      callId: ToolCallId('search-device'),
       name: 'tool_search',
       arguments: { query: 'device', limit: 8 },
       agent,
@@ -179,7 +179,7 @@ describe('deferred phone device Consumer', () => {
       turn: 1,
       step: 1,
       message: createToolResultMessage({
-        callId: CallId('search-device'),
+        callId: ToolCallId('search-device'),
         content: discovery.content,
         isError: false,
         loadedTools: discovery.loadedTools ?? [],
@@ -194,7 +194,7 @@ describe('deferred phone device Consumer', () => {
     const { ctx } = await harness(fleet)
 
     const listed = await ctx.tools.execute({
-      callId: CallId('list'),
+      callId: ToolCallId('list'),
       name: 'device_list',
       arguments: {},
       signal,
@@ -206,7 +206,7 @@ describe('deferred phone device Consumer', () => {
     }])
 
     const observed = await ctx.tools.execute({
-      callId: CallId('observe'),
+      callId: ToolCallId('observe'),
       name: 'device_observe',
       arguments: { deviceId: 'emulator-5554' },
       signal,
@@ -217,7 +217,7 @@ describe('deferred phone device Consumer', () => {
     })
 
     const missing = await ctx.tools.execute({
-      callId: CallId('observe-missing'),
+      callId: ToolCallId('observe-missing'),
       name: 'device_observe',
       arguments: { deviceId: 'no-such-device' },
       signal,
@@ -228,7 +228,7 @@ describe('deferred phone device Consumer', () => {
     })
 
     const shot = await ctx.tools.execute({
-      callId: CallId('shot'),
+      callId: ToolCallId('shot'),
       name: 'device_screenshot',
       arguments: { deviceId: 'emulator-5554' },
       signal,
@@ -252,7 +252,7 @@ describe('deferred phone device Consumer', () => {
     const fleet = fakeFleet()
     const { ctx } = await harness(fleet)
     const shot = await ctx.tools.execute({
-      callId: CallId('shot-png'),
+      callId: ToolCallId('shot-png'),
       name: 'device_screenshot',
       arguments: { deviceId: 'emulator-5554' },
       signal,
@@ -281,7 +281,7 @@ describe('deferred phone device Consumer', () => {
     })
 
     const allowed = await ctx.tools.execute({
-      callId: CallId('act-allow'),
+      callId: ToolCallId('act-allow'),
       name: 'device_act',
       arguments: tap,
       agent,
@@ -295,7 +295,7 @@ describe('deferred phone device Consumer', () => {
     expect(fleet.ioCalls).toEqual([{ deviceId: ANDROID_ID, method: 'tap', source: { kind: 'fresh-probe' }, x: 12, y: 40 }])
 
     const opened = await ctx.tools.execute({
-      callId: CallId('open-allow'),
+      callId: ToolCallId('open-allow'),
       name: 'device_open',
       arguments: { deviceId: 'SIM-UDID' },
       agent,
@@ -306,21 +306,21 @@ describe('deferred phone device Consumer', () => {
     expect(fleet.boots).toEqual([IOS_SIM_ID])
 
     await expect(ctx.tools.execute({
-      callId: CallId('act-swipe'),
+      callId: ToolCallId('act-swipe'),
       name: 'device_act',
       arguments: { deviceId: 'emulator-5554', action: { kind: 'swipe', x1: 1, y1: 2, x2: 3, y2: 4 } },
       agent,
       signal,
     })).resolves.toMatchObject({ isError: false, value: { action: { kind: 'swipe' } } })
     await expect(ctx.tools.execute({
-      callId: CallId('act-type'),
+      callId: ToolCallId('act-type'),
       name: 'device_act',
       arguments: { deviceId: 'emulator-5554', action: { kind: 'type', text: 'hello' } },
       agent,
       signal,
     })).resolves.toMatchObject({ isError: false, value: { action: { kind: 'type', text: 'hello' } } })
     await expect(ctx.tools.execute({
-      callId: CallId('act-button'),
+      callId: ToolCallId('act-button'),
       name: 'device_act',
       arguments: { deviceId: 'emulator-5554', action: { kind: 'button', name: 'home' } },
       agent,
@@ -339,7 +339,7 @@ describe('deferred phone device Consumer', () => {
       return Promise.resolve<ApprovalOutcome>('rejected')
     }, { prepend: true })
     const deniedAct = await ctx.tools.execute({
-      callId: CallId('act-deny'),
+      callId: ToolCallId('act-deny'),
       name: 'device_act',
       arguments: tap,
       agent,
@@ -353,7 +353,7 @@ describe('deferred phone device Consumer', () => {
     expect(fleet.ioCalls).toHaveLength(5)
 
     const closed = await ctx.tools.execute({
-      callId: CallId('close-deny'),
+      callId: ToolCallId('close-deny'),
       name: 'device_close',
       arguments: { deviceId: 'SIM-UDID' },
       agent,
@@ -368,7 +368,7 @@ describe('deferred phone device Consumer', () => {
       return Promise.resolve<ApprovalOutcome>('allowed-once')
     }, { prepend: true })
     const closedOk = await ctx.tools.execute({
-      callId: CallId('close-allow'),
+      callId: ToolCallId('close-allow'),
       name: 'device_close',
       arguments: { deviceId: 'SIM-UDID' },
       agent,
@@ -397,7 +397,7 @@ describe('deferred phone device Consumer', () => {
     ctx.on('approval/request', () => Promise.resolve<ApprovalOutcome>('allowed-once'))
 
     const listed = await ctx.tools.execute({
-      callId: CallId('list-fail'),
+      callId: ToolCallId('list-fail'),
       name: 'device_list',
       arguments: {},
       signal,
@@ -408,7 +408,7 @@ describe('deferred phone device Consumer', () => {
     })
 
     const opened = await ctx.tools.execute({
-      callId: CallId('open-fail'),
+      callId: ToolCallId('open-fail'),
       name: 'device_open',
       arguments: { deviceId: 'REAL-UDID' },
       agent,
@@ -420,7 +420,7 @@ describe('deferred phone device Consumer', () => {
     })
 
     const closed = await ctx.tools.execute({
-      callId: CallId('close-fail'),
+      callId: ToolCallId('close-fail'),
       name: 'device_close',
       arguments: { deviceId: 'missing' },
       agent,
@@ -443,7 +443,7 @@ describe('deferred phone device Consumer', () => {
     ctx.on('approval/request', () => Promise.resolve<ApprovalOutcome>('allowed-once'))
 
     const shot = await ctx.tools.execute({
-      callId: CallId('shot-unsupported'),
+      callId: ToolCallId('shot-unsupported'),
       name: 'device_screenshot',
       arguments: { deviceId: 'emulator-5554' },
       signal,
@@ -454,7 +454,7 @@ describe('deferred phone device Consumer', () => {
     })
 
     const acted = await ctx.tools.execute({
-      callId: CallId('act-unsupported'),
+      callId: ToolCallId('act-unsupported'),
       name: 'device_act',
       arguments: { deviceId: 'emulator-5554', action: { kind: 'button', name: 'home' } },
       agent,
@@ -474,7 +474,7 @@ describe('deferred phone device Consumer', () => {
     ctx.on('approval/request', () => Promise.resolve<ApprovalOutcome>('allowed-once'))
 
     await expect(ctx.tools.execute({
-      callId: CallId('blank-id'),
+      callId: ToolCallId('blank-id'),
       name: 'device_observe',
       arguments: { deviceId: '  ' },
       signal,
@@ -484,7 +484,7 @@ describe('deferred phone device Consumer', () => {
     })
 
     await expect(ctx.tools.execute({
-      callId: CallId('empty-type'),
+      callId: ToolCallId('empty-type'),
       name: 'device_act',
       arguments: { deviceId: 'emulator-5554', action: { kind: 'type', text: '   ' } },
       agent,
@@ -514,7 +514,7 @@ describe('deferred phone device Consumer', () => {
     ctx.on('approval/request', () => Promise.resolve<ApprovalOutcome>('allowed-once'))
 
     const acted = await ctx.tools.execute({
-      callId: CallId('act-timeout'),
+      callId: ToolCallId('act-timeout'),
       name: 'device_act',
       arguments: { deviceId: 'emulator-5554', action: { kind: 'tap', x: 1, y: 2 } },
       agent,
@@ -526,7 +526,7 @@ describe('deferred phone device Consumer', () => {
     })
 
     const shot = await ctx.tools.execute({
-      callId: CallId('shot-upstream'),
+      callId: ToolCallId('shot-upstream'),
       name: 'device_screenshot',
       arguments: { deviceId: 'emulator-5554' },
       signal,
@@ -543,7 +543,7 @@ describe('deferred phone device Consumer', () => {
     ctx.on('tools/pre-execute', (): Promise<PreToolDecision> =>
       Promise.resolve({ kind: 'deny', reason: 'later deny' }))
     const listed = await ctx.tools.execute({
-      callId: CallId('later-deny-list'),
+      callId: ToolCallId('later-deny-list'),
       name: 'device_list',
       arguments: {},
       signal,
@@ -559,7 +559,7 @@ describe('deferred phone device Consumer', () => {
     ctx.on('tools/pre-execute', (): Promise<PreToolDecision> =>
       Promise.resolve({ kind: 'deny', reason: 'owner denied first' }), { prepend: true })
     const result = await ctx.tools.execute({
-      callId: CallId('denied-open'),
+      callId: ToolCallId('denied-open'),
       name: 'device_open',
       arguments: { deviceId: 'SIM-UDID' },
       signal,
@@ -623,7 +623,7 @@ describe('deferred phone device Consumer', () => {
       async shutdown() {},
     })
     const listed = await ctx.tools.execute({
-      callId: CallId('plain-fail'),
+      callId: ToolCallId('plain-fail'),
       name: 'device_list',
       arguments: {},
       signal,

@@ -1,7 +1,7 @@
 import { copyFile, mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { normalizeSessionSnapshot, type NormalizeContext } from '@deepseek-ai/dsh-acp-snapshot'
+import { normalizeSessionSnapshot, type NormalizeContext } from '@deepseek-ai/dsh-session-snapshot'
 import { LOADER_SMOKE_TEST_TIMEOUT_MS, runLoaderSmoke } from '@deepseek-ai/dsh-loader-smoke'
 import {
   decompressZstdFrame,
@@ -15,8 +15,8 @@ const sessionExpected = join(scenarioDir, 'session.expected.jsonl')
 const configPath = fileURLToPath(new URL('../deferred-phone-tools.cordis.snapshot.yml', import.meta.url))
 const phoneMockLlmPath = fileURLToPath(new URL('./fixtures/phone-mock-llm.ts', import.meta.url))
 const fakePhoneFleetPath = fileURLToPath(new URL('./fixtures/fake-phone-fleet.ts', import.meta.url))
-const dshBinScript = fileURLToPath(new URL('../../../apps/cli/src/bin.ts', import.meta.url))
-const tsconfigPath = fileURLToPath(new URL('../../../tsconfig.json', import.meta.url))
+const dshBinScript = fileURLToPath(new URL('../../../../src/bin.ts', import.meta.url))
+const tsconfigPath = fileURLToPath(new URL('../../../../../../tsconfig.json', import.meta.url))
 const refreshing = process.env.DSH_SNAPSHOT === 'refresh'
 
 const TASK =
