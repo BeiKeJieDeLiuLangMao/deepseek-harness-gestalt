@@ -109,7 +109,7 @@ describe('packaged Desktop main bundle', () => {
     expect(source).toContain('companion entry search')
     expect(source).not.toContain('DSH_PLATFORM_ORIGIN')
     expect(JSON.parse(readFileSync(join(desktop, 'out', 'cliproxyapi-source.json'), 'utf8'))).toEqual({
-      sourceSHA: '7fac6b15bcfe5ea55c18c9eaec8e5b7e6457d974',
+      sourceSHA: '1d25ceb7f38736880880a5a0d9e08ebb5349d950',
     })
     expect(JSON.parse(readFileSync(join(desktop, 'out', 'operated-platform.json'), 'utf8'))).toEqual({
       environment: 'production',
