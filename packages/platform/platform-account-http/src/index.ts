@@ -9,6 +9,9 @@ import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import {
   AccountError,
+  parseAccountDeletionId,
+  parseAccountDeletionRecoveryToken,
+  parseAccountDeletionSuccessors,
   parseAccountProofJti,
   parseDesktopInstallationPresentation,
   parseInstallationId,
@@ -130,6 +133,44 @@ export function apply(ctx: Context, config: Config): void {
     writeJson(res, 200, await ctx.platformAccount.refresh({
       refreshToken: requiredString(body, 'refreshToken'),
       proof: requiredProof(body.proof),
+    }))
+  })
+
+  route('/v1/account/mobile-installations', async (req, res) => {
+    requireMethod(req, 'GET')
+    writeJson(res, 200, await ctx.platformAccount.listMobileInstallations(accountSessionPresentation(req)))
+  })
+
+  route('/v1/account/mobile-installations/revoke', async (req, res) => {
+    requireMethod(req, 'POST')
+    const body = await readJson(req)
+    writeJson(res, 200, await ctx.platformAccount.revokeMobileInstallation({
+      ...accountSessionPresentation(req),
+      installationId: parseInstallationId(requiredString(body, 'installationId')),
+    }))
+  })
+
+  route('/v1/account/deletion/plan', async (req, res) => {
+    requireMethod(req, 'POST')
+    writeJson(res, 200, await ctx.platformAccount.planAccountDeletion(accountSessionPresentation(req)))
+  })
+
+  route('/v1/account/deletion', async (req, res) => {
+    requireMethod(req, 'POST')
+    const body = await readJson(req)
+    const receipt = requiredDeletionReceipt(body)
+    const successors = requiredDeletionSuccessors(body.successors)
+    writeJson(res, 200, await ctx.platformAccount.deleteAccount({
+      ...accountSessionPresentation(req), ...receipt, successors,
+    }))
+  })
+
+  route('/v1/account/deletion/recovery', async (req, res) => {
+    requireMethod(req, 'POST')
+    const body = await readJson(req)
+    writeJson(res, 200, await ctx.platformAccount.recoverAccountDeletion({
+      ...requiredDeletionReceipt(body), proof: requiredProof(body.proof),
+      ...(body.successors === undefined ? {} : { successors: requiredDeletionSuccessors(body.successors) }),
     }))
   })
 
@@ -263,12 +304,19 @@ function answerError(res: ServerResponse, error: unknown): void {
     return
   }
   if (error instanceof AccountError) {
+    const status = error.code === 'QUOTA' || error.code === 'PLATFORM_CAPACITY'
+      ? 429
+      : error.code.startsWith('SESSION_')
+        ? 401
+        : error.code === 'INSTALLATION_FORBIDDEN'
+          ? 403
+          : error.code === 'INSTALLATION_NOT_FOUND'
+            ? 404
+            : 400
     writeRetryAfterError(
       res,
       error,
-      error.code === 'QUOTA' || error.code === 'PLATFORM_CAPACITY'
-        ? 429
-        : error.code.startsWith('SESSION_') ? 401 : 400,
+      status,
     )
     return
   }
@@ -277,4 +325,20 @@ function answerError(res: ServerResponse, error: unknown): void {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function requiredDeletionReceipt(body: Record<string, unknown>) {
+  try {
+    return { operationId: parseAccountDeletionId(body.operationId), recoveryToken: parseAccountDeletionRecoveryToken(body.recoveryToken) }
+  } catch (error) {
+    // The owned deletion parsers reject decoded JSON only with TypeError.
+    throw new HttpError(400, 'INVALID_REQUEST', (error as Error).message)
+  }
+}
+
+function requiredDeletionSuccessors(value: unknown) {
+  try { return parseAccountDeletionSuccessors(value) } catch (error) {
+    // The owned successor parser rejects decoded JSON only with TypeError.
+    throw new HttpError(400, 'INVALID_REQUEST', (error as Error).message)
+  }
 }

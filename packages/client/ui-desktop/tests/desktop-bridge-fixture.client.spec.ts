@@ -2,7 +2,7 @@ import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
 import type { DesktopBridge } from '../src/protocol.ts'
 import { INITIAL_ACCOUNT_SNAPSHOT } from '../src/client/account-source.ts'
 import { INITIAL_PAIRING_SNAPSHOT } from '../src/client/pairing-source.ts'
-import { INITIAL_SUB2API_SNAPSHOT } from '../src/client/sub2api-source.ts'
+import { INITIAL_ACCOUNT_POOL_SNAPSHOT } from '../src/client/account-pool-source.ts'
 import { installDesktopBridgeFixture } from './desktop-bridge-fixture.client.ts'
 
 describe('DesktopBridge Web E2E fixture', () => {
@@ -40,43 +40,43 @@ describe('DesktopBridge Web E2E fixture', () => {
     expect(reply).not.toHaveBeenCalled()
   })
 
-  it('delivers inert Account, Pairing, and Sub2API snapshots and honors unsubscribe', async () => {
+  it('delivers inert Account, Pairing, and account-pool snapshots and honors unsubscribe', async () => {
     const bridge = installDesktopBridgeFixture('darwin')
     expect(bridge.platform).toBe('darwin')
     await expect(bridge.getStatus()).resolves.toEqual({ state: 'disabled', lastCheckedAt: null })
     await expect(bridge.accountGetSnapshot()).resolves.toEqual(INITIAL_ACCOUNT_SNAPSHOT)
     await expect(bridge.pairingGetSnapshot()).resolves.toEqual(INITIAL_PAIRING_SNAPSHOT)
-    await expect(bridge.sub2ApiGetSnapshot()).resolves.toEqual(INITIAL_SUB2API_SNAPSHOT)
+    await expect(bridge.accountPoolGetSnapshot()).resolves.toEqual(INITIAL_ACCOUNT_POOL_SNAPSHOT)
 
     const onAccount = vi.fn()
     const onPairing = vi.fn()
-    const onSub2api = vi.fn()
+    const onAccountPool = vi.fn()
     const onStatus = vi.fn()
     const stopAccount = bridge.onAccountSnapshot(onAccount)
     const stopPairing = bridge.onPairingSnapshot(onPairing)
-    const stopSub2api = bridge.onSub2ApiSnapshot(onSub2api)
+    const stopAccountPool = bridge.onAccountPoolSnapshot(onAccountPool)
     const stopStatus = bridge.onStatus(onStatus)
     expect(onAccount).toHaveBeenCalledExactlyOnceWith(INITIAL_ACCOUNT_SNAPSHOT)
     expect(onPairing).toHaveBeenCalledExactlyOnceWith(INITIAL_PAIRING_SNAPSHOT)
-    expect(onSub2api).toHaveBeenCalledExactlyOnceWith(INITIAL_SUB2API_SNAPSHOT)
+    expect(onAccountPool).toHaveBeenCalledExactlyOnceWith(INITIAL_ACCOUNT_POOL_SNAPSHOT)
     expect(onStatus).not.toHaveBeenCalled()
 
     stopAccount()
     stopPairing()
-    stopSub2api()
+    stopAccountPool()
     stopStatus()
     stopAccount()
     stopPairing()
-    stopSub2api()
+    stopAccountPool()
     stopStatus()
 
     await bridge.accountAcceptPrivacy()
     await bridge.pairingSetEnabled(true)
-    await bridge.sub2ApiEnable()
+    await bridge.accountPoolRefresh()
     bridge.checkNow()
     expect(onAccount).toHaveBeenCalledOnce()
     expect(onPairing).toHaveBeenCalledOnce()
-    expect(onSub2api).toHaveBeenCalledOnce()
+    expect(onAccountPool).toHaveBeenCalledOnce()
     expect(onStatus).not.toHaveBeenCalled()
   })
 })

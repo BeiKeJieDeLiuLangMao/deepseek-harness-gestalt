@@ -33,6 +33,8 @@
     { "path": "../../packages/browser/browser-runtime-electron" },
     { "path": "../../packages/client/ui-desktop" },
     { "path": "../../packages/host/webserver" },
+    { "path": "../../packages/llm/cliproxy-quota" },
+    { "path": "../../packages/llm/llm-gestalt-account-pool" },
     { "path": "../../packages/util/home-paths" },
     { "path": "../../vendor/cordis" },
     { "path": "../../packages/platform/platform-account" },

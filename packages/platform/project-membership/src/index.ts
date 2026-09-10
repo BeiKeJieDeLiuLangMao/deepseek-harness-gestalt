@@ -1,3 +1,4 @@
+import type { AccountDeletionProject, AccountDeletionSuccessor } from '@deepseek-ai/dsh-platform-account'
 /**
  * Service Definition for cloud-project membership: projects bound to a
  * workspace Git origin or `local://workspace/<id>` sentinel, owner/admin/member
@@ -96,6 +97,24 @@ export abstract class ProjectMembershipService extends Service {
   constructor(ctx: Context) {
     super(ctx, 'projectMembership')
   }
+
+  /**
+   * List shared projects requiring an explicit successor for account deletion.
+   * @param accountId - Account authenticated by the Account deletion owner.
+   * @returns Sole-owner projects and their other joined members.
+   */
+  abstract accountDeletionProjects(accountId: PlatformAccountId): Promise<readonly AccountDeletionProject[]>
+
+  /**
+   * Remove one deleting Account's personal membership records without deleting other members' data.
+   * @param accountId - Account whose durable deletion has already revoked ordinary authorization.
+   * @param successors - Explicit, proof-bound choices for sole-owner shared projects.
+   * @returns Projects requiring replacement choices; an empty list means cleanup completed.
+   */
+  abstract deleteAccountMemberships(
+    accountId: PlatformAccountId,
+    successors: readonly AccountDeletionSuccessor[],
+  ): Promise<readonly AccountDeletionProject[]>
 
   /**
    * Create one project; the actor becomes its first owner.

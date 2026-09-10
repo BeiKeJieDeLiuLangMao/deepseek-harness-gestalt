@@ -18,6 +18,8 @@ Gestalt 在独立 GitHub 仓库中开发可安装的 DeepSeek Harness 插件，�
 
 `vendor/` 仍是树内 Cordis 源码。`packages/` 仍是 `@deepseek-ai/dsh-*` workspace。Gestalt 之后作为一等 harness 包交付的插件仍迁入 `packages/`。
 
+拟议的[内置 CLIProxyAPI 账号池](2026-09-09-built-in-cliproxyapi-account-pool.zh.md)会取代上文针对 Sub2API 子项与 Offer 卡的计划，但不会取代该目录对独立发布插件的通用模式。其核心 fork 仍是由 submodule 钉住的外部源码，而 Gestalt 自有生命周期与 UI 代码位于 Harness 仓库中。
+
 默认 `git clone` 在执行 `git submodule update --init --recursive` 前让目录子项保持为空。需要插件源码的 CI 任务在 `actions/checkout` 上设置 `submodules: recursive`。只需要 harness 源码的任务保持默认空 checkout。
 
 ## Alternatives considered

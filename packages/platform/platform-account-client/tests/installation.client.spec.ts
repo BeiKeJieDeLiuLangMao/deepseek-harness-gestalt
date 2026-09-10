@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi, type Mock } from 'vitest'
 import {
   AccountError,
   parseInstallationId,
+  parseAccountDeletionId,
   parseAccountProofJti,
   parseLoginAttemptId,
   selectPlatformEnvironment,
@@ -72,7 +73,12 @@ interface MockTransport {
   pollLogin: Mock<PlatformAccountTransport['pollLogin']>
   refresh: Mock<PlatformAccountTransport['refresh']>
   current: Mock<PlatformAccountTransport['current']>
+  listMobileInstallations: Mock<PlatformAccountTransport['listMobileInstallations']>
+  revokeMobileInstallation: Mock<PlatformAccountTransport['revokeMobileInstallation']>
   signOut: Mock<PlatformAccountTransport['signOut']>
+  planAccountDeletion: Mock<PlatformAccountTransport['planAccountDeletion']>
+  deleteAccount: Mock<PlatformAccountTransport['deleteAccount']>
+  recoverAccountDeletion: Mock<PlatformAccountTransport['recoverAccountDeletion']>
 }
 
 function transport(
@@ -86,7 +92,12 @@ function transport(
       .mockImplementation(async () => ({ status: 'complete', ...results.shift()! })),
     refresh: vi.fn<PlatformAccountTransport['refresh']>(),
     current: vi.fn<PlatformAccountTransport['current']>(),
+    listMobileInstallations: vi.fn<PlatformAccountTransport['listMobileInstallations']>(),
+    revokeMobileInstallation: vi.fn<PlatformAccountTransport['revokeMobileInstallation']>(),
     signOut: vi.fn<PlatformAccountTransport['signOut']>().mockResolvedValue(undefined),
+    planAccountDeletion: vi.fn<PlatformAccountTransport['planAccountDeletion']>().mockResolvedValue([]),
+    deleteAccount: vi.fn<PlatformAccountTransport['deleteAccount']>(),
+    recoverAccountDeletion: vi.fn<PlatformAccountTransport['recoverAccountDeletion']>(),
   }
 }
 
@@ -719,13 +730,15 @@ describe('PlatformAccountHttpTransport', () => {
       const address = typeof url === 'string' ? url : url instanceof URL ? url.href : url.url
       calls.push([address, init ?? {}])
       if (init?.method === 'DELETE') return new Response(null, { status: 204 })
-      const value = address.endsWith('/login-attempts')
-        ? ATTEMPT
-        : address.endsWith('/login-poll')
-          ? { status: 'pending' }
-          : address.endsWith('/refresh')
-            ? session('account-a', 'octocat')
-            : session('account-a', 'octocat').account
+      const value = address.endsWith('/mobile-installations') || address.endsWith('/mobile-installations/revoke')
+        ? [{ id: 'mobile-1', reference: '123456789abc', name: 'Test phone', platform: 'ios' }]
+        : address.endsWith('/login-attempts')
+          ? ATTEMPT
+          : address.endsWith('/login-poll')
+            ? { status: 'pending' }
+            : address.endsWith('/refresh')
+              ? session('account-a', 'octocat')
+              : session('account-a', 'octocat').account
       return new Response(JSON.stringify(value), {
         status: 200, headers: { 'content-type': 'application/json' },
       })
@@ -743,6 +756,10 @@ describe('PlatformAccountHttpTransport', () => {
     await transport.pollLogin({ attemptId: parseLoginAttemptId('attempt'), pollingToken: 'poll', proof })
     await transport.refresh({ refreshToken: 'refresh', proof })
     await transport.current({ accessToken: 'access', proof })
+    await transport.listMobileInstallations({ accessToken: 'access', proof })
+    await transport.revokeMobileInstallation({
+      accessToken: 'access', proof, installationId: parseInstallationId('mobile-1'),
+    })
     await transport.signOut({ accessToken: 'access', proof })
 
     expect(calls.map(([url]) => url)).toEqual([
@@ -750,6 +767,8 @@ describe('PlatformAccountHttpTransport', () => {
       'https://prod.example/v1/account/login-poll',
       'https://prod.example/v1/account/session/refresh',
       'https://prod.example/v1/account/session',
+      'https://prod.example/v1/account/mobile-installations',
+      'https://prod.example/v1/account/mobile-installations/revoke',
       'https://prod.example/v1/account/session',
     ])
     expect(new Headers(calls[0]?.[1].headers).get('content-type')).toBe('application/json')
@@ -814,6 +833,8 @@ describe('PlatformAccountHttpTransport', () => {
     })).rejects.toThrow('status')
     await expect(transport.refresh({ refreshToken: 'refresh', proof })).rejects.toThrow('Account Session')
     await expect(transport.current({ accessToken: 'access', proof })).rejects.toThrow('Platform Account')
+    await expect(transport.listMobileInstallations({ accessToken: 'access', proof }))
+      .rejects.toThrow('must be an array')
     const backwards = { ...session('account-a', 'octocat'), accessExpiresAt: 2_000, refreshExpiresAt: 1_000 }
     const backwardsTransport = new PlatformAccountHttpTransport({
       environment: DEVELOPMENT, fetch: vi.fn(async () => json(backwards)),
@@ -935,10 +956,10 @@ describe('ACCOUNT_PRIVACY_NOTICE', () => {
   it('states retained data, retention, encrypted blobs, and the absent deletion flow in both languages', () => {
     expect(ACCOUNT_PRIVACY_NOTICE.zh).toContain('7 天')
     expect(ACCOUNT_PRIVACY_NOTICE.zh).toContain('30 天')
-    expect(ACCOUNT_PRIVACY_NOTICE.zh).toContain('不提供账号删除')
+    expect(ACCOUNT_PRIVACY_NOTICE.zh).toContain('手机账号页申请删除')
     expect(ACCOUNT_PRIVACY_NOTICE.en).toContain('7 days')
     expect(ACCOUNT_PRIVACY_NOTICE.en).toContain('30 days')
-    expect(ACCOUNT_PRIVACY_NOTICE.en).toContain('does not provide account deletion')
+    expect(ACCOUNT_PRIVACY_NOTICE.en).toContain('request deletion of the cloud account')
     expect(ACCOUNT_PRIVACY_NOTICE.zh).not.toContain('推送')
     expect(ACCOUNT_PRIVACY_NOTICE.en).not.toMatch(/push/iu)
   })
@@ -1016,3 +1037,206 @@ function deferred<T>(): { promise: Promise<T>; resolve(value: T): void } {
   let resolve!: (value: T) => void
   return { promise: new Promise<T>((next) => { resolve = next }), resolve }
 }
+
+
+describe('installation account deletion', () => {
+  it('persists a proof-bound receipt before transmission and recovers before ordinary authorization after restart', async () => {
+    const store = new MemoryInstallationAccountStore()
+    const api = transport([])
+    const keys = await webcrypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign', 'verify'])
+    await store.saveSession({ environment: 'development', session: session('account-a', 'alice'), privateKey: keys.privateKey })
+    const cleanup = vi.fn().mockRejectedValueOnce(new Error('native storage unavailable')).mockResolvedValue(undefined)
+    const options = { environment: DEVELOPMENT, installationId: parseInstallationId('deleting-mobile'),
+      installationKind: 'mobile' as const, presentation: { name: 'Deletion test', platform: 'ios' as const },
+      transport: api, store, systemBrowser: { open: vi.fn() }, crypto: webcrypto as Crypto, onAccountDeleted: cleanup }
+    api.current.mockResolvedValue(session('account-a', 'alice').account)
+    const first = new PlatformAccountInstallation(options)
+    await first.load()
+    await first.prepareAccountDeletion()
+    first.cancelAccountDeletion()
+    expect(api.deleteAccount).not.toHaveBeenCalled()
+    expect(first.getSnapshot().status).toBe('signed-in')
+    await first.prepareAccountDeletion()
+    api.deleteAccount.mockImplementation(async (input) => {
+      expect((await store.loadDeletion('development'))?.receipt.operationId).toBe(input.operationId)
+      throw new Error('response lost')
+    })
+    await first.confirmAccountDeletion([])
+    expect(first.getSnapshot().deletion?.status).toBe('retry')
+    const persisted = (await store.loadDeletion('development'))!
+    api.recoverAccountDeletion.mockResolvedValue({ operationId: persisted.receipt.operationId, status: 'complete', projects: [] })
+    api.current.mockClear()
+    const restarted = new PlatformAccountInstallation(options)
+    await restarted.load()
+    expect(api.current).not.toHaveBeenCalled()
+    expect(restarted.getSnapshot().deletion?.status).toBe('retry')
+    expect(await store.loadDeletion('development')).toBeDefined()
+    await restarted.retryAccountDeletion()
+    expect(restarted.getSnapshot().deletion?.status).toBe('complete')
+    expect(await store.loadSession('development')).toBeUndefined()
+    expect(await store.loadDeletion('development')).toBeUndefined()
+    expect(cleanup).toHaveBeenLastCalledWith(session('account-a', 'alice').account.id)
+    const request = api.recoverAccountDeletion.mock.calls[0]![0]
+    expect(request).not.toHaveProperty('accessToken')
+    expect(request.proof.signature).toBeTruthy()
+  })
+})
+
+
+async function deletionClient() {
+  const store = new MemoryInstallationAccountStore()
+  const api = transport([])
+  const keys = await webcrypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign', 'verify'])
+  const stored = { environment: 'development' as const, session: session('account-a', 'alice'), privateKey: keys.privateKey }
+  await store.saveSession(stored)
+  const client = new PlatformAccountInstallation({ environment: DEVELOPMENT,
+    installationId: parseInstallationId('deleting-mobile'), installationKind: 'mobile',
+    presentation: { name: 'Deletion test', platform: 'ios' }, transport: api, store,
+    systemBrowser: { open: vi.fn() }, crypto: webcrypto as Crypto })
+  return { store, api, client, stored }
+}
+
+describe('deletion recovery authority', () => {
+  it('persists IndexedDB recovery material and rejects a record from another environment', async () => {
+    const fake = indexedDbFake()
+    vi.stubGlobal('indexedDB', fake.api)
+    const store = new IndexedDbInstallationAccountStore('deletion-db')
+    const { stored } = await deletionClient()
+    const record = { phase: 'requested' as const, environment: stored.environment, accountId: stored.session.account.id,
+      privateKey: stored.privateKey, successors: [],
+      receipt: { operationId: parseAccountDeletionId('persisted-operation'), recoveryToken: 'a'.repeat(43) } }
+    expect(await store.loadDeletion('development')).toBeUndefined()
+    await store.saveDeletion(record)
+    expect(await store.loadDeletion('development')).toEqual(record)
+    fake.records.set('development:deletion', { ...record, phase: 'invalid' })
+    await expect(store.loadDeletion('development')).rejects.toThrow('phase is invalid')
+    fake.records.set('development:deletion', { ...record, environment: 'production' })
+    await expect(store.loadDeletion('development')).rejects.toThrow('another environment')
+    await store.clearDeletion('development')
+    expect(await store.loadDeletion('development')).toBeUndefined()
+  })
+
+  it('requires confirmation and a current session before creating a receipt', async () => {
+    const { client, store, api } = await deletionClient()
+    client.cancelAccountDeletion()
+    client.dismissAccountDeletion()
+    await client.retryAccountDeletion()
+    await expect(client.confirmAccountDeletion([])).rejects.toThrow('confirmation is not open')
+    await store.clearSession('development')
+    await expect(client.prepareAccountDeletion()).rejects.toMatchObject({ code: 'SESSION_REVOKED' })
+    expect(api.deleteAccount).not.toHaveBeenCalled()
+  })
+
+  it('does not send deletion when the session disappears after opening confirmation', async () => {
+    const { client, store, api } = await deletionClient()
+    await client.prepareAccountDeletion()
+    await store.clearSession('development')
+    await expect(client.confirmAccountDeletion([])).rejects.toMatchObject({ code: 'SESSION_REVOKED' })
+    expect(api.deleteAccount).not.toHaveBeenCalled()
+  })
+
+  it.each([false, true])('retains recovery when successor replanning fails: %s', async (unavailable) => {
+    const { client, store, api } = await deletionClient()
+    await client.prepareAccountDeletion()
+    api.deleteAccount.mockRejectedValue(new AccountError('DELETION_SELECTION_REQUIRED', 'Choose successor'))
+    if (unavailable) api.planAccountDeletion.mockRejectedValueOnce(new Error('offline'))
+    await client.confirmAccountDeletion([])
+    expect(client.getSnapshot().deletion?.status).toBe(unavailable ? 'retry' : 'confirming')
+    expect(await store.loadDeletion('development')).toEqual(unavailable ? expect.anything() : undefined)
+  })
+
+  it('rejects another operation response and retains the initiating material', async () => {
+    const { client, store, api } = await deletionClient()
+    await client.prepareAccountDeletion()
+    api.deleteAccount.mockResolvedValue({ operationId: parseAccountDeletionId('wrong-operation'), status: 'complete', projects: [] })
+    await client.confirmAccountDeletion([])
+    expect(client.getSnapshot().deletion?.status).toBe('retry')
+    expect(await store.loadDeletion('development')).toBeDefined()
+    await expect(client.prepareAccountDeletion()).rejects.toMatchObject({ code: 'ACCOUNT_DELETING' })
+  })
+
+  it('clears authority on action-required and accepts replacement choices through recovery', async () => {
+    const { client, store, api } = await deletionClient()
+    await client.prepareAccountDeletion()
+    api.deleteAccount.mockImplementation(async input => ({ operationId: input.operationId, status: 'action-required', projects: [] }))
+    await client.confirmAccountDeletion([])
+    expect(client.getSnapshot().deletion?.status).toBe('action-required')
+    expect(await store.loadSession('development')).toBeUndefined()
+    api.recoverAccountDeletion.mockImplementation(async input => ({ operationId: input.operationId, status: 'complete', projects: [] }))
+    await client.retryAccountDeletion([])
+    expect(api.recoverAccountDeletion.mock.calls[0]?.[0].successors).toEqual([])
+    expect(await store.loadDeletion('development')).toBeUndefined()
+    client.dismissAccountDeletion()
+    expect(client.getSnapshot().deletion).toBeUndefined()
+  })
+
+  it.each(['absent', 'another-account'] as const)('cannot resubmit unknown deletion using %s session', async (state) => {
+    const { client, store, api, stored } = await deletionClient()
+    await client.prepareAccountDeletion()
+    api.deleteAccount.mockRejectedValue(new Error('offline'))
+    await client.confirmAccountDeletion([])
+    if (state === 'absent') await store.clearSession('development')
+    else await store.saveSession({ ...stored, session: session('account-b', 'bob') })
+    api.recoverAccountDeletion.mockRejectedValue(new AccountError('DELETION_INVALID', 'unknown receipt'))
+    await client.retryAccountDeletion()
+    expect(api.deleteAccount).toHaveBeenCalledTimes(1)
+    expect(client.getSnapshot().deletion?.status).toBe('retry')
+  })
+
+  it('refreshes expired access before planning and preserves an expired refresh session', async () => {
+    const { client, store, api, stored } = await deletionClient()
+    await store.saveSession({ ...stored, session: { ...stored.session, accessExpiresAt: 0 } })
+    api.refresh.mockResolvedValue({ ...stored.session, accessToken: 'refreshed-access' })
+    await client.prepareAccountDeletion()
+    expect(api.planAccountDeletion.mock.calls[0]?.[0].accessToken).toBe('refreshed-access')
+    client.cancelAccountDeletion()
+    await store.saveSession({ ...stored, session: { ...stored.session, refreshExpiresAt: 0 } })
+    await expect(client.prepareAccountDeletion()).rejects.toMatchObject({ code: 'SESSION_EXPIRED' })
+    expect(api.deleteAccount).not.toHaveBeenCalled()
+  })
+})
+
+it('finishes retained local cleanup after the completed server receipt has expired', async () => {
+  const fake = indexedDbFake()
+  vi.stubGlobal('indexedDB', fake.api)
+  const store = new IndexedDbInstallationAccountStore('cloud-complete-recovery')
+  const { stored } = await deletionClient()
+  await store.saveSession(stored)
+  const api = transport([])
+  const cleanup = vi.fn().mockRejectedValueOnce(new Error('native storage unavailable')).mockResolvedValue(undefined)
+  const options = { environment: DEVELOPMENT, installationId: parseInstallationId('cloud-complete-mobile'),
+    installationKind: 'mobile' as const, presentation: { name: 'Deletion test', platform: 'ios' as const },
+    transport: api, store, systemBrowser: { open: vi.fn() }, crypto: webcrypto as Crypto, onAccountDeleted: cleanup }
+  api.deleteAccount.mockImplementation(async input => ({ operationId: input.operationId, status: 'complete', projects: [] }))
+  const client = new PlatformAccountInstallation(options)
+  await client.prepareAccountDeletion()
+  await client.confirmAccountDeletion([])
+  expect(client.getSnapshot().deletion?.status).toBe('retry')
+  expect(await store.loadSession('development')).toBeUndefined()
+  api.recoverAccountDeletion.mockRejectedValue(new AccountError('DELETION_INVALID', 'receipt expired'))
+  const restarted = new PlatformAccountInstallation({ ...options, store: new IndexedDbInstallationAccountStore('cloud-complete-recovery') })
+  await restarted.load()
+  expect(restarted.getSnapshot().deletion?.status).toBe('complete')
+  expect(api.recoverAccountDeletion).not.toHaveBeenCalled()
+  expect(cleanup).toHaveBeenCalledTimes(2)
+  expect(await store.loadDeletion('development')).toBeUndefined()
+  restarted.dismissAccountDeletion()
+  expect(restarted.getSnapshot().status).toBe('idle')
+})
+
+
+it('keeps session material when the cloud-complete checkpoint cannot be persisted', async () => {
+  const { client, store, api } = await deletionClient()
+  await client.prepareAccountDeletion()
+  const save = store.saveDeletion.bind(store)
+  const writes = vi.spyOn(store, 'saveDeletion').mockImplementationOnce(save).mockRejectedValueOnce(new Error('storage unavailable'))
+  api.deleteAccount.mockImplementation(async input => ({ operationId: input.operationId, status: 'complete', projects: [] }))
+  await client.confirmAccountDeletion([])
+  expect(client.getSnapshot().deletion?.status).toBe('retry')
+  expect(await store.loadSession('development')).toBeDefined()
+  expect(await store.loadDeletion('development')).toMatchObject({ phase: 'requested' })
+  writes.mockRestore()
+  api.recoverAccountDeletion.mockImplementation(async input => ({ operationId: input.operationId, status: 'complete', projects: [] }))
+  await client.retryAccountDeletion()
+  expect(client.getSnapshot().deletion?.status).toBe('complete')
+})

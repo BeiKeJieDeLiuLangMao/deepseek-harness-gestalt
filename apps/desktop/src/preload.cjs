@@ -19,6 +19,8 @@ contextBridge.exposeInMainWorld('dshDesktop', {
   accountAcceptPrivacy: () => ipcRenderer.invoke('account:acceptPrivacy'),
   accountBeginLogin: () => ipcRenderer.invoke('account:beginLogin'),
   accountCancelLogin: () => ipcRenderer.invoke('account:cancelLogin'),
+  accountRefreshMobileInstallations: () => ipcRenderer.invoke('account:refreshMobileInstallations'),
+  accountRevokeMobileInstallation: (installationId) => ipcRenderer.invoke('account:revokeMobileInstallation', installationId),
   accountSignOut: () => ipcRenderer.invoke('account:signOut'),
   onAccountSnapshot: (listener) => {
     const wrapped = (_event, snapshot) => { listener(snapshot) }
@@ -50,14 +52,19 @@ contextBridge.exposeInMainWorld('dshDesktop', {
     ipcRenderer.on('pairing:snapshot-changed', wrapped)
     return () => { ipcRenderer.removeListener('pairing:snapshot-changed', wrapped) }
   },
-  sub2ApiGetSnapshot: () => ipcRenderer.invoke('sub2api:getSnapshot'),
-  sub2ApiEnable: () => ipcRenderer.invoke('sub2api:enable'),
-  sub2ApiDisable: () => ipcRenderer.invoke('sub2api:disable'),
-  sub2ApiUninstall: (deleteData) => ipcRenderer.invoke('sub2api:uninstall', deleteData === true),
-  onSub2ApiSnapshot: (listener) => {
+  accountPoolGetSnapshot: () => ipcRenderer.invoke('accountPool:getSnapshot'),
+  accountPoolRefresh: () => ipcRenderer.invoke('accountPool:refresh'),
+  accountPoolSetEnabled: (name, enabled) => ipcRenderer.invoke('accountPool:setEnabled', { name, enabled }),
+  accountPoolDelete: (name) => ipcRenderer.invoke('accountPool:delete', name),
+  accountPoolStartLogin: (kind) => ipcRenderer.invoke('accountPool:startLogin', kind),
+  accountPoolLoginStatus: (state) => ipcRenderer.invoke('accountPool:loginStatus', state),
+  accountPoolCancelLogin: (state) => ipcRenderer.invoke('accountPool:cancelLogin', state),
+  accountPoolSubmitGlmKey: (input) => ipcRenderer.invoke('accountPool:submitGlmKey', input),
+  accountPoolRefreshQuota: (authIndex) => ipcRenderer.invoke('accountPool:refreshQuota', authIndex),
+  onAccountPoolSnapshot: (listener) => {
     const wrapped = (_event, snapshot) => { listener(snapshot) }
-    ipcRenderer.on('sub2api:snapshot-changed', wrapped)
-    return () => { ipcRenderer.removeListener('sub2api:snapshot-changed', wrapped) }
+    ipcRenderer.on('accountPool:snapshot-changed', wrapped)
+    return () => { ipcRenderer.removeListener('accountPool:snapshot-changed', wrapped) }
   },
   browserPresent: (request) => ipcRenderer.invoke('browser:present', request),
   browserConceal: (target) => ipcRenderer.invoke('browser:conceal', target),

@@ -95,7 +95,7 @@ Complete a worker phase only when the remote ticket branch represents its full t
 
 ## Merge through a merger subagent
 
-1. Dispatch a merger subagent, not the root session, to integrate each completed ticket branch into the specification branch. Fast-forward when the histories allow it; otherwise create a merge commit. Push the specification branch and report the new head.
+1. Dispatch a merger subagent, not the root session, to integrate each completed ticket branch into the specification branch. Fast-forward when the histories allow it; otherwise create a merge commit. Push the specification branch and report the new head. Give the merger `/opt/homebrew/bin` on PATH. `pnpm: command not found` is a PATH miss, not a sandbox denial. When the ticket SHA is already verified and the spec update is a fast-forward of only that SHA, the merger may push with `LEFTHOOK=0`; GitHub CI on that SHA owns typecheck. Do not rewrite lefthook in the same product PR.
 2. After a successful merge, recompute the ready frontier and dispatch newly unblocked writers.
 3. Before each batch, have the merger subagent merge-forward current `origin/master` into the specification branch once and push it. Affected in-flight writers then merge-forward that updated remote head into their ticket branches, audit semantic conflicts, and republish the exact head. Sibling writers do not merge master independently.
 4. For leftover GitHub-level dependencies that this single pull request cannot express, follow [the official stack workflow](../dsh-merging-stacked-prs/SKILL.md).

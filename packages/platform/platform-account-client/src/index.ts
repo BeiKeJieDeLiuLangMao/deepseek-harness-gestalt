@@ -6,11 +6,25 @@
 
 import {
   ACCOUNT_PRIVACY_NOTICE,
+  accountDeletionBinding,
+  parseAccountDeletionId,
+  parseAccountDeletionRecoveryToken,
+  parseAccountDeletionSuccessors,
+  parsePlatformAccountId,
+  type AccountDeletionReceipt,
+  type AccountDeletionSuccessor,
   AccountError,
+  parseAccountDeletionProjects,
+  parseAccountDeletionView,
+  type AccountDeletionRequest,
+  type AccountDeletionRecovery,
+  type AccountDeletionProject,
+  type AccountDeletionView,
   parseAccountSessionView,
   parseAccountProofJti,
   parseLoginAttemptView,
   parseLoginPollResult,
+  parseMobileAccountInstallationViews,
   parsePlatformAccountView,
   type AccountProof,
   type AccountErrorCode,
@@ -21,6 +35,7 @@ import {
   type LoginAttemptId,
   type LoginAttemptView,
   type LoginPollResult,
+  type MobileAccountInstallationView,
   type PlatformAccountId,
   type PlatformAccountView,
   type PlatformEnvironment,
@@ -46,7 +61,16 @@ export interface PlatformAccountTransport {
   pollLogin(input: { attemptId: LoginAttemptId; pollingToken: string; proof: AccountProof }): Promise<LoginPollResult>
   refresh(input: { refreshToken: string; proof: AccountProof }): Promise<AccountSessionView>
   current(input: { accessToken: string; proof: AccountProof }): Promise<PlatformAccountView>
+  listMobileInstallations(input: { accessToken: string; proof: AccountProof }): Promise<readonly MobileAccountInstallationView[]>
+  revokeMobileInstallation(input: {
+    accessToken: string
+    proof: AccountProof
+    installationId: InstallationId
+  }): Promise<readonly MobileAccountInstallationView[]>
   signOut(input: { accessToken: string; proof: AccountProof }): Promise<void>
+  planAccountDeletion(input: { accessToken: string; proof: AccountProof }): Promise<readonly AccountDeletionProject[]>
+  deleteAccount(input: AccountDeletionRequest): Promise<AccountDeletionView>
+  recoverAccountDeletion(input: AccountDeletionRecovery): Promise<AccountDeletionView>
 }
 
 /** HTTP transport construction inputs. */
@@ -95,11 +119,47 @@ export class PlatformAccountHttpTransport implements PlatformAccountTransport {
     }, parsePlatformAccountView)
   }
 
+  listMobileInstallations(input: {
+    accessToken: string
+    proof: AccountProof
+  }): Promise<readonly MobileAccountInstallationView[]> {
+    return this.json('/v1/account/mobile-installations', {
+      method: 'GET',
+      headers: proofHeaders(input.accessToken, input.proof),
+    }, parseMobileAccountInstallationViews)
+  }
+
+  revokeMobileInstallation(input: {
+    accessToken: string
+    proof: AccountProof
+    installationId: InstallationId
+  }): Promise<readonly MobileAccountInstallationView[]> {
+    return this.json('/v1/account/mobile-installations/revoke', {
+      method: 'POST',
+      headers: proofHeaders(input.accessToken, input.proof),
+      body: JSON.stringify({ installationId: input.installationId }),
+    }, parseMobileAccountInstallationViews)
+  }
+
   async signOut(input: { accessToken: string; proof: AccountProof }): Promise<void> {
     await this.request('/v1/account/session', {
       method: 'DELETE',
       headers: proofHeaders(input.accessToken, input.proof),
     })
+  }
+
+  planAccountDeletion(input: { accessToken: string; proof: AccountProof }): Promise<readonly AccountDeletionProject[]> {
+    return this.json('/v1/account/deletion/plan', { method: 'POST', headers: proofHeaders(input.accessToken, input.proof) }, parseAccountDeletionProjects)
+  }
+
+  deleteAccount(input: AccountDeletionRequest): Promise<AccountDeletionView> {
+    return this.json('/v1/account/deletion', { method: 'POST', headers: proofHeaders(input.accessToken, input.proof),
+      body: JSON.stringify({ operationId: input.operationId, recoveryToken: input.recoveryToken, successors: input.successors }),
+    }, parseAccountDeletionView)
+  }
+
+  recoverAccountDeletion(input: AccountDeletionRecovery): Promise<AccountDeletionView> {
+    return this.json('/v1/account/deletion/recovery', { method: 'POST', body: JSON.stringify(input) }, parseAccountDeletionView)
   }
 
   private async json<T>(path: string, init: RequestInit, parse: (value: unknown) => T): Promise<T> {
@@ -141,8 +201,22 @@ export interface StoredInstallationSession {
   privateKey: CryptoKey
 }
 
+/** Installation-bound deletion material retained until cloud and local cleanup complete. */
+export interface StoredAccountDeletion {
+  /** Cloud completion is durable before local cleanup; its replay never requires a server receipt. */
+  phase: 'requested' | 'cloud-complete'
+  environment: PlatformEnvironment
+  accountId: PlatformAccountId
+  receipt: AccountDeletionReceipt
+  successors: readonly AccountDeletionSuccessor[]
+  privateKey: CryptoKey
+}
+
 /** Persistence used for session recovery and account-scoped product material. */
 export interface InstallationAccountStore {
+  loadDeletion(environment: PlatformEnvironment): Promise<StoredAccountDeletion | undefined>
+  saveDeletion(record: StoredAccountDeletion): Promise<void>
+  clearDeletion(environment: PlatformEnvironment): Promise<void>
   loadSession(environment: PlatformEnvironment): Promise<StoredInstallationSession | undefined>
   saveSession(record: StoredInstallationSession): Promise<void>
   clearSession(environment: PlatformEnvironment): Promise<void>
@@ -153,9 +227,24 @@ export interface InstallationAccountStore {
 
 /** In-memory installation store for keyless compositions and tests. */
 export class MemoryInstallationAccountStore implements InstallationAccountStore {
+  private readonly deletions = new Map<PlatformEnvironment, StoredAccountDeletion>()
   private readonly sessions = new Map<PlatformEnvironment, StoredInstallationSession>()
   private readonly pending = new Map<PlatformEnvironment, PendingLogin>()
   private readonly material = new Map<string, Map<string, unknown>>()
+
+  loadDeletion(environment: PlatformEnvironment): Promise<StoredAccountDeletion | undefined> {
+    return Promise.resolve(this.deletions.get(environment))
+  }
+
+  saveDeletion(record: StoredAccountDeletion): Promise<void> {
+    this.deletions.set(record.environment, record)
+    return Promise.resolve()
+  }
+
+  clearDeletion(environment: PlatformEnvironment): Promise<void> {
+    this.deletions.delete(environment)
+    return Promise.resolve()
+  }
 
   loadSession(environment: PlatformEnvironment): Promise<StoredInstallationSession | undefined> {
     return Promise.resolve(this.sessions.get(environment))
@@ -223,6 +312,27 @@ export class IndexedDbInstallationAccountStore implements InstallationAccountSto
       request.onsuccess = () => { resolve(request.result) }
       request.onerror = () => { reject(request.error ?? new Error('Platform Account IndexedDB open failed')) }
     })
+  }
+
+  loadDeletion(environment: PlatformEnvironment): Promise<StoredAccountDeletion | undefined> {
+    return this.read(`${environment}:deletion`, (value) => {
+      const record = durableRecord(value, 'stored account deletion')
+      if (record.environment !== environment) throw new TypeError('Stored deletion belongs to another environment')
+      const receipt = durableRecord(record.receipt, 'account deletion receipt')
+      if (record.phase !== 'requested' && record.phase !== 'cloud-complete') throw new TypeError('Stored deletion phase is invalid')
+      return { phase: record.phase, environment, accountId: parsePlatformAccountId(record.accountId),
+        receipt: { operationId: parseAccountDeletionId(receipt.operationId),
+          recoveryToken: parseAccountDeletionRecoveryToken(receipt.recoveryToken) },
+        successors: parseAccountDeletionSuccessors(record.successors), privateKey: parseP256PrivateKey(record.privateKey) }
+    })
+  }
+
+  saveDeletion(record: StoredAccountDeletion): Promise<void> {
+    return this.write(`${record.environment}:deletion`, record)
+  }
+
+  clearDeletion(environment: PlatformEnvironment): Promise<void> {
+    return this.remove(`${environment}:deletion`)
   }
 
   loadSession(environment: PlatformEnvironment): Promise<StoredInstallationSession | undefined> {
@@ -342,6 +452,7 @@ export function accountStorageNamespace(environment: PlatformEnvironment, accoun
 export interface PlatformAccountInstallationSnapshot {
   status: 'idle' | 'preparing' | 'ready' | 'polling' | 'signed-in' | 'signing-out' | 'failed'
   privacyAccepted: boolean
+  deletion?: { status: 'confirming' | 'deleting' | 'action-required' | 'retry' | 'complete'; projects: readonly AccountDeletionProject[] }
   account?: PlatformAccountView
   error?: string
 }
@@ -398,6 +509,8 @@ interface PlatformAccountInstallationBaseOptions {
   transitions?: AccountLifecycleTransitions
   crypto?: Crypto
   now?: () => number
+  /** Delete only this account's local keys and caches; failures retain the recovery receipt. */
+  onAccountDeleted?: (accountId: PlatformAccountId) => Promise<void>
 }
 
 /** Controller construction inputs, including authenticated Mobile presentation. */
@@ -459,6 +572,7 @@ export class PlatformAccountInstallation {
    */
   async authorizeCurrentInstallation(): Promise<CurrentInstallationAuthorization> {
     return this.transitions.run(async () => {
+      await this.requireOrdinaryAccountAccess()
       const stored = await this.options.store.loadSession(this.options.environment.environment)
       if (stored === undefined) throw new AccountError('SESSION_REVOKED', 'Installation is not signed in')
       let session = stored.session
@@ -492,6 +606,11 @@ export class PlatformAccountInstallation {
   }
 
   private async loadTransition(): Promise<void> {
+    const deletion = await this.options.store.loadDeletion(this.options.environment.environment)
+    if (deletion !== undefined) {
+      await this.recoverDeletion(deletion)
+      return
+    }
     const stored = await this.options.store.loadSession(this.options.environment.environment)
     if (stored === undefined) {
       const pending = await this.options.store.loadPending(this.options.environment.environment)
@@ -544,6 +663,7 @@ export class PlatformAccountInstallation {
   }
 
   private async prepareLoginTransition(): Promise<void> {
+    await this.requireOrdinaryAccountAccess()
     if (!this.snapshot.privacyAccepted) throw new Error('privacy notice must be accepted before authorization')
     this.publish({ status: 'preparing', privacyAccepted: true })
     try {
@@ -634,6 +754,7 @@ export class PlatformAccountInstallation {
   }
 
   private async signOutTransition(): Promise<void> {
+    await this.requireOrdinaryAccountAccess()
     const stored = await this.options.store.loadSession(this.options.environment.environment)
     if (stored === undefined) return
     this.publish({ ...withoutError(this.snapshot), status: 'signing-out' })
@@ -655,6 +776,156 @@ export class PlatformAccountInstallation {
       this.fail(error)
       throw error
     }
+  }
+
+  /** Read shared projects that need an explicit successor before showing confirmation. */
+  async prepareAccountDeletion(): Promise<void> {
+    await this.transitions.run(async () => {
+      await this.requireOrdinaryAccountAccess()
+      const loaded = await this.options.store.loadSession(this.options.environment.environment)
+      if (loaded === undefined) throw new AccountError('SESSION_REVOKED', 'Installation is not signed in')
+      const stored = await this.refreshDeletionSession(loaded)
+      const projects = await this.options.transport.planAccountDeletion({ accessToken: stored.session.accessToken,
+        proof: await this.proof(stored.privateKey, 'plan-account-deletion', await hashToken(this.crypto, stored.session.accessToken)) })
+      this.publish({ ...withoutError(this.snapshot), deletion: { status: 'confirming', projects } })
+    })
+  }
+
+  /** Dismiss a confirmation before any deletion request has been admitted. */
+  cancelAccountDeletion(): void {
+    if (this.snapshot.deletion?.status !== 'confirming') return
+    const { deletion: _deletion, ...snapshot } = this.snapshot
+    this.publish(snapshot)
+  }
+
+  /**
+   * Persist the initiating key and recovery token before requesting irreversible cloud deletion.
+   * @param successors - Explicit choices from the confirmation's joined members.
+   */
+  async confirmAccountDeletion(successors: readonly AccountDeletionSuccessor[]): Promise<void> {
+    await this.transitions.run(async () => {
+      if (this.snapshot.deletion?.status !== 'confirming') throw new Error('Account deletion confirmation is not open')
+      const stored = await this.options.store.loadSession(this.options.environment.environment)
+      if (stored === undefined) throw new AccountError('SESSION_REVOKED', 'Installation is not signed in')
+      const record: StoredAccountDeletion = { phase: 'requested', environment: stored.environment, accountId: stored.session.account.id,
+        privateKey: stored.privateKey, successors,
+        receipt: { operationId: parseAccountDeletionId(this.crypto.randomUUID()),
+          recoveryToken: base64url(this.crypto.getRandomValues(new Uint8Array(32))) } }
+      await this.options.store.saveDeletion(record)
+      await this.startDeletion(record, stored)
+    })
+  }
+
+  /**
+   * Retry progress or replace an unavailable successor using the initiating Installation key.
+   * @param successors - Replacement choices only for action-required progress.
+   */
+  async retryAccountDeletion(successors?: readonly AccountDeletionSuccessor[]): Promise<void> {
+    await this.transitions.run(async () => {
+      const record = await this.options.store.loadDeletion(this.options.environment.environment)
+      if (record === undefined) return
+      await this.recoverDeletion(record, successors)
+    })
+  }
+
+  /** Return to sign-in after both cloud deletion and local cleanup have completed. */
+  dismissAccountDeletion(): void {
+    if (this.snapshot.deletion?.status !== 'complete') return
+    this.publish({ status: 'idle', privacyAccepted: this.snapshot.privacyAccepted })
+  }
+
+  private async deletionBinding(record: StoredAccountDeletion, successors: readonly AccountDeletionSuccessor[]): Promise<string> {
+    return accountDeletionBinding({ operationId: record.receipt.operationId,
+      recoveryTokenHash: await hashToken(this.crypto, record.receipt.recoveryToken), successors })
+  }
+
+  private async startDeletion(record: StoredAccountDeletion, stored: StoredInstallationSession): Promise<void> {
+    this.publishDeletion('deleting', [])
+    try {
+      stored = await this.refreshDeletionSession(stored)
+      const binding = `${await hashToken(this.crypto, stored.session.accessToken)}:${await this.deletionBinding(record, record.successors)}`
+      const view = await this.options.transport.deleteAccount({ ...record.receipt, successors: record.successors,
+        accessToken: stored.session.accessToken, proof: await this.proof(record.privateKey, 'delete-account', binding) })
+      await this.applyDeletion(record, view)
+    } catch (error) {
+      if (error instanceof AccountError && error.code === 'DELETION_SELECTION_REQUIRED') {
+        try {
+          const projects = await this.options.transport.planAccountDeletion({ accessToken: stored.session.accessToken,
+            proof: await this.proof(stored.privateKey, 'plan-account-deletion', await hashToken(this.crypto, stored.session.accessToken)) })
+          await this.options.store.clearDeletion(record.environment)
+          this.publish({ status: 'signed-in', privacyAccepted: this.snapshot.privacyAccepted, account: stored.session.account,
+            deletion: { status: 'confirming', projects } })
+          return
+        } catch {
+          // An unavailable replacement plan retains the original receipt for a later retry.
+        }
+      }
+      this.publishDeletion('retry', [])
+    }
+  }
+
+  private async recoverDeletion(record: StoredAccountDeletion, successors?: readonly AccountDeletionSuccessor[]): Promise<void> {
+    this.publishDeletion('deleting', [])
+    try {
+      if (record.phase === 'cloud-complete') {
+        await this.finishLocalDeletion(record)
+        return
+      }
+      const view = await this.options.transport.recoverAccountDeletion({ ...record.receipt,
+        ...successors === undefined ? {} : { successors },
+        proof: await this.proof(record.privateKey, 'recover-account-deletion', await this.deletionBinding(record, successors ?? [])) })
+      await this.applyDeletion(record, view)
+    } catch (error) {
+      if (error instanceof AccountError && error.code === 'DELETION_INVALID') {
+        const stored = await this.options.store.loadSession(record.environment)
+        if (stored !== undefined && stored.session.account.id === record.accountId) {
+          await this.startDeletion(record, stored)
+          return
+        }
+      }
+      this.publishDeletion('retry', [])
+    }
+  }
+
+  private async applyDeletion(record: StoredAccountDeletion, view: AccountDeletionView): Promise<void> {
+    if (view.operationId !== record.receipt.operationId) throw new Error('Account deletion response belongs to another operation')
+    if (view.status === 'complete') {
+      await this.options.store.saveDeletion({ ...record, phase: 'cloud-complete' })
+      await this.finishLocalDeletion(record)
+      return
+    }
+    await this.options.store.clearSession(record.environment)
+    await this.options.store.clearPending(record.environment)
+    this.publishDeletion(view.status, view.projects)
+  }
+
+  private async finishLocalDeletion(record: StoredAccountDeletion): Promise<void> {
+    await this.options.store.clearSession(record.environment)
+    await this.options.store.clearPending(record.environment)
+    await this.options.onAccountDeleted?.(record.accountId)
+    await this.options.store.clearDeletion(record.environment)
+    this.publishDeletion('complete', [])
+  }
+
+  private publishDeletion(status: NonNullable<PlatformAccountInstallationSnapshot['deletion']>['status'], projects: readonly AccountDeletionProject[]): void {
+    this.publish({ status: status === 'complete' ? 'idle' : 'signing-out', privacyAccepted: this.snapshot.privacyAccepted,
+      deletion: { status, projects } })
+  }
+
+  private async requireOrdinaryAccountAccess(): Promise<void> {
+    if (await this.options.store.loadDeletion(this.options.environment.environment) !== undefined) {
+      throw new AccountError('ACCOUNT_DELETING', 'This installation is recovering account deletion')
+    }
+  }
+
+  private async refreshDeletionSession(stored: StoredInstallationSession): Promise<StoredInstallationSession> {
+    if (stored.session.refreshExpiresAt <= this.now()) throw new AccountError('SESSION_EXPIRED', 'Installation Account Session expired')
+    if (stored.session.accessExpiresAt > this.now()) return stored
+    const session = await this.options.transport.refresh({ refreshToken: stored.session.refreshToken,
+      proof: await this.proof(stored.privateKey, 'refresh', await hashToken(this.crypto, stored.session.refreshToken)) })
+    const refreshed = { ...stored, session }
+    await this.options.store.saveSession(refreshed)
+    return refreshed
   }
 
   private async proof(privateKey: CryptoKey, operation: string, binding: string): Promise<AccountProof> {
@@ -740,6 +1011,12 @@ function isAccountErrorCode(value: string): value is AccountErrorCode {
     'SESSION_REVOKED',
     'QUOTA',
     'PLATFORM_CAPACITY',
+    'ACCOUNT_DELETING',
+    'INSTALLATION_FORBIDDEN',
+    'INSTALLATION_NOT_FOUND',
+    'DELETION_UNAVAILABLE',
+    'DELETION_INVALID',
+    'DELETION_SELECTION_REQUIRED',
   ].includes(value)
 }
 

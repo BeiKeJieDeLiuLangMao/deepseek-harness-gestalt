@@ -10,7 +10,7 @@ Status: implemented
 
 ## Decision
 
-[`dsh-desktop-test-instance`](../../../skills/dsh-desktop-test-instance/SKILL.md) 负责由智能体启动的 Desktop 测试 Electron 生命周期。一个用户目标只对应一套实例和一个活跃桌面输入 owner。原生产品 GUI 检查通过已验证的 [macOS 后台 computer use](https://learn.chatgpt.com/docs/computer-use#when-to-use-computer-use) 路线操控实际隔离 Electron。该会话必须截取精确应用、发送用户级输入、观察结果 UI，并保持用户的前台应用不变。采用其他驱动或执行模式需要用户明确变更范围，不得自动替换。
+[`dsh-desktop-test-instance`](../../../skills/dsh-desktop-test-instance/SKILL.md) 负责由智能体启动的 Desktop 测试 Electron 生命周期。一个用户目标只对应一套实例和一个活跃桌面输入 owner。原生产品 GUI 检查通过已验证的 [macOS 后台 computer use](https://learn.chatgpt.com/docs/computer-use#when-to-use-computer-use) 路线操控实际隔离 Electron。[CUA 可用性证据](../../../skills/dsh-desktop-test-instance/CUA-AVAILABILITY.md) 区分已配置的 MCP 访问、可调用的正式 Codex turn 与已完成的路线。该会话必须截取精确应用、发送用户级输入、观察结果 UI，并保持用户的前台应用不变。采用其他驱动或执行模式需要用户明确变更范围，不得自动替换。
 
 macOS 参考验证使用唯一绝对路径下字节一致的 DSH 0.1.15 应用副本并保留原 Developer ID 签名，通过 `open -g -j -n -a "$appPath" --env "DSH_HOME=$scratchDshHome" --args "--user-data-dir=$scratchUserData"` 启动，并让 computer use 绑定该精确路径。验证过程匹配测试进程与 Host，截取全新 UI，点击通过 onboarding，打开 Settings，输入搜索文本并观察到结果，期间 ChatGPT 始终在前台；缺少 `-j`、只用 `-g` 时 DSH 会进入前台。该证据只证明这个版本的后台控制入口，不能证明指针位置不变、任意目标构建或完整产品 E2E。目标构建可以没有签名；它的副本仍须字节一致，并保留已有的签名状态。
 

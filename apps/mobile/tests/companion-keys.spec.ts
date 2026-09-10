@@ -6,6 +6,7 @@ import { parsePlatformAccountId } from '@deepseek-ai/dsh-platform-account'
 import { parseRelayCredential, parseRelayPairingSelector, parseRelayRouteId } from '@deepseek-ai/dsh-remote-protocol'
 import {
   IndexedDbMobilePairingStateStore,
+  NativeMobilePairingStateStore,
   MAX_RETAINED_PAIRING_KEYS,
   PairingCompanionKeyVault,
 } from '../src/companion-keys.ts'
@@ -366,3 +367,30 @@ async function openPairingDatabase(databaseName: string): Promise<IDBDatabase> {
     request.onerror = () => { reject(request.error ?? new Error('legacy IndexedDB open failed')) }
   })
 }
+
+
+it('removes every deleted-account native pairing key while preserving another account and installation identity', async () => {
+  const values = new Map<string, string>([['installation:production', 'installation-kept']])
+  const storage = { get: async (key: string) => values.get(key), set: async (key: string, value: string) => { values.set(key, value) },
+    remove: async (key: string) => { values.delete(key) } }
+  const store = new NativeMobilePairingStateStore(storage, 'deletion-native')
+  const deleted = parsePlatformAccountId('deleted-native')
+  const retained = parsePlatformAccountId('retained-native')
+  await store.save(deleted, { active: [
+    { pairingId: parsePersonalPairingId('first-desktop'), attachmentKey: MATERIAL },
+    { pairingId: parsePersonalPairingId('second-desktop'), attachmentKey: OTHER },
+  ] })
+  await store.save(retained, { active: [{ pairingId: parsePersonalPairingId('retained-desktop'), attachmentKey: OTHER }] })
+  const vault = new PairingCompanionKeyVault(store)
+  await vault.selectAccount(deleted)
+  await vault.forgetDeletedAccount(deleted)
+  await store.removeAccount(deleted)
+  expect(vault.attachmentKeyMaterial(parsePersonalPairingId('first-desktop'))).toBeUndefined()
+  expect(vault.attachmentKeyMaterial(parsePersonalPairingId('second-desktop'))).toBeUndefined()
+  expect(await store.load(deleted)).toEqual({ active: [] })
+  expect((await store.load(retained)).active).toHaveLength(1)
+  expect(values.get('installation:production')).toBe('installation-kept')
+  await vault.selectAccount(retained)
+  await vault.forgetDeletedAccount(deleted)
+  expect(vault.attachmentKeyMaterial(parsePersonalPairingId('retained-desktop'))).toEqual(OTHER)
+})

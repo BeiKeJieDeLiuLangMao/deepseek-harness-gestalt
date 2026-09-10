@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { parseMobileInstallationPresentation } from '@deepseek-ai/dsh-platform-account'
+import {
+  parseMobileAccountInstallationViews,
+  parseMobileInstallationPresentation,
+} from '@deepseek-ai/dsh-platform-account'
 
 describe('parseMobileInstallationPresentation', () => {
   it('accepts a bounded device-owned iOS or Android presentation', () => {
@@ -21,5 +24,30 @@ describe('parseMobileInstallationPresentation', () => {
     [{ name: 'Browser' }, 'platform'],
   ])('rejects invalid Mobile Installation presentation %#', (value, field) => {
     expect(() => parseMobileInstallationPresentation(value)).toThrow(field)
+  })
+})
+
+describe('parseMobileAccountInstallationViews', () => {
+  it('accepts current and legacy Mobile Installation rows', () => {
+    expect(parseMobileAccountInstallationViews([
+      { id: 'current-mobile', reference: '123456789abc', name: 'Current phone', platform: 'ios' },
+      { id: 'legacy-mobile', reference: 'abcdef123456' },
+    ])).toEqual([
+      { id: 'current-mobile', reference: '123456789abc', name: 'Current phone', platform: 'ios' },
+      { id: 'legacy-mobile', reference: 'abcdef123456' },
+    ])
+  })
+
+  it.each([
+    [[{ id: 'mobile', reference: 1 }], 'reference'],
+    [[{ id: 'mobile', reference: 'ABCDEF123456' }], 'reference'],
+    [[{ id: 'mobile', reference: '123456789abc', name: 'Partial' }], 'present together'],
+    [[{ id: 'mobile', reference: '123456789abc', platform: 'ios' }], 'present together'],
+    [[
+      { id: 'mobile', reference: '123456789abc' },
+      { id: 'mobile', reference: 'abcdef123456' },
+    ], 'unique'],
+  ])('rejects invalid Mobile Installation rows %#', (value, message) => {
+    expect(() => parseMobileAccountInstallationViews(value)).toThrow(message)
   })
 })

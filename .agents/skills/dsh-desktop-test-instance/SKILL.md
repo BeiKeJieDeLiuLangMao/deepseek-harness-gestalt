@@ -15,7 +15,7 @@ Own one isolated Desktop Electron per user goal. Automated lanes such as `pnpm -
 
 3. **Refuse a second instance.** Scan for other Desktop test processes that still belong to this goal (same scratch root, same memoed `DSH_HOME`, or the same ticket/PR Electron). Stop them before creating a replacement. Complete when this goal has zero live test Electron / Host / PostgreSQL / sidecar processes.
 
-4. **Use native background computer use on macOS.** Product GUI self-test, bug reproduction, prototype checks, fidelity comparison, and the experience-route walk use an existing or authorized Codex session that has callable computer-use tools; a Codex model or provider name without those tools is insufficient and does not authorize creating a user-owned task. This workflow uses only the verified macOS launch and control path in step 7. Another driver or execution mode requires an explicit user scope change; never switch automatically. If the target application or requested scene fails, keep diagnosis with the same owner, record the exact cause, and report the blocker. Complete when the computer-use executor and exact target application are identified.
+4. **Use native background computer use on macOS.** When the route selects Codex computer use, first establish its level through [CUA availability evidence](CUA-AVAILABILITY.md). Product GUI self-test, bug reproduction, prototype checks, fidelity comparison, and the experience-route walk use an existing or authorized Codex session that has callable computer-use tools; a Codex model or provider name without those tools is insufficient and does not authorize creating a user-owned task. This workflow uses only the verified macOS launch and control path in step 7. Another driver or execution mode requires an explicit user scope change; never switch automatically. If the target application or requested scene fails, keep diagnosis with the same owner, record the exact cause, and report the blocker. Complete when the computer-use executor and exact target application are identified.
 
 5. **Choose the operated Platform config from the scenario.** Desktop `build-main.mjs` requires `DSH_DESKTOP_OPERATED_PLATFORM_CONFIG` or an argv path; `pnpm gestalt:dev` does not supply one. Pick the config before launch:
 
@@ -97,6 +97,8 @@ Stop recorded PIDs, then verify. Do not use a command-line substring kill that c
 - the CDP port is closed;
 - the scratch root, `DSH_HOME`, and user-data directories are gone;
 - on macOS, PostgreSQL SysV shared-memory segments whose `CPID`/`LPID` match the recorded PIDs are gone.
+
+When freeing operated-Platform Mobile installation quota, drive the already-signed-in product Desktop Installation. Do not mint a new Desktop Installation for cleanup; that consumes a separate desktop quota. Isolated test instances still must not use the user's normal `DSH_HOME`. If the installed Desktop build lacks the Mobile-installation Settings UI, a source Desktop at the specification SHA may reuse the normal Electron `--user-data-dir` (`~/Library/Application Support/DeepSeek Gestalt` on macOS) without copying `DSH_HOME` or creating a new user-data directory. Revoke only by full opaque Installation ids.
 
 The Sub2API Electron runner already fails if those survivors remain; agent-started instances use the same completion bar.
 

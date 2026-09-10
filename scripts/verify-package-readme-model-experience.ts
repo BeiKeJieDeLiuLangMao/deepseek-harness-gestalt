@@ -37,6 +37,7 @@ const NO_MODEL_EXPERIENCE_SECTION: Readonly<Record<string, string>> = {
   'packages/util/workspace-path': 'The package only formats Workspace paths for browser UI; it never constructs model input.',
   'packages/util/values': 'The package only validates, snapshots, compares, freezes, or rejects caller-owned values; consumers own every model-facing use.',
   'packages/util/request-trust': 'The package only judges HTTP request trust headers; model-facing consumers own any rendered use.',
+  'packages/llm/cliproxy-quota': 'The package is a model-agnostic quota observation library; it registers no model-facing surface and its output never enters a model request.',
 }
 
 /**

@@ -8,12 +8,10 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { readFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
-import type { PlatformAccountId } from '@deepseek-ai/dsh-platform-account'
+import type { AccountDeletionProject, AccountDeletionSuccessor, PlatformAccountId } from '@deepseek-ai/dsh-platform-account'
 import {
   canGrantInviteRole,
   duplicateInvitee,
@@ -39,6 +37,8 @@ import {
   type SetMemberTagsInput,
   type WorkspaceLink,
 } from '@deepseek-ai/dsh-project-membership'
+import { FileProjectMembershipPersistence, type ProjectMembershipPersistence } from './persistence.ts'
+export type { ProjectMembershipPersistence, ProjectMembershipTransaction } from './persistence.ts'
 import { parse, serialize, PROJECT_MEMBERSHIP_FORMAT_VERSION, type PersistedInvitation, type PersistedMembership, type PersistedState } from './persisted-state.ts'
 
 /** Absolute document path for one environment namespace. */
@@ -138,15 +138,9 @@ type RosterMutationDetail =
  * mutation batch back, so no later commit can publish a row the document
  * refused.
  */
-export class FileProjectMembership extends ProjectMembershipService {
-  static Config: z<Config> = z.object({
-    storagePath: z.string(),
-    environment: z.union(['development', 'production'] as const),
-  })
-
-  /** Durable document path; the environment segment is the namespace isolation. */
-  readonly storageFile: string
-
+export class ProjectMembership extends ProjectMembershipService {
+  private changed = false
+  private pendingInvalidations: RosterInvalidation[] = []
   private readonly projects = new Map<ProjectId, ProjectRow>()
   private readonly projectNameIndex = new Map<string, ProjectId>()
   private readonly projectRemoteIndex = new Map<string, ProjectId>()
@@ -163,29 +157,92 @@ export class FileProjectMembership extends ProjectMembershipService {
   private chain: Promise<unknown> = Promise.resolve()
   private disposed = false
   /**
-   * Corruption error from the one document load. Cordis cannot await a
-   * constructor-era effect, so the store itself must carry the rejection to
-   * every caller; non-Error throw values are normalized so the stored reason
-   * is always an Error.
+   * Retain the first document-admission failure so later operations cannot
+   * treat a corrupt corpus as empty.
    */
-  private loadFailure: { reason: Error } | undefined
+  private loadFailure: { reason: unknown } | undefined
 
   /**
    * @param ctx - Cordis context receiving the `projectMembership` service.
-   * @param config - validated {@link Config}.
+   * @param persistence - Exclusive membership transaction and authoritative document.
    */
-  constructor(ctx: Context, config: Config) {
+  constructor(ctx: Context, private readonly persistence: ProjectMembershipPersistence) {
     super(ctx)
-    const validated = resolveConfig(config)
-    this.storageFile = stateFilePath(validated.storagePath, validated.environment)
     ctx.effect(async () => {
-      await this.enqueue(() => this.load())
+      await this.enqueue(() => undefined)
       return async () => {
         this.disposed = true
-        // Let any in-flight durable write finish instead of abandoning it.
         await this.chain
       }
     }, 'project-membership: durable-state lifecycle')
+  }
+
+  override accountDeletionProjects(accountId: PlatformAccountId): Promise<readonly AccountDeletionProject[]> {
+    return this.enqueue(() => this.deletionProjects(accountId))
+  }
+
+  override deleteAccountMemberships(
+    accountId: PlatformAccountId,
+    successors: readonly AccountDeletionSuccessor[],
+  ): Promise<readonly AccountDeletionProject[]> {
+    return this.enqueue(async () => {
+      const projects = this.deletionProjects(accountId)
+      const selected = new Map(successors.map(choice => [choice.projectId, choice.successorMembershipId]))
+      if (projects.some(project => !project.candidates.some(candidate =>
+        candidate.membershipId === selected.get(project.projectId)))) return projects
+      for (const [projectId, memberships] of this.projectMemberships) {
+        const deleting = this.requireMembershipRowOrUndefined(accountId, projectId)
+        if (deleting === undefined) continue
+        if (memberships.size === 1) {
+          const project = this.requireProject(projectId)
+          this.projects.delete(projectId)
+          this.projectNameIndex.delete(project.name)
+          this.projectRemoteIndex.delete(project.boundRemoteUrl)
+          this.projectMemberships.delete(projectId)
+          this.membershipAccounts.delete(duplicateKey(projectId, accountId))
+          this.removeDeletionInvitations(accountId, projectId)
+          this.changed = true
+          continue
+        }
+        if (deleting.role === 'owner' && this.ownerCount(projectId) === 1) {
+          // The transaction's validated plan supplies this sole owner's successor.
+          const successorMembershipId = selected.get(projectId) as MembershipId
+          await this.changeRoleOp(accountId, { membershipId: successorMembershipId, role: 'owner' })
+        }
+        memberships.delete(deleting.id)
+        this.membershipAccounts.delete(duplicateKey(projectId, accountId))
+        this.changed = true
+        this.publish(this.requireProject(projectId), { reason: 'removed' }, {
+          projectId, membershipId: deleting.id, accountId,
+        })
+      }
+      this.removeDeletionInvitations(accountId)
+      return []
+    })
+  }
+
+  private deletionProjects(accountId: PlatformAccountId): readonly AccountDeletionProject[] {
+    const result: AccountDeletionProject[] = []
+    for (const [projectId, members] of this.projectMemberships) {
+      const deleting = this.requireMembershipRowOrUndefined(accountId, projectId)
+      if (deleting?.role !== 'owner' || this.ownerCount(projectId) !== 1 || members.size === 1) continue
+      result.push({ projectId, name: this.requireProject(projectId).name,
+        candidates: [...members.values()].filter(member => member.accountId !== accountId).map(member => ({
+          membershipId: member.id, accountId: member.accountId, label: member.accountId,
+        })),
+      })
+    }
+    return result
+  }
+
+  private removeDeletionInvitations(accountId: PlatformAccountId, deletedProject?: ProjectId): void {
+    for (const [id, invitation] of this.invitations) {
+      if (invitation.inviterAccountId !== accountId && invitation.inviteeAccountId !== accountId
+        && invitation.projectId !== deletedProject) continue
+      this.invitations.delete(id)
+      this.pendingInvitees.delete(duplicateKey(invitation.projectId, invitation.inviteeAccountId))
+      this.changed = true
+    }
   }
 
   override createProject(actor: PlatformAccountId, input: CreateProjectInput): Promise<ProjectView> {
@@ -276,42 +333,39 @@ export class FileProjectMembership extends ProjectMembershipService {
   /** Run one exclusive operation behind the settled tail of the write chain. */
   private enqueue<T>(operation: () => T | Promise<T>): Promise<T> {
     if (this.disposed) return Promise.reject(new Error('project-membership: store has been disposed'))
-    // The load may still be in flight when an operation is enqueued, so the
-    // corruption gate is re-checked at run time, not only at call time.
-    const run = (): T | Promise<T> => {
-      if (this.loadFailure !== undefined) return Promise.reject(this.loadFailure.reason)
-      return Promise.resolve(operation())
+    const run = async (): Promise<T> => {
+      if (this.loadFailure !== undefined) throw this.loadFailure.reason
+      const invalidations: RosterInvalidation[] = []
+      const result = await this.persistence.transact(async (transaction) => {
+        try { this.loadDocument(transaction.document) } catch (error) {
+          this.loadFailure = { reason: error }
+          throw error
+        }
+        this.changed = false
+        this.pendingInvalidations = invalidations
+        try {
+          const value = await operation()
+          // oxlint-disable-next-line typescript/no-unnecessary-condition -- The awaited operation marks its mutations.
+          if (this.changed) transaction.write(this.serializeDocument())
+          return value
+        } finally { this.pendingInvalidations = [] }
+      })
+      for (const change of invalidations) this.ctx.emit('project-membership/roster-invalidated', change)
+      return result
     }
     const result = this.chain.then(run, run)
     this.chain = result.then(noop, noop)
     return result
   }
 
-  /**
-   * Load the environment document once; absence is the empty first boot. A
-   * document that fails validation rejects the load before any row reaches
-   * the in-memory maps, and the store records the corruption error so every
-   * later operation rejects instead of serving or republishing an empty
-   * corpus.
-   */
-  private async load(): Promise<void> {
-    try {
-      await this.loadDocument()
-    } catch (error) {
-      /* v8 ignore next -- node reads and document parsing reject with Error instances. */
-      const reason = error instanceof Error ? error : new Error(String(error))
-      this.loadFailure = { reason }
-      throw reason
-    }
-  }
-
-  private async loadDocument(): Promise<void> {
-    let text: string | undefined
-    try {
-      text = await readFile(this.storageFile, 'utf8')
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-    }
+  private loadDocument(text: string | undefined): void {
+    this.projects.clear()
+    this.projectNameIndex.clear()
+    this.projectRemoteIndex.clear()
+    this.projectMemberships.clear()
+    this.membershipAccounts.clear()
+    this.invitations.clear()
+    this.pendingInvitees.clear()
     if (text === undefined) return
     const state = parse(text)
     for (const project of state.projects) {
@@ -349,7 +403,7 @@ export class FileProjectMembership extends ProjectMembershipService {
   }
 
   /** Atomically publish the complete committed state. */
-  private async persist(): Promise<void> {
+  private serializeDocument(): string {
     const state: PersistedState = {
       formatVersion: PROJECT_MEMBERSHIP_FORMAT_VERSION,
       projects: [...this.projects.values()].map(project => ({
@@ -364,26 +418,12 @@ export class FileProjectMembership extends ProjectMembershipService {
         .map(toPersistedMembership),
       invitations: [...this.invitations.values()].map(toPersistedInvitation),
     }
-    await writeFileAtomic(this.storageFile, serialize(state), { mode: 0o600, dirMode: 0o700 })
+    return serialize(state)
   }
 
-  /**
-   * Commit the already-applied mutation batch at its durable point: the
-   * document write must succeed before the batch stays in memory. A failed
-   * write runs `rollback` — the exact inverse of the batch `persist` just
-   * serialized — and rethrows, leaving memory and disk as if the operation
-   * never ran. Serialization through the write chain makes the applied batch
-   * invisible until this point, so the rollback restores the exact pre-call
-   * state.
-   * @param rollback - inverse of the one mutation batch awaiting durability.
-   */
-  private async commit(rollback: () => void): Promise<void> {
-    try {
-      await this.persist()
-    } catch (error) {
-      rollback()
-      throw error
-    }
+  private commit(): Promise<void> {
+    this.changed = true
+    return Promise.resolve()
   }
 
   private requireProject(projectId: ProjectId): ProjectRow {
@@ -459,7 +499,7 @@ export class FileProjectMembership extends ProjectMembershipService {
     project.rosterVersion = rosterVersionAfter
     const base = { ...identity, rosterVersionBefore, rosterVersionAfter }
     const change: RosterInvalidation = buildInvalidation(base, detail)
-    this.ctx.emit('project-membership/roster-invalidated', change)
+    this.pendingInvalidations.push(change)
   }
 
   private async createProjectOp(actor: PlatformAccountId, input: CreateProjectInput): Promise<ProjectView> {
@@ -488,13 +528,7 @@ export class FileProjectMembership extends ProjectMembershipService {
     this.projectRemoteIndex.set(boundRemoteUrl, project.id)
     this.projectMemberships.set(project.id, new Map([[founder.id, founder]]))
     this.membershipAccounts.set(duplicateKey(project.id, actor), founder)
-    await this.commit(() => {
-      this.projects.delete(project.id)
-      this.projectNameIndex.delete(name)
-      this.projectRemoteIndex.delete(boundRemoteUrl)
-      this.projectMemberships.delete(project.id)
-      this.membershipAccounts.delete(duplicateKey(project.id, actor))
-    })
+    await this.commit()
     this.publish(project, { reason: 'joined' }, {
       projectId: project.id,
       membershipId: founder.id,
@@ -528,10 +562,7 @@ export class FileProjectMembership extends ProjectMembershipService {
     }
     this.invitations.set(row.id, row)
     this.pendingInvitees.set(duplicateKey(row.projectId, row.inviteeAccountId), row)
-    await this.commit(() => {
-      this.invitations.delete(row.id)
-      this.pendingInvitees.delete(duplicateKey(row.projectId, row.inviteeAccountId))
-    })
+    await this.commit()
     return cloneInvitation(row)
   }
 
@@ -539,13 +570,6 @@ export class FileProjectMembership extends ProjectMembershipService {
     row.state = state
     row.settledAt = Date.now()
     this.pendingInvitees.delete(duplicateKey(row.projectId, row.inviteeAccountId))
-  }
-
-  /** Inverse of {@link settlePending}: restore the row to its pending spelling. */
-  private unsettlePending(row: InvitationRow): void {
-    row.state = 'pending'
-    row.settledAt = undefined
-    this.pendingInvitees.set(duplicateKey(row.projectId, row.inviteeAccountId), row)
   }
 
   /** Resolve one invitation to its row, proving addressee scope along the way. */
@@ -592,11 +616,7 @@ export class FileProjectMembership extends ProjectMembershipService {
     this.membershipAccounts.set(duplicateKey(member.projectId, member.accountId), member)
     this.settlePending(invitation, 'accepted')
     const project = this.requireProject(invitation.projectId)
-    await this.commit(() => {
-      this.projectMemberships.get(member.projectId)?.delete(member.id)
-      this.membershipAccounts.delete(duplicateKey(member.projectId, member.accountId))
-      this.unsettlePending(invitation)
-    })
+    await this.commit()
     this.publish(project, { reason: 'joined' }, {
       projectId: member.projectId,
       membershipId: member.id,
@@ -608,7 +628,7 @@ export class FileProjectMembership extends ProjectMembershipService {
   private async declineOp(actor: PlatformAccountId, invitationId: InvitationId): Promise<void> {
     const invitation = this.requireAddressedInvitation(actor, invitationId, true)
     this.settlePending(invitation, 'declined')
-    await this.commit(() => { this.unsettlePending(invitation) })
+    await this.commit()
   }
 
   private async retractOp(actor: PlatformAccountId, invitationId: InvitationId): Promise<void> {
@@ -618,7 +638,7 @@ export class FileProjectMembership extends ProjectMembershipService {
       throw new ProjectMembershipError('ROLE_REQUIRED', 'only the issuing account or a project owner can retract')
     }
     this.settlePending(invitation, 'retracted')
-    await this.commit(() => { this.unsettlePending(invitation) })
+    await this.commit()
   }
 
   /** Locate a membership row among projects where the actor holds a membership. */
@@ -640,12 +660,9 @@ export class FileProjectMembership extends ProjectMembershipService {
     if (target.role === 'owner' && input.role !== 'owner') {
       this.assertNotFinalOwner(target.projectId)
     }
-    const previousRole = target.role
     target.role = input.role
     const project = this.requireProject(target.projectId)
-    await this.commit(() => {
-      target.role = previousRole
-    })
+    await this.commit()
     this.publish(project, { reason: 'role-changed', role: target.role }, {
       projectId: target.projectId,
       membershipId: target.id,
@@ -677,12 +694,9 @@ export class FileProjectMembership extends ProjectMembershipService {
     if (this.requireMembershipIn(actor, target.projectId).role === 'member') {
       throw new ProjectMembershipError('ROLE_REQUIRED', 'editing function tags requires the admin or owner role')
     }
-    const previousTags = target.tags
     target.tags = this.validateFunctionTags(input.tags)
     const project = this.requireProject(target.projectId)
-    await this.commit(() => {
-      target.tags = previousTags
-    })
+    await this.commit()
     this.publish(project, { reason: 'tags-changed', tags: [...target.tags] }, {
       projectId: target.projectId,
       membershipId: target.id,
@@ -702,10 +716,7 @@ export class FileProjectMembership extends ProjectMembershipService {
     this.projectMemberships.get(target.projectId)?.delete(target.id)
     this.membershipAccounts.delete(duplicateKey(target.projectId, removedAccount))
     const project = this.requireProject(target.projectId)
-    await this.commit(() => {
-      this.projectMemberships.get(target.projectId)?.set(target.id, target)
-      this.membershipAccounts.set(duplicateKey(target.projectId, removedAccount), target)
-    })
+    await this.commit()
     this.publish(project, { reason: 'removed' }, {
       projectId: target.projectId,
       membershipId: removedMembershipId,
@@ -831,4 +842,44 @@ function cloneInvitation(invitation: InvitationRow): InvitationView {
   }
 }
 
+/** Local single-writer file composition of the Project Membership algorithms. */
+export class FileProjectMembership extends ProjectMembership {
+  static Config: z<Config> = z.object({
+    storagePath: z.string(),
+    environment: z.union(['development', 'production'] as const),
+  })
+  /** Environment-scoped file containing the authoritative membership document. */
+  readonly storageFile: string
+
+  /**
+   * @param ctx - Context receiving the membership service.
+   * @param config - Local file location and environment namespace.
+   */
+  constructor(ctx: Context, config: Config) {
+    const validated = resolveConfig(config)
+    const storageFile = stateFilePath(validated.storagePath, validated.environment)
+    super(ctx, new FileProjectMembershipPersistence(storageFile))
+    this.storageFile = storageFile
+  }
+}
+
 export default FileProjectMembership
+
+/**
+ * Validate a membership snapshot before an explicit persistence import.
+ * @param document - Complete source document from the approved snapshot.
+ * @returns Nothing; invalid or ambiguously indexed records throw.
+ */
+export function validateProjectMembershipDocument(document: string): void {
+  const state = parse(document)
+  for (const values of [state.projects.map(row => row.id), state.projects.map(row => row.name),
+    state.projects.map(row => row.boundRemoteUrl), state.memberships.map(row => row.id),
+    state.memberships.map(row => `${row.projectId}:${row.accountId}`), state.invitations.map(row => row.id)]) {
+    if (new Set(values).size !== values.length) throw new Error('Membership snapshot contains duplicate indexed records')
+  }
+  for (const project of state.projects) {
+    if (!state.memberships.some(member => member.projectId === project.id && member.role === 'owner')) {
+      throw new Error('Membership snapshot contains a project without an owner')
+    }
+  }
+}

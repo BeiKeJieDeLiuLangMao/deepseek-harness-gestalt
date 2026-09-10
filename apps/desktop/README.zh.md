@@ -14,6 +14,8 @@ DeepSeek Gestalt 的 Desktop Host。Electron 拥有窗口、菜单、GitHub 自�
 
 成功关闭手机访问后，会先提交 Platform 撤销，再清除本地 active 与 pending Relay grant，因此之后重新开启不会恢复已撤销的 authority。
 
+Host 拥有的 Account controller 会在 Settings 打开时刷新已登录账号的活跃 Mobile Installation，并使用 Desktop Installation 密钥签署每次列表或选中移除请求。Renderer 快照包含设备展示、短显示引用与 opaque 操作目标；preload 只接收该目标，绝不暴露 Account token 或签名材料。
+
 Desktop Platform 账号从打包 main 入口旁的 `operated-platform.json` 读取一套实际运行的生产身份。构建必须显式指定源文件，拒绝缺失或未知字段，并根据 `production` 标记、六个公开身份字段与最大尺寸 Companion 附件的正数 Host deadline 重建应用 archive 中的产物；它绝不复制调用方提供的 JSON，也不会嵌入 OAuth secret。localhost、非 HTTPS origin、回调不匹配或 deadline 无效会在 Electron 创建窗口、启动 Web Host、读取账号存储或发送流量之前使模块启动失败。操作系统加密不可用仍会作为明确的能力失败显示。加密记录通过 `dsh-atomic-write` 的随机独占同级文件、仅所有者权限、符号链接安全 rename 与失败清理完成替换。
 
 Window Chrome 在 Desktop 侧栏、Session 内容与顶部 Workbench 上统一使用一条 36px 行。在 macOS 上，侧栏与 Session 区域可在 traffic lights 周围拖动窗口；Workbench 只把 `+` 后的未占用空间作为拖拽区，标签与控件仍可交互。Windows 使用同一行，最小化、最大化和关闭按钮各占 46px。纯浏览器 `dsh web` 保留 34px Workbench 标签栏，且不渲染窗口拖拽区。未支持平台的开发运行保留系统窗口框架。
@@ -93,6 +95,8 @@ hoisted deploy 会纳入工作区包，但不带 pnpm 的链接式虚拟依赖�
 ## Known Limitations and Deferred Work
 
 - **安装包里的 Node + dsh 快照由发布 workflow 组装** — `gestalt:dev` 跑的是工作区源码树。
+- **内置 CLIProxyAPI 由安装包持有** — 发布 job 会初始化 `catalog/cliproxyapi`，为原生目标构建其精确 gitlink，并把二进制与源码 SHA、平台、架构和 SHA-256 manifest 一起打包。正式包启动只接受该已核验资源。开发环境仅在 `DSH_DESKTOP_CLIPROXYAPI_FIXTURE` 指定显式 fixture 可执行文件时启动核心。
+- **账号池状态保持隔离** — Desktop 在自己的 `userData` 下生成私有运行时 root，把该运行代用作 core cwd 与 HOME，并传入操作系统环境白名单，而不是继承 Desktop 启动环境中的 storage/provider/credential 变量。相互分离的 management 与 inference key、配置、auth 文件、日志和运行代私有 TLS 证书均保留在运行代中。发送 inference key 前，Desktop 会在访问 `/v1/models` 的 HTTPS 握手中钉住该证书。Settings 通过 Host 私有的 roster、登录和额度操作渲染 Gestalt 自有双面账号池；renderer 从不接收 management key 或通用请求设施。恢复会先发布新的 HTTPS 端点、key 与证书路径，再替换 Web Host。关闭仅对该子进程组执行有界优雅终止与强制终止，然后删除运行时 root；它从不读取外部 cwd 的 `.env`、`~/.cli-proxy-api`、Sub2API 数据或外部服务配置。账号池不可用不会阻止 Desktop 其余部分启动。
 - **没有 Windows Authenticode** — SmartScreen 会警告；更新器仍会运行。
 - **Companion 发布证据由仓库门禁持有** — Node 22 与 24、iOS Simulator WKWebView 和 Android Emulator WebView 会执行仓库内确切的 Snow JS/WASM 包及其有界攻击用例。验收表面仍是组装后的 Desktop/Mobile 产品链路；本地 Vite、测试证书与 `prototype-companion` 不是产品验收。
 - **非 Member Questions 关键路径 Electron 验收仅限源码** — `pnpm run test:e2e-critical-path-electron` 只构建一次当前源码，三次启动同一个隔离 Desktop，并经界面走通 Workspace 连接、主 Session 提示词、Models 实时配置、Side Chat 模型与权限选择、进程恢复、关闭及持久归档核对。每次运行都拥有独占的产物命名空间，由正式持久化实现解析生产 JSONL，采样 Electron 与 Host 的精确进程身份及其后代，并在写入最终结果前删除匹配凭据材料的保留文件。属主或 scan 未能停稳时，runner 会保留失败结果与 scratch 供诊断，并隐藏产物分享路径。隔离标题路由保留正式 base 策略，Electron 进程捕获在 service 初始化完成后、每个测试前执行。其环回模型只记录阶段、请求路径和模型 id；该通道从不读取正常 `DSH_HOME`，并在 Linux 上要求可见 `DISPLAY`。

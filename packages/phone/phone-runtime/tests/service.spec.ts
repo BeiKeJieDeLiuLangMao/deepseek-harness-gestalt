@@ -3441,6 +3441,22 @@ describe('phone runtime service lifecycle', () => {
     expect((windowed as Error | null)?.message).toMatch(/did not become ready within/)
   })
 
+  it('reports an empty stderr tail when readiness times out with no child output', async () => {
+    const fake = await stageFake({ hang: true, quiet: true })
+    fakes.push(fake)
+    await fake.claim()
+    const context = new Context()
+    contexts.push(context)
+    const failure = context.plugin(PhoneDevices, {
+      ...FAST_CONFIG,
+      readyTimeoutMs: 120,
+      executablePath: fake.executablePath,
+      serverPort: fake.port,
+    })
+    const windowed: unknown = await failure.await().then(() => null, (error: unknown) => error)
+    expect((windowed as Error | null)?.message).toMatch(/stderr tail follows\n\(empty\)$/)
+  })
+
   it('disposes to child-exit quiescence, silences subscribers, and refuses later operations', async () => {
     const fake = await stageFake({ devices: BASE_DEVICES })
     fakes.push(fake)

@@ -21,6 +21,7 @@ import {
   type PersonalPairingAccessTransaction,
   deriveAuthenticationWords,
   parseDevicePrincipalId,
+  parseAttachmentBlobReservationId,
   parsePairingChallengeId,
   parsePairingInvitationLink,
   parsePairingCompletionId,
@@ -43,6 +44,95 @@ describe('PersonalPairingProvider', () => {
       pendingPairingId: parsePendingPairingId('pending-default-finish'),
       mobileFinish: Uint8Array.of(1),
     })).rejects.toMatchObject({ code: 'PAIRING_PENDING_INVALID' })
+  })
+
+  it('revokes Desktop pairing access through the trusted deletion owner after sessions are gone', async () => {
+    const currentInstallation = vi.fn(async ({ accessToken }: { accessToken: string }) => authenticated(accessToken))
+    const authority = new MemoryPersonalPairingAuthorityStore()
+    const composition = PersonalPairingProvider.compose(new Context(), {
+      account: { currentInstallation }, handshake: handshakeProvider(), authority, ownsAuthority: true,
+      pairingLinkOrigin: 'https://platform.example.com/pair',
+    })
+    await composition.provider.setMobileAccess({ desktop: authentication('desktop-installation'), enabled: true })
+    currentInstallation.mockRejectedValue(new Error('Account Session revoked'))
+    await composition.accountDeletion.revoke(account('account-one').id, [parseInstallationId('desktop-installation')])
+    await expect(authority.getDesktop(account('account-one').id, parseInstallationId('desktop-installation')))
+      .resolves.toMatchObject({ enabled: false })
+    await composition.accountDeletion.cleanup(account('account-one').id, [parseInstallationId('desktop-installation')])
+    await composition.provider.dispose()
+  })
+
+  it('retries retained deletion cleanup and preserves every other account record', async () => {
+    const authority = new MemoryPersonalPairingAuthorityStore()
+    const handshake = handshakeProvider()
+    let nextId = 0
+    const composition = PersonalPairingProvider.compose(new Context(), {
+      account: { currentInstallation: async ({ accessToken }) => authenticated(accessToken) },
+      handshake, authority, ownsAuthority: true, clock: { now: () => NOW },
+      randomId: kind => `${kind}-deletion-${String(++nextId)}`,
+      pairingLinkOrigin: 'https://platform.example.com/pair',
+    })
+    const { provider } = composition
+    const owners = ['account-one', 'account-two']
+    try {
+      for (const owner of owners) {
+        const desktop = authentication(`desktop-${owner}`, owner)
+        const mobile = authentication(`mobile-${owner}`, owner)
+        await provider.setMobileAccess({ desktop, enabled: true })
+        await prepareEndpointPairing(provider, desktop, mobile, owner, 'message1')
+      }
+      await authority.runPairingTransaction(async (state) => {
+        for (const [index, owner] of owners.entries()) {
+          const desktopInstallationId = parseInstallationId(`desktop-${owner}`)
+          const mobileInstallationId = parseInstallationId(`mobile-${owner}`)
+          const challengeId = parsePairingChallengeId(`retained-${owner}`)
+          const pendingPairingId = parsePendingPairingId(`retained-${owner}`)
+          const resource = index * 10
+          state.settledChallenges.set(challengeId, { accountId: owner, desktopInstallationId,
+            outcome: 'cancelled', cleanup: { resource: Uint8Array.of(resource + 1) }, settledAt: NOW })
+          state.settledPending.set(pendingPairingId, { accountId: owner, desktopInstallationId, mobileInstallationId,
+            outcome: 'rejected', cleanup: { resource: Uint8Array.of(resource + 2) }, settledAt: NOW })
+          state.completions.set(parsePairingCompletionId(`retained-${owner}`), { accountId: owner,
+            desktopInstallationId, mobileInstallationId, challengeId, requestDigest: new Uint8Array(32),
+            challengeCleanup: { resource: Uint8Array.of(resource + 3) }, completedAt: NOW,
+            view: { pendingPairingId, authenticationWords: ['amber', 'binary', 'cedar', 'delta', 'ember', 'frost'],
+              desktopHandshake: Uint8Array.of(8), device: { name: 'Retained phone', platform: 'ios' } } })
+          const cleanup = { resource: Uint8Array.of(resource + 4) }
+          state.orphanPendingCleanups.set(cleanup, { accountId: owner, desktopInstallationId, mobileInstallationId, cleanup })
+          state.blobs.set(parseAttachmentBlobReservationId(`retained-${owner}`), { accountId: owner, bytes: 1 })
+          state.accountChallengeAt.set(owner, [NOW])
+          state.blobUploads.set(owner, [{ at: NOW, bytes: 1 }])
+        }
+      })
+      handshake.destroyChallenge.mockRejectedValueOnce(new Error('crypto cleanup temporarily unavailable'))
+      const deleting = account('account-one').id
+      await expect(composition.accountDeletion.cleanup(deleting, [parseInstallationId('desktop-account-one')]))
+        .rejects.toThrow('crypto cleanup temporarily unavailable')
+      await authority.runPairingTransaction(async (state) => {
+        expect(state.settledChallenges.size).toBe(2)
+        expect(state.completions.size).toBe(2)
+      })
+      await composition.accountDeletion.cleanup(deleting, [parseInstallationId('desktop-account-one')])
+      expect(handshake.destroyChallenge).toHaveBeenCalledWith(Uint8Array.of(1))
+      expect(handshake.destroyChallenge).toHaveBeenCalledWith(Uint8Array.of(3))
+      expect(handshake.destroyPendingPairing).toHaveBeenCalledWith(Uint8Array.of(2))
+      expect(handshake.destroyPendingPairing).toHaveBeenCalledWith(Uint8Array.of(4))
+      expect(handshake.destroyChallenge).not.toHaveBeenCalledWith(Uint8Array.of(11))
+      expect(handshake.destroyPendingPairing).not.toHaveBeenCalledWith(Uint8Array.of(12))
+      await authority.runPairingTransaction(async (state) => {
+        for (const rows of [state.settledChallenges, state.settledPending, state.completions, state.orphanPendingCleanups, state.blobs]) {
+          expect([...rows.values()].map(row => row.accountId)).toEqual(['account-two'])
+        }
+        expect(state.accountChallengeAt.has('account-one')).toBe(false)
+        expect(state.blobUploads.has('account-one')).toBe(false)
+        expect(state.accountChallengeAt.has('account-two')).toBe(true)
+        expect(state.blobUploads.has('account-two')).toBe(true)
+        expect(state.endpointMailbox.challenges.every(row => row.accountId === 'account-two')).toBe(true)
+        expect(state.endpointMailbox.pending.every(row => row.accountId === 'account-two')).toBe(true)
+        expect(state.endpointMailbox.pending).toHaveLength(1)
+      })
+      await composition.accountDeletion.cleanup(deleting, [parseInstallationId('desktop-account-one')])
+    } finally { await provider.dispose() }
   })
 
   it('authenticates one Mobile Access disable request exactly once', async () => {

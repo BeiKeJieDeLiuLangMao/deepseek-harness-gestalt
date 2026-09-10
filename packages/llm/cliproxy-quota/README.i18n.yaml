@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/llm/cliproxy-quota/README.md
+README.md: a040e7f6e51bfe4c93cdaf64f105ee2b3a95ae31
+README.zh.md: 639f9bf940ffb0b77095df7052b7c00555ec34f8

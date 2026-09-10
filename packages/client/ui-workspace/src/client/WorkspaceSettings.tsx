@@ -18,11 +18,13 @@ import { useEffect, useRef, useState } from 'react'
 import { Button, Modal, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { WorkspaceId } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { WorkspaceBrowserProps } from './contract/slots.ts'
+import type { ProjectMembershipErrorCode } from '@deepseek-ai/dsh-project-membership'
 import { grantableInviteRoles } from '@deepseek-ai/dsh-project-membership/invite-role'
 import type {
   ProjectMembershipGateway, WorkspaceIssuedInvitation, WorkspaceMemberRow,
   WorkspacePendingInvitation, WorkspaceProjectRole, WorkspaceProjectView,
 } from './contract/slots.ts'
+import type { WorkspaceKey } from './locales.ts'
 import css from './WorkspaceSettings.module.css'
 
 /** The standard locale seat, prop-passed from the browser root. */
@@ -50,17 +52,23 @@ export interface WizardWorkspace {
 }
 
 const MEMBERSHIP_ERROR_COPY = {
-  INVITATION_NOT_PENDING: 'error.INVITATION_NOT_PENDING',
-  INVITATION_NOT_FOUND: 'error.INVITATION_NOT_PENDING',
-  ROLE_REQUIRED: 'error.ROLE_REQUIRED',
-  INVALID_LINK: 'error.INVALID_LINK',
   DUPLICATE_INVITEE: 'error.DUPLICATE_INVITEE',
-  PROJECT_NOT_FOUND: 'error.PROJECT_NOT_FOUND',
+  ROLE_REQUIRED: 'error.ROLE_REQUIRED',
   NOT_A_MEMBER: 'error.NOT_A_MEMBER',
+  PROJECT_NOT_FOUND: 'error.PROJECT_NOT_FOUND',
+  MEMBERSHIP_NOT_FOUND: 'error.MEMBERSHIP_NOT_FOUND',
+  INVITATION_NOT_FOUND: 'error.INVITATION_NOT_PENDING',
+  INVITATION_NOT_PENDING: 'error.INVITATION_NOT_PENDING',
+  PROJECT_NAME_TAKEN: 'error.PROJECT_NAME_TAKEN',
+  PROJECT_REMOTE_TAKEN: 'error.PROJECT_REMOTE_TAKEN',
+  INVALID_PROJECT_NAME: 'error.INVALID_PROJECT_NAME',
+  INVALID_REMOTE_URL: 'error.INVALID_REMOTE_URL',
+  INVALID_TAGS: 'error.INVALID_TAGS',
   LAST_OWNER: 'error.LAST_OWNER',
-} as const
+  INVALID_LINK: 'error.INVALID_LINK',
+} as const satisfies Record<ProjectMembershipErrorCode, WorkspaceKey>
 
-const GONE_INVITATION_CODES = new Set<keyof typeof MEMBERSHIP_ERROR_COPY>([
+const GONE_INVITATION_CODES = new Set<ProjectMembershipErrorCode>([
   'INVITATION_NOT_PENDING',
   'INVITATION_NOT_FOUND',
 ])
@@ -89,9 +97,9 @@ export function isInvitationNoLongerPending(reason: unknown): boolean {
   return /already reached\s+\w+|not pending|retracted/i.test(text)
 }
 
-function membershipFailureCode(text: string): keyof typeof MEMBERSHIP_ERROR_COPY | undefined {
-  const codes = Object.keys(MEMBERSHIP_ERROR_COPY) as Array<keyof typeof MEMBERSHIP_ERROR_COPY>
-  return codes.find(code => text.includes(code))
+function membershipFailureCode(text: string): ProjectMembershipErrorCode | undefined {
+  return text.split(/[^A-Za-z0-9_]+/u).find((token): token is ProjectMembershipErrorCode =>
+    Object.prototype.hasOwnProperty.call(MEMBERSHIP_ERROR_COPY, token))
 }
 
 /**
@@ -370,7 +378,7 @@ function MemberRowItem({ row, gateway, onAct, t }: {
   const [tagsDraft, setTagsDraft] = useState(row.tags.join(', '))
   const identity = row.displayName === '' ? row.accountId : row.displayName
   const commitTags = () => {
-    const tags = tagsDraft.split(',').map(tag => tag.trim()).filter(tag => tag !== '')
+    const tags = tagsDraft.split(/[,，]/u).map(tag => tag.trim()).filter(tag => tag !== '')
     const unchanged = tags.length === row.tags.length && tags.every((tag, i) => tag === row.tags[i])
     if (unchanged) return
     onAct(() => gateway.setMemberTags(row.membershipId, tags))

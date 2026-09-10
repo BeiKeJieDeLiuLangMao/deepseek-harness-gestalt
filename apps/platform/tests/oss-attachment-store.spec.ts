@@ -125,6 +125,10 @@ describe('OSS remote attachment durable metadata', () => {
       let commits = 0
       const client = {
         query: async (sql: string, values?: readonly unknown[]) => {
+          if (sql.includes('SELECT object_key FROM remote_attachment_objects')) {
+            if (metadataOutcome === 'unreadable') throw new Error('metadata read is unavailable')
+            return { rows: [{ object_key: objectKey }], rowCount: 1 }
+          }
           if (sql.includes('SELECT phase FROM remote_attachment_storage_phase')) {
             return { rows: [{ phase: 'bridge' }], rowCount: 1 }
           }

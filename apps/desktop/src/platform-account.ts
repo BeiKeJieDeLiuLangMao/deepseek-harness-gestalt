@@ -27,6 +27,7 @@ import {
 } from '@deepseek-ai/dsh-platform-account-client'
 import {
   AccountError,
+  mobileInstallationRevocationBinding,
   parseAccountProofJti,
   parseAccountSessionView,
   parseInstallationId,
@@ -106,6 +107,10 @@ export interface DesktopAccountActions {
    */
   cancelLogin(): Promise<DesktopAccountSnapshot>
   signOut(): Promise<DesktopAccountSnapshot>
+  /** Refresh active Mobile Installations owned by the signed-in Account. */
+  refreshMobileInstallations(): Promise<DesktopAccountSnapshot>
+  /** Remotely sign one owned Mobile Installation out. */
+  revokeMobileInstallation(installationId: InstallationId): Promise<DesktopAccountSnapshot>
   /** Authorize a Host-owned current-Installation operation without exposing the private key. */
   authorizeCurrentInstallation(): Promise<CurrentInstallationAuthorization>
   /** @returns the Platform-registered presentation while this Installation is signed in. */
@@ -221,6 +226,9 @@ export class DesktopAccountController implements DesktopAccountActions {
         status: 'signed-in',
         privacyAccepted: this.snapshot.privacyAccepted,
         account: persisted.session.account,
+        ...(this.snapshot.mobileInstallations === undefined
+          ? {}
+          : { mobileInstallations: this.snapshot.mobileInstallations }),
       })
       return this.snapshot
     }
@@ -270,39 +278,142 @@ export class DesktopAccountController implements DesktopAccountActions {
   async authorizeCurrentInstallation(): Promise<CurrentInstallationAuthorization> {
     return this.transitions.run(async () => {
       const record = this.requireRecord()
-      if (record.session === undefined || record.sessionPrivateKey === undefined) {
-        throw new AccountError('SESSION_REVOKED', 'Desktop Installation is not signed in')
-      }
-      if (record.session.refreshExpiresAt <= this.now()) {
-        await this.clearSession(record)
-        throw new AccountError('SESSION_EXPIRED', 'Desktop Account Session expired')
-      }
-      if (record.session.accessExpiresAt <= this.now()) {
-        record.session = await this.options.transport.refresh({
-          refreshToken: record.session.refreshToken,
-          proof: desktopProof(
-            record.sessionPrivateKey,
-            'refresh',
-            hash(record.session.refreshToken),
-            this.now(),
-          ),
-        })
-        await this.options.store.save(record)
-        this.publish({
-          status: 'signed-in',
-          privacyAccepted: this.snapshot.privacyAccepted,
-          account: record.session.account,
-        })
-      }
+      const current = await this.requireUsableSession(record)
       return {
-        accessToken: record.session.accessToken,
+        accessToken: current.session.accessToken,
         proof: desktopProof(
-          record.sessionPrivateKey,
+          current.privateKey,
           'current',
-          hash(record.session.accessToken),
+          hash(current.session.accessToken),
           this.now(),
         ),
       }
+    })
+  }
+
+  async refreshMobileInstallations(): Promise<DesktopAccountSnapshot> {
+    return this.transitions.run(async () => this.refreshMobileInstallationsTransition())
+  }
+
+  private async refreshMobileInstallationsTransition(): Promise<DesktopAccountSnapshot> {
+    const record = this.requireRecord()
+    const retained = this.snapshot.mobileInstallations?.installations ?? []
+    if (record.session === undefined || record.sessionPrivateKey === undefined) return this.snapshot
+    this.publish({
+      status: 'signed-in',
+      privacyAccepted: this.snapshot.privacyAccepted,
+      account: record.session.account,
+      mobileInstallations: { status: 'loading', installations: retained },
+    })
+    try {
+      const current = await this.requireUsableSession(record)
+      const installations = await this.options.transport.listMobileInstallations({
+        accessToken: current.session.accessToken,
+        proof: desktopProof(
+          current.privateKey,
+          'list-mobile-installations',
+          hash(current.session.accessToken),
+          this.now(),
+        ),
+      })
+      this.publishMobileInstallations(record, { status: 'ready', installations })
+    } catch (error) {
+      if (isTerminalSessionError(error)) {
+        await this.clearSession(record)
+        return this.snapshot
+      }
+      this.publishMobileInstallations(record, {
+        status: 'error',
+        installations: retained,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+    return this.snapshot
+  }
+
+  async revokeMobileInstallation(installationId: InstallationId): Promise<DesktopAccountSnapshot> {
+    return this.transitions.run(async () => {
+      const record = this.requireRecord()
+      const retained = this.snapshot.mobileInstallations?.installations ?? []
+      if (record.session === undefined || record.sessionPrivateKey === undefined) return this.snapshot
+      this.publishMobileInstallations(record, {
+        status: 'removing',
+        installations: retained,
+        removingInstallationId: installationId,
+      })
+      try {
+        const current = await this.requireUsableSession(record)
+        const accessTokenHash = hash(current.session.accessToken)
+        const installations = await this.options.transport.revokeMobileInstallation({
+          accessToken: current.session.accessToken,
+          installationId,
+          proof: desktopProof(
+            current.privateKey,
+            'revoke-mobile-installation',
+            mobileInstallationRevocationBinding(accessTokenHash, installationId),
+            this.now(),
+          ),
+        })
+        this.publishMobileInstallations(record, { status: 'ready', installations })
+      } catch (error) {
+        if (isTerminalSessionError(error)) {
+          await this.clearSession(record)
+          return this.snapshot
+        }
+        this.publishMobileInstallations(record, {
+          status: 'error',
+          installations: retained,
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
+      return this.snapshot
+    })
+  }
+
+  private async requireUsableSession(record: PersistedDesktopAccount): Promise<{
+    session: AccountSessionView
+    privateKey: string
+  }> {
+    if (record.session === undefined || record.sessionPrivateKey === undefined) {
+      throw new AccountError('SESSION_REVOKED', 'Desktop Installation is not signed in')
+    }
+    if (record.session.refreshExpiresAt <= this.now()) {
+      await this.clearSession(record)
+      throw new AccountError('SESSION_EXPIRED', 'Desktop Account Session expired')
+    }
+    if (record.session.accessExpiresAt <= this.now()) {
+      record.session = await this.options.transport.refresh({
+        refreshToken: record.session.refreshToken,
+        proof: desktopProof(
+          record.sessionPrivateKey,
+          'refresh',
+          hash(record.session.refreshToken),
+          this.now(),
+        ),
+      })
+      await this.options.store.save(record)
+      this.publish({
+        status: 'signed-in',
+        privacyAccepted: this.snapshot.privacyAccepted,
+        account: record.session.account,
+        ...(this.snapshot.mobileInstallations === undefined
+          ? {}
+          : { mobileInstallations: this.snapshot.mobileInstallations }),
+      })
+    }
+    return { session: record.session, privateKey: record.sessionPrivateKey }
+  }
+
+  private publishMobileInstallations(
+    record: PersistedDesktopAccount,
+    mobileInstallations: NonNullable<DesktopAccountSnapshot['mobileInstallations']>,
+  ): void {
+    if (record.session === undefined) return
+    this.publish({
+      status: 'signed-in',
+      privacyAccepted: this.snapshot.privacyAccepted,
+      account: record.session.account,
+      mobileInstallations,
     })
   }
 
@@ -360,7 +471,12 @@ export class DesktopAccountController implements DesktopAccountActions {
         record.session = { ...record.session, account }
       }
       await this.options.store.save(record)
-      this.publish({ status: 'signed-in', privacyAccepted: this.snapshot.privacyAccepted, account: record.session.account })
+      this.publish({
+        status: 'signed-in',
+        privacyAccepted: this.snapshot.privacyAccepted,
+        account: record.session.account,
+        mobileInstallations: { status: 'loading', installations: [] },
+      })
     } catch (error) {
       if (isTerminalSessionError(error)) {
         await this.clearSession(record)
@@ -449,7 +565,12 @@ export class DesktopAccountController implements DesktopAccountActions {
       await this.options.store.save(record)
       return
     }
-    this.publish({ status: 'signed-in', privacyAccepted: true, account: result.account })
+    this.publish({
+      status: 'signed-in',
+      privacyAccepted: true,
+      account: result.account,
+      mobileInstallations: { status: 'loading', installations: [] },
+    })
   }
 
   private cancelScheduledPoll(): void {
@@ -512,6 +633,8 @@ export class UnavailableDesktopAccountController implements DesktopAccountAction
   beginLogin(): Promise<DesktopAccountSnapshot> { return Promise.resolve(this.snapshot) }
   cancelLogin(): Promise<DesktopAccountSnapshot> { return Promise.resolve(this.snapshot) }
   signOut(): Promise<DesktopAccountSnapshot> { return Promise.resolve(this.snapshot) }
+  refreshMobileInstallations(): Promise<DesktopAccountSnapshot> { return Promise.resolve(this.snapshot) }
+  revokeMobileInstallation(): Promise<DesktopAccountSnapshot> { return Promise.resolve(this.snapshot) }
   authorizeCurrentInstallation(): Promise<CurrentInstallationAuthorization> {
     return Promise.reject(new AccountError('SESSION_REVOKED', 'Desktop Platform Account is unavailable'))
   }
@@ -543,6 +666,7 @@ function withoutDesktopError(snapshot: DesktopAccountSnapshot): DesktopAccountSn
     status: snapshot.status,
     privacyAccepted: snapshot.privacyAccepted,
     ...(snapshot.account === undefined ? {} : { account: snapshot.account }),
+    ...(snapshot.mobileInstallations === undefined ? {} : { mobileInstallations: snapshot.mobileInstallations }),
   }
 }
 

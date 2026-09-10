@@ -2,7 +2,7 @@
   "name": "@deepseek-ai/dsh-desktop",
   "productName": "DeepSeek Gestalt",
   "description": "DeepSeek Gestalt Desktop Host: Electron window around bundled dsh web",
-  "version": "0.1.16",
+  "version": "0.1.17",
   "private": true,
   "type": "module",
   "main": "out/main.mjs",
@@ -72,6 +72,7 @@
     "start": "electron out/main.mjs",
     "build:main": "node scripts/build-main.mjs",
     "typecheck:e2e-critical-path": "tsc -b tests/critical-path-e2e/tsconfig.json",
+    "build:cliproxyapi": "node scripts/build-cliproxyapi.mjs",
     "typecheck:e2e-project-members": "tsc -p tests/member-question-e2e/tsconfig.json",
     "test:e2e-critical-path-electron": "tsx tests/critical-path-e2e/run-electron.ts",
     "test:e2e-project-members-electron": "tsx tests/member-question-e2e/run-electron.ts",
@@ -106,7 +107,9 @@
     "@deepseek-ai/dsh-browser-runtime-electron": "workspace:^",
     "@deepseek-ai/dsh-client-ui-desktop": "workspace:^",
     "@deepseek-ai/dsh-client-ui-phone": "workspace:^",
+    "@deepseek-ai/dsh-cliproxy-quota": "workspace:^",
     "@deepseek-ai/dsh-home-paths": "workspace:^",
+    "@deepseek-ai/dsh-llm-gestalt-account-pool": "workspace:^",
     "@deepseek-ai/dsh-noise-channel": "workspace:^",
     "@deepseek-ai/dsh-phone-runtime": "workspace:^",
     "@deepseek-ai/dsh-phone-environment": "workspace:^",
@@ -211,6 +214,7 @@
       "out/operated-platform.json",
       "out/boot.html",
       "out/sub2api-sources.json",
+      "out/cliproxyapi-source.json",
       "cordis.patch.yml",
       "package.json"
     ],
@@ -235,6 +239,10 @@
       {
         "from": "out/system-node-fetch-helper.cjs",
         "to": "system-node-fetch-helper.cjs"
+      },
+      {
+        "from": "resources/cliproxyapi",
+        "to": "cliproxyapi"
       }
     ],
     "asar": true,

@@ -1,5 +1,6 @@
 /** PostgreSQL capability authority with ciphertext bytes retained only in Alibaba Cloud OSS. */
 
+import type { PlatformAccountId } from '@deepseek-ai/dsh-platform-account'
 import { createHash, randomBytes } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import {
@@ -27,11 +28,20 @@ import { validateOssObjectPrefix } from './oss-config.ts'
 import type { PlatformSqlClient, PlatformSqlPool } from './postgres-pairing-store.ts'
 import {
   migrateAttachmentStoragePhase,
+  retainAttachmentAccountOwner,
+  revokeAccountAttachments,
   readAttachmentStoragePhase,
   removeAttachmentStorageLegacyDuplicates,
 } from './attachment-storage-phase.ts'
 
 const SCHEMA = `
+CREATE TABLE IF NOT EXISTS remote_attachment_account_cleanup (
+  database_identity text NOT NULL,
+  pairing_id text NOT NULL,
+  kind text NOT NULL CHECK (kind IN ('object', 'quota')),
+  resource_key text NOT NULL,
+  PRIMARY KEY (database_identity, pairing_id, kind, resource_key)
+);
 CREATE TABLE IF NOT EXISTS remote_attachment_blobs (
   database_identity text NOT NULL,
   capability_digest bytea NOT NULL,
@@ -110,6 +120,8 @@ type Schedule = (handler: () => void, ms: number) => { unref(): void; cancel(): 
 
 /** Deployment bounds, compatibility, cleanup, and quota adapters for the operated OSS store. */
 export interface OssRemoteAttachmentStoreOptions {
+  /** Operated authority check executed while reserving a publication. */
+  authorizePairing?: (client: PlatformSqlClient, pairingId: PersonalPairingId) => Promise<PlatformAccountId>
   maxBlobBytes: number
   capabilityLifetimeMs: number
   maxRetainedBlobs: number
@@ -141,6 +153,7 @@ export class OssRemoteAttachmentStore extends RemoteAttachmentStoreService {
   private readonly cleanupWorkers = new Set<Promise<void>>()
   private sweepTimer: ReturnType<Schedule> | undefined
   private sweepOperation: Promise<void> | undefined
+  private readonly authorizePairing: OssRemoteAttachmentStoreOptions['authorizePairing']
   private disposed = false
 
   /**
@@ -158,6 +171,7 @@ export class OssRemoteAttachmentStore extends RemoteAttachmentStoreService {
     options: OssRemoteAttachmentStoreOptions,
   ) {
     super(ctx)
+    this.authorizePairing = options.authorizePairing
     this.maxBlobBytes = options.maxBlobBytes
     this.capabilityLifetimeMs = options.capabilityLifetimeMs
     this.objectPrefix = validateOssObjectPrefix(options.objectPrefix)
@@ -220,29 +234,34 @@ export class OssRemoteAttachmentStore extends RemoteAttachmentStoreService {
       throw new TypeError('OSS attachment quota lease expires before blob authority')
     }
     let objectWritten = false
+    let retained = false
     try {
-      const cleanup = await this.reservePublishIntent({
-        capabilityDigest,
-        pairingId: input.pairingId,
-        objectKey,
-        byteLength: input.ciphertext.byteLength,
-        now: input.now,
-        expiresAt,
-        ...(input.quota === undefined ? {} : { quotaReservationId: input.quota.id }),
-      })
-      this.queueCleanup(cleanup)
-      await this.objects.putObject(objectKey, input.ciphertext, expiresAt)
-      objectWritten = true
-      await this.commitPublishIntent({
-        capabilityDigest,
-        pairingId: input.pairingId,
-        objectKey,
-        ciphertext: input.ciphertext,
-        expiresAt,
-        ...(input.quota === undefined ? {} : { quotaReservationId: input.quota.id }),
-      })
+      const client = await this.pool.connect()
+      const publicationLock = `remote-attachments-oss-publish:${this.databaseIdentity}:${capabilityDigest.toString('hex')}`
+      try {
+        await client.query('SELECT pg_advisory_lock(hashtext($1))', [publicationLock])
+        const cleanup = await this.reservePublishIntent({
+          capabilityDigest, pairingId: input.pairingId, objectKey,
+          byteLength: input.ciphertext.byteLength, now: input.now, expiresAt,
+          ...(input.quota === undefined ? {} : { quotaReservationId: input.quota.id }),
+        }, client)
+        this.queueCleanup(cleanup)
+        await this.objects.putObject(objectKey, input.ciphertext, expiresAt)
+        objectWritten = true
+        await this.commitPublishIntent({
+          capabilityDigest, pairingId: input.pairingId, objectKey, ciphertext: input.ciphertext, expiresAt,
+          ...(input.quota === undefined ? {} : { quotaReservationId: input.quota.id }),
+        }, client)
+      } catch (error) {
+        retained = objectWritten && await this.metadataReferences(capabilityDigest, objectKey, client)
+        if (objectWritten && !retained) {
+          await this.recordAccountCleanup(client, input.pairingId, 'object', objectKey)
+        }
+        throw error
+      } finally {
+        try { await client.query('SELECT pg_advisory_unlock(hashtext($1))', [publicationLock]) } finally { client.release() }
+      }
     } catch (error) {
-      const retained = objectWritten && await this.metadataReferences(capabilityDigest, objectKey)
       if (!retained) {
         if (objectWritten) await this.deleteObjectAfterAuthority(objectKey)
         try {
@@ -317,6 +336,41 @@ export class OssRemoteAttachmentStore extends RemoteAttachmentStoreService {
     }
   }
 
+  /**
+   * Complete known attachment cleanup for an account, including its previously removed pairings.
+   * @param accountId - Account whose session and pairing access is revoked.
+   * @param pairingIds - Pairing identities captured before authority revocation.
+   */
+  async revokeAccount(accountId: PlatformAccountId, pairingIds: readonly PersonalPairingId[]): Promise<void> {
+    await revokeAccountAttachments(this.pool, this.databaseIdentity, accountId, pairingIds, ids => this.revokePairings(ids))
+  }
+
+  /**
+   * Erase captured pairing attachments with durable object and quota cleanup progress.
+   * @param pairingIds - Persisted owners whose public pairing access is already revoked.
+   */
+  async revokePairings(pairingIds: readonly PersonalPairingId[]): Promise<void> {
+    if (pairingIds.length === 0) return
+    await this.transaction(async (client) => {
+      await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`remote-attachments:${this.databaseIdentity}`])
+      await this.retire(client, 0, pairingIds)
+      const pending = await client.query('SELECT capability_digest FROM remote_attachment_publish_intents WHERE database_identity = $1 AND pairing_id = ANY($2::text[])', [this.databaseIdentity, pairingIds])
+      if (pending.rows.length > 0) throw new Error('Account attachment publication is still settling')
+    })
+    const cleanup = await this.pool.query('SELECT kind, resource_key, pairing_id FROM remote_attachment_account_cleanup WHERE database_identity = $1 AND pairing_id = ANY($2::text[])', [this.databaseIdentity, pairingIds])
+    for (const row of cleanup.rows) {
+      if ((row.kind !== 'object' && row.kind !== 'quota') || typeof row.resource_key !== 'string') throw new TypeError('Account attachment cleanup record is invalid')
+      if (row.kind === 'object' && !row.resource_key.startsWith(`${this.objectPrefix}/`)) throw new TypeError('Account attachment cleanup object is outside its prefix')
+      await this.runCleanup({ kind: row.kind, key: row.resource_key })
+    }
+  }
+
+  private async recordAccountCleanup(client: PlatformSqlClient, pairingId: PersonalPairingId, kind: 'object' | 'quota', key: string): Promise<void> {
+    await client.query(`INSERT INTO remote_attachment_account_cleanup (database_identity, pairing_id, kind, resource_key)
+      VALUES ($1,$2,$3,$4) ON CONFLICT (database_identity, pairing_id, kind, resource_key) DO NOTHING`,
+    [this.databaseIdentity, pairingId, kind, key])
+  }
+
   override async revoke(input: { pairingId: PersonalPairingId; capability: AttachmentCapability }): Promise<void> {
     const capabilityDigest = digest(input.capability)
     const cleanup = await this.transaction(async (client) => {
@@ -379,9 +433,11 @@ export class OssRemoteAttachmentStore extends RemoteAttachmentStoreService {
     now: number
     expiresAt: number
     quotaReservationId?: AttachmentBlobReservationId
-  }): Promise<CleanupBatch> {
-    return await this.transaction(async (client) => {
+  }, client: PlatformSqlClient): Promise<CleanupBatch> {
+    return await this.clientTransaction(client, async (client) => {
       await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`remote-attachments:${this.databaseIdentity}`])
+      const accountId = await this.authorizePairing?.(client, input.pairingId)
+      if (accountId !== undefined) await retainAttachmentAccountOwner(client, this.databaseIdentity, input.pairingId, accountId)
       const cleanup = await this.retire(client, input.now)
       const counted = await client.query(
         `SELECT COUNT(*)::text AS count FROM (
@@ -419,8 +475,8 @@ export class OssRemoteAttachmentStore extends RemoteAttachmentStoreService {
     ciphertext: Uint8Array
     expiresAt: number
     quotaReservationId?: AttachmentBlobReservationId
-  }): Promise<void> {
-    await this.transaction(async (client) => {
+  }, client: PlatformSqlClient): Promise<void> {
+    await this.clientTransaction(client, async (client) => {
       await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`remote-attachments:${this.databaseIdentity}`])
       const phase = await readAttachmentStoragePhase(client, this.databaseIdentity)
       if (phase === 'legacy') throw new TypeError('OSS attachment publish requires bridge or OSS authority')
@@ -553,7 +609,7 @@ export class OssRemoteAttachmentStore extends RemoteAttachmentStoreService {
             [this.databaseIdentity, capabilityDigest, token],
           )
           return removed.rowCount === 1
-            ? await this.recordQuotaCleanup(client, row.quota_reservation_id)
+            ? await this.recordQuotaCleanup(client, row.quota_reservation_id, undefined, row.pairing_id)
             : emptyCleanup()
         })
         await this.finishCleanup(cleanup)
@@ -569,7 +625,7 @@ export class OssRemoteAttachmentStore extends RemoteAttachmentStoreService {
               [this.databaseIdentity, capabilityDigest, token],
             )
             return removed.rowCount === 1
-              ? await this.recordQuotaCleanup(client, row.quota_reservation_id)
+              ? await this.recordQuotaCleanup(client, row.quota_reservation_id, undefined, row.pairing_id)
               : emptyCleanup()
           }
           await client.query(
@@ -633,6 +689,10 @@ export class OssRemoteAttachmentStore extends RemoteAttachmentStoreService {
     objectRow: AttachmentRow | undefined,
     legacyRow: LegacyAttachmentRow | undefined,
   ): Promise<CleanupBatch> {
+    if (objectRow !== undefined) await this.recordAccountCleanup(client, objectRow.pairing_id, 'object', objectRow.object_key)
+    const pairingId = objectRow?.pairing_id ?? legacyRow?.pairing_id
+    const quotaId = objectRow?.quota_reservation_id ?? legacyRow?.quota_reservation_id
+    if (pairingId !== undefined && quotaId !== undefined) await this.recordAccountCleanup(client, pairingId, 'quota', quotaId)
     await client.query(
       'DELETE FROM remote_attachment_objects WHERE database_identity = $1 AND capability_digest = $2',
       [this.databaseIdentity, capabilityDigest],
@@ -652,8 +712,10 @@ export class OssRemoteAttachmentStore extends RemoteAttachmentStoreService {
     client: PlatformSqlClient,
     reservationId?: AttachmentBlobReservationId,
     objectKey?: string,
+    pairingId?: PersonalPairingId,
   ): Promise<CleanupBatch> {
     if (reservationId !== undefined) {
+      if (pairingId !== undefined) await this.recordAccountCleanup(client, pairingId, 'quota', reservationId)
       await client.query(
         `INSERT INTO remote_attachment_quota_releases (database_identity, reservation_id)
          VALUES ($1,$2) ON CONFLICT (database_identity, reservation_id) DO NOTHING`,
@@ -690,27 +752,34 @@ export class OssRemoteAttachmentStore extends RemoteAttachmentStoreService {
                WHERE legacy.database_identity = object.database_identity
                  AND legacy.capability_digest = object.capability_digest
             )))
-       RETURNING capability_digest, object_key, quota_reservation_id`,
+       RETURNING capability_digest, object_key, pairing_id, quota_reservation_id`,
       [this.databaseIdentity, now, retirePairings, inactivePairingIds],
     )
     const legacy = await client.query(
       `DELETE FROM remote_attachment_blobs
         WHERE database_identity = $1
           AND (expires_at <= $2 OR ($3::boolean AND pairing_id = ANY($4::text[])))
-       RETURNING quota_reservation_id`,
+       RETURNING pairing_id, quota_reservation_id`,
       [this.databaseIdentity, now, retirePairings, inactivePairingIds],
     )
     const intents = await client.query(
       `DELETE FROM remote_attachment_publish_intents
         WHERE database_identity = $1
           AND (expires_at <= $2 OR ($3::boolean AND pairing_id = ANY($4::text[])))
-       RETURNING capability_digest, object_key, quota_reservation_id`,
-      [this.databaseIdentity, now, retirePairings, inactivePairingIds],
+          AND pg_try_advisory_xact_lock(hashtext($5 || encode(capability_digest, 'hex')))
+       RETURNING capability_digest, object_key, pairing_id, quota_reservation_id`,
+      [this.databaseIdentity, now, retirePairings, inactivePairingIds, `remote-attachments-oss-publish:${this.databaseIdentity}:`],
     )
     const reservationIds = new Set<AttachmentBlobReservationId>()
+    for (const row of [...objects.rows, ...intents.rows]) {
+      const [key] = this.cleanupObjectKeys([row])
+      if (key === undefined) throw new TypeError('Attachment cleanup object is missing')
+      await this.recordAccountCleanup(client, parsePersonalPairingId(row.pairing_id), 'object', key)
+    }
     for (const row of [...objects.rows, ...legacy.rows, ...intents.rows]) {
       if (typeof row.quota_reservation_id === 'string') {
         reservationIds.add(parseAttachmentBlobReservationId(row.quota_reservation_id))
+        await this.recordAccountCleanup(client, parsePersonalPairingId(row.pairing_id), 'quota', row.quota_reservation_id)
       }
     }
     for (const reservationId of reservationIds) await this.recordQuotaCleanup(client, reservationId)
@@ -750,9 +819,9 @@ export class OssRemoteAttachmentStore extends RemoteAttachmentStoreService {
     return ciphertext
   }
 
-  private async metadataReferences(capabilityDigest: Uint8Array, objectKey: string): Promise<boolean> {
+  private async metadataReferences(capabilityDigest: Uint8Array, objectKey: string, client: PlatformSqlClient): Promise<boolean> {
     try {
-      const selected = await this.pool.query(
+      const selected = await client.query(
         `SELECT object_key FROM remote_attachment_objects
           WHERE database_identity = $1 AND capability_digest = $2
          UNION ALL
@@ -874,6 +943,10 @@ export class OssRemoteAttachmentStore extends RemoteAttachmentStoreService {
 
   private async transaction<T>(operation: (client: PlatformSqlClient) => Promise<T>): Promise<T> {
     const client = await this.pool.connect()
+    try { return await this.clientTransaction(client, operation) } finally { client.release() }
+  }
+
+  private async clientTransaction<T>(client: PlatformSqlClient, operation: (client: PlatformSqlClient) => Promise<T>): Promise<T> {
     try {
       await client.query('BEGIN')
       const result = await operation(client)
@@ -884,8 +957,6 @@ export class OssRemoteAttachmentStore extends RemoteAttachmentStoreService {
         /* rollback after a failed metadata transaction is best-effort */
       }
       throw error
-    } finally {
-      client.release()
     }
   }
 
@@ -933,6 +1004,12 @@ export class OssRemoteAttachmentStore extends RemoteAttachmentStoreService {
     )
     cleanup.quotaReservationIds.push(...pending.rows.flatMap(row =>
       typeof row.reservation_id === 'string' ? [parseAttachmentBlobReservationId(row.reservation_id)] : []))
+    const retainedCleanup = await this.pool.query('SELECT kind, resource_key FROM remote_attachment_account_cleanup WHERE database_identity = $1', [this.databaseIdentity])
+    for (const row of retainedCleanup.rows) {
+      if ((row.kind !== 'object' && row.kind !== 'quota') || typeof row.resource_key !== 'string') throw new TypeError('Attachment cleanup record is invalid')
+      if (row.kind === 'object' && !row.resource_key.startsWith(`${this.objectPrefix}/`)) throw new TypeError('Attachment cleanup object is outside its prefix')
+      this.queueCleanupItem(row.kind, row.resource_key)
+    }
     this.queueCleanup(cleanup)
   }
 
@@ -968,13 +1045,15 @@ export class OssRemoteAttachmentStore extends RemoteAttachmentStoreService {
   private async runCleanup(item: { kind: 'object' | 'quota'; key: string }): Promise<void> {
     if (item.kind === 'object') {
       await this.objects.deleteObject(item.key)
-      return
+    } else {
+      await this.quotaCleanup.release(parseAttachmentBlobReservationId(item.key))
+      await this.pool.query(
+        'DELETE FROM remote_attachment_quota_releases WHERE database_identity = $1 AND reservation_id = $2',
+        [this.databaseIdentity, item.key],
+      )
     }
-    await this.quotaCleanup.release(parseAttachmentBlobReservationId(item.key))
-    await this.pool.query(
-      'DELETE FROM remote_attachment_quota_releases WHERE database_identity = $1 AND reservation_id = $2',
-      [this.databaseIdentity, item.key],
-    )
+    await this.pool.query('DELETE FROM remote_attachment_account_cleanup WHERE database_identity = $1 AND kind = $2 AND resource_key = $3',
+      [this.databaseIdentity, item.kind, item.key])
   }
 
   private async finishCleanup(cleanup: CleanupBatch): Promise<void> {
@@ -988,8 +1067,8 @@ export class OssRemoteAttachmentStore extends RemoteAttachmentStoreService {
   }
 
   private async deleteObjectAfterAuthority(key: string): Promise<void> {
-    try { await this.objects.deleteObject(key) } catch {
-      // Bucket lifecycle expiry owns recovery after metadata authority is gone.
+    try { await this.runCleanup({ kind: 'object', key }) } catch {
+      // The pairing-owned cleanup record survives metadata retirement and is retried by the sweep.
       console.error('[platform] OSS attachment cleanup failed')
     }
   }

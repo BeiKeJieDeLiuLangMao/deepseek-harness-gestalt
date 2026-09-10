@@ -17,6 +17,7 @@ export const PLATFORM_PRODUCTION_REQUIRED_ENV = [
   'PLATFORM_APSARADB_CA_BASE64',
   'PLATFORM_POSTGRES_DATABASE',
   'PLATFORM_IDENTITY_NAMESPACE',
+  'PLATFORM_ACCOUNT_SESSION_INVALIDATION_RETRY_INTERVAL_MS',
   'PLATFORM_REDIS_HOST',
   'PLATFORM_REDIS_USER',
   'PLATFORM_REDIS_PASSWORD',
@@ -61,6 +62,7 @@ export const PLATFORM_DEPLOY_REQUIRED_ENV = [
 
 /** A required production or deploy Environment name. */
 export type PlatformDeployEnvName = (typeof PLATFORM_DEPLOY_REQUIRED_ENV)[number]
+  | 'PLATFORM_ACCOUNT_DELETION_RETRY_INTERVAL_MS' | 'PLATFORM_ACCOUNT_DELETION_RECEIPT_LIFETIME_MS'
 
 /** Validated operated identity before the Account package brands it. */
 export interface OperatedPlatformIdentity {
@@ -117,8 +119,14 @@ export interface OperatedPlatformConfig {
   oss: OperatedOssConfig
   tokenSigningKey: Uint8Array
   pollingSigningKey: Uint8Array
+  /** Interval for retrying committed Account Session invalidations. */
+  accountSessionInvalidationRetryIntervalMs: number
   /** Directory for the file-backed Project Membership corpus. */
   membershipStoragePath: string
+  /** Authority explicitly selected after the reviewed membership cutover. */
+  membershipBackend: 'file' | 'postgres'
+  /** Deletion is enabled only with shared membership authority. */
+  accountDeletion?: { retryIntervalMs: number; completedReceiptLifetimeMs: number }
 }
 
 /** Default directory for the file-backed Project Membership corpus. */
@@ -249,6 +257,8 @@ export function loadOperatedPlatformConfig(
     requiredPlatformEnv('PLATFORM_APSARADB_CA_BASE64', env),
     'PLATFORM_APSARADB_CA_BASE64',
   )
+  const membershipBackend = env.PLATFORM_MEMBERSHIP_BACKEND ?? 'file'
+  if (membershipBackend !== 'file' && membershipBackend !== 'postgres') throw new TypeError('PLATFORM_MEMBERSHIP_BACKEND must be file or postgres')
   return {
     environment: operatedIdentity({
       environment: 'production',
@@ -312,7 +322,16 @@ export function loadOperatedPlatformConfig(
     }),
     tokenSigningKey: readPlatformSigningKey('PLATFORM_TOKEN_SIGNING_KEY', env),
     pollingSigningKey: readPlatformSigningKey('PLATFORM_POLLING_SIGNING_KEY', env),
+    accountSessionInvalidationRetryIntervalMs: positiveIntegerEnv(
+      env,
+      'PLATFORM_ACCOUNT_SESSION_INVALIDATION_RETRY_INTERVAL_MS',
+    ),
     membershipStoragePath: membershipStoragePath(env),
+    membershipBackend,
+    ...(membershipBackend === 'postgres' ? { accountDeletion: {
+      retryIntervalMs: positiveIntegerEnv(env, 'PLATFORM_ACCOUNT_DELETION_RETRY_INTERVAL_MS'),
+      completedReceiptLifetimeMs: positiveIntegerEnv(env, 'PLATFORM_ACCOUNT_DELETION_RECEIPT_LIFETIME_MS'),
+    } } : {}),
   }
 }
 

@@ -157,6 +157,14 @@ export class NativeMobilePairingStateStore implements MobilePairingStateStore {
     await this.storage.set(this.key(accountId), JSON.stringify(encoded))
   }
 
+  /**
+   * Remove one account's protected pairing document after its writers have stopped.
+   * @param accountId - Deleted account whose independent installation identity is retained.
+   */
+  async removeAccount(accountId: PlatformAccountId): Promise<void> {
+    await this.storage.remove(this.key(accountId))
+  }
+
   private key(accountId: PlatformAccountId): string {
     return `pairings:${this.namespace}:${accountId}`
   }
@@ -359,6 +367,18 @@ export class PairingCompanionKeyVault implements MobilePairingKeyRetention {
     this.desktopNames.delete(pairingId)
     if (this.selected === pairingId) this.selected = undefined
     this.persist()
+  }
+
+  /**
+   * Zero a deleted account's in-memory keys after pairing work has stopped.
+   * @param accountId - Account whose keys may be released; other loaded accounts are preserved.
+   */
+  async forgetDeletedAccount(accountId: PlatformAccountId): Promise<void> {
+    await this.selection
+    await this.persistence
+    if (this.accountId !== accountId) return
+    this.clearMemory()
+    this.accountId = undefined
   }
 
   /** Zero every retained attachment key, leaving the vault empty. */

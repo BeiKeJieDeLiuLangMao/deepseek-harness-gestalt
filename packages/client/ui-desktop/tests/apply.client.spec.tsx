@@ -4,7 +4,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { apply, inject } from '@deepseek-ai/dsh-client-ui-desktop/client'
-import type { DesktopBridge, DesktopSub2ApiSnapshot, UpdaterStatus } from '../src/protocol.ts'
+import type { DesktopBridge, DesktopAccountPoolSnapshot, UpdaterStatus } from '../src/protocol.ts'
 
 afterEach(() => {
   delete window.dshDesktop
@@ -86,6 +86,8 @@ describe('ui-desktop apply', () => {
       accountAcceptPrivacy: vi.fn(),
       accountBeginLogin: vi.fn(),
       accountCancelLogin: vi.fn(),
+      accountRefreshMobileInstallations: vi.fn(),
+      accountRevokeMobileInstallation: vi.fn(),
       accountSignOut: vi.fn(),
       onAccountSnapshot: vi.fn(() => () => {}),
       pairingGetSnapshot: vi.fn().mockResolvedValue({ status: 'unavailable', enabled: false, pairings: [] }),
@@ -96,11 +98,16 @@ describe('ui-desktop apply', () => {
       pairingReject: vi.fn(),
       pairingRevoke: vi.fn(),
       onPairingSnapshot: vi.fn(() => () => {}),
-      sub2ApiGetSnapshot: vi.fn(() => Promise.resolve<DesktopSub2ApiSnapshot>({ state: 'missing', enabled: true })),
-      sub2ApiEnable: vi.fn(() => Promise.resolve<DesktopSub2ApiSnapshot>({ state: 'missing', enabled: true })),
-      sub2ApiDisable: vi.fn(() => Promise.resolve<DesktopSub2ApiSnapshot>({ state: 'missing', enabled: true })),
-      sub2ApiUninstall: vi.fn(() => Promise.resolve<DesktopSub2ApiSnapshot>({ state: 'missing', enabled: true })),
-      onSub2ApiSnapshot: vi.fn(() => () => {}),
+      accountPoolGetSnapshot: vi.fn(() => Promise.resolve<DesktopAccountPoolSnapshot>({ state: 'starting', accounts: [] })),
+      accountPoolRefresh: vi.fn(() => Promise.resolve<DesktopAccountPoolSnapshot>({ state: 'starting', accounts: [] })),
+      accountPoolSetEnabled: vi.fn(() => Promise.resolve<DesktopAccountPoolSnapshot>({ state: 'starting', accounts: [] })),
+      accountPoolDelete: vi.fn(() => Promise.resolve<DesktopAccountPoolSnapshot>({ state: 'starting', accounts: [] })),
+      accountPoolStartLogin: vi.fn(),
+      accountPoolLoginStatus: vi.fn(() => Promise.resolve<DesktopAccountPoolSnapshot>({ state: 'starting', accounts: [] })),
+      accountPoolCancelLogin: vi.fn(() => Promise.resolve<DesktopAccountPoolSnapshot>({ state: 'starting', accounts: [] })),
+      accountPoolSubmitGlmKey: vi.fn(() => Promise.resolve<DesktopAccountPoolSnapshot>({ state: 'starting', accounts: [] })),
+      accountPoolRefreshQuota: vi.fn(() => Promise.resolve<DesktopAccountPoolSnapshot>({ state: 'starting', accounts: [] })),
+      onAccountPoolSnapshot: vi.fn(() => () => {}),
       chromeOverlayShow: async () => {},
       chromeOverlayHide: async () => {},
       chromeOverlayGetState: async () => null,
@@ -134,8 +141,8 @@ describe('ui-desktop apply', () => {
     expect(desktop.pairingGetSnapshot).toHaveBeenCalledOnce()
     expect(desktop.onPairingSnapshot).toHaveBeenCalledOnce()
     expect(b.ctx.get('projectMembershipClient')).toBe(desktop.projectMembership)
-    expect(desktop.sub2ApiGetSnapshot).toHaveBeenCalledOnce()
-    expect(desktop.onSub2ApiSnapshot).toHaveBeenCalledOnce()
+    expect(desktop.accountPoolGetSnapshot).toHaveBeenCalledOnce()
+    expect(desktop.onAccountPoolSnapshot).toHaveBeenCalledOnce()
     expect(b.slots.entries('sidebar.brand.name')).toHaveLength(1)
     const footer = b.slots.entries('sidebar.footer.action').find(entry => entry.options.id === 'desktop-update')
     expect((footer?.inject as () => { hooks: { updater: unknown } } | undefined)?.()?.hooks.updater).toBeDefined()
@@ -144,7 +151,7 @@ describe('ui-desktop apply', () => {
     expect((pairing?.inject as () => { hooks: { pairing: unknown } } | undefined)?.()?.hooks.pairing).toBeDefined()
     const sub2api = b.slots.entries('settings.section').find(entry => entry.options.id === 'sub2api')
     expect((sub2api?.options.label as (() => string) | undefined)?.()).toBe('Account pool')
-    expect((sub2api?.inject as () => { hooks: { sub2api: unknown } } | undefined)?.()?.hooks.sub2api).toBeDefined()
+    expect((sub2api?.inject as () => { hooks: { accountPool: unknown } } | undefined)?.()?.hooks.accountPool).toBeDefined()
     await Promise.resolve()
     await Promise.resolve()
     await fiber.dispose()

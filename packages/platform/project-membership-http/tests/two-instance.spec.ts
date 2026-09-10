@@ -330,7 +330,10 @@ async function bootInstance(storagePath: string, shared: Shared): Promise<Instan
         invalidation: shared.invalidation,
         github: shared.github,
         environment: ENVIRONMENT,
-        config: { tokenSigningKey: Buffer.alloc(32, 7), pollingSigningKey: Buffer.alloc(32, 9) },
+        config: {
+          tokenSigningKey: Buffer.alloc(32, 7), pollingSigningKey: Buffer.alloc(32, 9),
+          sessionInvalidationRetryIntervalMs: 60_000,
+        },
       })
     },
   }

@@ -2,14 +2,13 @@
  * Generate `docs/tool-catalog.md` from schemas collected by booting each tool
  * plugin. Runtime registration is the source of truth for computed schemas;
  * the manifest is checked against every on-disk `tool-*` package. `--check`
- * verifies the committed artifact. The original decision is recorded in
- * `.agents/notes/archived/process/2026-07-02-tool-schema-catalog.md`.
+ * verifies the committed artifact. Rationale and ownership live in
+ * `.agents/notes/implemented/process/2026-07-02-tool-schema-catalog.md`.
  */
 
 import { globSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, resolve } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
-import LlmRuntime from '@deepseek-ai/dsh-llm'
 import type { ToolSchema } from '@deepseek-ai/dsh-llm'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
@@ -19,7 +18,7 @@ import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import SqliteSessionQueryEngine from '@deepseek-ai/dsh-session-query-sqlite'
 import GoalService from '@deepseek-ai/dsh-goal'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
-import ToolRuntime, { RUN_CODE_NAME, TOOL_SEARCH_NAME, type Config as ToolsConfig } from '@deepseek-ai/dsh-tools'
+import ToolRuntime, { type Config as ToolsConfig } from '@deepseek-ai/dsh-tools'
 import LocalBashExecutor from '@deepseek-ai/dsh-bash-local'
 import * as BashEnvPlugin from '@deepseek-ai/dsh-shell-env'
 import { PwshLocalExecutor } from '@deepseek-ai/dsh-pwsh-local'
@@ -33,30 +32,30 @@ import WebRuntime from '@deepseek-ai/dsh-web'
 import * as WebSearchExa from '@deepseek-ai/dsh-web-search-exa'
 import * as WebFetchLocal from '@deepseek-ai/dsh-web-fetch-http'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
-import type { SubagentProvider } from '@deepseek-ai/dsh-subagent'
+import type { SubagentProvider, SubagentReportDelivery } from '@deepseek-ai/dsh-subagent'
 import * as ToolSubagentControl from '@deepseek-ai/dsh-tool-subagent-control'
 import * as ToolSubagentListAgents from '@deepseek-ai/dsh-tool-subagent-control/list-agents'
+import * as ToolSubagentReport from '@deepseek-ai/dsh-tool-subagent-report'
 import SkillRegistry from '@deepseek-ai/dsh-skill'
 import * as SkillFileSystem from '@deepseek-ai/dsh-skill-filesystem'
 import LocalJobRegistry from '@deepseek-ai/dsh-jobs-local'
 import * as ToolAskUser from '@deepseek-ai/dsh-tool-ask-user'
-import DeterministicBrowserRuntime from '@deepseek-ai/dsh-browser-runtime-deterministic'
+import * as ToolProjectMembers from '@deepseek-ai/dsh-tool-project-members'
+import { ProjectMembershipService } from '@deepseek-ai/dsh-project-membership'
 import * as ToolBash from '@deepseek-ai/dsh-tool-bash'
-import * as ToolBrowser from '@deepseek-ai/dsh-tool-browser'
 import * as ToolPwsh from '@deepseek-ai/dsh-tool-pwsh'
 import * as ToolBashPersistent from '@deepseek-ai/dsh-tool-bash-persistent'
 import * as ToolPwshPersistent from '@deepseek-ai/dsh-tool-pwsh-persistent'
 import CordisHostRunner from '@deepseek-ai/dsh-cordis-host-runner'
 import * as ToolCordis from '@deepseek-ai/dsh-tool-cordis'
-import * as ToolPresent from '@deepseek-ai/dsh-tool-present'
 import * as ToolFs from '@deepseek-ai/dsh-tool-fs'
 import * as ToolFsSearch from '@deepseek-ai/dsh-tool-fs-search'
 import * as ToolStrReplaceEditor from '@deepseek-ai/dsh-tool-str-replace-editor'
 import TerminalSessionService from '@deepseek-ai/dsh-terminal'
-import * as ToolProjectMembers from '@deepseek-ai/dsh-tool-project-members'
 import * as ToolPty from '@deepseek-ai/dsh-tool-terminal'
 import * as ToolGoal from '@deepseek-ai/dsh-tool-goal'
 import * as ToolSchedule from '@deepseek-ai/dsh-schedule'
+import { ScheduleTransactions } from '../packages/schedule/schedule/src/transaction.ts'
 import Lsp from '@deepseek-ai/dsh-lsp'
 import * as ToolLsp from '@deepseek-ai/dsh-tool-lsp'
 import * as ToolSkill from '@deepseek-ai/dsh-tool-skill'
@@ -66,8 +65,9 @@ import type TeamService from '@deepseek-ai/dsh-experimental-agent-team'
 import * as ToolTeam from '@deepseek-ai/dsh-experimental-tool-agent-team'
 import * as ToolTodo from '@deepseek-ai/dsh-tool-todo'
 import * as ToolSubagent from '@deepseek-ai/dsh-tool-subagent'
-import { registerListSubagentModels } from '../packages/subagent/tool-subagent/src/list-models.ts'
 import * as ToolWeb from '@deepseek-ai/dsh-tool-web'
+import DeterministicBrowserRuntime from '@deepseek-ai/dsh-browser-runtime-deterministic'
+import * as ToolBrowser from '@deepseek-ai/dsh-tool-browser'
 import * as ToolPhone from '@deepseek-ai/dsh-tool-phone'
 import VmWorkflowEngine from '@deepseek-ai/dsh-workflow-worker-thread'
 import * as ToolRalph from '@deepseek-ai/dsh-tool-ralph'
@@ -98,6 +98,80 @@ class CatalogAttachmentStore extends AttachmentStore {
   }
 }
 
+/**
+ * Membership seam marker that lets the roster tool's `projectMembership`
+ * inject resolve during schema harvest. Registration never reads a roster.
+ */
+class CatalogProjectMembership extends ProjectMembershipService {
+  override accountDeletionProjects(): Promise<never> {
+    return Promise.reject(unreachable('account deletion planning'))
+  }
+
+  override deleteAccountMemberships(): Promise<never> {
+    return Promise.reject(unreachable('account deletion'))
+  }
+
+  override roster(): Promise<never> {
+    return Promise.reject(unreachable('roster reads'))
+  }
+
+  override createProject(): Promise<never> {
+    return Promise.reject(unreachable('project creation'))
+  }
+
+  override invite(): Promise<never> {
+    return Promise.reject(unreachable('invitations'))
+  }
+
+  override retractInvitation(): Promise<never> {
+    return Promise.reject(unreachable('invitation retraction'))
+  }
+
+  override acceptInvitation(): Promise<never> {
+    return Promise.reject(unreachable('invitation acceptance'))
+  }
+
+  override declineInvitation(): Promise<never> {
+    return Promise.reject(unreachable('invitation decline'))
+  }
+
+  override changeRole(): Promise<never> {
+    return Promise.reject(unreachable('role changes'))
+  }
+
+  override setMemberTags(): Promise<never> {
+    return Promise.reject(unreachable('tag edits'))
+  }
+
+  override removeMember(): Promise<never> {
+    return Promise.reject(unreachable('member removal'))
+  }
+
+  override pendingInvitationsFor(): Promise<never> {
+    return Promise.reject(unreachable('invitation enumeration'))
+  }
+
+  override pendingInvitationContextsFor(): Promise<never> {
+    return Promise.reject(unreachable('invitation context enumeration'))
+  }
+
+  override pendingInvitationsIssuedBy(): Promise<never> {
+    return Promise.reject(unreachable('issued invitation enumeration'))
+  }
+
+  override projectByRemote(): Promise<never> {
+    return Promise.reject(unreachable('remote lookups'))
+  }
+
+  override rosterVersion(): Promise<never> {
+    return Promise.reject(unreachable('roster version reads'))
+  }
+}
+
+function unreachable(operation: string): Error {
+  return new Error(`gen-tool-catalog: ${operation} are unreachable during schema harvest`)
+}
+
 const root = resolve(import.meta.dirname, '..')
 const OUT = 'docs/tool-catalog.md'
 
@@ -105,21 +179,12 @@ const OUT = 'docs/tool-catalog.md'
  * Register the descriptor needed to mount schema-producing consumers. Declares
  * the full capability set of the shipped in-process providers so consumers
  * mount under their shipped defaults (tool-subagent's default numeric maxDepth
- * requires `depthLimit`). `images: true` is this harvest fixture only: the
- * provider never starts a child, and backends that advertise `images: false`
- * omit the model-facing `images` parameter.
+ * requires `depthLimit`).
  */
 function registerCatalogSubagentProvider(ctx: Context, name: string): void {
   const provider: SubagentProvider = {
     name,
-    capabilities: {
-      agentOptions: true,
-      images: true,
-      outputSchema: true,
-      depthLimit: true,
-      toolFilter: true,
-      persona: true,
-    },
+    capabilities: { outputSchema: true, depthLimit: true, toolFilter: true, persona: true, agentOptions: true, images: true },
     inheritsParentContext: false,
     start: () => Promise.reject(new Error('tool-catalog provider cannot start a child')),
     // Declared so consumers configured for continuable background mode mount.
@@ -206,29 +271,46 @@ const TOOL_PACKAGES: ToolPackage[] = [
     dir: 'tool-ask-user',
     source: 'packages/interaction/tool-ask-user/src/index.ts',
     requires: ['ctx.tools', 'ctx.userQuestions'],
-    writes: ['tool/call', 'tool/result after a composed answerer answers the question'],
+    writes: ['tool/call', 'tool/result after a UI/provider answers the question, or after member-question sender delivery'],
     async mount(ctx) {
       await ctx.plugin(UserQuestionService)
       await ctx.plugin(ToolAskUser)
     },
     note:
-      'ask_user_question pauses the tool call until the composed answerer waterfall returns a human answer.',
+      'ask_user_question pauses a local call until the active UI provider returns a human answer. `to_project_member` routes through `ctx.memberQuestionSender` instead. Runtime eligibility hides that parameter from assembled prompts unless the workspace is bound to a cloud project; the catalog records the static schema including the routing parameters because the sender is optional at harvest.',
+  },
+  {
+    pkg: '@deepseek-ai/dsh-tool-project-members',
+    dir: 'tool-project-members',
+    source: 'packages/interaction/tool-project-members/src/index.ts',
+    requires: ['ctx.tools', 'ctx.projectMembership'],
+    writes: ['tool/call', 'tool/result'],
+    async mount(ctx) {
+      // The tool registers from the seam alone; the injected provider faces
+      // (account, workspace binding, presence) are load-time Config and are
+      // absent in this default-config harvest.
+      await ctx.plugin(CatalogProjectMembership)
+      await ctx.plugin(ToolProjectMembers)
+    },
+    note:
+      'The tool reads the membership seam only and owns no permission decision. The composition injects the session-bound account, the workspace→project binding, and the presence/identity presentation through Config; without those faces the tool still registers and answers the stable `ACCOUNT_UNAVAILABLE` / `PROJECT_UNBOUND` errors at call time.',
   },
   {
     pkg: '@deepseek-ai/dsh-tools',
     dir: 'tools',
     source: {
-      run_code: 'packages/core/tools/src/ptc.ts',
+      run_code: 'packages/core/tools/src/code-mode.ts',
       tool_search: 'packages/core/tools/src/index.ts',
     },
-    requires: ['ctx.tools', 'ctx.codeRuntime (execution time)', 'ctx.systemPrompt', 'toolSearch config for deferred discovery'],
-    writes: ['tool/call', 'one tool/ptc-dispatch-start + tool/ptc-dispatch pair per bridged sub-call', 'tool/result'],
-    // run_code exists only under a non-native mode; tool_search exists only
-    // when toolSearch is configured (the SDK profile). Harvest both.
-    toolsConfig: { mode: 'ptc', toolSearch: { maxResultBytes: 65536 } },
+    requires: ['ctx.tools', 'ctx.codeRuntime (execution time)', 'ctx.systemPrompt'],
+    writes: ['tool/call', 'one tool/code-dispatch-start + tool/code-dispatch pair per bridged sub-call', 'tool/result'],
+    // The registry's OWN tool: run_code exists only under a non-native mode
+    // (the registry registers it in its constructor; the code runtime is read
+    // at assembly/execution time, so the schema harvest needs none mounted).
+    toolsConfig: { mode: 'both', toolSearch: { maxResultBytes: 65_536 } },
     async mount() {},
     note:
-      'Owned by the tool registry. `run_code` is a reserved transport outside filterable capability layers under `mode: ptc` / `mode: both` (see the PTC mode Agent Note). `tool_search` is the reserved deferred-schema discovery tool when `toolSearch` is configured (shipped SDK). Under `ptc` the other visible capabilities are declared in a generated SDK section in the loaded runtime\'s language, and a program calls them through bindings scheduled under the native concurrency contract (submission-ordered starts and policy; concurrency-safe bodies overlap up to `maxParallelSubCalls`) that re-enter the complete guarded tool pipeline and link each nested execution to this outer result.',
+      'Owned by the tool registry as a reserved transport outside filterable capability layers under `mode: code` / `mode: both` (see the Code Mode Agent Note). Under `code` it is the registry\'s only wire contribution; the other visible capabilities are declared in a generated SDK section in the loaded runtime\'s language, and a program calls them through bindings scheduled under the native concurrency contract (submission-ordered starts and policy; concurrency-safe bodies overlap up to `maxParallelSubCalls`) that re-enter the complete guarded tool pipeline and link each nested execution to this outer result.',
   },
   {
     pkg: '@deepseek-ai/dsh-plan-mode',
@@ -256,18 +338,6 @@ const TOOL_PACKAGES: ToolPackage[] = [
     },
     note:
       'The bash tool is the model-facing consumer of the bash executor seam. A `run_in_background` run registers with the generic `ctx.jobs` runtime and is collected/stopped through the `job_*` tools from `@deepseek-ai/dsh-tool-jobs`; the `enableRunInBackground` config (default true) removes the parameter entirely when disabled.',
-  },
-  {
-    pkg: '@deepseek-ai/dsh-tool-present',
-    dir: 'tool-present',
-    source: 'packages/fs/tool-present/src/index.ts',
-    requires: ['ctx.tools', 'ctx.fs', 'ctx.sessionProjections'],
-    writes: ['tool/call', 'deliverables/presented after a successful final result', 'tool/result'],
-    async mount(ctx) {
-      await ctx.plugin(LocalFileSystem)
-      await ctx.plugin(ToolPresent)
-    },
-    note: 'Deliveries belong to the calling Session; Web ui-deliverables supplies source-file opening and cards.',
   },
   {
     pkg: '@deepseek-ai/dsh-tool-pwsh',
@@ -412,13 +482,7 @@ const TOOL_PACKAGES: ToolPackage[] = [
       const session = ctx.sessions.create(SessionId('tool-catalog-schedule'))
       const agent = { id: session.id, session } as Agent
       await mountCatalogChildScope(ctx, (childCtx) => {
-        ToolSchedule.registerScheduleTools(
-          ctx,
-          childCtx,
-          agent,
-          new ToolSchedule.ScheduleTransactions(),
-          () => {},
-        )
+        ToolSchedule.registerScheduleTools(ctx, childCtx, agent, new ScheduleTransactions(), () => {})
       }, agent, ['tools', 'systemPrompt'])
     },
     scope: ctx => catalogChildScopes.get(ctx) as Agent,
@@ -441,18 +505,6 @@ const TOOL_PACKAGES: ToolPackage[] = [
     },
     note:
       'The lsp tool keeps provider selection and language-server subprocesses behind ctx.lsp, so its model-visible schema stays stable across providers. Requires a registered provider (e.g. `@deepseek-ai/dsh-lsp-stdio`) at runtime; without one, a query returns the structured `LSP_UNAVAILABLE` error rather than changing the schema.',
-  },
-  {
-    pkg: '@deepseek-ai/dsh-tool-project-members',
-    dir: 'tool-project-members',
-    source: 'packages/interaction/tool-project-members/src/index.ts',
-    requires: ['ctx.tools', 'optional ctx.projectMembership or injected rosterResolver'],
-    writes: ['tool/call', 'tool/result'],
-    async mount(ctx) {
-      await ctx.plugin(ToolProjectMembers)
-    },
-    note:
-      'project_members reads a cloud project roster. A composition supplies account, project binding, and presence through Config resolvers; the package itself depends only on the membership Service Definition.',
   },
   {
     pkg: '@deepseek-ai/dsh-tool-ralph',
@@ -502,24 +554,27 @@ const TOOL_PACKAGES: ToolPackage[] = [
   {
     pkg: '@deepseek-ai/dsh-tool-subagent',
     dir: 'tool-subagent',
-    source: {
-      list_subagent_models: 'packages/subagent/tool-subagent/src/list-models.ts',
-      subagent: 'packages/subagent/tool-subagent/src/index.ts',
-    },
-    requires: ['ctx.tools', 'ctx.subagents', 'ctx.systemPrompt', 'ctx.llm for model discovery and selected-route validation'],
-    writes: ['tool/call', 'tool/result', 'child session events through the chosen provider'],
+    source: 'packages/subagent/tool-subagent/src/index.ts',
+    requires: [
+      'ctx.tools',
+      'ctx.subagents',
+      'ctx.systemPrompt',
+      'ctx.fs + ctx.attachments when images are supplied',
+    ],
+    writes: [
+      'tool/call',
+      'tool/result',
+      'child session events through the chosen provider',
+      'durable attachments when images are supplied',
+    ],
     shippedNames: ['subagent', 'subagent_fork'],
     async mount(ctx) {
       await ctx.plugin(SubagentRuntime)
-      await ctx.plugin(LlmRuntime)
       registerCatalogSubagentProvider(ctx, 'mock')
       await ctx.plugin(ToolSubagent, { provider: 'mock' })
-      registerListSubagentModels(ctx, { id: SessionId('tool-catalog-parent'), ctx } as Agent, {
-        routes: [{ provider: 'mock', model: 'mock' }],
-      })
     },
     note:
-      'The registered delegation name is the load-time `toolName` config (default `subagent`); the default schema above has model selection off, while the discovery schema is shown as the fixed companion available in an enabled Session. The optional `images` parameter is present only when the bound provider advertises `capabilities.images`; this harvest uses an in-process catalog fixture that does, so ACP and other out-of-process backends that advertise `images: false` omit the field. Web presets sample the Plugins preference for each new top-level Session and preserve that decision for its child Sessions; `subagent_fork` accepts the same authorized route selection while preserving completed parent turns; omitting its route keeps inheritance. Selectable tools on one Agent share discovery. Each instance independently controls whether it reads model-selection settings and its background behavior through `modelSelectionSettings`, `backgroundMode`, and `enableRunInBackground`.',
+      'The registered tool name is the load-time `toolName` config (default `subagent`); the schema above is that default. The shipped compositions load this package once per subagent backend, so the model additionally sees `subagent_fork` bound to the fork backend. Each instance\'s description, `run_in_background` parameter, and system-prompt policy follow its own `backgroundMode` and `enableRunInBackground`, so the two shipped schemas are not identical: `subagent` is `continuable` and defaults omitted calls to background with automatic settlement delivery, while `subagent_fork` stays `one-shot` and defaults them to foreground — see `packages/bundle/base/cordis.patch.yml` and `examples/acp-agent/cordis.yml`.',
   },
   {
     pkg: '@deepseek-ai/dsh-tool-subagent-control',
@@ -536,11 +591,33 @@ const TOOL_PACKAGES: ToolPackage[] = [
       await ctx.plugin(LocalJobRegistry)
       await ctx.plugin(AgentRegistry)
       await ctx.plugin(SessionStore)
+      await ctx.plugin(SessionProjectionRegistry)
       await ctx.plugin(ToolSubagentControl)
       await ctx.plugin(ToolSubagentListAgents)
     },
     note:
       'The globally named control tools over continuable background subagents: provider-bound `tool-subagent` instances register distinct delegation tools, while this package registers `send_message` and `interrupt_agent` once, plus `list_agents` from its separately loaded `/list-agents` plugin (whose catalog rows use the sessionProjections and live Agent registries).',
+  },
+  {
+    pkg: '@deepseek-ai/dsh-tool-subagent-report',
+    dir: 'tool-subagent-report',
+    source: 'packages/subagent/tool-subagent-report/src/index.ts',
+    requires: ['ctx.subagents', 'ctx.systemPrompt', 'a live continuable in-process child Agent'],
+    writes: ['tool/call', 'tool/result', 'a user-role message in the direct parent session'],
+    async mount(ctx) {
+      await ctx.plugin(AgentRegistry)
+      await ctx.plugin(SubagentRuntime)
+      const { reportDelivery } = ToolSubagentReport.Config({}) as { reportDelivery: SubagentReportDelivery }
+      await mountCatalogChildScope(ctx, (childCtx) => {
+        ToolSubagentReport.installReportTool(childCtx, ctx, reportDelivery)
+      })
+    },
+    scope: ctx => catalogChildScopes.get(ctx) as Agent,
+    note:
+      'Registered per continuable in-process child rather than globally, so this schema is visible only '
+      + 'inside such a child and survives its global `toolFilter`. The same contribution installs the '
+      + 'child-scoped `tool:report` prompt section, which this catalog does not render. The parent-facing '
+      + '`send_message` tool is installed independently.',
   },
   {
     pkg: '@deepseek-ai/dsh-tool-jobs',
@@ -591,7 +668,7 @@ const TOOL_PACKAGES: ToolPackage[] = [
     },
     scope: ctx => catalogChildScopes.get(ctx) as Agent,
     note:
-      'All nine tools are scoped to implicit Team Leads and durable teammates. The shipped dsh-base bundle keeps the package disabled; the documented Agent Teams profile patch enables it while disabling the legacy continuable-child control names.',
+      'All ten tools are scoped to implicit Team Leads and durable teammates. The shipped dsh-base bundle keeps the package disabled; the documented Agent Teams profile patch enables it while disabling the legacy continuable-child control names.',
   },
   {
     pkg: '@deepseek-ai/dsh-tool-todo',
@@ -724,9 +801,9 @@ export function assertManifestComplete(packages: ToolPackage[] = TOOL_PACKAGES, 
  * A tool package that boots without registering anything is a broken boot, not
  * an empty catalog section. The usual cause is an `inject` the entry's `mount`
  * does not satisfy: cordis leaves the plugin PENDING, every step here still
- * succeeds, and the generator writes a catalog missing that package's tools.
- * The freshness gate stays green because regeneration reproduces the omission.
- * {@link assertManifestComplete} cannot see this: the
+ * succeeds, and the generator writes a catalog missing that package's tools —
+ * with the freshness gate green on it, because the omission is now what the
+ * generator produces. {@link assertManifestComplete} cannot see this: the
  * package IS listed, it just contributed nothing.
  * @param entry - the manifest entry that was booted.
  * @param harvested - how many schemas its boot registered.
@@ -756,11 +833,13 @@ export async function collectToolCatalog(packages: ToolPackage[] = TOOL_PACKAGES
     // plugins mounted still tears the context down (no leaked executor/provider
     // fiber) — the repo's "dispose must reach quiescence" rule.
     try {
-      await ctx.plugin(SessionProjectionRegistry)
       await ctx.plugin(SystemPrompt)
       await ctx.plugin(ToolRuntime, entry.toolsConfig ?? {})
       await entry.mount(ctx)
-      const schemas = harvestPackageSchemas(ctx, entry)
+      const schemas = (entry.pkg === '@deepseek-ai/dsh-tools'
+        ? ctx.tools.schemas(entry.scope?.(ctx))
+        : ctx.tools.catalogSchemas(entry.scope?.(ctx)))
+        .sort((a, b) => a.name.localeCompare(b.name))
       assertToolsHarvested(entry, schemas.length)
       catalog.push({
         pkg: entry.pkg,
@@ -779,25 +858,6 @@ export async function collectToolCatalog(packages: ToolPackage[] = TOOL_PACKAGES
     }
   }
   return catalog
-}
-
-const TOOLS_PACKAGE = '@deepseek-ai/dsh-tools'
-
-/**
- * Union the end-tool catalog with registry-owned presentation schemas.
- * `catalogSchemas()` omits `run_code` and `tool_search`; `schemas()` omits
- * deferred tools. Merge by name, then keep registry-owned names only on the
- * tools package so a `toolSearch` harvest (browser) does not steal `tool_search`.
- */
-function harvestPackageSchemas(ctx: Context, entry: ToolPackage): ToolSchema[] {
-  const scope = entry.scope?.(ctx)
-  const merged = new Map<string, ToolSchema>()
-  for (const schema of ctx.tools.catalogSchemas(scope)) merged.set(schema.name, schema)
-  for (const schema of ctx.tools.schemas(scope)) merged.set(schema.name, schema)
-  return [...merged.values()]
-    .filter(schema => entry.pkg === TOOLS_PACKAGE
-      || (schema.name !== RUN_CODE_NAME && schema.name !== TOOL_SEARCH_NAME))
-    .sort((a, b) => a.name.localeCompare(b.name))
 }
 
 /** Resolve one harvested tool to the plugin source that registered it. */
@@ -839,7 +899,7 @@ export function render(catalog: ToolCatalog): string {
     '',
     'Every model-facing tool a shipped plugin contributes to `ctx.tools`: the `name`, `description`, and JSON-Schema `parameters` the model receives via the system-prompt assembly. It complements the [subsystem pages](subsystems/core.md) (the types plus each page\'s generated Cordis API region) — this page is the *tools* the agent is offered.',
     '',
-    'This file is GENERATED and verified fresh by `pnpm run verify-tool-catalog` (part of `doc-sync`) — do not edit it by hand. Unlike the cordis catalog (a pure source-AST pass), this generator BOOTS each tool plugin on a real context and reads the complete `ctx.tools.catalogSchemas()` end-tool catalog plus the registry-owned presentation schemas from `ctx.tools.schemas()`, because a tool schema is not statically knowable (runtime-spread enums, concatenated descriptions, config-driven names, raw-JSON-Schema MCP tools). A completeness guard globs `packages/*/tool-*` and fails if any package is missing from the generator\'s boot manifest, so a new tool cannot be silently undocumented. The archived [tool-schema-catalog record](../.agents/notes/archived/process/2026-07-02-tool-schema-catalog.md) documents the original decision.',
+    'This file is GENERATED and verified fresh by `pnpm run verify-tool-catalog` (part of `doc-sync`) — do not edit it by hand. Unlike the cordis catalog (a pure source-AST pass), this generator BOOTS each tool plugin on a real context and reads the complete `ctx.tools.catalogSchemas()` end-tool catalog plus the registry-owned presentation schemas from `ctx.tools.schemas()`, because a tool schema is not statically knowable (runtime-spread enums, concatenated descriptions, config-driven names, raw-JSON-Schema MCP tools). A completeness guard globs `packages/*/tool-*` and fails if any package is missing from the generator\'s boot manifest, so a new tool cannot be silently undocumented. See [the tool-schema-catalog Agent Note](../.agents/notes/implemented/process/2026-07-02-tool-schema-catalog.md).',
     '',
     'Scope: shipped product tools under `packages/*/tool-*`, each booted with its DEFAULT config, except where a Config field is REQUIRED with no default — there the generator must choose, and the per-package note records which branch this page shows. The registered tool NAME can be a load-time config (e.g. `tool-subagent`\'s `toolName`), so a deployment may expose a package under a different or additional name — a per-package note records those shipped aliases where they exist. The `examples/` demo tools (e.g. `echo`) are excluded, matching the cordis catalog\'s packages-only scope.',
     '',
@@ -901,6 +961,7 @@ async function main(): Promise<void> {
   console.log(`gen-tool-catalog: wrote ${OUT}.`)
 }
 
+// Run only when invoked as a script, not when imported by a test.
 if (process.argv[1] && import.meta.filename === resolve(process.argv[1])) {
   await main()
 }

@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-27-project-membership-commit-point-rollback.md
+2026-08-27-project-membership-commit-point-rollback.md: 7474a9e60ffa515da1c64d59be52e78d7f8ec807
+2026-08-27-project-membership-commit-point-rollback.zh.md: 51789991c953ccfae8cbd6b89f95e5fd0799c5ec
