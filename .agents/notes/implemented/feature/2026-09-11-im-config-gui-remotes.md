@@ -10,7 +10,7 @@ Official Host now mounts idle IM services, but the Web GUI still mutates an in-m
 
 ## Decision
 
-`ImConfigService` extends `TypertRemoteService` and exposes account, route, and simulation CRUD through `@Remote`. Wire option types live on `@deepseek-ai/dsh-im-core/client`. `packages/api/remotes` mounts the generated contribution. `ui-im` injects `remote` and `remote.imConfig`, then refreshes its snapshot from Host lists. New GUI routes stay disabled; editing a rule reuses `createRouteRule` with the same id so target and trigger can change. Disconnect marks the account `disconnected` and does not delete it. Conversation stream presentation stays local until `imDelivery` remotes exist.
+`ImConfigService` extends `TypertRemoteService` and exposes account, route, and simulation CRUD through `@Remote`. Wire option types live on `@deepseek-ai/dsh-im-core/client`. `packages/api/remotes` mounts the generated contribution. `ui-im` injects `remote` and `remote.imConfig`, then refreshes its snapshot from Host lists. The GUI Remote `listRouteRules` is an unfiltered adapter because an optional positional argument cannot ride the wire. New GUI routes stay disabled; editing a rule reuses `createRouteRule` with the same id so target and trigger can change. Disconnect marks the account `disconnected` and does not delete it. Conversation stream presentation stays local until `imDelivery` remotes exist.
 
 ## Alternatives considered
 

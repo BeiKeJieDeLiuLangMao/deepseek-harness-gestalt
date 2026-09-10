@@ -10,7 +10,7 @@ Status: implemented
 
 ## Decision
 
-`ImConfigService` 继承 `TypertRemoteService`，经 `@Remote` 暴露账号、路由与模拟 CRUD。线上选项类型放在 `@deepseek-ai/dsh-im-core/client`。`packages/api/remotes` 挂载生成的 contribution。`ui-im` 注入 `remote` 与 `remote.imConfig`，再从 Host 列表刷新快照。新建 GUI 路由保持禁用；编辑规则用同一 id 再调 `createRouteRule`，以便改 target 与 trigger。断开把账号标为 `disconnected`，不删除。对话流展示在 `imDelivery` remotes 就绪前仍是本地的。
+`ImConfigService` 继承 `TypertRemoteService`，经 `@Remote` 暴露账号、路由与模拟 CRUD。线上选项类型放在 `@deepseek-ai/dsh-im-core/client`。`packages/api/remotes` 挂载生成的 contribution。`ui-im` 注入 `remote` 与 `remote.imConfig`，再从 Host 列表刷新快照。GUI Remote 的 `listRouteRules` 是未过滤适配器，因为可选位置参数不能上线。新建 GUI 路由保持禁用；编辑规则用同一 id 再调 `createRouteRule`，以便改 target 与 trigger。断开把账号标为 `disconnected`，不删除。对话流展示在 `imDelivery` remotes 就绪前仍是本地的。
 
 ## Alternatives considered
 

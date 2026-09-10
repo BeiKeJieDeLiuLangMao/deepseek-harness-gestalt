@@ -64,7 +64,6 @@ const _deepseek_ai_dsh_im_core_imConfig_listAccounts_result$schema = z.array(z.o
   'createdAt': z.string().readonly(),
   'updatedAt': z.string().readonly(),
 }))
-const _deepseek_ai_dsh_im_core_imConfig_listRouteRules_parameter_0$schema = z.union([z.undefined(), z.intersection(z.string(), z.unknown())])
 const _deepseek_ai_dsh_im_core_imConfig_listRouteRules_result$schema = z.array(z.object({
   'id': z.intersection(z.string(), z.unknown()).readonly(),
   'accountId': z.intersection(z.string(), z.unknown()).readonly(),
@@ -195,7 +194,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@deepseek-ai/dsh-im-core/client#ImRouteRule',
         schema: _deepseek_ai_dsh_im_core_imConfig_createRouteRule_result$schema,
       },
-      sourceLocation: {"file":"packages/im/im-core/src/service.ts","line":222,"column":9},
+      sourceLocation: {"file":"packages/im/im-core/src/service.ts","line":228,"column":9},
     },
     {
       id: '@deepseek-ai/dsh-im-core#imConfig/deleteAccount',
@@ -245,7 +244,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@deepseek-ai/dsh-im-core#imConfig/deleteRouteRule:result',
         schema: _deepseek_ai_dsh_im_core_imConfig_deleteRouteRule_result$schema,
       },
-      sourceLocation: {"file":"packages/im/im-core/src/service.ts","line":302,"column":9},
+      sourceLocation: {"file":"packages/im/im-core/src/service.ts","line":307,"column":9},
     },
     {
       id: '@deepseek-ai/dsh-im-core#imConfig/deleteSimulationConfig',
@@ -295,7 +294,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@deepseek-ai/dsh-im-core#imConfig/getSimulationConfig:result',
         schema: _deepseek_ai_dsh_im_core_imConfig_getSimulationConfig_result$schema,
       },
-      sourceLocation: {"file":"packages/im/im-core/src/service.ts","line":414,"column":9},
+      sourceLocation: {"file":"packages/im/im-core/src/service.ts","line":419,"column":9},
     },
     {
       id: '@deepseek-ai/dsh-im-core#imConfig/listAccounts',
@@ -317,26 +316,16 @@ export const TYPERT_REMOTE = {
       service: 'imConfig',
       namespace: 'imConfig',
       method: 'listRouteRules',
+      implementation: 'remoteExportListRouteRules',
       invocation: { kind: 'direct' },
       parameters: [
-        {
-          name: 'workspaceId',
-          wire: 'workspaceId',
-          source: 'json',
-          acceptsUndefined: true,
-          codec: {
-            mode: 'strict',
-            typeSymbol: '@deepseek-ai/dsh-workspace/types#WorkspaceId',
-            schema: _deepseek_ai_dsh_im_core_imConfig_listRouteRules_parameter_0$schema,
-          },
-        },
       ],
       result: {
         mode: 'strict',
         typeSymbol: '@deepseek-ai/dsh-im-core#imConfig/listRouteRules:result',
         schema: _deepseek_ai_dsh_im_core_imConfig_listRouteRules_result$schema,
       },
-      sourceLocation: {"file":"packages/im/im-core/src/service.ts","line":204,"column":9},
+      sourceLocation: {"file":"packages/im/im-core/src/service.ts","line":201,"column":9},
     },
     {
       id: '@deepseek-ai/dsh-im-core#imConfig/listSimulationConfigs',
@@ -351,7 +340,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@deepseek-ai/dsh-im-core#imConfig/listSimulationConfigs:result',
         schema: _deepseek_ai_dsh_im_core_imConfig_listSimulationConfigs_result$schema,
       },
-      sourceLocation: {"file":"packages/im/im-core/src/service.ts","line":424,"column":9},
+      sourceLocation: {"file":"packages/im/im-core/src/service.ts","line":429,"column":9},
     },
     {
       id: '@deepseek-ai/dsh-im-core#imConfig/pauseAccount',
@@ -411,7 +400,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@deepseek-ai/dsh-im-core/client#ImWorkspaceSimulationConfig',
         schema: _deepseek_ai_dsh_im_core_imConfig_setSimulationConfig_result$schema,
       },
-      sourceLocation: {"file":"packages/im/im-core/src/service.ts","line":441,"column":9},
+      sourceLocation: {"file":"packages/im/im-core/src/service.ts","line":446,"column":9},
     },
     {
       id: '@deepseek-ai/dsh-im-core#imConfig/updateRouteRule',
@@ -446,7 +435,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@deepseek-ai/dsh-im-core/client#ImRouteRule',
         schema: _deepseek_ai_dsh_im_core_imConfig_updateRouteRule_result$schema,
       },
-      sourceLocation: {"file":"packages/im/im-core/src/service.ts","line":271,"column":9},
+      sourceLocation: {"file":"packages/im/im-core/src/service.ts","line":276,"column":9},
     },
     {
       id: '@deepseek-ai/dsh-im-core#imConfig/upsertAccount',

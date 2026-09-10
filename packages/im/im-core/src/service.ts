@@ -171,8 +171,6 @@ export class ImConfigService extends TypertRemoteService {
     const { accountsTable, rulesTable } = this.requireDomain()
     const existing = accountsTable.get(id)
     if (!existing) return false
-
-    // Cascade remove route rules associated with this account
     for (const [ruleId, rule] of rulesTable.entries()) {
       if (rule.accountId === id) {
         await rulesTable.delete(ruleId)
@@ -196,11 +194,19 @@ export class ImConfigService extends TypertRemoteService {
   }
 
   /**
+   * List every route rule for the GUI Remote. Workspace filtering stays local.
+   * @returns All saved route rules.
+   */
+  @Remote('listRouteRules')
+  async remoteExportListRouteRules(): Promise<ImRouteRule[]> {
+    return this.listRouteRules()
+  }
+
+  /**
    * List route rules, optionally filtered by workspace identifier.
    * @param workspaceId - Optional workspace identifier filter.
    * @returns Array of matching route rules.
    */
-  @Remote('listRouteRules')
   async listRouteRules(workspaceId?: WorkspaceId): Promise<ImRouteRule[]> {
     const { rulesTable } = this.requireDomain()
     const rules: ImRouteRule[] = []
@@ -221,7 +227,6 @@ export class ImConfigService extends TypertRemoteService {
   @Remote('createRouteRule')
   async createRouteRule(options: CreateImRouteRuleOptions): Promise<ImRouteRule> {
     const { accountsTable, rulesTable } = this.requireDomain()
-    // Validate account exists
     const account = accountsTable.get(options.accountId)
     if (!account) {
       throw accountNotFound(
@@ -440,7 +445,6 @@ export class ImConfigService extends TypertRemoteService {
   @Remote('setSimulationConfig')
   async setSimulationConfig(options: SetWorkspaceSimulationTargetOptions): Promise<ImWorkspaceSimulationConfig> {
     const { accountsTable, rulesTable, simulationsTable } = this.requireDomain()
-    // Invariant: Simulation target must refer to an already configured account
     const account = accountsTable.get(options.targetAccountId)
     if (!account) {
       throw accountNotFound(
@@ -448,10 +452,6 @@ export class ImConfigService extends TypertRemoteService {
         `Cannot configure simulation target: account ${options.targetAccountId} does not exist`,
       )
     }
-
-    // Invariant: Simulation target must match a configured route rule (specific or all) for the target account and conversationKind.
-    // The route rule may belong to another workspace (e.g. testing a bot workspace).
-    // Disabled or account-paused rules remain valid simulation targets.
     const allRules = [...rulesTable.entries()].map(([, rule]) => rule)
     const matchingRules = allRules.filter(
       r => r.accountId === options.targetAccountId && r.conversationKind === options.conversationKind,

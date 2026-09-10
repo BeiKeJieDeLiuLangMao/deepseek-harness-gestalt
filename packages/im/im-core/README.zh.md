@@ -20,7 +20,7 @@ DeepSeek Harness 的 IM 领域配置、账号与路由核心服务。
 - `pauseAccount(id: ImAccountId, paused: boolean): Promise<ImAccountMetadata>`
 - `deleteAccount(id: ImAccountId): Promise<boolean>`
 - `getRouteRule(id: ImRouteRuleId): Promise<ImRouteRule | undefined>`
-- `listRouteRules(workspaceId?: WorkspaceId): Promise<ImRouteRule[]>`
+- `listRouteRules(workspaceId?: WorkspaceId): Promise<ImRouteRule[]>` — GUI Remote 的 `listRouteRules` 是未过滤导出；工作区过滤仍在本地
 - `createRouteRule(options: CreateImRouteRuleOptions): Promise<ImRouteRule>` — 同一 id 会替换 target、trigger 与 enabled，并保留 `createdAt`
 - `updateRouteRule(id: ImRouteRuleId, updates: UpdateImRouteRuleOptions): Promise<ImRouteRule>`
 - `deleteRouteRule(id: ImRouteRuleId): Promise<boolean>`

@@ -14,7 +14,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     deleteSimulationConfig: (workspaceId: WorkspaceId) => Promise<RemoteResult<boolean>>
     getSimulationConfig: (workspaceId: WorkspaceId) => Promise<RemoteResult<ImWorkspaceSimulationConfig | undefined>>
     listAccounts: () => Promise<RemoteResult<ImAccountMetadata[]>>
-    listRouteRules: (workspaceId?: WorkspaceId) => Promise<RemoteResult<ImRouteRule[]>>
+    listRouteRules: () => Promise<RemoteResult<ImRouteRule[]>>
     listSimulationConfigs: () => Promise<RemoteResult<ImWorkspaceSimulationConfig[]>>
     pauseAccount: (id: ImAccountId, paused: boolean) => Promise<RemoteResult<ImAccountMetadata>>
     setSimulationConfig: (options: SetWorkspaceSimulationTargetOptions) => Promise<RemoteResult<ImWorkspaceSimulationConfig>>
@@ -28,7 +28,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'imConfig/deleteSimulationConfig': (workspaceId: WorkspaceId) => Promise<RemoteResult<boolean>>
     'imConfig/getSimulationConfig': (workspaceId: WorkspaceId) => Promise<RemoteResult<ImWorkspaceSimulationConfig | undefined>>
     'imConfig/listAccounts': () => Promise<RemoteResult<ImAccountMetadata[]>>
-    'imConfig/listRouteRules': (workspaceId?: WorkspaceId) => Promise<RemoteResult<ImRouteRule[]>>
+    'imConfig/listRouteRules': () => Promise<RemoteResult<ImRouteRule[]>>
     'imConfig/listSimulationConfigs': () => Promise<RemoteResult<ImWorkspaceSimulationConfig[]>>
     'imConfig/pauseAccount': (id: ImAccountId, paused: boolean) => Promise<RemoteResult<ImAccountMetadata>>
     'imConfig/setSimulationConfig': (options: SetWorkspaceSimulationTargetOptions) => Promise<RemoteResult<ImWorkspaceSimulationConfig>>

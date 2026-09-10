@@ -20,7 +20,7 @@ Mounted at `ctx.imConfig` for configuration and routing, `ctx.imDelivery` for me
 - `pauseAccount(id: ImAccountId, paused: boolean): Promise<ImAccountMetadata>`
 - `deleteAccount(id: ImAccountId): Promise<boolean>`
 - `getRouteRule(id: ImRouteRuleId): Promise<ImRouteRule | undefined>`
-- `listRouteRules(workspaceId?: WorkspaceId): Promise<ImRouteRule[]>`
+- `listRouteRules(workspaceId?: WorkspaceId): Promise<ImRouteRule[]>` — GUI Remote `listRouteRules` is the unfiltered export; workspace filtering stays local
 - `createRouteRule(options: CreateImRouteRuleOptions): Promise<ImRouteRule>` — same id replaces target, trigger, and enabled while keeping `createdAt`
 - `updateRouteRule(id: ImRouteRuleId, updates: UpdateImRouteRuleOptions): Promise<ImRouteRule>`
 - `deleteRouteRule(id: ImRouteRuleId): Promise<boolean>`
