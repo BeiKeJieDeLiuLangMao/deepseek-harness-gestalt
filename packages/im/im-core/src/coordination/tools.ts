@@ -12,6 +12,7 @@ import {
   type ImDeliveryScope,
   type ImOutboundRequestId,
   type ImScopeId,
+  type OutboundMessageRecord,
   unescapeScopeComponent,
 } from '../delivery/index.ts'
 import type { ImAccountId, ImPlatform } from '../types.ts'
@@ -282,7 +283,7 @@ export function registerImTools(ctx: Context): () => void {
             const imSim = ctx.get('imSimulation') as
               | {
                 handleSimOutbound: (
-                  outbound: typeof outbound,
+                  outbound: OutboundMessageRecord,
                   instanceId: string,
                   conversationId: string,
                 ) => Promise<{ status: string; requestId: ImOutboundRequestId; scopeId: ImScopeId }>
