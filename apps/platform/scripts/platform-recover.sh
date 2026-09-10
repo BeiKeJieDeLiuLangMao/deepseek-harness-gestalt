@@ -3,6 +3,9 @@
 set -eEuo pipefail
 
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+if ! declare -F platform_extract_json_object >/dev/null; then
+  source "$script_dir/platform-oss-json.sh"
+fi
 if ! declare -F platform_cloud_run >/dev/null; then
   source "$script_dir/platform-cloud-assistant.sh"
 fi
@@ -12,7 +15,7 @@ fi
 : "${RECOVERY_COMMAND:?}"
 
 state_object="oss://${PLATFORM_OSS_BUCKET}/${PLATFORM_DEPLOY_OSS_OBJECT_PREFIX}/active-state.json"
-state=$(aliyun oss cat "$state_object" --region "$PLATFORM_ALIYUN_REGION" --endpoint "$PLATFORM_DEPLOY_OSS_UPLOAD_ENDPOINT")
+state=$(aliyun oss cat "$state_object" --region "$PLATFORM_ALIYUN_REGION" --endpoint "$PLATFORM_DEPLOY_OSS_UPLOAD_ENDPOINT" | platform_extract_json_object)
 if [ "$(jq -r '.kind // empty' <<< "$state")" = membership-cutover-v1 ]; then
   echo 'platform: resume the bound membership_cutover transaction; ordinary recovery cannot restore file writers' >&2
   exit 1
