@@ -76,7 +76,7 @@ export function loadNodePty(requireImpl: NodePtyRequire = defaultRequire): NodeP
 
 /** The recorded load failure (undefined when the load succeeded or never ran). */
 export function nodePtyLoadCause(): unknown {
-  return cached !== undefined && !cached.ok ? cached.cause : undefined
+  return cached?.ok === false ? cached.cause : undefined
 }
 
 /** Forget the cached outcome (tests only — a real reload is otherwise one-shot). */

@@ -1,6 +1,12 @@
-/** Desktop-only mapping from Host pending requests to pairing-private Companion identities. */
+/** Desktop mapping from Gateway `$events` waterfalls to pairing-private Companion identities. */
 
 import { createHmac, timingSafeEqual } from 'node:crypto'
+import type {
+  RemoteEventClientId,
+  RemoteEventDownlinkFrame,
+  RemoteEventId,
+  RemoteEventReadyFrame,
+} from '@deepseek-ai/dsh-api-gateway'
 import {
   encodeProtocolBase64Url,
   parseCompanionInteractionId,
@@ -10,6 +16,11 @@ import {
 } from '@deepseek-ai/dsh-remote-protocol'
 import type { DesktopPendingCompanionInteraction } from './companion-product.ts'
 
+interface PendingQuestion extends DesktopPendingCompanionInteraction {
+  kind: 'question'
+  questions: readonly unknown[]
+}
+
 interface PendingApproval extends DesktopPendingCompanionInteraction {
   kind: 'approval'
   approvalId: string
@@ -18,46 +29,49 @@ interface PendingApproval extends DesktopPendingCompanionInteraction {
   reason?: string
 }
 
-interface PendingQuestion extends DesktopPendingCompanionInteraction {
-  kind: 'question'
-  questions: readonly unknown[]
-}
-
 type PendingInteraction = PendingApproval | PendingQuestion
 
 /** Pairing-neutral Host pending registry; ids are derived only when projected to one pairing. */
 export class DesktopCompanionInteractionRegistry {
-  private readonly pending = new Map<string, PendingInteraction>()
+  private clientId: RemoteEventClientId | undefined
+  private readonly pending = new Map<RemoteEventId, PendingInteraction>()
 
-  /** @param envelope - validated-shape Host mux envelope from the current Web Host generation. */
-  accept(envelope: { rpcId: string; payload: unknown }): void {
-    if (!isRecord(envelope.payload) || typeof envelope.payload.type !== 'string') return
-    const payload = envelope.payload
-    if (payload.type === 'approval/requested') {
-      if (typeof payload.sessionId !== 'string' || typeof payload.approvalId !== 'string'
-        || typeof payload.toolName !== 'string') return
-      this.pending.set(envelope.rpcId, {
-        rpcId: envelope.rpcId, kind: 'approval', sessionId: parseCompanionSessionId(payload.sessionId),
-        approvalId: payload.approvalId, toolName: payload.toolName,
-        ...(typeof payload.callId === 'string' ? { callId: payload.callId } : {}),
-        ...(typeof payload.reason === 'string' ? { reason: payload.reason } : {}),
+  /** Bind later `$events/result` calls to this Client generation. */
+  ready(frame: RemoteEventReadyFrame): void {
+    this.clientId = frame.clientId
+    this.pending.clear()
+  }
+
+  /** @param frame - validated Gateway forwarded-event item. */
+  accept(frame: RemoteEventDownlinkFrame): void {
+    if (frame.type === 'cancel') {
+      this.pending.delete(frame.eventId)
+      return
+    }
+    if (frame.type !== 'waterfall' || this.clientId === undefined) return
+    if (frame.event === 'user-questions/request') {
+      if (!Array.isArray(frame.request.questions)) return
+      this.pending.set(frame.eventId, {
+        eventId: frame.eventId,
+        clientId: this.clientId,
+        kind: 'question',
+        sessionId: parseCompanionSessionId(frame.agentId),
+        questions: structuredClone(frame.request.questions),
       })
       return
     }
-    if (payload.type === 'question/requested') {
-      if (typeof payload.sessionId !== 'string' || !Array.isArray(payload.questions)) return
-      this.pending.set(envelope.rpcId, {
-        rpcId: envelope.rpcId, kind: 'question', sessionId: parseCompanionSessionId(payload.sessionId),
-        questions: structuredClone(payload.questions),
+    if (frame.event === 'approval/request') {
+      if (typeof frame.request.toolName !== 'string') return
+      this.pending.set(frame.eventId, {
+        eventId: frame.eventId,
+        clientId: this.clientId,
+        kind: 'approval',
+        sessionId: parseCompanionSessionId(frame.agentId),
+        approvalId: typeof frame.request.approvalId === 'string' ? frame.request.approvalId : frame.eventId,
+        toolName: frame.request.toolName,
+        ...(typeof frame.request.callId === 'string' ? { callId: frame.request.callId } : {}),
+        ...(typeof frame.request.reason === 'string' ? { reason: frame.request.reason } : {}),
       })
-      return
-    }
-    if (payload.type === 'approval/resolved' && typeof payload.approvalId === 'string') {
-      for (const [rpcId, pending] of this.pending) {
-        if (pending.kind === 'approval' && pending.approvalId === payload.approvalId) this.pending.delete(rpcId)
-      }
-    } else if (payload.type === 'question/resolved' && typeof payload.questionRpcId === 'string') {
-      this.pending.delete(payload.questionRpcId)
     }
   }
 
@@ -71,7 +85,7 @@ export class DesktopCompanionInteractionRegistry {
     return undefined
   }
 
-  /** Project current waits for one Session without exposing Host rpc ids. */
+  /** Project current waits for one Session without exposing Host event ids. */
   project(sessionId: CompanionSessionId, key: Uint8Array): ReadonlyArray<{
     kind: 'approval' | 'question'
     interactionId: CompanionInteractionId
@@ -92,8 +106,16 @@ export class DesktopCompanionInteractionRegistry {
     }))
   }
 
+  /** Drop one settled waterfall before the Host cancel frame arrives. */
+  forget(eventId: RemoteEventId): void {
+    this.pending.delete(eventId)
+  }
+
   /** Drop every Host-generation request before a replacement stream begins. */
-  clear(): void { this.pending.clear() }
+  clear(): void {
+    this.clientId = undefined
+    this.pending.clear()
+  }
 }
 
 function deriveInteractionId(pending: PendingInteraction, key: Uint8Array): CompanionInteractionId {
@@ -101,11 +123,7 @@ function deriveInteractionId(pending: PendingInteraction, key: Uint8Array): Comp
     .update('dsh-companion-interaction-v1\0')
     .update(pending.kind).update('\0')
     .update(pending.sessionId).update('\0')
-    .update(pending.rpcId)
+    .update(pending.eventId)
     .digest()
   return parseCompanionInteractionId(encodeProtocolBase64Url(digest))
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }

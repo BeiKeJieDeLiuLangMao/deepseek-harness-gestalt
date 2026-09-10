@@ -81,7 +81,8 @@ declare module '@deepseek-ai/dsh-session/types' {
      * Whole Session-owned Browser Workspace snapshot. Log-only, last-wins.
      * Carries every owned instance, tab, per-tab revision, and last non-blank
      * URL so Session switch, reload, and replay restore the same Workspace
-     * without exposing another Session's tabs.
+     * without exposing another Session's tabs. Writers mark the event
+     * `ignorable: true` so readers that do not know this type can skip it.
      */
     'browser/workspace': BrowserWorkspaceProjection
   }

@@ -6,7 +6,7 @@ import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import * as ToolPhone from '@deepseek-ai/dsh-tool-phone'
 import { deviceId } from '@deepseek-ai/dsh-phone-runtime'
-import { CallId } from '@deepseek-ai/dsh-llm'
+import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -78,7 +78,7 @@ describe('tool-phone Loader composition', () => {
 
     expect(context.tools.schemas().map(schema => schema.name)).toEqual(['tool_search'])
     const listed = await context.tools.execute({
-      callId: CallId('loader-list'),
+      callId: ToolCallId('loader-list'),
       name: 'device_list',
       arguments: {},
       signal: new AbortController().signal,

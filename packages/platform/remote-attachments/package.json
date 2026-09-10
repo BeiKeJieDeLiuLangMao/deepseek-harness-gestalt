@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-remote-attachments",
   "description": "Pairing-scoped encrypted attachment blob store with expiring one-time capabilities",
-  "version": "0.1.1-rc.2",
+  "version": "0.1.2-rc.1",
   "publishConfig": { "access": "public" },
   "repository": {
     "type": "git",
@@ -14,16 +14,14 @@
   "exports": {
     ".": { "types": "./lib/types/index.d.ts", "default": "./lib/index.js" },
     "./http": { "types": "./lib/types/http.d.ts", "default": "./lib/http.js" },
-    "./invariant": { "types": "./lib/types/invariant.d.ts", "default": "./lib/invariant.js" },
     "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
-  "files": ["lib/index.js", "lib/invariant.js", "lib/http.js", "lib/types/**/*.d.ts"],
+  "files": ["lib/index.js", "lib/http.js", "lib/types/**/*.d.ts"],
   "license": "MIT",
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/dsh-host-webserver": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
     "@deepseek-ai/dsh-platform-account": "workspace:^",
     "@deepseek-ai/dsh-remote-access": "workspace:^",
     "@deepseek-ai/dsh-remote-protocol": "workspace:^"
@@ -31,7 +29,6 @@
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/dsh-host-webserver": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
     "@deepseek-ai/dsh-platform-account": "workspace:^",
     "@deepseek-ai/dsh-remote-access": "workspace:^",
     "@deepseek-ai/dsh-remote-protocol": "workspace:^"

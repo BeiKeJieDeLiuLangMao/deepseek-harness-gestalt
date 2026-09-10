@@ -6,7 +6,7 @@
  * owns the disposer lifecycle (cordis auto-invokes it on fiber disposal,
  * HMR-safe).
  */
-import type { Context } from '../../context-types.ts'
+import type { SidebarContext } from '../../context-types.ts'
 import type { BetterSidebarService } from '../service.ts'
 import { builtinTabs, type BuiltinTabOptions } from './tabs.tsx'
 import { builtinViewers } from './viewers.tsx'
@@ -18,7 +18,7 @@ import { builtinViewers } from './viewers.tsx'
  * (EditorHost reads `ctx.betterSidebar` for file-viewer matching).
  */
 export function registerBuiltins(
-  ctx: Context,
+  ctx: SidebarContext,
   service: BetterSidebarService,
   options: BuiltinTabOptions = {},
 ): () => void {

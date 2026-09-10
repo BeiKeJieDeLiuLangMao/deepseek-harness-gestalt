@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { validateJsonSchemaValue, type ToolDefinition, type ToolRunContext } from '@deepseek-ai/dsh-tools'
 import { AgentOpenRegistry, registerOpenTool } from '../src/agent-opens.ts'
-import type { Context } from '../src/context-types.ts'
+import type { SidebarContext as Context } from '../src/context-types.ts'
 import { SIDEBAR_PREFS_DEFAULTS, type SidebarPrefs } from '../src/prefs-shared.ts'
 
 function exec(sessionId: string): ToolRunContext {
@@ -16,7 +16,7 @@ function exec(sessionId: string): ToolRunContext {
 
 function mount(options: {
   prefs?: Partial<SidebarPrefs>
-  resolveCwd?: (sessionId: string) => string
+  resolveCwd?: (sessionId: string) => Promise<string>
 } = {}): { definition: ToolDefinition; registry: AgentOpenRegistry } {
   let definition: ToolDefinition | undefined
   const ctx = {
@@ -29,7 +29,7 @@ function mount(options: {
   } as unknown as Context
   const registry = new AgentOpenRegistry(() => {})
   const prefs: SidebarPrefs = { ...SIDEBAR_PREFS_DEFAULTS, ...options.prefs }
-  registerOpenTool(ctx, registry, options.resolveCwd ?? (() => '/cwd'), () => prefs)
+  registerOpenTool(ctx, registry, options.resolveCwd ?? (async () => '/cwd'), () => prefs)
   if (definition === undefined) throw new Error('sidebar_open was not registered')
   return { definition, registry }
 }
@@ -100,7 +100,7 @@ describe('sidebar_open', () => {
     try {
       const file = join(directory, 'note.md')
       writeFileSync(file, '# note')
-      const { definition, registry } = mount({ resolveCwd: () => directory })
+      const { definition, registry } = mount({ resolveCwd: async () => directory })
       const delivered: unknown[] = []
       const detach = registry.attach('session-a', request => { delivered.push(request) })
 

@@ -9,10 +9,19 @@
   ],
   "references": [
     {
+      "path": "../../api/session-controller/tsconfig.client.json"
+    },
+    {
+      "path": "../../api/workspace-controller/tsconfig.client.json"
+    },
+    {
       "path": "../locale"
     },
     {
       "path": "../../../vendor/cordis"
+    },
+    {
+      "path": "../../../vendor/schemastery"
     },
     {
       "path": "../ui-slots"
@@ -24,7 +33,16 @@
       "path": "../connection/tsconfig.client.json"
     },
     {
-      "path": "../runtime"
+      "path": "../../api/remotes/tsconfig.client.json"
+    },
+    {
+      "path": "../store"
+    },
+    {
+      "path": "../../core/session"
+    },
+    {
+      "path": "../../schedule/schedule"
     },
     {
       "path": "../ui-sidebar"
@@ -33,10 +51,28 @@
       "path": "../ui-conversation"
     },
     {
-      "path": "../../runtime-diagnostics/invariants"
+      "path": "../ui-renderer"
+    },
+    {
+      "path": "../ui-session"
+    },
+    {
+      "path": "../../util/workspace-path"
+    },
+    {
+      "path": "../../util/brand"
+    },
+    {
+      "path": "../../platform/project-membership"
     },
     {
       "path": "../../platform/project-membership-client"
+    },
+    {
+      "path": "../../platform/platform-account"
+    },
+    {
+      "path": "../../typert/protocol"
     }
   ]
 }

@@ -52,6 +52,26 @@ export interface EncodedImageAttachment {
   name?: string
 }
 
+/**
+ * Browser-submitted prompt content accepted by Host prompt endpoints; the
+ * accepting Host promotes image parts to durable references through
+ * `admitPromptContent` before any message is created, so a wire caller can
+ * never cite an attachment it did not upload.
+ */
+export type PromptContentPart =
+  | { readonly type: 'text'; readonly text: string }
+  | {
+    readonly type: 'image'
+    readonly mediaType: ImageMediaType
+    readonly data: string
+    readonly name?: string
+  }
+
+/** Host-admitted prompt content with each uploaded image replaced by its durable reference. */
+export type AdmittedPromptContentPart =
+  | { readonly type: 'text'; readonly text: string }
+  | { readonly type: 'image'; readonly attachment: ImageAttachmentRef }
+
 /** Request to validate and durably commit one image. */
 export interface SaveImageAttachment {
   data: Uint8Array
@@ -67,30 +87,32 @@ export interface StoredImageAttachment {
   data: Uint8Array
 }
 
-/** Durable, serializable metadata for one immutable generic file object. */
-export interface FileAttachmentRef {
-  /** Opaque content-addressed storage identifier; never a filesystem path or bearer URL. */
+/** Durable, serializable reference to one immutable opaque byte object. */
+export interface ByteAttachmentRef {
+  /** Opaque storage identifier; never a filesystem path or bearer URL. */
   attachmentId: AttachmentId
-  /** Bounded caller-declared media type retained as display metadata. */
+  /** Caller-declared media type recorded with the object; bytes are not decoded. */
   mediaType: string
-  /** Exact immutable byte length. */
+  /** Exact stored byte length. */
   bytes: number
-  /** Lowercase SHA-256 digest of the exact stored bytes. */
+  /** SHA-256 digest of the stored bytes as 64 lowercase hex characters. */
   sha256: string
-  /** Bounded display name stripped of local path information. */
-  name: string
+  /** Optional display name stripped of local path information. */
+  name?: string
 }
 
-/** Request to durably commit one generic file. */
-export interface SaveFileAttachment {
+/** Request to validate and durably commit one opaque byte object. */
+export interface SaveByteAttachment {
   data: Uint8Array
+  /** Caller-declared media type recorded with the object; it is never decoded. */
   mediaType: string
+  /** Display name; path separators and control characters are stripped before storage. */
   name: string
 }
 
-/** Stored generic file bytes returned after reference and digest verification. */
-export interface StoredFileAttachment {
-  ref: FileAttachmentRef
+/** Stored opaque bytes returned after reference and digest verification. */
+export interface StoredByteAttachment {
+  ref: ByteAttachmentRef
   data: Uint8Array
 }
 
@@ -98,7 +120,7 @@ export interface StoredFileAttachment {
 export interface ImageRequestPolicy {
   /** Maximum width multiplied by height after aspect-preserving projection. */
   maxPixels: number
-  /** Encoded-byte cap before base64 expansion or Files API upload. */
+  /** Encoded-byte target before base64 expansion or Files API upload; the smallest quality-ladder output is kept when no quality fits. */
   maxBytes: number
 }
 

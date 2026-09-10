@@ -90,7 +90,7 @@ export function WebSearchCard(props: WebSearchCardProps) {
                   data-active={isSelected ? 'true' : undefined}
                   onClick={() => {
                     setProbe('idle')
-                    selectProvider(tab.id)
+                    void selectProvider(tab.id)
                   }}
                 >
                   {tab.label}

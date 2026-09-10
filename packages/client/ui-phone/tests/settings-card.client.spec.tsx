@@ -7,7 +7,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
-import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { DeviceId } from '@deepseek-ai/dsh-phone-runtime'
 import { PhoneSettingsCard } from '../src/client/PhoneSettingsCard.tsx'
 import { PhoneSettingsSection } from '../src/client/PhoneSettingsSection.tsx'

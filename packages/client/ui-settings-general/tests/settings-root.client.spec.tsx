@@ -2,17 +2,20 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useEffect, useState } from 'react'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { subscribeOverlayLock } from '@deepseek-ai/dsh-client-ui-primitives/src/overlay-lock.ts'
+import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type { SettingsRootComponentProps } from '../src/client/shell-contract.ts'
-import { SettingsRoot, settingsChromeMode } from '../src/client/SettingsRoot.tsx'
+import { SettingsRoot } from '../src/client/SettingsRoot.tsx'
+import { en } from '../src/client/locales.ts'
 
 afterEach(() => {
   cleanup()
-  delete (globalThis as { dshDesktop?: unknown }).dshDesktop
-  document.documentElement.removeAttribute('data-dsh-desktop-overlay')
+  vi.useRealTimers()
 })
 
 type Row = { id: string; order: number; label: string }
 type Step = { id: string; order: number }
+type ChromeRequest = { requestId: string; sectionId?: string } | null
 
 /** Slot-content stand-ins: the shell renders whatever the seats contribute. */
 const SEAT_CONTENT: Record<string, string> = {
@@ -22,8 +25,16 @@ const SEAT_CONTENT: Record<string, string> = {
   'settings.close': 'Close',
 }
 
+type AttentionSnapshot = Parameters<Parameters<SettingsRootComponentProps['useSessionPendingInteraction']>[0]>[0]
+type ConnectionSnapshot = Parameters<Parameters<SettingsRootComponentProps['useConnectionState']>[0]>[0]
+const noAttention: AttentionSnapshot = new Map()
+const useSessionPendingInteraction: SettingsRootComponentProps['useSessionPendingInteraction'] = selector => selector(noAttention)
+
 function mount({
   wide = true,
+  chromeMode = 'web',
+  chromeRequest = null,
+  connectionState = 'connected',
   onboardingActive = true,
   rows = [
     { id: 'general', order: 0, label: 'General' },
@@ -34,11 +45,26 @@ function mount({
     { id: 'welcome', order: -100 },
     { id: 'credential', order: 0 },
   ],
-}: { wide?: boolean; onboardingActive?: boolean; rows?: Row[]; steps?: Step[] } = {}) {
+}: {
+  wide?: boolean
+  chromeMode?: 'web' | 'desktop-host' | 'overlay'
+  chromeRequest?: ChromeRequest
+  connectionState?: ConnectionSnapshot
+  onboardingActive?: boolean
+  rows?: Row[]
+  steps?: Step[]
+} = {}) {
   // Mutable row source standing in for the bound useSections hook; bump()
   // plays a ledger change through the same observable contract.
   let current = rows
+  let currentConnectionState = connectionState
   const listeners = new Set<() => void>()
+  const connectionListeners = new Set<() => void>()
+  const reconnect = vi.fn()
+  const openChromeSettings = vi.fn()
+  const closeChromeSettings = vi.fn()
+  let currentChromeRequest = chromeRequest
+  const chromeListeners = new Set<() => void>()
   const renderSlot = vi.fn(
     ((key: string, _owner: unknown, opts?: { only?: string }) => {
       if (key === 'settings.section') return <div data-testid={`section-${opts?.only ?? 'all'}`} />
@@ -55,8 +81,32 @@ function mount({
   const unusedHook = (() => { throw new Error('unused by SettingsRoot') }) as never
   const props: SettingsRootComponentProps = {
     useSessions,
+    useSessionPendingInteraction,
     useWorkspaces: unusedHook,
     wide,
+    reconnect,
+    ...{
+      chromeMode, openChromeSettings, closeChromeSettings,
+      useChromeState: <T,>(select: (request: ChromeRequest) => T) => {
+        const [, force] = useState(0)
+        useEffect(() => {
+          const listener = () => { force(n => n + 1) }
+          chromeListeners.add(listener)
+          return () => { chromeListeners.delete(listener) }
+        }, [])
+        return select(currentChromeRequest)
+      },
+    },
+    t: makeTranslate(en),
+    useConnectionState: (select) => {
+      const [, force] = useState(0)
+      useEffect(() => {
+        const listener = () => { force(n => n + 1) }
+        connectionListeners.add(listener)
+        return () => { connectionListeners.delete(listener) }
+      }, [])
+      return select(currentConnectionState)
+    },
     useOnboardingSteps: select => select(steps),
     useSections: (select) => {
       const [, force] = useState(0)
@@ -76,205 +126,27 @@ function mount({
       for (const fn of [...listeners]) fn()
     })
   }
-  return { view, renderSlot, bump, listeners }
+  const setConnectionState = (next: typeof currentConnectionState) => {
+    act(() => {
+      currentConnectionState = next
+      for (const fn of [...connectionListeners]) fn()
+    })
+  }
+  const setChromeRequest = (request: ChromeRequest) => {
+    act(() => {
+      currentChromeRequest = request
+      for (const listener of chromeListeners) listener()
+    })
+  }
+  return { view, renderSlot, bump, listeners, reconnect, setConnectionState, openChromeSettings, closeChromeSettings, setChromeRequest }
 }
 
 function openPanel() {
-  fireEvent.click(screen.getByRole('button', { name: 'Settings' }))
+  const trigger = screen.getByRole('button', { name: 'Settings' })
+  trigger.focus()
+  fireEvent.click(trigger)
+  return trigger
 }
-
-describe('settingsChromeMode', () => {
-  it('picks overlay, desktop-host, then web', () => {
-    expect(settingsChromeMode()).toBe('web')
-    ;(globalThis as { dshDesktop?: unknown }).dshDesktop = {}
-    expect(settingsChromeMode()).toBe('web')
-    ;(globalThis as { dshDesktop?: unknown }).dshDesktop = { chromeOverlayShow: () => {} }
-    expect(settingsChromeMode()).toBe('desktop-host')
-    document.documentElement.setAttribute('data-dsh-desktop-overlay', '')
-    expect(settingsChromeMode()).toBe('overlay')
-  })
-})
-
-describe('SettingsRoot Desktop Host', () => {
-  it('opens Settings in the native overlay and closes on the matching reply', () => {
-    const show = vi.fn()
-    const listeners = new Set<(result: { type: string; requestId: string }) => void>()
-    ;(globalThis as { dshDesktop?: unknown }).dshDesktop = {
-      chromeOverlayShow: show,
-      chromeOverlayGetState: async () => null,
-      chromeOverlayResult: () => {},
-      onChromeOverlayResult: (listener: (result: { type: string; requestId: string }) => void) => {
-        listeners.add(listener)
-        return () => { listeners.delete(listener) }
-      },
-    }
-    mount()
-    fireEvent.click(screen.getByRole('button', { name: 'Settings' }))
-    expect(screen.queryByRole('dialog')).toBeNull()
-    expect(show).toHaveBeenCalledWith(expect.objectContaining({ kind: 'settings' }))
-    expect(screen.getByRole('button', { name: 'Settings', expanded: true })).toBeTruthy()
-    const requestId = (show.mock.calls[0]?.[0] as { requestId: string }).requestId
-    act(() => {
-      for (const listener of listeners) listener({ type: 'select', requestId })
-      for (const listener of listeners) listener({ type: 'close', requestId: 'other' })
-    })
-    expect(screen.getByRole('button', { name: 'Settings', expanded: true })).toBeTruthy()
-    act(() => {
-      for (const listener of listeners) listener({ type: 'close', requestId })
-    })
-    expect(screen.getByRole('button', { name: 'Settings', expanded: false })).toBeTruthy()
-  })
-
-  it('opens Settings without a result listener', () => {
-    const show = vi.fn()
-    ;(globalThis as { dshDesktop?: unknown }).dshDesktop = {
-      chromeOverlayShow: show,
-      chromeOverlayGetState: async () => null,
-      chromeOverlayResult: () => {},
-    }
-    mount()
-    fireEvent.click(screen.getByRole('button', { name: 'Settings' }))
-    expect(show).toHaveBeenCalledOnce()
-  })
-
-  it('opens a section through the native overlay', () => {
-    const show = vi.fn()
-    ;(globalThis as { dshDesktop?: unknown }).dshDesktop = {
-      chromeOverlayShow: show,
-      chromeOverlayGetState: async () => null,
-      chromeOverlayResult: () => {},
-      onChromeOverlayResult: () => () => {},
-    }
-    const { renderSlot } = mount()
-    const first = renderSlot.mock.calls.find(call => call[0] === 'settings.onboarding')
-    act(() => {
-      (first?.[1] as { openSection: (id: string) => void }).openSection('models')
-    })
-    expect(show).toHaveBeenCalledWith(expect.objectContaining({ kind: 'settings', sectionId: 'models' }))
-    expect(screen.queryByRole('dialog')).toBeNull()
-  })
-})
-
-describe('SettingsRoot overlay document', () => {
-  it('publishes section navigation under the live Settings request', async () => {
-    document.documentElement.setAttribute('data-dsh-desktop-overlay', '')
-    const show = vi.fn()
-    ;(globalThis as { dshDesktop?: unknown }).dshDesktop = {
-      chromeOverlayShow: show,
-      chromeOverlayGetState: async () => ({ kind: 'settings', requestId: 'live-settings', sectionId: 'general' }),
-      chromeOverlayResult: () => {},
-      onChromeOverlayState: () => () => {},
-      onChromeOverlayResult: () => () => {},
-    }
-    await act(async () => { mount() })
-
-    fireEvent.click(screen.getByRole('button', { name: 'Models' }))
-
-    expect(screen.getByTestId('section-models')).toBeTruthy()
-    expect(show).toHaveBeenCalledWith({
-      kind: 'settings', requestId: 'live-settings', sectionId: 'models',
-    })
-  })
-
-  it('paints the current settings request and reports close', async () => {
-    document.documentElement.setAttribute('data-dsh-desktop-overlay', '')
-    const result = vi.fn()
-    ;(globalThis as { dshDesktop?: unknown }).dshDesktop = {
-      chromeOverlayShow: () => {},
-      chromeOverlayGetState: async () => ({ kind: 'settings', requestId: 'from-state', sectionId: 'models' }),
-      chromeOverlayResult: result,
-      onChromeOverlayState: () => () => {},
-      onChromeOverlayResult: () => () => {},
-    }
-    await act(async () => { mount() })
-    expect(screen.queryByRole('button', { name: 'Settings' })).toBeNull()
-    expect(screen.getByTestId('section-models')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
-    expect(result).toHaveBeenCalledWith({ type: 'close', requestId: 'from-state' })
-  })
-
-  it('reacts to settings and menu state changes', async () => {
-    document.documentElement.setAttribute('data-dsh-desktop-overlay', '')
-    const listeners = new Set<(state: {
-      kind?: string
-      requestId?: string
-      sectionId?: string
-    } | null) => void>()
-    ;(globalThis as { dshDesktop?: unknown }).dshDesktop = {
-      chromeOverlayShow: () => {},
-      chromeOverlayGetState: async () => null,
-      chromeOverlayResult: () => {},
-      onChromeOverlayState: (listener: (state: {
-        kind?: string
-        requestId?: string
-        sectionId?: string
-      } | null) => void) => {
-        listeners.add(listener)
-        return () => { listeners.delete(listener) }
-      },
-      onChromeOverlayResult: () => () => {},
-    }
-    await act(async () => { mount() })
-    expect(screen.queryByRole('dialog')).toBeNull()
-    act(() => {
-      for (const listener of listeners) {
-        listener({ kind: 'settings', requestId: 'live', sectionId: 'general' })
-      }
-    })
-    expect(screen.getByTestId('section-general')).toBeTruthy()
-    act(() => {
-      for (const listener of listeners) listener({ kind: 'menu', requestId: 'menu' })
-    })
-    expect(screen.queryByRole('dialog')).toBeNull()
-  })
-
-  it('uses the first section when the request names no section', async () => {
-    document.documentElement.setAttribute('data-dsh-desktop-overlay', '')
-    ;(globalThis as { dshDesktop?: unknown }).dshDesktop = {
-      chromeOverlayShow: () => {},
-      chromeOverlayGetState: async () => ({ kind: 'settings', requestId: 'bare' }),
-      chromeOverlayResult: () => {},
-      onChromeOverlayState: () => () => {},
-      onChromeOverlayResult: () => () => {},
-    }
-    await act(async () => { mount() })
-    expect(screen.getByTestId('section-general')).toBeTruthy()
-  })
-
-  it('paints nothing for a non-settings request or an incomplete bridge', async () => {
-    document.documentElement.setAttribute('data-dsh-desktop-overlay', '')
-    ;(globalThis as { dshDesktop?: unknown }).dshDesktop = {
-      chromeOverlayShow: () => {},
-      chromeOverlayGetState: async () => ({ kind: 'menu', requestId: 'm' }),
-      chromeOverlayResult: () => {},
-      onChromeOverlayState: () => () => {},
-      onChromeOverlayResult: () => () => {},
-    }
-    await act(async () => { mount() })
-    expect(screen.queryByRole('dialog')).toBeNull()
-    cleanup()
-    ;(globalThis as { dshDesktop?: unknown }).dshDesktop = {}
-    mount()
-    expect(screen.queryByRole('dialog')).toBeNull()
-    cleanup()
-    ;(globalThis as { dshDesktop?: unknown }).dshDesktop = 7
-    mount()
-    expect(screen.queryByRole('dialog')).toBeNull()
-  })
-
-  it('closes an overlay request when the optional result sink is absent', async () => {
-    document.documentElement.setAttribute('data-dsh-desktop-overlay', '')
-    ;(globalThis as { dshDesktop?: unknown }).dshDesktop = {
-      chromeOverlayShow: () => {},
-      chromeOverlayGetState: async () => ({ kind: 'settings', requestId: 'without-result' }),
-      onChromeOverlayState: () => () => {},
-      onChromeOverlayResult: () => () => {},
-    }
-    await act(async () => { mount() })
-    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
-    expect(screen.getByRole('dialog')).toBeTruthy()
-  })
-})
 
 describe('SettingsRoot trigger', () => {
   it('renders the trigger seat content as the accessible name (no aria-label of its own)', () => {
@@ -291,6 +163,36 @@ describe('SettingsRoot trigger', () => {
   it('hands the rail state to the trigger seat', () => {
     const { renderSlot } = mount({ wide: false })
     expect(renderSlot).toHaveBeenCalledWith('settings.trigger', { wide: false })
+  })
+
+  it('shows outage, retry progress, and a two-second recovery confirmation', () => {
+    vi.useFakeTimers()
+    const mounted = mount()
+    expect(screen.queryByRole('button', { name: 'Disconnected, reconnect now' })).toBeNull()
+
+    mounted.setConnectionState('disconnected')
+    const indicator = screen.getByRole('button', { name: 'Disconnected, reconnect now' })
+    expect(indicator.textContent).toContain('Disconnected')
+    expect(indicator.hasAttribute('title')).toBe(false)
+    expect(indicator.querySelector('svg')).toBeTruthy()
+    fireEvent.click(indicator)
+    expect(mounted.reconnect).toHaveBeenCalledOnce()
+
+    mounted.setConnectionState('connecting')
+    expect(screen.getByRole('button', { name: 'Connecting, restart now' }).textContent)
+      .toContain('Connecting...')
+
+    mounted.setConnectionState('connected')
+    expect(screen.getByRole('status', { name: 'Connected' })).toBeTruthy()
+    act(() => { vi.advanceTimersByTime(1_999) })
+    expect(screen.getByRole('status', { name: 'Connected' })).toBeTruthy()
+    act(() => { vi.advanceTimersByTime(1) })
+    expect(screen.queryByRole('status')).toBeNull()
+  })
+
+  it('keeps the reconnect indicator out of the collapsed rail', () => {
+    mount({ wide: false, connectionState: 'disconnected' })
+    expect(screen.queryByRole('button', { name: 'Disconnected, reconnect now' })).toBeNull()
   })
 })
 
@@ -323,18 +225,41 @@ describe('SettingsPage chrome seats', () => {
 })
 
 describe('SettingsPage close paths', () => {
-  it('closes via the header button', () => {
+  it('closes via the header button and restores trigger focus', async () => {
     mount()
-    openPanel()
+    const trigger = openPanel()
     fireEvent.click(screen.getByRole('button', { name: 'Close' }))
     expect(screen.queryByRole('dialog')).toBeNull()
+    await vi.waitFor(() => { expect(document.activeElement).toBe(trigger) })
   })
 
-  it('closes via document-level Escape and unhooks the listener with the page', () => {
+  it('releases the shared Web overlay lock on close and unmount', () => {
+    const held: boolean[] = []
+    const off = subscribeOverlayLock((value) => { held.push(value) })
+    const mounted = mount()
+    openPanel()
+    expect(held).toEqual([true])
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+    expect(held).toEqual([true, false])
+    openPanel()
+    mounted.view.unmount()
+    expect(held).toEqual([true, false, true, false])
+    off()
+  })
+
+  it('keeps the page open when its empty surface is clicked', () => {
     mount()
     openPanel()
+    fireEvent.click(screen.getByRole('dialog'))
+    expect(screen.getByRole('dialog')).toBeTruthy()
+  })
+
+  it('closes via document-level Escape, restores trigger focus, and unhooks the listener', async () => {
+    mount()
+    const trigger = openPanel()
     fireEvent.keyDown(document, { key: 'Escape' })
     expect(screen.queryByRole('dialog')).toBeNull()
+    await vi.waitFor(() => { expect(document.activeElement).toBe(trigger) })
     // Ignored while closed (listener removed with the panel) and non-Escape
     // keys are ignored while open.
     fireEvent.keyDown(document, { key: 'Escape' })
@@ -454,5 +379,48 @@ describe('SettingsPage navigation', () => {
     expect(listeners.size).toBe(1)
     view.unmount()
     expect(listeners.size).toBe(0)
+  })
+})
+
+
+describe('SettingsRoot native presentation', () => {
+  it('delegates the ordinary Desktop trigger without painting a second Settings page', () => {
+    const mounted = mount({ chromeMode: 'desktop-host' })
+    openPanel()
+    expect(mounted.openChromeSettings).toHaveBeenCalledWith()
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('opens the requested onboarding section through native chrome', () => {
+    const mounted = mount({ chromeMode: 'desktop-host' })
+    const step = mounted.renderSlot.mock.calls.find(call => call[0] === 'settings.onboarding')
+    act(() => { (step?.[1] as { openSection: (id: string) => void }).openSection('models') })
+    expect(mounted.openChromeSettings).toHaveBeenCalledWith('models')
+    expect(screen.queryByRole('dialog')).toBeNull()
+    mounted.setChromeRequest({ requestId: 'host-settings', sectionId: 'models' })
+    expect(screen.getByRole('button', { name: 'Settings', expanded: true })).toBeTruthy()
+    mounted.setChromeRequest(null)
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Settings' }))
+  })
+
+  it('paints the native Settings request and sends its exact close result', () => {
+    const mounted = mount({ chromeMode: 'overlay', chromeRequest: { requestId: 'settings-1', sectionId: 'models' } })
+    expect(screen.getByRole('dialog', { name: 'Settings Title' })).toBeTruthy()
+    expect(screen.getByTestId('section-models')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Settings' })).toBeNull()
+    expect(mounted.renderSlot.mock.calls.filter(call => call[0] === 'settings.onboarding')).toHaveLength(0)
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+    expect(mounted.closeChromeSettings).toHaveBeenCalledWith('settings-1')
+    mounted.setChromeRequest(null)
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('keeps the overlay empty for a menu and renders a later Settings request', () => {
+    const mounted = mount({ chromeMode: 'overlay' })
+    expect(mounted.view.container.textContent).toBe('')
+    mounted.setChromeRequest({ requestId: 'settings-2' })
+    expect(screen.getByRole('dialog')).toBeTruthy()
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(mounted.closeChromeSettings).toHaveBeenCalledWith('settings-2')
   })
 })

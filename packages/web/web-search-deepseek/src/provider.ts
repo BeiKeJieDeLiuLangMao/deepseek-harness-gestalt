@@ -2,9 +2,7 @@
  * DeepSeek search through an Anthropic-compatible Messages model call with the native
  * `web_search_20250305` server tool. Each search costs a model turn, but returns structured
  * result blocks; absence of those blocks is an error rather than a prose-scraping fallback.
- * The same Messages contract serves the official DeepSeek endpoint and a separately
- * configured Anthropic-compatible base. The wire format and native `fetch` client are
- * provider-private and do not use `ctx.llm`.
+ * The wire format and native `fetch` client are provider-private and do not use `ctx.llm`.
  * @module @deepseek-ai/dsh-web-search-deepseek/provider
  */
 
@@ -180,7 +178,10 @@ export function mapAnthropicResponse(response: AnthropicResponse): WebSearchResu
   return { sources, truncated: false }
 }
 
-/** The DeepSeek-backed search provider; HTTP redirects fail as `WEB_PROVIDER_ERROR`. */
+/**
+ * The DeepSeek-backed search provider. HTTP redirects fail as `WEB_PROVIDER_ERROR`;
+ * failures after dispatch name the endpoint and tell the model how the user can configure it.
+ */
 export class DeepSeekSearchProvider implements WebSearchProvider {
   readonly id = DEEPSEEK_PROVIDER_ID
 
@@ -230,22 +231,51 @@ export class DeepSeekSearchProvider implements WebSearchProvider {
       apiVersion: options.apiVersion,
       body,
     })
-    const response = await postSearch(endpoint, {
-      // Official DeepSeek expects `x-api-key`; an Anthropic-compatible proxy
-      // may expect `Authorization: Bearer` — send both so either resolves.
-      'x-api-key': apiKey,
-      'authorization': `Bearer ${apiKey}`,
-      'anthropic-version': options.apiVersion,
-      'content-type': 'application/json',
-      'accept': 'application/json',
-      'user-agent': USER_AGENT,
-    }, body, signal, 'DeepSeek search request failed')
+    throwIfSearchAborted(signal)
+    let response: Response
+    try {
+      response = await fetch(endpoint, {
+        method: 'POST',
+        redirect: 'error',
+        headers: {
+          // Official DeepSeek expects `x-api-key`; an Anthropic-compatible proxy
+          // may expect `Authorization: Bearer` — send both so either resolves.
+          'x-api-key': apiKey,
+          'authorization': `Bearer ${apiKey}`,
+          'anthropic-version': options.apiVersion,
+          'content-type': 'application/json',
+          'accept': 'application/json',
+          'user-agent': USER_AGENT,
+        },
+        body: JSON.stringify(body),
+        ...signal !== undefined ? { signal } : {},
+      })
+    } catch (error: unknown) {
+      if (signal?.aborted === true || isAbortError(error)) throw searchAborted(signal, error)
+      throw searchEndpointError(
+        endpoint,
+        `DeepSeek search request failed: ${String(error)}`,
+        error,
+      )
+    }
 
     if (!response.ok) {
-      throw new WebError(
-        await providerHttpError(response, `DeepSeek API error (HTTP ${String(response.status)})`, signal),
-        'WEB_PROVIDER_ERROR',
-      )
+      const status = response.status
+      let message = `DeepSeek API error (HTTP ${status})`
+      try {
+        const parsed = await response.json() as AnthropicError
+        const detail = typeof parsed.error === 'string' ? parsed.error : parsed.error?.message ?? parsed.message
+        if (detail !== undefined && detail.length > 0) message += `: ${detail}`
+      } catch (error: unknown) {
+        // An abort fired mid-body must surface as WEB_ABORTED, not be swallowed
+        // into a generic HTTP-error message — cancellation is not a provider
+        // error (the seam's cancellation contract).
+        if (signal?.aborted === true || isAbortError(error)) throw searchAborted(signal, error)
+        // Otherwise: the HTTP status is already captured in `message` above; a
+        // malformed/non-JSON error body (normal for gateway 5xx/429s) can only
+        // cost a richer provider message, never the real error.
+      }
+      throw searchEndpointError(endpoint, message)
     }
 
     try {
@@ -253,8 +283,10 @@ export class DeepSeekSearchProvider implements WebSearchProvider {
       return mapAnthropicResponse(payload)
     } catch (error: unknown) {
       if (signal?.aborted === true || isAbortError(error)) throw searchAborted(signal, error)
-      if (error instanceof WebError) throw error
-      throw new WebError(`DeepSeek returned an unprocessable response body: ${String(error)}`, 'WEB_PROVIDER_ERROR', { cause: error })
+      const message = error instanceof WebError
+        ? error.message
+        : `DeepSeek returned an unprocessable response body: ${String(error)}`
+      throw searchEndpointError(endpoint, message, error)
     }
   }
 
@@ -323,6 +355,20 @@ export class DeepSeekSearchProvider implements WebSearchProvider {
   }
 }
 
+/** Add endpoint recovery instructions to failures that occur after request dispatch begins. */
+function searchEndpointError(endpoint: string, message: string, cause?: unknown): WebError {
+  return new WebError(
+    `${message}\n\nThe web search request used endpoint ${JSON.stringify(endpoint)}. `
+    + 'Search endpoint configuration is separate from chat. If that endpoint is not intended, '
+    + 'guide the user to Settings > Plugins > Plugin configuration > Web search, where they can '
+    + 'change and save Endpoint. If that settings page is unavailable, the user can set '
+    + 'DEEPSEEK_SEARCH_BASE_URL or configure web-search-deepseek.baseURL to a trusted '
+    + 'Anthropic-compatible Messages API base. Only the user should choose or change the endpoint.',
+    'WEB_PROVIDER_ERROR',
+    cause === undefined ? undefined : { cause },
+  )
+}
+
 /**
  * Race a same-process asynchronous preflight against caller cancellation. The
  * attached settlement handlers keep observing an uncooperative operation after
@@ -345,6 +391,28 @@ function abortable<T>(operation: Promise<T>, signal?: AbortSignal): Promise<T> {
       },
     )
   })
+}
+
+/** Throw the provider's stable cancellation error when the caller already aborted. */
+function throwIfSearchAborted(signal?: AbortSignal): void {
+  if (signal?.aborted === true) throw searchAborted(signal)
+}
+
+/** Build the provider's stable cancellation error while retaining the caller's reason. */
+function searchAborted(signal?: AbortSignal, fallback?: unknown): WebError {
+  return new WebError('DeepSeek search aborted', 'WEB_ABORTED', {
+    cause: signal?.aborted === true ? signal.reason : fallback,
+  })
+}
+
+/** True for a fetch/`AbortSignal` abort, surfaced as `WEB_ABORTED`. */
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === 'AbortError'
+}
+
+/** True for DeepSeek request limits that can be sent to the Messages API. */
+function isPositiveInteger(value: number): boolean {
+  return Number.isInteger(value) && value > 0
 }
 
 /**
@@ -403,28 +471,6 @@ async function providerHttpError(
   return message
 }
 
-/** Throw the provider's stable cancellation error when the caller already aborted. */
-function throwIfSearchAborted(signal?: AbortSignal): void {
-  if (signal?.aborted === true) throw searchAborted(signal)
-}
-
-/** Build the provider's stable cancellation error while retaining the caller's reason. */
-function searchAborted(signal?: AbortSignal, fallback?: unknown): WebError {
-  return new WebError('DeepSeek search aborted', 'WEB_ABORTED', {
-    cause: signal?.aborted === true ? signal.reason : fallback,
-  })
-}
-
-/** True for a fetch/`AbortSignal` abort, surfaced as `WEB_ABORTED`. */
-function isAbortError(error: unknown): boolean {
-  return error instanceof DOMException && error.name === 'AbortError'
-}
-
-/** True for DeepSeek request limits that can be sent to the Messages API. */
-function isPositiveInteger(value: number): boolean {
-  return Number.isInteger(value) && value > 0
-}
-
 /** Moonshot `POST /v1/search` response. */
 interface MoonshotSearchResponse {
   search_results?: readonly {
@@ -439,6 +485,9 @@ interface MoonshotSearchResponse {
 /**
  * Map Moonshot `search_results` onto the seam's sources. Truncation here is a
  * provider-side bound; the seam may truncate again for `maxResults`.
+ * @param payload - Moonshot search JSON.
+ * @param limit - maximum sources to keep.
+ * @returns mapped sources and whether more results were dropped.
  */
 function mapMoonshotResponse(payload: MoonshotSearchResponse, limit: number): WebSearchResult {
   const seen = new Set<string>()
@@ -462,6 +511,8 @@ function mapMoonshotResponse(payload: MoonshotSearchResponse, limit: number): We
 /**
  * Fetch rejects header values outside Latin-1 as a ByteString error. Fail
  * before dispatch so a non-ASCII key or version is named, not wrapped.
+ * @param headers - request headers to send.
+ * @returns the same map when every value is Latin-1.
  */
 function asciiHeaders(headers: Record<string, string>): Record<string, string> {
   for (const [name, value] of Object.entries(headers)) {

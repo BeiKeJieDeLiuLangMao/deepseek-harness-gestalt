@@ -53,8 +53,10 @@ describe('workbench apply on the overlay document', () => {
     ctx.provide('sessions', {
       list: { getSnapshot: () => ({ byId: {} }), subscribe },
     })
-    ctx.provide('settingsScope', {
-      bind: () => ({ getSnapshot: () => ({ value: undefined }) }),
+    ctx.provide('browserUi', {
+      createRequest: () => ({ profile: 'shared' }),
+      renderPageChrome: vi.fn(),
+      recoverListedMutation: vi.fn(),
     })
     await ctx.plugin({ inject: [...clientInject], apply: applyClient }).await()
     const face = ctx.get('workbenchBrowser') as {

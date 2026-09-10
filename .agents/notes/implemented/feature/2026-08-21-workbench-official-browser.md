@@ -18,6 +18,8 @@ The collapsed preview stays on `conversation.browser.preview`. ChatView paints i
 
 Host `browserWorkspace.create` is now `@Remote('create')`. Browser Workspace's client outlet owns Remote-result unwrapping, so UI packages do not evaluate the complete Remote assembly to consume that pure adapter. The settings page still does not create tabs. Snapshot `BrowserView` stays on disk: when `ctx.workbenchBrowser` is published it renders official chrome; otherwise the iframe remains the standalone fallback. `betterSidebar.setPanelOpen` expands the panel without minting a dummy URL.
 
+The workbench consumes the required `browserUi` face for shared settings, official chrome, and stale-close recovery. The [browser UI injection decision](../architecture/2026-09-08-workbench-browser-ui-injection.md) owns this Client dependency and provider lifecycle.
+
 ## Alternatives considered
 
 **Keep official chrome in `details` and the workbench beside it.** Rejected because both paint on the right and the user asked to leave Dock.
@@ -36,8 +38,8 @@ One product browser. ChatView hides the preview when the right gutter cannot hos
 
 ## Verification
 
-- `pnpm exec vitest run packages/client/ui-workbench packages/client/ui-browser packages/browser/browser-runtime-electron packages/client/ui-conversation/tests/preview-rail.client.spec.ts packages/client/ui-conversation/tests/chat-view.client.spec.tsx packages/browser/browser-workspace/tests/workspace.spec.ts apps/desktop/tests/browser-present.spec.ts apps/desktop/tests/chrome-overlay.spec.ts packages/client/ui-desktop/tests/desktop-chrome-overlay.client.spec.tsx packages/client/ui-layout/tests/app-frame.client.spec.tsx packages/client/ui-sidebar/tests/sidebar-root.client.spec.tsx`
+- `pnpm exec vitest run packages/client/ui-workbench packages/client/ui-browser packages/browser/browser-runtime-electron packages/client/ui-chat/tests/preview-rail.client.spec.ts packages/client/ui-chat/tests/chat-view.client.spec.tsx packages/browser/browser-workspace/tests/workspace.spec.ts apps/desktop/tests/browser-present.spec.ts apps/desktop/tests/chrome-overlay.spec.ts packages/client/ui-desktop/tests/desktop-chrome-overlay.client.spec.tsx packages/client/ui-layout/tests/app-frame.client.spec.tsx packages/client/ui-sidebar/tests/sidebar-root.client.spec.tsx`
 - `pnpm run test:electron-runtime-e2e` proves hidden-page screenshots and Profile isolation in a real Electron process.
 - `DSH_COVERAGE_PARTITIONS=4 pnpm run check:ci:coverage` covers every changed Browser and workbench branch.
-- `apps/web/tests/browser-dock.snapshot.ts` pins the collapsed preview, workbench page chrome after open and Refresh, and replacement plus navigation after a simulated Runtime restart.
+- [Browser Dock E2E](../../../../apps/web/tests/browser-dock.e2e.ts) pins the collapsed preview, workbench chrome after open and Refresh, missing-target recovery after Runtime provider replacement, and stale-close recovery through real Browser Workspace RPC.
 - `pnpm run check:ci:consumers` runs the Web gate after every built-client artifact reader. The serial HMR owner restores the complete build-record artifact set before the parallel Web pool consumes it.

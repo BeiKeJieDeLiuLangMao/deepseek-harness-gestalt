@@ -3,7 +3,7 @@
  * @module @deepseek-ai/dsh-desktop/spawn-web-host
  */
 import { type ChildProcess, spawn } from 'node:child_process'
-import { webUrlFromOutput } from './web-url.ts'
+import { webHostAnnouncementFromOutput } from './web-url.ts'
 
 /** How we invoke `dsh web`. */
 export interface WebHostCommand {
@@ -71,6 +71,8 @@ export interface RunningWebHost {
   readonly stop: () => Promise<WebHostExit>
   /** Loopback URL including the assigned port. */
   readonly url: string
+  /** Authenticated startup URL; exchanged once in memory and never logged. */
+  readonly launchUrl: string
 }
 
 const SENSITIVE_ENVIRONMENT_NAME = /(?:KEY|SECRET|TOKEN|PASSWORD|CREDENTIAL)/iu
@@ -248,13 +250,15 @@ export function spawnWebHost(
       if (!settled) {
         startupBuffer += text
         urlScan = `${urlScan}${text}`.slice(-URL_SCAN_MAX)
-        const url = webUrlFromOutput(urlScan)
-        if (url === undefined) return
+        const announcement = webHostAnnouncementFromOutput(urlScan)
+        if (announcement === undefined) return
         settled = true
         startupBuffer = ''
         urlScan = ''
         clearTimeout(timer)
-        resolve({ child, exited, stop, url })
+        resolve({
+          child, exited, stop, url: announcement.origin, launchUrl: announcement.launchUrl,
+        })
       }
     }
     child.stdout.on('data', onData)

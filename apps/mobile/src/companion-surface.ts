@@ -1,7 +1,9 @@
 /** Product-owned Mobile projection of authenticated Desktop Companion state. */
 
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
-import type { ConversationSnapshot, SessionId, SessionListState, WorkspaceView } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { WorkspaceView } from '@deepseek-ai/dsh-api-workspace-controller/client'
+import { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {
   CompanionAttachmentRejectedResult,
   CompanionHostFailure,
@@ -18,6 +20,8 @@ import {
   adaptMobileCompanionProjection,
   assertCompanionJsonProjection,
   type MobileCompanionProjectionDto,
+  MobilePendingDraftStore,
+  type MobileConversationView,
   type MobilePendingSettlement,
   type MobilePendingSettlementReceipt,
 } from './companion-projection.ts'
@@ -123,7 +127,7 @@ export interface MobileCompanionSurfaceSnapshot {
   /** Last authenticated Workspace projection. */
   readonly workspaces: readonly WorkspaceView[]
   /** Last authenticated opened conversations. */
-  readonly conversations: Readonly<Partial<Record<SessionId, ConversationSnapshot>>>
+  readonly conversations: Readonly<Partial<Record<SessionId, MobileConversationView>>>
   /** Current Desktop-authoritative full-text search state. */
   readonly search: MobileCompanionSearchSnapshot
   /** Latest selected-file transfer and its correlated Desktop outcome. */
@@ -208,9 +212,17 @@ export class MobileCompanionSurface {
   }>()
   readonly #historyOperations = new Map<CompanionOperationId, PendingHistoryOperation>()
   readonly #historyInFlight = new Map<SessionId, PendingHistoryOperation>()
+  #pendingDrafts = new MobilePendingDraftStore()
+  readonly #unsubscribeRuntime: () => void
 
   /** @param runtime - current physical-connection synchronization authority. */
-  constructor(runtime: CompanionForegroundRuntime) { this.#runtime = runtime }
+  constructor(runtime: CompanionForegroundRuntime) {
+    this.#runtime = runtime
+    this.#unsubscribeRuntime = runtime.subscribe(() => {
+      if (runtime.getState().socketOpen) return
+      this.replacePendingDrafts()
+    })
+  }
 
   /** @returns the last authenticated Desktop projection. */
   getSnapshot(): MobileCompanionSurfaceSnapshot { return this.#snapshot }
@@ -218,6 +230,12 @@ export class MobileCompanionSurface {
   subscribe(listener: () => void): () => void {
     this.#listeners.add(listener)
     return () => { this.#listeners.delete(listener) }
+  }
+
+  /** Stop observing connection loss. */
+  dispose(): void {
+    this.#unsubscribeRuntime()
+    this.replacePendingDrafts()
   }
 
   /** Select the cache owned by the current Account and Personal Pairing. */
@@ -232,6 +250,7 @@ export class MobileCompanionSurface {
     this.#attachmentOperationId = undefined
     this.#refreshOperationId = undefined
     this.#createdSessionFocus = undefined
+    this.replacePendingDrafts()
     this.#snapshot = emptySurfaceSnapshot()
     this.publish()
   }
@@ -245,6 +264,7 @@ export class MobileCompanionSurface {
     const adapted = adaptMobileCompanionProjection(
       projection,
       () => Promise.reject(new Error('Companion interaction requires foreground synchronization')),
+      new MobilePendingDraftStore(),
     )
     this.#snapshot = {
       ...adapted,
@@ -327,7 +347,7 @@ export class MobileCompanionSurface {
     channel: MobileCompanionConnectionChannel,
   ): ValidatedDesktopSurfaceResyncReceiver | undefined {
     const lifecycleReceiver = this.#runtime.bindValidatedDesktopResync()
-    if (lifecycleReceiver === undefined) return undefined
+    if (lifecycleReceiver === undefined || !this.#runtime.getState().socketOpen) return undefined
     const token = Symbol('mobile-companion-connection')
     return {
       acceptValidatedDesktopResync: (message) => {
@@ -341,12 +361,14 @@ export class MobileCompanionSurface {
         const presentationMessage = pendingFocus !== undefined && pendingCreatedSession?.blank === true
           ? { ...message, sessions: { ...message.sessions, current: pendingFocus.sessionId } }
           : message
+        const previousConnection = this.#activeConnection
+        const replacingConnection = previousConnection !== undefined && previousConnection.token !== token
+        if (replacingConnection) this.replacePendingDrafts()
         const projection = adaptMobileCompanionProjection(
           presentationMessage,
           settlement => this.settlePending(active, settlement),
+          this.#pendingDrafts,
         )
-        const previousConnection = this.#activeConnection
-        const replacingConnection = previousConnection !== undefined && previousConnection.token !== token
         const conversations = { ...projection.conversations }
         if (!replacingConnection) {
           for (const pending of this.#historyInFlight.values()) {
@@ -811,6 +833,11 @@ export class MobileCompanionSurface {
     }
   }
 
+  private replacePendingDrafts(): void {
+    this.#pendingDrafts.revoke()
+    this.#pendingDrafts = new MobilePendingDraftStore()
+  }
+
   private requireActive(kind: CompanionMutationName): ActiveConnection {
     requireCompanionMutation(this.#runtime.getState(), kind)
     if (this.#activeConnection === undefined) {
@@ -866,10 +893,10 @@ function companionSendFailure(): CompanionHostFailure {
 }
 
 function localSessionId(value: CompanionSessionId): SessionId {
-  return value as unknown as SessionId
+  return SessionId(value)
 }
 
-function oldestNodeSeq(conversation: ConversationSnapshot): number | undefined {
+function oldestNodeSeq(conversation: MobileConversationView): number | undefined {
   let oldest: number | undefined
   for (const node of conversation.nodes) {
     if (!Number.isSafeInteger(node.seq) || node.seq < 0) continue

@@ -1,6 +1,13 @@
+---
+description: "提供 GitHub OAuth、签名轮询、P-256 证明、轮换与失效处理的 Platform Account Provider。"
+kind: "package-reference"
+---
+
 # `@deepseek-ai/dsh-platform-account-core`
 
 [English](README.md) | 中文
+
+## 概述
 
 本包是 Platform 账号提供方。登录尝试有效期为五分钟，携带随机 OAuth state 与 S256 PKCE，只能凭签名轮询令牌和 P-256 安装证明消费一次。GitHub OAuth 适配器不请求 scope，拒绝继承得到的非空 scope，只保留不可变数字 id、公开登录名和头像，并在身份查询后丢弃提供方令牌。
 
@@ -12,21 +19,45 @@ Desktop Mobile 移除先于 Account 和 Session 行锁定已经授权的 attempt
 
 `loadPlatformEnvironment` 要求并选择完整环境对。开发与生产不能共享 origin、回调、GitHub OAuth App id、凭证引用、数据库身份或身份命名空间。提供方会在处理流量前拒绝与所选身份不匹配的 GitHub 适配器或后端。
 
+## 目录
+
+- [扩展点](#extension-points)
+- [模型体验](#model-experience)
+- [已知限制与暂缓事项](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+-----
+
+<a id="extension-points"></a>
 ## 扩展点
 
 `AccountBackend` 提供原子持久化与待投递失效记录，`AccountInvalidationBus` 提供幂等跨实例投递，`GitHubIdentityProvider` 拥有提供方交换。生产 composition root 提供三者及明确的失效重试间隔；内存实现只用于无密钥验收与开发。
 
 `configureAccountDeletion` 绑定现有产品数据 owner 及明确的重试、已完成凭据期限。接受操作时原子持久化进度并撤销全部会话；owner 撤销先于失效通知，未完成清理保持可恢复。正在删除的账号无法完成登录或刷新。只有发起 Installation 的密钥能通过恢复凭据查询或替换接任成员。完成时移除 Account 与会话记录，重新注册取得新 id。后台扫描报告每个失败账号，并继续其他清理与已完成凭据的过期删除。未配置此 owner 的组合以 `DELETION_UNAVAILABLE` 拒绝删除。[删除决策](../../../.agents/notes/implemented/feature/2026-09-09-mobile-account-deletion.zh.md)定义归属、顺序和验证。
 
+<a id="model-experience"></a>
 ## 模型体验
 
-无。账号授权位于 agent 会话与模型请求之外。
+通过 Project Membership、Personal Pairing 与接收 Session 工作所消费的 Account 身份和安装授权间接影响模型。
 
 #### KV Cache 影响
 
-无。
+该 Provider 不增加稳定请求前缀；其身份和授权决策经下游 roster、pairing 与接收 Consumer 出现。
 
 ## 已知限制与暂缓事项
+<a id="known-limitations-and-deferred-work"></a>
 
 - 本包不提供生产数据库、分布式失效、密钥管理、限流器或审计接收器；这些适配器归 Platform 部署 composition root 所有。
 - GitHub 适配器只支持 OAuth Apps，并以无提供方 scope 的方式接收公开身份。
+
+本包不发布运行时不变式配套插件，因为 backend 与 invalidation bus 是 constructor 私有 adapter，没有 Context 可见的观察；Provider 在持久变更后发布，并报告后续发布失败。
+
+<a id="dev-note"></a>
+### 开发备注
+
+<details>
+<summary>维护者工作上下文——点击展开</summary>
+
+暂无。
+
+</details>

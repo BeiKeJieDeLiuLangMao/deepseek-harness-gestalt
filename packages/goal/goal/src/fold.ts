@@ -1,8 +1,8 @@
 /** Pure replay fold and strict decoder for durable goal changes. */
 
 import type { MessageSource } from '@deepseek-ai/dsh-llm'
-import type { SessionEvent } from '@deepseek-ai/dsh-session'
-import { GOAL_CHANGE_VERSION, GoalId } from './runtime.ts'
+import { SessionSeq, type SessionEvent } from '@deepseek-ai/dsh-session'
+import { GOAL_CHANGE_VERSION, GoalError, GoalId } from './runtime.ts'
 import type { GoalBlockReason, GoalPhase, GoalRef, GoalSnapshot } from './types.ts'
 import type {
   FoldedGoal,
@@ -346,4 +346,54 @@ export function foldGoal(events: readonly SessionEvent[]): FoldedGoal {
     ...state.updatedAt === undefined ? {} : { updatedAt: state.updatedAt },
     ...state.lastRef === undefined ? {} : { lastRef: { ...state.lastRef } },
   }
+}
+
+/**
+ * Append one child-owned clear tombstone when a contiguous fork prefix still
+ * folds to a current goal. Callers keep `inheritedEventCount` at the parent
+ * prefix length so the tombstone is not inherited. A seed without a current
+ * goal is returned unchanged.
+ * @param seed - contiguous parent prefix from seq 0, typically `snapshotEvents()`.
+ * @param now - tombstone `clearedAt`; clamped not to precede the current goal update.
+ * @returns the same array, or a new array with one trailing `goal/change` clear.
+ * @throws {@link GoalError} when the prefix or derived tombstone fails strict replay.
+ */
+export function clearGoalFromForkSeed(
+  seed: readonly SessionEvent[],
+  now: number = Date.now(),
+): readonly SessionEvent[] {
+  let folded: FoldedGoal
+  try {
+    folded = foldGoal(seed)
+  } catch (error: unknown) {
+    throw new GoalError(
+      `fork seed cannot fold a current goal: ${error instanceof Error ? error.message : String(error)}`,
+      'GOAL_INVALID_TRANSITION',
+    )
+  }
+  const current = folded.goal
+  if (current === undefined) return seed
+  const last = seed.at(-1)
+  const tombstone: SessionEvent<'goal/change'> = {
+    type: 'goal/change',
+    seq: SessionSeq(seed.length),
+    time: last === undefined ? now : Math.max(now, last.time),
+    data: {
+      kind: 'goal/change',
+      version: GOAL_CHANGE_VERSION,
+      operation: 'clear',
+      cleared: { id: current.id, revision: current.revision + 1 },
+      clearedAt: Math.max(now, folded.updatedAt ?? now),
+    },
+  }
+  const cleared = [...seed, tombstone]
+  try {
+    foldGoal(cleared)
+  } catch (error: unknown) {
+    throw new GoalError(
+      `fork seed clear tombstone failed replay: ${error instanceof Error ? error.message : String(error)}`,
+      'GOAL_INVALID_TRANSITION',
+    )
+  }
+  return cleared
 }

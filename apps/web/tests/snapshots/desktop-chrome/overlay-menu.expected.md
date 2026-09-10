@@ -1,0 +1,4 @@
+- menu:
+  - menuitem "Side Chat":
+    - img
+    - text: Side Chat

@@ -7,10 +7,11 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import { LlmAdapter, type GenerateOptions, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
-import ScheduleService from '../src/index.ts'
+import * as SchedulePlugin from '../src/index.ts'
 import {
   ScheduleId,
   createAfterScheduleRecord,
@@ -51,10 +52,11 @@ async function mountRuntime(root: string, adapter: RecordingAdapter): Promise<Co
   const ctx = new Context()
   contexts.push(ctx)
   await mountAgentLoopTestDependencies(ctx)
+  await ctx.plugin(SessionProjectionRegistry)
   await ctx.plugin(AgentLoop, { agents: [] })
   await ctx.plugin(JsonlSessionPersistence, { root, compression: 'none' })
   ctx.llm.registerAdapter(['mock'], adapter)
-  await ctx.plugin(ScheduleService)
+  await ctx.plugin(SchedulePlugin)
   return ctx
 }
 
@@ -80,65 +82,55 @@ async function settleCurrentTasks(): Promise<void> {
   await new Promise<void>(resolve => setImmediate(resolve))
 }
 
+/** Read one stored session's header and full event log through a read handle. */
+async function readStored(ctx: Context, id: SessionId) {
+  const handle = await ctx.sessionPersistence.open(id, 'read')
+  try {
+    return { header: handle.header, inheritedEventCount: handle.inheritedEventCount, events: await handle.read() }
+  } finally {
+    await handle.close()
+  }
+}
+
 describe('Schedule production JSONL restart', () => {
-  it('pauses a cold overdue reminder without activation and preserves it across a Host restart', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'dsh-schedule-jsonl-cold-pause-'))
+  it('does not wake a cold overdue reminder until a future live root resumes it', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-schedule-jsonl-cold-idle-'))
     roots.push(root)
-    const sessionId = SessionId('schedule-jsonl-cold-pause')
+    const sessionId = SessionId('schedule-jsonl-cold-idle')
     const first = await mountPersistence(root)
     const pending = first.sessions.create(sessionId, { meta: { cwd: '/tmp' } })
     pending.append('schedule/change', {
       version: 1,
       operation: 'create',
       schedule: createAfterScheduleRecord(
-        ScheduleId('schedule-1'), 'cold paused reminder', 1, Date.now() - 60_000,
+        ScheduleId('schedule-1'), 'cold overdue reminder', 1, Date.now() - 60_000,
       ),
     })
-    await expect(first.sessions.flush(pending)).resolves.toBe(true)
+    const seed = await first.sessionPersistence.create(pending.header)
+    await seed.append(pending.snapshotEvents())
+    await seed.close()
     await disposeContext(first)
 
-    const pausingAdapter = new RecordingAdapter()
-    const pausing = await mountRuntime(root, pausingAdapter)
+    const idleAdapter = new RecordingAdapter()
+    const idle = await mountRuntime(root, idleAdapter)
     const created: SessionId[] = []
     const sessionCreated: SessionId[] = []
     const sessionDisposed: SessionId[] = []
-    pausing.on('agent/created', ({ agent }) => { created.push(agent.id) })
-    pausing.on('session/created', (session) => { sessionCreated.push(session.id) })
-    pausing.on('session/disposed', (session) => { sessionDisposed.push(session.id) })
-    await expect(pausing.schedules.pause(sessionId, ScheduleId('schedule-1')))
-      .resolves.toMatchObject({ id: 'schedule-1', state: 'paused' })
+    idle.on('agent/created', ({ agent }) => { created.push(agent.id) })
+    idle.on('session/created', (session) => { sessionCreated.push(session.id) })
+    idle.on('session/disposed', (session) => { sessionDisposed.push(session.id) })
+    await settleCurrentTasks()
     expect(created).toEqual([])
     expect(sessionCreated).toEqual([])
     expect(sessionDisposed).toEqual([])
-    expect(pausing.sessions.get(sessionId)).toBeUndefined()
-    expect(pausingAdapter.requests).toEqual([])
-    const pausedStored = await pausing.sessionPersistence.inspect(sessionId)
-    expect(foldScheduleEvents(pausedStored.events, pausedStored.meta.seedLength ?? 0).paused)
+    expect(idle.sessions.get(sessionId)).toBeUndefined()
+    expect(idleAdapter.requests).toEqual([])
+    const stored = await readStored(idle, sessionId)
+    expect(foldScheduleEvents(stored.events, stored.inheritedEventCount).active)
       .toEqual([expect.objectContaining({ id: 'schedule-1' })])
-    await disposeContext(pausing)
-
-    const resumedAdapter = new RecordingAdapter()
-    const restarted = await mountRuntime(root, resumedAdapter)
-    const handle = await restarted.agents.resume({
-      resumeSessionId: sessionId,
-      agentOptions: { provider: 'mock', model: 'mock' },
-    })
-    await handle.agent.whenIdle()
-    await settleCurrentTasks()
-    expect(resumedAdapter.requests).toEqual([])
-    expect(handle.agent.session.events.filter(event =>
+    expect(stored.events.filter(event =>
       event.type === 'schedule/change' && event.data.operation === 'dispatch')).toEqual([])
-
-    const dispatched = waitForDispatch(restarted, sessionId)
-    await expect(restarted.schedules.resume(sessionId, ScheduleId('schedule-1')))
-      .resolves.toMatchObject({ id: 'schedule-1', state: 'overdue' })
-    await dispatched
-    await handle.agent.whenIdle()
-    expect(resumedAdapter.requests).toHaveLength(1)
-    expect(handle.agent.session.events.filter(event =>
-      event.type === 'schedule/change' && event.data.operation === 'dispatch')).toHaveLength(1)
-    await handle.dispose()
-    await disposeContext(restarted)
+    await disposeContext(idle)
   })
 
   it('resumes one overdue reminder exactly once across fresh runtime mounts', async () => {
@@ -152,7 +144,9 @@ describe('Schedule production JSONL restart', () => {
       ScheduleId('schedule-1'), 'restart reminder', 1, Date.now() - 60_000,
     )
     pending.append('schedule/change', { version: 1, operation: 'create', schedule: pendingRecord })
-    await expect(first.sessions.flush(pending)).resolves.toBe(true)
+    const seed = await first.sessionPersistence.create(pending.header)
+    await seed.append(pending.snapshotEvents())
+    await seed.close()
     await disposeContext(first)
 
     const dispatchingAdapter = new RecordingAdapter()
@@ -165,8 +159,8 @@ describe('Schedule production JSONL restart', () => {
     await dispatched
     await handle.agent.whenIdle()
     await expect(restarted.sessions.flush(handle.agent.session)).resolves.toBe(true)
-    const dispatchedStored = await restarted.sessionPersistence.inspect(sessionId)
-    expect(foldScheduleEvents(dispatchedStored.events, dispatchedStored.meta.seedLength ?? 0).active)
+    const dispatchedStored = await readStored(restarted, sessionId)
+    expect(foldScheduleEvents(dispatchedStored.events, dispatchedStored.inheritedEventCount).active)
       .toEqual([])
     const dispatches = dispatchedStored.events.filter(event =>
       event.type === 'schedule/change' && event.data.operation === 'dispatch')
@@ -187,9 +181,9 @@ describe('Schedule production JSONL restart', () => {
     await replayed.sessions.flush(replayHandle.agent.session)
 
     expect(replayAdapter.requests).toEqual([])
-    expect(replayHandle.agent.session.events.filter(event =>
+    expect(replayHandle.agent.session.snapshotEvents().filter(event =>
       event.type === 'schedule/change' && event.data.operation === 'dispatch')).toHaveLength(1)
-    const replayedStored = await replayed.sessionPersistence.inspect(sessionId)
+    const replayedStored = await readStored(replayed, sessionId)
     expect(replayedStored.events.filter(event =>
       event.type === 'schedule/change' && event.data.operation === 'dispatch')).toHaveLength(1)
     await replayHandle.dispose()

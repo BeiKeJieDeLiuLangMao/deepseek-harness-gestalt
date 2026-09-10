@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import AttachmentStore, {
   AttachmentError,
   AttachmentId,
+  displayName,
   ImageVariantId,
   isImageAdmissionError,
   type ImageAttachmentRef,
@@ -135,18 +136,6 @@ describe('AttachmentStore.saveImages', () => {
   })
 })
 
-describe('AttachmentStore generic-file composition', () => {
-  it('fails loudly when a specialized provider omits generic file storage', async () => {
-    const store = new RecordingStore(new Context())
-    await expect(store.saveFile({ data: Uint8Array.of(1), name: 'a.bin', mediaType: 'application/octet-stream' }))
-      .rejects.toMatchObject({ code: 'ATTACHMENT_WRITE_FAILED' })
-    await expect(store.readFile({
-      attachmentId: AttachmentId(`sha256:${'0'.repeat(64)}`),
-      mediaType: 'application/octet-stream', bytes: 1, sha256: '0'.repeat(64), name: 'a.bin',
-    })).rejects.toMatchObject({ code: 'ATTACHMENT_READ_FAILED' })
-  })
-})
-
 describe('AttachmentStore.readImageRequest', () => {
   it('reports unsupported request projection while preserving cancellation', async () => {
     const store = new UnsupportedProjectionStore(new Context())
@@ -157,6 +146,39 @@ describe('AttachmentStore.readImageRequest', () => {
     const reason = new Error('cancel unsupported projection')
     controller.abort(reason)
     expect(() => store.readImageRequest(ref, { maxPixels: 1, maxBytes: 1 }, controller.signal)).toThrow(reason)
+  })
+
+  it('exposes no provider-owned host path by default', async () => {
+    const store = new RecordingStore(new Context())
+    const ref = await store.saveImage(image(1))
+    expect(store.imageHostPath(ref)).toBeUndefined()
+  })
+})
+
+describe('displayName', () => {
+  it('strips Windows and POSIX path prefixes and empty leaves', () => {
+    expect(displayName('C:\\Users\\a\\notes.pdf')).toBe('notes.pdf')
+    expect(displayName('/home/a/notes.pdf')).toBe('notes.pdf')
+    expect(displayName('C:\\Users\\a\\')).toBeUndefined()
+    expect(displayName('\u0000')).toBeUndefined()
+  })
+})
+
+describe('AttachmentStore opaque bytes', () => {
+  it('refuses save and read when the provider does not persist opaque bytes', async () => {
+    const store = new UnsupportedProjectionStore(new Context())
+    const input = { data: Uint8Array.of(1, 2, 3), mediaType: 'application/pdf', name: 'notes.pdf' }
+    await expect(store.saveBytes(input)).rejects.toMatchObject({ code: 'ATTACHMENT_BYTES_UNSUPPORTED' })
+    const controller = new AbortController()
+    const reason = new Error('cancel unsupported bytes')
+    controller.abort(reason)
+    expect(() => store.readBytes({
+      attachmentId: AttachmentId(`sha256:${'a'.repeat(64)}`),
+      mediaType: 'application/pdf',
+      bytes: 3,
+      sha256: 'a'.repeat(64),
+      name: 'notes.pdf',
+    }, controller.signal)).toThrow(reason)
   })
 })
 

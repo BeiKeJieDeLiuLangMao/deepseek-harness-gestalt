@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-member-question-receiver",
   "description": "Host-owned durable receiver for authenticated member questions and receiving-session admission",
-  "version": "0.1.1-rc.2",
+  "version": "0.1.2-rc.1",
   "publishConfig": { "access": "public" },
   "repository": {
     "type": "git",
@@ -13,10 +13,31 @@
   "types": "lib/types/index.d.ts",
   "exports": {
     ".": { "types": "./lib/types/index.d.ts", "default": "./lib/index.js" },
+    "./types": {
+      "types": "./lib/types/types.d.ts",
+      "default": "./lib/types/types.js"
+    },
     "./invariant": { "types": "./lib/types/invariant.d.ts", "default": "./lib/invariant.js" },
+    "./typert": {
+      "types": "./lib/typert.host.d.ts",
+      "default": "./lib/typert.host.js"
+    },
+    "./remote": {
+      "types": "./lib/typert.remote-client.d.ts",
+      "default": "./lib/typert.remote-client.js"
+    },
     "./package.json": "./package.json"
   },
-  "files": ["lib/index.js", "lib/invariant.js", "lib/types/**/*.d.ts"],
+  "files": [
+    "lib/index.js",
+    "lib/invariant.js",
+    "lib/types/**/*.js",
+    "lib/types/**/*.d.ts",
+    "lib/typert.host.js",
+    "lib/typert.host.d.ts",
+    "lib/typert.remote-client.js",
+    "lib/typert.remote-client.d.ts"
+  ],
   "license": "MIT",
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
@@ -27,9 +48,13 @@
     "@deepseek-ai/dsh-platform-account": "workspace:^",
     "@deepseek-ai/dsh-project-membership": "workspace:^",
     "@deepseek-ai/dsh-remote-protocol": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^"
+    "@deepseek-ai/dsh-session": "workspace:^",
+    "@deepseek-ai/dsh-typert-protocol": "workspace:^"
   },
-  "dependencies": { "@deepseek-ai/schemastery": "workspace:^" },
+  "dependencies": {
+    "@deepseek-ai/schemastery": "workspace:^",
+    "zod": "^4.4.3"
+  },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/dsh-attachment": "workspace:^",
@@ -39,6 +64,11 @@
     "@deepseek-ai/dsh-platform-account": "workspace:^",
     "@deepseek-ai/dsh-project-membership": "workspace:^",
     "@deepseek-ai/dsh-remote-protocol": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^"
+    "@deepseek-ai/dsh-session": "workspace:^",
+    "@deepseek-ai/dsh-typert-protocol": "workspace:^",
+    "@deepseek-ai/dsh-api-gateway": "workspace:^",
+    "@deepseek-ai/dsh-typert-registry": "workspace:^",
+    "@deepseek-ai/dsh-typert-generator": "workspace:^",
+    "@deepseek-ai/dsh-client-connection": "workspace:^"
   }
 }

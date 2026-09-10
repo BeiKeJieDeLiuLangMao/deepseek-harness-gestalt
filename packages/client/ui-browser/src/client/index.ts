@@ -4,12 +4,19 @@
  * collapsed preview, Profile settings, and Remote unwrap helpers.
  * Live Workspace facts arrive through `useProjection('browserWorkspace')`.
  */
-import type { ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
-import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
+import { createElement, type ReactElement } from 'react'
+import type { BrowserWorkspaceCreateRemoteRequest } from '@deepseek-ai/dsh-browser-workspace/client'
+import { BrowserPageChrome, type BrowserPageChromeProps } from './BrowserPageChrome.tsx'
+import { recoverListedMutation } from './listed-mutation.ts'
+import type { Context } from '@deepseek-ai/cordis'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
+import type {} from '@deepseek-ai/dsh-browser-workspace/remote'
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
+import type {} from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
-import type {} from '@deepseek-ai/dsh-browser-workspace/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import { BrowserPreview } from './BrowserPreview.tsx'
 import { BrowserSettingsSection } from './BrowserSettingsSection.tsx'
@@ -20,6 +27,7 @@ import {
   BROWSER_SETTINGS_NAMESPACE,
   DEFAULT_BROWSER_SETTINGS,
   isBrowserProfileName,
+  browserCreateRequestFromSettings,
   type BrowserSettings,
 } from '../browser-settings.ts'
 
@@ -29,7 +37,6 @@ export { recoverListedMutation } from './listed-mutation.ts'
 export { BrowserPageChrome } from './BrowserPageChrome.tsx'
 export type { BrowserPageChromeProps } from './BrowserPageChrome.tsx'
 export type { BrowserKey } from './locales.ts'
-export { listBrowserWorkspacePages } from '@deepseek-ai/dsh-browser-workspace/client'
 export type { BrowserWorkspacePage } from '@deepseek-ai/dsh-browser-workspace/client'
 export {
   BROWSER_SETTINGS_NAMESPACE,
@@ -42,6 +49,22 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
     /** Browser chrome and collapsed preview copy. */
     browser: BrowserKey
+  }
+}
+
+/** Browser UI behavior for the snapshot workbench renderer adapter. */
+export interface BrowserUiFace {
+  /** Read the current Profile settings and resolve a page create identity. */
+  createRequest: () => BrowserWorkspaceCreateRemoteRequest
+  /** Render the official page chrome with its normal React hook lifecycle. */
+  renderPageChrome: (props: BrowserPageChromeProps) => ReactElement
+  /** Run a listed mutation, observing and retrying at most one revision conflict. */
+  recoverListedMutation: typeof recoverListedMutation
+}
+
+declare module '@deepseek-ai/cordis' {
+  interface Context {
+    browserUi: BrowserUiFace
   }
 }
 
@@ -60,7 +83,7 @@ export const inject = [
  * Client plugin body: collapsed preview and Profile settings.
  * @param ctx - client root context.
  */
-export function apply(ctx: ClientContext): void {
+export function apply(ctx: Context): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-browser: dictionaries')
   const scope = ctx.settingsScope.bind<BrowserSettings>({ namespace: BROWSER_SETTINGS_NAMESPACE })
   const preferences = createSnapshotStore<BrowserSettings>({ ...DEFAULT_BROWSER_SETTINGS })
@@ -72,6 +95,11 @@ export function apply(ctx: ClientContext): void {
   }
   sync()
   ctx.effect(() => scope.subscribe(sync), 'ui-browser: settings sync')
+  ctx.provide('browserUi', {
+    createRequest: () => browserCreateRequestFromSettings(preferences.getSnapshot()),
+    renderPageChrome: props => createElement(BrowserPageChrome, props),
+    recoverListedMutation,
+  } satisfies BrowserUiFace)
   ctx.slots.inject('settings.section', () => ctx.slots.register({
     name: 'settings.section',
     id: 'browser',
@@ -106,7 +134,7 @@ export function apply(ctx: ClientContext): void {
   ctx.slots.inject('conversation.browser.preview', () => ctx.slots.register({
     name: 'conversation.browser.preview',
     locale: NS,
-    inject: (sessionId: SessionId): BrowserPreviewActions => ({
+    inject: (sessionId): BrowserPreviewActions => ({
       reveal: () => {
         const workbench = ctx.get('workbenchBrowser') as WorkbenchBrowserReveal | undefined
         workbench?.reveal(sessionId)

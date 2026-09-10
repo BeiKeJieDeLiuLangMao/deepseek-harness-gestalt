@@ -1,6 +1,13 @@
+---
+description: "Platform Account provider with GitHub OAuth, signed polling, P-256 proof, rotation, and invalidation."
+kind: "package-reference"
+---
+
 # `@deepseek-ai/dsh-platform-account-core`
 
 English | [中文](README.zh.md)
+
+## Summary
 
 Platform Account provider. A Login Attempt lasts five minutes, carries random OAuth state and S256 PKCE, and can be consumed once with a signed polling token plus P-256 installation proof. The GitHub OAuth adapter requests no scope, rejects inherited non-empty scopes, retains only the immutable numeric id plus public login and avatar, and discards the provider token after identity lookup.
 
@@ -12,21 +19,45 @@ Desktop Mobile removal locks already-authorized attempts before the Account and 
 
 `loadPlatformEnvironment` requires and selects a complete pair. Development and production cannot share an origin, callback, GitHub OAuth App id, credential reference, database identity, or identity namespace. The provider rejects a GitHub adapter or backend whose selected identity does not match before serving traffic.
 
+## Table of Contents
+
+- [Extension Points](#extension-points)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
+
+-----
+
+<a id="extension-points"></a>
 ## Extension Points
 
 `AccountBackend` supplies atomic persistence and pending invalidation records, and `AccountInvalidationBus` supplies idempotent cross-instance delivery. `GitHubIdentityProvider` owns provider exchange. Production composition supplies all three and an explicit invalidation retry interval; the in-memory implementations exist for keyless acceptance and development.
 
 `configureAccountDeletion` binds existing product data owners and explicit retry/receipt-lifetime budgets. Acceptance atomically persists the operation and revokes all sessions; owner revocation precedes invalidation publication, and incomplete cleanup remains recoverable. Deleting accounts cannot complete login or refresh. Only the initiating Installation key can query or replace successor choices through the recovery receipt. Completion removes Account and session records; repeated registration creates a new id. A background sweep reports each failed Account and continues other cleanup and completed-receipt expiration. Compositions without this owner reject deletion with `DELETION_UNAVAILABLE`. [The deletion decision](../../../.agents/notes/implemented/feature/2026-09-09-mobile-account-deletion.md) defines ownership, ordering and verification.
 
+<a id="model-experience"></a>
 ## Model Experience
 
-None, as Account authorization is outside agent sessions and model requests.
+Indirectly, through Account identity and installation authorization consumed by Project Membership, Personal Pairing, and received Session work.
 
 #### KV Cache effect
 
-None.
+The Provider adds no stable request prefix; its identities and authorization decisions appear through downstream roster, pairing, and receiving consumers.
 
 ## Known Limitations and Deferred Work
+<a id="known-limitations-and-deferred-work"></a>
 
 - This package defines no production database, distributed invalidation, secret manager, rate limiter, or audit sink; the Platform deployment composition owns those adapters.
 - The GitHub adapter supports OAuth Apps only and accepts public identity without provider scopes.
+
+No runtime invariant companion is published because the backend and invalidation bus are constructor-private adapters with no Context-visible observation; the Provider publishes after durable mutation and reports later publication failures.
+
+<a id="dev-note"></a>
+### Dev Note
+
+<details>
+<summary>Working context for maintainers — click to expand</summary>
+
+None.
+
+</details>

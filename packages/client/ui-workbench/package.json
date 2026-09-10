@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-client-ui-workbench",
   "description": "Adapter that mounts the better-sidebar snapshot and binds official Browser pages to its browser tab",
-  "version": "0.1.1-rc.2",
+  "version": "0.1.2-rc.1",
   "publishConfig": {
     "access": "public"
   },
@@ -18,13 +18,9 @@
       "types": "./lib/types/index.d.ts",
       "default": "./lib/index.js"
     },
-    "./invariant": {
-      "types": "./lib/types/invariant.d.ts",
-      "default": "./lib/invariant.js"
-    },
     "./client": {
       "types": "./lib/types/client/index.d.ts",
-      "default": "./lib/client.cjs"
+      "default": "./lib/client.js"
     },
     "./src/*": "./src/*",
     "./package.json": "./package.json"
@@ -33,14 +29,9 @@
     "client": {
       "inject": [
         "@deepseek-ai/dsh-client-ui-better-sidebar",
-        "@deepseek-ai/dsh-client-runtime",
         "@deepseek-ai/dsh-api-remotes",
-        "@deepseek-ai/dsh-client-ui-browser",
-        "@deepseek-ai/dsh-client-ui-settings"
-      ],
-      "external": [
-        "@deepseek-ai/dsh-api-remotes/client",
-        "@deepseek-ai/dsh-client-ui-browser/client"
+        "@deepseek-ai/dsh-api-session-controller",
+        "@deepseek-ai/dsh-client-ui-browser"
       ],
       "platform": "web"
     }
@@ -51,29 +42,20 @@
   },
   "license": "MIT",
   "peerDependencies": {
-    "@deepseek-ai/dsh-api-remotes": "workspace:^",
-    "@deepseek-ai/dsh-browser-workspace": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-better-sidebar": "workspace:^",
-    "@deepseek-ai/dsh-client-runtime": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-browser": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-settings": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-settings": "workspace:^",
-    "@deepseek-ai/dsh-typert-protocol": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   },
   "devDependencies": {
+    "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/cordis-plugin-loader": "workspace:^",
     "@deepseek-ai/dsh-api-remotes": "workspace:^",
+    "@deepseek-ai/dsh-api-session-controller": "workspace:^",
     "@deepseek-ai/dsh-browser-workspace": "workspace:^",
     "@deepseek-ai/dsh-client-ui-better-sidebar": "workspace:^",
-    "@deepseek-ai/dsh-client-runtime": "workspace:^",
     "@deepseek-ai/dsh-client-ui-browser": "workspace:^",
     "@deepseek-ai/dsh-client-ui-settings": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
+    "@deepseek-ai/dsh-session": "workspace:^",
     "@deepseek-ai/dsh-settings": "workspace:^",
     "@deepseek-ai/dsh-typert-protocol": "workspace:^",
-    "@deepseek-ai/cordis": "workspace:^",
     "@testing-library/react": "^16.1.0",
     "@types/react": "~18.3.1",
     "react": "^18.2.0",
@@ -81,8 +63,7 @@
   },
   "files": [
     "lib/index.js",
-    "lib/invariant.js",
-    "lib/client.cjs",
+    "lib/client.js",
     "lib/types/**/*.d.ts"
   ]
 }

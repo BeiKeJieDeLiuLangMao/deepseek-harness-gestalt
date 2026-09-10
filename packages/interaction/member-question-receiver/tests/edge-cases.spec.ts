@@ -324,10 +324,15 @@ describe('member-question receiver edge contracts', () => {
       { ...base, timer: {} },
       { ...base, timer: { set() {} } },
       { ...base, stateWriter: true },
+      { ...base, memberQuestionInstallationId: 'installation-1' },
+      { ...base, memberQuestionDeviceName: 'Desk A' },
+      { ...base, memberQuestionInstallationId: ' ', memberQuestionDeviceName: 'Desk A' },
+      { ...base, memberQuestionInstallationId: 'installation-1', memberQuestionDeviceName: ' ' },
     ]
     for (const config of cases) {
       const context = new Context()
-      expect(() => new FileMemberQuestionReceiver(context, config as never)).toThrow('config.')
+      expect(() => new FileMemberQuestionReceiver(context, config as never))
+        .toThrow(/config\.|must be configured together|must be non-empty/)
       void context.fiber.dispose()
     }
   })

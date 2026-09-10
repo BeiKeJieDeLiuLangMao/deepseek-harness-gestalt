@@ -4,7 +4,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import { settingsNamespace } from '@deepseek-ai/dsh-settings'
+import type {} from '@deepseek-ai/dsh-settings'
 import { BROWSER_SETTINGS_NAMESPACE, BrowserSettingsSchema } from './browser-settings.ts'
 
 export {
@@ -19,14 +19,12 @@ export {
   type BrowserSettings,
 } from './browser-settings.ts'
 
-const BROWSER_NAMESPACE = settingsNamespace(BROWSER_SETTINGS_NAMESPACE)
-
 /**
  * Register the durable Browser Profile section when settings is composed.
  * @param ctx - Host context that may acquire settings.
  */
 export function apply(ctx: Context): void {
   ctx.inject(['settings'], (settingsCtx) => {
-    settingsCtx.settings.register(BROWSER_NAMESPACE, BrowserSettingsSchema)
+    settingsCtx.settings.register(BROWSER_SETTINGS_NAMESPACE, BrowserSettingsSchema)
   })
 }

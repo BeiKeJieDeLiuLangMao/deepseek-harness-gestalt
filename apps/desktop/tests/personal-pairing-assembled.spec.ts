@@ -12,11 +12,11 @@ import Loader from '@deepseek-ai/cordis-plugin-loader'
 import WebServer from '@deepseek-ai/dsh-host-webserver'
 import {
   parseAccountProofJti,
-  parseDesktopInstallationPresentation,
   parseInstallationId,
   parsePlatformAccountId,
   selectPlatformEnvironment,
   validatePlatformEnvironmentPair,
+  type AuthenticatedInstallationView,
 } from '@deepseek-ai/dsh-platform-account'
 import {
   DevelopmentKeylessPairingHandshakeProvider,
@@ -33,10 +33,10 @@ import {
 import { RemoteAccessHttpTransport } from '@deepseek-ai/dsh-remote-access-client'
 import { DesktopPairingKeyVault } from '../src/pairing-keys.ts'
 import { DesktopPairingController } from '../src/personal-pairing.ts'
-import { PairingCompanionKeyVault } from '#testing/mobile/companion-keys'
-import { KeylessMobileHandshakeFixture } from '#testing/mobile/development-keyless-pairing'
-import { MobilePairingController } from '#testing/mobile/personal-pairing'
-import * as RemoteAccessHttp from '@deepseek-ai/dsh-remote-access-http'
+import { PairingCompanionKeyVault } from '../../mobile/src/companion-keys.ts'
+import { KeylessMobileHandshakeFixture } from '../../mobile/tests/fixtures/development-keyless-pairing.fixture.ts'
+import { MobilePairingController } from '../../mobile/src/personal-pairing.ts'
+import * as RemoteAccessHttp from '../../../packages/platform/remote-access-http/src/index.ts'
 
 const ORIGIN = 'https://platform.dev.example.com'
 const ENVIRONMENT = selectPlatformEnvironment(validatePlatformEnvironmentPair({
@@ -62,10 +62,6 @@ const ENVIRONMENT = selectPlatformEnvironment(validatePlatformEnvironmentPair({
 
 const clock = { now: Date.parse('2026-08-19T10:00:00.000Z') }
 const MOBILE_INSTALLATION_ID = parseInstallationId(`mobile-${randomUUID()}`)
-const DESKTOP_PRESENTATION = parseDesktopInstallationPresentation({
-  name: 'Assembled Desktop',
-  platform: 'macos',
-})
 const MOBILE_PRESENTATION = {
   name: `Mobile ${MOBILE_INSTALLATION_ID}`,
   platform: randomUUID().charCodeAt(0) % 2 === 0 ? 'ios' as const : 'android' as const,
@@ -320,9 +316,13 @@ async function loadComposition(): Promise<{ port: number }> {
                 avatarUrl: `https://avatars.example/${accountId}`,
               },
               installation: kind === 'desktop'
-                ? { id: parseInstallationId(installationId), kind, presentation: DESKTOP_PRESENTATION }
+                ? {
+                  id: parseInstallationId(installationId),
+                  kind,
+                  presentation: { name: 'Assembled Desktop', platform: 'macos' },
+                }
                 : { id: parseInstallationId(installationId), kind, presentation: MOBILE_PRESENTATION },
-            }
+            } satisfies AuthenticatedInstallationView
           },
         },
         handshake: new DevelopmentKeylessPairingHandshakeProvider(),

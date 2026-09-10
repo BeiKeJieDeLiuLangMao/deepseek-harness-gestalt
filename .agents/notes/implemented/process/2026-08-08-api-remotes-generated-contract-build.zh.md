@@ -12,19 +12,26 @@ Host 的 `@Remote` 方法需要先由 Typert 生成 `/remote` 声明和运行时
 
 ## 决策
 
-根构建先完成 Host tsc 和 Host tsdown，由 Host tsdown 运行 Typert 并生成 Remote Client 约定；随后完成 Client tsc、Client tsdown 和 Web 构建：
+根构建先完成 Host tsc 和 Host tsdown，由 Host tsdown 运行 Typert 并生成 Remote Client 约定；随后完成 Client tsc、Desktop 应用检查、Client tsdown 和 Web 构建：
 
 ~~~text
 tsc -b tsconfig.host.json
 tsdown --env.DSH_BUILD_FACE host
+typecheck:host-contracts-ready
 tsc -b tsconfig.client.json
+typecheck:desktop-contracts-ready
+typecheck:cross-face-contracts-ready
 tsdown --env.DSH_BUILD_FACE client
 Vite Web build
 ~~~
 
-`build:lib:host` 负责前两步，`build:lib:client` 负责中间两步，`build:web` 最后运行。`typecheck` 也必须先执行完整 Host lib 阶段，因为 Client tsc 需要 Host tsdown 生成的声明；它不需要运行 Client tsdown 或 Web build。
+`build:lib:host` 负责前三步，`build:lib:client` 负责后续四步，`build:web` 最后运行。`typecheck` 也必须先执行完整 Host lib 阶段，因为 Client tsc、Desktop 应用检查与跨 face 集成测试需要 Host tsdown 生成的声明；它不需要运行 Client tsdown 或 Web build。
 
-每个 tsc 阶段都是唯一的 TypeScript 编译器路径，负责向 `lib/types` 发射 JavaScript、声明和增量状态。tsdown 只读取这些 JavaScript 并生成发布 bundle，不读取源码，也不生成声明。
+每个 aggregate tsc 阶段都向 `lib/types` 发射 JavaScript、声明和增量状态。tsdown 只读取这些 JavaScript 并生成发布 bundle，不读取源码，也不生成声明。Host contracts-ready 阶段是只检查指定测试且不发射产物的 TypeScript program。
+
+导入生成 `/remote` 声明的 Host 测试使用 `.generated.host.spec.ts` 后缀。首次 Host tsc 排除这个精确模式；Host tsdown 发射声明后，contracts-ready 阶段选择同一模式并复用 `tsconfig.host.json` 的 compiler options 与 Project References，不复制整张图。选中集合为空、生成 Remote 消费测试缺少该后缀、声明缺失或出现 TypeScript diagnostic，都会使 Host lib 构建失败。
+
+`apps/desktop/tsconfig.json` 在 Client tsc 之后检查完整的 Desktop `src`、`tests` 与 `scripts` 应用。Desktop 同时消费 Host 和 Client project，因此不属于任何根 aggregate，也不发射产物。另一个不发射 program 检查精确的 `POST_GENERATION_CROSS_FACE_TESTS` 集成测试清单。五个测试仍由各自 Platform package 拥有，只把这些测试作为 root，并复用 Desktop、Host 与 Client 配置中的直接 Project Reference，不展平 aggregate 文件清单。workspace constraints 要求每个测试都是精确文件和精确 Host exclusion，拒绝重复或失效条目，要求完整 Desktop 配置，并固定公共脚本顺序。
 
 ## 唯一的 package 特例
 
@@ -43,7 +50,7 @@ packages/api/remotes/
       └─ index.ts
 ~~~
 
-包根 `tsconfig.json` 是只引用两个具体 project 的 solution，不进入任何 aggregate 或直接消费方的依赖图。根 Host aggregate 与 `host/apiproxy` 引用 `api/remotes/tsconfig.host.json`；根 Client aggregate 与 `client/ui-goal` 引用 `api/remotes/tsconfig.client.json`。`ui-goal` 本身仍是普通的单一 Client project。workspace constraints 门禁遍历可达的 Project Reference 图；凡已声明 face 的 project 引用了拆分包的 solution 根或另一侧 leaf，门禁都会拒绝，而只有 `tsconfig.json` 的目标仍可由任一 face 引用。
+包根 `tsconfig.json` 是只引用两个具体 project 的 solution，不进入任何 aggregate 或直接消费方的依赖图。根 Host aggregate 引用 `api/remotes/tsconfig.host.json`，根 Client aggregate 与直接 Client 消费方引用 `api/remotes/tsconfig.client.json`。`session-log-export` 使用相同的 solution 与 leaf 结构，让 Node archive 实现不进入浏览器 controller。workspace constraints 门禁遍历可达的 Project Reference 图；凡已声明 face 的 project 引用了拆分包的 solution 根或另一侧 leaf，门禁都会拒绝，而只有 `tsconfig.json` 的目标仍可由任一 face 引用。
 
 两个 project 使用互不重叠的 `files` 和不同的 `.tsbuildinfo`，因此可以共享 `lib/types` 而不重复发射任何源码。若未来需要两侧共用一份实现，应把实现移入中立 package，不能把同一源码同时交给两个 emitting project。
 
@@ -73,8 +80,8 @@ Host 与 Client 两次 tsdown 都接收 `vendor/*`、`packages/*/*` 和 `apps/cl
 
 ## 后果
 
-干净构建成为顺序正确性的权威验证：没有任何既存 `/remote` 产物时，Host tsc 必须先成功，Host tsdown 必须生成约定，随后 Client tsc、Client tsdown 与 Web build 必须成功。任何阶段都不得把产物写进 `src`。
+干净构建成为顺序正确性的权威验证：没有任何既存 `/remote` 产物时，首次 Host tsc 必须在不读取生成约定消费测试的前提下成功，Host tsdown 必须生成约定，Host contracts-ready 阶段必须接受这些消费测试，随后 Client tsc、Desktop 应用检查、跨 face 集成检查、Client tsdown 与 Web build 必须成功。任何阶段都不得把产物写进 `src`。
 
 [TypeScript 构建配置 Note](2026-06-17-ts-build-config.zh.md)确定的 tsc-first 职责保持不变，但其单次全图 tsc 后再打包的命令形态由本文的有序阶段取代。[双 aggregate solution Note](2026-07-22-tsconfig-solution-root-two-aggregates.zh.md)确定的普通 package 单 aggregate 规则保持不变，本文只为 `api/remotes` 建立一个显式例外。
 
-Client 的独立构建不再是干净工作树上的自足入口；仓库命令、CI 和发布流程必须先运行 Host lib 阶段。普通 package 的开发者无需理解或复制该例外，仍按所属运行环境选择一个 aggregate。
+Client 的独立构建不再是干净工作树上的自足入口；仓库命令、CI 和发布流程必须先运行 Host lib 阶段。此后，`build:lib:client` 会先检查 Client aggregate、完整 Desktop 应用与精确跨 face 集成测试，再执行打包。普通 package 的开发者无需理解或复制该例外，仍按所属运行环境选择一个 aggregate。

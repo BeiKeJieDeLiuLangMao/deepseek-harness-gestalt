@@ -3,25 +3,21 @@
  * browser tab, 1:1 with Session-owned Workspace pages.
  */
 import { createElement, type ReactElement } from 'react'
-import type { ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context } from '@deepseek-ai/cordis'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {
   BrowserPageState, BrowserTarget, BrowserWorkspaceCreateRemoteRequest, BrowserWorkspaceProjection,
 } from '@deepseek-ai/dsh-browser-workspace/client'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
-import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
-import {
-  BROWSER_SETTINGS_NAMESPACE,
-  DEFAULT_BROWSER_SETTINGS,
-  browserCreateRequestFromSettings,
-  type BrowserSettings,
-} from '@deepseek-ai/dsh-client-ui-browser/client'
+import type {} from '@deepseek-ai/dsh-api-session-controller/client'
+import type {} from '@deepseek-ai/dsh-client-ui-browser/client'
 import { isDesktopOverlayDocument } from '../desktop-overlay-document.ts'
 import { OfficialBrowserTab, type OfficialBrowserTabProps } from './OfficialBrowserTab.tsx'
 import { OfficialBrowserBridge, type WorkbenchSidebarFace } from './bridge.ts'
 import { bindBrowserWorkspace, type BrowserWorkspaceRemoteFace } from './remote-bind.ts'
 
 export const inject = [
-  'betterSidebar', 'sessions', 'remote', 'remote.browserWorkspace', 'settingsScope',
+  'betterSidebar', 'sessions', 'remote', 'remote.browserWorkspace', 'browserUi',
 ] as const
 
 interface SessionListRow {
@@ -52,17 +48,14 @@ declare module '@deepseek-ai/cordis' {
  * Client plugin body: publish official tab chrome and keep pages paired.
  * @param ctx - client root context.
  */
-export function apply(ctx: ClientContext): void {
+export function apply(ctx: Context): void {
   const sidebar = ctx.get('betterSidebar') as WorkbenchSidebarFace | undefined
   if (sidebar === undefined) {
     throw new Error('ui-workbench: betterSidebar is not published; mount the snapshot client first')
   }
   const remote = ctx.remote.browserWorkspace as BrowserWorkspaceRemoteFace
-  const settings = ctx.settingsScope.bind<BrowserSettings>({ namespace: BROWSER_SETTINGS_NAMESPACE })
-  const createRequest = (): BrowserWorkspaceCreateRemoteRequest => browserCreateRequestFromSettings({
-    ...DEFAULT_BROWSER_SETTINGS,
-    ...settings.getSnapshot().value,
-  })
+  const browserUi = ctx.browserUi
+  const createRequest = (): BrowserWorkspaceCreateRemoteRequest => browserUi.createRequest()
   const bridge = new OfficialBrowserBridge({
     sidebar,
     bindRemote: sessionId => bindBrowserWorkspace(remote, sessionId),
@@ -71,9 +64,10 @@ export function apply(ctx: ClientContext): void {
       return row?.projectionValues?.browserWorkspace
     },
     createRequest,
+    recoverListedMutation: browserUi.recoverListedMutation,
   })
   const face: WorkbenchBrowserFace = {
-    renderTab: props => createElement(OfficialBrowserTab, props),
+    renderTab: props => createElement(OfficialBrowserTab, { ...props, renderPageChrome: browserUi.renderPageChrome }),
     reveal: (sessionId) => { bridge.reveal(sessionId) },
     createRequest,
     ensureOfficial: (tabId) => {
@@ -86,6 +80,7 @@ export function apply(ctx: ClientContext): void {
     },
   }
   ctx.provide('workbenchBrowser', face)
+  ctx.effect(() => () => bridge.dispose(), 'ui-workbench: in-flight browser operations')
 
   if (isDesktopOverlayDocument()) return
   const tick = (): void => { bridge.tick() }

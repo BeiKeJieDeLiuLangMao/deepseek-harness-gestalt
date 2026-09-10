@@ -6,7 +6,7 @@ English | [中文](2026-08-13-safari-textarea-soft-wrap-reflow.zh.md)
 
 ## Problem
 
-The composer keeps the caret and selection in a transparent native textarea while the backdrop paints visible glyphs and the hidden mirror determines the full draft height. The [single-scrollport decision](2026-07-31-composer-text-layers-share-one-scrollport.md) therefore depends on the textarea owning no scrollable overflow: after every draft commit, its `scrollHeight` and `clientHeight` are equal and its `scrollTop` is zero.
+When this decision was implemented, the composer kept the caret and selection in a transparent native textarea while the backdrop painted visible glyphs and the hidden mirror determined the full draft height. The now-[archived single-scrollport decision](../../archived/bug-fix/2026-07-31-composer-text-layers-share-one-scrollport.md) required that textarea to own no scrollable overflow: after every draft commit, its `scrollHeight` and `clientHeight` were equal and its `scrollTop` was zero.
 
 Safari 26.5.2 can retain the textarea's former native line layout when Backspace moves a draft across a soft-wrap threshold at the same time that React updates the mirror. In the reproduced two-line-to-one-line transition, the mirror, backdrop, grow stack, and textarea box all become 28px high, but the textarea still reports `scrollHeight=52` and `scrollTop=20`. The caret remains in the stale native line while the backdrop correctly paints one line.
 

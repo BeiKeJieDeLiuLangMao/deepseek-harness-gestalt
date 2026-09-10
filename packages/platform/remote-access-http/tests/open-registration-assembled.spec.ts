@@ -1,5 +1,6 @@
 /** REAL HTTP composition for open-registration pairing and blob quotas. */
 
+import { randomUUID } from 'node:crypto'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { Context } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -174,7 +175,7 @@ function handshakeProvider(): PairingHandshakeProvider {
       pendingPairingKey: Uint8Array.of(3),
     })),
     activatePairing: vi.fn(async () => ({
-      keyReference: `key-${crypto.randomUUID()}` as never,
+      keyReference: `key-${randomUUID()}` as never,
       activePairingKey: Uint8Array.of(6),
     })),
     destroyChallenge: vi.fn(),
@@ -187,7 +188,7 @@ function authentication(accountId: string, installationId: string): PairingAccou
   const kind = installationId.includes('mobile') ? 'mobile' : 'desktop'
   return {
     accessToken: `${accountId}:${kind}:${installationId}`,
-    proof: { jti: parseAccountProofJti(crypto.randomUUID()), issuedAt: 1, signature: 'signature' },
+    proof: { jti: parseAccountProofJti(randomUUID()), issuedAt: 1, signature: 'signature' },
   }
 }
 

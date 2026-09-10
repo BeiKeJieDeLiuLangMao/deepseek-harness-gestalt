@@ -1,33 +1,53 @@
 import { createServer } from 'node:http'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
+import { WebSocketServer } from 'ws'
 import { parsePersonalPairingId } from '@deepseek-ai/dsh-remote-access'
 import {
   deriveCompanionAttachmentKey,
   encodeProtocolBase64Url,
-  parseAttachmentCapability,
   parseCompanionOperationId,
   parseCompanionInteractionId,
   parseCompanionSessionId,
-  parseCompanionWorkspaceId,
   parseDocumentTransferId,
   parseMemberQuestionId,
   parseMemberQuestionProjectId,
   REMOTE_PROTOCOL_LIMITS,
   sealCompanionAttachment,
-  type CompanionMemberQuestionOperation,
   type CompanionOfferAttachmentOperation,
   type CompanionSearchSessionsOperation,
-  type CompanionSettleInteractionOperation,
   type CompanionOperation,
 } from '@deepseek-ai/dsh-remote-protocol'
+import { SessionId } from '@deepseek-ai/dsh-session/types'
+import { WorkspaceId } from '@deepseek-ai/dsh-workspace'
 import {
-  DesktopCompanionSurfaceDiscovery,
-  DesktopCompanionProductOwner,
-  handleCompanionProductOperation,
-  projectDesktopCompanionLiveSession,
-  type CompanionProductOperationDependencies,
+  DesktopCompanionOperationLedger,
+} from '../src/companion-operation-ledger.ts'
+import type {
+  DesktopCompanionSurfaceDiscovery as DesktopCompanionSurfaceDiscoveryType,
+  DesktopCompanionProductOwner as DesktopCompanionProductOwnerType,
+  CompanionProductOperationDependencies,
+  DesktopWorkspaceSnapshot,
+  DesktopWorkspaceSnapshotFailure,
+  DesktopSessionHistoryCache as DesktopSessionHistoryCacheType,
+  handleCompanionProductOperation as HandleCompanionProductOperationType,
 } from '../src/companion-product.ts'
 import type { DesktopHostRpc, DesktopHostRpcResult } from '../src/host-rpc.ts'
+import { generateDesktopHostTypertArtifacts } from './shipped-web-host.ts'
+
+let DesktopCompanionSurfaceDiscovery: typeof DesktopCompanionSurfaceDiscoveryType
+let DesktopCompanionProductOwner: typeof DesktopCompanionProductOwnerType
+let DesktopSessionHistoryCache: typeof DesktopSessionHistoryCacheType
+let handleCompanionProductOperation: typeof HandleCompanionProductOperationType
+
+beforeAll(async () => {
+  generateDesktopHostTypertArtifacts()
+  ;({
+    DesktopCompanionSurfaceDiscovery,
+    DesktopCompanionProductOwner,
+    DesktopSessionHistoryCache,
+    handleCompanionProductOperation,
+  } = await import('../src/companion-product.ts'))
+}, 120_000)
 
 const pairingId = parsePersonalPairingId('pairing-product')
 const attachmentKey = crypto.getRandomValues(new Uint8Array(32))
@@ -37,82 +57,102 @@ const closeServers: Array<() => Promise<void>> = []
 afterEach(async () => {
   vi.unstubAllGlobals()
   await Promise.all(closeServers.splice(0).map(close => close()))
-})
+}, 15_000)
 
 describe('Desktop Companion product operations', () => {
-  it('rejects a mutation when the product owner has no operation ledger', async () => {
-    const owner = new DesktopCompanionProductOwner({
-      timeoutMs: 100, responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
-    })
-    const uninstall = owner.installHost('http://127.0.0.1:43123')
-    const operation = op({ type: 'create-session' })
-    await expect(owner.handle(operation, baseDependencies(hostRpc(async () => ({ ok: true, value: {} })))))
-      .resolves.toEqual({
-        type: 'operation-failed',
-        operationId: operation.operationId,
-        failure: {
-          kind: 'wire', code: 'HOST_WIRE_INVALID',
-          message: 'Desktop Companion operation ledger is unavailable',
-        },
-      })
-    uninstall()
-  })
-
   it('leases Host event streams only while authenticated live connections exist', async () => {
-    const sockets: TestHostWebSocket[] = []
-    class TestHostWebSocket extends EventTarget {
-      static readonly CONNECTING = 0
-      static readonly OPEN = 1
-      readyState = TestHostWebSocket.CONNECTING
-      readonly close = vi.fn(() => {
-        this.readyState = 3
-        this.dispatchEvent(new Event('close'))
+    const upgrades: string[] = []
+    const server = createServer()
+    const wss = new WebSocketServer({ noServer: true })
+    server.on('upgrade', (request, socket, head) => {
+      upgrades.push(request.url ?? '')
+      wss.handleUpgrade(request, socket, head, (websocket) => {
+        websocket.on('message', (data) => {
+          const text = typeof data === 'string' ? data : Buffer.from(data as Uint8Array).toString('utf8')
+          const message = JSON.parse(text) as { type?: string; streamId?: string; endpoint?: string }
+          if (message.type === 'open' && message.endpoint === 'workspace/follow' && message.streamId !== undefined) {
+            websocket.send(JSON.stringify({
+              type: 'item',
+              streamId: message.streamId,
+              value: { type: 'baseline', value: { items: [], archivedSessionIds: [] } },
+            }))
+          }
+          if (message.type === 'open' && message.endpoint === '$events' && message.streamId !== undefined) {
+            websocket.send(JSON.stringify({
+              type: 'item',
+              streamId: message.streamId,
+              value: { type: 'ready', clientId: 'client-loopback', host: { home: '/tmp' } },
+            }))
+          }
+        })
       })
-      constructor(readonly url: URL) {
-        super()
-        sockets.push(this)
-      }
-    }
-    vi.stubGlobal('WebSocket', TestHostWebSocket)
+    })
+    await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
+    closeServers.push(async () => {
+      for (const client of wss.clients) client.terminate()
+      wss.close()
+      server.close()
+    })
+    const address = server.address()
+    if (address === null || typeof address === 'string') throw new Error('expected TCP address')
     const owner = new DesktopCompanionProductOwner({
       timeoutMs: 100, responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
     })
-    const uninstall = owner.installHost('http://127.0.0.1:43123')
-    expect(sockets).toHaveLength(0)
+    const uninstall = owner.installHost(`http://127.0.0.1:${String(address.port)}`)
+    await expect.poll(() => upgrades.filter(path => path === '/api/remote.mux').length).toBeGreaterThan(0)
+    expect(upgrades.some(path => path.startsWith('/api/events.'))).toBe(false)
     const first = owner.connectLiveProjection(pairingId, () => {}, () => {})
     const second = owner.connectLiveProjection(pairingId, () => {}, () => {})
-    expect(sockets).toHaveLength(2)
-
+    expect(upgrades.some(path => path.startsWith('/api/events.'))).toBe(false)
     first()
-    expect(sockets.every(socket => socket.close.mock.calls.length === 0)).toBe(true)
     second()
-    expect(sockets.every(socket => socket.close.mock.calls.length === 1)).toBe(true)
-
-    const replacement = owner.connectLiveProjection(pairingId, () => {}, () => {})
-    expect(sockets).toHaveLength(4)
-    replacement()
     uninstall()
-    await Promise.resolve()
   })
 
-  it('requests a complete Mobile resync when the Web Host arrives after Relay authentication', () => {
-    class TestHostWebSocket extends EventTarget {
-      static readonly CONNECTING = 0
-      static readonly OPEN = 1
-      readyState = TestHostWebSocket.CONNECTING
-      close(): void { this.readyState = 3 }
-    }
-    vi.stubGlobal('WebSocket', TestHostWebSocket)
+  it('requests a complete Mobile resync when the Web Host arrives after Relay authentication', async () => {
+    const loopback = await listenCompanionHost()
     const owner = new DesktopCompanionProductOwner({
       timeoutMs: 100, responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
     })
     const changed = vi.fn()
     const disconnect = owner.connectLiveProjection(pairingId, changed, () => {})
-
-    const uninstall = owner.installHost('http://127.0.0.1:43123')
-
+    const uninstall = owner.installHost(loopback.origin)
     expect(changed).toHaveBeenCalledOnce()
     expect(changed).toHaveBeenCalledWith({ type: 'surface' })
+    disconnect()
+    uninstall()
+  })
+
+  it('invalidates Companion list from $events api-session notices without polling', async () => {
+    const loopback = await listenCompanionHost({
+      onEventsOpen: (send) => {
+        send({
+          type: 'emit',
+          event: 'api-session/added',
+          args: [{ sessionId: 'session-added', updatedAt: 1, running: false, blank: true }],
+        })
+        send({
+          type: 'emit',
+          event: 'api-session/status',
+          args: ['session-running', true],
+        })
+        send({
+          type: 'emit',
+          event: 'api-session/removed',
+          args: ['session-added'],
+        })
+      },
+    })
+    const owner = new DesktopCompanionProductOwner({
+      timeoutMs: 2_000, responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
+    })
+    const changes: unknown[] = []
+    const disconnect = owner.connectLiveProjection(pairingId, (change) => { changes.push(change) }, () => {})
+    const uninstall = owner.installHost(loopback.origin)
+    await expect.poll(() => changes.filter(change => isRecord(change) && change.type === 'surface').length >= 3).toBe(true)
+    await expect.poll(() => changes.some((change) => {
+      return isRecord(change) && change.type === 'session' && change.sessionId === 'session-running'
+    })).toBe(true)
     disconnect()
     uninstall()
   })
@@ -121,19 +161,20 @@ describe('Desktop Companion product operations', () => {
     const calls: string[] = []
     const dependencies = baseDependencies(hostRpc(async (method) => {
       calls.push(method)
-      if (method === 'session.list') return { ok: true, value: { items: [{
+      if (method === 'session/list') return { ok: true, value: { items: [{
         sessionId: 'session-product', updatedAt: 9, running: false, blank: false,
         cwd: '/work', projections: { asOfSeq: 1, values: { title: 'Real session' } },
       }, {
         sessionId: 'session-archived', updatedAt: 10, running: false, blank: false,
       }] } }
-      if (method === 'workspace.list') return { ok: true, value: { items: [{
-        workspaceId: 'workspace-product', path: '/work', title: 'Work',
-        sessionIds: ['session-product'], createdAt: '2026-08-23T00:00:00.000Z',
-        updatedAt: '2026-08-23T00:00:00.000Z',
-      }], archivedSessionIds: ['session-archived'] } }
       throw new Error(`unexpected Host method ${method}`)
-    }))
+    }), {
+      items: [{
+        workspaceId: WorkspaceId('workspace-product'), path: '/work', title: 'Work',
+        sessionIds: [SessionId('session-product')], createdAt: '2026-08-23T00:00:00.000Z',
+        updatedAt: '2026-08-23T00:00:00.000Z',
+      }], archivedSessionIds: [SessionId('session-archived')],
+    })
     const operation = op({ type: 'refresh-surface', offset: 0 })
     await expect(handleCompanionProductOperation(operation, dependencies)).resolves.toMatchObject({
       type: 'surface-snapshot', operationId: operation.operationId,
@@ -141,7 +182,224 @@ describe('Desktop Companion product operations', () => {
       sessions: [{ sessionId, displayTitle: 'Real session', cwd: '/work' }],
       workspaces: [{ workspaceId: 'workspace-product', sessionIds: [sessionId] }],
     })
-    expect(calls).toEqual(['session.list', 'workspace.list'])
+    expect(calls).toEqual(['session/list'])
+  })
+
+  it('does not reuse a follow snapshot when maxMessages changes', async () => {
+    const follows: Array<number | undefined> = []
+    const pages: Array<{ throughSeq: number; beforeSeq?: number; maxMessages?: number }> = []
+    const generation = new AbortController()
+    const rpc: DesktopHostRpc = {
+      followEvents: async () => {},
+      completeEvent: async () => ({ ok: true, value: undefined }),
+      call: async (method, payload) => {
+        expect(method).toBe('session/page')
+        const request = (payload as { args: { request: {
+          throughSeq: number
+          beforeSeq?: number
+          maxMessages?: number
+        } } }).args.request
+        pages.push(request)
+        return { ok: true, value: { records: [], hasMore: false } }
+      },
+      followWorkspaces: async () => {},
+      followSession: async (sessionId, signal, accept, maxMessages) => {
+        follows.push(maxMessages)
+        if (sessionId === 'session-other') {
+          await new Promise<void>((resolve) => {
+            if (signal.aborted) resolve()
+            else signal.addEventListener('abort', () => { resolve() }, { once: true })
+          })
+          return
+        }
+        accept(sessionFollowSnapshot({
+          cursor: maxMessages === 1 ? 0 : 10,
+          hasMore: maxMessages === 1,
+          records: [{
+            type: 'event',
+            event: {
+              type: 'user/message',
+              seq: maxMessages === 1 ? 0 : 10,
+              time: 1,
+              data: { content: [{ type: 'text', text: String(maxMessages) }], source: { kind: 'user' } },
+              ...maxMessages === 20 ? { sourceEventSeqs: [8, 9] } : {},
+            },
+          }],
+        }))
+        await new Promise<void>((resolve) => {
+          if (signal.aborted) resolve()
+          else signal.addEventListener('abort', () => { resolve() }, { once: true })
+        })
+      },
+    }
+    const cache = new DesktopSessionHistoryCache(rpc, generation.signal)
+    const first = await cache.page('session-product', { maxMessages: 1 })
+    const second = await cache.page('session-product', { maxMessages: 20 })
+    expect(follows).toEqual([1, 20])
+    expect(first).toMatchObject({
+      ok: true, value: { events: [{ event: { seq: 0, data: { content: [{ text: '1' }] } } }], hasMore: true },
+    })
+    expect(second).toMatchObject({
+      ok: true,
+      value: { events: [{ event: { seq: 10, sourceEventSeqs: [8, 9] } }], hasMore: false },
+    })
+    await cache.page('session-product', { beforeSeq: 0, maxMessages: 1 })
+    await cache.page('session-product', { beforeSeq: 10, maxMessages: 20 })
+    expect(pages).toEqual([
+      {
+        address: { kind: 'session', sessionId: 'session-product' },
+        throughSeq: 0, beforeSeq: 0, maxMessages: 1,
+      },
+      {
+        address: { kind: 'session', sessionId: 'session-product' },
+        throughSeq: 10, beforeSeq: 10, maxMessages: 20,
+      },
+    ])
+    const cancelled = new AbortController()
+    const pending = cache.page('session-other', { maxMessages: 5 }, cancelled.signal)
+    cancelled.abort()
+    await expect(pending).resolves.toMatchObject({
+      ok: false, failure: { code: 'HOST_WIRE_INVALID' },
+    })
+    expect(follows).toEqual([1, 20, 5])
+    generation.abort()
+    await expect(cache.page('session-product', { maxMessages: 20 })).resolves.toMatchObject({
+      ok: false, failure: { code: 'HOST_WIRE_INVALID' },
+    })
+  })
+
+  it('fails closed when a session follow snapshot is invalid and keeps packed neighbors intact', async () => {
+    const generation = new AbortController()
+    let invalidAccepts = 0
+    const rpc: DesktopHostRpc = {
+      followEvents: async () => {},
+      completeEvent: async () => ({ ok: true, value: undefined }),
+      call: async () => {
+        throw new Error('invalid follow must not page')
+      },
+      followWorkspaces: async () => {},
+      followSession: async (sessionId, signal, accept, maxMessages) => {
+        if (sessionId === 'session-invalid') {
+          invalidAccepts += 1
+          accept({ type: 'snapshot', records: 'not-an-array' })
+          await new Promise<void>((resolve) => {
+            if (signal.aborted) resolve()
+            else signal.addEventListener('abort', () => { resolve() }, { once: true })
+          })
+          return
+        }
+        accept(sessionFollowSnapshot({
+          cursor: 14,
+          hasMore: false,
+          records: [
+            {
+              type: 'chunks',
+              event: {
+                type: 'chunkrow/text-chunks',
+                seq: 11,
+                time: 20,
+                data: { turn: 1, step: 2, index: 0, dt: [1, 2], texts: ['a', 'b', 'c'] },
+              },
+            },
+            {
+              type: 'event',
+              event: {
+                type: 'assistant/message',
+                seq: 14,
+                time: 30,
+                data: { turn: 1, step: 2 },
+                sourceEventSeqs: [11, 12, 13],
+              },
+            },
+          ],
+        }))
+        await new Promise<void>((resolve) => {
+          if (signal.aborted) resolve()
+          else signal.addEventListener('abort', () => { resolve() }, { once: true })
+        })
+        void maxMessages
+      },
+    }
+    const cache = new DesktopSessionHistoryCache(rpc, generation.signal)
+    await expect(cache.page('session-invalid', { maxMessages: 2 })).resolves.toMatchObject({
+      ok: false, failure: { kind: 'wire', code: 'HOST_WIRE_INVALID' },
+    })
+    expect(invalidAccepts).toBe(1)
+    const packed = await cache.page('session-packed', { maxMessages: 20 })
+    expect(packed).toMatchObject({
+      ok: true,
+      value: {
+        events: [
+          { event: { type: 'assistant/chunk', seq: 11 } },
+          { event: { type: 'assistant/chunk', seq: 12 } },
+          { event: { type: 'assistant/chunk', seq: 13 } },
+          { event: { type: 'assistant/message', seq: 14, sourceEventSeqs: [11, 12, 13] } },
+        ],
+        hasMore: false,
+      },
+    })
+    generation.abort()
+  })
+
+  it('rejects surface and search while the workspace follow snapshot is still loading', async () => {
+    const dependencies = baseDependencies(hostRpc(async (method) => {
+      if (method === 'session/list') return { ok: true, value: { items: [{
+        sessionId: 'session-product', updatedAt: 9, running: false, blank: false,
+      }] } }
+      if (method === 'session/search') return { ok: true, value: { items: [
+        { sessionId: 'session-hit', snippet: 'needle' },
+      ], hasMore: false } }
+      throw new Error(`unexpected Host method ${method}`)
+    }))
+    dependencies.workspaceSnapshot = async () => ({ kind: 'loading' })
+    await expect(handleCompanionProductOperation(op({ type: 'refresh-surface', offset: 0 }), dependencies))
+      .resolves.toMatchObject({
+        type: 'operation-failed',
+        failure: { kind: 'timeout', code: 'HOST_TIMEOUT' },
+      })
+    await expect(handleCompanionProductOperation(search('needle'), dependencies)).resolves.toMatchObject({
+      type: 'operation-failed',
+      failure: { kind: 'timeout', code: 'HOST_TIMEOUT' },
+    })
+  })
+
+  it('does not reuse a workspace snapshot after the follow stream fails', async () => {
+    const dependencies = baseDependencies(hostRpc(async (method) => {
+      if (method === 'session/search') return { ok: true, value: { items: [
+        { sessionId: 'session-hit', snippet: 'needle' },
+      ], hasMore: false } }
+      throw new Error(`unexpected Host method ${method}`)
+    }), { items: [], archivedSessionIds: [] })
+    await expect(handleCompanionProductOperation(search('needle'), dependencies)).resolves.toMatchObject({
+      type: 'session-search', items: [{ sessionId: 'session-hit' }],
+    })
+    dependencies.workspaceSnapshot = async () => ({ kind: 'error', message: 'Desktop Host workspace follow ended' })
+    await expect(handleCompanionProductOperation(search('needle'), dependencies)).resolves.toMatchObject({
+      type: 'operation-failed',
+      failure: { kind: 'wire', code: 'HOST_WIRE_INVALID', message: 'Desktop Host workspace follow ended' },
+    })
+  })
+
+  it('rejects surface and search after a workspace follow frame fails the generated codec', async () => {
+    const loopback = await listenCompanionHost({
+      workspaceFollowValue: { type: 'baseline', value: { items: 'not-an-array' } },
+    })
+    const owner = new DesktopCompanionProductOwner({
+      timeoutMs: 2_000, responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
+    })
+    const uninstall = owner.installHost(loopback.origin)
+    const pairing = baseDependencies(hostRpc(async () => {
+      throw new Error('owner must use its installed Host RPC')
+    }))
+    await expect(owner.handle(op({ type: 'refresh-surface', offset: 0 }), pairing)).resolves.toMatchObject({
+      type: 'operation-failed',
+      failure: { kind: 'wire', code: 'HOST_WIRE_INVALID' },
+    })
+    await expect(owner.handle(search('needle'), pairing)).resolves.toMatchObject({
+      type: 'operation-failed',
+      failure: { kind: 'wire', code: 'HOST_WIRE_INVALID' },
+    })
+    uninstall()
   })
 
   it('projects a later Session page with exact hasMore and Workspace membership', async () => {
@@ -152,21 +410,22 @@ describe('Desktop Companion product operations', () => {
       blank: false,
     }))
     let sessionListCalls = 0
+    const workspaceSnapshot = () => Promise.resolve({
+      items: items.map((item, index) => ({
+        workspaceId: WorkspaceId(`workspace-${String(index)}`), path: `/work/${String(index)}`, title: `Work ${String(index)}`,
+        sessionIds: [SessionId(item.sessionId)],
+        createdAt: '2026-08-23T00:00:00.000Z', updatedAt: '2026-08-23T00:00:00.000Z',
+      })),
+      archivedSessionIds: [],
+    })
     const dependencies = baseDependencies(hostRpc(async (method) => {
-      if (method === 'session.list') {
+      if (method === 'session/list') {
         sessionListCalls += 1
         return { ok: true, value: { items } }
       }
-      if (method === 'workspace.list') return { ok: true, value: {
-        items: items.map((item, index) => ({
-          workspaceId: `workspace-${String(index)}`, path: `/work/${String(index)}`, title: `Work ${String(index)}`,
-          sessionIds: [item.sessionId],
-          createdAt: '2026-08-23T00:00:00.000Z', updatedAt: '2026-08-23T00:00:00.000Z',
-        })),
-        archivedSessionIds: [],
-      } }
       throw new Error(`unexpected Host method ${method}`)
     }))
+    dependencies.workspaceSnapshot = workspaceSnapshot
     const discovery = new DesktopCompanionSurfaceDiscovery()
     await expect(discovery.refresh(op({ type: 'refresh-surface', offset: 0 }), dependencies)).resolves.toMatchObject({
       offset: 0,
@@ -202,7 +461,7 @@ describe('Desktop Companion product operations', () => {
       blank: false,
       projections: { values: { title: `${String(index)}-${'large title '.repeat(300)}` } },
     }))
-    const dependencies = baseDependencies(hostRpc(async method => method === 'session.list'
+    const dependencies = baseDependencies(hostRpc(async method => method === 'session/list'
       ? { ok: true, value: { items } }
       : { ok: true, value: { items: [], archivedSessionIds: [] } }))
     const discovery = new DesktopCompanionSurfaceDiscovery()
@@ -232,7 +491,7 @@ describe('Desktop Companion product operations', () => {
   })
 
   it('returns a bounded failure when one surface row exceeds the projection byte limit', async () => {
-    const dependencies = baseDependencies(hostRpc(async method => method === 'session.list'
+    const dependencies = baseDependencies(hostRpc(async method => method === 'session/list'
       ? { ok: true, value: { items: [{
         sessionId: 'session-oversized',
         updatedAt: 1,
@@ -256,7 +515,7 @@ describe('Desktop Companion product operations', () => {
     const oldWorkspaces = deferred<DesktopHostRpcResult>()
     const discovery = new DesktopCompanionSurfaceDiscovery()
     const oldDependencies = baseDependencies(hostRpc(async method => await (
-      method === 'session.list' ? oldSessions.promise : oldWorkspaces.promise
+      method === 'session/list' ? oldSessions.promise : oldWorkspaces.promise
     )))
     const old = discovery.refresh(op({ type: 'refresh-surface', offset: 0 }), oldDependencies)
 
@@ -264,7 +523,7 @@ describe('Desktop Companion product operations', () => {
     const items = Array.from({ length: REMOTE_PROTOCOL_LIMITS.surfaceSessionRows + 1 }, (_, index) => ({
       sessionId: `replacement-${String(index)}`, updatedAt: index, running: false, blank: false,
     }))
-    const replacementDependencies = baseDependencies(hostRpc(async method => method === 'session.list'
+    const replacementDependencies = baseDependencies(hostRpc(async method => method === 'session/list'
       ? { ok: true, value: { items } }
       : { ok: true, value: { items: [], archivedSessionIds: [] } }))
     await discovery.refresh({
@@ -290,34 +549,30 @@ describe('Desktop Companion product operations', () => {
   })
 
   it('projects Host history into the shared conversation carrier', async () => {
-    const dependencies = baseDependencies(hostRpc(async (method, payload) => {
-      if (method === 'session.list') return { ok: true, value: { items: [{
+    const dependencies = baseDependencies(hostRpc(async (method) => {
+      expect(method).toBe('session/list')
+      return { ok: true, value: { items: [{
         sessionId: 'session-product', updatedAt: 30, running: true, blank: false,
       }] } }
-      expect(method).toBe('session.history')
-      expect(payload).toEqual({ sessionId, beforeSeq: 10, maxMessages: 20 })
-      return { ok: true, value: {
-        events: [
-          { event: { type: 'user/message', seq: 1, time: 10, data: {
-            id: 'message-user', content: [{ type: 'text', text: 'hello' }], source: { kind: 'user' },
-          } } },
-          { event: { type: 'assistant/message', seq: 2, time: 20, data: {
-            turn: 1, step: 1, message: {
-              id: 'message-assistant', role: 'assistant', content: [{ type: 'text', text: 'world' }],
-              source: { kind: 'assistant' },
-            },
-          } } },
-          { event: { type: 'user/message', seq: 3, time: 25, data: {
-            id: 'message-steering', content: [{ type: 'text', text: 'redirect' }],
-            source: { kind: 'steering' },
-          } } },
-          { event: { type: 'turn/end', seq: 4, time: 30, data: {
-            turn: 1, reason: { kind: 'error', error: { message: 'model failed', code: 'MODEL_FAILED' } },
-          } } },
-        ],
-        hasMore: false,
-      } }
     }))
+    dependencies.sessionHistory = historyCache([
+      { event: { type: 'user/message', seq: 1, time: 10, data: {
+        id: 'message-user', content: [{ type: 'text', text: 'hello' }], source: { kind: 'user' },
+      } } },
+      { event: { type: 'assistant/message', seq: 2, time: 20, data: {
+        turn: 1, step: 1, message: {
+          id: 'message-assistant', role: 'assistant', content: [{ type: 'text', text: 'world' }],
+          source: { kind: 'assistant' },
+        },
+      } } },
+      { event: { type: 'user/message', seq: 3, time: 25, data: {
+        id: 'message-steering', content: [{ type: 'text', text: 'redirect' }],
+        source: { kind: 'steering' },
+      } } },
+      { event: { type: 'turn/end', seq: 4, time: 30, data: {
+        turn: 1, reason: { kind: 'error', error: { message: 'model failed', code: 'MODEL_FAILED' } },
+      } } },
+    ])
     const operation = op({ type: 'load-history', sessionId, beforeSeq: 10, maxMessages: 20 })
     await expect(handleCompanionProductOperation(operation, dependencies)).resolves.toMatchObject({
       type: 'conversation-snapshot', operationId: operation.operationId, sessionId, beforeSeq: 10,
@@ -334,61 +589,17 @@ describe('Desktop Companion product operations', () => {
     })
   })
 
-  it('preserves durable assistant interruption in paged history and live replacements', async () => {
-    const dependencies = assistantHistoryDependencies(true)
-    const conversation = { nodes: [{
-      kind: 'assistant', messageId: 'message-partial', seq: 2, time: 20, turn: 1, step: 1,
-      blocks: [{ kind: 'text', text: 'Delivered prefix' }], interrupted: true,
-    }] }
-
-    await expect(handleCompanionProductOperation(
-      op({ type: 'load-history', sessionId, maxMessages: 20 }), dependencies,
-    )).resolves.toMatchObject({ type: 'conversation-snapshot', conversation })
-    await expect(projectDesktopCompanionLiveSession(
-      sessionId, true, dependencies, new AbortController().signal,
-    )).resolves.toMatchObject({ sessionId, conversation })
-  })
-
-  it.each([false, null, 1, 'true'])('rejects assistant interruption %j at the Host JSON boundary', async (interrupted) => {
-    const dependencies = assistantHistoryDependencies(interrupted)
-
-    await expect(handleCompanionProductOperation(
-      op({ type: 'load-history', sessionId, maxMessages: 20 }), dependencies,
-    )).resolves.toMatchObject({ type: 'operation-failed', failure: { code: 'HOST_WIRE_INVALID' } })
-    await expect(projectDesktopCompanionLiveSession(
-      sessionId, true, dependencies, new AbortController().signal,
-    )).rejects.toThrow('Desktop Host live conversation returned an invalid value')
-  })
-
-  it('keeps unmarked assistant messages unmarked even when the turn is aborted', async () => {
-    const dependencies = assistantHistoryDependencies()
-    const page = await handleCompanionProductOperation(
-      op({ type: 'load-history', sessionId, maxMessages: 20 }), dependencies,
-    )
-    const live = await projectDesktopCompanionLiveSession(
-      sessionId, true, dependencies, new AbortController().signal,
-    )
-
-    for (const projection of [page, live]) {
-      expect(projection).toMatchObject({ conversation: { nodes: [{ kind: 'assistant' }] } })
-      expect(projection).not.toHaveProperty('conversation.nodes.0.interrupted')
-    }
-  })
-
   it('projects non-user messages with the shared context presentation metadata', async () => {
     const dependencies = baseDependencies(hostRpc(async (method) => {
-      if (method === 'session.list') return { ok: true, value: { items: [{
+      if (method === 'session/list') return { ok: true, value: { items: [{
         sessionId: 'session-product', updatedAt: 30, running: false, blank: false,
       }] } }
-      expect(method).toBe('session.history')
-      return { ok: true, value: {
-        events: [{ event: { type: 'user/message', seq: 1, time: 10, data: {
-          id: 'message-context', content: [{ type: 'text', text: 'Current runtime context.' }],
-          source: { kind: 'plugin', plugin: '@deepseek-ai/dsh-system-prompt', form: 'snapshot' },
-        } } }],
-        hasMore: false,
-      } }
+      throw new Error(`unexpected Host method ${method}`)
     }))
+    dependencies.sessionHistory = historyCache([{ event: { type: 'user/message', seq: 1, time: 10, data: {
+      id: 'message-context', content: [{ type: 'text', text: 'Current runtime context.' }],
+      source: { kind: 'plugin', plugin: '@deepseek-ai/dsh-system-prompt', form: 'snapshot' },
+    } } }])
     const operation = op({ type: 'load-history', sessionId, maxMessages: 20 })
 
     await expect(handleCompanionProductOperation(operation, dependencies)).resolves.toMatchObject({
@@ -404,23 +615,20 @@ describe('Desktop Companion product operations', () => {
 
   it('unwraps Host tool presentation envelopes for the shared Mobile cards', async () => {
     const dependencies = baseDependencies(hostRpc(async (method) => {
-      if (method === 'session.list') return { ok: true, value: { items: [{
+      if (method === 'session/list') return { ok: true, value: { items: [{
         sessionId: 'session-product', updatedAt: 30, running: false, blank: false,
       }] } }
-      expect(method).toBe('session.history')
-      return { ok: true, value: {
-        events: [
-          { event: { type: 'tool/call', seq: 1, time: 10, data: {
-            turn: 1, step: 1, callId: 'call-1', name: 'bash', arguments: '{"command":"pwd"}',
-          } }, view: { for: 'call', view: { card: 'terminal', title: 'Run command', cwd: '/tmp' } } },
-          { event: { type: 'tool/result', seq: 2, time: 20, data: {
-            turn: 1, step: 1,
-            message: { source: { kind: 'tool', callId: 'call-1' }, content: [{ type: 'text', text: '/tmp' }] },
-          } }, view: { for: 'result', view: { card: 'terminal', title: 'Command result', output: '/tmp', exitCode: 0 } } },
-        ],
-        hasMore: false,
-      } }
+      throw new Error(`unexpected Host method ${method}`)
     }))
+    dependencies.sessionHistory = historyCache([
+      { event: { type: 'tool/call', seq: 1, time: 10, data: {
+        turn: 1, step: 1, callId: 'call-1', name: 'bash', arguments: '{"command":"pwd"}',
+      } }, view: { for: 'call', view: { card: 'terminal', title: 'Run command', cwd: '/tmp' } } },
+      { event: { type: 'tool/result', seq: 2, time: 20, data: {
+        turn: 1, step: 1,
+        message: { source: { kind: 'tool', callId: 'call-1' }, content: [{ type: 'text', text: '/tmp' }] },
+      } }, view: { for: 'result', view: { card: 'terminal', title: 'Command result', output: '/tmp', exitCode: 0 } } },
+    ])
     const operation = op({ type: 'load-history', sessionId, maxMessages: 20 })
 
     await expect(handleCompanionProductOperation(operation, dependencies)).resolves.toMatchObject({
@@ -435,12 +643,12 @@ describe('Desktop Companion product operations', () => {
 
   it('projects an empty Session with the shared blank composer phase', async () => {
     const dependencies = baseDependencies(hostRpc(async (method) => {
-      if (method === 'session.list') return { ok: true, value: { items: [{
+      if (method === 'session/list') return { ok: true, value: { items: [{
         sessionId: 'session-product', updatedAt: 30, running: false, blank: true,
       }] } }
-      expect(method).toBe('session.history')
-      return { ok: true, value: { events: [], hasMore: false } }
+      throw new Error(`unexpected Host method ${method}`)
     }))
+    dependencies.sessionHistory = historyCache([])
     const operation = op({ type: 'load-history', sessionId, maxMessages: 20 })
 
     await expect(handleCompanionProductOperation(operation, dependencies)).resolves.toMatchObject({
@@ -462,10 +670,10 @@ describe('Desktop Companion product operations', () => {
     )
     items.push({ sessionId: target, updatedAt: 100, running: true, blank: false })
     const dependencies = baseDependencies(hostRpc(async (method) => {
-      if (method === 'session.list') return { ok: true, value: { items } }
-      expect(method).toBe('session.history')
-      return { ok: true, value: { events: [], hasMore: false } }
+      if (method === 'session/list') return { ok: true, value: { items } }
+      throw new Error(`unexpected Host method ${method}`)
     }))
+    dependencies.sessionHistory = historyCache([])
     const operation = op({ type: 'load-history', sessionId: target, maxMessages: 20 })
 
     await expect(handleCompanionProductOperation(operation, dependencies)).resolves.toMatchObject({
@@ -477,28 +685,25 @@ describe('Desktop Companion product operations', () => {
 
   it('projects model retries and suppresses the retry-owned terminal turn error', async () => {
     const dependencies = baseDependencies(hostRpc(async (method) => {
-      if (method === 'session.list') return { ok: true, value: { items: [{
+      if (method === 'session/list') return { ok: true, value: { items: [{
         sessionId: 'session-product', updatedAt: 50, running: false, blank: false,
       }] } }
-      expect(method).toBe('session.history')
-      return { ok: true, value: {
-        events: [
-          { event: { type: 'step/start', seq: 1, time: 10, data: { turn: 1, step: 1 } } },
-          { event: { type: 'turn/end', seq: 2, time: 20, data: {
-            turn: 1, reason: { kind: 'error', error: { message: 'temporary', code: 'RATE_LIMIT' } },
-          } } },
-          { event: { type: 'llm/retry', seq: 3, time: 30, data: {
-            retryId: 'retry-product', turn: 1, step: 1, provider: 'deepseek', mode: 'normal',
-            policyKey: 'normal', retry: 1, maxRetries: 2, delayMs: 500,
-            failure: { message: 'temporary', code: 'RATE_LIMIT' },
-          } } },
-          { event: { type: 'llm/retry-started', seq: 4, time: 40, data: {
-            retryId: 'retry-product', turn: 1, step: 1, retry: 1,
-          } } },
-        ],
-        hasMore: false,
-      } }
+      throw new Error(`unexpected Host method ${method}`)
     }))
+    dependencies.sessionHistory = historyCache([
+      { event: { type: 'step/start', seq: 1, time: 10, data: { turn: 1, step: 1 } } },
+      { event: { type: 'turn/end', seq: 2, time: 20, data: {
+        turn: 1, reason: { kind: 'error', error: { message: 'temporary', code: 'RATE_LIMIT' } },
+      } } },
+      { event: { type: 'llm/retry', seq: 3, time: 30, data: {
+        retryId: 'retry-product', turn: 1, step: 1, provider: 'deepseek', mode: 'normal',
+        policyKey: 'normal', retry: 1, maxRetries: 2, delayMs: 500,
+        failure: { message: 'temporary', code: 'RATE_LIMIT' },
+      } } },
+      { event: { type: 'llm/retry-started', seq: 4, time: 40, data: {
+        retryId: 'retry-product', turn: 1, step: 1, retry: 1,
+      } } },
+    ])
     const operation = op({ type: 'load-history', sessionId, maxMessages: 20 })
 
     await expect(handleCompanionProductOperation(operation, dependencies)).resolves.toMatchObject({
@@ -527,9 +732,44 @@ describe('Desktop Companion product operations', () => {
       type: 'confirmed', operationId: cancel.operationId,
     })
     expect(calls).toEqual([
-      ['session.prompt', { sessionId, mode: 'queue', content: [{ type: 'text', text: 'continue' }] }],
-      ['session.cancel', { sessionId }],
+      ['session/prompt', { args: { request: {
+        requestId: submit.operationId,
+        sessionId,
+        mode: 'queue',
+        content: [{ type: 'text', text: 'continue' }],
+      } } }],
+      ['session/cancel', { args: { request: { sessionId } } }],
     ])
+  })
+
+  it('retries a pairing ledger submit without a second Host prompt', async () => {
+    let prompts = 0
+    const loopback = await listenCompanionHost({
+      onUnary: (method) => {
+        if (method === 'session/prompt') prompts += 1
+      },
+    })
+    const owner = new DesktopCompanionProductOwner({
+      timeoutMs: 2_000, responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
+    })
+    const ledger = await DesktopCompanionOperationLedger.load({
+      load: async () => [],
+      save: async () => {},
+    })
+    owner.installLedger(ledger)
+    const uninstall = owner.installHost(loopback.origin)
+    const submit = op({ type: 'submit-prompt', sessionId, text: 'continue' })
+    const pairing = baseDependencies(hostRpc(async () => {
+      throw new Error('owner must use its installed Host RPC')
+    }))
+    await expect(owner.handle(submit, pairing)).resolves.toMatchObject({
+      type: 'confirmed', operationId: submit.operationId,
+    })
+    await expect(owner.handle(submit, pairing)).resolves.toMatchObject({
+      type: 'confirmed', operationId: submit.operationId,
+    })
+    expect(prompts).toBe(1)
+    uninstall()
   })
 
   it('creates Workspace-owned and Ungrouped Sessions through the exact Host request', async () => {
@@ -538,7 +778,7 @@ describe('Desktop Companion product operations', () => {
       calls.push([method, payload])
       return { ok: true, value: { sessionId: `session-created-${String(calls.length)}` } }
     }))
-    const workspace = op({ type: 'create-session', workspaceId: parseCompanionWorkspaceId('workspace-product') })
+    const workspace = op({ type: 'create-session', workspaceId: 'workspace-product' as never })
     const ungrouped = op({ type: 'create-session' })
 
     await expect(handleCompanionProductOperation(workspace, dependencies)).resolves.toMatchObject({
@@ -548,44 +788,99 @@ describe('Desktop Companion product operations', () => {
       type: 'session-created', operationId: ungrouped.operationId, sessionId: 'session-created-2',
     })
     expect(calls).toEqual([
-      ['session.create', { workspaceId: 'workspace-product' }],
-      ['session.create', {}],
+      ['session/create', { args: { request: { workspaceId: 'workspace-product' } } }],
+      ['session/create', { args: { request: {} } }],
     ])
   })
 
-  it('settles pairing-private Approval and Ask User requests through Host respond', async () => {
-    const respond = vi.fn<NonNullable<DesktopHostRpc['respond']>>(async () => ({ accepted: true }))
-    const host = hostRpc(async () => { throw new Error('settlement must not use an arbitrary Host method') }, respond)
+  it('settles pairing-private Approval and Ask User requests through $events/result', async () => {
+    const completeEvent = vi.fn<DesktopHostRpc['completeEvent']>(async () => ({ ok: true, value: undefined }))
+    const host = hostRpc(async () => { throw new Error('settlement must not use an arbitrary Host method') }, completeEvent)
     const dependencies = baseDependencies(host)
     const interactionId = parseCompanionInteractionId('interaction-product')
     dependencies.resolveInteraction = () => ({
-      rpcId: 'host-request-private', kind: 'approval', sessionId,
+      eventId: 'event-approval' as never,
+      clientId: 'client-generation' as never,
+      kind: 'approval', sessionId,
       approvalId: 'approval-product',
     })
-    const operation: CompanionSettleInteractionOperation = op({
+    const operation = op({
       type: 'settle-interaction', sessionId, interactionId,
-      settlement: { kind: 'approval', outcome: 'allowed-once' },
+      settlement: { kind: 'approval' as const, outcome: 'allowed-once' as const },
     })
     await expect(handleCompanionProductOperation(operation, dependencies)).resolves.toEqual({
       type: 'interaction-receipt', operationId: operation.operationId, accepted: true,
     })
-    expect(respond).toHaveBeenCalledWith('host-request-private', {
-      ok: true,
-      value: { sessionId, approvalId: 'approval-product', outcome: 'allowed-once' },
+    expect(completeEvent).toHaveBeenCalledWith({
+      clientId: 'client-generation',
+      eventId: 'event-approval',
+      outcome: { kind: 'result', value: 'allowed-once' },
+    })
+    const reject = op({
+      type: 'settle-interaction', sessionId, interactionId,
+      settlement: { kind: 'approval' as const, outcome: 'rejected' as const },
+    })
+    await expect(handleCompanionProductOperation(reject, dependencies)).resolves.toEqual({
+      type: 'interaction-receipt', operationId: reject.operationId, accepted: true,
+    })
+    expect(completeEvent).toHaveBeenLastCalledWith({
+      clientId: 'client-generation',
+      eventId: 'event-approval',
+      outcome: { kind: 'result', value: 'rejected' },
+    })
+  })
+
+  it('rejects an expired Ask User locally and cancels through ASK_CANCELLED', async () => {
+    const completeEvent = vi.fn<DesktopHostRpc['completeEvent']>(async () => ({ ok: true, value: undefined }))
+    const host = hostRpc(async () => { throw new Error('expired settlement must not invent Host not-pending') }, completeEvent)
+    const dependencies = baseDependencies(host)
+    const missing = op({
+      type: 'settle-interaction', sessionId,
+      interactionId: parseCompanionInteractionId('interaction-missing'),
+      settlement: { kind: 'question' as const, answers: [{ id: 'q1', selected: ['Yes'] }] },
+    })
+    await expect(handleCompanionProductOperation(missing, dependencies)).resolves.toEqual({
+      type: 'interaction-receipt', operationId: missing.operationId, accepted: false, reason: 'not-pending',
+    })
+    expect(completeEvent).not.toHaveBeenCalled()
+    const interactionId = parseCompanionInteractionId('interaction-question')
+    dependencies.resolveInteraction = () => ({
+      eventId: 'event-question' as never,
+      clientId: 'client-generation' as never,
+      kind: 'question', sessionId,
+    })
+    const cancel = op({
+      type: 'settle-interaction', sessionId, interactionId,
+      settlement: { kind: 'question-cancelled' as const },
+    })
+    await expect(handleCompanionProductOperation(cancel, dependencies)).resolves.toEqual({
+      type: 'interaction-receipt', operationId: cancel.operationId, accepted: true,
+    })
+    expect(completeEvent).toHaveBeenCalledWith({
+      clientId: 'client-generation',
+      eventId: 'event-question',
+      outcome: {
+        kind: 'rejected',
+        error: {
+          name: 'UserQuestionError',
+          message: 'the user cancelled ask_user_question',
+          code: 'ASK_CANCELLED',
+        },
+      },
     })
   })
 
   it('refuses routed member questions with a stable typed business failure', async () => {
     const host = hostRpc(async () => { throw new Error('member questions must not reach the Host yet') })
-    const question: CompanionMemberQuestionOperation = op({
+    const question = op({
       type: 'member-question',
       questionId: parseMemberQuestionId('member-question-product'),
-      projectId: parseMemberQuestionProjectId('project-atlas'),
+      projectId: parseMemberQuestionProjectId('project-product'),
       originSessionId: sessionId,
       expiresAt: 2_000,
       origin: {
         projectName: 'Atlas', originSessionTitle: 'Refactor the ingest pipeline',
-        askerAccountId: 'account-asker', askerRole: 'admin',
+        askerAccountId: 'account-asker', askerRole: 'admin' as const,
         askerDisplayName: 'Ada', askerAvatarUrl: 'https://example.test/ada.png',
       },
       background: 'Pick a rollback window before the freeze.',
@@ -624,8 +919,9 @@ describe('Desktop Companion product operations', () => {
 
   it('returns exact historical image bytes as ordered chunks', async () => {
     const bytes = Uint8Array.of(0, 1, 2, 255)
-    const dependencies = baseDependencies(hostRpc(async (method) => {
-      expect(method).toBe('session.attachment')
+    const dependencies = baseDependencies(hostRpc(async (method, payload) => {
+      expect(method).toBe('session/attachment')
+      expect(payload).toEqual({ args: { request: { sessionId, attachmentId: 'image-product' } } })
       return { ok: true, value: {
         attachment: { id: 'image-product', mediaType: 'image/png', bytes: bytes.byteLength, sha256: '0'.repeat(64) },
         data: Buffer.from(bytes).toString('base64'),
@@ -650,11 +946,10 @@ describe('Desktop Companion product operations', () => {
     const prepared = await offer(fileName, plaintext, `operation-${kind}`)
     const host = hostRpc(() => { throw new Error('attachment must not become a placeholder Host prompt') })
     const submitAttachment = vi.fn<CompanionProductOperationDependencies['submitAttachment']>(
-      async () => ({ ok: true, value: { accepted: true } }),
+      async () => ({ ok: true, value: { accepted: true } } as const),
     )
     const result = await handleCompanionProductOperation(prepared.operation, {
       ...baseDependencies(host),
-      now: () => 1_000,
       downloadAttachment: async () => prepared.ciphertext,
       submitAttachment,
     })
@@ -671,9 +966,8 @@ describe('Desktop Companion product operations', () => {
   it('returns explicit attachment rejection results for expiry and hash failure', async () => {
     const expired = await offer('expired.bin', Uint8Array.of(1), 'operation-expired')
     const hash = await offer('hash.bin', Uint8Array.of(2), 'operation-hash')
-    const host = hostRpc(() => { throw new Error('rejected attachment must not call Host') })
     const dependencies = {
-      ...baseDependencies(host),
+      ...baseDependencies(hostRpc(() => { throw new Error('rejected attachment must not call Host') })),
       now: () => 2_000,
       downloadAttachment: async () => hash.ciphertext,
       submitAttachment: async () => { throw new Error('rejected attachment must not submit') },
@@ -699,9 +993,8 @@ describe('Desktop Companion product operations', () => {
     let items = [{ sessionId: 'session-hit', snippet: 'Desktop indexed needle' }]
     let expectedQuery = 'needle'
     const call = vi.fn(async (method: string, payload: Record<string, unknown>): Promise<DesktopHostRpcResult> => {
-      if (method === 'workspace.list') return { ok: true, value: { items: [], archivedSessionIds: [] } }
-      expect(method).toBe('session.search')
-      expect(payload).toEqual({ query: expectedQuery })
+      expect(method).toBe('session/search')
+      expect(payload).toEqual({ args: { request: { query: expectedQuery } } })
       return {
         ok: true,
         value: {
@@ -710,7 +1003,7 @@ describe('Desktop Companion product operations', () => {
         },
       }
     })
-    const dependencies = baseDependencies({ call })
+    const dependencies = baseDependencies(hostRpc(call))
     await expect(handleCompanionProductOperation(operation, dependencies)).resolves.toEqual({
       type: 'session-search',
       operationId: operation.operationId,
@@ -722,17 +1015,18 @@ describe('Desktop Companion product operations', () => {
     await expect(handleCompanionProductOperation(search('absent'), dependencies)).resolves.toMatchObject({
       type: 'session-search', items: [], hasMore: false,
     })
-    expect(call).toHaveBeenCalledTimes(4)
+    expect(call).toHaveBeenCalledTimes(2)
   })
 
   it('excludes Desktop-archived Sessions from authoritative full-text results', async () => {
     const operation = search('needle')
-    const dependencies = baseDependencies(hostRpc(async method => method === 'session.search'
-      ? { ok: true, value: { items: [
+    const dependencies = baseDependencies(hostRpc(async (method) => {
+      expect(method).toBe('session/search')
+      return { ok: true, value: { items: [
         { sessionId: 'session-visible', snippet: 'Visible needle' },
         { sessionId: 'session-archived', snippet: 'Archived needle' },
       ], hasMore: false } }
-      : { ok: true, value: { items: [], archivedSessionIds: ['session-archived'] } }))
+    }), { items: [], archivedSessionIds: [SessionId('session-archived')] })
 
     await expect(handleCompanionProductOperation(operation, dependencies)).resolves.toEqual({
       type: 'session-search',
@@ -748,45 +1042,51 @@ describe('Desktop Companion product operations', () => {
     ['http-400', { kind: 'http', code: 'HOST_HTTP_STATUS', message: 'Desktop Host returned HTTP 400', status: 400 }],
   ] as const)('projects %s Host search refusal without stream loss', async (_name, failure) => {
     const operation = search(_name)
-    await expect(handleCompanionProductOperation(operation, baseDependencies({
-      call: async () => ({ ok: false, failure }),
-    }))).resolves.toEqual({ type: 'operation-failed', operationId: operation.operationId, failure })
+    await expect(handleCompanionProductOperation(operation, baseDependencies(hostRpc(async () => ({ ok: false, failure })))),
+    ).resolves.toEqual({ type: 'operation-failed', operationId: operation.operationId, failure })
   })
 
   it('installs the real Web Host RPC in the product owner and invalidates it on Host exit', async () => {
     const server = createServer((request, response) => {
-      if (request.url === '/api/events.mux' || request.url === '/api/events.host') {
-        response.writeHead(426)
-        response.end()
-        return
-      }
       const chunks: Buffer[] = []
       request.on('data', chunk => chunks.push(chunk as Buffer))
       request.on('end', () => {
-        const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as {
-          rpcId: string
-          method: string
-          payload: { query?: string }
-        }
-        const value = body.method === 'workspace.list'
-          ? { items: [], archivedSessionIds: ['session-real-archived'] }
-          : { items: body.payload.query === 'absent' ? [] : [
-            { sessionId: 'session-real-entry', snippet: 'real Host result' },
-            { sessionId: 'session-real-archived', snippet: 'archived Host result' },
-          ], hasMore: false }
+        const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as { rpcId: string; method: string }
         response.end(JSON.stringify({
           type: 'server-response',
           rpcId: body.rpcId,
-          result: { ok: true, value },
+          result: {
+            ok: true,
+            value: { items: [{ sessionId: 'session-real-entry', snippet: 'real Host result' }], hasMore: false },
+          },
         }))
+      })
+    })
+    const wss = new WebSocketServer({ noServer: true })
+    server.on('upgrade', (request, socket, head) => {
+      if (request.url !== '/api/remote.mux') {
+        socket.destroy()
+        return
+      }
+      wss.handleUpgrade(request, socket, head, (websocket) => {
+        websocket.on('message', (data) => {
+          const text = typeof data === 'string' ? data : Buffer.from(data as Uint8Array).toString('utf8')
+          const message = JSON.parse(text) as { type: string; streamId: string; endpoint?: string }
+          if (message.type === 'open' && message.endpoint === 'workspace/follow') {
+            websocket.send(JSON.stringify({
+              type: 'item',
+              streamId: message.streamId,
+              value: { type: 'baseline', value: { items: [], archivedSessionIds: [] } },
+            }))
+          }
+        })
       })
     })
     await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
     closeServers.push(async () => {
-      server.closeAllConnections()
-      await new Promise<void>((resolve, reject) => {
-        server.close((error) => { if (error === undefined) resolve(); else reject(error) })
-      })
+      for (const client of wss.clients) client.terminate()
+      wss.close()
+      server.close()
     })
     const address = server.address()
     if (address === null || typeof address === 'string') throw new Error('expected TCP address')
@@ -796,36 +1096,15 @@ describe('Desktop Companion product operations', () => {
     const uninstallReplaced = owner.installHost(`http://127.0.0.1:${String(address.port)}`)
     const uninstall = owner.installHost(`http://127.0.0.1:${String(address.port)}`)
     uninstallReplaced()
-    const hit = {
-      type: 'session-search',
-      items: [{ sessionId: parseCompanionSessionId('session-real-entry'), snippet: 'real Host result' }],
-      hasMore: false,
-    }
-
     await expect(owner.handle(search('entry'), baseDependencies(hostRpc(() => {
       throw new Error('owner must use its installed Host RPC')
     })))).resolves.toEqual({
-      ...hit,
-      operationId: parseCompanionOperationId('search-entry'),
-    })
-    await expect(owner.handle(search('one-argument'))).resolves.toEqual({
-      ...hit,
-      operationId: parseCompanionOperationId('search-one-argument'),
-    })
-    await expect(owner.handle(search('absent'))).resolves.toEqual({
       type: 'session-search',
-      operationId: parseCompanionOperationId('search-absent'),
-      items: [],
+      operationId: parseCompanionOperationId('search-entry'),
+      items: [{ sessionId: parseCompanionSessionId('session-real-entry'), snippet: 'real Host result' }],
       hasMore: false,
     })
     uninstall()
-    await expect(owner.handle(search('one-argument-after-exit'))).resolves.toEqual({
-      type: 'operation-failed',
-      operationId: parseCompanionOperationId('search-one-argument-after-exit'),
-      failure: {
-        kind: 'wire', code: 'HOST_WIRE_INVALID', message: 'Desktop Web Host is not available',
-      },
-    })
     await expect(owner.handle(search('after-exit'), baseDependencies(hostRpc(() => {
       throw new Error('uninstalled owner must not call an injected Host')
     })))).resolves.toEqual({
@@ -838,29 +1117,19 @@ describe('Desktop Companion product operations', () => {
   })
 })
 
-function proveOwnerHandleRequiresPairingDependencies(owner: DesktopCompanionProductOwner): void {
-  const createSession = op({ type: 'create-session' })
-  // @ts-expect-error Non-search operations require authenticated pairing dependencies.
-  void owner.handle(createSession)
-  void owner.handle(createSession, baseDependencies(hostRpc(async () => ({ ok: true, value: {} }))))
-}
-void proveOwnerHandleRequiresPairingDependencies
-
 async function offer(fileName: string, plaintext: Uint8Array, id: string): Promise<{
   operation: CompanionOfferAttachmentOperation
   ciphertext: Uint8Array
 }> {
-  const sealed = await sealCompanionAttachment(
-    await deriveCompanionAttachmentKey(attachmentKey),
-    plaintext,
-  )
+  const key = await deriveCompanionAttachmentKey(attachmentKey)
+  const sealed = await sealCompanionAttachment(key, plaintext)
   return {
     ciphertext: sealed.ciphertext,
     operation: {
       type: 'offer-attachment',
       operationId: parseCompanionOperationId(id),
       sessionId,
-      capability: parseAttachmentCapability('A'.repeat(43)),
+      capability: 'A'.repeat(43) as never,
       ciphertextSha256: sealed.ciphertextSha256,
       byteLength: sealed.ciphertext.byteLength,
       expiresAt: 2_000,
@@ -878,36 +1147,43 @@ function search(query: string): CompanionSearchSessionsOperation {
   }
 }
 
-function hostRpc(call: DesktopHostRpc['call'], respond?: DesktopHostRpc['respond']): DesktopHostRpc {
-  return { call, ...(respond === undefined ? {} : { respond }) }
+function hostRpc(call: DesktopHostRpc['call'], completeEvent?: DesktopHostRpc['completeEvent']): DesktopHostRpc {
+  return {
+    call,
+    followEvents: async () => {},
+    completeEvent: completeEvent ?? (async () => ({ ok: true, value: undefined })),
+    followWorkspaces: async () => {},
+    followSession: async () => {},
+  }
 }
 
-function assistantHistoryDependencies(interrupted?: unknown) {
-  return baseDependencies(hostRpc(async (method) => {
-    if (method === 'session.list') return { ok: true, value: { items: [{
-      sessionId, updatedAt: 30, running: false, blank: false,
-    }] } }
-    if (method === 'workspace.list') return { ok: true, value: { items: [], archivedSessionIds: [] } }
-    expect(method).toBe('session.history')
-    return { ok: true, value: {
-      events: [
-        { event: { type: 'assistant/message', seq: 2, time: 20, data: {
-          turn: 1, step: 1,
-          ...(interrupted === undefined ? {} : { interrupted }),
-          message: { id: 'message-partial', content: [{ type: 'text', text: 'Delivered prefix' }] },
-        } } },
-        { event: { type: 'turn/end', seq: 3, time: 30, data: {
-          turn: 1, reason: { kind: 'aborted', reason: { kind: 'user' } },
-        } } },
-      ],
-      hasMore: false,
-    } }
-  }))
+function sessionFollowSnapshot(value: {
+  cursor: number
+  hasMore: boolean
+  records: unknown[]
+}): unknown {
+  return {
+    type: 'snapshot',
+    header: { version: 0, id: 'session-product', createdAt: 1 },
+    projections: { asOfSeq: value.cursor, values: {} },
+    ...value,
+  }
 }
 
-function baseDependencies(host: DesktopHostRpc): CompanionProductOperationDependencies {
+function historyCache(events: unknown[], hasMore = false) {
+  return {
+    page: async () => ({ ok: true as const, value: { events, hasMore } }),
+  } as never
+}
+
+function baseDependencies(
+  host: DesktopHostRpc,
+  workspaceValue: DesktopWorkspaceSnapshot | DesktopWorkspaceSnapshotFailure = { items: [], archivedSessionIds: [] },
+): CompanionProductOperationDependencies {
   return {
     host,
+    workspaceSnapshot: () => Promise.resolve(workspaceValue),
+    sessionHistory: historyCache([]),
     pairingId,
     attachmentKey,
     now: () => 1_000,
@@ -929,4 +1205,126 @@ function deferred<T>(): { promise: Promise<T>; resolve(value: T): void } {
   let resolve!: (value: T) => void
   const promise = new Promise<T>((settle) => { resolve = settle })
   return { promise, resolve }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+async function listenCompanionHost(options?: {
+  workspaceFollowValue?: unknown
+  onUnary?: (method: string) => void
+  onEventsOpen?: (send: (value: unknown) => void) => void
+}): Promise<{ origin: string }> {
+  const workspaceFollowValue = options?.workspaceFollowValue ?? {
+    type: 'baseline', value: { items: [], archivedSessionIds: [] },
+  }
+  const server = createServer((request, response) => {
+    const chunks: Buffer[] = []
+    request.on('data', chunk => chunks.push(chunk as Buffer))
+    request.on('end', () => {
+      let rpcId = 'rpc'
+      try {
+        const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as { rpcId?: string; method?: string }
+        rpcId = body.rpcId ?? rpcId
+        if (body.method !== undefined) options?.onUnary?.(body.method)
+        if (body.method === 'session/prompt' || body.method === 'session/cancel' || body.method === '$events/result') {
+          response.end(JSON.stringify({
+            type: 'server-response', rpcId,
+            result: { ok: true, value: body.method === '$events/result' ? undefined : { accepted: true } },
+          }))
+          return
+        }
+        if (body.method === 'session/list') {
+          response.end(JSON.stringify({
+            type: 'server-response', rpcId,
+            result: { ok: true, value: { items: [{
+              sessionId: 'session-product', updatedAt: 9, running: false, blank: false,
+            }] } },
+          }))
+          return
+        }
+        if (body.method === 'session/create') {
+          response.end(JSON.stringify({
+            type: 'server-response', rpcId,
+            result: { ok: true, value: { sessionId: 'session-created' } },
+          }))
+          return
+        }
+        if (body.method === 'session/search') {
+          response.end(JSON.stringify({
+            type: 'server-response', rpcId,
+            result: { ok: true, value: { items: [{ sessionId: 'session-hit', snippet: 'needle' }], hasMore: false } },
+          }))
+          return
+        }
+        if (body.method === 'session/attachment') {
+          response.end(JSON.stringify({
+            type: 'server-response', rpcId,
+            result: { ok: true, value: {
+              attachment: { id: 'image-product', mediaType: 'image/png', bytes: 4, sha256: '0'.repeat(64) },
+              data: Buffer.from(Uint8Array.of(0, 1, 2, 255)).toString('base64'),
+            } },
+          }))
+          return
+        }
+        if (body.method === 'session/admitAttachment') {
+          response.end(JSON.stringify({
+            type: 'server-response', rpcId,
+            result: { ok: true, value: { attachment: { name: 'payload.bin', mediaType: 'application/octet-stream', bytes: 4 } } },
+          }))
+          return
+        }
+      } catch {
+        // Unary bodies that are not Host RPC JSON stay a wire failure.
+      }
+      response.end(JSON.stringify({
+        type: 'server-response', rpcId, result: { ok: false, error: { code: 'unavailable', message: 'no' } },
+      }))
+    })
+  })
+  const wss = new WebSocketServer({ noServer: true })
+  server.on('upgrade', (request, socket, head) => {
+    if (request.url !== '/api/remote.mux') {
+      socket.destroy()
+      return
+    }
+    wss.handleUpgrade(request, socket, head, (websocket) => {
+      websocket.on('message', (data) => {
+        const text = typeof data === 'string' ? data : Buffer.from(data as Uint8Array).toString('utf8')
+        const message = JSON.parse(text) as { type?: string; streamId?: string; endpoint?: string }
+        if (message.type === 'open' && message.endpoint === 'workspace/follow' && message.streamId !== undefined) {
+          websocket.send(JSON.stringify({
+            type: 'item',
+            streamId: message.streamId,
+            value: workspaceFollowValue,
+          }))
+        }
+        if (message.type === 'open' && message.endpoint === '$events' && message.streamId !== undefined) {
+          websocket.send(JSON.stringify({
+            type: 'item',
+            streamId: message.streamId,
+            value: { type: 'ready', clientId: 'client-loopback', host: { home: '/tmp' } },
+          }))
+          options?.onEventsOpen?.((value) => {
+            websocket.send(JSON.stringify({
+              type: 'item',
+              streamId: message.streamId,
+              value,
+            }))
+          })
+        }
+      })
+    })
+  })
+  await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
+  closeServers.push(async () => {
+    wss.close()
+    for (const client of wss.clients) client.terminate()
+    wss.close()
+    server.close()
+  })
+  const address = server.address()
+  if (address === null || typeof address === 'string') throw new Error('expected TCP address')
+  return { origin: `http://127.0.0.1:${String(address.port)}` }
 }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
+import SessionStore, { SessionId, SessionSeq } from '@deepseek-ai/dsh-session'
+import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import InvariantRegistry, { InvariantError } from '@deepseek-ai/dsh-invariants'
 import * as BrowserWorkspaceInvariant from '../src/invariant.ts'
 import type { BrowserWorkspaceProjection } from '../src/types.ts'
@@ -68,7 +69,7 @@ describe('Browser Workspace invariant', () => {
       ] },
     ]
     for (const value of invalid) {
-      expect(() => session.append('browser/workspace', value as never)).toThrow(InvariantError)
+      expect(() => session.append('browser/workspace', value as never, { ignorable: true })).toThrow(InvariantError)
     }
   })
 
@@ -78,13 +79,30 @@ describe('Browser Workspace invariant', () => {
     await ctx.plugin(InvariantRegistry)
     const fiber = await ctx.plugin(BrowserWorkspaceInvariant)
     const session = ctx.sessions.create()
-    session.append('browser/workspace', VALID)
+    session.append('browser/workspace', VALID, { ignorable: true })
     expect(() => session.append('turn/start', { turn: 1 })).not.toThrow()
     const later = new Context()
     await later.plugin(SessionStore)
-    later.sessions.create(SessionId('seeded'), { seed: session.events })
+    later.sessions.create(SessionId('seeded'), { seed: session.snapshotEvents() })
     await later.plugin(InvariantRegistry)
     await later.plugin(BrowserWorkspaceInvariant)
     await expect(fiber.dispose()).resolves.toBeUndefined()
+  })
+
+  it('keeps an unknown ignorable event when the Workspace companion is not mounted', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    const session = ctx.sessions.create(SessionId('unknown-ignorable'), {
+      seed: [{
+        type: 'plugin/telemetry',
+        seq: SessionSeq(0),
+        time: 1,
+        data: { kind: 'kept' },
+        ignorable: true,
+      } as SessionEvent],
+    })
+    expect(session.snapshotEvents()).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'plugin/telemetry', ignorable: true, data: { kind: 'kept' } }),
+    ]))
   })
 })

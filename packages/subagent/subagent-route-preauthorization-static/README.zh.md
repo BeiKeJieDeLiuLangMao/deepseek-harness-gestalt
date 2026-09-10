@@ -1,0 +1,54 @@
+---
+description: "贡献部署所有精确子 LLM 路由的静态 Provider。"
+kind: "package-reference"
+---
+
+# @deepseek-ai/dsh-subagent-route-preauthorization-static
+
+[English](README.md) | 中文
+
+## 概述
+
+本包是 `ctx.subagentRoutePreauthorization` 的静态 Provider。必填的 `allowedModels` 数组属于部署配置，与用户 Settings 相互独立。
+
+## 目录
+
+- [使用本包](#use-this-package)
+- [模型体验](#model-experience)
+- [已知限制与延期工作](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+-----
+
+<a id="use-this-package"></a>
+## 使用本包
+
+用非空 provider 与 model ID 挂载此默认导出的 Service Provider。直接程序构造与 Loader 配置都会拒绝畸形条目。Provider 在发布不可变服务快照前复制、去重并排序路由。
+
+dispose 此 Provider 会移除服务。已经按缺失快照组合的 Consumer 会保留已记录的空策略；之后出现的 Provider 不能再授权该 Session。重新安装会为之后组合的 Session 发布一份全新快照。
+
+<a id="model-experience"></a>
+## 模型体验
+
+通过把贡献路由快照记录进全新顶层 Session 的 Consumer 间接影响模型。
+
+#### KV Cache 影响
+
+Provider 本身不增加 token。Provider 被替换后，已记录的 Session 策略仍让 Consumer 的路由选择 schema 保持稳定。
+
+## 已知限制与延期工作
+<a id="known-limitations-and-deferred-work"></a>
+
+- **静态生命周期配置** — 修改路由需要替换 Provider fiber；已有 Session 策略保持不变。
+
+本包不发布运行时不变式配套插件，因为此 Provider 在加载时校验并冻结路由快照，之后没有独立观察。
+
+<a id="dev-note"></a>
+### 开发备注
+
+<details>
+<summary>维护者工作上下文——点击展开</summary>
+
+暂无。
+
+</details>

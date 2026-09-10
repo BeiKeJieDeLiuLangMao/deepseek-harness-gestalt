@@ -1,0 +1,92 @@
+---
+description: "Host 与 Client 会话控制：创建、恢复、提示、跟随历史并投影实时会话状态。"
+kind: "package-reference"
+---
+# Session Controller
+
+[English](README.md) | 中文
+
+## 概述
+
+`@deepseek-ai/dsh-api-session-controller` 拥有 Host 的 `ctx.sessionController` 服务，以及生成的 Client `session`、`skills` 和 `fileReferences` Remote namespace。它提供 Session 生命周期与历史、Host generation 模型目录、工作区路径打开、用户可调用 skill 发现，以及面向 Agent 的文件引用 adapter。当 Client 需要按 Session 寻址的操作时，请通过 API Gateway 使用它。
+
+## 目录
+
+- [使用本包](#use-this-package)
+- [配置](#configuration)
+- [模型体验](#model-experience)
+- [已知限制与延期工作](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+-----
+
+<a id="use-this-package"></a>
+## 使用本包
+
+历史页与 follow opening snapshot 携带带判别字段的 `SessionHistoryRecord`。两个分支都使用 `{ type, event }`：`type: 'event'` 携带一个原始 `SessionWireEvent`，`type: 'chunks'` 则携带一个由连续且属于同一 block 的 `assistant/chunk` delta 组成的无损 `ChunkRowEvent`。两种内部值都公开 `type`、`seq`、`time` 与 `data`，因此 Client 无需逐 record 转换，就能把每条已接受 record 保留为一个 `SessionEventLikeEntry`。packed event 的 `seq` 与 `time` 表示首成员，`data` 保留 fragment 与 timestamp-gap 数组。实时 follow frame 继续携带单个 `event` record。工具参数、结果内容、失败信息和 `tool/result.data.meta` 原样通过；controller 不解析 Tool definition、不运行 presenter，也不附加 UI 数据。
+
+每个 endpoint 都声明自己的激活策略。列表、搜索、附件、历史页、日志跟随、skill 发现和工作区路径打开可以在不激活 Agent 的情况下检查 persistence；`canOpenWorkspacePath()` 无需指定 Session 即可报告原生打开能力。`session.admitAttachment` 会恢复普通 Session，把并发 Companion `operationId` 串行到现有 Agent 准入链上，持久化精确的不透明字节，追加可忽略的 `session/attachment-admitted` 并 flush；相同重试（含共享同一 leaf 的 Windows / POSIX 路径名）在 flush 完成后返回已记录引用，冲突载荷失败且不会追加第二条事件。这些文件绝不会进入模型历史。queue 变更与取消要求 live 状态。`session.updateQueue` 接受 JSON-safe `QueueEditContentPart`：文本和来自该 pending occurrence 的图片引用。它复制文本，并把每个提交的图片 id 重新解析为该 occurrence 的下一个精确引用；未知 id 或任何逐 id occurrence 次数变化以 `session/attachment-invalid` 失败，而 prompt 图片字节不属于 Remote 类型。queue edit 绝不准入附件。Web queue dock 仍只编辑纯文本行，因此混合行保持不可编辑。`session.toolEligibility` 会恢复普通 Session，从该 Agent context 读取 `ctx.tools.eligibilityAllow`，并返回与模型请求组装相同的 `catalogSchemas` 并集：省略 `allow` 表示未启用 allow-only 策略，`[]` 表示组合不允许任何末端工具，非空列表是配置并集。模型、重命名、prompt 和文件引用操作可以解析或恢复普通 Session。只有 create 与 fork 会直接创建新 Agent。`session.fork` 把 `inheritedEventCount` 保持为源前缀长度，并在发布前把该前缀交给 `clearGoalFromForkSeed`，因此尾部 clear 墓碑属于子会话，源目标不变，子会话也不会自动启用续行。skill 目录则优先使用已有 live Agent，否则使用所记录 preset 的常驻 scope，因此列表查询绝不会启动 Agent。
+
+Client adapter 提供 `SessionEventStream`，即绑定到一个普通 Session 或 direct subagent address 的 Gateway `RemoteJournalStream`。它在读取首个 page 前打开 follow，只发布连续的 `replace`、`prepend` 和 `append` 变更，并通过 tail page 修复重连或 seq 缺口。向后分页有两个动词：`loadOlder()` 拉一页 50 条 message，而 `loadThrough(seq)`——轮次跳转加载器——按 200 条 message 一页循环拉取直到窗口覆盖目标 seq，重复调用会下调共享目标，遇到无进展的页即停止，忙碌状态复用同一个 `loadingOlder` 快照位。普通 record 覆盖 `[event.seq, event.seq]`，packed row 覆盖 `[event.seq, event.seq + memberCount - 1]`。业务、persistence 或无法恢复的连续性错误会终止 stream，只有物理载体断开才触发自动恢复。`SessionControlStream` 是 Gateway `RemoteSnapshotStream`；每代都以完整的进程本地 baseline 开始，因此重连会替换 queue、jobs 和 projection 状态，而不会把瞬态值当作 durable event。
+
+`ctx.sessions.registerAdmission(sessionId, route)` 与 `registerAdmissionAdapter(adapter)` 为精确 Session 身份或匹配 adapter 安装功能自有 Client 路由。延迟注册、替换与撤销会立即作用于已有 `Session` binding，因为每个 Session 在 prompt、cancel、queue 变更与 command 时解析当前归属方。精确身份优先于 adapter；默认冲突策略替换先前精确归属方，`conflict: 'reject'` 则抛错。过期 disposer 不会撤销更新的归属方。命中后失败或抛错绝不会回退到库存 Host Remote，包括 catalog 定址 child 的 `subagents.prompt` 与 `subagents.interruptByParent`，command 也绝不会转成 prompt。未命中的 Session 仍走库存 Remote，没有归属方时也包括这些 subagent 路由。注册不授予 Host 权限；标题与普通 subagent 地址都不是凭证。准入 `prompt` 会收到传给 `Session.prompt` 的可选 `requestId`；功能若准入持久化 user message 或 queue occurrence，必须把它保留为 user source 的 `rpcId`，使调用方的本地提交回显收敛到权威投影。`modelRoute` 返回带判别字段的库存或功能路由。普通已列出 Session 获得库存 `session.selectModel` 路由；消费方把它与共享 Host catalog 及持久 `modelSelection` 投影组合。功能路由必须同时实现 `inspect` 与 `selectModel`：前者报告该功能的有效选择及可路由状态，使功能自有状态不进入普通 Session 投影。catalog 定址与 `origin: 'subagent'` 身份在功能 `modelRoute` 打开前保持隐藏；Host `session.selectModel` 拒绝这些身份（`session/agent-busy`），本 Client 也不会改派到父会话。admission 拥有 `modelRoute` 字段时替换库存，包括显式 undefined 隐藏；省略该字段不是隐藏。`commandCatalogSessionId` 与 `skillCatalogSessionId` 仍只是展示 lookup。`ui-commands` 与 `ui-skill` 按该身份列目录；execute 仍落在 composer Session。`historyScope: 'owned-suffix'` 用 Host follow 的 `header.seedLength`（`inheritedEventCount`）裁剪 Client 事件窗。后来的 `session/end-seed` 不抬高该 floor；持久日志不变。`ui-better-sidebar` 为 draft 与已知 Side Chat id 在 `registerAdmissionAdapter` 上注册产品 adapter。
+
+功能回调返回 `SessionAdmissionResult`：失败分支携带分布式 `code`、`message` 与 `details` 字段，不构造 `RemoteError`。Session Controller 为公共 `RemoteResult` 重建该 Error、保留已有结构标记的 `RemoteFailure`，并把其他回调 throw 归类为 `gateway/internal`；功能 `inspect` 与 `selectModel` 方法也由同一处归一。
+
+Host apply 可选注入 `memberQuestionReceiver`。该服务缺席时 Session Controller 仍保持 ACTIVE，且不登记 materializer；服务出现后（含 HMR）同一 inject 回调会安装唯一的到达 Session materializer、人工轮次准入与终态 Session 同步。已认证 ingest 会创建或续写 receiver 拥有的 Session 身份，挂上绑定 Workspace，写入可忽略的 `member-question/received` 元数据，注入 Decision Brief 且不启动模型轮次，并 flush persistence。到达 flush 失败会保持 `materialized` 为 false，后续 ingest 按同一身份重试。持久终态会恢复该已物化 Session，并恰好追加一次可忽略的 `member-question/settled`；flush 失败后按 `receivingTerminalRetryMs` 重试。人工轮次准入会恢复同一 Session，以保留的 rpcId 标记 `source.kind=user`，并 steer 或 followup；未物化身份会被拒绝，而不是再创建第二个 Session。卸载 controller 会取消定时器、拒绝过期写入、等待进行中的同步，并撤回两处登记。
+
+Client apply 会注入全部必填生成命名空间（含 `remote.memberQuestion`），并把 `ctx.receivingQuestions` 登记为 Cordis 服务。该书加载 `memberQuestion.snapshot`，经 `memberQuestion.settle` 结算，并随 fiber 卸载。缺少必填命名空间时插件停在注入等待，直到 `$mount` 提供该服务；apply 不会在 `remote.session` 就绪后探 `ctx.remote.memberQuestion` 并把尚未完成的 mount 当成硬失败。
+
+`ctx.sessions.binding(id)` 保持渲染安全的查找：它绝不会打开 Host 历史或刷新 catalog。`stageProvisional()` 会把调用方提供的、仅供 renderer 使用的 Session 身份插入普通 list 与 binding 缓存，且不改变 `list.current`。Host list 刷新会保留该未发布行；当 Host baseline 已列出该 id 时，会原地发布并保持同一 binding。`openForRender()` 是显式渲染的 Host I/O —— 在仍为临时身份时跳过历史请求，Host 发布后则打开历史并刷新 subagent catalog 且不选中该 Session，未知身份为 no-op。对同一身份重复暂存会失败并报错。Host 发布会原地升级同一身份和 `SessionBinding`；之后暂存 disposer 变为 no-op，因此不能删除已发布 Session。释放未发布身份会恰好一次移除其行与 Agent scope，包括首次成功 Host list baseline 之前。renderer 只消费 `UiSession.adapter.resolve(sessionId)`，不拥有此生命周期。
+
+Session 对象还承载本地提交回显：`session.beginSubmission` 在调用方序列化与 prompt 之前，同步把一条回显写入 `SessionSnapshot.pendingSubmissions`，会话 UI 因此能在点击提交的当帧显示消息。Session 根据当前运行状态与请求的投递模式推导每条回显的 `transcript`、`queued` 或 `steering` 位置，并在序列化期间保留该位置。prompt 的 `requestId` 是关联标识：Host 把它回显为 durable user source 的 `rpcId`，queue occurrence 也把它投影为 `SessionQueuedItem.rpcId`。回显在观察到其 durable event 或 queue occurrence 后延迟一个动画帧退休，该延迟保证替代内容就绪前回显仍可渲染；带标识的 prompt 失败或被放弃时立即退休，销毁时按 failed 退休；每次退休恰好触发一次注册的 `onRetire` 回调。回显只存在于 Client 内存；刷新与重连只从 durable event 重建会话。
+
+-----
+
+`SessionSnapshot.promptRoute` 标识当前 `session`、`subagent` 或已注册 `feature` 提交分派方。准入注册、替换与撤销会刷新它，不改变 subagent 地址或 `parentAvailable`；注册不授予 Host 权限。收到 `member-question/received` 简报后，Session 在模型轮次开始前即为非空。投影状态版本 2 会重新折叠旧的 Session 列表元数据缓存。
+
+<a id="configuration"></a>
+## 配置
+
+| 字段 | 默认值 | 含义 |
+|---|---:|---|
+| `coldBlankProbeMaxEvents` | `16` | stat 报告的事件数不超过该值的冷 Session 才可进行空白状态验证；`0` 禁用事件数门槛 |
+| `coldBlankProbeMaxBytes` | `1,024` | 后端不提供事件数时，stat 报告的工件字节数不超过该值的冷 Session 才可进行空白状态验证；`0` 禁用字节数门槛 |
+| `nativeOpen` | 平台探测 | 是否能把 Session 工作区路径交给原生桌面打开器 |
+| `receivingTerminalRetryMs` | `1,000` | 成员提问终态 Session 同步失败后的重试间隔 |
+
+生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-api-session-controller)是所有受支持字段及其 JSDoc 的完整来源。
+
+-----
+
+<a id="model-experience"></a>
+## 模型体验
+
+无，因为被调用的 Agent 命令拥有任何模型可见效果。
+
+#### KV Cache 影响
+
+无直接影响；模型请求仍由 Agent 和 LLM 包拥有。
+
+## 已知限制与延期工作
+
+<a id="known-limitations-and-deferred-work"></a>
+
+- Control baseline 表示进程本地状态，因此 Host 重启后无法重建 jobs。
+- follow 恢复失败会对调用方可见，而不会无限重试。
+- ApiProxy 剩余成员提问方法是 `workspaceBinding`、`ensureWorkspaceBinding` 与 `bindWorkspace`。snapshot、settle 与人工轮次准入是生成的 `memberQuestion` Remote。
+- 文件引用补全使用共享 Agent lookup，因此可能恢复冷 Session；`skills/list` 目录是不激活 Agent 的 skill 元数据读取路径。
+- Client admission registry 分派覆盖精确身份与 adapter 上的 prompt、cancel、queue 变更与 command，命中时也会挡住库存 subagent prompt 与 interrupt 路由。带判别字段的 `modelRoute` 为普通 Session 组合库存选择与共享 catalog／投影状态，为功能路由检查并选择功能自有状态；catalog child 在功能路由打开前保持隐藏。省略 `modelRoute` 不是隐藏。`commandCatalogSessionId` 与 `skillCatalogSessionId` 只是展示 lookup，由 `ui-commands` 与 `ui-skill` 消费。`historyScope: 'owned-suffix'` 按 Host `seedLength` 裁剪展示窗；后来的 `session/end-seed` 不抬高该 floor。`ui-better-sidebar` 注册 Side Chat adapter。
+
+
+<a id="dev-note"></a>
+### 开发备注
+
+<details>
+<summary>维护者工作上下文——点击展开</summary>
+
+无。
+
+</details>
+
+**运行时不变式：** 不发布伴生入口。每个分页与帧都会对照其指向的持久 Session 校验。

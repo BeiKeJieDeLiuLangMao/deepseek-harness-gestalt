@@ -1,15 +1,36 @@
+---
+description: "版本化 Relay Transport 与 Encrypted Companion wire codec。"
+kind: "package-reference"
+---
+
 # `@deepseek-ai/dsh-remote-protocol`
 
 [English](README.md) | 中文
 
+## 概述
+
 Remote Access 的纯 codec 与协商器。本包拥有两个独立版本化的协议，不导入 Harness Workspace、Session、prompt、tool、model、approval、Host API 或 WebSocket 类型。
 
+## 目录
+
+- [Relay Transport Protocol](#relay-transport-protocol)
+- [Encrypted Companion Protocol](#encrypted-companion-protocol)
+- [Endpoint attachment cipher](#endpoint-attachment-cipher)
+- [Wire 限制与错误](#wire-limits-and-errors)
+- [模型体验](#model-experience)
+- [已知限制与延后工作](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+-----
+
+<a id="relay-transport-protocol"></a>
 ## Relay Transport Protocol
 
 版本 1 只暴露路由 attachment、不透明密文转发、心跳、撤销、稳定 transport 错误与 transport 版本协商。Attachment 授权使用端点持有的 P-256 签名密钥：Relay 签发绑定 route、attachment id、端点类型、公钥、challenge id、nonce 的新鲜限时挑战，并只接受对完整元组的一次签名。Platform 只持久化公钥摘要；attach 帧不携带可重放 bearer authority。认证完成后，`ready` 会绑定本地 route 与 attachment，并投影当前对端 attachment id、credential-bound 非秘密 pairing selector 和 connection generation。selector 用于选择端点本地 Snow static state，但不授予 Relay 或应用 authority。Relay 标识符是协议原生的品牌化值。`REMOTE_OFFLINE` 报告在线目标缺失，但不表示存在排队投递。解码会拒绝未知消息类型、重复的 ready peer 和额外字段，因此完整 Host 请求不能夹带在 transport 元数据旁。
 
 Mobile endpoint 会在 attachment 前选择一个已保留 Personal Pairing。每个 pairing 都拥有独立 Mobile route grant、pairing selector、Snow static state 与 Companion projection。选择属于 endpoint 本地行为，不会新增 Relay 或 Companion wire operation。切换会先让上一条物理 channel 失效并排空，再只用所选 grant attach；Relay 绝不跨 Paired Desktop multiplex 或合并 Session authority。
 
+<a id="encrypted-companion-protocol"></a>
 ## Encrypted Companion Protocol
 
 Companion major 4 和 3 是当前及紧邻的前一应用版本。双方 endpoint 必须在所选 major 上声明已认证加密、配对密钥隔离与重放保护。Snow IK 完成后，Desktop 会随 IK 消息 2 发送自己的加密 offer，Mobile 再把自己的加密 offer 作为下一条 ciphertext 返回；任一 endpoint 都不会从本地虚构的对端 offer 构造应用 codec。协商不受 offer 数组顺序影响，始终选择最高的安全共同 major，因此不安全的共同 major 只能降级到安全的紧邻前一 major。每条逻辑 endpoint 连接拥有一个 negotiation channel。在该 channel 上开始新协商时，会在求值 offer 前让此前的应用 codec token 失效；失败的协商会让 channel 保持未激活，而其他 channel 仍然有效。不存在安全版本交集时，会在编码应用明文或 foreground synchronization 前失败，并指出必须更新的 endpoint。
@@ -22,10 +43,12 @@ conversation projection 会回显 history 请求中可选的 exclusive `beforeSe
 
 Major 4 还承载两个 Platform 账号的配对安装之间交换的成员提问。`member-question` 操作携带品牌化 question、云端项目及发起 Session id、绝对 `expiresAt` epoch、有界 Decision Brief origin（项目名、发起 Session 标题、提问者账号、角色、显示名、头像 URL）、agent 撰写的 background、复用 user-questions 问题项字段的一个问题批次，以及至多 8 条带 reason 的参考文档 path。`member-question-settled` 结果在绝对 `settledAt` epoch 提交一个全局幂等 outcome：`answered`（附带回显的 answers 批次）、`declined`、`expired`、`withdrawn` 或 `superseded`。answered 与 declined 结果必须携带执行结算的 `InstallationId` 和面向用户的设备名；系统负责的到期、撤回与取代禁止携带这些 claimant 字段。`member-question-state` 投影采用相同的终态元数据规则，使每个接收端都能区分获胜 Installation 与系统终态。每个 member-question 载体都要求应用 major 4，并拒绝缺失、未知或旧版字段。成员提问的参考文档以 `document-chunk` 操作帧传输任意文件类型：每帧携带品牌化 transfer id、关联 question id、零起 index、至多 64 的 total 声明，以及至多 32 KiB 的规范 base64url bytes，因此单帧始终满足应用上限。`document-transfer-state` 投影以 `{transferId, received, total}` 报告传输进度。codec 独立校验每帧——精确字段、index 小于 total、分片字节上限、规范 base64url——重组属于消费方职责，由其校验顺序与累计 8 MiB 解码字节预算。`deriveMemberQuestionDocumentTransferId(questionId, referenceIndex)` 是某一参考材料位置的协议原生 transfer identity，因此加密帧不必携带文档 path。
 
+<a id="endpoint-attachment-cipher"></a>
 ## Endpoint attachment cipher
 
 `deriveCompanionAttachmentKey`、`sealCompanionAttachment`、`openCompanionAttachment` 与 `hashCompanionCiphertext` 以 HKDF-SHA-256 密钥派生和 AES-256-GCM 实现加密 attachment 传输的 endpoint 侧。密封载荷是 `iv(12) ‖ ciphertext ‖ tag(16)`（`COMPANION_ATTACHMENT_SEAL_OVERHEAD_BYTES` = 28）。两个 endpoint 链接这些函数；Platform blob store 只接收 `sealCompanionAttachment` 的输出及其 SHA-256，永不派生密钥。密钥材料由 Personal Pairing 层提供。100 MiB blob 上限是密文限制；Mobile 会拒绝加上该开销后无法放入上限的明文。
 
+<a id="wire-limits-and-errors"></a>
 ## Wire 限制与错误
 
 | 限制 | 值 |
@@ -68,15 +91,29 @@ Major 4 还承载两个 Platform 账号的配对安装之间交换的成员提�
 
 本包不加密 Companion 消息流量。Mobile 与 Desktop 提供 [`dsh-noise-channel`](../noise-channel/README.zh.md) endpoint channel，再在 Relay 转发前加密版本 offer 和已编码 Companion 消息。[无密钥 assembled example](../../../examples/remote-protocol/start.ts)保留仅限示例的 AES-GCM adapter，用于隔离验证 codec；它不是产品密码实现或安全评审证据。产品 Mobile 与 Desktop 已组装 endpoint-owned 首配、credential-bound peer discovery、fresh-ephemeral IK 与加密 Companion 消息。[双实例产品快照](../../../examples/two-instance-relay/start.ts)通过真实 WSS Relay 实例运行不透明 endpoint mailbox、密封 Mobile authority 与 Snow IK，而不是示例 adapter。
 
+<a id="model-experience"></a>
 ## 模型体验
 
-无，因为 Remote Protocol 元数据与设备来源永不进入模型请求。
+无，因为这些 codec 只携带已有的 Companion operation 内容，不创建发往模型的内容，也不决定其呈现方式。
 
 #### KV Cache 影响
 
-无。
+这些 codec 不增加模型请求内容，因此不影响提供方缓存复用。
 
 ## 已知限制与延后工作
+<a id="known-limitations-and-deferred-work"></a>
 
 - Session 重命名、归档、删除与 fork、Workspace 管理、terminal 输入，以及 settings、credential、plugin、model 与 preset mutation 不属于 Companion major 4。
 - 配对 handshake、凭据持久化、challenge lifecycle 与生产 Companion 消息加密属于服务或经评审的 endpoint 集成，不属于这些 codec。
+
+本包不发布运行时不变式配套插件，因为本包只包含纯 codec、限制、协商函数与类型，没有可变状态或事件流。
+
+<a id="dev-note"></a>
+### 开发备注
+
+<details>
+<summary>维护者工作上下文——点击展开</summary>
+
+暂无。
+
+</details>

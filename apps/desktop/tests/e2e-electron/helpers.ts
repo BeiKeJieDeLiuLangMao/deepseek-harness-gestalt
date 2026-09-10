@@ -1,4 +1,5 @@
 /** Black-box helpers for the built Desktop Host phone-tab journey. */
+import { randomUUID } from 'node:crypto'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { browser, expect } from '@wdio/globals'
@@ -118,7 +119,7 @@ export async function openSession(): Promise<void> {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           type: 'client-request',
-          rpcId: crypto.randomUUID(),
+          rpcId: randomUUID(),
           method,
           payload,
         }),

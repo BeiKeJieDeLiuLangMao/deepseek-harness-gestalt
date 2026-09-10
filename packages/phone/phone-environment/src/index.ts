@@ -6,7 +6,8 @@ import { join, resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import z from '@deepseek-ai/schemastery'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
-import { writeJson } from '@deepseek-ai/dsh-host-webserver'
+import { writeJson } from '@deepseek-ai/dsh-host-webserver/http'
+import type {} from '@deepseek-ai/dsh-host-webserver'
 import {
   resolveMobilecliExecutable, verifyAnnexBH264KeyAccessUnit, verifyMjpegJpegPicture, type DeviceId,
 } from '@deepseek-ai/dsh-phone-runtime'

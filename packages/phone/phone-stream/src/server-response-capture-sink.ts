@@ -1,5 +1,5 @@
 import type { ServerResponse } from 'node:http'
-import { HttpError, writeHttpError, writeJson } from '@deepseek-ai/dsh-host-webserver'
+import { HttpError, writeHttpError, writeJson } from '@deepseek-ai/dsh-host-webserver/http'
 import { PhoneDevicesError } from '@deepseek-ai/dsh-phone-runtime'
 import type { CaptureSink } from './capture-relays.ts'
 import { MJPEG_NORMALIZED_BOUNDARY } from './multipart-normalize.ts'

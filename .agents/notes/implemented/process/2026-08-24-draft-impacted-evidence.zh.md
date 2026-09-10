@@ -18,6 +18,8 @@ package graph 将变更 package 路径映射为直接 package，并沿反向 pee
 
 稳定的 aggregate verdict 只评估计划选中的 lane。在 impacted Draft 中，它要求 preflight、存在时的 package 影响面，以及被选中时的组装态 consumer lane。在 exhaustive 计划中，它要求完整的阻塞清单。被选中的 lane 只要失败、取消或跳过，verdict 就会失败；未选中的 lane 保持 skipped，不会形成误报。
 
+没有 preflight planner 的拉取请求 CI 不会调度 `draft-impact` job。`pnpm ci:impact` 仍是 impacted 计划的本地命令，并继续拒绝 exhaustive 计划。
+
 ## 备选方案
 
 **只按变更目录过滤。** 拒绝，因为直接路径无法识别反向 consumer，也不能证明 package 接口上的行为。

@@ -48,7 +48,7 @@ export function AccountControl({ t, useAccount, usePairing }: AccountControlProp
     <section className={css.root} data-desktop-account-control={snapshot.status}>
       {!signedIn && (
         <header className={css.header}>
-          <span className={css.mark}>G</span>
+          <span className={css.mark} translate="no">G</span>
           <div>
             <h2>{t('account.title')}</h2>
             <p>{t('account.sectionDescription')}</p>
@@ -127,6 +127,7 @@ function MobileInstallationsPanel({ desktop, snapshot, t }: {
           description={t('account.installations.confirmDescription')}
           acknowledgeLabel={t('account.installations.acknowledge')}
           cancelLabel={t('account.installations.cancel')}
+          closeLabel={t('account.installations.close')}
           confirmLabel={t('account.installations.confirm')}
           acknowledged={acknowledged}
           disabled={removing}
@@ -174,7 +175,11 @@ function PairingPanel({ desktop, snapshot, t }: {
       )}
       {snapshot.challenge !== undefined && (
         <div className={css.challenge}>
-          <PairingQr label={t('pairing.qrLabel')} value={snapshot.challenge.qrPayload} />
+          <PairingQr
+            label={t('pairing.qrLabel')}
+            payloadLabel={t('pairing.payloadLabel')}
+            value={snapshot.challenge.qrPayload}
+          />
           <div><strong>{t('pairing.scan')}</strong><p>{t('pairing.fullLink')}</p><code>{snapshot.challenge.oneTimeLink}</code></div>
           <Button variant="outline" onClick={() => { void desktop.pairingCancelChallenge() }}>{t('pairing.cancel')}</Button>
         </div>
@@ -224,7 +229,7 @@ function PairingPanel({ desktop, snapshot, t }: {
   )
 }
 
-function PairingQr({ label, value }: { label: string; value: string }) {
+function PairingQr({ label, payloadLabel, value }: { label: string; payloadLabel: string; value: string }) {
   const qr = encodeQrCode(value, { ecc: 'M' })
   let path = ''
   for (let row = 0; row < qr.size; row += 1) {
@@ -237,7 +242,7 @@ function PairingQr({ label, value }: { label: string; value: string }) {
       <svg viewBox={`-2 -2 ${String(qr.size + 4)} ${String(qr.size + 4)}`} aria-label={label} role="img">
         <path d={path} />
       </svg>
-      <code aria-label="Pairing QR payload">{value}</code>
+      <code aria-label={payloadLabel}>{value}</code>
     </figure>
   )
 }

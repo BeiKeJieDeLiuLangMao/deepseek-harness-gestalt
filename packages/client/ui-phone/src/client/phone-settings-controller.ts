@@ -2,7 +2,8 @@
  * Phone settings card controller: projects the durable `ui-phone` scope and
  * the injected environment source into one snapshot the slot renderer binds.
  */
-import { createSnapshotStore, type SettingsScope, type SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
+import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { DeviceId } from '@deepseek-ai/dsh-phone-runtime'
 import type { PhoneSettings } from '../phone-settings.ts'
 import {

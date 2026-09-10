@@ -1,23 +1,24 @@
 /** Side Chat tab shell over the canonical explicit-Session conversation renderer. */
 import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from 'react'
-import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
-import type { Context } from '../context-types.ts'
+import { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { SessionId as SessionIdType } from '@deepseek-ai/dsh-api-remotes/client'
+import type { SidebarContext } from '../context-types.ts'
 import {
   SIDE_LABEL_PREFIX, SIDE_NEW_THREAD_TITLE, sidechatTabRootThreadId, sidechatTabThreadId,
 } from '../sidechat-core.ts'
-import { registerSidechatDraft } from './api.ts'
+import { noteKnownSidechatSession, registerSidechatDraft } from './api.ts'
 import { t } from './locales.ts'
 import type { SessionScope } from './api.ts'
 import type { SidebarTab } from './state.ts'
 import css from './SideChatView.module.css'
 
 /** The thread a tab is bound to (durable in tab.meta across refreshes). */
-export function sidechatThreadIdOf(tab: SidebarTab): SessionId | undefined {
+export function sidechatThreadIdOf(tab: SidebarTab): SessionIdType | undefined {
   return sidechatTabThreadId(tab.meta)
 }
 
 /** Root Side Chat identity whose live handle belongs to this navigable tab. */
-export function sidechatRootThreadIdOf(tab: SidebarTab): SessionId | undefined {
+export function sidechatRootThreadIdOf(tab: SidebarTab): SessionIdType | undefined {
   return sidechatTabRootThreadId(tab.meta)
 }
 
@@ -28,7 +29,7 @@ function threadDisplayTitle(title: string): string {
 
 /** One Side Chat tab: thread creation plus the canonical conversation slot. */
 export function SideChatView(props: {
-  ctx: Context
+  ctx: SidebarContext
   scope: SessionScope
   tab: SidebarTab
   visible: boolean
@@ -44,18 +45,23 @@ export function SideChatView(props: {
   const summary = threadId === undefined ? undefined : list.byId[threadId]
   const published = summary?.blank === false
   const conversationHost = useRef<HTMLDivElement | null>(null)
-  const openSession = useCallback((sessionId: SessionId): void => {
+  const openSession = useCallback((sessionId: SessionIdType): void => {
     ctx.get('betterSidebar')?.updateTab(tab.id, {
       meta: { threadId: sessionId, ...(rootThreadId === undefined ? {} : { rootThreadId }) },
     })
   }, [ctx, rootThreadId, tab.id])
 
   useEffect(() => {
+    if (threadId === undefined) return
+    noteKnownSidechatSession(threadId)
+  }, [threadId])
+
+  useEffect(() => {
     if (threadId === undefined || !provisional || published) return
-    const forgetDraft = registerSidechatDraft(threadId, scope.sessionId)
+    const forgetDraft = registerSidechatDraft(threadId, SessionId(scope.sessionId))
     const unstage = ctx.sessions.stageProvisional({
-      sessionId: threadId as never,
-      parentSessionId: scope.sessionId as never,
+      sessionId: threadId,
+      parentSessionId: SessionId(scope.sessionId),
       origin: 'subagent',
       title: SIDE_NEW_THREAD_TITLE,
     })

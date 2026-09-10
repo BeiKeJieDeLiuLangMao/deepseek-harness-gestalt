@@ -1,9 +1,26 @@
+---
+description: "Deterministic keyless Browser Runtime Provider for temporary and named persistent Profiles."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-browser-runtime-deterministic
 
 English | [中文](README.zh.md)
 
+## Summary
+
 Deterministic keyless Browser Runtime Provider for temporary, named persistent, and shared Browser Profiles. One Profile can own multiple Workspaces, browser instances, and tabs. It is a runnable store and fixture backend, not an operating-system browser.
 
+## Table of Contents
+
+- [Configuration](#configuration)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
+
+-----
+
+<a id="configuration"></a>
 ## Configuration
 
 `idPrefix` controls the stable opaque fixture identities and defaults to `browser-trace`. Required `pages` entries contain `url`, `title`, `text`, and `screenshotPngBase64`; screenshot data must be non-empty canonical base64 whose decoded bytes start with the PNG signature. Empty page sets, duplicate URLs, and invalid screenshots fail plugin load.
@@ -12,6 +29,7 @@ Operations enter one serialized queue. Mutations require the current revision of
 
 The Provider's state is authoritative. Its invariant companion seeds from that state on initial installation and hot reload, then registers a synchronous pre-commit validator for identity, exact revision succession, and terminal closure. A failed invariant leaves the previous state authoritative. `browser/runtime-state` is a contained post-commit notification, so a broken ordinary observer cannot make a committed operation appear to fail.
 
+<a id="model-experience"></a>
 ## Model Experience
 
 Indirectly, through dsh-tool-browser, which renders every deterministic page and lifecycle fact.
@@ -21,5 +39,16 @@ Indirectly, through dsh-tool-browser, which renders every deterministic page and
 The Provider itself contributes no request text; Consumer schemas and logged results determine cache changes.
 
 ## Known Limitations and Deferred Work
+<a id="known-limitations-and-deferred-work"></a>
 
 - Navigation and synthetic input URLs succeed only for configured fixture URLs; native browser automation remains absent.
+
+<a id="dev-note"></a>
+### Dev Note
+
+<details>
+<summary>Working context for maintainers — click to expand</summary>
+
+None.
+
+</details>

@@ -8,94 +8,282 @@
 
 .title {
   margin: 0;
-  font-size: 16px;
-  line-height: 24px;
-  font-weight: 500;
-  color: var(--dsw-alias-label-primary);
+  font-size: 18px;
+  line-height: 26px;
+  font-weight: 600;
 }
 
 .intro,
 .empty {
   margin: 0;
-  font-size: 14px;
-  line-height: 22px;
+  font-size: 13px;
+  line-height: 20px;
   color: var(--dsw-alias-label-tertiary);
 }
 
-.field {
+.identityCard {
   display: flex;
   flex-direction: column;
-  align-items: stretch;
-  gap: 8px;
-  color: var(--dsw-alias-label-primary);
-  font: inherit;
+  gap: 10px;
+  margin-top: 4px;
+  padding: 14px;
+  border: 0.5px solid var(--dsw-alias-border-l4);
+  border-radius: 16px;
+  background: var(--dsw-alias-bg-layer-2);
+}
+
+.cardLabel,
+.rosterTitle {
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 600;
 }
 
 .kinds {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  padding: 3px;
+  border-radius: 11px;
+  background: var(--dsw-alias-bg-layer-1);
 }
 
-.row {
+.kindOption {
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: center;
+  min-width: 0;
+  height: 32px;
+  padding: 0 10px;
+  border: 0.5px solid transparent;
+  border-radius: 8px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 20px;
+  cursor: pointer;
+  transition: background .12s, border-color .12s, color .12s;
 }
 
-.control {
+.kindOption:hover {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.kindOption[data-selected='true'] {
+  border-color: var(--dsw-alias-border-l3);
+  background: var(--dsw-alias-bg-layer-3);
+  color: var(--dsw-alias-label-primary);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 6%);
+}
+
+.kindOption:has(input:focus-visible) {
+  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline-offset: 1px;
+}
+
+.persistentField {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 44%);
+  align-items: center;
+  gap: 16px;
+  padding-top: 12px;
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
+}
+
+.fieldLabel {
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.select {
   box-sizing: border-box;
   width: 100%;
   height: 32px;
-  padding: 0 10px;
-  border: 1px solid var(--dsw-alias-border-l2);
+  padding: 0 28px 0 10px;
+  border: 0.5px solid var(--dsw-alias-border-l4);
   border-radius: 8px;
-  background: var(--dsw-alias-bg-layer-3);
+  background: var(--dsw-alias-bg-layer-1);
   color: var(--dsw-alias-label-primary);
   font: inherit;
-  font-size: 14px;
-  line-height: 22px;
+  font-size: 13px;
 }
 
-.control:focus {
-  outline: none;
-  border-color: var(--dsw-alias-brand-primary);
+.select:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline-offset: 1px;
 }
 
-.control[aria-invalid='true'] {
-  border-color: var(--dsw-alias-label-error);
+.rosterSection {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.rosterHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.rosterTitle {
+  margin: 0;
 }
 
 .roster {
-  margin: 0;
-  padding: 0;
-  list-style: none;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
 .rosterRow {
   display: flex;
   align-items: center;
+  min-height: 48px;
+  padding: 6px 8px 6px 12px;
+  border: 0.5px solid var(--dsw-alias-border-l4);
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-layer-2);
+}
+
+.rosterRow:hover:not(.rosterRowEditing) {
+  border-color: var(--dsw-alias-border-l3);
+}
+
+.rosterRowEditing {
+  padding: 8px;
+}
+
+.profileIdentity {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+}
+
+.profileIcon {
+  display: inline-flex;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.profileName {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--dsw-alias-label-primary);
+  font-family: var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 13px;
+  line-height: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rosterActions,
+.renameActions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+}
+
+.iconAction {
+  width: 28px;
+  padding: 0;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.removeAction:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover-danger);
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.renameForm {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.renameLine {
+  display: flex;
+  min-width: 0;
+  align-items: center;
   gap: 8px;
 }
 
-.rosterName {
+.renameInput,
+.modalInput {
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.renameInput {
   flex: 1;
   min-width: 0;
 }
 
-.rosterActions {
+.inputInvalid {
+  border-color: var(--dsw-alias-state-error-primary);
+}
+
+.dialog {
+  width: min(420px, 100%);
+}
+
+.dialogField {
   display: flex;
-  flex: none;
-  align-items: center;
-  gap: 4px;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .error {
   margin: 0;
+  color: var(--dsw-alias-state-error-primary);
   font-size: 12px;
-  line-height: 1.5;
-  color: var(--dsw-alias-label-error);
+  line-height: 18px;
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (max-width: 560px) {
+  .kinds {
+    grid-template-columns: 1fr;
+  }
+
+  .persistentField {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  .renameLine {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .renameActions {
+    justify-content: flex-end;
+  }
 }

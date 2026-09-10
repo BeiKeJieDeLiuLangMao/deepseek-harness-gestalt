@@ -3,7 +3,6 @@ import { parsePersonalPairingId } from '@deepseek-ai/dsh-remote-access'
 import {
   deriveCompanionAttachmentKey,
   hashCompanionCiphertext,
-  parseAttachmentCapability,
   parseCompanionOperationId,
   parseCompanionSessionId,
   REMOTE_PROTOCOL_LIMITS,
@@ -26,10 +25,8 @@ async function offer(overrides: Partial<CompanionOfferAttachmentOperation> = {})
   ciphertext: Uint8Array
   hash: string
 }> {
-  const sealed = await sealCompanionAttachment(
-    await deriveCompanionAttachmentKey(attachmentKey),
-    plaintext,
-  )
+  const key = await deriveCompanionAttachmentKey(attachmentKey)
+  const sealed = await sealCompanionAttachment(key, plaintext)
   return {
     ciphertext: sealed.ciphertext,
     hash: sealed.ciphertextSha256,
@@ -37,7 +34,7 @@ async function offer(overrides: Partial<CompanionOfferAttachmentOperation> = {})
       type: 'offer-attachment',
       operationId: parseCompanionOperationId('operation-one'),
       sessionId: parseCompanionSessionId('session-one'),
-      capability: parseAttachmentCapability('A'.repeat(43)),
+      capability: 'A'.repeat(43) as never,
       ciphertextSha256: sealed.ciphertextSha256,
       byteLength: sealed.ciphertext.byteLength,
       expiresAt: 2_000,
@@ -90,7 +87,7 @@ describe('Desktop Companion attachment receive', () => {
 
     const tampered = new Uint8Array(prepared.ciphertext)
     const firstByte = tampered[0]
-    if (firstByte === undefined) throw new Error('sealed fixture ciphertext must contain a byte')
+    if (firstByte === undefined) throw new Error('sealed attachment is empty')
     tampered[0] = firstByte ^ 0xff
     expect(await hashCompanionCiphertext(tampered)).not.toBe(prepared.hash)
     await expect(receiveCompanionAttachment(prepared.offer, {
@@ -180,7 +177,9 @@ describe('Desktop Companion attachment receive', () => {
       fetch: async (_input, init) => {
         const headers = new Headers(init?.headers)
         expect(headers.get('x-gestalt-pairing-selector')).toBe(pairingId)
-        return new Response(prepared.ciphertext, { status: 200 })
+        const body = new ArrayBuffer(prepared.ciphertext.byteLength)
+        new Uint8Array(body).set(prepared.ciphertext)
+        return new Response(body, { status: 200 })
       },
     })).resolves.toEqual(prepared.ciphertext)
   })

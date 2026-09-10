@@ -1,0 +1,900 @@
+import { accessSync, constants as fsConstants, mkdirSync, readFileSync } from 'node:fs'
+import { glob, mkdtemp, readFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { decompressZstdFrame, scanZstdFrames } from '../../../packages/session/session-persistence-jsonl/src/zstd.ts'
+import { afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { parsePersonalPairingId } from '@deepseek-ai/dsh-remote-access'
+import { startMockLlmServer } from '@deepseek-ai/dsh-llm-mock-server'
+import {
+  parseCompanionInteractionId, parseCompanionOperationId, parseCompanionSessionId, REMOTE_PROTOCOL_LIMITS,
+} from '@deepseek-ai/dsh-remote-protocol'
+import { DesktopCompanionOperationLedger } from '../src/companion-operation-ledger.ts'
+import type { DesktopCompanionLiveProjectionChange } from '../src/companion-live-projection.ts'
+import { DesktopCompanionProductOwner, handleCompanionProductOperation } from '../src/companion-product.ts'
+import type { DesktopCompanionPairingDependencies } from '../src/companion-product.ts'
+import {
+  admitDesktopHostAttachment,
+  archiveDesktopHostSession,
+  bootstrapDesktopHostCookie, createDesktopHostRpc, createDesktopHostSession,
+  createDesktopHostWorkspace,
+  listDesktopHostSessions, pageDesktopHostSession,
+  promptDesktopHostSession,
+  readDesktopHostAttachment,
+  searchDesktopHostSessions,
+} from '../src/host-rpc.ts'
+import type { RunningWebHost } from '../src/spawn-web-host.ts'
+import {
+  generateDesktopHostTypertArtifacts,
+  startShippedWebHost,
+  stopShippedWebHosts,
+} from './shipped-web-host.ts'
+
+const children: RunningWebHost[] = []
+const homes: string[] = []
+
+beforeAll(() => {
+  generateDesktopHostTypertArtifacts()
+}, 120_000)
+
+afterEach(async () => {
+  await stopShippedWebHosts(children, homes)
+})
+
+async function startShippedHost(
+  env: NodeJS.ProcessEnv = {},
+  home?: string,
+): Promise<{ home: string; running: RunningWebHost }> {
+  return startShippedWebHost({ env, ...(home === undefined ? {} : { home }), children, homes })
+}
+
+describe('Desktop Host RPC against shipped dsh web', () => {
+  it('bootstraps the launch token and lists Sessions through generated session/list', async () => {
+    const first = await startShippedHost()
+    expect(first.running.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/)
+    expect(first.running.launchUrl.startsWith(`${first.running.url}/?token=`)).toBe(true)
+    expect(first.running.launchUrl).not.toBe(first.running.url)
+
+    const anonymous = createDesktopHostRpc(first.running.url, {
+      timeoutMs: 10_000,
+      responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
+    })
+    await expect(listDesktopHostSessions(anonymous)).resolves.toMatchObject({
+      ok: false,
+      failure: { kind: 'http', code: 'HOST_HTTP_STATUS', status: 401 },
+    })
+
+    await expect(bootstrapDesktopHostCookie(
+      first.running.launchUrl.replace(first.running.url, 'http://127.0.0.1:9'),
+      first.running.url,
+    )).rejects.toThrow(/same-origin loopback launch URL/)
+
+    const cookie = await bootstrapDesktopHostCookie(first.running.launchUrl, first.running.url)
+    expect(cookie).toMatch(/^dsh-auth-[^=]+=/)
+    const authed = createDesktopHostRpc(first.running.url, {
+      timeoutMs: 10_000,
+      responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
+      cookieHeader: cookie,
+    })
+    const listed = await listDesktopHostSessions(authed)
+    expect(listed).toMatchObject({ ok: true, value: { items: expect.any(Array) as unknown } })
+
+    const firstLaunch = first.running.launchUrl
+    await first.running.stop()
+    children.splice(children.indexOf(first.running), 1)
+
+    const second = await startShippedHost()
+    await expect(listDesktopHostSessions(createDesktopHostRpc(second.running.url, {
+      timeoutMs: 10_000,
+      responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
+      cookieHeader: cookie,
+    }))).resolves.toMatchObject({
+      ok: false,
+      failure: { kind: 'http', code: 'HOST_HTTP_STATUS', status: 401 },
+    })
+    await expect(bootstrapDesktopHostCookie(firstLaunch, second.running.url))
+      .rejects.toThrow(/same-origin loopback launch URL|HTTP 401|cookie bootstrap/)
+    const nextCookie = await bootstrapDesktopHostCookie(second.running.launchUrl, second.running.url)
+    expect(nextCookie).not.toBe(cookie)
+    await expect(listDesktopHostSessions(createDesktopHostRpc(second.running.url, {
+      timeoutMs: 10_000,
+      responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
+      cookieHeader: nextCookie,
+    }))).resolves.toMatchObject({ ok: true, value: { items: expect.any(Array) as unknown } })
+  }, 180_000)
+
+  it('follows generated session/follow, stops after unsubscribe, and reauths after Host restart', async () => {
+    const first = await startShippedHost()
+    const cookie = await bootstrapDesktopHostCookie(first.running.launchUrl, first.running.url)
+    const rpc = createDesktopHostRpc(first.running.url, {
+      timeoutMs: 10_000,
+      responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
+      cookieHeader: cookie,
+    })
+    const sessionId = 'desktop-follow-session'
+    await expect(createDesktopHostSession(rpc, sessionId)).resolves.toMatchObject({
+      ok: true, value: { sessionId },
+    })
+    const frames: unknown[] = []
+    const follow = new AbortController()
+    const watching = rpc.followSession?.(sessionId, follow.signal, (frame) => { frames.push(frame) })
+    await expect.poll(() => frames.some(frame => isRecord(frame) && frame.type === 'snapshot')).toBe(true)
+    const seen = frames.length
+    follow.abort()
+    await expect(watching).resolves.toBeUndefined()
+    await createDesktopHostSession(rpc, `${sessionId}-after-unsub`)
+    await new Promise(resolve => setTimeout(resolve, 250))
+    expect(frames.length).toBe(seen)
+
+    await first.running.stop()
+    children.splice(children.indexOf(first.running), 1)
+    const second = await startShippedHost()
+    const stale = createDesktopHostRpc(second.running.url, {
+      timeoutMs: 10_000,
+      responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
+      cookieHeader: cookie,
+    })
+    const staleFollow = new AbortController()
+    await expect(stale.followSession?.(sessionId, staleFollow.signal, () => {})).rejects.toThrow()
+    const nextCookie = await bootstrapDesktopHostCookie(second.running.launchUrl, second.running.url)
+    const next = createDesktopHostRpc(second.running.url, {
+      timeoutMs: 10_000,
+      responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
+      cookieHeader: nextCookie,
+    })
+    await expect(createDesktopHostSession(next, sessionId)).resolves.toMatchObject({
+      ok: true, value: { sessionId },
+    })
+    const restarted: unknown[] = []
+    const restartFollow = new AbortController()
+    const restartWatch = next.followSession?.(sessionId, restartFollow.signal, (frame) => {
+      restarted.push(frame)
+    })
+    await expect.poll(() => restarted.some(frame => isRecord(frame) && frame.type === 'snapshot')).toBe(true)
+    const snapshot = restarted.find(frame => isRecord(frame) && frame.type === 'snapshot')
+    if (!isRecord(snapshot) || typeof snapshot.cursor !== 'number') throw new Error('missing follow snapshot')
+    await expect(pageDesktopHostSession(next, {
+      sessionId, throughSeq: snapshot.cursor, maxMessages: 20,
+    })).resolves.toMatchObject({ ok: true, value: { records: expect.any(Array) as unknown, hasMore: expect.any(Boolean) as unknown } })
+    restartFollow.abort()
+    await expect(restartWatch).resolves.toBeUndefined()
+  }, 180_000)
+
+  it('follows generated workspace/follow, applies a create increment, and reauths after Host restart', async () => {
+    const first = await startShippedHost()
+    const cookie = await bootstrapDesktopHostCookie(first.running.launchUrl, first.running.url)
+    const rpc = createDesktopHostRpc(first.running.url, {
+      timeoutMs: 10_000,
+      responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
+      cookieHeader: cookie,
+    })
+    const frames: unknown[] = []
+    const follow = new AbortController()
+    const watching = rpc.followWorkspaces?.(follow.signal, (frame) => { frames.push(frame) })
+    await expect.poll(() => frames.some(frame => isRecord(frame) && frame.type === 'baseline')).toBe(true)
+    const created = await createDesktopHostWorkspace(rpc, first.home)
+    expect(created.ok).toBe(true)
+    if (!created.ok || !isRecord(created.value) || !isRecord(created.value.workspace)
+      || typeof created.value.workspace.path !== 'string') {
+      throw new Error('Desktop Host workspace/create returned an invalid value')
+    }
+    expect(created.value.workspace.path).toContain('dsh-desktop-host-rpc-')
+    await expect.poll(() => frames.some(frame => isRecord(frame) && frame.type === 'upsert')).toBe(true)
+    const seen = frames.length
+    follow.abort()
+    await expect(watching).resolves.toBeUndefined()
+    await createDesktopHostWorkspace(rpc, join(first.home, '.agents'))
+    await new Promise(resolve => setTimeout(resolve, 250))
+    expect(frames.length).toBe(seen)
+
+    await first.running.stop()
+    children.splice(children.indexOf(first.running), 1)
+    const second = await startShippedHost()
+    const stale = createDesktopHostRpc(second.running.url, {
+      timeoutMs: 10_000,
+      responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
+      cookieHeader: cookie,
+    })
+    const staleFollow = new AbortController()
+    await expect(stale.followWorkspaces?.(staleFollow.signal, () => {})).rejects.toThrow()
+    const nextCookie = await bootstrapDesktopHostCookie(second.running.launchUrl, second.running.url)
+    const next = createDesktopHostRpc(second.running.url, {
+      timeoutMs: 10_000,
+      responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
+      cookieHeader: nextCookie,
+    })
+    const restarted: unknown[] = []
+    const restartFollow = new AbortController()
+    const restartWatch = next.followWorkspaces?.(restartFollow.signal, (frame) => { restarted.push(frame) })
+    await expect.poll(() => restarted.some(frame => isRecord(frame) && frame.type === 'baseline')).toBe(true)
+    restartFollow.abort()
+    await expect(restartWatch).resolves.toBeUndefined()
+  }, 180_000)
+
+  it('archives a Session through workspace/follow without exposing it after unsubscribe', async () => {
+    const first = await startShippedHost()
+    const cookie = await bootstrapDesktopHostCookie(first.running.launchUrl, first.running.url)
+    const rpc = createDesktopHostRpc(first.running.url, {
+      timeoutMs: 10_000,
+      responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
+      cookieHeader: cookie,
+    })
+    const sessionId = 'desktop-archived-session'
+    await expect(createDesktopHostSession(rpc, sessionId)).resolves.toMatchObject({
+      ok: true, value: { sessionId },
+    })
+    const frames: unknown[] = []
+    const follow = new AbortController()
+    const watching = rpc.followWorkspaces?.(follow.signal, (frame) => { frames.push(frame) })
+    await expect.poll(() => frames.some(frame => isRecord(frame) && frame.type === 'baseline')).toBe(true)
+    await expect(archiveDesktopHostSession(rpc, sessionId)).resolves.toMatchObject({ ok: true })
+    await expect.poll(() => frames.some((frame) => {
+      return isRecord(frame) && frame.type === 'archived'
+        && Array.isArray(frame.archivedSessionIds) && frame.archivedSessionIds.includes(sessionId)
+    })).toBe(true)
+    const seen = frames.length
+    follow.abort()
+    await expect(watching).resolves.toBeUndefined()
+    await archiveDesktopHostSession(rpc, `${sessionId}-after-unsub`)
+    await new Promise(resolve => setTimeout(resolve, 250))
+    expect(frames.length).toBe(seen)
+  }, 180_000)
+
+  it('submits session/prompt with initiator requestId then cancels through session/cancel', async () => {
+    const apiKey = 'desktop-assembled-prompt-key'
+    const llm = await startMockLlmServer({ sequence: ['stall'], apiKey })
+    try {
+      const first = await startShippedHost({
+        DEEPSEEK_API_KEY: apiKey,
+        DEEPSEEK_BASE_URL: llm.baseURL,
+      })
+      const cookie = await bootstrapDesktopHostCookie(first.running.launchUrl, first.running.url)
+      const rpc = createDesktopHostRpc(first.running.url, {
+        timeoutMs: 15_000,
+        responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
+        cookieHeader: cookie,
+      })
+      const sessionId = parseCompanionSessionId('desktop-prompt-session')
+      await expect(createDesktopHostSession(rpc, sessionId)).resolves.toMatchObject({
+        ok: true, value: { sessionId },
+      })
+      const submit = {
+        type: 'submit-prompt' as const,
+        operationId: parseCompanionOperationId('desktop-prompt-operation'),
+        sessionId,
+        text: 'assembled companion prompt',
+      }
+      const pairing = {
+        pairingId: parsePersonalPairingId('pairing-assembled'),
+        attachmentKey: new Uint8Array(32),
+        now: () => 1_000,
+        downloadAttachment: async () => { throw new Error('assembled prompt must not download') },
+        submitAttachment: async () => { throw new Error('assembled prompt must not submit attachments') },
+        generation: 1,
+        desktopRevision: 1,
+        desktopName: 'Assembled Desktop',
+        resolveInteraction: () => undefined,
+        pendingInteractions: () => [],
+        workspaceSnapshot: async () => ({ items: [], archivedSessionIds: [] }),
+      }
+      const frames: unknown[] = []
+      const follow = new AbortController()
+      const watching = rpc.followSession(sessionId, follow.signal, (frame) => { frames.push(frame) })
+      try {
+        await expect(handleCompanionProductOperation(submit, { ...pairing, host: rpc })).resolves.toMatchObject({
+          type: 'confirmed', operationId: submit.operationId,
+        })
+        await expect.poll(async () => {
+          const log = await durableSessionLog(first.home, sessionId)
+          return log.includes(`"rpcId":"${submit.operationId}"`)
+        }).toBe(true)
+        await expect.poll(() => llm.requests.length > 0).toBe(true)
+        await expect.poll(() => frames.some(frame => followHasTurnStart(frame))).toBe(true)
+        expect(frames.some(frame => followHasUserRequest(frame, submit.operationId))).toBe(true)
+        const llmCallsBeforeCancel = llm.requests.length
+        await expect(handleCompanionProductOperation({
+          type: 'cancel-session', operationId: parseCompanionOperationId('desktop-cancel-operation'), sessionId,
+        }, { ...pairing, host: rpc })).resolves.toMatchObject({ type: 'confirmed' })
+        await expect.poll(() => frames.some(frame => followHasTurnEnd(frame))).toBe(true)
+        await expect.poll(async () => {
+          const listed = await listDesktopHostSessions(rpc)
+          if (!listed.ok || !isRecord(listed.value) || !Array.isArray(listed.value.items)) return false
+          const row: unknown = listed.value.items.find(item => isRecord(item) && item.sessionId === sessionId)
+          return isRecord(row) && row.running === false
+        }).toBe(true)
+        expect(llm.requests.length).toBe(llmCallsBeforeCancel)
+        const latest = [...frames].reverse().find(frame => isRecord(frame) && frame.type === 'snapshot')
+          ?? frames.find(frame => isRecord(frame) && frame.type === 'snapshot')
+        if (!isRecord(latest) || typeof latest.cursor !== 'number') throw new Error('missing follow snapshot')
+        const paged = await pageDesktopHostSession(rpc, { sessionId, throughSeq: latest.cursor, maxMessages: 20 })
+        expect(paged.ok).toBe(true)
+      } finally {
+        follow.abort()
+        await watching
+      }
+    } finally {
+      await llm.close()
+    }
+  }, 180_000)
+
+  it('answers one shipped Host ask_user_question through $events/result', async () => {
+    const apiKey = 'desktop-assembled-ask-user-key'
+    const llm = await startMockLlmServer({
+      sequence: ['tool_call_success', 'success'],
+      apiKey,
+      toolName: 'ask_user_question',
+      toolArguments: JSON.stringify({
+        questions: [{
+          id: 'q1',
+          question: 'Continue?',
+          options: [{ label: 'Yes' }],
+        }],
+      }),
+      successText: 'acknowledged-ask-user',
+    })
+    try {
+      const first = await startShippedHost({
+        DEEPSEEK_API_KEY: apiKey,
+        DEEPSEEK_BASE_URL: llm.baseURL,
+      })
+      const cookie = await bootstrapDesktopHostCookie(first.running.launchUrl, first.running.url)
+      const owner = new DesktopCompanionProductOwner({
+        timeoutMs: 15_000,
+        responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
+      })
+      const ledger = await DesktopCompanionOperationLedger.load({
+        load: async () => [],
+        save: async () => {},
+      })
+      owner.installLedger(ledger)
+      const uninstall = owner.installHost(first.running.url, cookie)
+      const rpc = createDesktopHostRpc(first.running.url, {
+        timeoutMs: 15_000,
+        responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
+        cookieHeader: cookie,
+      })
+      const sessionId = parseCompanionSessionId('desktop-ask-user-session')
+      const attachmentKey = new Uint8Array(32)
+      const pairing: DesktopCompanionPairingDependencies = {
+        pairingId: parsePersonalPairingId('pairing-ask-user'),
+        attachmentKey,
+        now: () => 1_000,
+        downloadAttachment: async () => { throw new Error('ask-user must not download') },
+        submitAttachment: async () => { throw new Error('ask-user must not submit attachments') },
+        generation: 1,
+        desktopRevision: 1,
+        desktopName: 'Assembled Desktop',
+        resolveInteraction: interactionId => owner.resolveInteraction(interactionId, attachmentKey),
+        pendingInteractions: sessionId => owner.pendingInteractions(sessionId, attachmentKey),
+      }
+      try {
+        await expect(createDesktopHostSession(rpc, sessionId)).resolves.toMatchObject({
+          ok: true, value: { sessionId },
+        })
+        const submit = {
+          type: 'submit-prompt' as const,
+          operationId: parseCompanionOperationId('desktop-ask-user-prompt'),
+          sessionId,
+          text: 'ask the user one question',
+        }
+        await expect(owner.handle(submit, pairing)).resolves.toMatchObject({
+          type: 'confirmed', operationId: submit.operationId,
+        })
+        await expect.poll(() => owner.pendingInteractions(sessionId, attachmentKey).length > 0).toBe(true)
+        const pending = owner.pendingInteractions(sessionId, attachmentKey)[0]
+        if (!isRecord(pending) || pending.kind !== 'question' || typeof pending.interactionId !== 'string') {
+          throw new Error('missing Ask User wait')
+        }
+        await expect(owner.handle({
+          type: 'settle-interaction',
+          operationId: parseCompanionOperationId('desktop-ask-user-answer'),
+          sessionId,
+          interactionId: parseCompanionInteractionId(pending.interactionId),
+          settlement: { kind: 'question', answers: [{ id: 'q1', selected: ['Yes'] }] },
+        }, pairing)).resolves.toMatchObject({ type: 'interaction-receipt', accepted: true })
+        await expect.poll(async () => {
+          const log = await durableSessionLog(first.home, sessionId)
+          return log.includes('acknowledged-ask-user')
+        }).toBe(true)
+        expect(owner.pendingInteractions(sessionId, attachmentKey)).toHaveLength(0)
+      } finally {
+        uninstall()
+      }
+    } finally {
+      await llm.close()
+    }
+  }, 180_000)
+
+  it('allows one shipped Host bash escalation and writes the scratch file once', async () => {
+    await runAssembledApproval({
+      sessionId: 'desktop-approval-allow-session',
+      outcome: 'allowed-once',
+      expectWritten: true,
+    })
+  }, 180_000)
+
+  it('rejects one shipped Host bash escalation and never writes the scratch file', async () => {
+    await runAssembledApproval({
+      sessionId: 'desktop-approval-reject-session',
+      outcome: 'rejected',
+      expectWritten: false,
+    })
+  }, 180_000)
+
+  it('creates, lists, searches, reads images, and admits files on generated Session remotes', async () => {
+    const first = await startShippedHost()
+    const cookie = await bootstrapDesktopHostCookie(first.running.launchUrl, first.running.url)
+    const rpc = createDesktopHostRpc(first.running.url, {
+      timeoutMs: 15_000,
+      responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
+      attachmentTimeoutMs: 15_000,
+      cookieHeader: cookie,
+    })
+    const sessionId = parseCompanionSessionId('desktop-generated-session-remotes')
+    await expect(createDesktopHostSession(rpc, sessionId)).resolves.toMatchObject({
+      ok: true, value: { sessionId },
+    })
+    await expect(listDesktopHostSessions(rpc)).resolves.toMatchObject({
+      ok: true,
+      value: { items: expect.arrayContaining([expect.objectContaining({ sessionId })]) as unknown },
+    })
+    const needle = 'desktop-generated-search-needle'
+    await expect(promptDesktopHostSession(rpc, {
+      requestId: 'desktop-generated-search-prompt',
+      sessionId,
+      mode: 'queue',
+      content: [{ type: 'text', text: needle }],
+    })).resolves.toMatchObject({ ok: true, value: { accepted: true } })
+    await expect.poll(async () => {
+      const searched = await searchDesktopHostSessions(rpc, needle)
+      return searched.ok && isRecord(searched.value) && Array.isArray(searched.value.items)
+        && searched.value.items.some(item => isRecord(item) && item.sessionId === sessionId)
+    }).toBe(true)
+
+    const png = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+      'base64',
+    )
+    await expect(rpc.call('session/selectModel', {
+      args: {
+        request: {
+          sessionId,
+          provider: 'deepseek-official',
+          model: 'deepseek-v4-flash-vision-exp',
+        },
+      },
+    })).resolves.toMatchObject({
+      ok: true,
+      value: { selected: { provider: 'deepseek-official', model: 'deepseek-v4-flash-vision-exp' } },
+    })
+    const frames: unknown[] = []
+    const follow = new AbortController()
+    const watching = rpc.followSession(sessionId, follow.signal, (frame) => { frames.push(frame) })
+    try {
+      await expect.poll(() => frames.some(frame => isRecord(frame) && frame.type === 'snapshot')).toBe(true)
+      const imagePrompt = await promptDesktopHostSession(rpc, {
+        requestId: 'desktop-generated-image-prompt',
+        sessionId,
+        mode: 'queue',
+        content: [
+          { type: 'text', text: 'see image' },
+          { type: 'image', mediaType: 'image/png', data: png.toString('base64'), name: 'pixel.png' },
+        ],
+      })
+      if (!imagePrompt.ok) throw new Error(`image prompt failed: ${JSON.stringify(imagePrompt)}`)
+      expect(imagePrompt).toMatchObject({ ok: true, value: { accepted: true } })
+      await expect.poll(() => imageAttachmentIdFromFollow(frames) !== undefined).toBe(true)
+      const imageId = imageAttachmentIdFromFollow(frames)
+      if (imageId === undefined) throw new Error('missing image attachment id')
+      const image = await readDesktopHostAttachment(rpc, { sessionId, attachmentId: imageId })
+      if (!image.ok) throw new Error(`image read failed id=${imageId} result=${JSON.stringify(image)}`)
+      expect(image).toMatchObject({
+        ok: true,
+        value: { attachment: expect.objectContaining({ mediaType: 'image/png' }) as unknown, data: png.toString('base64') },
+      })
+
+      const fileBytes = Uint8Array.of(0, 255, 1, 2)
+      const admitted = await admitDesktopHostAttachment(rpc, {
+        sessionId,
+        operationId: 'desktop-generated-file-admit',
+        mediaType: 'application/octet-stream',
+        name: 'payload.bin',
+        data: Buffer.from(fileBytes).toString('base64'),
+      })
+      expect(admitted).toMatchObject({
+        ok: true,
+        value: { attachment: expect.objectContaining({
+          name: 'payload.bin', mediaType: 'application/octet-stream', bytes: 4,
+        }) as unknown },
+      })
+      const fileId = admitted.ok && isRecord(admitted.value) && isRecord(admitted.value.attachment)
+        ? admitted.value.attachment.attachmentId
+        : undefined
+      expect(typeof fileId).toBe('string')
+      await expect(readDesktopHostAttachment(rpc, { sessionId, attachmentId: String(fileId) })).resolves.toMatchObject({
+        ok: false,
+        failure: { kind: 'business' },
+      })
+      expect(await durableSessionLog(first.home, sessionId)).toContain('session/attachment-admitted')
+    } finally {
+      follow.abort()
+      await watching
+    }
+  }, 180_000)
+
+  it('invalidates Companion list from shipped Host api-session notices', async () => {
+    const first = await startShippedHost()
+    const cookie = await bootstrapDesktopHostCookie(first.running.launchUrl, first.running.url)
+    const owner = new DesktopCompanionProductOwner({
+      timeoutMs: 15_000,
+      responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
+    })
+    const uninstall = owner.installHost(first.running.url, cookie)
+    const rpc = createDesktopHostRpc(first.running.url, {
+      timeoutMs: 15_000,
+      responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
+      cookieHeader: cookie,
+    })
+    const sessionId = parseCompanionSessionId('desktop-list-notice-session')
+    const changes: unknown[] = []
+    const disconnect = owner.connectLiveProjection(
+      parsePersonalPairingId('pairing-list-notice'),
+      (change) => { changes.push(change) },
+      () => {},
+    )
+    try {
+      await expect(createDesktopHostSession(rpc, sessionId)).resolves.toMatchObject({
+        ok: true, value: { sessionId },
+      })
+      await expect.poll(() => {
+        return changes.filter(change => isRecord(change) && change.type === 'surface').length >= 1
+      }).toBe(true)
+      await expect(listDesktopHostSessions(rpc)).resolves.toMatchObject({
+        ok: true,
+        value: { items: expect.arrayContaining([expect.objectContaining({ sessionId })]) as unknown },
+      })
+      const surfaces = changes.filter(change => isRecord(change) && change.type === 'surface').length
+      await expect(archiveDesktopHostSession(rpc, sessionId)).resolves.toMatchObject({ ok: true })
+      await expect.poll(() => {
+        return changes.filter(change => isRecord(change) && change.type === 'surface').length > surfaces
+      }).toBe(true)
+    } finally {
+      disconnect()
+      uninstall()
+    }
+  }, 180_000)
+
+  it('projects assistant conversation from owner live session/follow and stops after unsubscribe', async () => {
+    const apiKey = 'desktop-assembled-follow-consumer-key'
+    const assistantText = 'desktop-follow-consumer-assistant'
+    const llm = await startMockLlmServer({
+      sequence: ['success'],
+      repeatLast: true,
+      apiKey,
+      successText: assistantText,
+    })
+    try {
+      const first = await startShippedHost({
+        DEEPSEEK_API_KEY: apiKey,
+        DEEPSEEK_BASE_URL: llm.baseURL,
+      })
+      const cookie = await bootstrapDesktopHostCookie(first.running.launchUrl, first.running.url)
+      const owner = new DesktopCompanionProductOwner({
+        timeoutMs: 15_000,
+        responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
+      })
+      owner.installLedger(await DesktopCompanionOperationLedger.load({
+        load: async () => [],
+        save: async () => {},
+      }))
+      const uninstall = owner.installHost(first.running.url, cookie)
+      const rpc = createDesktopHostRpc(first.running.url, {
+        timeoutMs: 15_000,
+        responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
+        cookieHeader: cookie,
+      })
+      const pairingId = parsePersonalPairingId('pairing-follow-consumer')
+      const attachmentKey = new Uint8Array(32)
+      const pairing: DesktopCompanionPairingDependencies = {
+        pairingId,
+        attachmentKey,
+        now: () => 1_000,
+        downloadAttachment: async () => { throw new Error('follow consumer must not download') },
+        submitAttachment: async () => { throw new Error('follow consumer must not submit attachments') },
+        generation: 1,
+        desktopRevision: 1,
+        desktopName: 'Assembled Desktop',
+        resolveInteraction: interactionId => owner.resolveInteraction(interactionId, attachmentKey),
+        pendingInteractions: sessionId => owner.pendingInteractions(sessionId, attachmentKey),
+      }
+      const sessionId = parseCompanionSessionId('desktop-follow-consumer-session')
+      const needle = 'desktop follow consumer prompt'
+      const changes: DesktopCompanionLiveProjectionChange[] = []
+      const disconnect = owner.connectLiveProjection(pairingId, (change) => { changes.push(change) }, () => {})
+      try {
+        await expect(createDesktopHostSession(rpc, sessionId)).resolves.toMatchObject({
+          ok: true, value: { sessionId },
+        })
+        await expect(owner.handle({
+          type: 'observe-session',
+          operationId: parseCompanionOperationId('desktop-follow-observe'),
+          sessionId,
+        }, pairing)).resolves.toMatchObject({ type: 'confirmed' })
+        const observed = changes.find(change => (
+          change.type === 'session' && change.sessionId === sessionId && change.includeConversation
+        ))
+        if (observed === undefined) throw new Error('observe-session did not request a live conversation')
+        await expect(owner.projectLiveSession(observed, attachmentKey, new AbortController().signal))
+          .resolves.toMatchObject({ sessionId, conversation: { sessionId } })
+
+        const surfacesBeforeWorkspace = changes.filter(change => change.type === 'surface').length
+        await expect(owner.handle({
+          type: 'submit-prompt',
+          operationId: parseCompanionOperationId('desktop-follow-prompt'),
+          sessionId,
+          text: needle,
+        }, pairing)).resolves.toMatchObject({ type: 'confirmed' })
+        await expect.poll(async () => {
+          const latest = [...changes].reverse().find(change => (
+            change.type === 'session' && change.sessionId === sessionId && change.includeConversation
+          ))
+          if (latest === undefined) return false
+          const projected = await owner.projectLiveSession(latest, attachmentKey, new AbortController().signal)
+          return conversationHasUserText(projected, needle)
+            && conversationHasAssistantText(projected, assistantText)
+        }).toBe(true)
+
+        await expect(createDesktopHostWorkspace(rpc, first.home)).resolves.toMatchObject({ ok: true })
+        await expect.poll(() => {
+          return changes.filter(change => change.type === 'surface').length > surfacesBeforeWorkspace
+        }).toBe(true)
+
+        disconnect()
+        const afterLive = changes.length
+        const llmCalls = llm.requests.length
+        await expect(owner.handle({
+          type: 'submit-prompt',
+          operationId: parseCompanionOperationId('desktop-follow-after-unsub'),
+          sessionId,
+          text: 'must not notify after live unsubscribe',
+        }, pairing)).resolves.toMatchObject({ type: 'confirmed' })
+        await expect.poll(() => llm.requests.length > llmCalls).toBe(true)
+        await new Promise(resolve => setTimeout(resolve, 250))
+        expect(changes.filter(change => (
+          change.type === 'session' && change.sessionId === sessionId && change.includeConversation
+        )).length).toBe(changes.slice(0, afterLive).filter(change => (
+          change.type === 'session' && change.sessionId === sessionId && change.includeConversation
+        )).length)
+        expect(changes.length).toBe(afterLive)
+      } finally {
+        uninstall()
+      }
+    } finally {
+      await llm.close()
+    }
+  }, 180_000)
+})
+
+function followHasUserRequest(frame: unknown, requestId: string): boolean {
+  if (!isRecord(frame)) return false
+  const events = frame.type === 'event' ? [frame.event] : frame.type === 'snapshot' && Array.isArray(frame.records)
+    ? frame.records.map(record => isRecord(record) ? record.event : undefined)
+    : []
+  return events.some((event) => {
+    return isRecord(event) && event.type === 'user/message' && isRecord(event.data)
+      && isRecord(event.data.source) && event.data.source.rpcId === requestId
+  })
+}
+
+function followHasEventType(frame: unknown, type: string): boolean {
+  if (!isRecord(frame)) return false
+  if (frame.type === 'event') return isRecord(frame.event) && frame.event.type === type
+  if (frame.type !== 'snapshot' || !Array.isArray(frame.records)) return false
+  return frame.records.some(record => isRecord(record) && isRecord(record.event) && record.event.type === type)
+}
+
+function followHasTurnStart(frame: unknown): boolean {
+  return followHasEventType(frame, 'turn/start')
+}
+
+function followHasTurnEnd(frame: unknown): boolean {
+  return followHasEventType(frame, 'turn/end')
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function conversationHasUserText(projected: unknown, text: string): boolean {
+  if (!isRecord(projected) || !isRecord(projected.conversation) || !Array.isArray(projected.conversation.nodes)) {
+    return false
+  }
+  return projected.conversation.nodes.some((node) => {
+    return isRecord(node) && node.kind === 'user' && Array.isArray(node.content)
+      && node.content.some(block => isRecord(block) && block.type === 'text' && block.text === text)
+  })
+}
+
+function conversationHasAssistantText(projected: unknown, text: string): boolean {
+  if (!isRecord(projected) || !isRecord(projected.conversation)) return false
+  const nodes: unknown[] = Array.isArray(projected.conversation.nodes) ? projected.conversation.nodes : []
+  const partial: unknown[] = isRecord(projected.conversation.partial) && Array.isArray(projected.conversation.partial.blocks)
+    ? projected.conversation.partial.blocks
+    : []
+  return [...nodes, ...partial].some((item) => {
+    if (!isRecord(item)) return false
+    if (item.kind === 'assistant' && Array.isArray(item.blocks)) {
+      return item.blocks.some(block => isRecord(block) && block.kind === 'text' && block.text === text)
+    }
+    return item.kind === 'text' && item.text === text
+  })
+}
+
+function imageAttachmentIdFromFollow(frames: readonly unknown[]): string | undefined {
+  for (const frame of frames) {
+    const events = followEvents(frame)
+    for (const event of events) {
+      if (!isRecord(event) || event.type !== 'user/message' || !isRecord(event.data) || !Array.isArray(event.data.content)) {
+        continue
+      }
+      for (const block of event.data.content) {
+        if (!isRecord(block) || block.type !== 'image' || !isRecord(block.attachment)) continue
+        if (typeof block.attachment.attachmentId === 'string') return block.attachment.attachmentId
+      }
+    }
+  }
+  return undefined
+}
+
+function followEvents(frame: unknown): unknown[] {
+  if (!isRecord(frame)) return []
+  if (frame.type === 'event') return [frame.event]
+  if (frame.type === 'snapshot' && Array.isArray(frame.records)) {
+    return frame.records.map(record => isRecord(record) ? record.event : undefined)
+  }
+  return []
+}
+
+async function runAssembledApproval(input: {
+  sessionId: string
+  outcome: 'allowed-once' | 'rejected'
+  expectWritten: boolean
+}): Promise<void> {
+  const apiKey = `desktop-assembled-approval-${input.outcome}`
+  const marker = `desktop-approval-${input.outcome}`
+  const home = await mkdtemp(join(tmpdir(), 'dsh-desktop-host-rpc-'))
+  homes.push(home)
+  const workspace = join(home, 'workspace')
+  const scratch = join(home, 'scratch', 'approval-scratch.txt')
+  mkdirSync(workspace, { recursive: true })
+  mkdirSync(join(home, 'scratch'), { recursive: true })
+  const llm = await startMockLlmServer({
+    sequence: ['tool_call_success', 'success'],
+    apiKey,
+    toolName: 'bash',
+    toolArguments: JSON.stringify({
+      command: `printf ${marker} >> ${JSON.stringify(scratch)}`,
+      description: 'Append one approval marker to the isolated Host scratch file',
+      sandbox_permissions: 'danger-full-access',
+      justification: 'Assembled Companion approval must observe one exclusive scratch write.',
+    }),
+    successText: `approval-${input.outcome}-done`,
+  })
+  try {
+    const first = await startShippedHost({
+      DEEPSEEK_API_KEY: apiKey,
+      DEEPSEEK_BASE_URL: llm.baseURL,
+      DSH_PERMISSION_MODE: 'workspace-write',
+    }, home)
+    const cookie = await bootstrapDesktopHostCookie(first.running.launchUrl, first.running.url)
+    const owner = new DesktopCompanionProductOwner({
+      timeoutMs: 15_000,
+      responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
+    })
+    const ledger = await DesktopCompanionOperationLedger.load({
+      load: async () => [],
+      save: async () => {},
+    })
+    owner.installLedger(ledger)
+    const uninstall = owner.installHost(first.running.url, cookie)
+    const rpc = createDesktopHostRpc(first.running.url, {
+      timeoutMs: 15_000,
+      responseMaxBytes: REMOTE_PROTOCOL_LIMITS.companionMessageBytes,
+      cookieHeader: cookie,
+    })
+    const sessionId = parseCompanionSessionId(input.sessionId)
+    const attachmentKey = new Uint8Array(32)
+    const pairing: DesktopCompanionPairingDependencies = {
+      pairingId: parsePersonalPairingId('pairing-approval'),
+      attachmentKey,
+      now: () => 1_000,
+      downloadAttachment: async () => { throw new Error('approval must not download') },
+      submitAttachment: async () => { throw new Error('approval must not submit attachments') },
+      generation: 1,
+      desktopRevision: 1,
+      desktopName: 'Assembled Desktop',
+      resolveInteraction: interactionId => owner.resolveInteraction(interactionId, attachmentKey),
+      pendingInteractions: sessionId => owner.pendingInteractions(sessionId, attachmentKey),
+    }
+    try {
+      await expect(createDesktopHostSession(rpc, sessionId, { cwd: workspace })).resolves.toMatchObject({
+        ok: true, value: { sessionId },
+      })
+      const submit = {
+        type: 'submit-prompt' as const,
+        operationId: parseCompanionOperationId(`desktop-approval-${input.outcome}-prompt`),
+        sessionId,
+        text: 'escalate one bash write',
+      }
+      await expect(owner.handle(submit, pairing)).resolves.toMatchObject({
+        type: 'confirmed', operationId: submit.operationId,
+      })
+      await expect.poll(() => {
+        return owner.pendingInteractions(sessionId, attachmentKey)
+          .some(item => isRecord(item) && item.kind === 'approval')
+      }).toBe(true)
+      const pending = owner.pendingInteractions(sessionId, attachmentKey)
+        .find(item => isRecord(item) && item.kind === 'approval')
+      if (!isRecord(pending) || typeof pending.interactionId !== 'string') throw new Error('missing Approval wait')
+      const interactionId = parseCompanionInteractionId(pending.interactionId)
+      const settle = {
+        type: 'settle-interaction' as const,
+        operationId: parseCompanionOperationId(`desktop-approval-${input.outcome}-answer`),
+        sessionId,
+        interactionId,
+        settlement: { kind: 'approval' as const, outcome: input.outcome },
+      }
+      await expect(owner.handle(settle, pairing)).resolves.toMatchObject({
+        type: 'interaction-receipt', accepted: true,
+      })
+      await expect(owner.handle(settle, pairing)).resolves.toMatchObject({
+        type: 'interaction-receipt', accepted: true,
+      })
+      await expect.poll(() => owner.pendingInteractions(sessionId, attachmentKey)).toEqual([])
+      if (input.expectWritten) {
+        await expect.poll(() => {
+          try {
+            return readFileSync(scratch, 'utf8')
+          } catch {
+            return ''
+          }
+        }).toBe(marker)
+      } else {
+        await expect.poll(async () => {
+          const log = await durableSessionLog(first.home, sessionId)
+          return log.includes('the user rejected escalating this command')
+        }).toBe(true)
+        expect(() => { accessSync(scratch, fsConstants.F_OK) }).toThrow()
+      }
+      await expect(owner.handle({
+        type: 'settle-interaction',
+        operationId: parseCompanionOperationId(`desktop-approval-${input.outcome}-late`),
+        sessionId,
+        interactionId,
+        settlement: { kind: 'approval', outcome: 'rejected' },
+      }, pairing)).resolves.toMatchObject({
+        type: 'interaction-receipt', accepted: false, reason: 'not-pending',
+      })
+    } finally {
+      uninstall()
+    }
+  } finally {
+    await llm.close()
+  }
+}
+
+async function durableSessionLog(home: string, sessionId: string): Promise<string> {
+  const root = join(home, '.dsh', 'sessions')
+  const matches: string[] = []
+  for await (const match of glob(`**/${sessionId}/session.jsonl.zstd`, { cwd: root })) {
+    matches.push(match)
+  }
+  if (matches[0] === undefined) return ''
+  const bytes = await readFile(join(root, matches[0]))
+  const scan = scanZstdFrames(bytes)
+  const chunks: Buffer[] = []
+  for (const frame of scan.frames) {
+    chunks.push(await decompressZstdFrame(bytes.subarray(frame.start, frame.end)))
+  }
+  return Buffer.concat(chunks).toString('utf8')
+}

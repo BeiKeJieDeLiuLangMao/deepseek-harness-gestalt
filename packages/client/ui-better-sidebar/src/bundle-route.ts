@@ -16,10 +16,10 @@ import { createHash } from 'node:crypto'
 import { stat, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { Context, SidebarHttpRequest, SidebarHttpResponse } from './context-types.ts'
+import type { SidebarContext, SidebarHttpRequest, SidebarHttpResponse } from './context-types.ts'
 
 /** The chunk names the client may request (mirror of src/client/chunk-loader.ts). */
-export const CHUNK_NAMES = ['terminal', 'editor', 'mermaid'] as const
+export const CHUNK_NAMES = ['terminal', 'editor', 'mermaid', 'locale'] as const
 export type ChunkName = (typeof CHUNK_NAMES)[number]
 
 /**
@@ -124,7 +124,7 @@ export function createBundleRouteHandler(
 }
 
 /** Register the /sidebar/bundle route (disposed with the fiber). */
-export function registerBundleRoute(ctx: Context, fence: (req: SidebarHttpRequest) => boolean): () => void {
+export function registerBundleRoute(ctx: SidebarContext, fence: (req: SidebarHttpRequest) => boolean): () => void {
   return ctx.webServer.register({
     kind: 'prefix',
     path: '/sidebar/bundle',

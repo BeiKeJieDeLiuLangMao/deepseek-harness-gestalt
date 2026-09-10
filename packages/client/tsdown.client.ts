@@ -18,7 +18,6 @@ import { transform } from 'lightningcss'
 import { optionalStringArray } from './modules/src/client/manifest.ts'
 import { PLATFORM_MODULES, PRELOADED_CLIENT_EXTERNALS } from './web/src/platform.ts'
 import { clientBuildEnvironmentDefines } from '../../scripts/client-build-environment.ts'
-import { DYNAMIC_CLIENT_ARTIFACT } from '../../scripts/client-artifact-contract.ts'
 
 /**
  * Virtual-id wrapper keeping module CSS away from tsdown's own css pipeline
@@ -54,12 +53,12 @@ function styleInjectionModule(
 }
 
 /**
- * Wire/type layers a client bundle may inline: browser-safe contracts
- * with no runtime identity to share (no Symbol/instanceof/singleton state).
+ * Contract layers and pure folds a client bundle may inline: browser-safe
+ * values with no runtime identity to share (no Symbol/instanceof/singleton state).
  * Everything else under @deepseek-ai/* is either a module-table entry
  * (external) or a leak the purity gate rejects.
  */
-export const INLINE_SAFE = /^(?:@deepseek-ai\/dsh-platform-account\/privacy|@deepseek-ai\/dsh-project-membership\/(?:remote-url|invite-role)$|@deepseek-ai\/dsh-browser-workspace\/client$|@deepseek-ai\/dsh-phone-runtime\/swipe$|@deepseek-ai\/dsh-(?:host-apiproxy|file-reference|session|llm|tools|brand|request-trust)(?:\/|$))/
+export const INLINE_SAFE = /^(?:@deepseek-ai\/dsh-(?:file-reference|session|llm|tools|brand|deque|typert-protocol|util-crypto|util-values|util-workspace-path|request-trust)(?:\/|$)|@deepseek-ai\/dsh-browser-workspace\/client$|@deepseek-ai\/dsh-platform-account\/privacy$|@deepseek-ai\/dsh-project-membership\/(?:remote-url|invite-role)$|@deepseek-ai\/dsh-token-meter\/client$|@deepseek-ai\/dsh-agent-presets\/display$|@deepseek-ai\/dsh-phone-runtime\/swipe$)/
 
 /**
  * Vendored framework libraries: rescoped into @deepseek-ai, so the gate below
@@ -80,8 +79,13 @@ const SKIP_WORKSPACE_BUILD: UserConfig = { entry: '' }
 
 const REPOSITORY_ROOT = fileURLToPath(new URL('../..', import.meta.url))
 
-/** Rebase a physical lib-relative source onto a browser URL that mirrors the repository directories. */
-function browserSourcePath(source: string, sourcemapPath: string): string {
+/**
+ * Rebase a physical lib-relative source onto a browser URL that mirrors the repository directories.
+ * @param source - relative source path written into the generated map.
+ * @param sourcemapPath - absolute path of the emitting `client.js.map`.
+ * @returns `../../../packages/<group>/<package>/src/...` for workspace sources; otherwise the original path.
+ */
+export function browserSourcePath(source: string, sourcemapPath: string): string {
   if (!source.startsWith('.')) return source
   const physicalSource = resolvePath(dirname(sourcemapPath), source)
   const repositoryPath = relative(REPOSITORY_ROOT, physicalSource).split(sep).join('/')
@@ -95,7 +99,8 @@ function browserSourcePath(source: string, sourcemapPath: string): string {
  * earlier Host pass. A package-level tsdown.config.ts REPLACES the root
  * workspace layout, so the lib half must be restated here — dropping it leaves
  * the package without lib/index.js and the host Loader cannot import its node
- * half.
+ * half. The Client build consumes `lib/types` and chains those tsc maps, with
+ * original source content, into the standalone plugin map.
  * @param id - plugin id (package name), stamped into the __ModuleLoader__.load
  * handoff and onto the injected style tags.
  * @param libEntry - node-half entries, spelled at the call site so the
@@ -299,7 +304,6 @@ function staticLinkedConfig(
   assetSourceRoot: '.' | 'src' = 'src',
 ): UserConfig {
   const emitted = new Set<string>()
-  const inlineStyles = new Map<string, string>()
   return {
     name: id,
     entry: { [outputName]: entry },
@@ -313,12 +317,13 @@ function staticLinkedConfig(
     // The shell compiles this artifact, so its map is the only path from a
     // browser stack frame back to the TSX (tsc emits the lib/types half).
     sourcemap: true,
+    outputOptions: { sourcemapExcludeSources: false },
     plugins: [{
       // Contract 1. `pre` because tsdown's own deps plugin would otherwise
       // resolve and inline every specifier missing from the npm production
       // sections, which is the coupling this preset exists to remove. The name
       // is also the roster marker {@link isStaticLinkedConfig} reads.
-      name: roster ? STATIC_LINKED_PLUGIN : BROWSER_SUBPATH_PLUGIN,
+      name: roster ? STATIC_LINKED_PLUGIN : `_${STATIC_LINKED_PLUGIN}`,
       resolveId: {
         order: 'pre' as const,
         handler(source: string, importer: string | undefined) {
@@ -341,19 +346,10 @@ function staticLinkedConfig(
           // originalFileName also puts the physical sheet in the watch graph.
           this.emitFile({ type: 'asset', fileName, source: await readFile(file), originalFileName: file })
         }
-        if (inline) {
-          const id = `\0dsh-browser-subpath-inline:${file}.mjs`
-          inlineStyles.set(id, file)
-          return id
-        }
         // Every emitted chunk sits at the lib/ root, so the src-relative name
         // is what resolves from there. Rolldown keeps relative externals as
         // written instead of re-normalizing them.
         return { id: `./${fileName}`, external: true }
-      },
-      async load(id: string) {
-        const file = inlineStyles.get(id)
-        return file === undefined ? null : `export default ${JSON.stringify(await readFile(file, 'utf8'))}`
       },
     }],
   }
@@ -496,7 +492,7 @@ function clientConfig(id: string, entry: string): UserConfig {
     name: `${id}/client`,
     entry: { client: entry },
     // Browser bundle lands next to the node half (single lib/ artifact dir;
-    // the entryFileNames pin keeps it exactly lib/client.cjs). clean must stay
+    // the entryFileNames pin keeps it exactly lib/client.js). clean must stay
     // off — a default clean would wipe the node-half output emitted above.
     outDir: 'lib',
     format: 'cjs',
@@ -515,6 +511,18 @@ function clientConfig(id: string, entry: string): UserConfig {
       // package's own request list: requested specifiers stay imports,
       // everything else is bundled.
       alwaysBundle: (specifier: string) => !isRequested(specifier),
+    },
+    // Dual-mode libraries (lexical's exports carry development/production/
+    // node conditions; the node file picks its flavor with a top-level await
+    // a CJS bundle cannot carry) resolve their static flavor matching the
+    // NODE_ENV the defines below bake in.
+    inputOptions: {
+      resolve: {
+        conditionNames: [
+          (process.env.NODE_ENV ?? 'production') === 'development' ? 'development' : 'production',
+          'browser', 'import', 'module', 'default',
+        ],
+      },
     },
     // Browser bundles inline node-idiom deps (zustand/immer read
     // process.env.NODE_ENV; zustand's esm build also probes
@@ -609,7 +617,8 @@ function clientConfig(id: string, entry: string): UserConfig {
       },
     }],
     outputOptions: {
-      entryFileNames: DYNAMIC_CLIENT_ARTIFACT.entryFileName,
+      entryFileNames: 'client.js',
+      sourcemapExcludeSources: false,
       // The map is served from /plugins/<scoped-package>/client.js.map. The
       // browser resolves its local sources back into URLs that mirror the
       // /packages/<group>/<package>/src directories; sourcesContent keeps them usable
@@ -629,7 +638,6 @@ const LIB_MARKER = `${sep}lib${sep}`
 
 /** Plugin name carrying contract 1, and the marker that identifies a statically linked config. */
 const STATIC_LINKED_PLUGIN = 'dsh-static-linked-external'
-const BROWSER_SUBPATH_PLUGIN = 'dsh-browser-subpath-external'
 
 /** Path segment a package's sources hang under, and the root emitted assets mirror. */
 const SOURCE_MARKER = `${sep}src${sep}`
@@ -656,9 +664,12 @@ function tscSourceMapPlugin() {
         return path.startsWith('.') ? path : `./${path}`
       })
       const sourcesContent = await Promise.all(physicalSources.map(source => readFile(source, 'utf8')))
+      const map: Record<string, unknown> = { ...parsed, sources, sourcesContent }
+      if (typeof parsed.sourceRoot === 'string') map.sourceRoot = ''
+      else delete map.sourceRoot
       return {
         code: code.replace(SOURCEMAP_COMMENT, ''),
-        map: JSON.stringify({ ...parsed, sourceRoot: '', sources, sourcesContent }),
+        map,
       }
     },
   }

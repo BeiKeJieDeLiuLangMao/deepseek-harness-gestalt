@@ -25,7 +25,10 @@ function host(): RunningWebHost {
   return {
     // The owner never accesses ChildProcess methods; only the injected stop/exit promises are used.
     child: new EventEmitter() as ChildProcess,
-    exited: Promise.resolve(exit), url: 'http://host.invalid', stop: vi.fn(async () => exit),
+    exited: Promise.resolve(exit),
+    url: 'http://host.invalid',
+    launchUrl: 'http://host.invalid/?token=fixture',
+    stop: vi.fn(async () => exit),
   }
 }
 function fixture() {

@@ -210,7 +210,6 @@ describe('iOS environment manager', () => {
         return await new Promise<IosCommandResult>((_resolve, reject) => {
           options.signal?.addEventListener('abort', () => {
             const reason: unknown = 'external stop'
-            // oxlint-disable-next-line typescript/prefer-promise-reject-errors -- exercise arbitrary command rejection normalization
             reject(reason)
           }, { once: true })
         })

@@ -1,0 +1,27 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "composite": false,
+    "incremental": false,
+    "rewriteRelativeImportExtensions": false
+  },
+  "files": [
+    "resource-owner.spec.ts",
+    "relay-loader.spec.ts",
+    "two-instance-relay.spec.ts",
+    "fixtures/driver.ts"
+  ],
+  "include": [],
+  "references": [
+    {
+      "path": "../../../packages/boot/app-boot"
+    },
+    {
+      "path": "../../../packages/platform/remote-protocol"
+    },
+    {
+      "path": "../../../packages/test-support/loader-smoke"
+    }
+  ]
+}

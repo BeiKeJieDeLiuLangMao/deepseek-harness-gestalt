@@ -1,10 +1,69 @@
 import { describe, expect, it, vi } from 'vitest'
-import { liveModelSelection, type Agent, type AgentOptions, type AgentSetup } from '@deepseek-ai/dsh-agent'
+import {
+  liveModelSelection, type Agent, type AgentOptions, type AgentSetup, type CreateAgentOptions,
+  type ModelSelection,
+} from '@deepseek-ai/dsh-agent'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { snapshotSubagentDescriptor } from '@deepseek-ai/dsh-subagent'
 import { Context as CordisContext } from '@deepseek-ai/cordis'
+import {
+  SessionId, SessionLogOffset,
+  type SessionEvent, type SessionHeader,
+} from '@deepseek-ai/dsh-session'
+import {
+  SessionPersistenceRevision,
+  type SessionAccess, type SessionHandle, type SessionPersistenceSnapshot,
+} from '@deepseek-ai/dsh-session-persistence'
 import { buildSidechatApi } from '../src/sidechat-routes.ts'
-import type { Context } from '../src/context-types.ts'
+import type {
+  SidebarContext as Context,
+  SidebarSessionPersistenceService,
+} from '../src/context-types.ts'
+
+function persistedSidechat(
+  events: readonly unknown[] = [],
+  options: {
+    readonly header?: Partial<SessionHeader>
+    readonly inheritedEventCount?: number
+    readonly listed?: boolean
+    readonly readFailure?: Error
+  } = {},
+) {
+  const header = (id: SessionId): SessionHeader => ({
+    ...options.header,
+    version: 0,
+    id,
+    createdAt: options.header?.createdAt ?? 1,
+    isSeeded: options.header?.isSeeded ?? false,
+  })
+  const close = vi.fn(() => Promise.resolve())
+  const read = vi.fn(() => options.readFailure === undefined
+    ? Promise.resolve(events as readonly SessionEvent[])
+    : Promise.reject(options.readFailure))
+  const open = vi.fn(async (id: SessionId, access: SessionAccess): Promise<SessionHandle> => ({
+    id,
+    access,
+    header: header(id),
+    inheritedEventCount: SessionLogOffset(options.inheritedEventCount ?? 0),
+    read,
+    append: () => Promise.resolve(),
+    flush: () => Promise.resolve(),
+    close,
+    [Symbol.asyncDispose]: close,
+  }))
+  const stat = vi.fn(async (id: SessionId) => ({
+    header: header(id),
+    revision: SessionPersistenceRevision(`test:${id}`),
+  }))
+  const list = vi.fn(async (): Promise<readonly SessionPersistenceSnapshot[]> => options.listed === true
+    ? [{
+        header: header(SessionId('cold-child')),
+        revision: SessionPersistenceRevision('test:cold-child'),
+      }]
+    : [])
+  const persistence = { open, stat, list } satisfies SidebarSessionPersistenceService
+  return { persistence, open, read, close, stat, list }
+}
 
 describe('sidechat route lifecycle', () => {
   it('creates the requested child only when the first prompt reaches the route', async () => {
@@ -16,14 +75,17 @@ describe('sidechat route lifecycle', () => {
       inject,
       followup,
       options: { provider: 'deepseek', model: 'chat' },
-      session: { events: [], header: {} },
+      session: { events: [], snapshotEvents: () => [], header: {} },
     } as unknown as Agent
     const parent = {
       id: 'parent',
       options: { provider: 'deepseek', model: 'chat' },
-      session: { id: 'parent', events: [], header: {} },
+      session: { id: 'parent', events: [], snapshotEvents: () => [], header: {} },
     } as unknown as Agent
-    const create = vi.fn(() => Promise.resolve({ agent: child, dispose: () => Promise.resolve() }))
+    const create = vi.fn<(options: CreateAgentOptions) => Promise<{
+      agent: Agent
+      dispose(): Promise<void>
+    }>>((_options) => Promise.resolve({ agent: child, dispose: () => Promise.resolve() }))
     const ctx = {
       get: (name: string) => name === 'agents'
         ? { get: (id: string) => id === 'parent' ? parent : undefined, create }
@@ -36,14 +98,23 @@ describe('sidechat route lifecycle', () => {
       sessionId: 'parent',
       childId: 'draft-child',
       text: 'first question',
+      requestId: 'request-sidechat-first',
     })).resolves.toEqual({ childId: 'draft-child', accepted: true })
 
     expect(create).toHaveBeenCalledWith(expect.objectContaining({
       sessionId: 'draft-child',
+      meta: expect.objectContaining({ parentSession: 'parent', isSeeded: true, origin: 'subagent' }),
       agentOptions: expect.objectContaining({ provider: 'deepseek', model: 'chat' }),
     }))
+    const createOptions = create.mock.calls[0]![0]
+    expect(createOptions.seed?.at(-1)).toMatchObject({
+      type: 'subagent/descriptor',
+      seq: createOptions.inheritedEventCount,
+    })
     expect(inject).toHaveBeenCalledOnce()
-    expect(followup).toHaveBeenCalledOnce()
+    expect(followup).toHaveBeenCalledWith(expect.objectContaining({
+      source: { kind: 'user', rpcId: 'request-sidechat-first' },
+    }))
     await sidechat.dispose()
   })
 
@@ -59,12 +130,12 @@ describe('sidechat route lifecycle', () => {
       inject: vi.fn(),
       followup: vi.fn(),
       options: { provider: 'deepseek', model: 'chat' },
-      session: { events: [], header: {} },
+      session: { events: [], snapshotEvents: () => [], header: {} },
     } as unknown as Agent
     const parent = {
       id: 'parent',
       options: { provider: 'deepseek', model: 'chat' },
-      session: { id: 'parent', events: [], header: {} },
+      session: { id: 'parent', events: [], snapshotEvents: () => [], header: {} },
     } as unknown as Agent
     const disposeHandle = vi.fn(async () => { childLive = false })
     const ctx = {
@@ -103,12 +174,12 @@ describe('sidechat route lifecycle', () => {
       inject: vi.fn(),
       followup: vi.fn(),
       options: { provider: 'deepseek', model: 'chat' },
-      session: { events: [], header: {} },
+      session: { events: [], snapshotEvents: () => [], header: {} },
     } as unknown as Agent
     const parent = {
       id: 'parent',
       options: { provider: 'deepseek', model: 'chat' },
-      session: { id: 'parent', events: [], header: {} },
+      session: { id: 'parent', events: [], snapshotEvents: () => [], header: {} },
     } as unknown as Agent
     const failure = new Error('release failed')
     const disposeHandle = vi.fn()
@@ -147,6 +218,19 @@ describe('sidechat route lifecycle', () => {
     await sidechat.dispose()
   })
 
+  it('reports a cold Side Chat as published from the formal durable snapshot', async () => {
+    const persisted = persistedSidechat([], { listed: true })
+    const ctx = {
+      get: (name: string) => name === 'sessionPersistence' ? persisted.persistence : undefined,
+    } as unknown as Context
+    const sidechat = buildSidechatApi(ctx)
+
+    await expect(sidechat.routes['sidechat.dispose']({ childId: 'cold-child' }))
+      .resolves.toEqual({ accepted: true, published: true })
+    expect(persisted.list).toHaveBeenCalledOnce()
+    await sidechat.dispose()
+  })
+
   it('preserves the canonical composer queue posture', async () => {
     const followup = vi.fn()
     const steer = vi.fn()
@@ -158,6 +242,9 @@ describe('sidechat route lifecycle', () => {
           type: 'user/message',
           data: { content: [{ type: 'text', text: 'Side conversation boundary' }] },
         }],
+        snapshotEvents() {
+          return this.events
+        },
       },
     } as unknown as Agent
     const ctx = {
@@ -196,7 +283,7 @@ describe('sidechat route lifecycle', () => {
   })
 
   it('synchronizes a Side Chat permission selection with its direct parent', async () => {
-    const setAgent = vi.fn()
+    const set = vi.fn()
     const parent = { id: 'parent', session: { header: {} } } as unknown as Agent
     const child = {
       id: 'child',
@@ -205,7 +292,7 @@ describe('sidechat route lifecycle', () => {
     const ctx = {
       get: (name: string) => {
         if (name === 'agents') return { get: (id: string) => id === 'parent' ? parent : id === 'child' ? child : undefined }
-        if (name === 'permissionPresets') return { names: ['workspace-write'], setAgent }
+        if (name === 'permissionPresets') return { names: ['workspace-write'], set }
         return undefined
       },
     } as unknown as Context
@@ -215,18 +302,18 @@ describe('sidechat route lifecycle', () => {
       childId: 'child', parentSessionId: 'parent', preset: 'workspace-write',
     })).resolves.toEqual({ selected: 'workspace-write' })
 
-    expect(setAgent).toHaveBeenNthCalledWith(1, parent, 'workspace-write')
-    expect(setAgent).toHaveBeenNthCalledWith(2, child, 'workspace-write')
+    expect(set).toHaveBeenNthCalledWith(1, parent.session, 'workspace-write')
+    expect(set).toHaveBeenNthCalledWith(2, child.session, 'workspace-write')
     await sidechat.dispose()
   })
 
   it('rejects a provisional permission request without an owned live child', async () => {
-    const setAgent = vi.fn()
+    const set = vi.fn()
     const parent = { id: 'parent', session: { header: {} } } as unknown as Agent
     const ctx = {
       get: (name: string) => {
         if (name === 'agents') return { get: (id: string) => id === 'parent' ? parent : undefined }
-        if (name === 'permissionPresets') return { names: ['workspace-write'], setAgent }
+        if (name === 'permissionPresets') return { names: ['workspace-write'], set }
         return undefined
       },
     } as unknown as Context
@@ -239,7 +326,7 @@ describe('sidechat route lifecycle', () => {
       provisional: true,
     })).rejects.toThrow('Side Chat session "draft-child" is not running')
 
-    expect(setAgent).not.toHaveBeenCalled()
+    expect(set).not.toHaveBeenCalled()
     await sidechat.dispose()
   })
 
@@ -252,12 +339,11 @@ describe('sidechat route lifecycle', () => {
       })),
       listProviders: () => [{ id: 'deepseek' }],
     }
+    const persisted = persistedSidechat()
     const ctx = {
       get: (name: string) => {
         if (name === 'llm') return llm
-        if (name === 'sessionPersistence') {
-          return { inspect: vi.fn(() => Promise.resolve({ meta: {}, events: [] })) }
-        }
+        if (name === 'sessionPersistence') return persisted.persistence
         return undefined
       },
     } as unknown as Context
@@ -273,20 +359,85 @@ describe('sidechat route lifecycle', () => {
       current: { provider: 'deepseek', model: 'pro', reasoningEffort: 'high' },
       routable: true,
     })
+    expect(persisted.stat).toHaveBeenCalledWith('cold-child')
+    expect(persisted.open).not.toHaveBeenCalled()
+    await sidechat.dispose()
+  })
+
+  it('keeps a concurrent provisional selection authoritative for first creation', async () => {
+    const preset = Promise.withResolvers<{ id: string }>()
+    const resolvePreset = vi.fn(() => preset.promise)
+    const create = vi.fn(() => Promise.resolve({
+      agent: {
+        id: 'draft-child',
+        ctx: { effect: vi.fn() },
+        inject: vi.fn(),
+        followup: vi.fn(),
+        options: { provider: 'provider-b', model: 'model-b' },
+        session: { events: [], snapshotEvents: () => [], header: {} },
+      } as unknown as Agent,
+      dispose: () => Promise.resolve(),
+    }))
+    const parent = {
+      id: 'parent',
+      options: { provider: 'provider-a', model: 'model-a' },
+      session: { id: 'parent', events: [], snapshotEvents: () => [], header: {} },
+    } as unknown as Agent
+    const ctx = {
+      get: (name: string) => {
+        if (name === 'agents') return { get: (id: string) => id === 'parent' ? parent : undefined, create }
+        if (name === 'agentPresets') return { resolve: resolvePreset, mount: () => Promise.resolve() }
+        if (name === 'llm') {
+          return {
+            resolveCallConfig: (selection: ModelSelection) => Promise.resolve(selection),
+            listProviders: () => [{ id: 'provider-a' }, { id: 'provider-b' }],
+          }
+        }
+        return undefined
+      },
+    } as unknown as Context
+    const sidechat = buildSidechatApi(ctx)
+
+    const starting = sidechat.routes['sidechat.start']({
+      sessionId: 'parent',
+      childId: 'draft-child',
+      text: 'first question',
+      selection: { provider: 'provider-a', model: 'model-a' },
+    })
+    await vi.waitFor(() => { expect(resolvePreset).toHaveBeenCalledOnce() })
+    await expect(sidechat.routes['sidechat.selectModel']({
+      childId: 'draft-child',
+      selection: { provider: 'provider-b', model: 'model-b' },
+      provisional: true,
+    })).resolves.toEqual({ selected: { provider: 'provider-b', model: 'model-b' } })
+    await expect(sidechat.routes['sidechat.model']({
+      childId: 'draft-child',
+      parentSessionId: 'parent',
+      provisional: true,
+    })).resolves.toEqual({
+      current: { provider: 'provider-b', model: 'model-b' },
+      routable: true,
+    })
+
+    preset.resolve({ id: 'standard' })
+    await expect(starting).resolves.toEqual({ childId: 'draft-child', accepted: true })
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({
+      agentOptions: expect.objectContaining({ provider: 'provider-b', model: 'model-b' }),
+    }))
     await sidechat.dispose()
   })
 
   it('uses the live parent model for a provisional Side Chat', async () => {
-    const inspect = vi.fn(() => Promise.reject(new Error('draft is not persisted')))
+    const stat = vi.fn(() => Promise.reject(new Error('draft is not persisted')))
     const parent = {
       id: 'parent',
       options: { provider: 'deepseek', model: 'chat' },
-      session: { events: [], header: {} },
+      session: { events: [], snapshotEvents: () => [], header: {} },
     } as unknown as Agent
     const ctx = {
       get: (name: string) => {
         if (name === 'agents') return { get: (id: string) => id === 'parent' ? parent : undefined }
-        if (name === 'sessionPersistence') return { inspect }
+        if (name === 'sessionPersistence') return { stat }
         return undefined
       },
     } as unknown as Context
@@ -298,7 +449,7 @@ describe('sidechat route lifecycle', () => {
       current: { provider: 'deepseek', model: 'chat' },
       routable: true,
     })
-    expect(inspect).not.toHaveBeenCalled()
+    expect(stat).not.toHaveBeenCalled()
     await sidechat.dispose()
   })
 
@@ -326,11 +477,10 @@ describe('sidechat route lifecycle', () => {
         }),
       },
     ]
+    const persisted = persistedSidechat(events, { inheritedEventCount: 1 })
     const ctx = {
       get: (name: string) => {
-        if (name === 'sessionPersistence') {
-          return { inspect: vi.fn(() => Promise.resolve({ meta: {}, events })) }
-        }
+        if (name === 'sessionPersistence') return persisted.persistence
         if (name === 'llm') return { listProviders: () => [{ id: 'child-provider' }] }
         return undefined
       },
@@ -341,6 +491,118 @@ describe('sidechat route lifecycle', () => {
       current: { provider: 'child-provider', model: 'child-model' },
       routable: true,
     })
+    expect(persisted.open).toHaveBeenCalledWith('cold-child', 'read')
+    expect(persisted.close).toHaveBeenCalledOnce()
+    await sidechat.dispose()
+  })
+
+  it('uses the nested child descriptor instead of inherited parent model events', async () => {
+    const events = [
+      {
+        type: 'subagent/descriptor',
+        seq: 0,
+        time: 1,
+        data: snapshotSubagentDescriptor({
+          mode: 'continuable',
+          provider: 'sidechat',
+          label: 'Side: parent',
+          agentProvider: 'parent-initial',
+          agentModel: 'parent-initial-model',
+        }),
+      },
+      {
+        type: 'request/header',
+        seq: 1,
+        time: 2,
+        data: {
+          header: { config: { provider: 'parent-current', model: 'parent-current-model' } },
+          reason: 'change',
+        },
+      },
+      {
+        type: 'subagent/descriptor',
+        seq: 2,
+        time: 3,
+        data: snapshotSubagentDescriptor({
+          mode: 'continuable',
+          provider: 'sidechat',
+          label: 'Side: child',
+          agentProvider: 'child-provider',
+          agentModel: 'child-model',
+        }),
+      },
+    ]
+    const persisted = persistedSidechat(events, { inheritedEventCount: 2 })
+    const ctx = {
+      get: (name: string) => {
+        if (name === 'sessionPersistence') return persisted.persistence
+        if (name === 'llm') return { listProviders: () => [{ id: 'child-provider' }] }
+        return undefined
+      },
+    } as unknown as Context
+
+    const sidechat = buildSidechatApi(ctx)
+    await expect(sidechat.routes['sidechat.model']({ childId: 'nested-child' })).resolves.toEqual({
+      current: { provider: 'child-provider', model: 'child-model' },
+      routable: true,
+    })
+    expect(persisted.close).toHaveBeenCalledOnce()
+    await sidechat.dispose()
+  })
+
+  it('closes a persisted model reader when its log read fails', async () => {
+    const readFailure = new Error('stored read failed')
+    const persisted = persistedSidechat([], { readFailure })
+    const ctx = {
+      get: (name: string) => name === 'sessionPersistence' ? persisted.persistence : undefined,
+    } as unknown as Context
+
+    const sidechat = buildSidechatApi(ctx)
+    await expect(sidechat.routes['sidechat.model']({ childId: 'cold-child' }))
+      .rejects.toBe(readFailure)
+    expect(persisted.close).toHaveBeenCalledOnce()
+    await sidechat.dispose()
+  })
+
+  it('closes a persisted model reader before an invalid request header fails', async () => {
+    const persisted = persistedSidechat([{
+      type: 'request/header',
+      seq: 0,
+      time: 1,
+      data: { header: {} },
+    }])
+    const ctx = {
+      get: (name: string) => name === 'sessionPersistence' ? persisted.persistence : undefined,
+    } as unknown as Context
+
+    const sidechat = buildSidechatApi(ctx)
+    await expect(sidechat.routes['sidechat.model']({ childId: 'cold-child' }))
+      .rejects.toBeInstanceOf(TypeError)
+    expect(persisted.close).toHaveBeenCalledOnce()
+    await sidechat.dispose()
+  })
+
+  it('closes the persisted reader before preset composition fails', async () => {
+    const compositionFailure = new Error('preset composition failed')
+    const persisted = persistedSidechat([], { header: { agentPreset: 'broken' } })
+    const resume = vi.fn()
+    const ctx = {
+      get: (name: string) => {
+        if (name === 'agents') return { get: () => undefined, resume }
+        if (name === 'agentPresets') {
+          return { resolve: () => Promise.reject(compositionFailure), mount: vi.fn() }
+        }
+        if (name === 'sessionPersistence') return persisted.persistence
+        return undefined
+      },
+    } as unknown as Context
+
+    const sidechat = buildSidechatApi(ctx)
+    await expect(sidechat.routes['sidechat.prompt']({
+      childId: 'cold-child', text: 'continue', mode: 'queue',
+    })).rejects.toBe(compositionFailure)
+    expect(persisted.close).toHaveBeenCalledOnce()
+    expect(resume).not.toHaveBeenCalled()
     await sidechat.dispose()
   })
 
@@ -387,17 +649,16 @@ describe('sidechat route lifecycle', () => {
         id: 'cold-child',
         ctx: agentCtx,
         options: options.agentOptions ?? {},
-        session: { events, header: {} },
+        session: { events, snapshotEvents: () => events, header: {} },
         followup: vi.fn(),
       } as unknown as Agent
       return { agent: resumedAgent, dispose: () => Promise.resolve() }
     })
+    const persisted = persistedSidechat(events)
     const ctx = {
       get: (name: string) => {
         if (name === 'agents') return { get: () => undefined, resume }
-        if (name === 'sessionPersistence') {
-          return { inspect: vi.fn(() => Promise.resolve({ meta: {}, events })) }
-        }
+        if (name === 'sessionPersistence') return persisted.persistence
         if (name === 'llm') return { listProviders: () => [{ id: 'grok' }] }
         return undefined
       },
@@ -416,6 +677,8 @@ describe('sidechat route lifecycle', () => {
     expect(liveModelSelection(resumedAgent!)).toEqual({
       provider: 'grok', model: 'grok-4.6', reasoningEffort: 'high',
     })
+    expect(persisted.open).toHaveBeenCalledTimes(2)
+    expect(persisted.close).toHaveBeenCalledTimes(2)
     await sidechat.dispose()
     await agentCtx.fiber.dispose()
   })
@@ -432,7 +695,7 @@ describe('sidechat route lifecycle', () => {
       inject,
       followup,
       options: {},
-      session: { events: [], header: {} },
+      session: { events: [], snapshotEvents: () => [], header: {} },
     } as unknown as Agent
     const resume = vi.fn(() => resumed)
     const ctx = {

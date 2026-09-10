@@ -1,6 +1,13 @@
+---
+description: "负责 Platform Account 登录、证明、存储隔离与退出的 Desktop 和 Mobile 安装客户端。"
+kind: "package-reference"
+---
+
 # `@deepseek-ai/dsh-platform-account-client`
 
 [English](README.md) | 中文
+
+## 概述
 
 本包是 Desktop 与 Mobile 共用的安装客户端。它在授权前展示唯一规范的中英文数据保留说明，创建 P-256 密钥，在用户激活打开系统浏览器前准备好五分钟登录尝试，再以签名轮询完成授权。`load()` 会先向 Platform 确认已存储会话再发布账号；若没有会话但存在仍有效的待完成登录，则恢复为轮询；过期的待完成登录会被清除。当前进程仍持有授权 URL、等待必要的用户激活时，延迟到达的 `load()` 会让新准备的登录保持 ready。
 
@@ -8,15 +15,37 @@
 
 账号删除具有独立的确认和恢复状态。控制器在发送前持久化凭据与不可导出的发起密钥，先恢复该凭据再处理普通会话，并在恢复期间阻止登录、退出和服务鉴权。尚未接受的操作使用原 Account 授权重试；已接受的进度仅需同一 Installation 证明。Mobile 提供的 `onAccountDeleted(accountId)` 必须完成该账号的本地清理，随后才移除凭据并展示完成。云端完成会在删除本地材料前持久化。本地清理失败后从该检查点继续，不再联系服务器，即使服务器恢复凭据已过期也不受影响。取消仅适用于尚未提交确认的状态。
 
+## 目录
+
+- [模型体验](#model-experience)
+- [已知限制与暂缓事项](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+-----
+
+<a id="model-experience"></a>
 ## 模型体验
 
-无。控制器不会贡献模型可见状态。
+通过经鉴权的 Account Session 和安装证明间接影响模型；Project Membership 与 Personal Pairing Consumer 使用它们处理面向模型的工作。
 
 #### KV Cache 影响
 
-无。
+Account 状态本身不增加稳定请求前缀；授权会改变哪些成员关系与配对设备数据能够抵达后续面向模型的 Consumer。
 
 ## 已知限制与暂缓事项
+<a id="known-limitations-and-deferred-work"></a>
 
 - 本库向个人配对提供当前安装账号鉴权，但不授予 Desktop 或 Companion 权限。
 - Mobile 原生打包必须提供稳定的 WebView 存储 origin；Mobile composition 自己拥有 Capacitor Browser 适配器。
+
+本包不发布运行时不变式配套插件，因为请求、socket 与快照状态由 controller 私有持有，没有独立事件流。
+
+<a id="dev-note"></a>
+### 开发备注
+
+<details>
+<summary>维护者工作上下文——点击展开</summary>
+
+暂无。
+
+</details>

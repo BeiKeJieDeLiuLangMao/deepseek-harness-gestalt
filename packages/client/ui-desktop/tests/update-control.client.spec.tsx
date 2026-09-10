@@ -25,6 +25,7 @@ function mount(status: UpdaterStatus, bridge?: Partial<DesktopBridge>) {
       wide
       t={t as never}
       useSessions={(() => { throw new Error('unused') })}
+      useSessionPendingInteraction={(() => { throw new Error('unused') })}
       useWorkspaces={(() => { throw new Error('unused') })}
       useUpdater={select => select(status)}
     />,
@@ -39,6 +40,7 @@ describe('UpdateControl', () => {
         wide
         t={t as never}
         useSessions={(() => { throw new Error('unused') })}
+        useSessionPendingInteraction={(() => { throw new Error('unused') })}
         useWorkspaces={(() => { throw new Error('unused') })}
         useUpdater={select => select({ state: 'idle', lastCheckedAt: null })}
       />,
@@ -81,6 +83,7 @@ describe('UpdateControl', () => {
         wide
         t={t as never}
         useSessions={(() => { throw new Error('unused') })}
+        useSessionPendingInteraction={(() => { throw new Error('unused') })}
         useWorkspaces={(() => { throw new Error('unused') })}
         useUpdater={useUpdater}
       />,
@@ -181,6 +184,7 @@ describe('UpdateControl', () => {
         wide={false}
         t={t as never}
         useSessions={(() => { throw new Error('unused') })}
+        useSessionPendingInteraction={(() => { throw new Error('unused') })}
         useWorkspaces={(() => { throw new Error('unused') })}
         useUpdater={select => select({ state: 'available', lastCheckedAt: 1 })}
       />,

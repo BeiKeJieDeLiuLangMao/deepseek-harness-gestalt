@@ -22,12 +22,12 @@ interface LazyChunkViewProps<P> {
   props: P
 }
 
-function LazyChunkView<P>({ chunk, pick, props }: LazyChunkViewProps<P>): ReactNode {
+function LazyChunkView<P extends object>({ chunk, pick, props }: LazyChunkViewProps<P>): ReactNode {
   const [attempt, setAttempt] = useState(0)
   const [state, setState] = useState<
     | { status: 'loading' }
     | { status: 'error'; message: string }
-    | { status: 'ready'; Comp: ComponentType<any> }
+    | { status: 'ready'; Comp: ComponentType<P> }
   >({ status: 'loading' })
 
   useEffect(() => {
@@ -37,7 +37,7 @@ function LazyChunkView<P>({ chunk, pick, props }: LazyChunkViewProps<P>): ReactN
       if (cancelled) return
       const Comp = pick(mod)
       if (Comp === undefined) {
-        setState({ status: 'error', message: `[dsh-better-sidebar] chunk "${chunk}" is missing its component` })
+        setState({ status: 'error', message: t('chunkMissing', { chunk }) })
         return
       }
       setState({ status: 'ready', Comp })

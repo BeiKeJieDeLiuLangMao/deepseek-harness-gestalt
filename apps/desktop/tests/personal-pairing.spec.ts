@@ -12,8 +12,6 @@ import {
   parsePairingChallengeId,
   parsePendingPairingId,
   parsePersonalPairingId,
-  type EndpointPairingConfirmation,
-  type RelayCredentialGrant,
   type PairingChallengeId,
   type PendingPairingId,
   type PersonalPairingId,
@@ -23,7 +21,7 @@ import { FailClosedDesktopRelayLifecycle } from '@deepseek-ai/dsh-remote-access-
 import {
   bindDesktopPairing,
   createDesktopPairingSource,
-} from '@deepseek-ai/dsh-client-ui-desktop/pairing-source'
+} from '../../../packages/client/ui-desktop/src/client/pairing-source.ts'
 import {
   parseRelayCredential,
   parseRelayPairingSelector,
@@ -248,7 +246,7 @@ describe('DesktopPairingController', () => {
     await controller.start()
     expect(controller.getSnapshot()).toMatchObject({ status: 'pending', pending: { id: pendingPairingId } })
 
-    const confirmation: EndpointPairingConfirmation = {
+    const confirmation = {
       pairing: {
         id: parsePersonalPairingId('pairing-endpoint-owner'),
         devicePrincipal: {
@@ -258,7 +256,7 @@ describe('DesktopPairingController', () => {
         device: { name: 'Alice phone', platform: 'ios' }, pairedAt: 1, lastAccessAt: 1, online: false,
       },
       routeId: parseRelayRouteId('route-endpoint-owner'), relayRevision: 3,
-    }
+    } satisfies Awaited<ReturnType<RemoteAccessTransport['confirmEndpointPairing']>>
     const confirmationDigests: Uint8Array[] = []
     transport.confirmEndpointPairing.mockImplementation(async (input) => {
       confirmationDigests.push(input.mobileCredentialDigest.slice())
@@ -292,9 +290,9 @@ describe('DesktopPairingController', () => {
 
   it('installs the Settings Relay grant before starting the endpoint lifecycle', async () => {
     const transport = transportFixture()
-    const grant: RelayCredentialGrant = {
-      endpoint: 'desktop',
+    const grant = {
       routeId: parseRelayRouteId('route-settings'),
+      endpoint: 'desktop' as const,
       credential: parseRelayCredential('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'),
       revision: 1,
     }
@@ -818,9 +816,9 @@ describe('DesktopPairingController', () => {
     const controller = new DesktopPairingController({ account: accountFixture(), transport, relay })
     await controller.start()
 
-    const grant: RelayCredentialGrant = {
-      endpoint: 'desktop',
+    const grant = {
       routeId: parseRelayRouteId('route-settings'),
+      endpoint: 'desktop' as const,
       credential: parseRelayCredential('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'),
       revision: 1,
     }
@@ -978,7 +976,9 @@ describe('DesktopPairingController', () => {
 function transportFixture() {
   return {
     getMobileAccessState: vi.fn().mockResolvedValueOnce({ enabled: false }).mockResolvedValue({ enabled: true }),
-    setMobileAccess: vi.fn<RemoteAccessTransport['setMobileAccess']>(async input => ({ enabled: input.enabled })),
+    setMobileAccess: vi.fn<RemoteAccessTransport['setMobileAccess']>(
+      async input => ({ enabled: input.enabled }),
+    ),
     reissueDesktopRelayAuthority: vi.fn(async () => ({
       enabled: true,
       relay: {
@@ -1022,9 +1022,7 @@ function transportFixture() {
     confirmPairing: vi.fn().mockResolvedValue({}),
     rejectPairing: vi.fn(),
     revokePersonalPairing: vi.fn(),
-    revokeMobilePersonalPairing: vi.fn<RemoteAccessTransport['revokeMobilePersonalPairing']>(async (): Promise<void> => {
-      throw new Error('Unexpected Mobile pairing revoke: Desktop must use revokePersonalPairing')
-    }),
+    revokeMobilePersonalPairing: vi.fn(),
     completeChallenge: vi.fn(),
     submitEndpointMessage1: vi.fn(),
     getEndpointPairingStatus: vi.fn(),

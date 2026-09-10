@@ -1,21 +1,25 @@
 /**
- * Member-question plugin, browser half: the MemberQuestionCard registered as a
- * selector-routed entry of the conversation-declared composer chain, ahead of
- * the shared question composer, plus the `member-question` dictionaries. The
- * selector claims only requests whose whole batch declares the
- * `member-question` intent; `plan-review` and generic requests keep electing
- * the shared composer unchanged. The presentation and answer protocol stay
- * owned by dsh-client-ui-user-questions — this package mounts the sanctioned
- * presentation seam under its Decision Brief banner and binds the `question`
- * dictionary through the standard locale seat for it.
+ * Member-question plugin, browser half: the MemberQuestionDock registered on
+ * conversation.input.dock. It reads Host pending views from ReceivingQuestionBook
+ * and declares question.presentation for the shared Ask User occupant. This
+ * package does not import PendingQuestion.
  */
-import type { ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
-import { resolveWorkspacePath } from '@deepseek-ai/dsh-client-runtime/client'
-import type { DetailsDocumentFocus } from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type { Context as ClientContext } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-api-remotes/client'
+import type { ReceivingQuestionBook } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type {} from '@deepseek-ai/dsh-client-locale/client'
+import type {} from '@deepseek-ai/dsh-client-ui-better-sidebar/client'
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
+import { resolveWorkspacePath } from '@deepseek-ai/dsh-util-workspace-path'
+import type { MemberQuestionDockInjected } from './contract/slots.ts'
 import { MemberQuestionDock } from './MemberQuestionCard.tsx'
 import { en, zh, type MemberQuestionKey } from './locales.ts'
 
-export { selectMemberQuestion, selectMemberQuestionRecords, isMemberQuestionBatch, memberBriefOf, clampBackground, BACKGROUND_CLAMP } from './contract/slots.ts'
+export {
+  selectMemberQuestion, selectMemberQuestionRecords,
+  memberBriefOf, presentationQuestionsOf, clampBackground, BACKGROUND_CLAMP,
+} from './contract/slots.ts'
 export type {
   MemberQuestionBrief, MemberQuestionComposerProps, MemberQuestionOrigin,
   MemberQuestionReferenceChip, MemberQuestionRole, MemberQuestionWait,
@@ -29,11 +33,18 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   }
 }
 
+declare module '@deepseek-ai/cordis' {
+  interface Context {
+    /** Host-owned member-question receiving projection. */
+    receivingQuestions: ReceivingQuestionBook
+  }
+}
+
 /** Dictionary namespace owned by this plugin. */
 const NS = 'member-question'
 
-/** Required services: the slot registry, dictionaries, and Files-open path. */
-export const inject = ['slots', 'locale', 'workspaces', 'sessions']
+/** Required services: slots, dictionaries, Sessions, Host Remote, and receiving projection. */
+export const inject = ['slots', 'locale', 'sessions', 'receivingQuestions', 'remote', 'remote.session']
 
 /**
  * Client plugin body: register the `member-question` dictionaries and the
@@ -45,29 +56,15 @@ export const inject = ['slots', 'locale', 'workspaces', 'sessions']
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-member-questions: dictionaries')
 
-  // The mounted presentation reads the `question` namespace (owned by
-  // dsh-client-ui-user-questions); bind is stable per namespace, so the
-  // injected translator never churns memo identity.
-  const questionT = ctx.locale.bind('question')
-
-  // Resolve the optional provider at gesture time: dynamic client rows may
-  // supply or release ui-conversation after this fiber has registered.
-  const focusDocument = (sessionId: SessionId, document: DetailsDocumentFocus): void => {
-    ctx.get('detailsFocus')?.focus(sessionId, document)
-  }
-
   const openReference = (sessionId: SessionId, path: string, title?: string): void => {
     const cwd = ctx.sessions.list.getSnapshot().byId[sessionId]?.cwd
     const absolute = resolveWorkspacePath(cwd, path)
-    const sidebar = ctx.get('betterSidebar') as {
-      getTab(id: string): unknown
-      openFile(scope: { sessionId: string; cwd?: string }, path: string, title?: string): void
-    } | undefined
+    const sidebar = ctx.get('betterSidebar')
     if (sidebar?.getTab('editor') !== undefined) {
       sidebar.openFile(cwd === undefined ? { sessionId } : { sessionId, cwd }, absolute, title)
       return
     }
-    void ctx.workspaces.openPath(absolute)
+    void ctx.remote.session.openWorkspacePath({ path: absolute })
   }
 
   ctx.slots.inject('conversation.input.dock', () => ctx.slots.register(
@@ -76,7 +73,15 @@ export function apply(ctx: ClientContext): void {
       id: 'member-question',
       order: -20,
       locale: NS,
-      inject: () => ({ questionT, focusDocument, openReference }),
+      children: {
+        'question.presentation': { kind: 'single', scope: 'session' },
+      },
+      inject: (): MemberQuestionDockInjected => ({
+        openReference,
+        settle: (sessionId, answers) => ctx.receivingQuestions.settle(sessionId, answers),
+        decline: sessionId => ctx.receivingQuestions.decline(sessionId),
+        hooks: { receivingQuestions: ctx.receivingQuestions },
+      }),
     },
     MemberQuestionDock,
   ))

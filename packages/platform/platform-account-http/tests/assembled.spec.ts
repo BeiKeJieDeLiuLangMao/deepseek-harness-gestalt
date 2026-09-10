@@ -106,7 +106,7 @@ describe('real Platform Account HTTP composition', () => {
     const options = { environment: ENVIRONMENT, installationId: parseInstallationId('deletion-recovering-mobile'),
       installationKind: 'mobile' as const, presentation: { name: 'Deletion recovery', platform: 'ios' as const },
       transport: new PlatformAccountHttpTransport({ environment: ENVIRONMENT, fetch: networkFetch }), store,
-      systemBrowser: { open() {} }, crypto: webcrypto as Crypto }
+      systemBrowser: { open() {} }, crypto: webcrypto as typeof webcrypto }
     const first = new PlatformAccountInstallation(options)
     first.acceptPrivacy()
     await first.beginLogin()
@@ -204,7 +204,7 @@ describe('real Platform Account HTTP composition', () => {
       transport,
       store,
       systemBrowser: { open: opened },
-      crypto: webcrypto as Crypto,
+      crypto: webcrypto,
       now: () => now,
     })
 
@@ -299,7 +299,7 @@ describe('real Platform Account HTTP composition', () => {
       transport,
       store: desktopStore,
       systemBrowser: { open: () => {} },
-      crypto: webcrypto as Crypto,
+      crypto: webcrypto,
       now: () => now,
     })
     const mobile = new PlatformAccountInstallation({
@@ -310,7 +310,7 @@ describe('real Platform Account HTTP composition', () => {
       transport,
       store: new MemoryInstallationAccountStore(),
       systemBrowser: { open: () => {} },
-      crypto: webcrypto as Crypto,
+      crypto: webcrypto,
       now: () => now,
     })
 
@@ -411,7 +411,7 @@ describe('real Platform Account HTTP composition', () => {
       transport: developmentTransport,
       store: new MemoryInstallationAccountStore(),
       systemBrowser: { open: () => {} },
-      crypto: webcrypto as Crypto,
+      crypto: webcrypto,
       now: () => now,
     })
     installation.acceptPrivacy()

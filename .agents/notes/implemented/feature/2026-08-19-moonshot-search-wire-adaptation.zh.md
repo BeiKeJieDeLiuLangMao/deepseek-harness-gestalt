@@ -18,7 +18,7 @@ Gestalt 只发货一个覆盖 `web-search-deepseek` 的 `web_search` 工具。�
 - **Anthropic** — 同一套 Messages 约定，基址由用户填写；缺少 `baseURL` 时提供方不可用。
 - **Kimi** — Moonshot 专用搜索：对配置的 URL（默认 `https://api.kimi.com/coding/v1/search`）发起 `POST`，请求体 `{ "text_query" }`，鉴权 `Authorization: Bearer`。密钥先读 `KIMI_WEB_SEARCH_API_KEY`，该值不是可进 header 的 ASCII 时再读 `DEEPSEEK_API_KEY`。
 
-其他插件可以向 `settings.plugin.web-search.provider` 再注册 tab。插件卡片的 **测试搜索** 调用 `settings.testWebSearch`，内部执行 `ctx.web.search({ query: 'deepseek harness' })`。
+其他插件可以向 `settings.plugin.web-search.provider` 再注册 tab。插件卡片的 **测试搜索** 调用生成的 settings Remote 上的 `settings.testWebSearch`，内部执行 `ctx.web.search({ query: 'deepseek harness' })`。
 
 ## Alternatives considered
 
@@ -40,7 +40,7 @@ Gestalt 只发货一个覆盖 `web-search-deepseek` 的 `web_search` 工具。�
 
 ## Testing
 
-`packages/web/web-search-deepseek/tests/settings.spec.ts` 会切换 `backend`，并断言 Messages 打到 `{baseURL}/messages`，而 Kimi 打到搜索 URL 且不追加 `/messages`。客户端测试覆盖 tab 选择和测试搜索控件。plugin-config 快照列出一张 Web Search 卡片。
+`packages/web/web-search-deepseek/tests/settings.spec.ts` 会切换 `backend`，并断言 Messages 打到 `{baseURL}/messages`，而 Kimi 打到搜索 URL 且不追加 `/messages`。`packages/web/web-search-deepseek/tests/deepseek.spec.ts` 固定 Moonshot `text_query` 与仅 Bearer 鉴权。`packages/client/ui-settings-plugins` 由提供方 tab 写入 `backend`，把每个 tab 绑到各自的 settings 命名空间，并在等待同一条 settings-scope 写入队列之后通过生成的 `settings.testWebSearch` 探测，因此探测不会打到上一个提供方。`packages/client/ui-settings-plugins/tests/stores.client.spec.ts` 覆盖写入队列顺序和生成的 `settings.testWebSearch` 调用。Settings 段通过 `SettingsProvider.installSection` 安装到 `web-search-deepseek`、`web-search-anthropic` 和 `web-search-kimi`。
 
 ## Related
 

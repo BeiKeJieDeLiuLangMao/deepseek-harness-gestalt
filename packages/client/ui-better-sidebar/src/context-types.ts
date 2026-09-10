@@ -1,6 +1,6 @@
 /**
- * Structural types for the cordis services this plugin consumes, plus the
- * Context face both halves share.
+ * Structural types for the Cordis services this plugin consumes, plus the
+ * SidebarContext face both halves share.
  *
  * The type base is the vendored `@deepseek-ai/cordis` Context (the runtime
  * DSH actually runs); the service members this plugin touches are restated
@@ -22,7 +22,7 @@
  *
  * This file must stay FREE of Node.js types (`node:http`, `node:stream`,
  * `Buffer`): it is part of the CLIENT-reachable declaration graph (the
- * `Context` in `TabComponentProps` and the `betterSidebar` augmentation),
+ * `SidebarContext` in `TabComponentProps`),
  * so a Node import here would leak into browser-only consumer builds. The
  * webServer faces below are therefore structural mirrors with plain
  * interfaces (the host casts to real Node types at the few boundaries that
@@ -30,8 +30,9 @@
  */
 import type { Context as CordisContext } from '@deepseek-ai/cordis'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
-import type { SessionAdmissionAdapter } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionAdmissionAdapter } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
+import type SessionPersistence from '@deepseek-ai/dsh-session-persistence'
 import type { BetterSidebarService } from './client/service.ts'
 
 /** The request face route handlers see (structural subset of node's
@@ -90,11 +91,12 @@ export interface SidebarSessionStore {
   get(id: string): {
     header: SidebarSessionHeader
     /**
-     * The live session's append-only event log (immutable snapshot; absent
-     * on sessions the runtime has not hydrated). Read-only access — the
-     * jobs.output route replays `job_output` tool/result rows from it.
+     * The live session's append-only event log as an immutable snapshot.
+     * Read-only access — the jobs.output route replays `job_output`
+     * tool/result rows from it. (The `Session.events` property this face
+     * mirrored was renamed to `snapshotEvents()` in DSH 0.1.2-alpha.4.)
      */
-    events?: readonly SidebarSessionEvent[]
+    snapshotEvents(): readonly SidebarSessionEvent[]
   } | undefined
 }
 
@@ -121,6 +123,7 @@ export interface SidebarSlotRegisterOptions {
   locale?: string
   registrant?: string
   /** Business-face factory; args depend on the slot scope. */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- mirrors the host slots signature, where inject args are untyped; unknown[] would reject concrete-typed implementations (contravariance)
   inject?: (...args: any[]) => Record<string, unknown>
   children?: Record<string, unknown>
 }
@@ -140,6 +143,9 @@ export interface SidebarSlotsService {
 export interface SidebarSessionSummary {
   id: SessionId
   cwd?: string
+  /** Latest durable log-backed title, absent until the Host projects one. */
+  title?: string
+  /** Human-facing title with Workspace basename and Session id fallbacks. */
   displayTitle: string
   /** Coarse durable origin for navigation filtering (subagent children). */
   origin?: 'subagent'
@@ -192,7 +198,7 @@ export interface SidebarSessionEvent {
   type: string
   seq: number
   time: number
-  data: Record<string, unknown>
+  data: unknown
 }
 
 /** One history row: the durable event plus an optional tool presentation view. */
@@ -301,50 +307,8 @@ export interface SidebarSessionTitleService {
   rename(session: unknown, title: string): { title: string; eventSeq: number }
 }
 
-/** The host session-persistence face (mirror of the sessionPersistence
- *  service): detached inspection of a persisted session, used to compose the
- *  recorded preset when a Side Chat thread cold-resumes. */
-export interface SidebarSessionPersistenceService {
-  /** List every durable Session header from the authoritative backend. */
-  list(): Promise<readonly { id: SessionId }[]>
-  inspect(sessionId: string): Promise<{
-    meta: { cwd?: string; agentPreset?: string }
-    events: readonly SidebarSessionEvent[]
-  }>
-}
-
-/** RPC result slot mirror (`RpcResult<T>` on the wire). */
-export type SidebarRpcResult<T> = { ok: true; value: T } | { ok: false; error: { code: string; message: string } }
-
-/** Unary response mirror (`RpcResponse<T>` on the wire). */
-export interface SidebarRpcResponse<T> {
-  rpcId: unknown
-  result: SidebarRpcResult<T>
-}
-
-/** The generic session-history RPC face the Side Chat transcript polls
- *  (subagent.history verifies subagent-catalog membership, which our custom
- *  side-thread children do not have — the generic session.history reads any
- *  durable log directly). */
-export interface SidebarSessionHistoryRpc {
-  history(
-    payload: { sessionId: string; beforeSeq?: number; maxMessages?: number },
-    signal?: AbortSignal,
-  ): Promise<SidebarRpcResponse<{ events: SidebarHistoryEntry[]; hasMore: boolean }>>
-}
-
-/** The wire face the Subagent activity summary needs (subset of `ctx.connection`). */
-export interface SidebarConnectionHandle {
-  api: {
-    sessions: SidebarSessionHistoryRpc
-    subagents: {
-      history(
-        payload: SidebarSubagentAddress & { beforeSeq?: number; maxMessages?: number },
-        signal?: AbortSignal,
-      ): Promise<SidebarRpcResponse<{ events: SidebarHistoryEntry[]; hasMore: boolean }>>
-    }
-  }
-}
+/** Formal persistence operations used by Side Chat cold reads and publication checks. */
+export type SidebarSessionPersistenceService = Pick<SessionPersistence, 'list' | 'open' | 'stat'>
 
 /** The client session list snapshot the sidebar subscribes to. */
 export interface SidebarSessionList {
@@ -393,7 +357,7 @@ export interface SidebarSessionsService {
    * runtime ISessions.scope) — the ticket `ctx.conversation.input.for`
    * requires to reach that session's composer.
    */
-  scope(id: string): Context | undefined
+  scope(id: string): SidebarContext | undefined
   /**
    * Open a healthy catalog child through its exact direct-parent address
    * (mirror of the runtime ISessions.openSubagent).
@@ -413,13 +377,13 @@ export interface SidebarSessionsService {
   refreshSubagents?(parentSessionId: string): Promise<void>
   /** Project a renderer-only Side Chat identity until its first prompt publishes it. */
   stageProvisional(descriptor: {
-    sessionId: string
-    parentSessionId: string
+    sessionId: SessionId
+    parentSessionId: SessionId
     origin: 'subagent'
     title: string
   }): () => void
-  /** Register one feature-owned prompt/cancel route for exact Session identities. */
-  registerAdmissionAdapter?(adapter: SessionAdmissionAdapter): () => void
+  /** Register one feature-owned prompt/cancel route for matching Session identities. */
+  registerAdmissionAdapter(adapter: SessionAdmissionAdapter): () => void
 }
 
 /** Explicit-Session mounting face provided by ui-renderer. */
@@ -446,9 +410,10 @@ export interface SidebarLocaleService {
 
 /** The composer draft face the sidebar reaches through `ctx.conversation.input`. */
 export interface SidebarSessionInput {
-  /** The live input store (draft read for append). */
+  /** The live input store (draft read for append). `draftRev` is the machine's
+   *  span-CAS revision — required to mint a structured file-reference chip. */
   state: {
-    getSnapshot(): { draft: string }
+    getSnapshot(): { draft: string; draftRev?: number }
   }
   /** Replace the draft text (the input machine's single public write path). */
   setDraft(text: string): void
@@ -457,12 +422,12 @@ export interface SidebarSessionInput {
 /** The composer draft face the sidebar reaches through `ctx.get('conversation')`. */
 export interface SidebarConversation {
   input: {
-    for(actx: Context): SidebarSessionInput
+    for(actx: SidebarContext): SidebarSessionInput
   }
 }
 
 /**
- * The client workspaces service face (mirror of the runtime IWorkspaces).
+ * The client workspaces service face used for Side Chat archival close.
  */
 export interface SidebarWorkspacesService {
   /** Open a filesystem path with the Host operating system's default application. */
@@ -477,17 +442,22 @@ export interface SidebarWorkspacesService {
 }
 
 /**
- * The invariant service face (mirror of @deepseek-ai/dsh-invariants'
- * InvariantRegistry). The upstream augmentation does not reach this Context
- * (dual-cordis-instance resolution), so the register signature is restated
- * structurally, exactly like the other service faces above.
+ * The client `remote.session` namespace face. The chat's file-open funnel is
+ * `openWorkspacePath`: the caller resolves the path against the session cwd,
+ * and the host hands it to the OS's default application.
  */
-export interface SidebarInvariantsService {
-  /** Reserve one package's checks and install them in the service's child fiber. */
-  register(
-    packageName: string,
-    installer: (ctx: Context, fail: (message: string) => never) => void | Promise<void>,
-  ): () => void
+export interface SidebarRemoteSessionService {
+  /**
+   * Open an absolute path with the Host operating system's default
+   * application. Resolves with the typert `RemoteResult` envelope.
+   */
+  openWorkspacePath(
+    request: { path: string },
+    signal?: AbortSignal,
+  ): Promise<
+    | { readonly ok: true; readonly value: { opened: boolean } }
+    | { readonly ok: false; readonly error: { readonly code: string; readonly message: string; readonly details: object } }
+  >
 }
 
 /** The settings service face (mirror of @deepseek-ai/dsh-settings' SettingsProvider). */
@@ -546,7 +516,7 @@ export interface SidebarAgent {
 
 /**
  * The shape this plugin actually consumes, intersected with the vendored
- * cordis `Context` below (see the file header for why intersection is used
+ * Cordis `Context` below (see the file header for why intersection is used
  * instead of module augmentation).
  */
 export interface SidebarContextShape {
@@ -556,16 +526,24 @@ export interface SidebarContextShape {
   sessions: SidebarSessionStore & SidebarSessionsService
   /** The client wire handle used by sidebar RPC helpers. */
   connection: ConnectionHandle
+  /** Workspace archival used by Side Chat close. */
+  workspaces: SidebarWorkspacesService
+  /** Typert Remote namespaces used by file-open interception and Side Chat commands. */
+  remote: {
+    session: SidebarRemoteSessionService
+    commands: {
+      execute(sessionId: SessionId, line: string, args: readonly unknown[]): Promise<
+        | { readonly ok: true; readonly value: unknown }
+        | { readonly ok: false; readonly error: { readonly code: string; readonly message: string; readonly details: object } }
+      >
+    }
+  }
   /** The web runtime trust list (bind-derived). */
   webRuntime: SidebarWebRuntime
   /** The client slot registry (register/inject). */
   slots: SidebarSlotsService
-  /** The client workspaces service face (file-open funnel). */
-  workspaces: SidebarWorkspacesService
   /** The settings service face (prefs persistence + namespace reads). */
   settings: SidebarSettingsService
-  /** The invariant registry face. */
-  invariants: SidebarInvariantsService
   /** The tool registry face. */
   tools: SidebarToolsService
   /** The client locale service face. */
@@ -591,7 +569,7 @@ export interface SidebarContextShape {
   /**
    * The client-side sidebar registry: external plugins register tab types
    * and file previewers here. Provided by the client half (see
-   * {@link ./client/index.tsx}); undefined on the host side.
+   * {@link ./client/index.ts}); undefined on the host side.
    */
   betterSidebar: BetterSidebarService
   /**
@@ -604,20 +582,8 @@ export interface SidebarContextShape {
 }
 
 /**
- * The Context this plugin sees: the vendored cordis Context intersected with
- * the structural service faces above. Re-exported from the package root so a
- * consumer can `import type { Context } from 'dsh-better-sidebar'`.
+ * The context this snapshot sees: the vendored Cordis Context intersected with
+ * the structural service faces above. The snapshot-specific name prevents Host
+ * catalog declarations that mention Cordis Context from resolving to this mirror.
  */
-export type Context = CordisContext & SidebarContextShape
-
-/**
- * Consumer-facing augmentation (deliberately the only one kept): a plugin
- * that imports `Context` from `@deepseek-ai/cordis` and does
- * `import type {} from 'dsh-better-sidebar'` sees `ctx.betterSidebar`
- * without importing this package's own Context type.
- */
-declare module '@deepseek-ai/cordis' {
-  interface Context {
-    betterSidebar: BetterSidebarService
-  }
-}
+export type SidebarContext = CordisContext & SidebarContextShape

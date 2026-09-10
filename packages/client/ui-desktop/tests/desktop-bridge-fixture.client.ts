@@ -1,10 +1,13 @@
 /**
- * Shared inert `DesktopBridge` for assembled Desktop Web E2E.
+ * Shared `DesktopBridge` preload fixture for assembled Desktop Web E2E.
+ * Account state is inert; chrome requests and replies are delivered locally.
  * Playwright serializes `installDesktopBridgeFixture` into the page, so the
  * function body must stay free of imported values.
  */
 
 import type {
+  ChromeOverlayShowRequest,
+  ChromeOverlayResult,
   DesktopAccountSnapshot,
   DesktopBridge,
   DesktopPairingSnapshot,
@@ -25,6 +28,13 @@ export function installDesktopBridgeFixture(platform: 'darwin' | 'win32'): Deskt
   const account: DesktopAccountSnapshot = { status: 'unavailable', privacyAccepted: false }
   const pairing: DesktopPairingSnapshot = { status: 'unavailable', enabled: false, pairings: [] }
   let sub2api: DesktopSub2ApiSnapshot = { state: 'missing', enabled: true }
+  let overlay: ChromeOverlayShowRequest | null = null
+  const overlayListeners = new Set<(state: ChromeOverlayShowRequest | null) => void>()
+  const overlayResultListeners = new Set<(result: ChromeOverlayResult) => void>()
+  const publishOverlay = (state: ChromeOverlayShowRequest | null): void => {
+    overlay = state
+    for (const listener of overlayListeners) listener(state)
+  }
   const statusListeners = new Set<(status: UpdaterStatus) => void>()
   const accountListeners = new Set<(snapshot: DesktopAccountSnapshot) => void>()
   const pairingListeners = new Set<(snapshot: DesktopPairingSnapshot) => void>()
@@ -139,12 +149,21 @@ export function installDesktopBridgeFixture(platform: 'darwin' | 'win32'): Deskt
       listener(sub2api)
       return () => { sub2apiListeners.delete(listener) }
     },
-    chromeOverlayShow: async () => {},
-    chromeOverlayHide: async () => {},
-    chromeOverlayGetState: async () => null,
-    chromeOverlayResult: () => {},
-    onChromeOverlayState: () => () => {},
-    onChromeOverlayResult: () => () => {},
+    chromeOverlayShow: async (request) => { publishOverlay(request) },
+    chromeOverlayHide: async () => { publishOverlay(null) },
+    chromeOverlayGetState: async () => overlay,
+    chromeOverlayResult: (result) => {
+      publishOverlay(null)
+      for (const listener of overlayResultListeners) listener(result)
+    },
+    onChromeOverlayState: (listener) => {
+      overlayListeners.add(listener)
+      return () => { overlayListeners.delete(listener) }
+    },
+    onChromeOverlayResult: (listener) => {
+      overlayResultListeners.add(listener)
+      return () => { overlayResultListeners.delete(listener) }
+    },
   }
 
   Object.defineProperty(globalThis, 'dshDesktop', {

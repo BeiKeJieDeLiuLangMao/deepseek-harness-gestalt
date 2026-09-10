@@ -10,7 +10,7 @@ Session 可以拥有 Browser Workspace、实例、标签页、Dock 几何与当�
 
 ## 决策
 
-`dsh-client-ui-browser` 把 Session 持有的 Browser Workspace 呈现为官方截图加文本 chrome。占用关系后来迁到工作台侧栏的 `browser` 标签；见 [工作台官方浏览器 Agent Note](2026-08-21-workbench-official-browser.zh.md)。收起预览仍占用 `conversation.browser.preview`。实时事实通过 `useProjection('browserWorkspace')` 到达。变更走生成的 `remote.browserWorkspace` 命名空间，包括 `create`。
+`dsh-client-ui-browser` 把 Session 持有的 Browser Workspace 呈现为官方截图加文本 chrome。占用关系后来迁到工作台侧栏的 `browser` 标签；见 [工作台官方浏览器 Agent Note](2026-08-21-workbench-official-browser.zh.md)。收起预览仍占用 Chat 声明的 `conversation.browser.preview`。实时事实通过 `useProjection('browserWorkspace')` 到达。变更走生成的 `remote.browserWorkspace` 命名空间，包括 `create`。
 
 chrome 没有 Profile 切换或 Agent 状态行。工作台侧栏标签条就是页面列表；页面 chrome 没有标签条。持久 Profile 名称出现在地址栏旁，以及设置分区 `id: 'browser'` 的可编辑名册行里。重命名名册项会替换 `namedProfiles` 中的分区键，并在 `defaultPersistentName` 仍指向旧名称时一并改写；Chromium partition 数据不会迁移。活动标签页的标题、地址栏与截图会在该标签页的列表修订号前进时重新观察，因此 Binder 已提交的 navigate 会替换仍为空白的 `about:blank` 界面。刷新会先观察 Runtime 的当前 URL，再导航到该 URL。地址栏可编辑：回车导航，没有 scheme 的主机名会补上 `https://`。后退与前进在窗格本地的已提交 URL 轨迹上行走（地址栏导航，以及 Desktop 上 revision 前进后观察到的页内点击）；另有控件在默认浏览器打开当前页面。建页被拒会把错误记录在侧栏标签 meta 上，窗格显示重试控件。视口显示最近一次截图与页面文本，并在截图大于窗格时滚动；它不嵌入第二个进程。官方 chrome 不占用 `details`；窄屏浮层留给其他详情占用方（[窄屏浮层 Agent Note](../bug-fix/2026-08-21-narrow-browser-dock-overlay.zh.md)）。
 
@@ -36,6 +36,6 @@ Web 与 headless 组合挂载 `dsh-browser-runtime-deterministic` 与 `dsh-brows
 
 ## 验证
 
-- `pnpm exec vitest run packages/client/ui-workbench packages/client/ui-browser packages/browser/browser-workspace packages/client/ui-conversation/tests/preview-rail.client.spec.ts packages/client/ui-conversation/tests/chat-view.client.spec.tsx`
+- `pnpm exec vitest run packages/client/ui-workbench packages/client/ui-browser packages/browser/browser-workspace packages/client/ui-chat/tests/preview-rail.client.spec.ts packages/client/ui-chat/tests/chat-view.client.spec.tsx`
 - `pnpm exec vitest run packages/client/ui-browser --coverage --coverage.include='packages/client/ui-browser/src/**/*.ts'`
 - `pnpm run check:ci:static`

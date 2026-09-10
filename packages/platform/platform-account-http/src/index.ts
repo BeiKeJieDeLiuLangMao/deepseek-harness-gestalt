@@ -19,6 +19,7 @@ import {
   parseLoginAttemptId,
   type AccountProof,
 } from '@deepseek-ai/dsh-platform-account'
+import type {} from '@deepseek-ai/dsh-host-webserver'
 import {
   CorsOriginPolicy,
   HttpError,
@@ -26,7 +27,7 @@ import {
   writeHttpError,
   writeJson,
   writeRetryAfterError,
-} from '@deepseek-ai/dsh-host-webserver'
+} from '@deepseek-ai/dsh-host-webserver/http'
 
 const MAX_JSON_BYTES = 64 * 1024
 

@@ -82,7 +82,7 @@ export class EncryptedDesktopSnowPairingStore {
       throw new TypeError('Desktop Snow pairing store must contain an object')
     }
     const document = value as Record<string, unknown>
-    const active = boundedArray(document.active, 'active').map((item) => {
+    const active = boundedArray(document.active, 'active').map((item): PersistedSnowPairingState => {
       if (typeof item !== 'object' || item === null || Array.isArray(item)) {
         throw new TypeError('Desktop Snow pairing store record must be an object')
       }
@@ -102,7 +102,7 @@ export class EncryptedDesktopSnowPairingStore {
       return {
         pairingId: parsePersonalPairingId(record.pairingId), reconnectState, attachmentKey,
         desktopGrant: {
-          routeId: parseRelayRouteId(grant.routeId), endpoint: 'desktop' as const,
+          routeId: parseRelayRouteId(grant.routeId), endpoint: 'desktop',
           credential: parseRelayCredential(grant.credential), revision: grant.revision as number,
           pairingSelector: parseRelayPairingSelector(grant.pairingSelector),
         },
@@ -129,18 +129,6 @@ export class EncryptedDesktopSnowPairingStore {
         transaction: decodeConfirmation(record.transaction),
       }
     })
-    const pairingIds = new Set<PersonalPairingId>()
-    const pairingSelectors = new Set<RelayPairingSelector>()
-    for (const record of active) {
-      if (pairingIds.has(record.pairingId)) {
-        throw new TypeError('Desktop Snow pairing store contains a duplicate active pairing id')
-      }
-      if (pairingSelectors.has(record.desktopGrant.pairingSelector)) {
-        throw new TypeError('Desktop Snow pairing store contains a duplicate Relay pairing selector')
-      }
-      pairingIds.add(record.pairingId)
-      pairingSelectors.add(record.desktopGrant.pairingSelector)
-    }
     const state = { active, challenges, pending, confirmations }
     assertVaultCapacity(state)
     return state
@@ -389,12 +377,12 @@ export class DesktopSnowPairingVault {
 
   /** Read a defensive reconnect-state copy by Relay pairing selector. */
   reconnectState(selector: RelayPairingSelector): Uint8Array | undefined {
-    return this.activeRecord(selector)?.reconnectState.slice()
+    return this.active.get(parsePersonalPairingId(selector))?.reconnectState.slice()
   }
 
   /** Read the pairing-scoped application key derived from the authenticated XKpsk3 transcript. */
   attachmentKey(selector: RelayPairingSelector): Uint8Array | undefined {
-    return this.activeRecord(selector)?.attachmentKey.slice()
+    return this.active.get(parsePersonalPairingId(selector))?.attachmentKey.slice()
   }
 
   /** @returns copies of every pairing-scoped Desktop Relay grant. */
@@ -454,17 +442,6 @@ export class DesktopSnowPairingVault {
     this.persistence = this.persistence.catch(() => {}).then(async () => {
       try { await this.store?.save(state) } finally { wipeVaultState(state) }
     })
-  }
-
-  private activeRecord(selector: RelayPairingSelector): {
-    reconnectState: Uint8Array
-    attachmentKey: Uint8Array
-    desktopGrant: RelayCredentialGrant
-  } | undefined {
-    for (const record of this.active.values()) {
-      if (record.desktopGrant.pairingSelector === selector) return record
-    }
-    return undefined
   }
 
   private retainedPairingCount(): number {
@@ -596,12 +573,12 @@ function cloneConfirmation(transaction: DesktopSnowConfirmationTransaction): Des
     ...transaction,
     desktopCredentialDigest: transaction.desktopCredentialDigest.slice(),
     mobileCredentialDigest: transaction.mobileCredentialDigest.slice(),
-    ...(transaction.sealedRelayAuthority === undefined ? {} : {
-      sealedRelayAuthority: transaction.sealedRelayAuthority.slice(),
-    }),
-    ...(transaction.reconnectState === undefined ? {} : {
-      reconnectState: transaction.reconnectState.slice(),
-    }),
+    ...(transaction.sealedRelayAuthority === undefined
+      ? {}
+      : { sealedRelayAuthority: transaction.sealedRelayAuthority.slice() }),
+    ...(transaction.reconnectState === undefined
+      ? {}
+      : { reconnectState: transaction.reconnectState.slice() }),
     attachmentKey: transaction.attachmentKey.slice(),
   }
 }

@@ -52,7 +52,7 @@ describe('Desktop default Schedule turn', () => {
     }))
     await agentHandle.agent.whenIdle()
 
-    const events = agentHandle.agent.session.events
+    const events = agentHandle.agent.session.snapshotEvents()
     expect(events.some(event =>
       event.type === 'user/message'
       && event.data.source.kind === 'plugin'

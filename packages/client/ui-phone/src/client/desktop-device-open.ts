@@ -3,7 +3,7 @@
 import type {
   ChromeOverlayResult, ChromeOverlayShowRequest, DesktopBridge,
 } from '@deepseek-ai/dsh-client-ui-desktop/protocol'
-import type { SettingsScope } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { DeviceId } from '@deepseek-ai/dsh-phone-runtime'
 import type { PhoneSettings } from '../phone-settings.ts'
 import { phoneDeviceIdOf } from './phone-device-id.ts'

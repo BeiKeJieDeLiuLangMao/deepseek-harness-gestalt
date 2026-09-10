@@ -1,0 +1,41 @@
+- dialog "Settings":
+  - navigation:
+    - text: Settings
+    - button "General":
+      - img
+      - text: General
+    - button "Models":
+      - img
+      - text: Models
+    - button "Plugins":
+      - img
+      - text: Plugins
+    - button "Agent presets":
+      - img
+      - text: Agent presets
+    - button "Browser":
+      - img
+      - text: Browser
+    - button "Phone Devices":
+      - img
+      - text: Phone Devices
+    - button "Mobile pairing":
+      - img
+      - text: Mobile pairing
+    - button "Account pool":
+      - img
+      - text: Account pool
+    - button "Side card"
+  - button "Open configuration file"
+  - button "Close":
+    - img
+    - text: Close
+  - heading "Models" [level=2]
+  - paragraph: Enter your API keys to use models from the following providers.
+  - list
+  - button "Add provider":
+    - img
+    - text: Add provider
+  - button "Add a custom provider":
+    - img
+    - text: Add a custom provider

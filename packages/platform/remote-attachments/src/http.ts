@@ -2,7 +2,8 @@
 
 import type { IncomingHttpHeaders, IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
-import { CorsOriginPolicy, writeRetryAfterError } from '@deepseek-ai/dsh-host-webserver'
+import type {} from '@deepseek-ai/dsh-host-webserver'
+import { CorsOriginPolicy, writeRetryAfterError } from '@deepseek-ai/dsh-host-webserver/http'
 import { AccountError } from '@deepseek-ai/dsh-platform-account'
 import { RemoteAccessError, type PersonalPairingId } from '@deepseek-ai/dsh-remote-access'
 import { parseAttachmentCapability, type AttachmentCapability } from '@deepseek-ai/dsh-remote-protocol'

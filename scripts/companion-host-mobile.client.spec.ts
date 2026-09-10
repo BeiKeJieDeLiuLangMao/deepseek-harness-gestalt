@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { randomUUID } from 'node:crypto'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -55,7 +56,7 @@ describe('Host HTTP failure Companion projection', () => {
   it('carries a real HTTP 400 through the codec into the visible Mobile alert', async () => {
     const operationId = parseCompanionOperationId('visible-host-400')
     const tsxLoader = pathToFileURL(createRequire(join(repo, 'package.json')).resolve('tsx')).href
-    const probe = join(repo, 'apps', 'desktop', 'tests', 'companion-fixture', 'host-400-codec-probe.ts')
+    const probe = join(repo, 'apps', 'desktop', 'tests', 'host-400-codec-probe.ts')
     const probeResult = await startProbe(
       ['--import', tsxLoader, probe],
       10_000,
@@ -181,7 +182,7 @@ const environment = selectPlatformEnvironment(validatePlatformEnvironmentPair({
     databaseIdentity: 'database-production', identityNamespace: 'namespace-production',
   },
 }), 'development')
-const installationIdentity = crypto.randomUUID()
+const installationIdentity = randomUUID()
 const installationPlatform = (crypto.getRandomValues(new Uint8Array(1))[0] ?? 0) % 2 === 0 ? 'ios' : 'android'
 
 const attempt: LoginAttemptView = {

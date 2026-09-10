@@ -18,7 +18,7 @@ Status: implemented
 
 ## Alternatives considered
 
-**把 `examples/project-members` 快照当作足够证据。** 否决：该组合只播种内存花名册和内存发送器，从不执行 Account session、Project Membership HTTP、presence 心跳或加密多安装投递。
+**把 `snapshots/session/member-question-routed-ask` 快照当作足够证据。** 否决：该组合只播种内存花名册和内存发送器，从不执行 Account session、Project Membership HTTP、presence 心跳或加密多安装投递。
 
 **等待运营 GitHub OAuth 与已评审的生产加密。** 那仍是生产激活路径，但不能作为仓库的无密钥回归。本地 Platform 与密文 broker 是替代证据，并非产品密码学已经发货。
 

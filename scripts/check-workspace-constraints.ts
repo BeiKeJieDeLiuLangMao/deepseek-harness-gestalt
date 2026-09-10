@@ -8,7 +8,7 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { DYNAMIC_CLIENT_ARTIFACT } from './client-artifact-contract.ts'
+import { load as loadYaml } from 'js-yaml'
 import { hasTypertRemoteNavigation, isForbiddenPublicationFile } from './publication-payload.ts'
 import { collectProjectReferenceFaceViolations } from './project-reference-faces.ts'
 
@@ -55,13 +55,13 @@ const experimentalPackageDirectory = /^packages\/experimental\/[^/]+$/
 const experimentalPackageNamePrefix = '@deepseek-ai/dsh-experimental-'
 /** Directories whose packages this repository publishes: one release member each. */
 const releaseMemberDirectory = /^(?:packages\/(?!experimental\/)[^/]+\/[^/]+|apps\/(?:cli|web)|vendor\/[^/]+)$/
-
 const localArtifactDirs = new Set(['node_modules'])
 const appPackageFiles: Readonly<Record<string, readonly string[]>> = {
-  '@deepseek-ai/dsh': ['lib/*.js', 'config'],
-  // The Web build emits sourcemaps for browser debugging; publishing them is
-  // what the payload policy forbids, so the bundle ships without them.
-  '@deepseek-ai/dsh-web-frontend': ['dist', '!dist/**/*.map'],
+  '@deepseek-ai/dsh': ['lib/*.js'],
+  // Sourcemaps stay out by payload policy; the worker-preview surface
+  // (dist/preview.html and dist/preview/) backs private experimental
+  // packages and is not published.
+  '@deepseek-ai/dsh-web-frontend': ['dist', '!dist/**/*.map', '!dist/preview.html', '!dist/preview'],
 }
 
 /** The subset of package.json fields this constraint check cares about. */
@@ -150,8 +150,6 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   '@deepseek-ai/dsh-client-ui-primitives': ['lib/**/*.css'],
   '@deepseek-ai/dsh-client-web': ['lib/**/*.css'],
   '@deepseek-ai/dsh-client-ui-theme': ['lib/styles'],
-  // Remote Access keeps browser-safe public protocol surfaces separate from
-  // host-only provider and Node WebSocket adapters.
   '@deepseek-ai/dsh-noise-channel': [
     'pkg/dsh_noise_channel.d.ts',
     'pkg/dsh_noise_channel.js',
@@ -162,69 +160,58 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   '@deepseek-ai/dsh-remote-access': ['lib/relay-provider.js'],
   '@deepseek-ai/dsh-remote-access-client': ['lib/desktop-relay-lifecycle.js', 'lib/node-relay-socket.js'],
   '@deepseek-ai/dsh-remote-access-http': ['lib/relay.js'],
-  // Remote Attachments ships its HTTPS route plugin as its own bundle beside
-  // the blob store entry, mirroring the Remote Access HTTP split.
   '@deepseek-ai/dsh-remote-attachments': ['lib/http.js'],
-  // Desktop bridge types are shared by Electron and the browser overlay through
-  // a runtime subpath, so the protocol is bundled separately from the UI client.
-  '@deepseek-ai/dsh-client-runtime': ['lib/client-node.js'],
   '@deepseek-ai/dsh-client-ui-desktop': ['lib/protocol.js', 'lib/pairing-source.js'],
-  // The CPython side ships as source .py files, published as-is rather than built.
-  '@deepseek-ai/dsh-code-runtime-python': ['py/**/*.py'],
-  // The Python runtime uses a distinct closed-resolution bin; the public CLI
-  // keeps config-owned bare-package resolution through lib/bin.js.
-  '@deepseek-ai/dsh-sdk-jsonrpc-demo': ['lib/packaged-bin.js'],
-  // The argv-prefix runner entry ships beside the lib as its own bundle;
-  // sandbox-local resolves it through the package's ./runner export. tsdown
-  // also shares its generated FFI code through a hashed runtime chunk.
-  '@deepseek-ai/dsh-sandbox-windows-acl': ['lib/runner.js', 'lib/types-*.js'],
-  // SQLite loads every statement from immutable package resources at runtime.
-  '@deepseek-ai/dsh-session-persistence-sqlite': ['resources/sql/**/*.sql'],
-  '@deepseek-ai/dsh-skill-badge': ['assets'],
-  '@deepseek-ai/dsh-subprocess-local': ['scripts/ensure-spawn-helper.mjs'],
-  // Browser Runtime Providers share their authoritative-state registry with
-  // the invariant companion through a hashed runtime chunk beside the lib; the
-  // Tandem-shaped HTTP Provider also publishes its upstream provenance files.
   '@deepseek-ai/dsh-browser-runtime-deterministic': ['lib/runtime-state-*.js'],
   '@deepseek-ai/dsh-browser-runtime-electron': ['lib/runtime-state-*.js', 'lib/testing.js', 'lib/host-seam.js'],
   '@deepseek-ai/dsh-browser-runtime-tandem': ['lib/runtime-state-*.js', 'THIRD_PARTY_NOTICES.md', 'UPSTREAM.md'],
-  '@deepseek-ai/dsh-phone-runtime': ['lib/runtime-state-*.js'],
   '@deepseek-ai/dsh-client-ui-better-sidebar': [
     'lib/client-terminal.js',
     'lib/client-editor.js',
     'lib/client-mermaid.js',
+    'lib/client-locale.js',
   ],
+  // The CPython side ships as source .py files, published as-is rather than built.
+  '@deepseek-ai/dsh-code-runtime-python': ['py/**/*.py'],
+  '@deepseek-ai/dsh-experimental-code-runtime-python': ['py/**/*.py'],
+  // The shipped preset compositions travel inside the roster package.
+  '@deepseek-ai/dsh-agent-presets': ['presets'],
+  // The Web Host mounts the default-off settings owner independently of each
+  // Agent-scoped delegation-tool instance.
+  '@deepseek-ai/dsh-tool-subagent': ['lib/model-selection-settings.js'],
+  // The argv-prefix runner entry ships beside the lib as its own bundle;
+  // sandbox-local resolves it through the package's ./runner export. tsdown
+  // also shares its generated FFI code through a hashed runtime chunk.
+  '@deepseek-ai/dsh-sandbox-windows-acl': ['lib/runner.js', 'lib/types-*.js'],
+  '@deepseek-ai/dsh-skill-badge': ['assets'],
+  // tsdown shares the repository/pack code between the lib entry and the bin
+  // through a hashed chunk. The committed bin.js is the link target pnpm can
+  // resolve at install time, before the build produces lib/bin.js.
+  '@deepseek-ai/dsh-experimental-webworker-packer': ['bin.js', 'lib/repository-*.js'],
+  '@deepseek-ai/dsh-subprocess-local': ['scripts/ensure-spawn-helper.mjs'],
 }
 
 function sameStringList(actual: readonly string[] | undefined, expected: readonly string[]): boolean {
   return !!actual && actual.length === expected.length && actual.every((value, index) => value === expected[index])
 }
 
-function expectedDshPackageFiles(manifest: PackageManifest): readonly string[] {
-  const declaredPatch = manifest.dsh?.bundle?.patch
-  const bundleFiles = declaredPatch === undefined ? [] : [declaredPatch.replace(/^\.\//, '')]
-  const extras = [
-    ...bundleFiles,
-    ...(manifest.name ? packageFileExtras[manifest.name] ?? [] : []),
-  ]
-  return [
+export function expectedDshPackageFiles(manifest: PackageManifest): readonly string[] {
+  const runtimeFiles = [
     'lib/index.js',
-    // Every package publishes its invariant ownership companion as a separate
-    // bundle; the package-invariant gate validates the companion itself.
-    'lib/invariant.js',
+    // Packages with an invariant export publish its runtime as a separate
+    // bundle; the package-invariant gate validates the source/export pairing.
+    ...manifest.exports?.['./invariant'] ? ['lib/invariant.js'] : [],
     ...manifest.bin ? ['lib/bin.js'] : [],
-    ...manifest.exports?.['./worker'] ? ['lib/worker.cjs'] : [],
-    // Dynamic UI plugin packages ship their CommonJS browser factory beside
-    // the node lib. A package may instead expose an ESM ./client source channel.
-    ...exportDefault(manifest, './client') === DYNAMIC_CLIENT_ARTIFACT.exportPath
-      ? [DYNAMIC_CLIENT_ARTIFACT.relativePath]
-      : [],
+    // Worker-thread packages ship a CJS worker entry; the browser worker
+    // bundle is an ES module a page loads with `new Worker(type: 'module')`.
+    // Keyed on the artifact path, like ./client below.
+    ...exportDefault(manifest, './worker') === './lib/worker.cjs' ? ['lib/worker.cjs'] : [],
+    ...exportDefault(manifest, './worker') === './lib/worker.js' ? ['lib/worker.js'] : [],
+    // UI plugin packages ship their browser bundle beside the node lib
+    // (single-artifact ruling: dist/ retired, ./client resolves lib/client.js).
+    // Keyed on the artifact path, not the subpath name: a package's ./client is
+    // a browser-safe source channel, not a bundle.
     ...exportDefault(manifest, './client') === './lib/client.js' ? ['lib/client.js'] : [],
-    // Shared browser presentation subpaths ship an ESM entry and every CSS
-    // asset that the product shell compiles alongside it.
-    ...exportDefault(manifest, './presentation') === './lib/presentation.js'
-      ? ['lib/presentation.js', 'lib/**/*.css']
-      : [],
     // runtime's shell-held loader subpath ships as its own bundle beside the client half.
     ...exportDefault(manifest, './loader') === './lib/loader.js' ? ['lib/loader.js'] : [],
     // A store subpath ships its own bundle (single-entry builds; no shared chunk).
@@ -232,13 +219,14 @@ function expectedDshPackageFiles(manifest: PackageManifest): readonly string[] {
     // A surface bundle's startup row is its own bundle: the Loader imports it
     // as a row module, so it cannot ride inside the package entry.
     ...exportDefault(manifest, './startup') === './lib/startup.js' ? ['lib/startup.js'] : [],
-    ...extras,
-    // Subpaths whose runtime default is the tsc-emitted tree (lib/types/*.js —
-    // browser-safe source channels rehomed off src so plain Node can import
-    // them without type stripping) publish the emitted JS alongside the
-    // declarations.
-    ...usesEmittedTreeDefaults(manifest) ? ['lib/types/**/*.js'] : [],
-    'lib/types/**/*.d.ts',
+  ]
+  const declaredPatch = manifest.dsh?.bundle?.patch
+  const bundleFiles = declaredPatch === undefined ? [] : [declaredPatch.replace(/^\.\//, '')]
+  const extras = [
+    ...bundleFiles,
+    ...(manifest.name ? packageFileExtras[manifest.name] ?? [] : []),
+  ]
+  const generatedEntryFiles = [
     ...hasExportPair(manifest, './typert', './lib/typert.host.d.ts', './lib/typert.host.js')
       ? ['lib/typert.host.js', 'lib/typert.host.d.ts']
       : [],
@@ -248,6 +236,20 @@ function expectedDshPackageFiles(manifest: PackageManifest): readonly string[] {
     ...hasTypertRemoteNavigation(manifest)
       ? ['lib/typert.remote-client.js', 'lib/typert.remote-client.d.ts']
       : [],
+  ]
+  const listedFiles = new Set([...runtimeFiles, ...extras, ...generatedEntryFiles])
+  const exportedRuntimeFiles = exportedLibRuntimeFiles(manifest).filter(file => !listedFiles.has(file))
+  return [
+    ...runtimeFiles,
+    ...extras,
+    ...exportedRuntimeFiles,
+    // Subpaths whose runtime default is the tsc-emitted tree (lib/types/*.js —
+    // browser-safe source channels rehomed off src so plain Node can import
+    // them without type stripping) publish the emitted JS alongside the
+    // declarations.
+    ...usesEmittedTreeDefaults(manifest) ? ['lib/types/**/*.js'] : [],
+    'lib/types/**/*.d.ts',
+    ...generatedEntryFiles,
   ]
 }
 
@@ -273,6 +275,17 @@ function exportDefault(manifest: PackageManifest, subpath: string): string | und
   return undefined
 }
 
+/** Runtime artifacts directly addressed by supported package export entries. */
+function exportedLibRuntimeFiles(manifest: PackageManifest): string[] {
+  const files = new Set<string>()
+  for (const subpath of Object.keys(manifest.exports ?? {})) {
+    const target = exportDefault(manifest, subpath)
+    if (target?.startsWith('./lib/') !== true || target.startsWith('./lib/types/')) continue
+    files.add(target.slice(2))
+  }
+  return [...files]
+}
+
 /** Whether any export's runtime default points into the tsc-emitted lib/types tree. */
 function usesEmittedTreeDefaults(manifest: PackageManifest): boolean {
   return Object.keys(manifest.exports ?? {}).some(subpath =>
@@ -292,7 +305,12 @@ export function checkExperimentalManifest({ dir, manifest }: WorkspaceManifest):
   return errors
 }
 
-function checkWorkspace({ dir, manifest }: WorkspaceManifest): string[] {
+/**
+ * Check one workspace manifest against publication and dsh-package policy.
+ * @param workspace - package directory and parsed manifest.
+ * @returns path-qualified policy violations.
+ */
+export function checkWorkspaceManifest({ dir, manifest }: WorkspaceManifest): string[] {
   const errors = checkExperimentalManifest({ dir, manifest })
   const label = manifest.name ?? dir
   const isLandlockPackageDir = dir.startsWith('native/landlock-run/packages/')
@@ -445,6 +463,17 @@ function checkHierarchyShape(): string[] {
   return errors
 }
 
+interface WorkspacePolicy {
+  readonly allowBuilds?: Readonly<Record<string, unknown>>
+}
+
+/** Require every pnpm lifecycle-script decision to be an explicit boolean. */
+export function checkPnpmBuildPolicy(policy: WorkspacePolicy): string[] {
+  return Object.entries(policy.allowBuilds ?? {})
+    .filter(([, decision]) => typeof decision !== 'boolean')
+    .map(([name, decision]) => `pnpm-workspace.yaml: allowBuilds.${name} must be true or false, got ${JSON.stringify(decision)}`)
+}
+
 function checkRepositoryVersion(): string[] {
   // The root carries the dsh release family's version, so a prerelease such as
   // 0.0.1-rc.1 is a valid state between `release:dsh` and its publication.
@@ -512,8 +541,9 @@ export function main(): void {
     { dir: 'python/sdk-runtime', manifest: readJson(join(root, 'python/sdk-runtime/package.json')) },
   ]
   const errors = [
+    ...checkPnpmBuildPolicy(loadYaml(readFileSync(join(root, 'pnpm-workspace.yaml'), 'utf8')) as WorkspacePolicy),
     ...checkRepositoryVersion(),
-    ...manifests.flatMap(checkWorkspace),
+    ...manifests.flatMap(checkWorkspaceManifest),
     ...checkWorkspaceProtocol(manifests),
     ...checkExperimentalDependencyIsolation(dependencyManifests),
     ...checkHierarchyShape(),

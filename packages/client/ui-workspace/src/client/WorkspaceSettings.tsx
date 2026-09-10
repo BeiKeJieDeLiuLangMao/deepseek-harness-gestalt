@@ -16,7 +16,7 @@
  */
 import { useEffect, useRef, useState } from 'react'
 import { Button, Modal, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { WorkspaceId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { WorkspaceId } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { WorkspaceBrowserProps } from './contract/slots.ts'
 import type { ProjectMembershipErrorCode } from '@deepseek-ai/dsh-project-membership'
 import { grantableInviteRoles } from '@deepseek-ai/dsh-project-membership/invite-role'
@@ -30,10 +30,25 @@ import css from './WorkspaceSettings.module.css'
 /** The standard locale seat, prop-passed from the browser root. */
 type SettingsTranslate = WorkspaceBrowserProps['t']
 
+/**
+ * Visible link-candidate label: last path segment when the Workspace has a
+ * local path, otherwise the Workspace title.
+ * @param candidate - local Workspace offered as a link target.
+ * @returns radio-accessible name.
+ */
+function linkCandidateLabel(candidate: WizardWorkspace): string {
+  const path = candidate.path?.replace(/[\\/]+$/, '') ?? ''
+  const separator = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'))
+  const segment = separator >= 0 ? path.slice(separator + 1) : path
+  return segment === '' ? candidate.title : segment
+}
+
 /** Local workspace offered as a wizard link candidate. */
 export interface WizardWorkspace {
   workspaceId: WorkspaceId
   title: string
+  /** Absolute local path; the link radio uses its last segment when present. */
+  path?: string
 }
 
 const MEMBERSHIP_ERROR_COPY = {
@@ -391,9 +406,9 @@ function MemberRowItem({ row, gateway, onAct, t }: {
           onAct(() => gateway.changeRole(row.membershipId, role))
         }}
       >
-        <option value="owner">owner</option>
-        <option value="admin">admin</option>
-        <option value="member">member</option>
+        <option value="owner">{t('members.role.owner')}</option>
+        <option value="admin">{t('members.role.admin')}</option>
+        <option value="member">{t('members.role.member')}</option>
       </select>
       <input
         className={css.tagsInput}
@@ -563,7 +578,7 @@ export function InviteWizardModal({ invitation, workspaces, gateway, onClose, on
                           setCloneSelected(false)
                         }}
                       />
-                      <span className={css.memberName}>{candidate.title}</span>
+                      <span className={css.memberName}>{linkCandidateLabel(candidate)}</span>
                       {badge === 'recommended' && <span className={css.badgeRecommended}>{t('wizard.link.recommended')}</span>}
                       {badge === 'foreign' && <span className={css.badgeForeign}>{t('wizard.link.foreign')}</span>}
                     </label>

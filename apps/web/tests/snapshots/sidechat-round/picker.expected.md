@@ -3,9 +3,9 @@
 - button "Files":
   - img
   - text: Files
-- button "Source Control":
+- button "Changes":
   - img
-  - text: Source Control
+  - text: Changes
 - button "Tasks":
   - img
   - text: Tasks

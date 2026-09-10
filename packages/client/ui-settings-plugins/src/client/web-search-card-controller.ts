@@ -1,7 +1,7 @@
 /**
- * One web-search card's staged form. Official DeepSeek and the Anthropic-protocol
- * card share this controller; each binds its own settings namespace and writes
- * `backend` on the DeepSeek section so the Host does not guess the wire from a URL.
+ * One web-search card's staged form. Official DeepSeek, Anthropic Messages, and
+ * Kimi each bind their own settings namespace. Selecting a tab writes `backend`
+ * on the DeepSeek section so the Host does not guess the wire from a URL.
  *
  * The key is the one control that does not live in the section: its literal
  * never rides a response, so the card learns only whether one is configured
@@ -10,11 +10,10 @@
  * covers everything the card shows.
  */
 
-import type { IApiClient } from '@deepseek-ai/dsh-client-connection/client'
-import {
-  createSnapshotStore,
-  type SettingsScope, type SettingsScopeSnapshot, type SnapshotStore,
-} from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context as ClientContext } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-api-remotes/client'
+import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type { SettingsScope, SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { HostObservable, StoredEntry } from '@deepseek-ai/dsh-client-ui-slots'
 import { labeledSlotTab } from './slot-tab.ts'
 import {
@@ -44,6 +43,9 @@ const DEFAULT_API_KEY_REF = 'DEEPSEEK_API_KEY'
 /** Form field the credential control stages under. */
 const API_KEY_FIELD = 'apiKey'
 
+/** Probe query the Plugins card sends through `settings.testWebSearch`. */
+const WEB_SEARCH_PROBE_QUERY = 'deepseek harness'
+
 /** The search-provider fields this card edits. */
 export interface WebSearchSettings {
   /** Which card the next search reads; only the DeepSeek section stores this. */
@@ -62,7 +64,7 @@ interface CredentialState {
   ref: string
   /** Whether any layer supplies a value for it. */
   configured: boolean
-  /** Whether `credentials.set` can affect it; false disables the control. */
+  /** Whether `credentials/set` can affect it; false disables the control. */
   writable: boolean
 }
 
@@ -94,7 +96,7 @@ export interface WebSearchProviderTab {
   label: string
 }
 
-/** The registration-side face the web-search card's slot entry injects. */
+/** The registration-side face one provider tab injects. */
 export interface WebSearchCardFace extends CardActions {
   hooks: {
     /** Card snapshot bound by the renderer as useWebSearchCard. */
@@ -108,28 +110,27 @@ export interface WebSearchCardFace extends CardActions {
   baseUrlHintKey: PluginsSettingsLocaleKey
   /** Prefix for control ids so two cards on one page do not collide. */
   idPrefix: string
-  /** Make this card the one the next search reads. */
-  useThis: () => void
   /** Write staged edits so a probe uses the values on screen. */
   persist: () => Promise<void>
 }
 
-/** Bridges the `web-search-deepseek` scope and the credentials domain onto the card. */
+/** Bridges one search-provider namespace and the credentials domain onto a tab. */
 export class WebSearchCardController {
   private readonly form: CardForm<WebSearchSettings>
   private readonly store: SnapshotStore<WebSearchCardState>
   private credential: CredentialState = { ref: '', configured: false, writable: true }
 
   /**
-   * @param scope - the bound settings scope for this card's namespace.
-   * @param api - wire face used for the credential the section references.
-   * @param backend - the `backend` value this card writes when selected.
+   * @param scope - the bound settings scope for this tab's namespace.
+   * @param ctx - the card plugin's context, whose `remote.credentials` namespace
+   *   answers for the credential the section references.
+   * @param backend - the `backend` value this tab writes when selected.
    * @param selectionScope - the DeepSeek section that stores `backend`.
-   * @param copy - locale keys this card renders.
+   * @param copy - locale keys this tab renders.
    */
   constructor(
     private readonly scope: SettingsScope<WebSearchSettings>,
-    private readonly api: Pick<IApiClient, 'credentials'>,
+    private readonly ctx: ClientContext,
     private readonly backend: WebSearchBackend,
     private readonly selectionScope: SettingsScope<WebSearchSettings>,
     private readonly copy: {
@@ -179,16 +180,9 @@ export class WebSearchCardController {
       this.credential = { ref, configured: false, writable: true }
       this.store.set(this.projection())
     }
-    let response: Awaited<ReturnType<IApiClient['credentials']['describe']>>
-    try {
-      response = await this.api.credentials.describe({ refs: [ref] })
-    } catch (_credentialReadFailure) {
-      // The card stays usable without this: the key control simply reports the
-      // last state it knew, and a write still reaches the Host.
-      return
-    }
-    if (!response.result.ok || ref !== refOf(this.scope.getSnapshot())) return
-    const view = response.result.value.credentials[ref]
+    const response = await this.ctx.remote.credentials.describe([ref])
+    if (!response.ok || ref !== refOf(this.scope.getSnapshot())) return
+    const view = response.value[ref]
     const next: CredentialState = {
       ref,
       configured: view?.configured ?? false,
@@ -215,8 +209,8 @@ export class WebSearchCardController {
   }
 
   /**
-   * Build the face the card's slot registration injects.
-   * @returns the card's snapshot and its form actions.
+   * Build the face the tab's slot registration injects.
+   * @returns the tab's snapshot and its form actions.
    */
   inject(): WebSearchCardFace {
     return {
@@ -224,7 +218,6 @@ export class WebSearchCardController {
       ...this.copy,
       ...this.form.actions(),
       persist: () => this.form.save(),
-      useThis: () => { void this.selectionScope.set('backend', this.backend) },
     }
   }
 
@@ -234,12 +227,9 @@ export class WebSearchCardController {
    * @returns whether the Host reports a configured credential afterwards.
    */
   private async writeKey(value: string): Promise<boolean> {
-    try {
-      await this.api.credentials.set({ ref: refOf(this.scope.getSnapshot()), value })
-    } catch (_credentialWriteFailure) {
-      // Refusals surface through the re-read below: the Host is the only
-      // authority on whether the key now exists.
-    }
+    // Refusals surface through the re-read below: the Host is the only
+    // authority on whether the key now exists.
+    await this.ctx.remote.credentials.set(refOf(this.scope.getSnapshot()), value)
     await this.readCredential()
     return this.credential.configured
   }
@@ -287,8 +277,8 @@ export interface WebSearchShellFace extends CardActions {
   /** Locale key of the Web Search card description. */
   descriptionKey: PluginsSettingsLocaleKey
   /** Write `backend` so the next search reads this provider. */
-  selectProvider: (id: string) => void
-  /** Probe the selected provider with query `deepseek harness`. */
+  selectProvider: (id: string) => Promise<void>
+  /** Probe the selected provider through `settings.testWebSearch`. */
   testSearch: () => Promise<WebSearchProbe>
 }
 
@@ -306,11 +296,15 @@ export class WebSearchShell {
   private unsubChild: (() => void) | undefined
   private readonly tabListeners = new Set<() => void>()
   private tabSnapshot: readonly WebSearchProviderTab[] = []
+  /** Serializes `backend` writes so a probe cannot race an in-flight tab switch. */
+  private selectionWrite = Promise.resolve()
 
   /**
    * @param selectionScope - the DeepSeek section that stores `backend`.
    * @param entries - the provider tabs currently registered into the card.
    * @param copy - locale keys for the outer card.
+   * @param fallback - DeepSeek tab used when the ledger has no match.
+   * @param ctx - plugin context whose generated `remote.settings.testWebSearch` probes.
    */
   constructor(
     private readonly selectionScope: SettingsScope<WebSearchSettings>,
@@ -320,7 +314,7 @@ export class WebSearchShell {
       descriptionKey: PluginsSettingsLocaleKey
     },
     private readonly fallback: WebSearchCardController,
-    private readonly api: IApiClient,
+    private readonly ctx: ClientContext,
   ) {
     this.selectionScope.subscribe(() => { this.rewire() })
   }
@@ -382,25 +376,47 @@ export class WebSearchShell {
       resetField: (field) => { this.selectedFace().resetField(field) },
       save: () => { this.selectedFace().save() },
       discard: () => { this.selectedFace().discard() },
-      selectProvider: (id) => { void this.selectionScope.set('backend', id) },
+      selectProvider: id => this.queueBackend(id),
       testSearch: async () => {
-        await this.selectedFace().persist()
-        let response: Awaited<ReturnType<IApiClient['settings']['testWebSearch']>>
-        try {
-          response = await this.api.settings.testWebSearch({ query: 'deepseek harness' })
-        } catch (error: unknown) {
-          return { status: 'error', message: error instanceof Error ? error.message : String(error) }
+        await this.selectionWrite
+        if (this.store.getSnapshot().failed) {
+          return { status: 'error', message: 'search provider could not be switched' }
         }
-        if (!response.result.ok) {
-          return { status: 'error', message: response.result.error.message }
+        await this.selectedFace().persist()
+        if (this.selectedFace().hooks.webSearchCard.getSnapshot().failed) {
+          return { status: 'error', message: 'search settings could not be saved' }
+        }
+        const response = await this.ctx.remote.settings.testWebSearch(WEB_SEARCH_PROBE_QUERY)
+        if (!response.ok) {
+          return { status: 'error', message: response.error.message }
         }
         return {
           status: 'ok',
-          count: response.result.value.count,
-          ...response.result.value.title === undefined ? {} : { title: response.result.value.title },
+          count: response.value.count,
+          ...response.value.title === undefined ? {} : { title: response.value.title },
         }
       },
     }
+  }
+
+  /**
+   * Queue one `backend` write on the DeepSeek scope and wait for Host settlement.
+   * A later probe joins this tail so it cannot run against the previous provider.
+   */
+  private queueBackend(id: string): Promise<void> {
+    const write = this.commitBackend(id)
+    this.selectionWrite = this.selectionWrite.then(() => write, () => write)
+    return write
+  }
+
+  private async commitBackend(id: string): Promise<void> {
+    await this.selectionScope.set('backend', id)
+    const landed = (this.selectionScope.getSnapshot().value?.backend ?? 'deepseek') === id
+    if (!landed) {
+      this.store.set({ ...this.store.getSnapshot(), failed: true, dirty: true })
+      return
+    }
+    this.rewire()
   }
 
   private selectedId(): string {

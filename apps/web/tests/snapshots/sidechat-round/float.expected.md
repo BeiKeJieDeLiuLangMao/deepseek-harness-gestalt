@@ -2,12 +2,17 @@
 - text: New thread
 - button "Close":
   - img
-- banner:
-  - tablist:
-    - tab "Chat" [selected]
-    - tab "Trajectory"
-- textbox "Message the agent"
-- button "Commands and skills":
+- text: Into the Unknown Preview
+- button "Choose workspace":
+  - img
+  - text: workspace
+  - img
+- button "Standard mode":
+  - img
+  - text: Standard mode
+  - img
+- textbox "Describe what you want to build... / commands, @ files or sessions"
+- button "Commands":
   - img
 - button "Select model, current DeepSeek-V4-Flash":
   - text: DeepSeek-V4-Flash

@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ModelSelection } from '@deepseek-ai/dsh-api-remotes/client'
-import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { ComponentProps } from 'react'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -38,12 +38,18 @@ const modelSelectCss = readFileSync(
 
 function state(overrides: Partial<ModelDirectoryState> = {}): ModelDirectoryState {
   return {
+    available: true,
     current: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
     routable: true,
     groups: [{
       id: 'deepseek-official',
       name: 'DeepSeek',
-      models: [{ id: 'deepseek-v4-flash', name: 'DeepSeek-V4-Flash', reasoning }],
+      models: [{
+        id: 'deepseek-v4-flash',
+        name: 'DeepSeek-V4-Flash',
+        description: 'Fast catalog description',
+        reasoning,
+      }],
     }],
     failures: [],
     status: 'ready',
@@ -55,7 +61,7 @@ function state(overrides: Partial<ModelDirectoryState> = {}): ModelDirectoryStat
 afterEach(cleanup)
 
 describe('ModelSelect reasoning effort', () => {
-  it('renders adapter metadata and submits the effort as part of the session selection', async () => {
+  it('renders effort names without descriptions and submits the effort as part of the session selection', async () => {
     const directory = createSnapshotStore<ModelDirectoryState>(state())
     const select = vi.fn(async (selection: ModelSelection) => {
       directory.set(state({ current: selection }))
@@ -63,7 +69,6 @@ describe('ModelSelect reasoning effort', () => {
     })
     render(<ModelSelect
       locked={false}
-      available
       directory={directory}
       load={vi.fn()}
       select={select}
@@ -76,7 +81,8 @@ describe('ModelSelect reasoning effort', () => {
     fireEvent.click(trigger)
     fireEvent.click(screen.getByRole('menuitem', { name: /推理等级/ }))
     expect(screen.getAllByRole('menuitemradio').map(item => item.textContent))
-      .toEqual(['Off', 'High', 'MaxLargest budget'])
+      .toEqual(['Off', 'High', 'Max'])
+    expect(screen.queryByText('Largest budget')).toBeNull()
 
     fireEvent.click(screen.getByRole('menuitemradio', { name: /Max/ }))
     await waitFor(() => {
@@ -104,7 +110,6 @@ describe('ModelSelect reasoning effort', () => {
     }))
     render(<ModelSelect
       locked={false}
-      available
       directory={directory}
       load={vi.fn()}
       select={vi.fn().mockResolvedValue(true)}
@@ -119,27 +124,52 @@ describe('ModelSelect reasoning effort', () => {
       .toEqual(['Default', 'Standard'])
   })
 
-  it('prompts for a selection when the current model is no longer advertised', () => {
+  it('shows the durable model id when the catalog has no matching display name', () => {
     const directory = createSnapshotStore(state({
       current: { provider: 'deepseek-official', model: 'removed-model' },
     }))
     const select = vi.fn().mockResolvedValue(true)
     render(<ModelSelect
       locked={false}
-      available
       directory={directory}
       load={vi.fn()}
       select={select}
       t={t}
     />)
 
-    const trigger = screen.getByRole('button', { name: '选择模型' })
-    expect(trigger.textContent).toContain('选择模型')
+    const trigger = screen.getByRole('button', { name: '选择模型，当前 deepseek-official/removed-model' })
+    expect(trigger.textContent).toContain('deepseek-official/removed-model')
     fireEvent.click(trigger)
     expect(screen.queryByRole('menuitem', { name: /推理等级/ })).toBeNull()
     fireEvent.click(screen.getByRole('menuitem', { name: /模型/ }))
-    expect(screen.queryByText('removed-model')).toBeNull()
+    expect(screen.queryByRole('menuitemradio', { name: 'removed-model' })).toBeNull()
     expect(screen.getByRole('menuitemradio', { name: 'DeepSeek-V4-Flash' })).toBeTruthy()
+    expect(screen.queryByText('Fast catalog description')).toBeNull()
+  })
+
+  it('shows loading until the catalog and Session projection are both ready', async () => {
+    const directory = createSnapshotStore<ModelDirectoryState>(state({
+      current: null,
+      routable: null,
+      groups: [],
+      status: 'loading',
+    }))
+    render(<ModelSelect
+      locked={false}
+      directory={directory}
+      load={vi.fn()}
+      select={vi.fn().mockResolvedValue(true)}
+      t={t}
+    />)
+
+    expect(screen.getByRole('button', { name: '正在加载模型…' }).textContent)
+      .toContain('正在加载模型…')
+    directory.set(state())
+    await waitFor(() => {
+      expect(screen.getByRole('button', {
+        name: '选择模型，当前 DeepSeek-V4-Flash，推理等级 High',
+      })).toBeTruthy()
+    })
   })
 
   it('exposes the model id independently from its display name', () => {
@@ -153,7 +183,6 @@ describe('ModelSelect reasoning effort', () => {
     }))
     render(<ModelSelect
       locked={false}
-      available
       directory={directory}
       load={vi.fn()}
       select={vi.fn().mockResolvedValue(true)}
@@ -183,12 +212,11 @@ describe('ModelSelect reasoning effort', () => {
     }]
     const directory = createSnapshotStore<ModelDirectoryState>(state({ groups }))
     const select = vi.fn(async () => {
-      directory.set(state({ groups, status: 'error', error: 'model-unavailable: session already contains images' }))
+      directory.set(state({ groups, status: 'error', error: 'session/model-unavailable: session already contains images' }))
       return false
     })
     render(<ModelSelect
       locked={false}
-      available
       directory={directory}
       load={vi.fn()}
       select={select}
@@ -199,7 +227,7 @@ describe('ModelSelect reasoning effort', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: /模型/ }))
     fireEvent.click(screen.getByRole('menuitemradio', { name: /DeepSeek-V4-Pro/ }))
     const toast = await screen.findByRole('alert')
-    expect(toast.textContent).toContain('模型操作失败：model-unavailable: session already contains images')
+    expect(toast.textContent).toContain('模型操作失败：session/model-unavailable: session already contains images')
     // The selection failure does not render the in-menu load strip (no Retry).
     expect(screen.queryByRole('button', { name: '重试' })).toBeNull()
   })
@@ -208,8 +236,7 @@ describe('ModelSelect reasoning effort', () => {
     const load = vi.fn()
     render(<ModelSelect
       locked={false}
-      available={false}
-      directory={createSnapshotStore(state())}
+      directory={createSnapshotStore(state({ available: false }))}
       load={load}
       select={vi.fn().mockResolvedValue(false)}
       t={t}
@@ -217,5 +244,27 @@ describe('ModelSelect reasoning effort', () => {
 
     expect(screen.queryByRole('button')).toBeNull()
     expect(load).not.toHaveBeenCalled()
+  })
+
+  it('hides the control and refuses a later select when the live route disappears', async () => {
+    const directory = createSnapshotStore<ModelDirectoryState>(state())
+    const select = vi.fn<(selection: ModelSelection) => Promise<boolean>>(async () => true)
+    const gated = (selection: ModelSelection) => directory.getSnapshot().available
+      ? select(selection)
+      : Promise.resolve(false)
+    render(<ModelSelect
+      locked={false}
+      directory={directory}
+      load={vi.fn()}
+      select={gated}
+      t={t}
+    />)
+    expect(screen.getByRole('button', { name: /选择模型/ })).toBeDefined()
+    directory.set(state({ available: false }))
+    await waitFor(() => {
+      expect(screen.queryByRole('button')).toBeNull()
+    })
+    await expect(gated({ provider: 'deepseek-official', model: 'deepseek-v4-pro' })).resolves.toBe(false)
+    expect(select).not.toHaveBeenCalled()
   })
 })

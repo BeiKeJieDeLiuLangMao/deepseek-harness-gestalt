@@ -15,6 +15,7 @@ import type {
   PersonalPairingKeyReference,
   RelayCredentialGrant,
 } from '@deepseek-ai/dsh-remote-access'
+import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
 import {
   finishPairingResponder,
   generateSnowKeypair,
@@ -204,7 +205,7 @@ export class SnowMobileHandshakeClient {
         throw new TypeError('Snow Personal Pairing invitation has no Desktop static public key')
       }
       return {
-        completionId: parsePairingCompletionId(`snow-${crypto.randomUUID()}`),
+        completionId: parsePairingCompletionId(`snow-${randomUUID()}`),
         mobileHandshake: await this.prepare(invitation.desktopStaticPublicKey, invitation.invitationSecret),
       }
     } finally {

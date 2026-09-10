@@ -4,12 +4,12 @@
  */
 import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react'
 import type { Context } from '@deepseek-ai/cordis'
-import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {
   BrowserPageState, BrowserTarget, BrowserWorkspaceProjection,
 } from '@deepseek-ai/dsh-browser-workspace/client'
 import { listBrowserWorkspacePages } from '@deepseek-ai/dsh-browser-workspace/client'
-import { BrowserPageChrome } from '@deepseek-ai/dsh-client-ui-browser/client'
+import type { BrowserUiFace } from '@deepseek-ai/dsh-client-ui-browser/client'
 import { isDesktopOverlayDocument } from '../desktop-overlay-document.ts'
 import {
   officialCreateErrorOf, officialProfileFromChrome, officialTabMeta, officialTargetKey,
@@ -19,7 +19,7 @@ import { bindBrowserWorkspace, type BrowserWorkspaceRemoteFace } from './remote-
 
 /** Structural props the snapshot tab descriptor passes through. */
 export interface OfficialBrowserTabProps {
-  /** Client root context. */
+  /** Snapshot renderer context carrying Session and tab services. */
   ctx: Context
   /** Snapshot tab record. */
   tab: { id: string; meta?: unknown }
@@ -49,10 +49,10 @@ interface WorkbenchBrowserCreateFace {
 
 /**
  * Official page chrome for one snapshot browser tab.
- * @param props - Snapshot tab props plus the client context.
+ * @param props - Snapshot tab props, renderer context, and captured Browser UI renderer.
  * @returns the official chrome, or a creating placeholder.
  */
-export function OfficialBrowserTab({ ctx, tab, scope, visible }: OfficialBrowserTabProps) {
+export function OfficialBrowserTab({ ctx, tab, scope, visible, renderPageChrome }: OfficialBrowserTabProps & Pick<BrowserUiFace, 'renderPageChrome'>) {
   const sessionId = scope.sessionId as SessionId
   const list = (ctx.get('sessions') as { list: SessionListFace } | undefined)?.list
   const snapshot = useSyncExternalStore(
@@ -105,20 +105,18 @@ export function OfficialBrowserTab({ ctx, tab, scope, visible }: OfficialBrowser
   if (isDesktopOverlayDocument() || actions === undefined) return null
 
   const createError = bound === undefined ? officialCreateErrorOf(tab.meta) : undefined
-  return (
-    <BrowserPageChrome
-      target={bound}
-      {...(listedRevision === undefined ? {} : { listedRevision })}
-      refresh={actions.refresh}
-      observe={actions.observe}
-      screenshot={actions.screenshot}
-      t={t}
-      {...(visible === undefined ? {} : { visible })}
-      onCommittedPage={onCommittedPage}
-      onMissingTarget={onMissingTarget}
-      {...(createError === undefined ? {} : { createError, onRetry: onRetryCreate })}
-    />
-  )
+  return renderPageChrome({
+    target: bound,
+    ...(listedRevision === undefined ? {} : { listedRevision }),
+    refresh: actions.refresh,
+    observe: actions.observe,
+    screenshot: actions.screenshot,
+    t,
+    ...(visible === undefined ? {} : { visible }),
+    onCommittedPage,
+    onMissingTarget,
+    ...(createError === undefined ? {} : { createError, onRetry: onRetryCreate }),
+  })
 }
 
 function emptySubscribe(): () => void {

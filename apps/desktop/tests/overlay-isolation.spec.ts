@@ -9,6 +9,23 @@ import { resolveExampleLaunch } from '@deepseek-ai/dsh-loader-smoke'
 const here = dirname(fileURLToPath(import.meta.url))
 const repo = join(here, '..', '..', '..')
 
+function expectMemberQuestionReceiver(config: string): void {
+  expect(config).toMatch(/id: member-question-receiver/)
+  expect(config).toMatch(/@deepseek-ai\/dsh-member-question-receiver/)
+  expect(config).toContain("storagePath: !!js dshHomePath('member-question-receiver')")
+  expect(config).toMatch(
+    /environment: !!js(?: "| >-\n\s*)process\.env\.DSH_PLATFORM_ENVIRONMENT === 'production' \? 'production' :\s*'development'"?/,
+  )
+  expect(config).toMatch(
+    /maxRecords: 1000[\s\S]*terminalRetryMs: 1000[\s\S]*terminalAuthorityMode: deferred/,
+  )
+}
+
+function expectMemberQuestionClient(config: string): void {
+  expect(config).toMatch(/id: ui-member-questions/)
+  expect(config).toMatch(/@deepseek-ai\/dsh-client-ui-member-questions/)
+}
+
 describe('Desktop overlay isolation', () => {
   it('keeps Desktop-only plugins out of the default web graph', () => {
     const web = readFileSync(join(repo, 'packages', 'bundle', 'web-app', 'cordis.patch.yml'), 'utf8')
@@ -64,8 +81,10 @@ describe('Desktop overlay isolation', () => {
       expect(web).not.toMatch(/ui-desktop|dsh-client-ui-desktop|dsh-time-context|dsh-schedule|browser-runtime-electron-http/)
       expect(web).not.toMatch(/project-membership-desktop/)
       expect(web).toMatch(/@deepseek-ai\/dsh-host-directory-picker-auto/)
+      expectMemberQuestionReceiver(web)
       expect(web).toMatch(/id: member-question-sender/)
       expect(web).toMatch(/@deepseek-ai\/dsh-member-question-sender/)
+      expectMemberQuestionClient(web)
 
       const desktop = run(['web', '--patch', patch, '--dump-config'])
       const persistence = desktop.indexOf("name: '@deepseek-ai/dsh-session-persistence-jsonl'")
@@ -78,8 +97,10 @@ describe('Desktop overlay isolation', () => {
       expect(schedule).toBeGreaterThan(persistence)
       expect(desktop).toMatch(/@deepseek-ai\/dsh-client-ui-desktop/)
       expect(desktop).toMatch(/@deepseek-ai\/dsh-project-membership-desktop/)
+      expectMemberQuestionReceiver(desktop)
       expect(desktop).toMatch(/id: member-question-sender/)
       expect(desktop).toMatch(/@deepseek-ai\/dsh-member-question-sender/)
+      expectMemberQuestionClient(desktop)
       expect(desktop).toMatch(/@deepseek-ai\/dsh-browser-runtime-deterministic/)
       expect(desktop).toMatch(/@deepseek-ai\/dsh-browser-runtime-tandem/)
       expect(desktop).toMatch(/sidecar: false/)

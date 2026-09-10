@@ -1,33 +1,33 @@
 /** Public presentation seam shared by Web compositions that do not mount the Desktop page shell. */
 
-import { useCallback, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from 'react'
-import type {
-  ConversationNode, ConversationSnapshot, PendingWait, ToolResultNode, TurnErrorNode, TurnMaxTokensNode,
-} from '@deepseek-ai/dsh-client-runtime/client'
+import { useCallback, useEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from 'react'
+import type { SessionSnapshot } from '@deepseek-ai/dsh-api-session-controller/client'
+import { JsonBlock, MarkdownText, projectUserText } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
-import { JsonBlock } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { InputEffect, InputState } from './client/input/contract.ts'
-import { AssistantMarkdown } from './client/chat/AssistantMarkdown.tsx'
-import {
-  ModelRetryItem, TurnErrorItem, TurnMaxTokensItem, UserStyleBubble,
-} from './client/chat/MessageItem.tsx'
-import { ContextInjectionRow } from './client/chat/ContextInjectionRow.tsx'
-import { CompactionItem } from './client/chat/CompactionItem.tsx'
-import { GenericCommandCard } from './client/chat/GenericCommandCard.tsx'
-import {
-  ApprovalPresentation, approvalCommandOf,
-} from './client/skeleton/ApprovalPanel.tsx'
-import { PendingApproval } from './client/contract/slots.ts'
+import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
+import type {
+  ConversationNode, ToolResultNode, TurnErrorNode, TurnMaxTokensNode,
+} from './client/contract/records.ts'
+import type { InputEffect } from './client/contract/input.ts'
+import { SubmitMachine } from './client/input/machine.ts'
 import { InputBarPresentation } from './client/skeleton/InputBarPresentation.tsx'
-import { InputMachine } from './client/input/machine.ts'
 import { en, zh } from './client/locales.ts'
+import type { MessageImageSource, RenderMessageImages } from './client/contract/slots.ts'
 
 /** Locale ids supported by the shared Web presentation. */
 export type ConversationPresentationLocale = 'zh' | 'en'
 
 const COMMON = {
-  zh: { copy: '复制', copied: '复制成功', loading: '加载中…' },
-  en: { copy: 'Copy', copied: 'Copied', loading: 'Loading…' },
+  zh: {
+    loading: '加载中…',
+    'message.unknownSurface': '未知 surface 事件：{type}',
+    'json.truncated': '… 已截断，共 {total} 字符',
+  },
+  en: {
+    loading: 'Loading…',
+    'message.unknownSurface': 'Unknown surface event: {type}',
+    'json.truncated': '… truncated, {total} characters total',
+  },
 } as const
 
 /* v8 ignore next 3 -- closed-union defaults only defend future source widening. */
@@ -45,28 +45,78 @@ export function conversationPresentationTranslate(
 ): TranslateNS<'conversation'> {
   const dictionary: Record<string, string> = locale === 'zh' ? zh : en
   const common: Record<string, string> = COMMON[locale]
-  const translate: TranslateNS<'conversation'> = (key, params) => {
+  const translate = ((key: string, params?: Record<string, unknown>) => {
     const template = dictionary[key] ?? common[key] ?? key
     if (params === undefined) return template
     return template.replace(/\{(\w+)\}/g, (match, name: string) =>
       Object.hasOwn(params, name) ? String(params[name]) : match)
-  }
+  }) as TranslateNS<'conversation'>
   return translate
+}
+
+function presentationCopy(
+  t: TranslateNS<'conversation'>,
+  key: string,
+  params?: Record<string, unknown>,
+): string {
+  return (t as (lookup: string, values?: Record<string, unknown>) => string)(key, params)
+}
+
+function markdownLabels(t: TranslateNS<'conversation'>): { code: { copyLabel: string; copiedLabel: string }; footnotes: string } {
+  return {
+    code: { copyLabel: presentationCopy(t, 'copy'), copiedLabel: presentationCopy(t, 'copied') },
+    footnotes: presentationCopy(t, 'footnotes'),
+  }
 }
 
 /** Props for the shared user-message renderer. */
 export interface ConversationUserMessageProps {
-  /** Desktop-authoritative message content. */
-  content: readonly unknown[]
+  /** Desktop-authoritative user or steering content blocks. */
+  content: readonly ContentBlock[]
   /** Shared image renderer bound to the current Session's authorized loader. */
-  renderMessageImages: Parameters<typeof UserStyleBubble>[0]['renderMessageImages']
+  renderMessageImages: RenderMessageImages
   /** Shared conversation translator. */
   t: TranslateNS<'conversation'>
 }
 
+/**
+ * Split user content into text, durable image refs, and unknown blocks.
+ * @param content - user or steering ContentBlock list.
+ * @returns joined text, authorized image sources in source order, and leftover blocks.
+ */
+function userContentParts(content: readonly ContentBlock[]): {
+  text: string
+  images: MessageImageSource[]
+  rest: unknown[]
+} {
+  const texts: string[] = []
+  const images: MessageImageSource[] = []
+  const rest: unknown[] = []
+  for (const block of content) {
+    if (block.type === 'text') texts.push(block.text)
+    else if (block.type === 'image') images.push({ attachment: block.attachment })
+    else rest.push(block)
+  }
+  return { text: texts.join(''), images, rest }
+}
+
 /** Render a user message through the same bubble implementation as Desktop. */
 export function ConversationUserMessage({ content, renderMessageImages, t }: ConversationUserMessageProps): ReactNode {
-  return <UserStyleBubble content={content} renderMessageImages={renderMessageImages} t={t} />
+  const { text, images, rest } = userContentParts(content)
+  return (
+    <div>
+      {renderMessageImages({ images, align: 'end' })}
+      {text !== '' && <div>{projectUserText(text, [])}</div>}
+      {rest.map((block, index) => (
+        <JsonBlock
+          key={index}
+          label={presentationCopy(t, 'message.unknownSurface', { type: 'block' })}
+          payload={block}
+          truncatedLabel={total => presentationCopy(t, 'json.truncated', { total })}
+        />
+      ))}
+    </div>
+  )
 }
 
 /** Props for the shared turn-failure renderer. */
@@ -79,7 +129,11 @@ export interface ConversationFailureProps {
 
 /** Render a terminal turn outcome through the same implementation as Desktop. */
 export function ConversationFailure({ node, t }: ConversationFailureProps): ReactNode {
-  return node.kind === 'turn-error' ? <TurnErrorItem node={node} t={t} /> : <TurnMaxTokensItem t={t} />
+  return (
+    <div role="status">
+      {node.kind === 'turn-error' ? node.message : t('placeholder.unavailable')}
+    </div>
+  )
 }
 
 /** Props for the authoritative keyed Conversation Node presentation seam. */
@@ -108,14 +162,28 @@ export function ConversationNodePresentation({
       return <ConversationUserMessage content={node.content} renderMessageImages={renderMessageImages} t={t} />
     case 'assistant':
       return (
-        <AssistantMarkdown
-          blocks={node.blocks}
-          streaming={false}
-          interrupted={node.interrupted}
-          renderMessageImages={renderMessageImages}
-          t={t}
-          sourceId={node.messageId}
-        />
+        <>
+          {node.blocks.map((block, index) => {
+            if (block.kind === 'text') {
+              return <MarkdownText key={index} text={block.text} streaming={false} labels={markdownLabels(t)} />
+            }
+            if (block.kind === 'image') {
+              return (
+                <div key={index}>
+                  {renderMessageImages({ images: [{ attachment: block.attachment }], align: 'start' })}
+                </div>
+              )
+            }
+            return (
+              <JsonBlock
+                key={index}
+                label={presentationCopy(t, 'message.unknownSurface', { type: block.kind })}
+                payload={block}
+                truncatedLabel={total => presentationCopy(t, 'json.truncated', { total })}
+              />
+            )
+          })}
+        </>
       )
     case 'tool-result':
       return renderTool(node)
@@ -123,27 +191,22 @@ export function ConversationNodePresentation({
     case 'turn-max-tokens':
       return <ConversationFailure node={node} t={t} />
     case 'context':
+    case 'model-retry':
+    case 'command':
+    case 'compaction':
       return (
-        <ContextInjectionRow
-          content={node.content}
-          source={node.source}
-          provenance={node.provenance}
-          form={node.form}
-          t={t}
+        <JsonBlock
+          label={presentationCopy(t, 'message.unknownSurface', { type: node.kind })}
+          payload={node}
+          truncatedLabel={total => presentationCopy(t, 'json.truncated', { total })}
         />
       )
-    case 'model-retry':
-      return <ModelRetryItem node={node} active={node.retryState === 'scheduled'} t={t} />
-    case 'command':
-      return <GenericCommandCard node={node} t={t} />
-    case 'compaction':
-      return <CompactionItem node={node} t={t} />
     case 'unknown':
       return (
         <JsonBlock
-          label={t('message.unknownSurface', { type: node.type })}
+          label={presentationCopy(t, 'message.unknownSurface', { type: node.type })}
           payload={node.data}
-          truncatedLabel={total => t('json.truncated', { total })}
+          truncatedLabel={total => presentationCopy(t, 'json.truncated', { total })}
         />
       )
     /* v8 ignore next -- every current Conversation Node kind is handled above. */
@@ -151,39 +214,111 @@ export function ConversationNodePresentation({
   }
 }
 
+/** Pending Approval carrier accepted by the shared takeover. */
+export interface ConversationApprovalWait {
+  /** Domain discriminator. */
+  readonly kind: 'approval'
+  /** Tool requesting the decision, used when the asker supplied no reason. */
+  readonly toolName?: string | undefined
+  /** Human-readable reason supplied by the asker. */
+  readonly reason?: string | undefined
+  /**
+   * Resolve the Host waterfall with the user's decision.
+   * @param outcome - supported interactive decision.
+   * @returns settlement promise.
+   */
+  answer(outcome: 'allowed-once' | 'rejected'): Promise<void>
+}
+
 /** Props for the shared Approval takeover. */
 export interface ConversationApprovalProps {
   /** Desktop-authoritative pending Approval carrier. */
-  wait: PendingWait<'approval'>
-  /** Current Desktop-authoritative Session projection used to find the paired command. */
-  snapshot: ConversationSnapshot
+  wait: ConversationApprovalWait
+  /**
+   * Optional Session projection accepted for Mobile call-site compatibility.
+   * Command detail stays on the Desktop `conversation.approval.detail` slot;
+   * this shared seam does not invent a command renderer.
+   */
+  snapshot?: SessionSnapshot | undefined
   /** Shared conversation translator. */
   t: TranslateNS<'conversation'>
   /** Disable settlement while the composition lacks current mutation authority. */
   disabled?: boolean | undefined
 }
 
+function approvalHeadline(wait: ConversationApprovalWait, t: TranslateNS<'conversation'>): string {
+  if (wait.reason !== undefined && wait.reason !== '') return wait.reason
+  if (wait.toolName !== undefined && wait.toolName !== '') {
+    return presentationCopy(t, 'approval.escalation', { toolName: wait.toolName })
+  }
+  return t('placeholder.unavailable')
+}
+
+function approvalFailureMessage(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause)
+}
+
 /**
- * Render and settle an Approval through the same composer takeover as Desktop.
- * @param props - authoritative pending Approval, projection, translator, and mutation state.
+ * Render and settle an Approval through allow-once and reject actions.
+ * @param props - authoritative pending Approval, translator, and mutation state.
  * @returns shared Approval takeover.
  */
-export function ConversationApproval({ wait, snapshot, t, disabled = false }: ConversationApprovalProps): ReactNode {
-  const approval = new PendingApproval(wait)
+export function ConversationApproval({ wait, t, disabled = false }: ConversationApprovalProps): ReactNode {
+  const [pending, setPending] = useState(false)
+  const [failure, setFailure] = useState<string | undefined>(undefined)
+  const waitRef = useRef(wait)
+  const generationRef = useRef(0)
+  const inFlightRef = useRef(false)
+  const mountedRef = useRef(true)
+  if (waitRef.current !== wait) {
+    waitRef.current = wait
+    generationRef.current += 1
+    inFlightRef.current = false
+    setPending(false)
+    setFailure(undefined)
+  }
+  useEffect(() => {
+    mountedRef.current = true
+    return () => { mountedRef.current = false }
+  }, [])
+  const locked = disabled || pending
+  const settle = (outcome: 'allowed-once' | 'rejected'): void => {
+    if (disabled || inFlightRef.current) return
+    inFlightRef.current = true
+    setPending(true)
+    setFailure(undefined)
+    const token = generationRef.current
+    const fail = (cause: unknown): void => {
+      if (token !== generationRef.current || !mountedRef.current) return
+      inFlightRef.current = false
+      setPending(false)
+      setFailure(approvalFailureMessage(cause))
+    }
+    try {
+      void Promise.resolve(wait.answer(outcome)).catch(fail)
+    } catch (cause) {
+      fail(cause)
+    }
+  }
   return (
-    <ApprovalPresentation
-      wait={wait}
-      command={approvalCommandOf(snapshot, approval)}
-      t={t}
-      disabled={disabled}
-    />
+    <div role="group" aria-label={t('approval.detailAria')}>
+      <p>{t('approval.waiting')}</p>
+      <p>{approvalHeadline(wait, t)}</p>
+      {failure !== undefined && <p role="alert">{failure}</p>}
+      <button type="button" disabled={locked} onClick={() => { settle('rejected') }}>
+        {t('approval.reject')}
+      </button>
+      <button type="button" disabled={locked} onClick={() => { settle('allowed-once') }}>
+        {t('approval.allowOnce')}
+      </button>
+    </div>
   )
 }
 
 /** Props for the shared standalone composer adapter. */
 export interface ConversationComposerProps {
   /** Desktop-authoritative Session projection controlling run and removal state. */
-  snapshot: ConversationSnapshot
+  snapshot: SessionSnapshot
   /** Submit one prompt through the composition's authority adapter. */
   onSubmit: (text: string) => void | Promise<void>
   /** Cancel the active Desktop turn when supplied. */
@@ -196,33 +331,117 @@ export interface ConversationComposerProps {
   tools?: ReactNode | undefined
 }
 
-/** Execute InputMachine effects for the standalone composer. */
 function isNotice(effect: InputEffect): effect is Extract<InputEffect, { type: 'notice' }> {
   return effect.type === 'notice'
 }
 
+const DRAFT_HISTORY_LIMIT = 200
+
+/** Local undo/redo ring for the standalone controlled textarea. */
+class DraftHistory {
+  private undo: string[] = []
+  private redo: string[] = []
+  private composing = false
+  private compositionBase: string | undefined
+
+  /**
+   * Record a committed draft change as one undo unit.
+   * @param previous - draft before the change.
+   * @param next - draft after the change.
+   */
+  record(previous: string, next: string): void {
+    if (previous === next) return
+    if (this.composing) return
+    this.undo.push(previous)
+    if (this.undo.length > DRAFT_HISTORY_LIMIT) this.undo.shift()
+    this.redo = []
+  }
+
+  /** Begin an IME composition so later commits coalesce into one unit. */
+  beginComposition(current: string): void {
+    if (this.composing) return
+    this.composing = true
+    this.compositionBase = current
+  }
+
+  /**
+   * End IME composition and record one unit from the composition start.
+   * @param next - draft after composition.
+   */
+  endComposition(next: string): void {
+    if (!this.composing) return
+    const previous = this.compositionBase ?? next
+    this.composing = false
+    this.compositionBase = undefined
+    this.record(previous, next)
+  }
+
+  /**
+   * Undo one unit.
+   * @param current - live draft.
+   * @returns previous draft, or the current draft when the log is empty.
+   */
+  undoDraft(current: string): string {
+    const previous = this.undo.pop()
+    if (previous === undefined) return current
+    this.redo.push(current)
+    return previous
+  }
+
+  /**
+   * Redo one unit.
+   * @param current - live draft.
+   * @returns next draft, or the current draft when the redo stack is empty.
+   */
+  redoDraft(current: string): string {
+    const next = this.redo.pop()
+    if (next === undefined) return current
+    this.undo.push(current)
+    return next
+  }
+
+  /** Cut history after a successful send so the sent draft cannot resurrect. */
+  clear(): void {
+    this.undo = []
+    this.redo = []
+    this.composing = false
+    this.compositionBase = undefined
+  }
+}
+
 function settleEffects(
-  machine: InputMachine,
+  machine: SubmitMachine,
   effects: readonly InputEffect[],
   publish: () => void,
   publishNotice: (notice: Extract<InputEffect, { type: 'notice' }> | undefined) => void,
+  setDraft: (draft: string) => void,
+  setBusy: (busy: boolean) => void,
   onSubmit: ConversationComposerProps['onSubmit'],
+  history: DraftHistory,
 ): void {
   for (const effect of effects) {
-    /* v8 ignore next -- the standalone adapter has no claim owner, so its only non-empty effect is default-sink. */
     if (effect.type !== 'default-sink') continue
+    setBusy(true)
     publishNotice(undefined)
     void Promise.resolve().then(() => onSubmit(effect.draft)).then(
       () => {
-        const settled = machine.dispatch({ type: 'submit-settled', attempt: effect.attempt, ok: true })
+        const settled = machine.dispatch({
+          type: 'sink-settled', attempt: effect.attempt, ok: true,
+        })
+        history.clear()
+        setDraft('')
+        setBusy(false)
         publishNotice(settled.find(isNotice))
         publish()
       },
       (cause: unknown) => {
         const settled = machine.dispatch({
-          type: 'submit-settled', attempt: effect.attempt, ok: false,
+          type: 'sink-settled',
+          attempt: effect.attempt,
+          ok: false,
           message: cause instanceof Error ? cause.message : String(cause),
         })
+        setBusy(false)
         publishNotice(settled.find(isNotice))
         publish()
       },
@@ -231,7 +450,7 @@ function settleEffects(
 }
 
 /**
- * Render the standard InputBar over a local InputMachine while delegating submission and cancellation.
+ * Render the standard InputBar over a local SubmitMachine while delegating submission and cancellation.
  * The adapter owns draft mechanics only; the supplied Session projection remains authoritative for run state.
  * @param props - authoritative projection, transport actions, translator, and mutation state.
  * @returns shared InputBar presentation with owner-defined draft mechanics.
@@ -239,60 +458,79 @@ function settleEffects(
 export function ConversationComposer({
   snapshot, onSubmit, onCancel, t, disabled = false, tools,
 }: ConversationComposerProps): ReactNode {
-  const machineRef = useRef<InputMachine>()
-  const machine = machineRef.current ?? new InputMachine()
+  const machineRef = useRef<SubmitMachine>()
+  const machine = machineRef.current ?? new SubmitMachine()
   machineRef.current = machine
-  const [input, setInput] = useState<InputState>(() => machine.state)
+  const historyRef = useRef<DraftHistory>()
+  const history = historyRef.current ?? new DraftHistory()
+  historyRef.current = history
+  const [draft, setDraft] = useState('')
+  const [, setPhase] = useState(machine.state.phase)
+  const [busy, setBusy] = useState(false)
+  const busyRef = useRef(false)
   const [notice, setNotice] = useState<Extract<InputEffect, { type: 'notice' }>>()
-  const publish = useCallback(() => { setInput(machine.state) }, [machine])
-  const dispatch = useCallback((event: Parameters<InputMachine['dispatch']>[0]) => {
+  const markBusy = useCallback((next: boolean) => {
+    busyRef.current = next
+    setBusy(next)
+  }, [])
+  const publish = useCallback(() => { setPhase(machine.state.phase) }, [machine])
+  const dispatch = useCallback((event: Parameters<SubmitMachine['dispatch']>[0]) => {
     const effects = machine.dispatch(event)
     publish()
-    settleEffects(machine, effects, publish, setNotice, onSubmit)
-  }, [machine, onSubmit, publish])
+    settleEffects(machine, effects, publish, setNotice, setDraft, markBusy, onSubmit, history)
+  }, [history, machine, markBusy, onSubmit, publish])
   const composing = useRef(false)
-  const submit = useCallback(() => { dispatch({ type: 'enter', mode: 'queue' }) }, [dispatch])
-  const busy = input.phase === 'adjudicating' || input.phase === 'submitting'
+  const submit = useCallback(() => { dispatch({ type: 'enter', mode: 'queue', draft }) }, [dispatch, draft])
+  const applyDraft = (next: string): void => {
+    setDraft(next)
+    dispatch({ type: 'draft-changed', draft: next })
+  }
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>): void => {
     if (event.key === 'Enter' && event.shiftKey) return
     if ((event.metaKey || event.ctrlKey) && (event.key === 'z' || event.key === 'Z' || event.key === 'y')) {
       event.preventDefault()
-      if (busy || snapshot.removed) return
-      dispatch({ type: event.key === 'y' || event.shiftKey ? 'redo' : 'undo' })
+      if (busyRef.current || snapshot.removed) return
+      applyDraft(event.key === 'y' || event.shiftKey ? history.redoDraft(draft) : history.undoDraft(draft))
       return
     }
     if (event.key !== 'Enter' || composing.current || event.nativeEvent.isComposing) return
     event.preventDefault()
-    if (event.repeat || busy || snapshot.removed) return
+    if (event.repeat || busyRef.current || snapshot.removed) return
     submit()
   }
   const onPaste = (event: ClipboardEvent<HTMLTextAreaElement>): void => {
-    if (busy || snapshot.removed) return
+    if (busyRef.current || snapshot.removed) return
     const text = event.clipboardData.getData('text/plain')
     if (text === '') return
     event.preventDefault()
-    dispatch({
-      type: 'paste-begin',
-      text,
-      selection: {
-        start: event.currentTarget.selectionStart,
-        end: event.currentTarget.selectionEnd,
-      },
-    })
+    const start = event.currentTarget.selectionStart
+    const end = event.currentTarget.selectionEnd
+    const next = `${draft.slice(0, start)}${text}${draft.slice(end)}`
+    history.record(draft, next)
+    applyDraft(next)
   }
   return (
     <div
-      onCompositionStart={() => { composing.current = true }}
-      onCompositionEnd={() => { composing.current = false }}
+      onCompositionStart={() => {
+        composing.current = true
+        history.beginComposition(draft)
+      }}
+      onCompositionEnd={() => {
+        composing.current = false
+        history.endComposition(draft)
+      }}
     >
       <InputBarPresentation
-        draft={input.draft}
-        phase={input.phase}
+        draft={draft}
+        phase={machine.state.phase}
         running={snapshot.running}
         busy={busy}
         disabled={snapshot.removed || disabled}
         placeholder={t(snapshot.removed ? 'placeholder.unavailable' : 'placeholder.default')}
-        onDraftChange={(draft) => { dispatch({ type: 'draft-changed', draft }) }}
+        onDraftChange={(next) => {
+          history.record(draft, next)
+          applyDraft(next)
+        }}
         onSubmit={submit}
         onStop={onCancel}
         onKeyDown={onKeyDown}
@@ -304,8 +542,3 @@ export function ConversationComposer({
     </div>
   )
 }
-
-export { AssistantMarkdown }
-export type { AssistantMarkdownProps } from './client/chat/AssistantMarkdown.tsx'
-export { InputBarPresentation }
-export type { InputBarPresentationProps } from './client/skeleton/InputBarPresentation.tsx'

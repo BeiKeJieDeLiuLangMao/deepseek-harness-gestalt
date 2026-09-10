@@ -64,13 +64,13 @@ export async function apply(ctx: Context): Promise<void> {
   let code = 'delivered'
   try {
     await sender.send({
-      toProjectMember: String(mona.accountId),
+      toProjectMember: mona.accountId,
       projectId: parseMemberQuestionProjectId(project.id),
       background: 'This offline ask must not queue.',
       questions: [{ id: 'offline', question: 'Queued?' }],
       references: [],
       origin: {
-        projectName: 'PresenceClose', originSessionTitle: 'Offline', askerAccountId: String(octocat.accountId),
+        projectName: 'PresenceClose', originSessionTitle: 'Offline', askerAccountId: octocat.accountId,
         askerRole: 'owner', askerDisplayName: 'octocat', askerAvatarUrl: 'https://avatars.example/octocat',
       },
       originSessionId: parseCompanionSessionId('session-presence-close'),

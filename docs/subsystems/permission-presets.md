@@ -86,10 +86,10 @@ Owns the deployment's permission presets and their write path. Requires a confin
  * Resolve the preset matching the effective knob values. A still-matching
  * last selection wins shared-bundle ties; otherwise the first table match
  * wins, or {@link CUSTOM_PRESET} when no entry matches.
- * @param events - the session's events in log order.
+ * @param session - the session whose knob state is read.
  * @returns the effective preset name, or `custom` when nothing matches.
  */
-current(events: readonly SessionEvent[]): string
+current(session: Session): string
 
 /**
  * Build the whole select value for one folded knob state: every table
@@ -123,16 +123,9 @@ optionOf(name: string): PresetOption
  * @param name - the preset to switch to; unknown names throw.
  */
 set(session: Session, name: string): void
-
-/**
- * Switch one live Agent and queue approval-policy narration for its next step.
- * @param agent - live Agent whose Session and approval policy change together.
- * @param name - configured preset name.
- */
-setAgent(agent: Agent, name: string): void
 ```
 
-Types: [Agent](core.md) · [Session](session.md) · [SessionEvent](session.md)
+Types: [Session](session.md)
 
 Source: [`packages/interaction/permission-presets/src/index.ts`](../../packages/interaction/permission-presets/src/index.ts)
 <!-- END GENERATED cordis-surface -->

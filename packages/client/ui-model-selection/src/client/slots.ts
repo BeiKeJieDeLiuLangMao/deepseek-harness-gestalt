@@ -5,16 +5,14 @@
  * merge lives here.
  */
 import type { ModelSelection } from '@deepseek-ai/dsh-api-remotes/client'
-import type { SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { ModelDirectoryState } from './directory.ts'
 
 /** Injected business face of the composer model seat. */
 export interface ModelSelectInjected {
-  /** Whether this session supports Agent-bound model inspection and selection. */
-  available: boolean
   /** The session's shared directory store (same instance the /model popup reads). */
   directory: SnapshotStore<ModelDirectoryState>
-  /** Refresh the advisory directory (fire-and-forget; errors land on the store). */
+  /** Ensure the shared advisory catalog is loaded (errors land on the store). */
   load: () => void
   /**
    * Select a complete provider/model/reasoning selection.

@@ -70,6 +70,7 @@
     { "pattern": "packages/terminal/**", "area": "area/tools" },
     { "pattern": "packages/util/**", "area": "area/tools" },
     { "pattern": "packages/web/**", "area": "area/tools" },
+    { "pattern": "packages/webhook/**", "area": "area/tools" },
     { "pattern": "packages/workflow/**", "area": "area/tools" },
     { "pattern": "packages/examples/**", "area": "area/infra" },
     { "pattern": "packages/experimental/**", "area": "area/infra" },

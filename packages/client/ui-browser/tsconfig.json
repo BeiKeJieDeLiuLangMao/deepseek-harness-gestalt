@@ -15,10 +15,19 @@
       "path": "../locale"
     },
     {
+      "path": "../../api/gateway/tsconfig.client.json"
+    },
+    {
       "path": "../../api/remotes/tsconfig.client.json"
     },
     {
-      "path": "../runtime"
+      "path": "../store"
+    },
+    {
+      "path": "../../core/session"
+    },
+    {
+      "path": "../ui-chat"
     },
     {
       "path": "../ui-conversation"
@@ -28,6 +37,12 @@
     },
     {
       "path": "../ui-slots"
+    },
+    {
+      "path": "../ui-renderer"
+    },
+    {
+      "path": "../ui-session"
     },
     {
       "path": "../ui-settings"
@@ -40,9 +55,6 @@
     },
     {
       "path": "../../browser/browser-workspace"
-    },
-    {
-      "path": "../../runtime-diagnostics/invariants"
     },
     {
       "path": "../../typert/protocol"

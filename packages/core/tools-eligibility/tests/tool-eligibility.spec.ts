@@ -3,7 +3,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { createScope, scopeTarget } from '@deepseek-ai/dsh-scope'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import { CallId } from '@deepseek-ai/dsh-llm'
+import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import { SettingsProvider } from '@deepseek-ai/dsh-settings'
 import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
@@ -92,6 +92,7 @@ async function harness(options: HarnessOptions = {}) {
     version: 0,
     id,
     createdAt: 0,
+    isSeeded: false,
     ...'cwd' in options
       ? options.cwd === undefined ? {} : { cwd: options.cwd }
       : { cwd: '/workspace' },
@@ -118,6 +119,7 @@ async function addSecondAgent(ctx: Context): Promise<Agent> {
     version: 0,
     id,
     createdAt: 0,
+    isSeeded: false,
     cwd: '/workspace',
   })
   const agent = { id, session } as Agent
@@ -132,6 +134,31 @@ async function addSecondAgent(ctx: Context): Promise<Agent> {
 }
 
 describe('allow-only tool eligibility', () => {
+  it('attaches an existing Agent when the resolver loads after registration', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SystemPrompt, {})
+    await ctx.plugin(ToolRuntime, {})
+    await ctx.plugin(AgentRegistry)
+    await ctx.plugin(MemorySettings, {
+      [TOOL_ELIGIBILITY_SETTINGS_NAMESPACE]: { workspaces: {}, sessions: { existing: ['allowed'] } },
+    })
+    const id = SessionId('existing')
+    const session = Session.create(id, [], { version: 0, id, createdAt: 0, isSeeded: false })
+    const agent = { id, session } as Agent
+    let agentCtx!: Context
+    await ctx.plugin(Object.assign((inner: Context) => { agentCtx = createScope(inner, agent).ctx }, {
+      inject: ['tools', 'systemPrompt'],
+    }))
+    Object.assign(agent, { ctx: agentCtx, status: 'idle' })
+    ctx.agents.register(agent)
+    ctx.tools.register(tool('allowed'))
+    ctx.tools.register(tool('blocked'))
+
+    await ctx.plugin(ToolEligibility, { workspaces: {}, sessions: {} })
+
+    expect(ctx.tools.schemas(agent).map(schema => schema.name)).toEqual(['allowed'])
+  })
+
   it('unions preset, Workspace, and Session additions for schemas and execution', async () => {
     const { agent, ctx } = await harness()
     const blockedBody = vi.fn(() => Promise.resolve('blocked'))
@@ -156,7 +183,7 @@ describe('allow-only tool eligibility', () => {
 
     const blocked = await ctx.tools.execute({
       agent,
-      callId: CallId('blocked-call'),
+      callId: ToolCallId('blocked-call'),
       name: 'blocked-tool',
       arguments: {},
       signal,
@@ -430,6 +457,36 @@ describe('allow-only tool eligibility', () => {
       workspaceRegistry: 'absent',
     })
     expect(absentRegistry.ctx.tools.eligibilityAllow(absentRegistry.agent)).toBeUndefined()
+  })
+
+  it('contains observer failures while Settings provider detach commits fallback for every Agent', async () => {
+    const { agent: first, ctx, settingsRow } = await harness()
+    const second = await addSecondAgent(ctx)
+    const publications: Agent[] = []
+    const changes: Array<[readonly string[] | undefined, readonly string[] | undefined]> = []
+    const publicationFailure = new Error('detach publication failed')
+    const changeFailure = new Error('detach tools change failed')
+    const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => ctx.logger)
+    ctx.on('tool-eligibility/published', (agent) => {
+      publications.push(agent)
+      throw publicationFailure
+    })
+    ctx.on('tools/change', () => {
+      changes.push([ctx.tools.eligibilityAllow(first), ctx.tools.eligibilityAllow(second)])
+      throw changeFailure
+    })
+
+    await expect(settingsRow.dispose()).resolves.toBeUndefined()
+
+    expect(ctx.tools.eligibilityAllow(first)).toEqual(['late-tool', 'preset-tool'])
+    expect(ctx.tools.eligibilityAllow(second)).toEqual(['late-tool', 'preset-tool'])
+    expect(publications).toEqual([first, second])
+    expect(changes).toEqual([
+      [['late-tool', 'preset-tool'], ['late-tool', 'preset-tool']],
+      [['late-tool', 'preset-tool'], ['late-tool', 'preset-tool']],
+    ])
+    const aggregate = warn.mock.calls.flatMap(([value]) => value instanceof AggregateError ? [value] : [])[0]
+    expect(aggregate?.errors).toEqual(expect.arrayContaining([publicationFailure, changeFailure]))
   })
 
   it('coalesces settings refreshes that preserve the normalized addition', async () => {

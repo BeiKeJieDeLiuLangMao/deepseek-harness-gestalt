@@ -60,7 +60,6 @@ import {
   WIDTH_PERCENT_MAX,
   WIDTH_PERCENT_MIN,
   type SidebarPrefs,
-  type TitleBarScheme,
 } from '../prefs-shared.ts'
 import { api } from './api.ts'
 import { parsePrefs } from './prefs.ts'
@@ -861,8 +860,8 @@ export function SideCardSection({ store, service }: SideCardSectionProps) {
           instance's, kept in lockstep with package.json by
           tests/service.spec.ts). */}
       <div className={css.versionBadge}>
-        <span className={css.versionBadgeName}>DSH-better-sidebar</span>
-        <span className={css.versionBadgeTag}>v{service.version}</span>
+        <span className={css.versionBadgeName} translate="no">DSH-better-sidebar</span>
+        <span className={css.versionBadgeTag} translate="no">v{service.version}</span>
       </div>
 
       {/* 常规: the DSH settings-row recipe — title/desc left, control right. */}
@@ -947,9 +946,11 @@ export function SideCardSection({ store, service }: SideCardSectionProps) {
                 ...getShellPresets().map(preset => ({
                   value: `preset:${preset.id}`,
                   title: preset.title,
+                  // The preset desc is i18n-friendly (string or () => string)
+                  // — resolve it like every other settings text here.
                   desc: preset.detect?.(detectedEnv) === true
-                    ? `${preset.desc}（${t('settingsSchemeDetectedSuffix')}）`
-                    : preset.desc,
+                    ? `${textOf(preset.desc)}（${t('settingsSchemeDetectedSuffix')}）`
+                    : textOf(preset.desc),
                 })),
                 { value: 'custom', title: t('settingsSchemeCustomTitle'), desc: t('settingsSchemeCustomDesc') },
               ]}

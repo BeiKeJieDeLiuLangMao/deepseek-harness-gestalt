@@ -11,6 +11,9 @@ import * as PlatformAccountHttp from '@deepseek-ai/dsh-platform-account-http'
 import FileProjectMembership, { ProjectMembership } from '@deepseek-ai/dsh-project-membership-core'
 import * as ProjectMembershipHttp from '@deepseek-ai/dsh-project-membership-http'
 import {
+  PRESENCE_HEARTBEAT_INTERVAL_MS, PRESENCE_TTL_MS,
+} from '@deepseek-ai/dsh-project-membership-http'
+import {
   PersonalPairingProvider,
   parseRelayInstanceId,
   type PairingHandshakeProvider,
@@ -159,7 +162,11 @@ export async function launchOperatedPlatform(
         environment: environment.environment,
       })
     }
-    await context.plugin(ProjectMembershipHttp, { origins: productOrigins })
+    await context.plugin(ProjectMembershipHttp, {
+      origins: productOrigins,
+      presenceHeartbeatIntervalMs: PRESENCE_HEARTBEAT_INTERVAL_MS,
+      presenceTtlMs: PRESENCE_TTL_MS,
+    })
     const relay = new RemoteRelayProvider(context, {
       instanceId: parseRelayInstanceId(config.relay.instanceId),
       routeStore: remoteAccess.routeStore,
@@ -188,9 +195,8 @@ export async function launchOperatedPlatform(
       ? new PostgresRemoteAttachmentStore(context, environment.databaseIdentity, postgres, {
         ...config.remoteAttachments,
         quotaCleanup,
-        authorizePairing: async (client, pairingId) => {
-          await authorizeAttachmentPairing(client, environment.databaseIdentity, pairingId)
-        },
+        authorizePairing: (client, pairingId) =>
+          authorizeAttachmentPairing(client, environment.databaseIdentity, pairingId),
       })
       : new OssRemoteAttachmentStore(
         context,
@@ -202,9 +208,8 @@ export async function launchOperatedPlatform(
           objectPrefix: config.oss.objectPrefix,
           capacityRetryAfterSeconds: Math.max(1, Math.ceil(config.relay.capacityRetryAfterMs / 1_000)),
           quotaCleanup,
-          authorizePairing: async (client, pairingId) => {
-            await authorizeAttachmentPairing(client, environment.databaseIdentity, pairingId)
-          },
+          authorizePairing: (client, pairingId) =>
+            authorizeAttachmentPairing(client, environment.databaseIdentity, pairingId),
           inactivePairingIds: async pairingIds => await remoteAccess.authority.filterInactivePairingIds(pairingIds),
         },
       )

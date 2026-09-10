@@ -824,7 +824,7 @@ describe('PhoneEnvironment', () => {
 
     fixture.provider.deactivate = async () => {}
     const nonErrorFailure: unknown = 'non-error cancellation failure'
-    owned.iosTask = Promise.reject(nonErrorFailure) // oxlint-disable-line typescript/prefer-promise-reject-errors
+    owned.iosTask = Promise.reject(nonErrorFailure)
     await expect(owned.cancelIos()).rejects.toMatchObject({
       message: 'iOS environment cancellation failed with a non-Error reason',
     })
@@ -879,7 +879,7 @@ describe('PhoneEnvironment', () => {
       listDevices: async (signal: AbortSignal) => await new Promise((_resolve, reject) => {
         signal.addEventListener('abort', () => {
           const reason: unknown = signal.reason
-          reject(reason) // oxlint-disable-line typescript/prefer-promise-reject-errors
+          reject(reason)
         }, { once: true })
       }),
     }, { iosRuntimeVerifyTimeoutMs: 7 })

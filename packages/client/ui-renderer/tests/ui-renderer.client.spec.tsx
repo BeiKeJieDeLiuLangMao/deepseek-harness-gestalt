@@ -2,18 +2,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup } from '@testing-library/react'
 import { Context } from '@deepseek-ai/cordis'
-import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
-import { TestSessions, TestWorkspaces } from '@deepseek-ai/dsh-client-test-runtime'
-import type { Stabilizer } from '@deepseek-ai/dsh-client-test-runtime'
-import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
+import { SessionId } from '@deepseek-ai/dsh-session/types'
+import { SlotRegistry } from '../src/client/registry.ts'
+import type { ScopedStandardSourceBinding, SlotScopeAdapter } from '../src/client/index.ts'
 import { apply as nodeApply } from '@deepseek-ai/dsh-client-ui-renderer'
 import * as UiRenderer from '../src/client/index.ts'
-
-declare module '@deepseek-ai/dsh-client-ui-slots' {
-  interface SlotMap {
-    'renderer.explicit-session': { kind: 'single'; scope: 'session'; owner: object }
-  }
-}
 
 const mounted: (() => void)[] = []
 
@@ -24,23 +17,71 @@ afterEach(() => {
   document.body.innerHTML = ''
 })
 
-const stabilize: Stabilizer = async (fn) => { await act(async () => { await fn() }) }
+const stabilize = async (fn: () => void | Promise<void>): Promise<void> => {
+  await act(async () => { await fn() })
+}
 
 async function bench() {
   const ctx = new Context()
-  await ctx.plugin(SlotRegistry).await()
-  const slots = ctx.get('slots') as SlotRegistry
-  ctx.provide('sessions', new TestSessions(stabilize, ctx))
-  ctx.provide('workspaces', new TestWorkspaces(stabilize))
   const fiber = ctx.plugin({ inject: [...UiRenderer.inject], apply: UiRenderer.apply })
   await fiber.await()
-  return { ctx, slots, fiber }
+  const slots = ctx.get('slots') as SlotRegistry
+  const binding = (key: string): ScopedStandardSourceBinding => ({
+    key,
+    ctx,
+    hooks: {},
+    keyedHooks: {},
+    props: { sessionId: key },
+  })
+  let selectedBinding: ScopedStandardSourceBinding | undefined = binding('selected-session')
+  const explicitBinding = binding('explicit-session')
+  const currentListeners = new Set<() => void>()
+  const current = {
+    getSnapshot: () => selectedBinding ?? {
+      key: undefined,
+      hooks: {},
+      keyedHooks: {},
+      props: { sessionId: undefined },
+    },
+    subscribe: (listener: () => void) => {
+      currentListeners.add(listener)
+      return () => { currentListeners.delete(listener) }
+    },
+  }
+  const releaseRender = vi.fn()
+  const acquireForRender = vi.fn((key: string) =>
+    key === explicitBinding.key ? releaseRender : undefined)
+  const adapter: SlotScopeAdapter = {
+    current,
+    resolve: key => key === explicitBinding.key ? explicitBinding : undefined,
+    acquireForRender,
+    renderArea: (value, props) => value.key === undefined ? props.empty?.() : props.children,
+  }
+  slots.installScope('session', adapter)
+  return {
+    ctx,
+    slots,
+    fiber,
+    currentListeners,
+    acquireForRender,
+    releaseRender,
+    select: (key: string | undefined) => {
+      selectedBinding = key === undefined ? undefined : binding(key)
+      for (const listener of currentListeners) listener()
+    },
+  }
 }
 
 function container(): HTMLElement {
   const el = document.createElement('div')
   document.body.append(el)
   return el
+}
+
+declare module '@deepseek-ai/dsh-client-ui-slots' {
+  interface SlotMap {
+    'test.renderer.session': { kind: 'single'; scope: 'session'; owner: { label: string } }
+  }
 }
 
 describe('UI renderer plugin', () => {
@@ -78,40 +119,109 @@ describe('UI renderer plugin', () => {
     expect(records.some(record => record.target === boot)).toBe(false)
   })
 
-  it('returns an unmount disposer', async () => {
+  it('returns an idempotent unmount disposer', async () => {
     const { ctx, slots } = await bench()
     slots.register({ name: 'root' }, () => <div data-testid="root-probe" />)
     const el = container()
     let unmount: () => void = () => {}
     act(() => { unmount = ctx.get('uiRenderer')!.mount(el) })
-    act(() => { unmount() })
+    act(() => { unmount(); unmount() })
     expect(el.querySelector('[data-testid="root-probe"]')).toBeNull()
   })
 
-  it('mounts a declared slot against an explicit Session without changing current selection', async () => {
+  it('mounts an explicit Session independently from selected Session changes and removal', async () => {
+    const { ctx, slots, currentListeners, acquireForRender, releaseRender, select } = await bench()
+    slots.register({
+      name: 'root',
+      children: { 'test.renderer.session': { kind: 'single', scope: 'session' } },
+    }, ({ renderSlot }) => renderSlot('test.renderer.session', { label: 'selected' }))
+    slots.register({ name: 'test.renderer.session' }, ({ sessionId, label }) => (
+      <div data-testid="session-probe">{sessionId}:{label}</div>
+    ))
+    const el = container()
+
+    act(() => {
+      mounted.push(ctx.get('uiRenderer')!.mountSession(
+        el,
+        'test.renderer.session',
+        SessionId('explicit-session'),
+        { label: 'owner' },
+      ))
+    })
+
+    expect(el.querySelector('[data-testid="session-probe"]')?.textContent).toBe('explicit-session:owner')
+    expect(acquireForRender).toHaveBeenCalledOnce()
+    expect(acquireForRender).toHaveBeenCalledWith('explicit-session')
+    expect(releaseRender).not.toHaveBeenCalled()
+    expect(currentListeners).toHaveLength(0)
+    act(() => { select('other-selected-session') })
+    expect(el.querySelector('[data-testid="session-probe"]')?.textContent).toBe('explicit-session:owner')
+    act(() => { select(undefined) })
+    expect(el.querySelector('[data-testid="session-probe"]')?.textContent).toBe('explicit-session:owner')
+  })
+
+  it('fails before acquiring a React root and allows same-container retry', async () => {
     const { ctx, slots } = await bench()
     slots.register({
       name: 'root',
-      children: { 'renderer.explicit-session': { kind: 'single', scope: 'session' } },
-    }, (_props: PropsRenderSlots<'renderer.explicit-session'>) => null)
-    slots.register(
-      { name: 'renderer.explicit-session' },
-      (props: { sessionId: string }) => <b>{props.sessionId}</b>,
-    )
-    const sessions = ctx.get('sessions') as TestSessions
-    await sessions.add({ id: 'main' })
-    await sessions.add({ id: 'side-thread' }, { current: false })
+      children: { 'test.renderer.session': { kind: 'single', scope: 'session' } },
+    }, ({ renderSlot }) => renderSlot('test.renderer.session', { label: 'selected' }))
+    slots.register({ name: 'test.renderer.session' }, ({ sessionId, label }) => (
+      <div data-testid="session-probe">{sessionId}:{label}</div>
+    ))
+    const renderer = ctx.get('uiRenderer')!
     const el = container()
+    expect(() => renderer.mountSession(el, 'test.renderer.session', SessionId('missing'), { label: 'owner' }))
+      .toThrow('could not resolve')
     act(() => {
-      mounted.push(ctx.get('uiRenderer')!.mountSession(el, 'renderer.explicit-session', 'side-thread'))
+      mounted.push(renderer.mountSession(
+        el,
+        'test.renderer.session',
+        SessionId('explicit-session'),
+        { label: 'retry' },
+      ))
     })
-    expect(el.textContent).toBe('side-thread')
-    expect(sessions.list.getSnapshot().current).toBe('main')
+    expect(el.querySelector('[data-testid="session-probe"]')?.textContent).toBe('explicit-session:retry')
   })
 
-  it('retracts the service and renderer with its fiber', async () => {
-    const { ctx, slots, fiber } = await bench()
+  it('fiber disposal unmounts live roots and releases subscriptions without caller disposers', async () => {
+    const { ctx, slots, fiber, releaseRender } = await bench()
+    slots.register({
+      name: 'root',
+      children: { 'test.renderer.session': { kind: 'single', scope: 'session' } },
+    }, ({ renderSlot }) => (
+      <>
+        <div data-testid="root-probe" />
+        {renderSlot('test.renderer.session', { label: 'selected' })}
+      </>
+    ))
+    slots.register({ name: 'test.renderer.session' }, ({ sessionId }) => (
+      <div data-testid="session-probe">{sessionId}</div>
+    ))
+    const rootEl = container()
+    const sessionEl = container()
+    act(() => {
+      ctx.get('uiRenderer')!.mount(rootEl)
+      ctx.get('uiRenderer')!.mountSession(
+        sessionEl,
+        'test.renderer.session',
+        SessionId('explicit-session'),
+        { label: 'owner' },
+      )
+    })
+    const core = (slots as unknown as {
+      _core: { records: Map<string, { listeners: Set<() => void> }> }
+    })._core
+    expect(core.records.get('root')?.listeners.size).toBeGreaterThan(0)
+    expect(core.records.get('test.renderer.session')?.listeners.size).toBeGreaterThan(0)
+
     await stabilize(() => fiber.dispose())
+
+    expect(rootEl.childElementCount).toBe(0)
+    expect(sessionEl.childElementCount).toBe(0)
+    expect(core.records.get('root')?.listeners.size).toBe(0)
+    expect(core.records.get('test.renderer.session')?.listeners.size).toBe(0)
+    expect(releaseRender).toHaveBeenCalledOnce()
     expect(ctx.get('uiRenderer')).toBeUndefined()
     expect(() => slots.renderSlot('root', {})).toThrow('not installed')
   })

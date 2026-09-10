@@ -25,13 +25,10 @@
       "path": "../locale"
     },
     {
-      "path": "../connection"
+      "path": "../connection/tsconfig.client.json"
     },
     {
       "path": "../modules"
-    },
-    {
-      "path": "../runtime"
     },
     {
       "path": "../ui-conversation"
@@ -64,16 +61,22 @@
       "path": "../../core/session"
     },
     {
+      "path": "../../session/session-persistence"
+    },
+    {
       "path": "../../settings/settings"
     },
     {
       "path": "../../subagent/subagent"
     },
     {
-      "path": "../../runtime-diagnostics/invariants"
+      "path": "../../api/remotes/tsconfig.client.json"
     },
     {
-      "path": "../../api/remotes/tsconfig.client.json"
+      "path": "../../api/session-controller/tsconfig.client.json"
+    },
+    {
+      "path": "../../typert/protocol"
     }
   ]
 }

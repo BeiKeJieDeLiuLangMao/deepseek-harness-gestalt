@@ -31,7 +31,7 @@ describe('operated Platform Project Membership HTTP', () => {
         PLATFORM_MEMBERSHIP_STORAGE: storagePath,
       },
       adapters: {
-        createPostgres: () => fakePostgresPool() as Pool,
+        createPostgres: () => fakePostgresPool() as unknown as Pool,
         connectRedis: async () => fakeRedisConnection(),
       },
     })

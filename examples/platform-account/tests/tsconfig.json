@@ -1,0 +1,22 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "composite": false,
+    "incremental": false,
+    "rewriteRelativeImportExtensions": false
+  },
+  "files": [
+    "platform-account.spec.ts",
+    "fixtures/driver.ts"
+  ],
+  "include": [],
+  "references": [
+    {
+      "path": "../../../packages/boot/app-boot"
+    },
+    {
+      "path": "../../../packages/test-support/loader-smoke"
+    }
+  ]
+}

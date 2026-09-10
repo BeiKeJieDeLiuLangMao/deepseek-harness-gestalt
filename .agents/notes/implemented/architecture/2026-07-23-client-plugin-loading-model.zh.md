@@ -42,7 +42,7 @@ vendored Loader 经其 `internal` 约定消费模块系统——唯一调用点�
 
 每个图行的 `url` 交给一个带 `async` 的同源外部 classic `<script src>`。浏览器拥有网络请求与脚本执行；`load` 或 `error` 结算后节点立即移除，避免 HMR 累积失效节点。成功结算还要求图行对应的工厂 id 已出现在模块表中，否则到达失败；登记仍不运行工厂，副作用边界继续落在首次物化。
 
-共享 tsdown 预设为每个插件产出 `lib/client.cjs.map`，并把第一方源码路径重写成浏览器可识别的仓库形状 `/packages/<group>/<package>/src/...`。内联进 bundle 的其他 workspace 源码同样回到其 `packages/` 归属，依赖包路径保持原样；`sourcesContent` 承载源码。Host 将所供给 bundle 末尾的引用从物理 `client.cjs.map` 改写为公开 `client.js.map`，用物理 map 响应该 URL，并且不开放源码路由。Vite 壳也产出 sourcemap，使壳代码与图外插件都能从 stack 和性能 profile 回到 TypeScript/TSX。
+共享 tsdown 预设为每个 `dsh.client` 插件产出 `lib/client.js.map`，并把第一方源码路径重写成浏览器可识别的仓库形状 `/packages/<group>/<package>/src/...`。本地重写该变换的包（包括 `ui-better-sidebar`）仍必须调用共享的 `browserSourcePath`，使内联 workspace 源码落到其 `packages/` 归属，而不是包相对的 `../../../src/` 或 `../../../../../core/` 路径。依赖包路径保持原样；`sourcesContent` 承载源码。完整根构建只要求声明了 `dsh.client` 的包（HTTP 模块宿主 `/client.js` 图行）带有这些 map，并拒绝不以 `../../../packages/<group>/<package>/src/` 或 `../../../../vendor/<package>/src/` 开头的第一方 `.ts`/`.tsx` map 源。没有 `dsh.client` 的 workspace `lib/client.js` 不是该路由，可以没有同级 map。Host 用物理 map 响应公开 `client.js.map` URL，并且不开放源码路由。Vite 壳也产出 sourcemap，使壳代码与图外插件都能从 stack 和性能 profile 回到 TypeScript/TSX。
 
 `rev` 继续作为脚本 URL 的查询参数和内容一致性锚点，bundle 与 map 都以 `no-cache` 供给。外部脚本的 `error` 事件不给响应状态与正文，因此失败诊断只报告 URL；同源 host 供给与构建期写入的 registration id 是身份边界，`load` 后的工厂存在性检查负责拒绝未登记预期 id 的产物。
 

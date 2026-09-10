@@ -2,7 +2,7 @@
 
 [English](attachment.md) | 中文
 
-附件 seam 将二进制图片的所有权与会话日志分离。生产方把经过校验的编码字节交给 [`ctx.attachments`](#ctxattachments--attachmentstore-abstract-seam)；只有对象完成持久化后，该服务才会发布不可变的内容寻址引用。会话事件和模型可见的 `ImageBlock` 包含该引用及其元数据，绝不包含浏览器对象 URL、宿主临时路径、提供方 URL 或 base64 数据。
+附件 seam 将二进制所有权与会话日志分离。生产方把经过校验的编码字节交给 [`ctx.attachments`](#ctxattachments--attachmentstore-abstract-seam)；只有对象完成持久化后，该服务才会发布不可变的内容寻址引用。会话事件和模型可见的 `ImageBlock` 包含图片引用及其元数据，绝不包含浏览器对象 URL、宿主临时路径、提供方 URL 或 base64 数据。不透明 Companion 文件使用单独的 `ByteAttachmentRef`，绝不会成为 `ImageBlock`。
 
 未发送的浏览器草稿可以保留在内存中，原生客户端也可以将其暂存于操作系统临时存储。宿主接受用户消息后，会先把消息中的图片移到 `<DSH_HOME>/attachments/v1` 下，再追加用户事件。结构化模型图片输出遵循同样的先持久化、后追加事件规则。
 
@@ -56,7 +56,7 @@ interface ImageAttachmentLimits {
 }
 ```
 
-本地后端每条消息最多准入 20 张图片，源图编码数据总量不超过 200 MiB。单张源图不得超过 20 MiB、64,000,000 像素和单边 8192 像素。这些源文件限制先于独立的规范化阶段执行；该阶段默认把长边限制为 2048 像素，把编码数据限制为 4 MiB。
+本地后端每条消息最多准入 20 张图片，源图编码数据总量不超过 200 MiB。单张源图不得超过 20 MiB、64,000,000 像素和单边 8192 像素。这些源文件限制先于独立的规范化阶段执行；该阶段默认把长边限制为 2048 像素，把编码数据限制为 4 MiB。不透明 Companion 文件使用单独的写入时 `maxByteBytes` 上限，默认 100 MiB，并共用同一套内容寻址对象目录。
 
 引用记录固有尺寸和编码长度，使客户端无需先解码即可排布历史记录；每次权威读取仍会根据对象重新校验摘要、媒体签名、尺寸和元数据。
 
@@ -94,11 +94,46 @@ interface StoredImageAttachment {
 ```
 
 ```ts type-equiv
+/** Durable, serializable reference to one immutable opaque byte object. */
+interface ByteAttachmentRef {
+  /** Opaque storage identifier; never a filesystem path or bearer URL. */
+  attachmentId: AttachmentId
+  /** Caller-declared media type recorded with the object; bytes are not decoded. */
+  mediaType: string
+  /** Exact stored byte length. */
+  bytes: number
+  /** SHA-256 digest of the stored bytes as 64 lowercase hex characters. */
+  sha256: string
+  /** Optional display name stripped of local path information. */
+  name?: string
+}
+```
+
+```ts type-equiv
+/** Request to validate and durably commit one opaque byte object. */
+interface SaveByteAttachment {
+  data: Uint8Array
+  /** Caller-declared media type recorded with the object; it is never decoded. */
+  mediaType: string
+  /** Display name; path separators and control characters are stripped before storage. */
+  name: string
+}
+```
+
+```ts type-equiv
+/** Stored opaque bytes returned after reference and digest verification. */
+interface StoredByteAttachment {
+  ref: ByteAttachmentRef
+  data: Uint8Array
+}
+```
+
+```ts type-equiv
 /** Deterministic request-image policy selected by one exact model route. */
 interface ImageRequestPolicy {
   /** Maximum width multiplied by height after aspect-preserving projection. */
   maxPixels: number
-  /** Encoded-byte cap before base64 expansion or Files API upload. */
+  /** Encoded-byte target before base64 expansion or Files API upload; the smallest quality-ladder output is kept when no quality fits. */
   maxBytes: number
 }
 ```
@@ -125,7 +160,7 @@ interface RequestImageAttachment {
 }
 ```
 
-`saveImage()` 准备并原子提交提供方无关的规范化附件，然后直接返回 `ImageAttachmentRef`。`saveImages()` 在发布批次前为每个成员各准备一次经过验证的附件，因此校验拒绝不会留下部分对象，发布也不会重复解码或选择质量。`admitEncodedImages()` 是面向 base64 上传的 wire 入口，把张数、聚合字节和有序批量准入交给 `saveImages()`。`readImage()` 校验来自已授权会话路径的规范化附件。`readImageRequest()` 按确切路由的像素和字节预算派生并缓存请求版本；新条目在发布前完整解码，缓存命中只做有界元数据探测。调用方需要有序批次时，对单数方法使用 `Promise.all`。本地实现按需编码首选候选、合并相同请求身份的并发任务、允许每个等待方单独取消、没有等待方时停止共享任务，并通过实例级限流器限制全部变换，默认同时执行两项。该服务不规定保留策略：恢复和 fork 后的会话可能共享对象，因此基于引用的垃圾回收会延期实现，不与单个会话的删除绑定。
+`saveImage()` 准备并原子提交提供方无关的规范化附件，然后直接返回 `ImageAttachmentRef`。`saveBytes()` 原子提交精确的不透明字节并返回 `ByteAttachmentRef`；`readBytes()` 校验摘要与记录长度。不透明字节绝不会变成模型可见的 `ImageBlock`。不持久化不透明文件的提供方会以 `ATTACHMENT_BYTES_UNSUPPORTED` 拒绝这两项操作。`saveImages()` 在发布批次前为每个成员各准备一次经过验证的附件，因此校验拒绝不会留下部分对象，发布也不会重复解码或选择质量。`admitEncodedImages()` 是面向 base64 上传的 wire 入口，把张数、聚合字节和有序批量准入交给 `saveImages()`。`readImage()` 校验来自已授权会话路径的规范化附件。`readImageRequest()` 按确切路由的像素和字节预算派生并缓存请求版本；新条目在发布前完整解码，缓存命中只做有界元数据探测。调用方需要有序批次时，对单数方法使用 `Promise.all`。本地实现按需编码首选候选、合并相同请求身份的并发任务、允许每个等待方单独取消、没有等待方时停止共享任务，并通过实例级限流器限制全部变换，默认同时执行两项。该服务不规定保留策略：恢复和 fork 后的会话可能共享对象，因此基于引用的垃圾回收会延期实现，不与单个会话的删除绑定。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -168,6 +203,16 @@ async saveImages(inputs: readonly SaveImageAttachment[]): Promise<readonly Image
 abstract saveImage(input: SaveImageAttachment): Promise<ImageAttachmentRef>
 
 /**
+ * Persist exact opaque bytes before a Companion admission event is appended.
+ * Bytes are content-addressed and never decoded as an image or sent to a model.
+ * Providers that do not store opaque bytes refuse with
+ * {@link AttachmentErrorCode | ATTACHMENT_BYTES_UNSUPPORTED}.
+ * @param input - exact bytes, declared media type, and display name.
+ * @returns the durable content-addressed byte reference.
+ */
+saveBytes(input: SaveByteAttachment): Promise<ByteAttachmentRef>
+
+/**
  * Read one image and verify that bytes still match the recorded reference.
  * @param ref - durable reference from the session log.
  * @param signal - optional cancellation for backend read and verification work.
@@ -177,24 +222,28 @@ abstract saveImage(input: SaveImageAttachment): Promise<ImageAttachmentRef>
 abstract readImage(ref: ImageAttachmentRef, signal?: AbortSignal): Promise<StoredImageAttachment>
 
 /**
- * Validate and durably commit one immutable generic file.
- * @param input - exact bytes plus bounded display metadata.
- * @returns a content-addressed reference after durable publication.
+ * Read one opaque byte object and verify that bytes still match the recorded reference.
+ * Providers that do not store opaque bytes refuse with
+ * {@link AttachmentErrorCode | ATTACHMENT_BYTES_UNSUPPORTED}.
+ * @param ref - durable reference from the session log.
+ * @param signal - optional cancellation for backend read and verification work.
+ * @returns the verified bytes and recorded reference.
+ * @throws the signal reason when aborted, or a storage error when verification fails.
  */
-saveFile(input: SaveFileAttachment): Promise<FileAttachmentRef>
+readBytes(ref: ByteAttachmentRef, signal?: AbortSignal): Promise<StoredByteAttachment>
 
 /**
- * Read one generic file and verify its digest and metadata.
- * @param ref - durable reference from a Session event.
- * @param signal - optional cancellation for backend reads.
- * @returns verified exact bytes and canonical reference.
+ * Locate the provider-owned normalized object in the harness host filesystem.
+ * @param ref - durable normalized attachment reference.
+ * @returns an absolute host path, or undefined when this backend is not host-file-backed.
+ * @throws an AttachmentError when the durable reference is invalid.
  */
-readFile(ref: FileAttachmentRef, signal?: AbortSignal): Promise<StoredFileAttachment>
+imageHostPath(ref: ImageAttachmentRef): string | undefined
 
 /**
  * Generate or read one deterministic model-request version from the stored normalized image.
  * @param ref - durable provider-independent normalized attachment reference.
- * @param policy - exact route pixel and encoded-byte budget.
+ * @param policy - exact route pixel budget and encoded-byte target; a target no ladder quality meets yields the smallest ladder output.
  * @param signal - optional cancellation.
  * @returns request bytes and the cache/upload identity covering every transform input.
  */

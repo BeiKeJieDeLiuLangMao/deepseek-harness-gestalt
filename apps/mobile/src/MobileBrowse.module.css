@@ -334,6 +334,17 @@
   margin: 0;
 }
 
+.group [data-session-row] {
+  display: flex;
+  width: 100%;
+  min-height: 42px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 0;
+  cursor: pointer;
+}
+
 .sessions {
   display: flex;
   flex-direction: column;

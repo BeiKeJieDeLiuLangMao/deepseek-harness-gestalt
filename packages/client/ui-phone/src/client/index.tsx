@@ -8,10 +8,11 @@
  * same-origin channel. With `enabled: false` (the default) device switches
  * are refused and no stream session is ever minted.
  */
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context } from '@deepseek-ai/cordis'
 import type { DeviceId } from '@deepseek-ai/dsh-phone-runtime'
 import z from '@deepseek-ai/schemastery'
 import type { ReactNode } from 'react'
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import { PhoneConnectedView } from './PhoneConnectedView.tsx'
@@ -105,7 +106,7 @@ function renderPhoneTabBody(props: PhoneTabBodyProps, env: PhoneTabEnvironment):
  * @param ctx - client context carrying the betterSidebar and settings services.
  * @param config - validated {@link Config} (schema defaults applied).
  */
-export function apply(ctx: ClientContext, config: Config): void {
+export function apply(ctx: Context, config: Config): void {
   const compositionEnabled = config.enabled === true
   const scope = ctx.settingsScope.bind<PhoneSettings>({ namespace: PHONE_SETTINGS_NAMESPACE })
   const listing = createHttpPhoneListingSource()

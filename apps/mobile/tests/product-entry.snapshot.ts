@@ -307,6 +307,7 @@ describe('bundled Mobile product entry', () => {
         hasOwn: Object.hasOwn({ current: true }, 'current'),
         replacementToken: 'a'.replaceAll('a', '$&x'),
         replacedChild: root.textContent,
+        // oxlint-disable-next-line no-restricted-properties -- Exercise the installed WebView UUID API inside the page.
         uuid: crypto.randomUUID(),
       }
     })

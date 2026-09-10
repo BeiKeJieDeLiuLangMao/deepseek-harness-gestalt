@@ -63,7 +63,7 @@ Viewing persisted history creates no mux subscription by itself. When a follow-u
 
 The ordinary `session.history` route is likewise observation-only for both ordinary and subagent sessions, but it does not carry the catalog address or grant continuation authority. Every ordinary route that needs an Agent resolves through the shared ownership fence before cold resume; `session.cancel` applies that check directly because it queries only attached Agents. `session.updateQueue` also queries only attached Agents, and mutates a live child's inbox without resume.
 
-The adapter stays in `dsh-host-apiproxy`; `dsh-host-webserver` remains a carrier. Browser code imports the contract through the existing connection package and never reaches host `ctx`, preserving the [GUI RPC layering](../../implemented/architecture/2026-07-19-gui-layering-and-rpc-protocol.md).
+[`@deepseek-ai/dsh-subagent`](../../../../packages/subagent/subagent/src/index.ts) exposes the Host `subagents` Remote namespace, and [`@deepseek-ai/dsh-api-session-controller`](../../../../packages/api/session-controller/src/client/sessions/manager.ts) consumes it for browser session catalogs and control. `dsh-host-webserver` remains the HTTP carrier; browser code uses the generated Remote client rather than Host `ctx`.
 
 ## Client object layer and presentation
 

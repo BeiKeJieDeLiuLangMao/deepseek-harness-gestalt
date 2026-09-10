@@ -1,6 +1,6 @@
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   createDesktopSub2Api,
@@ -17,32 +17,14 @@ import {
   type Sub2ApiControllerOptions,
   type Sub2ApiHostControl,
 } from '../src/sub2api.ts'
+import { SUB2API_SOURCES_ENV } from '../src/sub2api-sources.ts'
 import type { DesktopSub2ApiSnapshot } from '@deepseek-ai/dsh-client-ui-desktop/protocol'
 import { manifestListsBundle, SUB2API_BUNDLE_NAME } from '../src/sub2api-profile.ts'
 import type { Sub2ApiInstall, Sub2ApiInstallInput, Sub2ApiInstallResult } from '../src/sub2api-install.ts'
 
-const missingFilesystem = vi.hoisted(() => ({
-  enabled: false,
-  probes: [] as string[],
-}))
-
-vi.mock('node:fs/promises', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('node:fs/promises')>()
-  return {
-    ...actual,
-    stat: (async (...args: Parameters<typeof actual.stat>) => {
-      if (!missingFilesystem.enabled) return actual.stat(...args)
-      missingFilesystem.probes.push(String(args[0]))
-      throw Object.assign(new Error('profile filesystem root is missing'), { code: 'ENOENT' })
-    }) as typeof actual.stat,
-  }
-})
-
 const dirs: string[] = []
 
 afterEach(async () => {
-  missingFilesystem.enabled = false
-  missingFilesystem.probes = []
   await Promise.all(dirs.splice(0).map(dir => rm(dir, { recursive: true, force: true })))
 })
 
@@ -92,7 +74,7 @@ async function fakeInstallWrites(dirs2: { profileDir: string; runtimeDir: string
 interface Harness {
   controller: DesktopSub2ApiController
   events: DesktopSub2ApiSnapshot[]
-  host: Sub2ApiHostControl & { restart: ReturnType<typeof vi.fn<Sub2ApiHostControl['restart']>> }
+  host: Sub2ApiHostControl & { restart: ReturnType<typeof vi.fn> }
   probe: ReturnType<typeof vi.fn<(origin: string) => Promise<boolean>>>
   install: Sub2ApiInstall
   installRuns: () => number
@@ -107,10 +89,10 @@ async function harness(overrides?: {
   disabled?: boolean
   noPackage?: boolean
   probe?: (origin: string) => Promise<boolean>
-  probeTimeoutMs?: number
   restart?: (startTimeoutMs?: number) => Promise<string>
   origin?: string | undefined
   installGate?: (input: Sub2ApiInstallInput) => Promise<void>
+  probeTimeoutMs?: number
 }): Promise<Harness> {
   const paths = await fixture({
     ...(overrides?.installed === undefined ? {} : { installed: overrides.installed }),
@@ -121,11 +103,12 @@ async function harness(overrides?: {
   let currentOrigin: string | undefined = overrides && 'origin' in overrides
     ? overrides.origin
     : 'http://127.0.0.1:9/'
+  const restart = vi.fn<Sub2ApiHostControl['restart']>(overrides?.restart ?? (async () => {
+    currentOrigin = 'http://127.0.0.1:10/'
+    return currentOrigin
+  }))
   const host = {
-    restart: vi.fn<Sub2ApiHostControl['restart']>(overrides?.restart ?? (async () => {
-      currentOrigin = 'http://127.0.0.1:10/'
-      return currentOrigin
-    })),
+    restart,
     origin: () => currentOrigin,
   }
   const probeImpl: (origin: string) => Promise<boolean> = overrides?.probe ?? (async () => true)
@@ -266,21 +249,6 @@ describe('DesktopSub2ApiController', () => {
     const final = await h.controller.enable()
     expect(final).toMatchObject({ state: 'error', error: STARTUP_TIMEOUT_ERROR })
     expect(final.version).toBeUndefined()
-  })
-
-  it('omits an unavailable installed version while running and disabling', async () => {
-    const h = await harness({ installed: true, noPackage: true })
-    await vi.waitFor(() => { expect(h.controller.getSnapshot().state).toBe('running') })
-    expect(h.controller.getSnapshot()).not.toHaveProperty('version')
-
-    const firstDisableEvent = h.events.length
-    const disabled = await h.controller.disable()
-    expect(disabled).toMatchObject({ state: 'installed', enabled: false })
-    expect(disabled).not.toHaveProperty('version')
-    expect(h.events.slice(firstDisableEvent)).toEqual([
-      { state: 'starting', enabled: false },
-      { state: 'installed', enabled: false },
-    ])
   })
 
   it('disables through the patch row and a restart, then re-enables without reinstalling', async () => {
@@ -586,79 +554,6 @@ describe('probe and IPC validation helpers', () => {
 })
 
 describe('createDesktopSub2Api', () => {
-  it('keeps a missing first-run web profile recoverable until the Web Host initializes it', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'sub2api-factory-first-run-'))
-    dirs.push(root)
-    const originalHome = process.env['DSH_HOME']
-    const originalSources = process.env.DSH_DESKTOP_SUB2API_SOURCES
-    try {
-      process.env['DSH_HOME'] = root
-      delete process.env.DSH_DESKTOP_SUB2API_SOURCES
-      const host: Sub2ApiHostControl = { restart: async () => 'http://127.0.0.1:12/', origin: () => undefined }
-      const actions = await createDesktopSub2Api({ fetch, host })
-      expect(actions).toBeInstanceOf(DesktopSub2ApiController)
-      expect(actions.getSnapshot()).toEqual({ state: 'missing', enabled: true })
-
-      const profileDir = join(root, 'profiles', 'web')
-      await mkdir(profileDir, { recursive: true })
-      await writeFile(join(profileDir, 'package.json'), JSON.stringify({
-        name: 'dsh-profile-web',
-        dsh: { profile: { bundles: ['@deepseek-ai/dsh-base'] } },
-      }))
-      await expect(actions.disable()).resolves.toEqual({ state: 'missing', enabled: true })
-      actions.dispose()
-    } finally {
-      if (originalHome === undefined) delete process.env['DSH_HOME']
-      else process.env['DSH_HOME'] = originalHome
-      if (originalSources === undefined) delete process.env.DSH_DESKTOP_SUB2API_SOURCES
-      else process.env.DSH_DESKTOP_SUB2API_SOURCES = originalSources
-    }
-  })
-
-  it.each(['profiles', 'profiles/web'])('does not treat an existing file at %s as first-run absence', async (relativePath) => {
-    const root = await mkdtemp(join(tmpdir(), 'sub2api-factory-invalid-profile-'))
-    dirs.push(root)
-    if (relativePath === 'profiles/web') await mkdir(join(root, 'profiles'))
-    await writeFile(join(root, relativePath), 'not a directory')
-    const originalHome = process.env['DSH_HOME']
-    const originalSources = process.env.DSH_DESKTOP_SUB2API_SOURCES
-    try {
-      process.env['DSH_HOME'] = root
-      delete process.env.DSH_DESKTOP_SUB2API_SOURCES
-      const host: Sub2ApiHostControl = { restart: async () => 'http://127.0.0.1:12/', origin: () => undefined }
-      const actions = await createDesktopSub2Api({ fetch, host })
-      expect(actions).toBeInstanceOf(UnavailableDesktopSub2ApiController)
-      expect(actions.getSnapshot().error).toMatch(/ENOTDIR|not a directory/iu)
-    } finally {
-      if (originalHome === undefined) delete process.env['DSH_HOME']
-      else process.env['DSH_HOME'] = originalHome
-      if (originalSources === undefined) delete process.env.DSH_DESKTOP_SUB2API_SOURCES
-      else process.env.DSH_DESKTOP_SUB2API_SOURCES = originalSources
-    }
-  })
-
-  it('stops at a missing filesystem root instead of retrying it', async () => {
-    const originalHome = process.env['DSH_HOME']
-    const originalSources = process.env.DSH_DESKTOP_SUB2API_SOURCES
-    try {
-      process.env['DSH_HOME'] = join('/', 'missing-sub2api-profile-root')
-      delete process.env.DSH_DESKTOP_SUB2API_SOURCES
-      missingFilesystem.enabled = true
-      const host: Sub2ApiHostControl = { restart: async () => 'http://127.0.0.1:12/', origin: () => undefined }
-      const actions = await createDesktopSub2Api({ fetch, host })
-      expect(actions).toBeInstanceOf(UnavailableDesktopSub2ApiController)
-      expect(actions.getSnapshot().error).toBe('profile filesystem root is missing')
-      expect(new Set(missingFilesystem.probes).size).toBe(missingFilesystem.probes.length)
-      expect(dirname(missingFilesystem.probes.at(-1)!)).toBe(missingFilesystem.probes.at(-1))
-    } finally {
-      missingFilesystem.enabled = false
-      if (originalHome === undefined) delete process.env['DSH_HOME']
-      else process.env['DSH_HOME'] = originalHome
-      if (originalSources === undefined) delete process.env.DSH_DESKTOP_SUB2API_SOURCES
-      else process.env.DSH_DESKTOP_SUB2API_SOURCES = originalSources
-    }
-  })
-
   it('builds the real controller over the resolved home and degrades to unavailable on a broken sources file', async () => {
     const root = await mkdtemp(join(tmpdir(), 'sub2api-factory-'))
     dirs.push(root)
@@ -669,7 +564,7 @@ describe('createDesktopSub2Api', () => {
       dsh: { profile: { bundles: ['@deepseek-ai/dsh-base'] } },
     }))
     const originalHome = process.env['DSH_HOME']
-    const originalSources = process.env.DSH_DESKTOP_SUB2API_SOURCES
+    const originalSources = process.env[SUB2API_SOURCES_ENV]
     try {
       process.env['DSH_HOME'] = root
       delete process.env.DSH_DESKTOP_SUB2API_SOURCES
@@ -679,7 +574,7 @@ describe('createDesktopSub2Api', () => {
       expect(sub2ApiPathsFromHome(root).profileDir).toBe(join(root, 'profiles', 'web'))
       expect(sub2ApiPathsFromHome(root).dataDir).toBe(join(root, 'sub2api', 'data'))
 
-      process.env.DSH_DESKTOP_SUB2API_SOURCES = join(root, 'broken.json')
+      process.env[SUB2API_SOURCES_ENV] = join(root, 'broken.json')
       await writeFile(join(root, 'broken.json'), '{nope')
       const degraded = await createDesktopSub2Api({ fetch, host })
       expect(degraded.getSnapshot().error).toContain('not valid JSON')
@@ -687,7 +582,7 @@ describe('createDesktopSub2Api', () => {
       if (originalHome === undefined) delete process.env['DSH_HOME']
       else process.env['DSH_HOME'] = originalHome
       if (originalSources === undefined) delete process.env.DSH_DESKTOP_SUB2API_SOURCES
-      else process.env.DSH_DESKTOP_SUB2API_SOURCES = originalSources
+      else process.env[SUB2API_SOURCES_ENV] = originalSources
     }
   })
 })

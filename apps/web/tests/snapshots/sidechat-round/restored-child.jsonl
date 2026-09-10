@@ -1,4 +1,4 @@
-{"type":"session","version":0,"id":"sidechat-restored-child","createdAt":1784998084440,"cwd":"{{cwd}}/workspace"}
+{"type":"session","version":0,"id":"{{session:1}}","createdAt":1784998084440,"cwd":"{{cwd}}/workspace"}
 {"type":"assistant/chunk","data":{"turn":1,"step":1,"chunk":{"type":"block-start","index":0,"blockType":"reasoning"}}}
 {"type":"reasoning-chunks","data":{"turn":1,"step":1,"index":0,"dt":[153,3,0,29,1,0,0,28,0,1,0,0,0,28,0,0,0,29,1,0,29,0,0,29,0,0,36,0,21,29],"texts":["The"," user"," is"," asking"," for"," a"," one","-s","entence"," description"," of"," event"," sourcing","."," This"," is"," a"," straightforward"," knowledge"," question"," that"," doesn","'t"," require"," any"," skill"," loading"," or"," tool"," calls","."]}}
 {"type":"assistant/chunk","data":{"turn":1,"step":1,"chunk":{"type":"block-start","index":1,"blockType":"text"}}}
@@ -12,3 +12,8 @@
 {"type":"assistant/chunk","data":{"turn":2,"step":1,"chunk":{"type":"block-end","index":0,"block":{"type":"text","text":"After restoration, event sourcing still represents application state as an immutable sequence of recorded changes."}}}}
 {"type":"assistant/chunk","data":{"turn":2,"step":1,"chunk":{"type":"usage","usage":{"inputTokens":110,"outputTokens":16,"cacheReadTokens":7680}}}}
 {"type":"assistant/chunk","data":{"turn":2,"step":1,"chunk":{"type":"finish","reason":{"kind":"stop"}}}}
+{"type":"assistant/chunk","data":{"turn":3,"step":1,"chunk":{"type":"block-start","index":0,"blockType":"text"}}}
+{"type":"assistant/chunk","data":{"turn":3,"step":1,"chunk":{"type":"text-delta","index":0,"text":"The nested Side Chat completed and its result is available."}}}
+{"type":"assistant/chunk","data":{"turn":3,"step":1,"chunk":{"type":"block-end","index":0,"block":{"type":"text","text":"The nested Side Chat completed and its result is available."}}}}
+{"type":"assistant/chunk","data":{"turn":3,"step":1,"chunk":{"type":"usage","usage":{"inputTokens":110,"outputTokens":11,"cacheReadTokens":7680}}}}
+{"type":"assistant/chunk","data":{"turn":3,"step":1,"chunk":{"type":"finish","reason":{"kind":"stop"}}}}
