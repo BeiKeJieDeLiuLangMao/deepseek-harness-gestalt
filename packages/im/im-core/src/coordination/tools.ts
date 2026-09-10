@@ -105,7 +105,7 @@ export function registerImTools(ctx: Context): () => void {
           }
 
           let workspaceId: WorkspaceId | undefined
-          const conversationKind = parsedScope.kind === 'real'
+          let conversationKind = parsedScope.kind === 'real'
             ? (parsedScope.conversationKind ?? 'direct')
             : 'direct'
 
@@ -117,10 +117,10 @@ export function registerImTools(ctx: Context): () => void {
                 ((r.target.kind === 'specific' && r.target.conversationId === parsedScope.conversationId) ||
                   r.target.kind === 'all'),
             )
-            const resolvedKind = parsedScope.conversationKind ?? matchedRule?.conversationKind ?? conversationKind
+            conversationKind = parsedScope.conversationKind ?? matchedRule?.conversationKind ?? conversationKind
             const routeResult = await ctx.imConfig.resolveRoute({
               accountId: parsedScope.accountId,
-              conversationKind: resolvedKind,
+              conversationKind,
               conversationId: parsedScope.conversationId,
             })
             if (
@@ -218,7 +218,7 @@ export function registerImTools(ctx: Context): () => void {
             }
             const sent = await dingtalk.sendMessage({
               accountId: parsedScope.accountId,
-              conversationKind: parsedScope.conversationKind ?? conversationKind,
+              conversationKind,
               targetId: parsedScope.conversationId,
               text: args.text,
               isAi: true,

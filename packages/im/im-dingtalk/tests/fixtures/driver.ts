@@ -37,17 +37,18 @@ class StubSubprocessRuntime extends SubprocessRuntime {
     }
 
     const read: SubprocessOutputRead = { text: outJson, nextOffset: outJson.length, lossy: false }
-    const done = isSend || isQuery
-      ? Promise.resolve({ status: 'exited', exitCode: 0 } as const)
-      : new Promise<{ status: 'exited'; exitCode: number }>(() => {}) // Consumer stream keeps running
+    const done: Promise<import('@deepseek-ai/dsh-subprocess').SubprocessOutcome> = isSend || isQuery
+      ? Promise.resolve({ exitCode: 0, signal: null })
+      : new Promise(() => {}) // Consumer stream keeps running
 
     return {
-      spec,
       stdin: new PassThrough(),
       stdout: new PassThrough(),
       stderr: new PassThrough(),
-      stdoutReader: { read: () => read },
-      stderrReader: { read: () => ({ text: '', nextOffset: 0, lossy: false }) },
+      collected: {
+        stdout: { readFrom: () => read },
+        stderr: { readFrom: () => ({ text: '', nextOffset: 0, lossy: false }) },
+      },
       done,
       terminate: () => {},
       waitForExit: () => Promise.resolve(true),

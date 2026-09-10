@@ -6,9 +6,16 @@
 
 import { Context } from '@deepseek-ai/cordis'
 import type { SubprocessHandle } from '@deepseek-ai/dsh-subprocess'
+import type {} from '@deepseek-ai/dsh-im-core'
+import type {} from '@deepseek-ai/dsh-im-core/delivery'
 import type { ImAccountId } from '@deepseek-ai/dsh-im-core/types'
 import { DingTalkDwsAdapterService } from './spec.ts'
 import { parseDwsEventLine } from './parser.ts'
+import {
+  collectedStreamText,
+  exitedCleanly,
+  snapshotConsumerState,
+} from './subprocess-io.ts'
 import type {
   DingTalkConsumerState,
   DingTalkDwsAdapterConfig,
@@ -21,6 +28,7 @@ interface ActiveConsumer {
   readonly accountId: ImAccountId
   readonly handle: SubprocessHandle
   readonly abortController: AbortController
+  readonly graceMs: number
   stopped: boolean
   reconnectCount: number
   reconnectTimer?: ReturnType<typeof setTimeout> | undefined
@@ -57,12 +65,12 @@ export class DingTalkDwsAdapterServiceImpl extends DingTalkDwsAdapterService {
   getConsumerState(accountId: ImAccountId): DingTalkConsumerState {
     const active = this.consumers.get(accountId)
     if (active) {
-      return {
+      return snapshotConsumerState(
         accountId,
-        isRunning: !active.stopped,
-        reconnectAttempts: active.reconnectCount,
-        lastError: active.lastError,
-      }
+        !active.stopped,
+        active.reconnectCount,
+        active.lastError,
+      )
     }
     const historical = this.consumerStates.get(accountId)
     if (historical) {
@@ -119,6 +127,7 @@ export class DingTalkDwsAdapterServiceImpl extends DingTalkDwsAdapterService {
       accountId,
       handle,
       abortController,
+      graceMs,
       stopped: false,
       reconnectCount: (existing?.reconnectCount ?? 0),
     }
@@ -153,21 +162,17 @@ export class DingTalkDwsAdapterServiceImpl extends DingTalkDwsAdapterService {
       if (consumer.stopped || this.isDisposed) {
         return
       }
-      if (outcome.status === 'exited' && outcome.exitCode === 0) {
-        // Clean exit
+      if (exitedCleanly(outcome)) {
         consumer.stopped = true
         return
       }
-      // Abnormal exit: attempt reconnect if below limit and service is not disposed
-      const stderr = handle.stderrReader !== undefined ? handle.stderrReader.read().text : ''
+      const stderr = collectedStreamText(handle, 'stderr')
       if (stderr !== '') {
         consumer.lastError = stderr
-        this.consumerStates.set(accountId, {
+        this.consumerStates.set(
           accountId,
-          isRunning: false,
-          reconnectAttempts: consumer.reconnectCount,
-          lastError: stderr,
-        })
+          snapshotConsumerState(accountId, false, consumer.reconnectCount, stderr),
+        )
       }
 
       if (consumer.reconnectCount < this.defaultMaxReconnectAttempts && !this.isDisposed) {
@@ -202,13 +207,11 @@ export class DingTalkDwsAdapterServiceImpl extends DingTalkDwsAdapterService {
     }
     consumer.handle.stdin?.end()
     consumer.handle.terminate()
-    const exited = await consumer.handle.waitForExit(consumer.handle.spec.graceMs)
-    this.consumerStates.set(accountId, {
+    const exited = await consumer.handle.waitForExit(AbortSignal.timeout(consumer.graceMs))
+    this.consumerStates.set(
       accountId,
-      isRunning: false,
-      reconnectAttempts: consumer.reconnectCount,
-      lastError: consumer.lastError,
-    })
+      snapshotConsumerState(accountId, false, consumer.reconnectCount, consumer.lastError),
+    )
     this.consumers.delete(accountId)
     if (!exited) {
       throw new Error(`Consumer child process for account ${accountId} failed to terminate within grace period`)
@@ -315,10 +318,10 @@ export class DingTalkDwsAdapterServiceImpl extends DingTalkDwsAdapterService {
 
     try {
       const outcome = await handle.done
-      const stdout = handle.stdoutReader !== undefined ? handle.stdoutReader.read().text : ''
-      const stderr = handle.stderrReader !== undefined ? handle.stderrReader.read().text : ''
+      const stdout = collectedStreamText(handle, 'stdout')
+      const stderr = collectedStreamText(handle, 'stderr')
 
-      if (outcome.status === 'exited' && outcome.exitCode === 0) {
+      if (exitedCleanly(outcome)) {
         let openTaskId: string | undefined
         try {
           const parsed = JSON.parse(stdout)
@@ -349,10 +352,17 @@ export class DingTalkDwsAdapterServiceImpl extends DingTalkDwsAdapterService {
 
       // Check if command failed pre-send (e.g. argument error, invalid syntax) vs unknown
       // If the process timed out or signal-killed after spawn, status is unknown to avoid double-send
-      if (outcome.status === 'timeout' || outcome.status === 'signalled') {
+      if (outcome.exitCode === null && outcome.signal === null) {
         return {
           status: 'result_unknown',
-          error: `Execution ${outcome.status}; request may or may not have reached DingTalk`,
+          error: 'Execution timeout; request may or may not have reached DingTalk',
+          rawOutput: stderr !== '' ? stderr : stdout,
+        }
+      }
+      if (outcome.signal !== null) {
+        return {
+          status: 'result_unknown',
+          error: 'Execution signalled; request may or may not have reached DingTalk',
           rawOutput: stderr !== '' ? stderr : stdout,
         }
       }
@@ -419,10 +429,10 @@ export class DingTalkDwsAdapterServiceImpl extends DingTalkDwsAdapterService {
 
     try {
       const outcome = await handle.done
-      const stdout = handle.stdoutReader !== undefined ? handle.stdoutReader.read().text : ''
-      const stderr = handle.stderrReader !== undefined ? handle.stderrReader.read().text : ''
+      const stdout = collectedStreamText(handle, 'stdout')
+      const stderr = collectedStreamText(handle, 'stderr')
 
-      if (outcome.status === 'exited' && outcome.exitCode === 0) {
+      if (exitedCleanly(outcome)) {
         try {
           const parsed = JSON.parse(stdout)
           const rawStatus = String(parsed.status ?? parsed.sendStatus).toLowerCase()
@@ -476,7 +486,7 @@ export class DingTalkDwsAdapterServiceImpl extends DingTalkDwsAdapterService {
       try {
         consumer.handle.stdin?.end()
         consumer.handle.terminate()
-        waits.push(consumer.handle.waitForExit(consumer.handle.spec.graceMs))
+        waits.push(consumer.handle.waitForExit(AbortSignal.timeout(consumer.graceMs)))
       } catch {
         // Quiescence best-effort
       }

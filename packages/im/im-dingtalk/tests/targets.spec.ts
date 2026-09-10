@@ -6,7 +6,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
-import type { SubprocessHandle, SubprocessOutcome, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
+import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import type { ImAccountId } from '@deepseek-ai/dsh-im-core/types'
 import { DingTalkDwsAdapterServiceImpl } from '../src/service.ts'
 import { classifySender, extractTextContent, parseDwsEventLine } from '../src/parser.ts'
@@ -15,20 +15,25 @@ import { Readable, Writable } from 'node:stream'
 describe('DingTalk DWS Message Targets and Send Status Inquiry', () => {
   const accId = brandString<ImAccountId>('acc-dt-targets')
 
-  function createMockHandle(spec: SubprocessSpawnSpec, stdoutText: string, exitCode = 0, status: 'exited' | 'timeout' | 'signalled' = 'exited'): SubprocessHandle {
+  function createMockHandle(_spec: SubprocessSpawnSpec, stdoutText: string, exitCode = 0, status: 'exited' | 'timeout' | 'signalled' = 'exited'): SubprocessHandle {
+    const stderrText = exitCode === 0 ? '' : stdoutText
     return {
-      spec,
       stdin: new Writable({ write(_c, _e, cb) { cb() } }),
       stdout: new Readable({ read() { this.push(null) } }),
       stderr: new Readable({ read() { this.push(null) } }),
-      stdoutReader: { read: () => ({ text: stdoutText, truncated: false }) },
-      stderrReader: { read: () => ({ text: exitCode === 0 ? '' : stdoutText, truncated: false }) },
+      collected: {
+        stdout: { readFrom: () => ({ text: stdoutText, nextOffset: stdoutText.length, lossy: false }) },
+        stderr: { readFrom: () => ({ text: stderrText, nextOffset: stderrText.length, lossy: false }) },
+      },
       terminate: vi.fn(),
       waitForExit: vi.fn(async () => true),
-      done: Promise.resolve({
-        status,
-        exitCode: status === 'exited' ? exitCode : undefined,
-      } as unknown as SubprocessOutcome),
+      done: Promise.resolve(
+        status === 'timeout'
+          ? { exitCode: null, signal: null }
+          : status === 'signalled'
+            ? { exitCode: null, signal: 'SIGTERM' as const }
+            : { exitCode, signal: null },
+      ),
     }
   }
 
@@ -122,17 +127,7 @@ describe('DingTalk DWS Message Targets and Send Status Inquiry', () => {
     ctx.imConfig = { getAccount: vi.fn(async () => ({ id: accId, paused: false })) } as unknown as typeof ctx.imConfig
     ctx.subprocess = {
       spawn: vi.fn((spec: SubprocessSpawnSpec) => {
-        return {
-          spec,
-          stdin: new Writable({ write(_c, _e, cb) { cb() } }),
-          stdout: new Readable({ read() { this.push(null) } }),
-          stderr: new Readable({ read() { this.push(null) } }),
-          stdoutReader: { read: () => ({ text: '', truncated: false }) },
-          stderrReader: { read: () => ({ text: '', truncated: false }) },
-          terminate: vi.fn(),
-          waitForExit: vi.fn(async () => true),
-          done: Promise.resolve({ status: 'exited', exitCode: 127 } as unknown as SubprocessOutcome),
-        } as unknown as SubprocessHandle
+        return createMockHandle(spec, '', 127)
       }),
     } as unknown as typeof ctx.subprocess
     const resExitErr = await service.sendMessage({
@@ -230,17 +225,7 @@ describe('DingTalk DWS Message Targets and Send Status Inquiry', () => {
     // Exit code non-zero with empty stderr
     ctx.subprocess = {
       spawn: vi.fn((spec: SubprocessSpawnSpec) => {
-        return {
-          spec,
-          stdin: new Writable({ write(_c, _e, cb) { cb() } }),
-          stdout: new Readable({ read() { this.push(null) } }),
-          stderr: new Readable({ read() { this.push(null) } }),
-          stdoutReader: { read: () => ({ text: '', truncated: false }) },
-          stderrReader: { read: () => ({ text: '', truncated: false }) },
-          terminate: vi.fn(),
-          waitForExit: vi.fn(async () => true),
-          done: Promise.resolve({ status: 'exited', exitCode: 2 } as unknown as SubprocessOutcome),
-        } as unknown as SubprocessHandle
+        return createMockHandle(spec, '', 2)
       }),
     } as unknown as typeof ctx.subprocess
     const exitEmptyErrRes = await service.querySendStatus('task-err-2')
