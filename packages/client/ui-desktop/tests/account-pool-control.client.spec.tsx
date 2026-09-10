@@ -386,9 +386,12 @@ function renderControl(snapshot: DesktopAccountPoolSnapshot): ReturnType<typeof 
   return render(
     <AccountPoolControl
       t={t as never}
-      useAccountPool={select => select(snapshot)}
+      useResource={() => { throw new Error('unused') }}
+      usePanelInfo={selector => selector({ activePanelId: null })}
       useSessions={() => { throw new Error('unused') }}
+      useSessionPendingInteraction={() => { throw new Error('unused') }}
       useWorkspaces={() => { throw new Error('unused') }}
+      useAccountPool={select => select(snapshot)}
       close={vi.fn()}
     />,
   )

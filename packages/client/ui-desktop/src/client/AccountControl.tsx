@@ -127,6 +127,7 @@ function MobileInstallationsPanel({ desktop, snapshot, t }: {
           description={t('account.installations.confirmDescription')}
           acknowledgeLabel={t('account.installations.acknowledge')}
           cancelLabel={t('account.installations.cancel')}
+          closeLabel={t('account.installations.cancel')}
           confirmLabel={t('account.installations.confirm')}
           acknowledged={acknowledged}
           disabled={removing}
