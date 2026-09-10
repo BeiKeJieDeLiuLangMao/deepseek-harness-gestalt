@@ -10,8 +10,10 @@ import type {
 import {
   localWorkspaceRemoteUrl,
   normalizeGitRemoteUrl,
-  type AuthenticatedProjectView,
-  type ProjectMembershipClient,
+} from '@deepseek-ai/dsh-project-membership/remote-url'
+import type {
+  AuthenticatedProjectView,
+  ProjectMembershipClient,
 } from '@deepseek-ai/dsh-project-membership-client'
 import type {
   WorkspaceCloneGitRequest,
@@ -100,7 +102,7 @@ export function membershipGatewayOf(
   }
   const localRemoteFor = async (workspaceId: WorkspaceId): Promise<string | undefined> => {
     const value = await unwrapRemote(workspaceGit.gitRemote(workspaceId))
-    return value.remoteUrl
+    return value.remoteUrl === undefined ? undefined : normalizeGitRemoteUrl(value.remoteUrl)
   }
   const remoteUrlFor = async (workspaceId: WorkspaceId): Promise<string> => {
     const remote = await localRemoteFor(workspaceId)

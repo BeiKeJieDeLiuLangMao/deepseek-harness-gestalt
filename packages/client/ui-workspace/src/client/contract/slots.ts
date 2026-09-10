@@ -275,7 +275,7 @@ export interface ProjectMembershipGateway {
   removeMember(membershipId: string): Promise<void>
   /** Read inbound invitations still pending for the current actor. */
   pendingInvitations(): Promise<readonly WorkspacePendingInvitation[]>
-  /** Read the local origin remote for one Workspace, if Git reports one. */
+  /** Read the canonical local origin remote for one Workspace, if Git reports one. */
   localRemoteFor(workspaceId: WorkspaceId): Promise<string | undefined>
   /** Clone the invited remote into a new local Workspace. */
   cloneWorkspace(input: {

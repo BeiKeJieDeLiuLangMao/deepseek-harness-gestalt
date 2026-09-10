@@ -198,13 +198,23 @@ describe('membershipGatewayOf', () => {
     expect(pendingInvitationsSpy).toHaveBeenCalledOnce()
   })
 
+  it('canonicalizes a Host origin that still carries .git', async () => {
+    const gitRemote = vi.fn(async () => ({
+      ok: true as const,
+      value: { remoteUrl: 'https://github.com/o/repo.git' },
+    }))
+    const gateway = membershipGatewayOf(client(), workspaceGit({ gitRemote }))
+    await expect(gateway.localRemoteFor('ws' as never)).resolves.toBe('https://github.com/o/repo')
+  })
+
   it('uses origin when present and local://workspace/<id> when Git reports none', async () => {
     const origin = 'https://github.com/Org/Repo.git'
+    const canonical = normalizeGitRemoteUrl(origin)
     const gitRemote = vi.fn(async () => ({ ok: true as const, value: { remoteUrl: origin } }))
-    const createProject = vi.fn(async () => authenticatedProject(normalizeGitRemoteUrl(origin)))
-    const projectByRemote = vi.fn(async () => authenticatedProject(normalizeGitRemoteUrl(origin)))
+    const createProject = vi.fn(async () => authenticatedProject(canonical))
+    const projectByRemote = vi.fn(async () => authenticatedProject(canonical))
     const withOrigin = membershipGatewayOf(client({ createProject, projectByRemote }), workspaceGit({ gitRemote }))
-    await expect(withOrigin.localRemoteFor('ws' as never)).resolves.toBe(origin)
+    await expect(withOrigin.localRemoteFor('ws' as never)).resolves.toBe(canonical)
     await expect(withOrigin.createProject({ name: 'Assembled', localWorkspaceId: 'ws' as never }))
       .resolves.toEqual({
         id: 'project-1',
@@ -212,11 +222,11 @@ describe('membershipGatewayOf', () => {
         boundRemoteUrl: 'https://github.com/Org/Repo',
         receivingAccountId: 'account-1',
       })
-    expect(createProject).toHaveBeenCalledWith({ name: 'Assembled', remoteUrl: origin })
+    expect(createProject).toHaveBeenCalledWith({ name: 'Assembled', remoteUrl: canonical })
     await expect(withOrigin.projectForWorkspace('ws' as never)).resolves.toMatchObject({
       id: 'project-1', receivingAccountId: 'account-1',
     })
-    expect(projectByRemote).toHaveBeenCalledWith(normalizeGitRemoteUrl(origin))
+    expect(projectByRemote).toHaveBeenCalledWith(canonical)
 
     const absent = vi.fn(async () => ({ ok: true as const, value: {} }))
     const createLocal = vi.fn(async () => authenticatedProject(localWorkspaceRemoteUrl('ws')))
