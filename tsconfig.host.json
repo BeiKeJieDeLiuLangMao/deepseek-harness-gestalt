@@ -356,6 +356,7 @@
     { "path": "./packages/phone/phone-runtime" },
     { "path": "./packages/phone/phone-stream" },
     { "path": "./packages/phone/tool-phone" },
+    { "path": "./packages/examples/phone-capture-wire-demo" },
     { "path": "./packages/util/request-trust" },
 
     { "path": "./packages/browser/tool-browser" },
