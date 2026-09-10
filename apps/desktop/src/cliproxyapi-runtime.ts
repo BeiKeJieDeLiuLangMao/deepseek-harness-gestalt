@@ -70,6 +70,8 @@ export interface CLIProxyAPISupervisorOptions {
   readonly stateRoot: string
   readonly startupTimeoutMs: number
   readonly restartLimit: number
+  /** Test-only argv inserted before `--config`. Windows Node fixtures pass the `.mjs` script here. */
+  readonly binaryArgs?: readonly string[]
   /** Test-only race injection after the reservation closes and before spawn. */
   readonly afterPortReservation?: (port: number) => void | Promise<void>
   /** Test-only callback after the TLS handshake and before the authenticated request. */
@@ -225,7 +227,7 @@ export class CLIProxyAPISupervisor {
     await writeFile(configPath, coreConfig(port, authDir, logDir, managementKey, inferenceKey, certPath, keyPath), { mode: 0o600 })
     await chmod(configPath, 0o600)
     const binary = resolve(this.options.binary)
-    const child = spawn(binary, ['--config', configPath], {
+    const child = spawn(binary, [...this.options.binaryArgs ?? [], '--config', configPath], {
       cwd: root,
       env: credentialSafeEnvironment(process.env, root),
       stdio: ['ignore', 'ignore', 'pipe'],
