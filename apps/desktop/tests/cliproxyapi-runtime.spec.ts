@@ -100,6 +100,24 @@ describe('CLIProxyAPI supervisor', () => {
     }
   })
 
+  it('does not send the inference key after shutdown during the TLS handshake', async () => {
+    const root = await scratch()
+    const observed = join(root, 'authorization.json')
+    const executable = join(root, 'handshake-fixture.mjs')
+    await writeFile(executable, fixtureSource(0, `globalThis.observed = ${JSON.stringify(observed)}`))
+    await chmod(executable, 0o755)
+    const supervisor = new CLIProxyAPISupervisor({
+      binary: executable,
+      stateRoot: join(root, 'state'),
+      startupTimeoutMs: 5_000,
+      restartLimit: 0,
+      afterTlsHandshake: () => { void supervisor.shutdown() },
+    })
+    await expect(supervisor.start()).rejects.toThrow(/aborted|before readiness|did not become ready/)
+    await supervisor.shutdown()
+    await expect(stat(observed)).rejects.toThrow()
+  })
+
   it('publishes replacement capabilities with new ports and keys', async () => {
     const root = await scratch()
     const executable = join(root, 'replacement-fixture.mjs')
@@ -143,9 +161,12 @@ describe('CLIProxyAPI supervisor', () => {
     const supervisor = new CLIProxyAPISupervisor({ binary: executable, stateRoot, startupTimeoutMs: 5_000, restartLimit: 0 })
     const running = await supervisor.start()
     expect(running.capability.provider).toBe('gestalt-account-pool')
+    expect(new URL(running.capability.baseURL).protocol).toBe('https:')
     expect(new URL(running.capability.baseURL).hostname).toBe('127.0.0.1')
+    expect(running.capability.caPath).toContain(stateRoot)
     const config = await findConfig(stateRoot)
     const text = await readFile(config, 'utf8')
+    expect(text).toContain('enable: true')
     expect(text).toContain(`- "${running.capability.apiKey}"`)
     expect(text).not.toContain(process.env.DEEPSEEK_API_KEY ?? '__absent__')
     expect((await stat(config)).mode & 0o777).toBe(0o600)
@@ -175,7 +196,7 @@ async function findConfig(stateRoot: string): Promise<string> {
 
 function environmentFixtureSource(observed: string): string {
   return fixtureSource(0, `
-import { existsSync, writeFileSync } from 'node:fs'
+import { existsSync } from 'node:fs'
 writeFileSync(${JSON.stringify(observed)}, JSON.stringify({
   cwdHasDotenv: existsSync('.env'),
   PGSTORE_DSN: process.env.PGSTORE_DSN,
@@ -188,14 +209,18 @@ writeFileSync(${JSON.stringify(observed)}, JSON.stringify({
 
 function fixtureSource(delayMs = 0, prelude = '', signalHandler = "process.on('SIGTERM', () => server.close(() => process.exit(0)))"): string {
   return `#!/usr/bin/env node
-import { readFileSync } from 'node:fs'
-import { createServer } from 'node:http'
+import { readFileSync, writeFileSync } from 'node:fs'
+import { createServer } from 'node:https'
 ${prelude}
 const path = process.argv[process.argv.indexOf('--config') + 1]
 const config = readFileSync(path, 'utf8')
 const port = Number(config.match(/port: (\\d+)/)[1])
 const key = config.match(/api-keys:\\n  - "([^"]+)"/)[1]
-const server = createServer((request, response) => {
+const cert = readFileSync(config.match(/cert: "([^"]+)"/)[1])
+const keyFile = readFileSync(config.match(/key: "([^"]+)"/)[1])
+const authorizationLog = typeof globalThis.observed === 'string' ? globalThis.observed : undefined
+const server = createServer({ cert, key: keyFile }, (request, response) => {
+  if (authorizationLog !== undefined) writeFileSync(authorizationLog, JSON.stringify({ receivedAuthorization: Boolean(request.headers.authorization) }))
   if (request.url !== '/v1/models' || request.headers.authorization !== 'Bearer ' + key) { response.statusCode = 401; response.end(); return }
   response.setHeader('content-type', 'application/json'); response.end(JSON.stringify({ data: [] }))
 })

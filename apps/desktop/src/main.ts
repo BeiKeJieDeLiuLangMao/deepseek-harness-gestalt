@@ -611,6 +611,7 @@ function spawnDesktopHost(
       ...cliProxyAPICapability === undefined ? {} : {
         DSH_GESTALT_ACCOUNT_POOL_BASE_URL: cliProxyAPICapability.baseURL,
         DSH_GESTALT_ACCOUNT_POOL_API_KEY: cliProxyAPICapability.apiKey,
+        NODE_EXTRA_CA_CERTS: cliProxyAPICapability.caPath,
       },
     },
     signal,
@@ -863,7 +864,6 @@ async function startCLIProxyAPI(): Promise<void> {
       cliProxyAPICapability = capability
       if (host !== undefined && !shuttingDown) await replaceWebHost()
     },
-    fetch: async (input, init) => await net.fetch(input instanceof URL ? input.href : input, init),
   })
   cliProxyAPI = supervisor
   const running = await supervisor.start()

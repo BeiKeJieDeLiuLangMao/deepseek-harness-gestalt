@@ -4,6 +4,7 @@ import { type ChildProcess, execFile, spawn } from 'node:child_process'
 import { chmod, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { basename, join, resolve } from 'node:path'
+import { connect as tlsConnect, type TLSSocket } from 'node:tls'
 import { promisify } from 'node:util'
 
 const execFileAsync = promisify(execFile)
@@ -24,6 +25,8 @@ export interface CLIProxyAPIInferenceCapability {
   readonly provider: typeof PROVIDER_ID
   readonly baseURL: string
   readonly apiKey: string
+  /** Generation-private self-signed certificate used as the TLS trust pin. */
+  readonly caPath: string
 }
 
 /** One ready Desktop-owned core generation. */
@@ -40,11 +43,10 @@ export interface CLIProxyAPISupervisorOptions {
   readonly stateRoot: string
   readonly startupTimeoutMs: number
   readonly restartLimit: number
-  readonly fetch?: typeof globalThis.fetch
   /** Test-only race injection after the reservation closes and before spawn. */
   readonly afterPortReservation?: (port: number) => void | Promise<void>
-  /** Resolve OS listener owners; omission uses the supported platform inspector. */
-  readonly listenerOwners?: (port: number) => Promise<ReadonlySet<number>>
+  /** Test-only callback after the TLS handshake and before the authenticated request. */
+  readonly afterTlsHandshake?: () => void | Promise<void>
   /** Grace period before an owned process tree receives forced termination. */
   readonly stopGraceMs?: number
   /** Publish each ready inference generation and its withdrawal. */
@@ -170,7 +172,10 @@ export class CLIProxyAPISupervisor {
     await mkdir(join(root, 'tmp'), { recursive: true, mode: 0o700 })
     const managementKey = randomBytes(32).toString('base64url')
     const inferenceKey = randomBytes(32).toString('base64url')
-    await writeFile(configPath, coreConfig(port, authDir, logDir, managementKey, inferenceKey), { mode: 0o600 })
+    const certPath = join(root, 'tls.crt')
+    const keyPath = join(root, 'tls.key')
+    await writeGenerationCertificate(root, certPath, keyPath)
+    await writeFile(configPath, coreConfig(port, authDir, logDir, managementKey, inferenceKey, certPath, keyPath), { mode: 0o600 })
     await chmod(configPath, 0o600)
     const binary = resolve(this.options.binary)
     const child = spawn(binary, ['--config', configPath], {
@@ -187,11 +192,10 @@ export class CLIProxyAPISupervisor {
     const stop = (): Promise<void> => stopTask ??= stopProcessTree(child, exited, this.options.stopGraceMs ?? 2_000)
     try {
       await waitForReady({
-        child, exited, stop, port, inferenceKey,
-        listenerOwners: this.options.listenerOwners ?? listenerOwners,
+        child, exited, port, inferenceKey, certPath,
+        ...this.options.afterTlsHandshake === undefined ? {} : { afterTlsHandshake: this.options.afterTlsHandshake },
         timeoutMs: this.options.startupTimeoutMs,
         signal: this.controller.signal,
-        fetch: this.options.fetch ?? globalThis.fetch,
       })
     } catch (error) {
       await stop().catch(() => undefined)
@@ -199,7 +203,12 @@ export class CLIProxyAPISupervisor {
     }
     return {
       child,
-      capability: Object.freeze({ provider: PROVIDER_ID, baseURL: `http://127.0.0.1:${String(port)}/v1`, apiKey: inferenceKey }),
+      capability: Object.freeze({
+        provider: PROVIDER_ID,
+        baseURL: `https://127.0.0.1:${String(port)}/v1`,
+        apiKey: inferenceKey,
+        caPath: certPath,
+      }),
       exited,
       stop,
     }
@@ -218,11 +227,19 @@ function parseManifest(value: unknown): CLIProxyAPIResourceManifest {
   return record as unknown as CLIProxyAPIResourceManifest
 }
 
-function coreConfig(port: number, authDir: string, logDir: string, managementKey: string, inferenceKey: string): string {
+function coreConfig(
+  port: number,
+  authDir: string,
+  logDir: string,
+  managementKey: string,
+  inferenceKey: string,
+  certPath: string,
+  keyPath: string,
+): string {
   return [
     'host: "127.0.0.1"',
     `port: ${String(port)}`,
-    'tls:', '  enable: false',
+    'tls:', '  enable: true', `  cert: ${JSON.stringify(certPath)}`, `  key: ${JSON.stringify(keyPath)}`,
     'remote-management:', '  allow-remote: false', `  secret-key: "${managementKey}"`, '  disable-control-panel: true',
     `auth-dir: ${JSON.stringify(authDir)}`,
     'api-keys:', `  - "${inferenceKey}"`,
@@ -230,6 +247,17 @@ function coreConfig(port: number, authDir: string, logDir: string, managementKey
     'usage-statistics-enabled: false',
     '',
   ].join('\n')
+}
+
+async function writeGenerationCertificate(root: string, certPath: string, keyPath: string): Promise<void> {
+  await execFileAsync('openssl', [
+    'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1',
+    '-keyout', keyPath, '-out', certPath,
+    '-subj', '/CN=localhost',
+    '-addext', 'subjectAltName=DNS:localhost,IP:127.0.0.1',
+  ], { cwd: root })
+  await chmod(certPath, 0o600)
+  await chmod(keyPath, 0o600)
 }
 
 function credentialSafeEnvironment(environment: NodeJS.ProcessEnv, privateHome: string): NodeJS.ProcessEnv {
@@ -260,63 +288,138 @@ async function reserveLoopbackPort(): Promise<number> {
 async function waitForReady(options: {
   child: ChildProcess
   exited: Promise<unknown>
-  stop: () => Promise<void>
   port: number
   inferenceKey: string
-  listenerOwners: (port: number) => Promise<ReadonlySet<number>>
+  certPath: string
+  afterTlsHandshake?: () => void | Promise<void>
   timeoutMs: number
   signal: AbortSignal
-  fetch: typeof globalThis.fetch
 }): Promise<void> {
   let failed = false
   void options.exited.then(() => { failed = true }, () => { failed = true })
   const deadline = Date.now() + options.timeoutMs
+  const ca = await readFile(options.certPath)
   while (Date.now() < deadline) {
     if (options.signal.aborted) throw new Error('CLIProxyAPI startup aborted')
     if (options.child.exitCode !== null || options.child.signalCode !== null) throw new Error('CLIProxyAPI exited before readiness')
     if (failed) throw new Error('CLIProxyAPI failed before readiness')
-    const pid = options.child.pid
-    if (pid === undefined) throw new Error('CLIProxyAPI child has no process id')
-    const owners = await options.listenerOwners(options.port)
-    if (!owners.has(pid)) {
-      await new Promise(resolve => setTimeout(resolve, READINESS_INTERVAL_MS))
-      continue
-    }
+    if (options.child.pid === undefined) throw new Error('CLIProxyAPI child has no process id')
     try {
-      const response = await options.fetch(`http://127.0.0.1:${String(options.port)}/v1/models`, {
-        headers: { Authorization: `Bearer ${options.inferenceKey}` }, signal: AbortSignal.timeout(500),
-      })
-      if (response.ok) return
-    } catch {
-      // Connection refusal and the per-attempt timeout mean the child has not committed readiness yet.
+      if (await pinnedAuthenticatedProbe({
+        port: options.port,
+        inferenceKey: options.inferenceKey,
+        ca,
+        child: options.child,
+        signal: options.signal,
+        ...options.afterTlsHandshake === undefined ? {} : { afterTlsHandshake: options.afterTlsHandshake },
+      })) return
+    } catch (error) {
+      if (options.signal.aborted) throw new Error('CLIProxyAPI startup aborted')
+      if (options.child.exitCode !== null || options.child.signalCode !== null) throw new Error('CLIProxyAPI exited before readiness')
+      if (error instanceof Error && /exited before readiness|startup aborted/u.test(error.message)) throw error
+      // Connection refusal, TLS mismatch, and per-attempt timeout are not readiness.
     }
     await new Promise(resolve => setTimeout(resolve, READINESS_INTERVAL_MS))
   }
   throw new Error(`CLIProxyAPI did not become ready within ${String(options.timeoutMs)}ms`)
 }
 
-async function listenerOwners(port: number): Promise<ReadonlySet<number>> {
-  if (process.platform === 'win32') {
-    const { stdout } = await execFileAsync('powershell.exe', [
-      '-NoProfile', '-NonInteractive', '-Command',
-      `(Get-NetTCPConnection -State Listen -LocalPort ${String(port)} -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess) -join '\n'`,
-    ])
-    return numericLines(stdout)
+async function pinnedAuthenticatedProbe(options: {
+  port: number
+  inferenceKey: string
+  ca: Buffer
+  child: ChildProcess
+  signal: AbortSignal
+  afterTlsHandshake?: () => void | Promise<void>
+}): Promise<boolean> {
+  const socket = await connectPinnedTls(options.port, options.ca, options.signal)
+  try {
+    await options.afterTlsHandshake?.()
+    if (options.signal.aborted) throw new Error('CLIProxyAPI startup aborted')
+    if (options.child.exitCode !== null || options.child.signalCode !== null) throw new Error('CLIProxyAPI exited before readiness')
+    const response = await requestModelsOnTls(socket, options.inferenceKey, options.signal)
+    return response.startsWith('HTTP/1.1 200 ') || response.startsWith('HTTP/1.0 200 ')
+  } finally {
+    socket.destroy()
   }
-  const { stdout } = await execFileAsync('/usr/sbin/lsof', ['-nP', '-t', `-iTCP:${String(port)}`, '-sTCP:LISTEN'])
-    .catch((error: unknown) => {
-      const code = (error as { code?: unknown }).code
-      if (code === 1) return { stdout: '', stderr: '' }
-      throw error
-    })
-  return numericLines(stdout)
 }
 
-function numericLines(output: string): ReadonlySet<number> {
-  return new Set(output.split(/\s+/u).flatMap((value) => {
-    const pid = Number(value)
-    return Number.isSafeInteger(pid) && pid > 0 ? [pid] : []
-  }))
+function connectPinnedTls(port: number, ca: Buffer, signal: AbortSignal): Promise<TLSSocket> {
+  return new Promise((resolve, reject) => {
+    const socket = tlsConnect({
+      host: '127.0.0.1',
+      port,
+      ca,
+      servername: 'localhost',
+      ALPNProtocols: ['http/1.1'],
+      minVersion: 'TLSv1.2',
+    })
+    const timer = setTimeout(() => settle(new Error('CLIProxyAPI TLS handshake timed out')), 500)
+    const abort = (): void => settle(new Error('CLIProxyAPI startup aborted'))
+    const error = (cause: Error): void => settle(cause)
+    const secure = (): void => {
+      if (!socket.authorized) settle(new Error('CLIProxyAPI TLS certificate is not the generation pin'))
+      else settle(undefined, socket)
+    }
+    let settled = false
+    const settle = (failure?: Error, value?: TLSSocket): void => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      signal.removeEventListener('abort', abort)
+      socket.removeListener('error', error)
+      socket.removeListener('secureConnect', secure)
+      if (failure !== undefined) {
+        socket.destroy()
+        reject(failure)
+      } else if (value !== undefined) resolve(value)
+    }
+    signal.addEventListener('abort', abort, { once: true })
+    socket.once('error', error)
+    socket.once('secureConnect', secure)
+    if (signal.aborted) abort()
+  })
+}
+
+function requestModelsOnTls(socket: TLSSocket, inferenceKey: string, signal: AbortSignal): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let response = ''
+    const timer = setTimeout(() => settle(new Error('CLIProxyAPI readiness response timed out')), 500)
+    const abort = (): void => settle(new Error('CLIProxyAPI startup aborted'))
+    const data = (chunk: Buffer): void => {
+      response += chunk.toString()
+      if (response.includes('\r\n\r\n')) settle(undefined, response)
+    }
+    const error = (cause: Error): void => settle(cause)
+    const close = (): void => settle(new Error('CLIProxyAPI readiness socket closed'))
+    let settled = false
+    const settle = (failure?: Error, value?: string): void => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      signal.removeEventListener('abort', abort)
+      socket.removeListener('data', data)
+      socket.removeListener('error', error)
+      socket.removeListener('close', close)
+      if (failure !== undefined) reject(failure)
+      else resolve(value ?? '')
+    }
+    signal.addEventListener('abort', abort, { once: true })
+    socket.on('data', data)
+    socket.once('error', error)
+    socket.once('close', close)
+    if (signal.aborted) {
+      abort()
+      return
+    }
+    socket.write([
+      'GET /v1/models HTTP/1.1',
+      'Host: localhost',
+      `Authorization: Bearer ${inferenceKey}`,
+      'Connection: close',
+      '', '',
+    ].join('\r\n'))
+  })
 }
 
 async function stopProcessTree(

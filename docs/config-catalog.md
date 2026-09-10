@@ -1157,7 +1157,7 @@ Requires: `llm`
 ```ts config-catalog
 /** Host-injected authority; values stay process-private and out of settings. */
 export interface Config {
-  /** IPv4-loopback CLIProxyAPI `/v1` endpoint owned by this Desktop instance. */
+  /** IPv4-loopback HTTPS CLIProxyAPI `/v1` endpoint owned by this Desktop instance. */
   readonly baseURL: string
   /** Inference-only key generated for this Desktop runtime generation. */
   readonly apiKey: string

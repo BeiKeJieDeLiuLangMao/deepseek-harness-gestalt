@@ -12,7 +12,7 @@ export const PROVIDER = 'gestalt-account-pool'
 
 /** Host-injected authority; values stay process-private and out of settings. */
 export interface Config {
-  /** IPv4-loopback CLIProxyAPI `/v1` endpoint owned by this Desktop instance. */
+  /** IPv4-loopback HTTPS CLIProxyAPI `/v1` endpoint owned by this Desktop instance. */
   readonly baseURL: string
   /** Inference-only key generated for this Desktop runtime generation. */
   readonly apiKey: string
@@ -139,7 +139,9 @@ export function apply(ctx: Context, config: Config): void {
 
 function parseLoopbackOrigin(baseURL: string): URL {
   const value = new URL(baseURL)
-  if (value.protocol !== 'http:' || value.hostname !== '127.0.0.1') throw new TypeError('gestalt account pool baseURL must be IPv4 loopback HTTP')
+  if ((value.protocol !== 'http:' && value.protocol !== 'https:') || value.hostname !== '127.0.0.1') {
+    throw new TypeError('gestalt account pool baseURL must be IPv4 loopback HTTP or HTTPS')
+  }
   return value
 }
 
