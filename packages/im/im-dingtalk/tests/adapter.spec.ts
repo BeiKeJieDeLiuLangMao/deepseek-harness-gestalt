@@ -361,6 +361,46 @@ describe('DingTalk DWS Adapter Service Lifecycle and Outbound Seam', () => {
     expect(result.error).toContain('Execution timeout; request may or may not have reached DingTalk')
   })
 
+  it('guards exit0 without openTaskId receipt by resolving to result_unknown instead of sent', async () => {
+    const { service, ctx } = setupTestContext()
+
+    ctx.subprocess.spawn = vi.fn((spec: SubprocessSpawnSpec) => {
+      return createMockSubprocessHandle(spec, 'exited', 0, JSON.stringify({ success: true, text: 'No receipt openTaskId' }))
+    })
+
+    const result = await service.sendMessage({
+      accountId: accId,
+      conversationKind: 'group',
+      targetId: 'cid-target-group-99',
+      text: 'Message that has no receipt',
+    })
+
+    expect(result.status).toBe('result_unknown')
+    expect(result.status).not.toBe('sent')
+    expect(result.error).toContain('no openTaskId receipt')
+  })
+
+  it('marks local subprocess spawn failure before transmission as pre_send_failed (safe to retry)', async () => {
+    const { service, ctx } = setupTestContext()
+
+    ctx.subprocess.spawn = vi.fn(() => {
+      const err = new Error('spawn ENOENT')
+      Reflect.set(err, 'code', 'ENOENT')
+      throw err
+    })
+
+    const result = await service.sendMessage({
+      accountId: accId,
+      conversationKind: 'group',
+      targetId: 'cid-target-group-99',
+      text: 'Message where spawn fails locally',
+    })
+
+    expect(result.status).toBe('pre_send_failed')
+    expect(result.status).not.toBe('result_unknown')
+    expect(result.error).toContain('Local process spawn failed before transmission')
+  })
+
   it('queries send status and maps response accurately', async () => {
     const { service, ctx } = setupTestContext()
 
