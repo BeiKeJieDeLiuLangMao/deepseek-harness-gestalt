@@ -54,6 +54,7 @@ await writeFile(
   JSON.stringify(publicOperatedPlatformConfig, undefined, 2) + '\n',
 )
 await cp(join(root, 'src', 'boot.html'), join(root, 'out', 'boot.html'))
+await cp(join(root, 'cliproxyapi-source.json'), join(root, 'out', 'cliproxyapi-source.json'))
 await writePackagedSub2ApiSources({ root, platform: packPlatform, arch: packArch })
 await mkdir(join(root, 'out', 'build'), { recursive: true })
 await cp(join(root, 'build', 'icon.png'), join(root, 'out', 'build', 'icon.png'))

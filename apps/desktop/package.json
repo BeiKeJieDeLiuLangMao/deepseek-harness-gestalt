@@ -69,6 +69,7 @@
   "scripts": {
     "dev": "node scripts/build-main.mjs && electron out/main.mjs",
     "build:main": "node scripts/build-main.mjs",
+    "build:cliproxyapi": "node scripts/build-cliproxyapi.mjs",
     "typecheck:e2e-project-members": "tsc -p tests/member-question-e2e/tsconfig.json",
     "test:e2e-project-members-electron": "tsx tests/member-question-e2e/run-electron.ts",
     "test:e2e-sub2api": "node scripts/run-e2e-sub2api.mjs",
@@ -85,6 +86,7 @@
     "@deepseek-ai/dsh-client-ui-desktop": "workspace:^",
     "@deepseek-ai/dsh-client-ui-phone": "workspace:^",
     "@deepseek-ai/dsh-home-paths": "workspace:^",
+    "@deepseek-ai/dsh-llm-gestalt-account-pool": "workspace:^",
     "@deepseek-ai/dsh-noise-channel": "workspace:^",
     "@deepseek-ai/dsh-phone-runtime": "workspace:^",
     "@deepseek-ai/dsh-phone-environment": "workspace:^",
@@ -173,6 +175,7 @@
       "out/operated-platform.json",
       "out/boot.html",
       "out/sub2api-sources.json",
+      "out/cliproxyapi-source.json",
       "cordis.patch.yml",
       "package.json"
     ],
@@ -197,6 +200,10 @@
       {
         "from": "out/system-node-fetch-helper.cjs",
         "to": "system-node-fetch-helper.cjs"
+      },
+      {
+        "from": "resources/cliproxyapi",
+        "to": "cliproxyapi"
       }
     ],
     "asar": true,

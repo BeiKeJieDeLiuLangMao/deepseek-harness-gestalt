@@ -3,6 +3,7 @@
  * @module @deepseek-ai/dsh-desktop/main
  */
 import { appendFileSync } from 'node:fs'
+import { readFile } from 'node:fs/promises'
 import { hostname } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -101,6 +102,7 @@ import { downloadCompanionAttachment } from './companion-attachments.ts'
 import { projectDesktopRendererEvent } from './renderer-projection.ts'
 import { connectDesktopRelayNodeHelper } from './relay-node-helper.ts'
 import { createDesktopSystemNodeFetch } from './system-node-fetch-helper.ts'
+import { CLIProxyAPISupervisor, verifyCLIProxyAPIResource, type CLIProxyAPIInferenceCapability } from './cliproxyapi-runtime.ts'
 import {
   createDesktopProjectMembershipClient,
   createDesktopProjectMembershipPresence,
@@ -134,6 +136,7 @@ const windowPresentation: DesktopWindowPresentation = desktopE2EProfile?.windowP
 let systemFetch: typeof globalThis.fetch
 const PRELOAD = join(here, 'preload.cjs')
 const OPERATED_PLATFORM_CONFIG = join(here, 'operated-platform.json')
+const CLIPROXYAPI_SOURCE_CONFIG = join(here, 'cliproxyapi-source.json')
 
 function smokeLog(line: string): void {
   const file = process.env.DSH_DESKTOP_SMOKE_FILE
@@ -188,6 +191,8 @@ let uninstallCompanionHost: (() => void) | undefined
 let companionHostReady = false
 let companionHostGeneration = 0
 let projectMembershipPresence: import('./project-membership.ts').DesktopProjectMembershipPresence | undefined
+let cliProxyAPI: CLIProxyAPISupervisor | undefined
+let cliProxyAPICapability: CLIProxyAPIInferenceCapability | undefined
 
 smokeLog('main loaded')
 const gotLock = app.requestSingleInstanceLock()
@@ -329,6 +334,10 @@ async function boot(): Promise<void> {
       },
     })
     stopSub2ApiEvents = sub2api.subscribe(pushSub2ApiSnapshot)
+    await startCLIProxyAPI().catch((error: unknown) => {
+      console.error('dsh desktop: account pool unavailable', error)
+      smokeLog('cliproxyapi unavailable')
+    })
     installIntegrationsOnce()
     const initialHostStartTimeout = sub2ApiBootHostStartTimeout(sub2api.getSnapshot())
     const startInitialHost = (): Promise<RunningWebHost> =>
@@ -599,6 +608,11 @@ function spawnDesktopHost(
       DSH_ELECTRON_BROWSER_TOKEN_FILE: browserRuntime.tokenFile,
       DSH_DESKTOP_PROJECT_MEMBERSHIP_ORIGIN: projectMembershipAgentRuntime.origin,
       DSH_DESKTOP_PROJECT_MEMBERSHIP_TOKEN_FILE: projectMembershipAgentRuntime.tokenFile,
+      ...cliProxyAPICapability === undefined ? {} : {
+        DSH_GESTALT_ACCOUNT_POOL_BASE_URL: cliProxyAPICapability.baseURL,
+        DSH_GESTALT_ACCOUNT_POOL_API_KEY: cliProxyAPICapability.apiKey,
+        NODE_EXTRA_CA_CERTS: cliProxyAPICapability.caPath,
+      },
     },
     signal,
   }, timeoutMs)
@@ -821,6 +835,41 @@ function requestShutdown(exitCode: number, mode: 'exit' | 'allow-quit' = 'exit')
   void desktopShutdown.request(exitCode, mode)
 }
 
+async function readCLIProxyAPISourceSHA(path: string): Promise<string> {
+  const value: unknown = JSON.parse(await readFile(path, 'utf8'))
+  if (value === null || typeof value !== 'object' || !('sourceSHA' in value)
+    || typeof value.sourceSHA !== 'string' || !/^[0-9a-f]{40}$/u.test(value.sourceSHA)) {
+    throw new Error('Desktop CLIProxyAPI source identity is invalid')
+  }
+  return value.sourceSHA
+}
+
+async function startCLIProxyAPI(): Promise<void> {
+  const explicit = process.env.DSH_DESKTOP_CLIPROXYAPI_FIXTURE
+  if (!app.isPackaged && (explicit === undefined || explicit.length === 0)) return
+  const paths = resolveDesktopRuntime({
+    packaged: app.isPackaged,
+    resourcesPath: process.resourcesPath,
+    moduleUrl: import.meta.url,
+  })
+  const binary = app.isPackaged
+    ? await verifyCLIProxyAPIResource(paths.cliProxyAPI ?? '', await readCLIProxyAPISourceSHA(CLIPROXYAPI_SOURCE_CONFIG))
+    : explicit as string
+  const supervisor = new CLIProxyAPISupervisor({
+    binary,
+    stateRoot: join(app.getPath('userData'), 'gestalt-account-pool', 'runtime'),
+    startupTimeoutMs: 15_000,
+    restartLimit: 1,
+    onCapability: async (capability) => {
+      cliProxyAPICapability = capability
+      if (host !== undefined && !shuttingDown) await replaceWebHost()
+    },
+  })
+  cliProxyAPI = supervisor
+  const running = await supervisor.start()
+  smokeLog(`cliproxyapi ready pid ${String(running.child.pid)}`)
+}
+
 async function cleanupDesktop(mode: 'exit' | 'allow-quit'): Promise<void> {
   const presence = projectMembershipPresence
   projectMembershipPresence = undefined
@@ -830,6 +879,12 @@ async function cleanupDesktop(mode: 'exit' | 'allow-quit'): Promise<void> {
     () => { const stop = stopAccountEvents; stopAccountEvents = undefined; stop?.() },
     () => { const stop = stopPairingEvents; stopPairingEvents = undefined; stop?.() },
     () => { const stop = stopSub2ApiEvents; stopSub2ApiEvents = undefined; stop?.() },
+    async () => {
+      const current = cliProxyAPI
+      cliProxyAPI = undefined
+      cliProxyAPICapability = undefined
+      await current?.shutdown()
+    },
     () => { const current = sub2api; sub2api = undefined; current?.dispose() },
     () => { clearCompanionHost() },
     () => disposeDesktopPresence(presence),

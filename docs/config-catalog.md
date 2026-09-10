@@ -1148,6 +1148,26 @@ Depends on: [`ModelModality`](../packages/llm/llm/src/index.ts) · [`RetryPolicy
 
 Source: [`packages/llm/llm-deepseek/src/index.ts:106`](../packages/llm/llm-deepseek/src/index.ts)
 
+<a id="deepseek-aidsh-llm-gestalt-account-pool"></a>
+
+## `@deepseek-ai/dsh-llm-gestalt-account-pool`
+
+Requires: `llm`
+
+```ts config-catalog
+/** Host-injected authority; values stay process-private and out of settings. */
+export interface Config {
+  /** IPv4-loopback HTTPS CLIProxyAPI `/v1` endpoint owned by this Desktop instance. */
+  readonly baseURL: string
+  /** Inference-only key generated for this Desktop runtime generation. */
+  readonly apiKey: string
+  /** Catalog refresh interval in milliseconds; defaults to 2,000. */
+  readonly refreshIntervalMs?: number
+}
+```
+
+Source: [`packages/llm/llm-gestalt-account-pool/src/index.ts:14`](../packages/llm/llm-gestalt-account-pool/src/index.ts)
+
 <a id="deepseek-aidsh-llm-pi-ai"></a>
 
 ## `@deepseek-ai/dsh-llm-pi-ai`
