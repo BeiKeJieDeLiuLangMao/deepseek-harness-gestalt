@@ -29,6 +29,14 @@ describe('transient CI retry', () => {
     expect(result.evidence).toMatchObject({ status: 'failed', retried: false })
   })
 
+  it('uses a Windows shell so PATHEXT shims such as pnpm.cmd resolve', async () => {
+    const source = await import('node:fs/promises').then(fs => fs.readFile(
+      new URL('./retry-transient-ci.ts', import.meta.url),
+      'utf8',
+    ))
+    expect(source).toContain('shell: process.platform === \'win32\'')
+  })
+
   it('records both attempts for one transient infrastructure retry', async () => {
     const execute = vi.fn()
       .mockResolvedValueOnce(attempt(1, 'transient-infrastructure'))

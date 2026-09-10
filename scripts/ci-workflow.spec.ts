@@ -745,8 +745,8 @@ describe('Python release workflows', () => {
     expect(install.run).toContain('node scripts/retry-transient-ci.ts')
     expect(install.run).not.toContain('pnpm --silent exec tsx')
     expect(install.run).toContain('install-${{ matrix.target }}.json')
-    expect(install.run).toContain("runner.os == 'Windows' && 'pnpm.cmd' || 'pnpm'")
-    expect(install.run).toContain('install --frozen-lockfile')
+    expect(install.run).toContain('pnpm install --frozen-lockfile')
+    expect(install.run).not.toContain('pnpm.cmd')
     expect(transientAttempts).toMatchObject({
       if: "always() && runner.os == 'Linux'",
       with: { path: '${{ runner.temp }}/ci-evidence/*.json' },
