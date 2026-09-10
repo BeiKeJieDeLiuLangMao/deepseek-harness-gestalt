@@ -19,20 +19,25 @@ import { Readable, Writable } from 'node:stream'
 describe('DingTalk DWS Adapter Counter-Example Defenses', () => {
   const accId = brandString<ImAccountId>('acc-dt-counter')
 
-  function createMockHandle(spec: SubprocessSpawnSpec, stdoutText: string, exitCode = 0, status: 'exited' | 'timeout' | 'signalled' = 'exited'): SubprocessHandle {
+  function createMockHandle(_spec: SubprocessSpawnSpec, stdoutText: string, exitCode = 0, status: 'exited' | 'timeout' | 'signalled' = 'exited'): SubprocessHandle {
+    const stderrText = exitCode === 0 ? '' : stdoutText
     return {
-      spec,
       stdin: new Writable({ write(_c, _e, cb) { cb() } }),
       stdout: new Readable({ read() { this.push(null) } }),
       stderr: new Readable({ read() { this.push(null) } }),
-      stdoutReader: { read: () => ({ text: stdoutText, truncated: false }) },
-      stderrReader: { read: () => ({ text: exitCode === 0 ? '' : stdoutText, truncated: false }) },
+      collected: {
+        stdout: { readFrom: () => ({ text: stdoutText, nextOffset: stdoutText.length, lossy: false }) },
+        stderr: { readFrom: () => ({ text: stderrText, nextOffset: stderrText.length, lossy: false }) },
+      },
       terminate: vi.fn(),
       waitForExit: vi.fn(async () => true),
-      done: Promise.resolve({
-        status,
-        exitCode: status === 'exited' ? exitCode : undefined,
-      } as unknown as SubprocessOutcome),
+      done: Promise.resolve(
+        status === 'timeout'
+          ? { exitCode: null, signal: null }
+          : status === 'signalled'
+            ? { exitCode: null, signal: 'SIGTERM' as const }
+            : { exitCode, signal: null },
+      ),
     }
   }
 
@@ -75,7 +80,7 @@ describe('DingTalk DWS Adapter Counter-Example Defenses', () => {
     expect(spawnCount).toBe(1)
 
     // 1. Consumer exits abnormally: schedules reconnectTimer for 60ms later
-    exitPromiseResolve!({ status: 'exited', exitCode: 1 })
+    exitPromiseResolve!({ exitCode: 1, signal: null })
 
     // 2. Allow event-loop tick so handle.done callback runs and arms reconnectTimer
     await new Promise(res => setTimeout(res, 10))

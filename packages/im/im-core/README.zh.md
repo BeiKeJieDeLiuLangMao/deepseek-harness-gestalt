@@ -10,7 +10,7 @@ DeepSeek Harness 的 IM 领域配置、账号与路由核心服务。
 
 ## 服务
 
-配置与路由服务挂载于 `ctx.imConfig`，消息历史、游标进度与出站生命周期追踪服务挂载于 `ctx.imDelivery`。
+配置与路由服务挂载于 `ctx.imConfig`，消息历史、游标进度与出站生命周期追踪服务挂载于 `ctx.imDelivery`，执行协调与触发准入服务挂载于 `ctx.imExecution`。
 
 ### 公共方法：imConfig
 
@@ -40,6 +40,16 @@ DeepSeek Harness 的 IM 领域配置、账号与路由核心服务。
 - `getOutbound(requestId: ImOutboundRequestId): Promise<OutboundMessageRecord | undefined>`
 - `cancelPendingAiOutbound(scopeId: ImScopeId, reason: string): Promise<OutboundMessageRecord[]>`
 
+### 公共方法：imExecution
+
+- `admitInbound(options: AdmitInboundOptions): Promise<AdmitInboundResult>`
+- `resetIntervalTracker(scopeId: ImScopeId, nowMs?: number): void`
+
+### 注册工具
+
+- `im_send_message`：向指定 IM 会话作用域发送出站回复消息，并严格校验模拟配置。
+- `im_query_history`：在指定的 IM 会话作用域内查询历史消息。
+
 ## 不变量
 
 - **凭据引用**：仅存储不透明的称名 `CredentialRef`；真实秘密由 credentials seam 托管。
@@ -52,4 +62,7 @@ DeepSeek Harness 的 IM 领域配置、账号与路由核心服务。
 - **投递阶段与游标推进**：严格区分阶段（`received` != `submitted` != `sent`）。入站消息必须先落库存储，再推进游标序列号。
 - **幂等去重与 Scope 隔离**：消息按 `(scopeId, externalMessageId)` 严格去重。转义编码防止真实 Scope 与模拟 Scope 发生冒号碰撞。
 - **出站安全与未知状态处置**：不明确回执标记为 `result_unknown`，严禁盲目自动重试。会话停用时阻止待发 AI 出站消息，重新启用时绝不批量补发。
+- **群触发 OR 与单批单次 Steer**：群聊综合 mention、everyN 与 fixedInterval 执行 OR 逻辑。同批多条件只触发一次 steer，并按 messageId 去重及 sequenceNumber 升序排列。
+- **Steer 与 Flush 推进事务性**：必须在 `agent.steer` 与会话 flush 均成功后才调用 `markSubmitted` 推进游标。任何失败绝不推进游标。
+- **AI 回显与外部授权限制**：AI 出站回显绝不触发 steer，亦不计入 everyN 计数。外部 IM 文本绝不授予执行或审批权限。
 - **无需独立 Invariant 伴生插件**：`im-core` 借助 `StorageDomain` 管理持久化状态与单 root 原子一致性，不存在分歧观察或跨进程桥接，因此无需导出独立的 `./invariant`。

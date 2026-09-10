@@ -75,6 +75,7 @@ describe('im-core real Loader cordis.yml composition and persistence reload', ()
       "    backend: 'memory'",
       "- name: '@deepseek-ai/dsh-im-core'",
       "- name: '@deepseek-ai/dsh-im-core/delivery'",
+      "- name: '@deepseek-ai/dsh-im-core/coordination'",
       '',
     ].join('\n')
     await writeFile(configPath, yml)

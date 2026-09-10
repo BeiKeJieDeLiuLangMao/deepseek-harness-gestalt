@@ -20,7 +20,22 @@ import { DingTalkDwsAdapterServiceImpl } from '../src/service.ts'
 import { classifySender, parseDwsEventLine } from '../src/parser.ts'
 import { Readable, Writable } from 'node:stream'
 
-function createMockSubprocessHandle(spec: SubprocessSpawnSpec, outcomeStatus: 'exited' | 'timeout' | 'signalled' = 'exited', exitCode = 0, stdoutText = '', stderrText = ''): SubprocessHandle {
+function mockOutcome(
+  outcomeStatus: 'exited' | 'timeout' | 'signalled',
+  exitCode = 0,
+): SubprocessOutcome {
+  if (outcomeStatus === 'timeout') return { exitCode: null, signal: null }
+  if (outcomeStatus === 'signalled') return { exitCode: null, signal: 'SIGTERM' }
+  return { exitCode, signal: null }
+}
+
+function collected(text: string) {
+  return {
+    readFrom: () => ({ text, nextOffset: text.length, lossy: false }),
+  }
+}
+
+function createMockSubprocessHandle(_spec: SubprocessSpawnSpec, outcomeStatus: 'exited' | 'timeout' | 'signalled' = 'exited', exitCode = 0, stdoutText = '', stderrText = ''): SubprocessHandle {
   const stdoutStream = new Readable({
     read() {
       if (stdoutText) {
@@ -37,22 +52,16 @@ function createMockSubprocessHandle(spec: SubprocessSpawnSpec, outcomeStatus: 'e
   })
 
   return {
-    spec,
     stdin: stdinStream,
     stdout: stdoutStream,
     stderr: new Readable({ read() { this.push(null) } }),
-    stdoutReader: {
-      read: () => ({ text: stdoutText, truncated: false }),
-    },
-    stderrReader: {
-      read: () => ({ text: stderrText, truncated: false }),
+    collected: {
+      stdout: collected(stdoutText),
+      stderr: collected(stderrText),
     },
     terminate: vi.fn(),
     waitForExit: vi.fn(async () => true),
-    done: Promise.resolve({
-      status: outcomeStatus,
-      exitCode: outcomeStatus === 'exited' ? exitCode : undefined,
-    } as unknown as SubprocessOutcome),
+    done: Promise.resolve(mockOutcome(outcomeStatus, exitCode)),
   }
 }
 

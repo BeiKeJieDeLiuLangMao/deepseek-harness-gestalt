@@ -7,6 +7,7 @@
 import { Context, Service } from '@deepseek-ai/cordis'
 import type { ImAccountId } from '@deepseek-ai/dsh-im-core/types'
 import type {
+  DingTalkConsumerState,
   DingTalkDwsAdapterConfig,
   DingTalkSendMessageRequest,
   DingTalkSendMessageResult,
@@ -38,4 +39,7 @@ export abstract class DingTalkDwsAdapterService extends Service {
 
   /** Query send status for an openTaskId. */
   abstract querySendStatus(openTaskId: string, accountId?: ImAccountId): Promise<DingTalkSendStatusResult>
+
+  /** Snapshot of one account's consumer stream. */
+  abstract getConsumerState(accountId: ImAccountId): DingTalkConsumerState
 }

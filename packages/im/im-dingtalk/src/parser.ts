@@ -35,12 +35,14 @@ export function classifySender(
   const isAi = Boolean(payload.aiTag ?? payload.ai_tag)
   const clientSource = typeof payload.clientSource === 'string' ? payload.clientSource : undefined
 
+  const nick = senderNick !== undefined ? { rawSenderNick: senderNick } : {}
+
   if (!isSelf) {
     return {
       classification: 'external',
       evidence: {
         rawSenderId: senderId,
-        rawSenderNick: senderNick,
+        ...nick,
         isSelfAccount: false,
         clientSource: 'external',
       },
@@ -53,7 +55,7 @@ export function classifySender(
       classification: 'ai_outbound',
       evidence: {
         rawSenderId: senderId,
-        rawSenderNick: senderNick,
+        ...nick,
         isSelfAccount: true,
         clientSource: 'ai_agent',
         notes: 'DWS event marked with AI tag or AI agent source',
@@ -66,7 +68,7 @@ export function classifySender(
       classification: 'human_dsh',
       evidence: {
         rawSenderId: senderId,
-        rawSenderNick: senderNick,
+        ...nick,
         isSelfAccount: true,
         clientSource: 'dsh_manual',
       },
@@ -78,7 +80,7 @@ export function classifySender(
       classification: 'human_native',
       evidence: {
         rawSenderId: senderId,
-        rawSenderNick: senderNick,
+        ...nick,
         isSelfAccount: true,
         clientSource: 'native_app',
       },
@@ -90,7 +92,7 @@ export function classifySender(
     classification: 'unknown',
     evidence: {
       rawSenderId: senderId,
-      rawSenderNick: senderNick,
+      ...nick,
       isSelfAccount: true,
       notes: 'Ambiguous self message evidence: clientSource absent or unrecognized',
     },

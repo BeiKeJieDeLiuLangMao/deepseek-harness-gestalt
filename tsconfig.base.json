@@ -535,6 +535,7 @@
       "@deepseek-ai/dsh-im-core/types": ["./packages/im/im-core/src/types.ts"],
       "@deepseek-ai/dsh-im-core/spec": ["./packages/im/im-core/src/spec.ts"],
       "@deepseek-ai/dsh-im-core/delivery": ["./packages/im/im-core/src/delivery/index.ts"],
+      "@deepseek-ai/dsh-im-core/coordination": ["./packages/im/im-core/src/coordination/index.ts"],
       "@deepseek-ai/dsh-im-dingtalk": ["./packages/im/im-dingtalk/src"],
       "@deepseek-ai/dsh-im-dingtalk/types": ["./packages/im/im-dingtalk/src/types.ts"],
       "@deepseek-ai/dsh-im-dingtalk/spec": ["./packages/im/im-dingtalk/src/spec.ts"],

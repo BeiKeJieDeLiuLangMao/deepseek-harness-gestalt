@@ -20,10 +20,10 @@ describe('DingTalk DWS Adapter Defensive Lifecycle and Error Handling', () => {
     let isWaitCalled = false
 
     const mockHandle: SubprocessHandle = {
-      spec: { argv: ['dws'], cwd: '.', graceMs: 5000, stdio: { stdin: 'pipe', stdout: 'pipe', stderr: 'pipe' } },
       stdin: new Writable({ write(_c, _e, cb) { cb() } }),
       stdout: new Readable({ read() { this.push(null) } }),
       stderr: new Readable({ read() { this.push(null) } }),
+      collected: {},
       terminate: vi.fn(() => { isTerminated = true }),
       waitForExit: vi.fn(async () => {
         isWaitCalled = true
@@ -65,16 +65,16 @@ describe('DingTalk DWS Adapter Defensive Lifecycle and Error Handling', () => {
     let exitPromiseResolve: (outcome: SubprocessOutcome) => void
 
     ctx.subprocess = {
-      spawn: vi.fn((spec: SubprocessSpawnSpec) => {
+      spawn: vi.fn((_spec: SubprocessSpawnSpec) => {
         spawnCount++
         const done = new Promise<SubprocessOutcome>((resolve) => {
           exitPromiseResolve = resolve
         })
         return {
-          spec,
           stdin: new Writable({ write(_c, _e, cb) { cb() } }),
           stdout: new Readable({ read() { this.push(null) } }),
           stderr: new Readable({ read() { this.push(null) } }),
+          collected: {},
           terminate: vi.fn(),
           waitForExit: vi.fn(async () => true),
           done,
@@ -99,7 +99,7 @@ describe('DingTalk DWS Adapter Defensive Lifecycle and Error Handling', () => {
     expect(spawnCount).toBe(1)
 
     // Simulate child crash with exitCode 1 and stderr message
-    exitPromiseResolve!({ status: 'exited', exitCode: 1 })
+    exitPromiseResolve!({ exitCode: 1, signal: null })
 
     // Wait for reconnect delay
     await new Promise(resolve => setTimeout(resolve, 60))
@@ -113,14 +113,15 @@ describe('DingTalk DWS Adapter Defensive Lifecycle and Error Handling', () => {
     let exitPromiseResolve: (outcome: SubprocessOutcome) => void
 
     ctx.subprocess = {
-      spawn: vi.fn((spec: SubprocessSpawnSpec) => {
+      spawn: vi.fn((_spec: SubprocessSpawnSpec) => {
         return {
-          spec,
           stdin: new Writable({ write(_c, _e, cb) { cb() } }),
           stdout: new Readable({ read() { this.push(null) } }),
           stderr: new Readable({ read() { this.push(null) } }),
-          stdoutReader: { read: () => ({ text: '', truncated: false }) },
-          stderrReader: { read: () => ({ text: 'OAuth token expired or invalid', truncated: false }) },
+          collected: {
+            stdout: { readFrom: () => ({ text: '', nextOffset: 0, lossy: false }) },
+            stderr: { readFrom: () => ({ text: 'OAuth token expired or invalid', nextOffset: 30, lossy: false }) },
+          },
           terminate: vi.fn(),
           waitForExit: vi.fn(async () => true),
           done: new Promise<SubprocessOutcome>((resolve) => {
@@ -146,7 +147,7 @@ describe('DingTalk DWS Adapter Defensive Lifecycle and Error Handling', () => {
     await service.startConsumer(accId)
 
     // Crash with exitCode 2: stderr should populate lastError
-    exitPromiseResolve!({ status: 'exited', exitCode: 2 })
+    exitPromiseResolve!({ exitCode: 2, signal: null })
     await new Promise(resolve => setTimeout(resolve, 10))
 
     const state = service.getConsumerState(accId)
@@ -163,13 +164,13 @@ describe('DingTalk DWS Adapter Defensive Lifecycle and Error Handling', () => {
     let exitPromiseResolve: (outcome: SubprocessOutcome) => void
 
     ctx.subprocess = {
-      spawn: vi.fn((spec: SubprocessSpawnSpec) => {
+      spawn: vi.fn((_spec: SubprocessSpawnSpec) => {
         spawnCount++
         return {
-          spec,
           stdin: new Writable({ write(_c, _e, cb) { cb() } }),
           stdout: new Readable({ read() { this.push(null) } }),
           stderr: new Readable({ read() { this.push(null) } }),
+          collected: {},
           terminate: vi.fn(),
           waitForExit: vi.fn(async () => true),
           done: new Promise<SubprocessOutcome>((resolve) => {
@@ -196,7 +197,7 @@ describe('DingTalk DWS Adapter Defensive Lifecycle and Error Handling', () => {
     expect(spawnCount).toBe(1)
 
     // Crash: triggers reconnect timer scheduled for 50ms later
-    exitPromiseResolve!({ status: 'exited', exitCode: 1 })
+    exitPromiseResolve!({ exitCode: 1, signal: null })
 
     // Within the delay window, explicitly stop consumer
     await new Promise(resolve => setTimeout(resolve, 10))
@@ -213,13 +214,13 @@ describe('DingTalk DWS Adapter Defensive Lifecycle and Error Handling', () => {
     let lastExitResolve: (outcome: SubprocessOutcome) => void
 
     ctx.subprocess = {
-      spawn: vi.fn((spec: SubprocessSpawnSpec) => {
+      spawn: vi.fn((_spec: SubprocessSpawnSpec) => {
         spawnCount++
         return {
-          spec,
           stdin: new Writable({ write(_c, _e, cb) { cb() } }),
           stdout: new Readable({ read() { this.push(null) } }),
           stderr: new Readable({ read() { this.push(null) } }),
+          collected: {},
           terminate: vi.fn(),
           waitForExit: vi.fn(async () => true),
           done: new Promise<SubprocessOutcome>((resolve) => {
@@ -246,12 +247,12 @@ describe('DingTalk DWS Adapter Defensive Lifecycle and Error Handling', () => {
     expect(spawnCount).toBe(1)
 
     // Crash 1 -> should reconnect (attempt 1)
-    lastExitResolve!({ status: 'exited', exitCode: 1 })
+    lastExitResolve!({ exitCode: 1, signal: null })
     await new Promise(resolve => setTimeout(resolve, 30))
     expect(spawnCount).toBe(2)
 
     // Crash 2 -> reached limit (attempt 2 > max 1), should not reconnect
-    lastExitResolve!({ status: 'exited', exitCode: 1 })
+    lastExitResolve!({ exitCode: 1, signal: null })
     await new Promise(resolve => setTimeout(resolve, 30))
     expect(spawnCount).toBe(2)
 
