@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 /** Sidebar presentation and tab subscriptions through the production slot renderer. */
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent } from '@testing-library/react'
 import { useState } from 'react'
@@ -25,6 +27,10 @@ const SESSION = 's-test' as SessionId
 const OTHER = 's-other' as SessionId
 const runtimes: SlotTestRuntime[] = []
 let getAnimationsDescriptor: PropertyDescriptor | undefined
+const dockkitStyles = readFileSync(
+  join(process.cwd(), 'packages/client/ui-dockkit/src/components/dockkit.module.css'),
+  'utf8',
+)
 
 beforeEach(() => {
   localStorage.clear()
@@ -565,6 +571,26 @@ describe('RightbarSeat fullscreen entry', () => {
 })
 
 describe('slot-owned useTabInfo', () => {
+  it('keeps a Slot-wrapped self-scrolling body out of the pane scroller', async () => {
+    const h = await mountSeat()
+    await act(async () => {
+      h.runtime.ctx.sidebarRightTabs.register({
+        id: 'test/scroll', kind: 'scroll', title: () => 'Scroll',
+      })
+      h.runtime.slots.register({ name: 'sidebar.right.pane.tab', key: 'test/scroll' },
+        () => <div data-dockkit-scroll-owner />)
+      h.actions.openContent(SESSION, { kind: 'scroll', contentId: 'scroll:test', title: 'Scroll' }, () => {})
+    })
+    const marker = element(h.view.container, '[data-dockkit-scroll-owner]')
+    expect(marker.parentElement?.dataset['slot']).toBe('sidebar.right.pane.tab')
+    expect(marker.parentElement?.style.display).toBe('contents')
+    const paneBody = marker.closest<HTMLElement>('[data-dockkit-pane-body]')
+    expect(paneBody).not.toBeNull()
+    expect(paneBody!.matches(':has([data-dockkit-scroll-owner])')).toBe(true)
+    expect(paneBody!.matches(':has(> [data-dockkit-scroll-owner])')).toBe(false)
+    expect(dockkitStyles).toContain('.paneBody:has([data-dockkit-scroll-owner])')
+  })
+
   it('updates body and title navigation with no layout commit and retains the bound hook', async () => {
     const h = await mountSeat()
     const tab = h.open('a.txt', { params: { line: 3 } })

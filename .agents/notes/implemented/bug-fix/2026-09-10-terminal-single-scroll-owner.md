@@ -10,7 +10,7 @@ DockKit made every pane body a generic vertical scroll container. The Terminal b
 
 ## Decision
 
-DockKit supports a direct tab-body root marked `data-dockkit-scroll-owner`. A pane with that direct child becomes a clipped flex column and delegates vertical scrolling to the child. Bodies without the marker keep the generic pane scrollbar.
+DockKit supports a tab-body root marked `data-dockkit-scroll-owner`. A pane containing that marker becomes a clipped flex column and delegates vertical scrolling to the child. The descendant match crosses the `display: contents` wrappers inserted by keyed Slots; bodies without the marker keep the generic pane scrollbar.
 
 Better Sidebar marks the Terminal root with this attribute. Its existing flex and minimum-height rules fill the pane while xterm's viewport remains the only vertical scroll container.
 
@@ -24,8 +24,8 @@ Better Sidebar marks the Terminal root with this attribute. Its existing flex an
 
 ## Consequences
 
-Terminal output scrolls only inside xterm, while other tab bodies preserve their prior DockKit scrolling. A future self-scrolling body can opt in only by filling the pane and placing the marker on its direct root.
+Terminal output scrolls only inside xterm, while other tab bodies preserve their prior DockKit scrolling. A future self-scrolling body can opt in only by filling the pane and placing the marker on its root.
 
 ## Testing
 
-Desktop acceptance checks that the marked Terminal root is the pane body's direct child, the pane body has hidden overflow with equal scroll and client heights, and the xterm viewport retains vertical scrolling.
+Desktop acceptance checks that the marked Terminal root is contained by the pane body, the pane body has hidden overflow with equal scroll and client heights, and the xterm viewport retains vertical scrolling.

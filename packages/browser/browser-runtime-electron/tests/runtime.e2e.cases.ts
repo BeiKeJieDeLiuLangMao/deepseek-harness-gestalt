@@ -1,6 +1,7 @@
 import { createServer, type Server } from 'node:http'
 import assert from 'node:assert/strict'
 import { Context } from '@deepseek-ai/cordis'
+import type { BrowserWindow as NativeBrowserWindow } from 'electron'
 import { BrowserProfileName } from '@deepseek-ai/dsh-browser-runtime'
 import ElectronBrowserRuntime from '@deepseek-ai/dsh-browser-runtime-electron'
 
@@ -63,12 +64,25 @@ export async function driveRealPage(): Promise<void> {
 export async function recoverAfterStalledNavigation(): Promise<void> {
   const pages = await serveLocalPages()
   const ctx = new Context()
+  let parent: NativeBrowserWindow | undefined
   try {
+    const requestTimeoutMs = 2_000
+    const cancelTimeoutMs = 200
     await ctx.plugin(ElectronBrowserRuntime, {
       idPrefix: 'electron-e2e-stall',
-      requestTimeoutMs: 2_000,
+      requestTimeoutMs,
+      cancelTimeoutMs,
     })
     const stalled = await ctx.browserRuntime.create({ profile: 'temporary' })
+    const { BrowserWindow } = await import('electron')
+    parent = new BrowserWindow({ show: false, width: 640, height: 480 })
+    ;(ctx.browserRuntime as ElectronBrowserRuntime).present(
+      stalled.target,
+      { x: 0, y: 0, width: 640, height: 480 },
+      parent,
+    )
+    parent.showInactive()
+    const startedAt = Date.now()
     await assert.rejects(ctx.browserRuntime.navigate({
       target: stalled.target,
       expectedRevision: stalled.revision,
@@ -78,6 +92,10 @@ export async function recoverAfterStalledNavigation(): Promise<void> {
       && 'code' in error
       && error.code === 'BROWSER_RUNTIME_UNAVAILABLE'
     ))
+    assert.ok(
+      Date.now() - startedAt < requestTimeoutMs + cancelTimeoutMs + 500,
+      'presented stalled navigation must settle within its request and cancellation bounds',
+    )
     const recovered = await ctx.browserRuntime.observe({ target: stalled.target })
     assert.equal(recovered.status, 'open')
     assert.equal(recovered.revision, 2)
@@ -92,6 +110,7 @@ export async function recoverAfterStalledNavigation(): Promise<void> {
     assert.equal(loaded.url, `${pages.origin}/plain`)
     assert.match(loaded.text, /local page ready/u)
   } finally {
+    parent?.destroy()
     await ctx.fiber.dispose()
     await pages.close()
   }

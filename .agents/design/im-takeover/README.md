@@ -6,7 +6,7 @@ This directory preserves the design inputs for the IM account takeover project s
 
 ## Contents
 
-- `scheme-source.md` is the approved-direction technical scheme source. The review baseline of the specification pull request is `origin/master`; the implementation baseline is fixed snapshot `96d33581128676a469a1587ea85e0339e4853cf0` (not an ancestor of the review branch; reachable via predecessor head `c2914ed9a5b3a8d51b2c0800d383376705e0da81`). Its source interfaces remain unreviewed.
+- `scheme-source.md` is the approved-direction technical scheme source. The review baseline of the specification pull request is `origin/master`; the implementation baseline is the dual-parent combined base `d4fd51ceb5` (combining `4797d94e8d` + `005b49be71`) with verified candidate milestone `0d8d0faa54`. Predecessor `54a56df8ca` provides frozen design evidence.
 - `review-pack.html` is the self-contained human review pack.
 - `prototype/` contains the accepted high-fidelity React prototype source, fixtures, theme token snapshots, and package metadata; `prototype/README.md` documents how to run it.
 - `screenshots/` contains selected example-only design screenshots.
@@ -14,7 +14,7 @@ This directory preserves the design inputs for the IM account takeover project s
 ## Revision provenance
 
 - Review baseline: `origin/master` (`5e55fbc0f9e699fa005028d2a591517fc72ba09e`) — the specification pull request branches from it; the fixed snapshot is not its ancestor.
-- Implementation baseline: fixed snapshot `96d33581128676a469a1587ea85e0339e4853cf0`, not contained in the review branch.
+- Implementation baseline: combined base `d4fd51ceb5` (`4797d94e8d` + `005b49be71`), candidate milestone `0d8d0faa54`.
 - Previously published head `c2914ed9a5b3a8d51b2c0800d383376705e0da81` carried the fixed snapshot in its ancestry; after the lease update it is unreferenced, so it is a temporary path only. Local preserved refs `codex/im-takeover-spec-fixedbase-preserved` and `codex/im-takeover-preserved-6d911d` hold the pre-rewrite heads. Official publication of the fixed baseline belongs to the synchronization project and precedes implementation.
 
 ## Later decision overrides

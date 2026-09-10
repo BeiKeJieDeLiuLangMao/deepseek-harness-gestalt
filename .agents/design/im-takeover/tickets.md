@@ -31,7 +31,7 @@ T3 + T4 + T5 + T6 + T7
 
 ### B0 — Review fixed-snapshot interfaces and platform gaps
 
-Materialize or receive a readable checkout of `96d33581128676a469a1587ea85e0339e4853cf0`, then verify the Session event, Agent inbox/steer, tools, subagent, approval, credentials, storage, workspace, settings, and Better Sidebar interfaces used by the scheme. Record the legal environment used for source review. Confirm DWS command availability and Wangwang identity gaps without real sends or credential disclosure.
+Verify Session V3 events, Agent dispatch/steer, tools, subagent, credentials, StorageDomain, and Better Sidebar interfaces directly on the combined base `d4fd51ceb5` in candidate worktree. Confirm DWS command availability and Wangwang identity gaps without real sends or credential disclosure.
 
 **Acceptance:** a fixed-snapshot review names every accepted interface and every remaining platform gap; no implementation ticket starts without it.
 

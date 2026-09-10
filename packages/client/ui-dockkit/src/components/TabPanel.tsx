@@ -406,7 +406,7 @@ export function TabPanel({ state, pane, callbacks }: TabPanelProps): ReactNode {
           </div>
         )}
       </div>
-      <div className={css.paneBody}>
+      <div className={css.paneBody} data-dockkit-pane-body>
         {active === undefined
           ? <p className={css.empty}>{callbacks.labels.emptyPane}</p>
           : callbacks.renderTab(active)}

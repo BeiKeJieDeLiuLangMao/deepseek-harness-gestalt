@@ -10,10 +10,9 @@ English | [中文](README.zh.md)
 
 Render Session conversations with images, localized actions, and restored scroll. Compact display folds completed-turn process rows while preserving final answers and useful context; packed historical Assistant runs remain collapsed. Local transcript and steering submissions appear immediately and retire when authoritative records arrive; queued submissions stay outside Chat. Settled assistant Markdown exposes selection annotations with stable message and block anchors. The package does not assemble model requests. Its Chat view can render a browser-preview rail in the right gutter and hides it below 240px.
 
-File-mention providers receive the viewed Session ID and closing-turn owner, so inherited-history links can address the fork.
-
 ## Table of Contents
 
+- [File ownership](#file-ownership)
 - [System prompt row](#system-prompt-row)
 - [Turn token usage](#turn-token-usage)
 - [Turn Process Folding](#turn-process-folding)
@@ -21,6 +20,13 @@ File-mention providers receive the viewed Session ID and closing-turn owner, so 
 - [Model Experience](#model-experience)
 - [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
 - [Dev Note](#dev-note)
+
+-----
+
+<a id="file-ownership"></a>
+## File ownership
+
+File-mention providers receive the viewed Session ID and closing-turn owner, so inherited-history links can address the fork. The Chat `openFile` injection encodes the viewed Session as the resource owner. An embedded Conversation may also supply a display-host Session; that value selects the right-Sidebar navigator where the tab appears without changing which Session authorizes and resolves the path.
 
 -----
 

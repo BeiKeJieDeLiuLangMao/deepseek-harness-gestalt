@@ -7,7 +7,12 @@ import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import TandemBrowserRuntime from '@deepseek-ai/dsh-browser-runtime-tandem'
-import { BrowserProfileName, BrowserRuntimeError, BrowserWorkspaceId } from '@deepseek-ai/dsh-browser-runtime'
+import {
+  BrowserProfileName,
+  BrowserRuntimeError,
+  BrowserWorkspaceId,
+  type BrowserRuntimeState,
+} from '@deepseek-ai/dsh-browser-runtime'
 import SubprocessLocal from '@deepseek-ai/dsh-subprocess-local'
 
 const FIXTURE = join(dirname(fileURLToPath(import.meta.url)), 'fixtures/tandem-http-fixture.mjs')
@@ -235,6 +240,68 @@ describe('Tandem Browser Runtime configuration', () => {
       const created = await ctx.browserRuntime.create({ profile: 'temporary' })
       expect(created.chrome.partition).toBe('session-protocol-only-tmp-1')
       await ctx.browserRuntime.close({ target: created.target, expectedRevision: 0 })
+    } finally {
+      const index = contexts.indexOf(ctx)
+      if (index !== -1) contexts.splice(index, 1)
+      await ctx.fiber.dispose()
+      await joinSpawnedChild(child)
+      await rmWhenIdle(root)
+    }
+  })
+
+  it('polls an externally managed runtime and republishes the recovered target', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-tandem-external-recovery-'))
+    const port = await freePort()
+    const tokenFile = join(root, 'api-token')
+    const child = spawn(process.execPath, [FIXTURE], {
+      cwd: root,
+      env: {
+        ...process.env,
+        TANDEM_FIXTURE_PORT: String(port),
+        TANDEM_FIXTURE_TOKEN_FILE: tokenFile,
+        TANDEM_FIXTURE_FAULTS: JSON.stringify({ navigate: 'runtime-unavailable' }),
+      },
+      stdio: 'ignore',
+    })
+    const ctx = new Context()
+    contexts.push(ctx)
+    try {
+      await ctx.plugin(TandemBrowserRuntime, {
+        baseUrl: `http://127.0.0.1:${String(port)}`,
+        tokenFile,
+        idPrefix: 'external-recovery',
+        sidecar: false,
+        startupTimeoutMs: 5_000,
+        requestTimeoutMs: 2_000,
+        healthPollMs: 10,
+        reconnectAttempts: 0,
+        processGraceMs: 100,
+      })
+      const projections: BrowserRuntimeState[] = []
+      ctx.on('browser/runtime-state', (state) => { projections.push(state) })
+      const created = await ctx.browserRuntime.create({ profile: 'temporary' })
+      await expect(ctx.browserRuntime.navigate({
+        target: created.target,
+        expectedRevision: created.revision,
+        url: 'https://external-recover.test/',
+      })).rejects.toMatchObject({ code: 'BROWSER_RUNTIME_UNAVAILABLE' })
+      await expect(ctx.browserRuntime.observe({ target: created.target })).resolves.toMatchObject({
+        status: 'open',
+        target: created.target,
+        revision: 2,
+        url: 'about:blank',
+      })
+      expect(projections).toContainEqual(expect.objectContaining({
+        status: 'unavailable',
+        target: created.target,
+        revision: 1,
+        reconnecting: true,
+      }))
+      expect(projections.at(-1)).toEqual(expect.objectContaining({
+        status: 'open',
+        target: created.target,
+        revision: 2,
+      }))
     } finally {
       const index = contexts.indexOf(ctx)
       if (index !== -1) contexts.splice(index, 1)

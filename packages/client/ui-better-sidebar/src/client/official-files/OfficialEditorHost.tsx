@@ -6,7 +6,6 @@ import type {
 } from '@deepseek-ai/dsh-client-ui-slots'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type { SidebarRightViewerDefinition } from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
-import { SessionId } from '@deepseek-ai/dsh-session/types'
 import { IconCheckOutline16, IconFolderOpen16, IconRefreshOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { api, isOutsideWorkspaceMessage, mediaUrl, type SessionScope } from '../api.ts'
 import { BinaryDownload } from '../binary-download.tsx'
@@ -90,7 +89,7 @@ export function OfficialEditorHost(props: OfficialFileBodyProps): ReactNode {
   const { panel, tab } = useTabInfo()
   const homeSessionId = tab.sessionId
   const parsed = useMemo(() => parseOfficialFileAddress(tab.contentId), [tab.contentId])
-  const resourceSessionId = parsed?.scope === 'session' ? SessionId(parsed.sessionId) : undefined
+  const resourceSessionId = parsed?.sessionId
   const cwd = useSessions(sessions => resourceSessionId === undefined
     ? undefined
     : sessions.byId[resourceSessionId]?.cwd)

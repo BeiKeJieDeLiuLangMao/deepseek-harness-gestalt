@@ -10,7 +10,7 @@ DockKit 把每个格正文都做成通用纵向滚动容器。Terminal 正文同
 
 ## Decision
 
-DockKit 支持在标签正文的直接根节点上标记 `data-dockkit-scroll-owner`。带该直接子节点的格会变成裁切溢出的 flex 列，并把纵向滚动交给子节点。没有该标记的正文保留通用格滚动条。
+DockKit 支持在标签正文根节点上标记 `data-dockkit-scroll-owner`。包含该标记的格会变成裁切溢出的 flex 列，并把纵向滚动交给子节点。后代匹配会穿过 keyed Slot 插入的 `display: contents` 包装层；没有该标记的正文保留通用格滚动条。
 
 Better Sidebar 在 Terminal 根节点上添加该属性。其现有 flex 与最小高度规则会占满格，而 xterm viewport 保持为唯一的纵向滚动容器。
 
@@ -24,8 +24,8 @@ Better Sidebar 在 Terminal 根节点上添加该属性。其现有 flex 与最�
 
 ## Consequences
 
-Terminal 输出只在 xterm 内滚动，其他标签正文保留原有 DockKit 滚动行为。未来自带滚动的正文只有在填满格并把标记放在直接根节点上时才能选择该行为。
+Terminal 输出只在 xterm 内滚动，其他标签正文保留原有 DockKit 滚动行为。未来自带滚动的正文只有在填满格并把标记放在根节点上时才能选择该行为。
 
 ## Testing
 
-Desktop 验收检查带标记的 Terminal 根节点是格正文的直接子节点、格正文隐藏溢出且 scroll height 与 client height 相等，以及 xterm viewport 保留纵向滚动。
+Desktop 验收检查带标记的 Terminal 根节点位于格正文内、格正文隐藏溢出且 scroll height 与 client height 相等，以及 xterm viewport 保留纵向滚动。

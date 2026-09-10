@@ -403,17 +403,15 @@ export class TandemBrowserRuntime extends BrowserRuntime {
       const detail = Buffer.from(bytes).toString('utf8').slice(0, 1_000)
       try {
         const parsed: unknown = JSON.parse(detail)
-        if (
-          parsed !== null
-          && typeof parsed === 'object'
-          && !Array.isArray(parsed)
-          && (parsed as { code?: unknown }).code === 'BROWSER_REVISION_CONFLICT'
-        ) {
+        if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          const code = (parsed as { code?: unknown }).code
           const message = (parsed as { error?: unknown }).error
-          throw new BrowserRuntimeError(
-            typeof message === 'string' ? message : detail,
-            'BROWSER_REVISION_CONFLICT',
-          )
+          if (code === 'BROWSER_REVISION_CONFLICT' || code === 'BROWSER_RUNTIME_UNAVAILABLE') {
+            throw new BrowserRuntimeError(
+              `Tandem HTTP ${String(response.status)} for ${path}: ${typeof message === 'string' ? message : detail}`,
+              code,
+            )
+          }
         }
       } catch (error) {
         if (error instanceof BrowserRuntimeError) throw error
@@ -563,13 +561,14 @@ export class TandemBrowserRuntime extends BrowserRuntime {
     const lastOpen = this.firstOpen()
     if (lastOpen === undefined) return [...this.states.values()].at(-1)
     this.recoveryScheduled = true
+    const reconnecting = !this.config.sidecar || this.config.reconnectAttempts > 0
     const projected = projectNow
       ? this.commit({
         status: 'unavailable' as const,
         target: lastOpen.target,
         revision: lastOpen.revision + 1,
         reason,
-        reconnecting: this.config.reconnectAttempts > 0,
+        reconnecting,
       })
       : undefined
     const recovery = this.queue.then(async () => {
@@ -580,7 +579,7 @@ export class TandemBrowserRuntime extends BrowserRuntime {
         target: lastOpen.target,
         revision: current.revision + 1,
         reason,
-        reconnecting: this.config.reconnectAttempts > 0,
+        reconnecting,
       })
       await this.reconnect(lastOpen, unavailable)
     })
@@ -597,6 +596,10 @@ export class TandemBrowserRuntime extends BrowserRuntime {
     lastOpen: BrowserPageState,
     unavailable: Extract<BrowserRuntimeState, { status: 'unavailable' }>,
   ): Promise<void> {
+    if (!this.config.sidecar) {
+      await this.reconnectExternal(lastOpen, unavailable)
+      return
+    }
     let lastError: unknown
     for (let attempt = 0; attempt < this.config.reconnectAttempts; attempt += 1) {
       if (this.closing || this.disposed) return
@@ -623,6 +626,47 @@ export class TandemBrowserRuntime extends BrowserRuntime {
     const current = this.states.get(browserTargetKey(unavailable.target))
     if (this.config.reconnectAttempts > 0 && !this.closing && !this.disposed && current?.status === 'unavailable') {
       this.ctx.logger.warn('browser-runtime-tandem: reconnect attempts exhausted')
+      this.ctx.logger.warn(lastError)
+      this.commit({
+        ...current,
+        revision: current.revision + 1,
+        reason: 'reconnect-failed',
+        reconnecting: false,
+      })
+    }
+  }
+
+  /** Poll an externally owned Host until the same target publishes its recovered revision. */
+  private async reconnectExternal(
+    lastOpen: BrowserPageState,
+    unavailable: Extract<BrowserRuntimeState, { status: 'unavailable' }>,
+  ): Promise<void> {
+    const deadline = Date.now() + this.config.startupTimeoutMs
+    let lastError: unknown
+    while (!this.closing && !this.disposed && Date.now() < deadline) {
+      try {
+        const signal = AbortSignal.timeout(Math.max(1, deadline - Date.now()))
+        const restored = await this.page(lastOpen, signal)
+        if (restored.revision !== unavailable.revision + 1) {
+          throw new BrowserRuntimeError(
+            `Tandem recovered revision ${String(restored.revision)} must follow ${String(unavailable.revision)}`,
+            'BROWSER_PROTOCOL',
+          )
+        }
+        const current = this.states.get(browserTargetKey(unavailable.target))
+        if (current !== unavailable) return
+        this.commit({ ...restored, focused: false })
+        return
+      } catch (error) {
+        lastError = error
+        if (error instanceof BrowserRuntimeError && error.code === 'BROWSER_PROTOCOL') break
+      }
+      const remaining = deadline - Date.now()
+      if (remaining > 0) await this.delay(Math.min(this.config.healthPollMs, remaining), undefined)
+    }
+    const current = this.states.get(browserTargetKey(unavailable.target))
+    if (!this.closing && !this.disposed && current === unavailable) {
+      this.ctx.logger.warn('browser-runtime-tandem: external reconnect timed out')
       this.ctx.logger.warn(lastError)
       this.commit({
         ...current,
@@ -794,28 +838,37 @@ export class TandemBrowserRuntime extends BrowserRuntime {
   }
 
   async navigate(request: BrowserNavigateRequest): Promise<BrowserPageState> {
-    return this.mutateOpenPage(request, async (state) => {
-      const response = objectValue(await this.json('/navigate', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-session': this.sessionNameFor(request.target) },
-        body: JSON.stringify({
-          url: request.url,
-          tabId: this.upstreamTabId(request.target),
-          expectedRevision: state.revision,
-        }),
-      }, request.signal), 'navigate')
-      const revision = numberField(response, 'revision', 'navigate')
-      const fallback = Object.freeze({
-        ...state,
-        revision,
-        url: stringField(response, 'url', 'navigate'),
+    try {
+      return await this.mutateOpenPage(request, async (state) => {
+        const response = objectValue(await this.json('/navigate', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-session': this.sessionNameFor(request.target) },
+          body: JSON.stringify({
+            url: request.url,
+            tabId: this.upstreamTabId(request.target),
+            expectedRevision: state.revision,
+          }),
+        }, request.signal), 'navigate')
+        const revision = numberField(response, 'revision', 'navigate')
+        const fallback = Object.freeze({
+          ...state,
+          revision,
+          url: stringField(response, 'url', 'navigate'),
+        })
+        const page = await this.pageAfterMutation(state, request.signal, fallback)
+        return this.commit({
+          ...page,
+          revision,
+        })
       })
-      const page = await this.pageAfterMutation(state, request.signal, fallback)
-      return this.commit({
-        ...page,
-        revision,
-      })
-    })
+    } catch (error) {
+      if (error instanceof BrowserRuntimeError && error.code === 'BROWSER_RUNTIME_UNAVAILABLE'
+        && /^Tandem HTTP /.test(error.message)) {
+        const reason = /HTTP request failed/.test(error.message) ? 'crashed' : 'unhealthy'
+        this.scheduleRecovery(reason, true)
+      }
+      throw error
+    }
   }
 
   async observe(request: BrowserObserveRequest): Promise<BrowserRuntimeState> {

@@ -3,7 +3,6 @@
 // assembled lane adapts from a coarse width budget and offers no folder
 // handoff: chips open in the right Sidebar's text preview, which has no
 // directory form, so the row shows nothing rather than a dead button.
-import { fileURLToPath } from 'node:url'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
@@ -16,7 +15,6 @@ import {
 import { newEnglishPage, saveFailureShot } from './support.ts'
 
 const MODE = webSnapshotMode()
-const OVERLAY = fileURLToPath(new URL('./produced-files.overlay.yml', import.meta.url))
 const SEED_ID = 'produced-files-web-e2e'
 const DONE = 'PRODUCED_FILES_DONE'
 
@@ -113,7 +111,7 @@ describe('web e2e: a finished turn ends with the files it produced', () => {
   let tripwire: ReturnType<typeof watchConsole>
 
   beforeAll(async () => {
-    scaffold = await launchWebScaffold({ extraOverlayPath: OVERLAY })
+    scaffold = await launchWebScaffold({ nativeOpen: true })
     await seedSession(scaffold, producedFixture(), SEED_ID)
     browser = await chromium.launch()
     page = await newEnglishPage(browser)

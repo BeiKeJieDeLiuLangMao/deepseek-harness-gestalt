@@ -1,12 +1,14 @@
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it } from 'vitest'
 import { SidebarRightTabRegistry } from '@deepseek-ai/dsh-client-ui-sidebar-right/src/client/tab-registry.ts'
+import { SessionId } from '@deepseek-ai/dsh-session/types'
 import {
   officialBuiltinViewers,
   officialFileDefinition,
   OFFICIAL_FILE_ID,
   OFFICIAL_FILE_KIND,
 } from '../src/client/official-files/definitions.ts'
+import { officialFileAddress, parseOfficialFileAddress } from '../src/client/official-files/address.ts'
 import { OfficialFileRuntime } from '../src/client/official-files/runtime.ts'
 
 describe('official file definitions', () => {
@@ -15,7 +17,7 @@ describe('official file definitions', () => {
     registry.register(officialFileDefinition(new OfficialFileRuntime()))
     for (const viewer of officialBuiltinViewers()) registry.registerViewer(viewer)
 
-    const address = (path: string) => `dsh-resource://file/session/s/${path}`
+    const address = (path: string) => officialFileAddress(SessionId('s'), undefined, path)
     expect(registry.claim(address('notes/a.md'))).toMatchObject({ kind: OFFICIAL_FILE_KIND })
     expect(registry.get(OFFICIAL_FILE_KIND)?.id).toBe(OFFICIAL_FILE_ID)
     expect(registry.viewers().map(viewer => [viewer.id, viewer.fetchStrategy])).toEqual([
@@ -33,6 +35,22 @@ describe('official file definitions', () => {
     expect(registry.matchViewer({ address: address('a.ts'), path: 'a.ts' })?.id).toBe('code')
     expect(registry.matchViewer({ address: address('a.data'), path: 'a.data', head: new Uint8Array([1, 0]) })?.id)
       .toBe('binary-download')
+  })
+
+  it('claims canonical dot paths through the registered official type', () => {
+    const registry = new SidebarRightTabRegistry(new Context())
+    registry.register(officialFileDefinition(new OfficialFileRuntime()))
+    const owner = SessionId('child')
+    const cases = [
+      { address: officialFileAddress(owner, '/work', '../outside/a.txt'), path: '../outside/a.txt' },
+      { address: 'dsh-resource://file/session/child/./a.txt', path: './a.txt' },
+      { address: officialFileAddress(owner, '/work', 'dir/../a.txt'), path: 'dir/../a.txt' },
+    ]
+
+    for (const { address, path } of cases) {
+      expect(registry.claim(address)).toMatchObject({ kind: OFFICIAL_FILE_KIND, contentId: address })
+      expect(parseOfficialFileAddress(address)).toEqual({ scope: 'session', sessionId: owner, path })
+    }
   })
 
   it('declares official preferences and rejects malformed file addresses', () => {

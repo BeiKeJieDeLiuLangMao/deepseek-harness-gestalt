@@ -22,9 +22,16 @@ const MAIN_DRAFT = 'Keep this main draft unchanged.'
 const CREATE_PROMPT = 'Create and inspect the child-owned files.'
 const FILE_RESPONSE = 'The child-owned files are ready.'
 const CHILD_FILE = 'child-owned.md'
-const CHILD_CONTENT = '# Child file\nSelected child line two.\nLast child line.\n'
+const CHILD_ROUTE = `dir/../${CHILD_FILE}`
+const CHILD_TARGET_LINE = 80
+const CHILD_TARGET = 'SIDECHAT_TARGET_LINE_080'
+const CHILD_CONTENT = `${Array.from({ length: 120 }, (_, index) => {
+  if (index === 0) return '# Child file'
+  if (index + 1 === CHILD_TARGET_LINE) return CHILD_TARGET
+  return `Child filler line ${String(index + 1).padStart(3, '0')}.`
+}).join('\n')}\n`
 const CHILD_FILES = [CHILD_FILE, ...Array.from({ length: 6 }, (_, index) => `child-extra-${String(index + 1)}.txt`)]
-const SHOT_DIR = fileURLToPath(new URL('../../../.artifacts/screenshots/sidechat-layout', import.meta.url))
+const SHOT_DIR = fileURLToPath(new URL('../../../.artifacts/screenshots/sidechat-layout-dotpath', import.meta.url))
 
 class SideChatLayoutAdapter extends LlmAdapter {
   private childFileStage = 0
@@ -60,7 +67,7 @@ class SideChatLayoutAdapter extends LlmAdapter {
     if (JSON.stringify(options.messages).includes(CREATE_PROMPT) && this.childFileStage === 1) {
       this.childFileStage = 2
       const id = ToolCallId('sidechat-read-child-line')
-      const args = JSON.stringify({ file_path: CHILD_FILE, offset: 2, limit: 1 })
+      const args = JSON.stringify({ file_path: CHILD_ROUTE, offset: CHILD_TARGET_LINE, limit: 1 })
       yield { type: 'block-start', index: 0, blockType: 'tool-call' }
       yield { type: 'tool-call-delta', index: 0, id, name: 'read', argumentsDelta: args }
       yield { type: 'block-end', index: 0, block: { type: 'tool-call', id, name: 'read', arguments: args } }
@@ -261,6 +268,7 @@ describe('web e2e: Side Chat fills the official workbench', () => {
     const sidechatTabId = await panel.locator('[data-dockkit-tab][aria-selected="true"]')
       .getAttribute('data-dockkit-tab')
     if (sidechatTabId === null) throw new Error('Side Chat tab has no durable tab id')
+    mkdirSync(join(scaffold.workspaceCwd, 'workspace', 'dir'), { recursive: true })
     const fileSettled = scaffold.whenTurnSettled()
     await sideComposer.fill(CREATE_PROMPT)
     await sideComposer.press('Enter')
@@ -271,21 +279,28 @@ describe('web e2e: Side Chat fills the official workbench', () => {
     if (await process.getAttribute('aria-expanded') !== 'true') await process.click()
     const readRow = sidechat.locator('[data-variant="read"]').last()
     await readRow.waitFor({ timeout: 15_000 })
-    await readRow.getByRole('button', { name: CHILD_FILE, exact: true }).click()
+    await readRow.getByRole('button', { name: CHILD_ROUTE, exact: true }).click()
 
     const fileHost = panel.locator('[data-official-file-host]')
     await fileHost.waitFor({ timeout: 15_000 })
     expect(await fileHost.getAttribute('data-official-file-host'))
-      .toContain(`/session/${encodeURIComponent(String(childId))}/${CHILD_FILE}`)
+      .toContain(`/session/${encodeURIComponent(String(childId))}/${CHILD_ROUTE}`)
     const pathInput = fileHost.locator(`input[title$="/${CHILD_FILE}"]`)
     await pathInput.waitFor({ timeout: 15_000 })
-    await expect.poll(() => pathInput.inputValue()).toBe(CHILD_FILE)
-    const secondLine = fileHost.locator('.cm-line').nth(1)
-    await expect.poll(() => secondLine.textContent()).toContain('Selected child line two.')
+    await expect.poll(() => pathInput.inputValue()).toBe(CHILD_ROUTE)
+    const targetLine = fileHost.locator('.cm-line').filter({ hasText: CHILD_TARGET })
+    await targetLine.waitFor({ timeout: 15_000 })
+    const scroller = fileHost.locator('.cm-scroller')
+    await expect.poll(() => scroller.evaluate(element => element.scrollTop)).toBeGreaterThan(0)
+    const [targetBox, scrollerBox] = await Promise.all([targetLine.boundingBox(), scroller.boundingBox()])
+    if (targetBox === null || scrollerBox === null) throw new Error('target line landing is not measurable')
+    expect(targetBox.y).toBeGreaterThanOrEqual(scrollerBox.y)
+    expect(targetBox.y + targetBox.height).toBeLessThanOrEqual(scrollerBox.y + scrollerBox.height)
+    await shot(page, '05-child-line-80-landing')
     const editMode = fileHost.getByRole('button', { name: 'Edit', exact: true })
     const previewMode = fileHost.getByRole('button', { name: 'Preview', exact: true })
     expect(await editMode.getAttribute('class')).not.toBe(await previewMode.getAttribute('class'))
-    await secondLine.click()
+    await targetLine.click()
     await page.keyboard.press('Home')
     await page.keyboard.down('Shift')
     await page.keyboard.press('End')
@@ -296,10 +311,10 @@ describe('web e2e: Side Chat fills the official workbench', () => {
 
     await panel.locator(`[data-dockkit-tab="${sidechatTabId}"]`).click()
     await sideComposer.waitFor({ timeout: 15_000 })
-    await expect.poll(() => sideComposer.textContent()).toContain(`${CHILD_FILE}:2`)
-    expect(await sideComposer.textContent()).toContain('Selected')
+    await expect.poll(() => sideComposer.textContent()).toContain(`${CHILD_ROUTE}:${String(CHILD_TARGET_LINE)}`)
+    expect(await sideComposer.textContent()).toContain(CHILD_TARGET)
     expect(await mainComposer.textContent()).toBe(MAIN_DRAFT)
-    await shot(page, '05-child-selection-routed')
+    await shot(page, '06-child-selection-routed')
 
     await sidechat.getByText('Show in folder', { exact: true }).click()
     const revealed = panel.locator('[data-dsh-revealed="true"]')
@@ -307,7 +322,7 @@ describe('web e2e: Side Chat fills the official workbench', () => {
       .toBe(CHILD_FILES.length)
     expect(await revealed.filter({ hasText: CHILD_FILE }).count()).toBe(1)
     expect(await mainComposer.textContent()).toBe(MAIN_DRAFT)
-    await shot(page, '06-child-files-revealed')
+    await shot(page, '07-child-files-revealed')
 
     await page.locator('[data-sidebar-bottom-toggle]').first().click()
     const bottom = page.locator('[data-sidebar-bottom-panel][data-sidebar-bottom-open]')
@@ -320,7 +335,7 @@ describe('web e2e: Side Chat fills the official workbench', () => {
     expectAnchored(bottomGeometry, 120)
     expect(bottomGeometry.host.height).toBeGreaterThan(150)
     expect(bottomGeometry.host.height).toBeLessThan(500)
-    await shot(page, '07-empty-bottom')
+    await shot(page, '08-empty-bottom')
 
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
