@@ -183,9 +183,21 @@ describe('CLIProxyAPI supervisor', () => {
       auth_index: 'glm-0',
       url: 'https://quota.example.test/usage',
     })
+    await expect(running.management.request({
+      authIndex: '   ' as never,
+      method: 'GET',
+      url: 'https://quota.example.test/usage',
+      headers: { Authorization: 'Bearer $TOKEN$' },
+    })).resolves.toMatchObject({ statusCode: 0, error: 'empty account reference' })
     expect(text).not.toContain(process.env.DEEPSEEK_API_KEY ?? '__absent__')
     expect((await stat(config)).mode & 0o777).toBe(0o600)
     await supervisor.shutdown()
+    await expect(running.management.request({
+      authIndex: 'glm-0' as never,
+      method: 'GET',
+      url: 'https://quota.example.test/usage',
+      headers: { Authorization: 'Bearer $TOKEN$' },
+    })).resolves.toMatchObject({ statusCode: 0, error: /not current|aborted/ })
     await expect(stat(stateRoot)).rejects.toThrow()
     await expect(fetch(new URL('/models', running.capability.baseURL))).rejects.toThrow()
   })
