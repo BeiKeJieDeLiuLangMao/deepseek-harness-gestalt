@@ -18,8 +18,10 @@ flowchart TD
     pkg_timeout["timeout"]
   end
   subgraph group_llm["packages/llm"]
+    pkg_cliproxy_quota["cliproxy-quota"]
     pkg_llm["llm"]
     pkg_llm_deepseek["llm-deepseek"]
+    pkg_llm_gestalt_account_pool["llm-gestalt-account-pool"]
     pkg_llm_pi_ai["llm-pi-ai"]
     pkg_llm_retry["llm-retry"]
     pkg_token_meter["token-meter"]
@@ -412,6 +414,8 @@ flowchart TD
   pkg_typert_generator --> pkg_invariants
   pkg_typert_protocol --> pkg_invariants
   pkg_typert_registry --> pkg_invariants
+  pkg_cliproxy_quota --> pkg_brand
+  pkg_cliproxy_quota --> pkg_invariants
   pkg_attachment --> pkg_brand
   pkg_attachment --> pkg_invariants
   pkg_browser_runtime --> pkg_brand
@@ -555,6 +559,9 @@ flowchart TD
   pkg_remote_protocol --> pkg_invariants
   pkg_remote_protocol --> pkg_platform_account
   pkg_remote_protocol --> pkg_project_membership
+  pkg_llm_gestalt_account_pool --> pkg_invariants
+  pkg_llm_gestalt_account_pool --> pkg_llm
+  pkg_llm_gestalt_account_pool --> pkg_llm_deepseek
   pkg_llm_pi_ai --> pkg_attachment
   pkg_llm_pi_ai --> pkg_authorization
   pkg_llm_pi_ai --> pkg_credentials
@@ -1764,6 +1771,7 @@ flowchart TD
 | [`typert-generator`](../packages/typert/generator) | `typert` | [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`typert-protocol`](../packages/typert/protocol) | `typert` | [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`typert-registry`](../packages/typert/registry) | `typert` | [`invariants`](../packages/runtime-diagnostics/invariants) |
+| [`cliproxy-quota`](../packages/llm/cliproxy-quota) | `llm` | [`brand`](../packages/util/brand), [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`attachment`](../packages/attachment/attachment) | `attachment` | [`brand`](../packages/util/brand), [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`browser-runtime`](../packages/browser/browser-runtime) | `browser` | [`brand`](../packages/util/brand), [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`client-modules`](../packages/client/modules) | `client` | [`host-webserver`](../packages/host/webserver), [`invariants`](../packages/runtime-diagnostics/invariants) |
@@ -1807,6 +1815,7 @@ flowchart TD
 | [`project-membership-core`](../packages/platform/project-membership-core) | `platform` | [`atomic-write`](../packages/util/atomic-write), [`invariants`](../packages/runtime-diagnostics/invariants), [`platform-account`](../packages/platform/platform-account), [`project-membership`](../packages/platform/project-membership) |
 | [`project-membership-http`](../packages/platform/project-membership-http) | `platform` | [`host-webserver`](../packages/host/webserver), [`invariants`](../packages/runtime-diagnostics/invariants), [`platform-account`](../packages/platform/platform-account), [`platform-account-http`](../packages/platform/platform-account-http), [`project-membership`](../packages/platform/project-membership) |
 | [`remote-protocol`](../packages/platform/remote-protocol) | `platform` | [`brand`](../packages/util/brand), [`invariants`](../packages/runtime-diagnostics/invariants), [`platform-account`](../packages/platform/platform-account), [`project-membership`](../packages/platform/project-membership) |
+| [`llm-gestalt-account-pool`](../packages/llm/llm-gestalt-account-pool) | `llm` | [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`llm-deepseek`](../packages/llm/llm-deepseek) |
 | [`llm-pi-ai`](../packages/llm/llm-pi-ai) | `llm` | [`attachment`](../packages/attachment/attachment), [`authorization`](../packages/credentials/authorization), [`credentials`](../packages/credentials/credentials), [`invariants`](../packages/runtime-diagnostics/invariants), [`launch-environment`](../packages/util/launch-environment), [`llm`](../packages/llm/llm), [`settings`](../packages/settings/settings), [`timeout`](../packages/util/timeout) |
 | [`agent`](../packages/core/agent) | `core` | [`invariants`](../packages/runtime-diagnostics/invariants), [`llm`](../packages/llm/llm), [`scope`](../packages/core/scope), [`session`](../packages/core/session), [`system-prompt`](../packages/core/system-prompt), [`typert-protocol`](../packages/typert/protocol) |
 | [`skill-badge`](../packages/skill/skill-badge) | `skill` | [`invariants`](../packages/runtime-diagnostics/invariants), [`skill`](../packages/skill/skill) |
