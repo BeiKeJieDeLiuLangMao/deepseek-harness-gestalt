@@ -318,7 +318,7 @@ function staticLinkedConfig(
       // resolve and inline every specifier missing from the npm production
       // sections, which is the coupling this preset exists to remove. The name
       // is also the roster marker {@link isStaticLinkedConfig} reads.
-      name: STATIC_LINKED_PLUGIN,
+      name: roster ? STATIC_LINKED_PLUGIN : `_${STATIC_LINKED_PLUGIN}`,
       resolveId: {
         order: 'pre' as const,
         handler(source: string, importer: string | undefined) {

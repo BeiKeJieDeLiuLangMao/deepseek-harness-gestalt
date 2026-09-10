@@ -1,10 +1,10 @@
 /**
  * Physical files for a loader-delivered browser plugin. The HTTP module host
- * serves these CommonJS factories through its stable `/client.js` route.
+ * serves these factories through its stable `/client.js` route.
  */
 export const DYNAMIC_CLIENT_ARTIFACT = {
-  entryFileName: 'client.cjs',
-  exportPath: './lib/client.cjs',
-  relativePath: 'lib/client.cjs',
-  sourceMapPath: 'lib/client.cjs.map',
+  entryFileName: 'client.js',
+  exportPath: './lib/client.js',
+  relativePath: 'lib/client.js',
+  sourceMapPath: 'lib/client.js.map',
 } as const
