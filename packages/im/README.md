@@ -24,6 +24,7 @@ The IM group provides account takeover and message routing capabilities for exte
 | Package | Role | ctx key |
 |---|---|---|
 | [`im-core`](im-core/README.md) | Domain configuration, account metadata, route rules, and simulation target binding | `ctx.imConfig` |
+| [`im-dingtalk`](im-dingtalk/README.md) | DingTalk DWS adapter for message consumption, sending, and status inquiry | `ctx.imDingtalk` |
 
 -----
 
