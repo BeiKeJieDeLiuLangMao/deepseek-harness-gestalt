@@ -8,7 +8,7 @@
 // Zero model calls: everything is pure client + persistence state on a blank
 // frame, so there is no fixture and a stray stream would fail loud on the
 // open llm seam.
-import { readFile } from 'node:fs/promises'
+import { mkdir, readFile } from 'node:fs/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
@@ -30,7 +30,6 @@ const DIALOG_EN_EXPECTED = join(SNAPSHOT_DIR, 'dialog-en.expected.md')
 // overlay view paints above official pages.
 const DESKTOP_SETTINGS_EXPECTED = join(SNAPSHOT_DIR, 'desktop-settings.expected.md')
 const DESKTOP_ACCOUNT_WAITING_EXPECTED = join(SNAPSHOT_DIR, 'desktop-account-waiting.expected.md')
-const SUB2API_ERROR_EXPECTED = join(SNAPSHOT_DIR, 'sub2api-error.expected.md')
 const PHONE_DEVICES_EXPECTED = join(SNAPSHOT_DIR, 'phone-devices.expected.md')
 const PHONE_DEVICES_RUNTIME_READY_EXPECTED = join(SNAPSHOT_DIR, 'phone-devices-runtime-ready.expected.md')
 const PLUGIN_ROW_SELECTOR = '[data-plugin-entry$="ui-settings"]'
@@ -713,23 +712,16 @@ describe('web e2e: the Desktop composition settings overlay document', () => {
       await captureStableAria(page, '[data-desktop-account-control="authorizing"]', scaffold.workspaceCwd),
       MODE,
     )
-    // The Sub2API offer card is a render-only projection of the fixture
-    // bridge's missing snapshot: the offer copy plus the enable affordance,
-    // with the data-directory and uninstall semantics spelled out.
     await dialog.getByRole('button', { name: '账号池' }).click()
-    const offer = dialog.locator('[data-desktop-sub2api-state="missing"]')
-    await expect.poll(() => offer.count(), { timeout: 10_000 }).toBe(1)
-    await expect.poll(() => offer.getByRole('heading', { name: 'Sub2API 账号池' }).count()).toBe(1)
-    await expect.poll(() => offer.getByText(/~\/\.dsh\/sub2api\/data/).count()).toBe(1)
-    const enable = offer.getByRole('button', { name: '下载并启用' })
-    await expect.poll(() => enable.count()).toBe(1)
-    await enable.click()
-    await expect.poll(() => dialog.locator('[data-desktop-sub2api-state="error"]').count()).toBe(1)
-    await compareOrRefreshGolden(SUB2API_ERROR_EXPECTED, await captureStableAria(
-      page,
-      '[data-desktop-sub2api-state="error"]',
-      scaffold.workspaceCwd,
-    ), MODE)
+    const pool = dialog.locator('[data-desktop-account-pool-state]')
+    await expect.poll(() => pool.count(), { timeout: 10_000 }).toBe(1)
+    await expect.poll(() => pool.getByText('内置账号池').count()).toBe(1)
+    const add = pool.getByRole('button', { name: '+ 添加账号 ▾' })
+    await expect.poll(() => add.count()).toBe(1)
+    await add.click()
+    for (const kind of ['KIMI', 'XAI', 'CODEX', 'ANTHROPIC', 'ANTIGRAVITY', 'GLM'] as const) {
+      await expect.poll(() => pool.getByRole('button', { name: kind, exact: true }).count()).toBe(1)
+    }
     // Closing reports through the overlay result channel with the Host's
     // request id — the page has no local close state in this mode. The Host
     // then hides the view and pushes the null state; the page unmounts.
@@ -748,7 +740,268 @@ describe('web e2e: the Desktop composition settings overlay document', () => {
       'desktop-account-waiting.expected.md',
       'desktop-settings.expected.md', 'dialog-en.expected.md', 'dialog.expected.md',
       'phone-devices-runtime-ready.expected.md', 'phone-devices.expected.md',
-      'plugins.expected.md', 'sub2api-error.expected.md',
+      'plugins.expected.md',
     ])
   }, 60_000)
+})
+
+describe('web e2e: Desktop account-pool experience route', () => {
+  let scaffold: WebScaffold
+  let browser: Browser
+  let page: Page
+  let tripwire: ReturnType<typeof watchConsole>
+
+  beforeAll(async () => {
+    scaffold = await launchWebScaffold({
+      extraOverlayPath: fileURLToPath(new URL('../../desktop/cordis.patch.yml', import.meta.url)),
+    })
+    browser = await chromium.launch()
+    page = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: ZH_BROWSER_LOCALE })
+    tripwire = watchConsole(page)
+    const { installDesktopBridgeFixture } = await import(pathToFileURL(DESKTOP_BRIDGE_FIXTURE).href) as {
+      installDesktopBridgeFixture: (platform: 'darwin' | 'win32') => void
+    }
+    const platform: 'darwin' | 'win32' = 'darwin'
+    await page.addInitScript(installDesktopBridgeFixture, platform)
+    await page.addInitScript(() => {
+      const bridge = (globalThis as { dshDesktop?: Record<string, unknown> }).dshDesktop
+      if (bridge === undefined) throw new Error('bridge fixture must install first')
+      const overlay = { kind: 'settings', requestId: 'overlay-account-pool', sectionId: 'sub2api' }
+      let pool: Record<string, unknown> = { state: 'ready', accounts: [] }
+      const listeners = new Set<(value: Record<string, unknown>) => void>()
+      const setPool = (next: Record<string, unknown>): void => {
+        pool = next
+        for (const listener of [...listeners]) listener(pool)
+      }
+      const withoutLogin = (current: Record<string, unknown>): Record<string, unknown> => {
+        const { login: _login, ...rest } = current
+        return rest
+      }
+      bridge.chromeOverlayGetState = async () => overlay
+      bridge.chromeOverlayResult = () => {}
+      bridge.onChromeOverlayState = (listener: (value: unknown) => void) => {
+        listener(overlay)
+        return () => {}
+      }
+      bridge.onChromeOverlayResult = () => () => {}
+      bridge.accountPoolGetSnapshot = async () => pool
+      bridge.onAccountPoolSnapshot = (listener: (value: Record<string, unknown>) => void) => {
+        listeners.add(listener)
+        listener(pool)
+        return () => { listeners.delete(listener) }
+      }
+      bridge.accountPoolStartLogin = async (kind: string) => {
+        const login = kind === 'glm'
+          ? { kind, flow: 'glm-key' }
+          : kind === 'kimi' || kind === 'xai'
+            ? {
+              kind,
+              flow: 'device',
+              state: 'device-1',
+              url: `https://auth.${kind}.example.test/device/verify?user_code=${kind.toUpperCase()}-1234`,
+              userCode: `${kind.toUpperCase()}-1234`,
+            }
+            : { kind, flow: 'pkce', state: 'pkce-1' }
+        setPool({ ...pool, login })
+        return login
+      }
+      bridge.accountPoolCancelLogin = async () => {
+        setPool(withoutLogin(pool))
+        return pool
+      }
+      bridge.accountPoolSubmitGlmKey = async (input: { apiKey: string }) => {
+        if (typeof input.apiKey !== 'string' || input.apiKey.length === 0) return pool
+        const accounts = Array.isArray(pool.accounts) ? pool.accounts as Array<Record<string, unknown>> : []
+        setPool({
+          ...withoutLogin(pool),
+          accounts: [...accounts, {
+            authIndex: 'glm-0',
+            name: 'glm-coding-plan.json',
+            provider: 'glm',
+            label: 'GLM Coding Plan',
+            email: 'glm-user@example.test',
+            status: 'active',
+            enabled: true,
+            successCount: 0,
+            failCount: 0,
+            quota: [],
+          }],
+        })
+        return pool
+      }
+      bridge.accountPoolSetEnabled = async (name: string, enabled: boolean) => {
+        const accounts = Array.isArray(pool.accounts) ? pool.accounts as Array<Record<string, unknown>> : []
+        setPool({
+          ...pool,
+          accounts: accounts.map(account => account.name === name ? { ...account, enabled } : account),
+        })
+        return pool
+      }
+      bridge.accountPoolDelete = async (name: string) => {
+        const accounts = Array.isArray(pool.accounts) ? pool.accounts as Array<Record<string, unknown>> : []
+        setPool({ ...pool, accounts: accounts.filter(account => account.name !== name) })
+        return pool
+      }
+      bridge.accountPoolRefreshQuota = async (authIndex: string) => {
+        const accounts = Array.isArray(pool.accounts) ? pool.accounts as Array<Record<string, unknown>> : []
+        setPool({
+          ...pool,
+          accounts: accounts.map(account => account.authIndex === authIndex
+            ? {
+              ...account,
+              quota: [{
+                key: '5h',
+                label: '5h',
+                remainingPercent: 40,
+                timeRemainingPercent: 70,
+                status: 'known',
+              }],
+            }
+            : account),
+        })
+        return pool
+      }
+      Object.defineProperty(globalThis, '__setAccountPool', { configurable: true, value: setPool })
+    })
+    await page.goto(`${scaffold.baseUrl}?dsh-desktop-overlay=1`, { waitUntil: 'load' })
+    await page.waitForSelector('[role="dialog"]', { timeout: 30_000 })
+  }, 120_000)
+
+  afterAll(async () => {
+    await browser?.close()
+    await scaffold?.close()
+  })
+
+  it('walks empty pool, logins, dual-face cards, unknown quota, and core error', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-settings-account-pool-route'))
+    const gifDir = process.env.DSH_RECORD_ACCOUNT_POOL_GIF === '1'
+      ? fileURLToPath(new URL('../../../.playwright-mcp/gif-frames-account-pool-full', import.meta.url))
+      : undefined
+    if (gifDir !== undefined) await mkdir(gifDir, { recursive: true })
+    const shot = async (name: string): Promise<void> => {
+      if (gifDir === undefined) return
+      await page.screenshot({ path: join(gifDir, `${name}.png`) })
+    }
+    const dialog = page.getByRole('dialog', { name: '设置' })
+    await dialog.getByRole('button', { name: '账号池' }).click()
+    const pool = dialog.locator('[data-desktop-account-pool-state]')
+    await expect.poll(() => pool.count(), { timeout: 10_000 }).toBe(1)
+    await expect.poll(() => pool.getByTestId('account-pool-title').innerText()).toBe('内置账号池')
+    expect(await pool.innerText()).not.toMatch(/127\.0\.0\.1:8317|Composite|PROTOTYPE DRAFT/)
+    await expect.poll(() => pool.getByText('共 0 个凭证').count()).toBe(1)
+    await shot('00-empty-ready')
+    await pool.getByRole('button', { name: '+ 添加账号 ▾' }).click()
+    for (const kind of ['KIMI', 'XAI', 'CODEX', 'ANTHROPIC', 'ANTIGRAVITY', 'GLM'] as const) {
+      await expect.poll(() => pool.getByRole('button', { name: kind, exact: true }).count()).toBe(1)
+    }
+    await shot('01-add-menu')
+    await pool.getByRole('button', { name: 'GLM', exact: true }).click()
+    const key = page.locator('input[type="password"]')
+    await expect.poll(() => key.count()).toBe(1)
+    expect(await key.getAttribute('type')).toBe('password')
+    await key.fill('glm-coding-plan-fixture')
+    await shot('02-glm-masked')
+    await page.getByRole('button', { name: '取消' }).click()
+    await expect.poll(() => page.locator('input[type="password"]').count()).toBe(0)
+    await pool.getByRole('button', { name: '+ 添加账号 ▾' }).click()
+    await pool.getByRole('button', { name: 'KIMI', exact: true }).click()
+    await expect.poll(() => page.getByText('KIMI-1234', { exact: true }).count()).toBe(1)
+    await expect.poll(() => page.getByText('https://auth.kimi.example.test/device/verify?user_code=KIMI-1234').count()).toBe(1)
+    await shot('03-kimi-device')
+    await page.getByRole('button', { name: '取消' }).click()
+    await pool.getByRole('button', { name: '+ 添加账号 ▾' }).click()
+    await pool.getByRole('button', { name: 'CODEX', exact: true }).click()
+    await expect.poll(() => page.getByText('正在等待 CODEX 浏览器授权…').count()).toBe(1)
+    await page.getByRole('button', { name: '取消' }).click()
+    await page.evaluate(() => {
+      const setPool = (globalThis as { __setAccountPool?: (value: unknown) => void }).__setAccountPool
+      setPool?.({
+        state: 'ready',
+        accounts: [
+          {
+            authIndex: 'codex-1',
+            name: 'codex-pool-engine.json',
+            provider: 'codex',
+            label: 'Pro 20x',
+            email: 'pool-engine@example.test',
+            status: 'active',
+            enabled: true,
+            successCount: 12,
+            failCount: 1,
+            quota: [{
+              key: '5h',
+              label: '5h',
+              remainingPercent: 40,
+              timeRemainingPercent: 70,
+              status: 'known',
+            }],
+          },
+          {
+            authIndex: 'antigravity-1',
+            name: 'antigravity-dev-alpha.json',
+            provider: 'antigravity',
+            label: 'Pro',
+            email: 'dev-alpha@example.test',
+            status: 'error',
+            statusMessage: '额度获取失败: auth token refresh failed',
+            enabled: false,
+            successCount: 0,
+            failCount: 3,
+            quota: [],
+          },
+          {
+            authIndex: 'kimi-1',
+            name: 'kimi-research-seat.json',
+            provider: 'kimi',
+            label: 'Standard',
+            email: 'research-seat@example.test',
+            status: 'active',
+            enabled: true,
+            successCount: 4,
+            failCount: 0,
+            quota: [{ key: 'unknown', label: 'unknown', status: 'failure' }],
+          },
+        ],
+      })
+    })
+    await expect.poll(() => pool.getByTestId('account-card-codex-1').count()).toBe(1)
+    expect(await pool.getByTestId('account-card-codex-1').getAttribute('data-current-face')).toBe('A')
+    await expect.poll(() => pool.getByText('额度获取失败: auth token refresh failed').count()).toBe(1)
+    await shot('04-management-cards')
+    await pool.getByTestId('global-face-btn-b').click()
+    expect(await pool.getByTestId('account-card-codex-1').getAttribute('data-current-face')).toBe('B')
+    await expect.poll(() => pool.getByText('额度剩余 40%').count()).toBe(1)
+    await expect.poll(() => pool.getByText('时间窗口剩余 70%').count()).toBe(1)
+    await expect.poll(() => pool.getByText('暂未获取到该账号配额数据，或该提供商不提供主动额度查询。').count()).toBe(1)
+    await expect.poll(() => pool.getByText('未知').count()).toBeGreaterThan(0)
+    await shot('05-global-quota')
+    await pool.getByTestId('card-flip-btn-codex-1').click()
+    expect(await pool.getByTestId('account-card-codex-1').getAttribute('data-current-face')).toBe('A')
+    expect(await pool.getByTestId('account-card-kimi-1').getAttribute('data-current-face')).toBe('B')
+    await shot('06-one-card-flipped')
+    await shot('07-unknown-quota')
+    await pool.getByTestId('global-face-btn-a').click()
+    expect(await pool.getByTestId('account-card-codex-1').getAttribute('data-current-face')).toBe('A')
+    await pool.getByRole('button', { name: 'codex (1)', exact: true }).click()
+    await expect.poll(() => pool.getByTestId('account-card-kimi-1').count()).toBe(0)
+    await pool.getByRole('button', { name: /全部/ }).click()
+    await expect.poll(() => pool.getByTestId('account-card-kimi-1').count()).toBe(1)
+    await pool.getByTestId('account-card-codex-1').locator('label').click()
+    await expect.poll(() => page.evaluate(() =>
+      ((globalThis as { dshDesktop?: { accountPoolGetSnapshot: () => Promise<{ accounts: Array<{ enabled: boolean }> }> } })
+        .dshDesktop?.accountPoolGetSnapshot() ?? Promise.resolve({ accounts: [] }))
+        .then(snapshot => snapshot.accounts[0]?.enabled),
+    )).toBe(false)
+    const snapshot = await page.evaluate(() =>
+      (globalThis as { dshDesktop?: { accountPoolGetSnapshot: () => Promise<unknown> } }).dshDesktop?.accountPoolGetSnapshot())
+    expect(JSON.stringify(snapshot)).not.toMatch(/api-key|secret|Bearer|glm-coding-plan-fixture/i)
+    await page.evaluate(() => {
+      const setPool = (globalThis as { __setAccountPool?: (value: unknown) => void }).__setAccountPool
+      setPool?.({ state: 'error', accounts: [], error: 'kernel failed' })
+    })
+    await expect.poll(() => pool.getByText('kernel failed').count()).toBe(1)
+    expect(await pool.getAttribute('data-desktop-account-pool-state')).toBe('error')
+    await shot('08-core-error')
+    expect(tripwire.pageErrors).toEqual([])
+  }, 90_000)
 })

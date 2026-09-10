@@ -1150,6 +1150,26 @@ export interface DeepSeekCatalogModel {
 
 来源：[`packages/llm/llm-deepseek/src/index.ts:106`](../packages/llm/llm-deepseek/src/index.ts)
 
+<a id="deepseek-aidsh-llm-gestalt-account-pool"></a>
+
+## `@deepseek-ai/dsh-llm-gestalt-account-pool`
+
+需要：`llm`
+
+```ts config-catalog
+/** Host-injected authority; values stay process-private and out of settings. */
+export interface Config {
+  /** IPv4-loopback HTTPS CLIProxyAPI `/v1` endpoint owned by this Desktop instance. */
+  readonly baseURL: string
+  /** Inference-only key generated for this Desktop runtime generation. */
+  readonly apiKey: string
+  /** Catalog refresh interval in milliseconds; defaults to 2,000. */
+  readonly refreshIntervalMs?: number
+}
+```
+
+来源：[`packages/llm/llm-gestalt-account-pool/src/index.ts:14`](../packages/llm/llm-gestalt-account-pool/src/index.ts)
+
 <a id="deepseek-aidsh-llm-pi-ai"></a>
 
 ## `@deepseek-ai/dsh-llm-pi-ai`
@@ -4581,6 +4601,7 @@ export interface Config {
 - `@deepseek-ai/dsh-client-ui-primitives`（[`packages/client/ui-primitives/src/index.ts`](../packages/client/ui-primitives/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-slots`（[`packages/client/ui-slots/src/index.ts`](../packages/client/ui-slots/src/index.ts)）
 - `@deepseek-ai/dsh-client-web`（[`packages/client/web/src/index.ts`](../packages/client/web/src/index.ts)）
+- `@deepseek-ai/dsh-cliproxy-quota`（[`packages/llm/cliproxy-quota/src/index.ts`](../packages/llm/cliproxy-quota/src/index.ts)）
 - `@deepseek-ai/dsh-cmdline`（[`packages/boot/cmdline/src/index.ts`](../packages/boot/cmdline/src/index.ts)）
 - `@deepseek-ai/dsh-code-runtime-python`（[`packages/code-runtime/code-runtime-python/src/index.ts`](../packages/code-runtime/code-runtime-python/src/index.ts)）
 - `@deepseek-ai/dsh-home-paths`（[`packages/util/home-paths/src/index.ts`](../packages/util/home-paths/src/index.ts)）

@@ -466,6 +466,15 @@
         "tests/**/*.ts"
       ]
     },
+    "packages/llm/cliproxy-quota": {
+      "entry": [
+        "tests/**/*.spec.ts"
+      ],
+      "project": [
+        "src/**/*.ts",
+        "tests/**/*.ts"
+      ]
+    },
     "packages/llm/llm-deepseek": {
       "entry": [
         "tests/**/*.spec.ts",
@@ -766,6 +775,7 @@
       ],
       "ignoreDependencies": [
         "@deepseek-ai/dsh-client-ui-phone",
+        "@deepseek-ai/dsh-llm-gestalt-account-pool",
         "@deepseek-ai/dsh-mobile",
         "@deepseek-ai/dsh-phone-environment",
         "@deepseek-ai/dsh-phone-runtime",

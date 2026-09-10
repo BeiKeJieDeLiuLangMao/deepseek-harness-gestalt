@@ -152,6 +152,7 @@ const NON_SOURCE_DIRECTORIES = new Set([
 export const TRANSLATION_SCOPE_GLOB_EXCLUDES = [
   '.agents/notes/archived/**',
   '**/node_modules/**',
+  'catalog/cliproxyapi/**',
   '**/lib/**',
   '**/.pnpm-store/**',
   '**/.cache/**',

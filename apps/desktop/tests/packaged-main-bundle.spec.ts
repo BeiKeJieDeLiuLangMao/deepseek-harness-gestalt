@@ -108,6 +108,9 @@ describe('packaged Desktop main bundle', () => {
     expect(desktopPackage.dependencies?.['https-proxy-agent']).toBe('^7.0.6')
     expect(source).toContain('companion entry search')
     expect(source).not.toContain('DSH_PLATFORM_ORIGIN')
+    expect(JSON.parse(readFileSync(join(desktop, 'out', 'cliproxyapi-source.json'), 'utf8'))).toEqual({
+      sourceSHA: '1d25ceb7f38736880880a5a0d9e08ebb5349d950',
+    })
     expect(JSON.parse(readFileSync(join(desktop, 'out', 'operated-platform.json'), 'utf8'))).toEqual({
       environment: 'production',
       origin: 'https://platform.fixture.example',
