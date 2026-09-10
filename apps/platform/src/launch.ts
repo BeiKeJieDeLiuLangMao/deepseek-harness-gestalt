@@ -195,9 +195,8 @@ export async function launchOperatedPlatform(
       ? new PostgresRemoteAttachmentStore(context, environment.databaseIdentity, postgres, {
         ...config.remoteAttachments,
         quotaCleanup,
-        authorizePairing: async (client, pairingId) => {
-          await authorizeAttachmentPairing(client, environment.databaseIdentity, pairingId)
-        },
+        authorizePairing: (client, pairingId) =>
+          authorizeAttachmentPairing(client, environment.databaseIdentity, pairingId),
       })
       : new OssRemoteAttachmentStore(
         context,
@@ -209,9 +208,8 @@ export async function launchOperatedPlatform(
           objectPrefix: config.oss.objectPrefix,
           capacityRetryAfterSeconds: Math.max(1, Math.ceil(config.relay.capacityRetryAfterMs / 1_000)),
           quotaCleanup,
-          authorizePairing: async (client, pairingId) => {
-            await authorizeAttachmentPairing(client, environment.databaseIdentity, pairingId)
-          },
+          authorizePairing: (client, pairingId) =>
+            authorizeAttachmentPairing(client, environment.databaseIdentity, pairingId),
           inactivePairingIds: async pairingIds => await remoteAccess.authority.filterInactivePairingIds(pairingIds),
         },
       )

@@ -46,6 +46,7 @@ export class GestaltAccountPoolAdapter extends LlmAdapter {
       options: connection,
       resolveApiKey: () => Promise.resolve(config.apiKey),
       resolveUserId: () => 'gestalt-account-pool' as never,
+      prepareExtensions: () => Promise.resolve({ fields: {}, accept: () => Promise.resolve() }),
     })
   }
 

@@ -41,7 +41,7 @@ function runController(directory: string, failure = '', source = 'a'.repeat(64),
     'platform_membership_cutover',
     'test "$state_resolved" = 1',
   ].join('\n')
-  return spawnSync('bash', ['-c', script], { encoding: 'utf8', detached: true, timeout: 55_000, killSignal: 'SIGTERM', env: {
+  return spawnSync('bash', ['-c', script], { encoding: 'utf8', timeout: 55_000, killSignal: 'SIGTERM', env: {
     PATH: process.env.PATH,
     DEPLOY_DIR: directory, FAILURE: failure, LIFETIME: String(lifetime),
     PLATFORM_CANDIDATE_SHA: '1'.repeat(40), IMAGE: `ghcr.io/example/repo/platform@sha256:${'2'.repeat(64)}`,
