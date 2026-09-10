@@ -18,6 +18,8 @@ Documentation paths select the static documentation lane. GUI and model-visible 
 
 The stable aggregate verdict evaluates only lanes selected by the plan. In an impacted Draft it requires preflight, package impact when present, and the assembled consumer lane when selected. In an exhaustive plan it requires the complete blocking inventory. A selected lane that fails, is cancelled, or is skipped fails the verdict; an unselected lane remains skipped without becoming a false failure.
 
+Pull-request CI that has no preflight planner does not schedule a `draft-impact` job. `pnpm ci:impact` remains the local command for an impacted plan and still rejects exhaustive plans.
+
 ## Alternatives considered
 
 **Filter only by changed directories.** Rejected because direct paths do not identify reverse consumers and cannot prove behavior at package interfaces.

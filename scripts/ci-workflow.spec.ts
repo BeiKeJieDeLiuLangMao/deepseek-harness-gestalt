@@ -381,6 +381,20 @@ describe('CI workflow', () => {
     expect(aggregate.needs).toContain('python-runtime')
   })
 
+  it('omits ungated draft-impact from pull-request CI without a planner', () => {
+    const workflow = loadWorkflow('.github/workflows/ci.yml')
+    if (!isRecord(workflow.jobs)) throw new TypeError('CI workflow must define jobs')
+    const aggregate = workflowJob(workflow, 'all-checks-passed')
+    if (!Array.isArray(aggregate.needs)) {
+      throw new TypeError('CI aggregate must define required job dependencies')
+    }
+
+    expect(workflow.jobs).not.toHaveProperty('preflight')
+    expect(workflow.jobs).not.toHaveProperty('draft-impact')
+    expect(aggregate.needs).not.toContain('draft-impact')
+    expect(JSON.stringify(workflow.jobs)).not.toContain('pnpm ci:impact')
+  })
+
   it('keeps every Vitest project process-isolated on native Windows', () => {
     const config = readFileSync(resolve(root, 'vitest.config.ts'), 'utf8')
 
