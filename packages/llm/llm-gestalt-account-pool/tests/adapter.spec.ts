@@ -2,6 +2,7 @@ import { createServer } from 'node:http'
 import { Context } from '@deepseek-ai/cordis'
 import LlmRuntime from '@deepseek-ai/dsh-llm'
 import { afterEach, describe, expect, it } from 'vitest'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { apply, GestaltAccountPoolAdapter, PROVIDER } from '../src/index.ts'
 
 const disposals: Array<() => Promise<void>> = []
@@ -14,7 +15,7 @@ describe('gestalt account pool dynamic registration', () => {
     const server = createServer((request, response) => {
       expect(request.headers.authorization).toBe(`Bearer ${key}`)
       response.setHeader('content-type', 'application/json')
-      response.end(JSON.stringify({ data: models.map(id => ({ id })) }))
+      response.end(JSON.stringify({ data: [...models.map(id => ({ id })), { id: '' }, null, 3] }))
     })
     await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
     const address = server.address()
@@ -75,6 +76,7 @@ describe('gestalt account pool dynamic registration', () => {
     expect(() => { apply(ctx, { baseURL: 'http://example.test/v1', apiKey: 'internal-inference-key-650' }) }).toThrow(/loopback/)
     expect(() => { apply(ctx, { baseURL: 'ftp://127.0.0.1/v1', apiKey: 'internal-inference-key-650' }) }).toThrow(/loopback/)
     expect(() => { apply(ctx, { baseURL: 'http://127.0.0.1:1/v1', apiKey: 'internal-inference-key-650', refreshIntervalMs: 0 }) }).toThrow(/positive/)
+    apply(ctx, { baseURL: 'https://127.0.0.1:1/v1', apiKey: 'internal-inference-key-650' })
   })
 
   it('keeps the route unpublished when the catalog JSON is invalid', async () => {
@@ -143,14 +145,21 @@ describe('gestalt account pool dynamic registration', () => {
   })
 
   it('skips blank catalog entries, resolves models, and starts a stream', async () => {
+    const events = [
+      '{"choices":[{"delta":{"role":"assistant","content":null,"reasoning_content":""}}]}',
+      '{"choices":[{"delta":{"content":"hello"}}]}',
+      '{"choices":[{"delta":{"content":""},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":1}}',
+      '[DONE]',
+    ]
     const server = createServer((request, response) => {
       if (request.url === '/v1/models') {
         response.setHeader('content-type', 'application/json')
         response.end(JSON.stringify({ data: [{ id: 'live-model' }, { id: '' }, null, 3] }))
         return
       }
-      response.statusCode = 401
-      response.end('{}')
+      response.writeHead(200, { 'content-type': 'text/event-stream' })
+      for (const event of events) response.write(`data: ${event}\n\n`)
+      response.end()
     })
     await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
     const address = server.address()
@@ -166,11 +175,76 @@ describe('gestalt account pool dynamic registration', () => {
     await expect(adapter.listModels()).resolves.toEqual([{ provider: PROVIDER, id: 'live-model', name: 'live-model' }])
     await expect(adapter.resolveModel(PROVIDER, 'live-model')).resolves.toMatchObject({ id: 'live-model', name: 'live-model' })
     await expect(adapter.resolveModel(PROVIDER, 'missing')).resolves.toMatchObject({ id: 'missing', name: 'missing' })
-    const chunks = adapter.stream({
+    adapter.setModels([{ id: 'named', name: 'Named' }])
+    await expect(adapter.listModels()).resolves.toEqual([{ provider: PROVIDER, id: 'named', name: 'Named' }])
+    expect(adapter.providerInfo()).toEqual({ id: PROVIDER, name: 'Gestalt Account Pool' })
+    const received: unknown[] = []
+    for await (const chunk of adapter.stream({
       provider: PROVIDER,
-      model: 'live-model',
-      messages: [{ id: 'm1', source: 'user', role: 'user', content: 'ping' }],
-    } as never)
-    await expect(chunks[Symbol.asyncIterator]().next()).rejects.toThrow()
+      model: 'named',
+      messages: [createUserMessage({
+        content: [{ type: 'text', text: 'ping' }],
+        source: { kind: 'plugin', plugin: 'test' },
+      })],
+    })) received.push(chunk)
+    expect(received.length).toBeGreaterThan(0)
+  })
+
+  it('withdraws a published route after a later catalog failure', async () => {
+    let fail = false
+    const server = createServer((_request, response) => {
+      if (fail) {
+        response.statusCode = 503
+        response.end('no')
+        return
+      }
+      response.setHeader('content-type', 'application/json')
+      response.end(JSON.stringify({ data: [{ id: 'live' }] }))
+    })
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+    const address = server.address()
+    if (address === null || typeof address === 'string') throw new Error('missing address')
+    disposals.push(async () => {
+      await new Promise<void>((resolve) => { server.close(() => { resolve() }) })
+    })
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    disposals.push(async () => { await ctx.fiber.dispose() })
+    await ctx.plugin({ apply, inject: ['llm'] }, {
+      baseURL: `http://127.0.0.1:${String(address.port)}/v1`, apiKey: 'internal-inference-key-650', refreshIntervalMs: 20,
+    })
+    await expect.poll(() => ctx.llm.listProviders().map(provider => provider.id)).toContain(PROVIDER)
+    fail = true
+    await expect.poll(() => ctx.llm.listProviders().map(provider => provider.id)).not.toContain(PROVIDER)
+  })
+
+  it('stops refreshing after a catalog publish collides with another adapter', async () => {
+    let models: string[] = []
+    const server = createServer((_request, response) => {
+      response.setHeader('content-type', 'application/json')
+      response.end(JSON.stringify({ data: models.map(id => ({ id })) }))
+    })
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+    const address = server.address()
+    if (address === null || typeof address === 'string') throw new Error('missing address')
+    disposals.push(async () => {
+      await new Promise<void>((resolve) => { server.close(() => { resolve() }) })
+    })
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    disposals.push(async () => { await ctx.fiber.dispose() })
+    await ctx.plugin({ apply, inject: ['llm'] }, {
+      baseURL: `http://127.0.0.1:${String(address.port)}/v1`, apiKey: 'internal-inference-key-650', refreshIntervalMs: 20,
+    })
+    await new Promise(resolve => setTimeout(resolve, 30))
+    class UserAdapter extends (await import('@deepseek-ai/dsh-llm')).LlmAdapter {
+      override providerInfo(): { id: string; name: string } { return { id: PROVIDER, name: 'user route' } }
+      async * stream(): AsyncIterable<never> { throw new Error('not exercised') }
+    }
+    ctx.llm.registerAdapter([PROVIDER], new UserAdapter())
+    models = ['late']
+    await new Promise(resolve => setTimeout(resolve, 40))
+    expect(ctx.llm.listProviders().map(provider => provider.id)).toContain(PROVIDER)
+    await expect(ctx.llm.listModels(PROVIDER)).resolves.toEqual([])
   })
 })

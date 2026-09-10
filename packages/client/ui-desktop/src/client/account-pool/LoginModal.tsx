@@ -22,6 +22,7 @@ export function LoginModal({ initialProvider, login, onClose, onStart, onCancel,
   const isGlm = provider === 'glm'
   const isDevice = provider === 'kimi' || provider === 'xai'
   const step = login === undefined ? (isGlm ? 'apiKeyForm' : 'select') : login.error !== undefined ? 'failed' : login.flow === 'glm-key' ? 'apiKeyForm' : 'authorizing'
+  const cancelState = login?.state
 
   useEffect(() => { setProvider(initialProvider) }, [initialProvider])
 
@@ -84,19 +85,19 @@ export function LoginModal({ initialProvider, login, onClose, onStart, onCancel,
               </div>
             </div>
           )}
-          {step === 'failed' && <div className={css.resultStep}><h4>{login?.error ?? '登录失败'}</h4></div>}
+          {step === 'failed' && login !== undefined && <div className={css.resultStep}><h4>{login.error}</h4></div>}
         </div>
         <footer className={css.footer}>
           {step === 'select' && (
             <>
               <Button variant="ghost" onClick={onClose}>取消</Button>
-              <Button variant="primary" onClick={() => { if (isGlm) setProvider('glm'); else onStart(provider) }}>
-                {isGlm ? '配置 GLM 订阅凭据' : `开始 ${provider.toUpperCase()} 登录`}
+              <Button variant="primary" onClick={() => { onStart(provider) }}>
+                {`开始 ${provider.toUpperCase()} 登录`}
               </Button>
             </>
           )}
-          {step === 'authorizing' && login?.state !== undefined && (
-            <Button variant="outline" onClick={() => { onCancel(login.state ?? '') }}>取消</Button>
+          {step === 'authorizing' && cancelState !== undefined && (
+            <Button variant="outline" onClick={() => { onCancel(cancelState) }}>取消</Button>
           )}
           {step === 'apiKeyForm' && (
             <>

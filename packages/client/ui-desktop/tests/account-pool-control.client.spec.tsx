@@ -89,6 +89,53 @@ describe('AccountPoolControl', () => {
     fireEvent.click(screen.getByRole('button', { name: '+ 添加账号 ▾' }))
     fireEvent.click(screen.getByRole('button', { name: 'CODEX' }))
     expect(desktop.accountPoolStartLogin).toHaveBeenCalledWith('codex')
+    fireEvent.click(screen.getByRole('button', { name: '开始 CODEX 登录' }))
+    expect(desktop.accountPoolStartLogin).toHaveBeenCalledTimes(2)
+  })
+
+  it('polls login status, cancels, and forwards card mutations', async () => {
+    vi.useFakeTimers()
+    const desktop = bridge()
+    window.dshDesktop = desktop
+    const { unmount } = renderControl({
+      state: 'ready',
+      accounts: [account],
+      login: { kind: 'kimi', flow: 'device', state: 's1', url: 'https://example.test/device' },
+    })
+    await vi.advanceTimersByTimeAsync(1_500)
+    expect(desktop.accountPoolLoginStatus).toHaveBeenCalledWith('s1')
+    unmount()
+    vi.useRealTimers()
+    renderControl({
+      state: 'error',
+      accounts: [account],
+      error: 'kernel failed',
+      login: { kind: 'kimi', flow: 'device', state: 's1' },
+    })
+    expect(screen.getByText('kernel failed')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '+ 添加账号 ▾' }))
+    fireEvent.click(screen.getByRole('button', { name: '+ 添加账号 ▾' }))
+    fireEvent.click(screen.getByRole('button', { name: '+ 添加账号 ▾' }))
+    fireEvent.click(screen.getByRole('button', { name: 'KIMI' }))
+    fireEvent.click(screen.getByRole('button', { name: '取消' }))
+    expect(desktop.accountPoolCancelLogin).toHaveBeenCalledWith('s1')
+    fireEvent.click(screen.getByRole('button', { name: '删除' }))
+    expect(desktop.accountPoolDelete).toHaveBeenCalledWith('kimi-user.json')
+    fireEvent.click(screen.getByRole('checkbox'))
+    expect(desktop.accountPoolSetEnabled).toHaveBeenCalledWith('kimi-user.json', false)
+    fireEvent.click(screen.getByRole('button', { name: '查看配额' }))
+    fireEvent.click(screen.getByRole('button', { name: '刷新额度' }))
+    expect(desktop.accountPoolRefreshQuota).toHaveBeenCalledWith('kimi-1')
+  })
+
+  it('closes the GLM modal without submitting', () => {
+    const desktop = bridge()
+    window.dshDesktop = desktop
+    renderControl({ state: 'starting', accounts: [] })
+    fireEvent.click(screen.getByRole('button', { name: '+ 添加账号 ▾' }))
+    fireEvent.click(screen.getByRole('button', { name: 'GLM' }))
+    fireEvent.click(screen.getByRole('button', { name: '✕' }))
+    expect(desktop.accountPoolSubmitGlmKey).not.toHaveBeenCalled()
   })
 })
 
@@ -212,6 +259,69 @@ describe('LoginModal', () => {
     )
     expect(screen.getByText('denied')).toBeTruthy()
   })
+
+  it('switches to GLM from the select step and submits a key-only payload', () => {
+    const onClose = vi.fn()
+    const onSubmitGlmKey = vi.fn()
+    const { container } = render(
+      <LoginModal
+        initialProvider="xai"
+        onClose={onClose}
+        onStart={vi.fn()}
+        onCancel={vi.fn()}
+        onSubmitGlmKey={onSubmitGlmKey}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: /GLM/ }))
+    fireEvent.change(document.querySelector('input[type="password"]') as HTMLInputElement, { target: { value: 'glm-only' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存并接入账号池' }))
+    expect(onSubmitGlmKey).toHaveBeenCalledWith({ apiKey: 'glm-only', site: 'cn' })
+    fireEvent.click(container.firstElementChild as HTMLElement)
+    expect(onClose).toHaveBeenCalled()
+  })
+
+  it('opens GLM directly and ignores dialog-body clicks', () => {
+    const onClose = vi.fn()
+    render(
+      <LoginModal
+        initialProvider="glm"
+        onClose={onClose}
+        onStart={vi.fn()}
+        onCancel={vi.fn()}
+        onSubmitGlmKey={vi.fn()}
+      />,
+    )
+    fireEvent.click(screen.getByText('添加账号凭证'))
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('keeps the GLM form when the Host reports a glm-key login', () => {
+    render(
+      <LoginModal
+        initialProvider="glm"
+        login={{ kind: 'glm', flow: 'glm-key' }}
+        onClose={vi.fn()}
+        onStart={vi.fn()}
+        onCancel={vi.fn()}
+        onSubmitGlmKey={vi.fn()}
+      />,
+    )
+    expect(screen.getByText('输入智谱 GLM Coding 订阅凭据')).toBeTruthy()
+  })
+
+  it('shows PKCE browser-authorization copy without a device code', () => {
+    render(
+      <LoginModal
+        initialProvider="codex"
+        login={{ kind: 'codex', flow: 'pkce', state: 's2' }}
+        onClose={vi.fn()}
+        onStart={vi.fn()}
+        onCancel={vi.fn()}
+        onSubmitGlmKey={vi.fn()}
+      />,
+    )
+    expect(screen.getByText(/浏览器授权/)).toBeTruthy()
+  })
 })
 
 describe('QuotaBarWithTimeline', () => {
@@ -227,6 +337,30 @@ describe('QuotaBarWithTimeline', () => {
       />,
     )
     expect(screen.getAllByText('未知').length).toBeGreaterThan(0)
+  })
+
+  it('clamps overflow and still draws a time needle without a quota fill', () => {
+    const { rerender } = render(
+      <QuotaBarWithTimeline
+        name="5h"
+        windowLabel="5h"
+        resetText="soon"
+        isReliable={true}
+        percentRemaining={140}
+        timeRemainingPercent={-5}
+      />,
+    )
+    expect(screen.getByText('100%')).toBeTruthy()
+    rerender(
+      <QuotaBarWithTimeline
+        name="5h"
+        windowLabel="5h"
+        resetText="soon"
+        isReliable={true}
+        timeRemainingPercent={40}
+      />,
+    )
+    expect(screen.getByText(/额度剩余 0%/)).toBeTruthy()
   })
 })
 

@@ -87,6 +87,7 @@ export function apply(ctx: Context, config: Config): void {
   let inFlight: Promise<void> | undefined
   let controller: AbortController | undefined
   const refresh = async (): Promise<void> => {
+    /* v8 ignore next -- the disposer clears the only timer before a later tick can re-enter. */
     if (disposed) return
     const request = new AbortController()
     controller = request
@@ -123,6 +124,7 @@ export function apply(ctx: Context, config: Config): void {
       ctx.logger('llm-gestalt-account-pool').warn('model catalog unavailable')
       ctx.logger('llm-gestalt-account-pool').warn(error)
     } finally {
+      /* v8 ignore next -- sequential refresh owns controller for the whole generation. */
       if (controller === request) controller = undefined
       if (!disposed) timer = setTimeout(() => { inFlight = refresh() }, refreshIntervalMs)
     }
