@@ -169,6 +169,22 @@ describe('DingTalk DWS Message Targets and Send Status Inquiry', () => {
     })
     expect(resSpawnErr.status).toBe('pre_send_failed')
     expect(resSpawnErr.error).toContain('Cannot allocate process')
+
+    // 5. Exit 0 JSON without openTaskId must settle as result_unknown
+    ctx.subprocess = {
+      spawn: vi.fn((spec: SubprocessSpawnSpec) => {
+        return createMockHandle(spec, JSON.stringify({ success: true, message: 'no-task-id-here' }), 0)
+      }),
+    } as unknown as typeof ctx.subprocess
+    const resNoReceipt = await service.sendMessage({
+      accountId: accId,
+      conversationKind: 'group',
+      targetId: 'cid-1',
+      text: 'msg-without-receipt',
+    })
+    expect(resNoReceipt.status).toBe('result_unknown')
+    expect(resNoReceipt.status).not.toBe('sent')
+    expect(resNoReceipt.error).toContain('no openTaskId receipt')
   })
 
   it('queries send status and maps failed, pending, and unknown outcomes', async () => {
