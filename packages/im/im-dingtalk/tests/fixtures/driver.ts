@@ -71,15 +71,17 @@ const ctx = new Context()
 await ctx.plugin(Loader)
 ctx.loader.builtins.include = Include
 
-// Mount stub subprocess service so DingTalk DWS adapter subprocess dependencies resolve natively
-await ctx.plugin(StubSubprocessRuntime)
+// Mount stub subprocess service as Cordis plugin so DingTalk DWS adapter subprocess dependency resolves natively
+ctx.plugin(StubSubprocessRuntime)
 
+// Pure Cordis Loader entry: loads cordis.yml via cordis:include, dynamically resolving packages
 await ctx.loader.create({
   name: 'cordis:include',
   config: { path: pathToFileURL(configPath).href },
 })
 await ctx.loader.await()
 
+// Access services resolved dynamically by the Loader
 const configService = ctx.get('imConfig') as ImConfigService
 if (!configService) throw new Error('imConfig service not loaded by real Loader')
 
