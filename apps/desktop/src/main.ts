@@ -103,6 +103,7 @@ import { projectDesktopRendererEvent } from './renderer-projection.ts'
 import { connectDesktopRelayNodeHelper } from './relay-node-helper.ts'
 import { createDesktopSystemNodeFetch } from './system-node-fetch-helper.ts'
 import { CLIProxyAPISupervisor, verifyCLIProxyAPIResource, type CLIProxyAPIInferenceCapability } from './cliproxyapi-runtime.ts'
+import type { QuotaObservationTransport } from '@deepseek-ai/dsh-cliproxy-quota'
 import {
   createDesktopProjectMembershipClient,
   createDesktopProjectMembershipPresence,
@@ -193,6 +194,7 @@ let companionHostGeneration = 0
 let projectMembershipPresence: import('./project-membership.ts').DesktopProjectMembershipPresence | undefined
 let cliProxyAPI: CLIProxyAPISupervisor | undefined
 let cliProxyAPICapability: CLIProxyAPIInferenceCapability | undefined
+let cliProxyAPIManagement: QuotaObservationTransport | undefined
 
 smokeLog('main loaded')
 const gotLock = app.requestSingleInstanceLock()
@@ -864,10 +866,11 @@ async function startCLIProxyAPI(): Promise<void> {
       cliProxyAPICapability = capability
       if (host !== undefined && !shuttingDown) await replaceWebHost()
     },
+    onManagement: (transport) => { cliProxyAPIManagement = transport },
   })
   cliProxyAPI = supervisor
   const running = await supervisor.start()
-  smokeLog(`cliproxyapi ready pid ${String(running.child.pid)}`)
+  smokeLog(`cliproxyapi ready pid ${String(running.child.pid)} management ${cliProxyAPIManagement === undefined ? 'absent' : 'bound'}`)
 }
 
 async function cleanupDesktop(mode: 'exit' | 'allow-quit'): Promise<void> {
@@ -883,6 +886,7 @@ async function cleanupDesktop(mode: 'exit' | 'allow-quit'): Promise<void> {
       const current = cliProxyAPI
       cliProxyAPI = undefined
       cliProxyAPICapability = undefined
+      cliProxyAPIManagement = undefined
       await current?.shutdown()
     },
     () => { const current = sub2api; sub2api = undefined; current?.dispose() },

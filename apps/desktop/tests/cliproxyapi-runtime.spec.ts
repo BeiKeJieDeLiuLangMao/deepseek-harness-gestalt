@@ -168,6 +168,21 @@ describe('CLIProxyAPI supervisor', () => {
     const text = await readFile(config, 'utf8')
     expect(text).toContain('enable: true')
     expect(text).toContain(`- "${running.capability.apiKey}"`)
+    const secretKey = text.match(/secret-key: "([^"]+)"/)?.[1]
+    expect(secretKey).toEqual(expect.any(String))
+    expect(JSON.stringify(running.capability)).not.toContain(secretKey)
+    const probe = await running.management.request({
+      authIndex: 'glm-0' as never,
+      method: 'GET',
+      url: 'https://quota.example.test/usage',
+      headers: { Authorization: 'Bearer $TOKEN$' },
+    })
+    expect(probe.statusCode).toBe(200)
+    expect(JSON.parse(probe.bodyText ?? '{}')).toEqual({
+      ok: true,
+      auth_index: 'glm-0',
+      url: 'https://quota.example.test/usage',
+    })
     expect(text).not.toContain(process.env.DEEPSEEK_API_KEY ?? '__absent__')
     expect((await stat(config)).mode & 0o777).toBe(0o600)
     await supervisor.shutdown()
@@ -219,10 +234,26 @@ const key = config.match(/api-keys:\\n  - "([^"]+)"/)[1]
 const cert = readFileSync(config.match(/cert: "([^"]+)"/)[1])
 const keyFile = readFileSync(config.match(/key: "([^"]+)"/)[1])
 const authorizationLog = typeof globalThis.observed === 'string' ? globalThis.observed : undefined
+const managementKey = config.match(/secret-key: "([^"]+)"/)[1]
 const server = createServer({ cert, key: keyFile }, (request, response) => {
   if (authorizationLog !== undefined) writeFileSync(authorizationLog, JSON.stringify({ receivedAuthorization: Boolean(request.headers.authorization) }))
-  if (request.url !== '/v1/models' || request.headers.authorization !== 'Bearer ' + key) { response.statusCode = 401; response.end(); return }
-  response.setHeader('content-type', 'application/json'); response.end(JSON.stringify({ data: [] }))
+  if (request.url === '/v1/models') {
+    if (request.headers.authorization !== 'Bearer ' + key) { response.statusCode = 401; response.end(); return }
+    response.setHeader('content-type', 'application/json'); response.end(JSON.stringify({ data: [] })); return
+  }
+  if (request.url === '/v0/management/api-call' && request.method === 'POST') {
+    if (request.headers.authorization !== 'Bearer ' + managementKey) { response.statusCode = 401; response.end(); return }
+    const chunks = []
+    request.on('data', chunk => chunks.push(chunk))
+    request.on('end', () => {
+      const body = JSON.parse(Buffer.concat(chunks).toString())
+      response.setHeader('content-type', 'application/json')
+      response.end(JSON.stringify({ status_code: 200, body: JSON.stringify({ ok: true, auth_index: body.auth_index, url: body.url }) }))
+    })
+    return
+  }
+  response.statusCode = 404
+  response.end()
 })
 setTimeout(() => server.listen(port, '127.0.0.1'), ${String(delayMs)})
 ${signalHandler}

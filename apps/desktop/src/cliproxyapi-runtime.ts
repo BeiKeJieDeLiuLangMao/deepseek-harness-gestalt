@@ -1,15 +1,19 @@
 /** Desktop-owned CLIProxyAPI process selection, isolated state, readiness, and teardown. */
 import { createHash, randomBytes } from 'node:crypto'
 import { type ChildProcess, execFile, spawn } from 'node:child_process'
+import { request as httpsRequest } from 'node:https'
 import { chmod, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { basename, join, resolve } from 'node:path'
 import { connect as tlsConnect, type TLSSocket } from 'node:tls'
 import { promisify } from 'node:util'
+import type { QuotaObservationTransport, QuotaProbeRequest, QuotaProbeResponse } from '@deepseek-ai/dsh-cliproxy-quota'
 
 const execFileAsync = promisify(execFile)
 const PROVIDER_ID = 'gestalt-account-pool'
 const READINESS_INTERVAL_MS = 50
+const MANAGEMENT_PROBE_TIMEOUT_MS = 15_000
+const MANAGEMENT_MAX_BODY_BYTES = 1_048_576
 
 /** Identity recorded beside one packaged CLIProxyAPI executable. */
 export interface CLIProxyAPIResourceManifest {
@@ -33,6 +37,8 @@ export interface CLIProxyAPIInferenceCapability {
 export interface RunningCLIProxyAPI {
   readonly child: ChildProcess
   readonly capability: CLIProxyAPIInferenceCapability
+  /** Host-private quota probe channel bound to this generation; never exported to renderer. */
+  readonly management: QuotaObservationTransport
   readonly exited: Promise<{ code: number | null; signal: NodeJS.Signals | null }>
   stop(): Promise<void>
 }
@@ -51,6 +57,8 @@ export interface CLIProxyAPISupervisorOptions {
   readonly stopGraceMs?: number
   /** Publish each ready inference generation and its withdrawal. */
   readonly onCapability?: (capability: CLIProxyAPIInferenceCapability | undefined) => void | Promise<void>
+  /** Publish the Host-private management transport for the current generation. */
+  readonly onManagement?: (transport: QuotaObservationTransport | undefined) => void | Promise<void>
 }
 
 /** Resolve and verify one packaged CLIProxyAPI resource. */
@@ -115,7 +123,10 @@ export class CLIProxyAPISupervisor {
         return
       }
       this.current = running
-      void Promise.resolve(this.options.onCapability?.(running.capability)).catch(() => running.stop())
+      void Promise.all([
+        Promise.resolve(this.options.onCapability?.(running.capability)),
+        Promise.resolve(this.options.onManagement?.(running.management)),
+      ]).catch(() => running.stop())
       void running.exited.then(() => this.onExit(running))
     }, () => { this.pending = undefined })
     return task
@@ -137,7 +148,10 @@ export class CLIProxyAPISupervisor {
     const running = this.current
     this.current = undefined
     this.shutdownTask = Promise.resolve().then(async () => {
-      await this.options.onCapability?.(undefined)
+      await Promise.all([
+        this.options.onCapability?.(undefined),
+        this.options.onManagement?.(undefined),
+      ])
       const admitted = await pending?.catch(() => undefined)
       await Promise.all([running, admitted].flatMap(value => value === undefined ? [] : [value.stop()]))
       await rm(this.options.stateRoot, { recursive: true, force: true })
@@ -149,7 +163,10 @@ export class CLIProxyAPISupervisor {
     if (this.current !== running) return
     this.current = undefined
     try {
-      await this.options.onCapability?.(undefined)
+      await Promise.all([
+        this.options.onCapability?.(undefined),
+        this.options.onManagement?.(undefined),
+      ])
     } catch {
       // Withdrawal failure cannot restore the exited core; recovery still owns the next generation.
     }
@@ -201,7 +218,7 @@ export class CLIProxyAPISupervisor {
       await stop().catch(() => undefined)
       throw error
     }
-    return {
+    const running: RunningCLIProxyAPI = {
       child,
       capability: Object.freeze({
         provider: PROVIDER_ID,
@@ -209,9 +226,34 @@ export class CLIProxyAPISupervisor {
         apiKey: inferenceKey,
         caPath: certPath,
       }),
+      management: Object.freeze({
+        request: async (request: QuotaProbeRequest): Promise<QuotaProbeResponse> => {
+          if (this.shutdownTask !== undefined) {
+            return { statusCode: 0, error: 'CLIProxyAPI management generation is not current' }
+          }
+          const live = this.current
+          if (live !== undefined && live.child !== child) {
+            return { statusCode: 0, error: 'CLIProxyAPI management generation is not current' }
+          }
+          if (child.exitCode !== null || child.signalCode !== null) {
+            return { statusCode: 0, error: 'CLIProxyAPI management generation is not current' }
+          }
+          const authIndex = request.authIndex.trim()
+          if (authIndex.length === 0) return { statusCode: 0, error: 'empty account reference' }
+          try {
+            return await requestManagementApiCall({
+              port, certPath, managementKey, request, signal: this.controller.signal,
+            })
+          } catch (error) {
+            return { statusCode: 0, error: error instanceof Error ? error.message : 'CLIProxyAPI management request failed' }
+          }
+        },
+      }),
       exited,
       stop,
     }
+    this.current = running
+    return running
   }
 }
 
@@ -247,6 +289,98 @@ function coreConfig(
     'usage-statistics-enabled: false',
     '',
   ].join('\n')
+}
+
+async function requestManagementApiCall(options: {
+  port: number
+  certPath: string
+  managementKey: string
+  request: QuotaProbeRequest
+  signal: AbortSignal
+}): Promise<QuotaProbeResponse> {
+  if (options.signal.aborted) return { statusCode: 0, error: 'CLIProxyAPI startup aborted' }
+  const ca = await readFile(options.certPath)
+  const body = JSON.stringify({
+    auth_index: options.request.authIndex,
+    method: options.request.method,
+    url: options.request.url,
+    header: options.request.headers,
+    ...options.request.body === undefined ? {} : { data: options.request.body },
+  })
+  const text = await requestPinnedHttps({
+    port: options.port,
+    path: '/v0/management/api-call',
+    ca,
+    authorization: `Bearer ${options.managementKey}`,
+    body,
+    signal: options.signal,
+  })
+  if (Buffer.byteLength(text.body, 'utf8') > MANAGEMENT_MAX_BODY_BYTES) {
+    return { statusCode: 0, error: 'CLIProxyAPI management response exceeded the bounded body limit' }
+  }
+  if (text.statusCode < 200 || text.statusCode >= 300) {
+    return { statusCode: 0, error: `CLIProxyAPI management answered status ${String(text.statusCode)}` }
+  }
+  let payload: unknown
+  try {
+    payload = JSON.parse(text.body) as unknown
+  } catch (error) {
+    if (error instanceof SyntaxError) return { statusCode: 0, error: 'CLIProxyAPI management response was not parseable JSON' }
+    throw error
+  }
+  if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) {
+    return { statusCode: 0, error: 'CLIProxyAPI management response was not parseable JSON' }
+  }
+  const record = payload as Record<string, unknown>
+  const statusCode = typeof record.status_code === 'number' ? record.status_code : 0
+  const upstream = typeof record.body === 'string' ? record.body : undefined
+  return { statusCode, ...(upstream === undefined ? {} : { bodyText: upstream }) }
+}
+
+function requestPinnedHttps(options: {
+  port: number
+  path: string
+  ca: Buffer
+  authorization: string
+  body: string
+  signal: AbortSignal
+}): Promise<{ statusCode: number; body: string }> {
+  return new Promise((resolve, reject) => {
+    const request = httpsRequest({
+      host: '127.0.0.1',
+      port: options.port,
+      path: options.path,
+      method: 'POST',
+      ca: options.ca,
+      servername: 'localhost',
+      headers: {
+        Authorization: options.authorization,
+        'content-type': 'application/json',
+        'content-length': String(Buffer.byteLength(options.body)),
+      },
+      timeout: MANAGEMENT_PROBE_TIMEOUT_MS,
+    }, (response) => {
+      const chunks: Buffer[] = []
+      response.on('data', chunk => chunks.push(chunk as Buffer))
+      response.on('end', () => {
+        resolve({ statusCode: response.statusCode ?? 0, body: Buffer.concat(chunks).toString('utf8') })
+      })
+    })
+    const abort = (): void => {
+      request.destroy(new Error('CLIProxyAPI startup aborted'))
+    }
+    options.signal.addEventListener('abort', abort, { once: true })
+    request.once('error', (error) => {
+      options.signal.removeEventListener('abort', abort)
+      reject(error)
+    })
+    request.once('timeout', () => {
+      request.destroy(new Error('CLIProxyAPI management request timed out'))
+    })
+    request.once('close', () => options.signal.removeEventListener('abort', abort))
+    if (options.signal.aborted) abort()
+    else request.end(options.body)
+  })
 }
 
 async function writeGenerationCertificate(root: string, certPath: string, keyPath: string): Promise<void> {

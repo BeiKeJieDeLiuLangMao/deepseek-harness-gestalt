@@ -14,7 +14,7 @@ Desktop 打包从 `catalog/cliproxyapi` gitlink 构建的原生 CLIProxyAPI 可�
 
 每个 Desktop 实例在自己的 `userData` 下生成一个私有运行代，并以该运行代作为 core cwd 启动，因此自动 dotenv 加载无法触及仓库或用户工作区的 `.env`。子进程接收明确的操作系统环境白名单，而不是 ambient storage、provider 或 credential 配置。该目录包含配置、auth 目录、日志、management key 与 inference key。配置仅绑定 IPv4 loopback 上由 Host 选择的临时端口，禁用 management control panel，且不引用 Sub2API 或用户的 CLIProxyAPI home。
 
-每个运行代会在其私有目录写入自签 localhost 证书，并以 HTTPS 启动核心。监督器在访问 `/v1/models` 时钉住该证书，仅在 TLS 握手成功、取消仍未发生且子进程仍存活后才写入 inference Authorization。没有该运行代证书的竞争 HTTP 监听者无法完成握手，也收不到 key。Management 与 inference key 始终分离。只有 HTTPS inference 端点、inference key 和运行代证书路径以 `NODE_EXTRA_CA_CERTS` 进入 Web Host 子进程环境；renderer 协议、settings、诊断与模型元数据均不接收这些值。
+每个运行代会在其私有目录写入自签 localhost 证书，并以 HTTPS 启动核心。监督器在访问 `/v1/models` 时钉住该证书，仅在 TLS 握手成功、取消仍未发生且子进程仍存活后才写入 inference Authorization。没有该运行代证书的竞争 HTTP 监听者无法完成握手，也收不到 key。Management 与 inference key 始终分离。监督器为当前运行代保留 Host 私有的 `QuotaObservationTransport`：它用该运行代 management key 认证 `/v0/management/api-call`，不接受 renderer 提供的任意 URL，并在运行代替换或停止时失效。只有 HTTPS inference 端点、inference key 和运行代证书路径以 `NODE_EXTRA_CA_CERTS` 进入 Web Host 子进程环境；renderer 协议、settings、诊断与模型元数据均不接收这些值，包括 management key。
 
 Web Host 插件拥有稳定 route `gestalt-account-pool`。空目录或不可用目录不注册 route；活跃模型列表变化时，它通过原子操作发布或撤回 route，并让 LLM registry 拒绝冲突。Dispose 会先中止并等待进行中的目录读取，再移除注册。
 

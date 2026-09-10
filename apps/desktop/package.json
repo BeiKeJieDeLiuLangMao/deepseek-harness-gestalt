@@ -85,6 +85,7 @@
     "@deepseek-ai/dsh-browser-runtime-electron": "workspace:^",
     "@deepseek-ai/dsh-client-ui-desktop": "workspace:^",
     "@deepseek-ai/dsh-client-ui-phone": "workspace:^",
+    "@deepseek-ai/dsh-cliproxy-quota": "workspace:^",
     "@deepseek-ai/dsh-home-paths": "workspace:^",
     "@deepseek-ai/dsh-llm-gestalt-account-pool": "workspace:^",
     "@deepseek-ai/dsh-noise-channel": "workspace:^",

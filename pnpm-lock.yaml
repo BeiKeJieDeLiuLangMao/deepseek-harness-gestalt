@@ -494,6 +494,9 @@ importers:
       '@deepseek-ai/dsh-client-ui-phone':
         specifier: workspace:^
         version: link:../../packages/client/ui-phone
+      '@deepseek-ai/dsh-cliproxy-quota':
+        specifier: workspace:^
+        version: link:../../packages/llm/cliproxy-quota
       '@deepseek-ai/dsh-home-paths':
         specifier: workspace:^
         version: link:../../packages/util/home-paths
