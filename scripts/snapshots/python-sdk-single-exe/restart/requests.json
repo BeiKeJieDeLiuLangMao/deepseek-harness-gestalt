@@ -28,6 +28,7 @@
       "job_output",
       "run_code",
       "subagent",
+      "tool_search",
       "workflow"
     ]
   },
@@ -60,6 +61,7 @@
       "job_output",
       "run_code",
       "subagent",
+      "tool_search",
       "workflow"
     ]
   }
