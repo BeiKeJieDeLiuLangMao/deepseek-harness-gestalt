@@ -1466,6 +1466,7 @@ export function WorkspaceBrowser({
           gateway={projectMembership}
           onClose={() => { setSettingsTarget(null) }}
           t={t}
+          renderSlot={owner => renderSlot('workspace.settings.section', owner)}
         />
       )}
       {pendingInvitation !== null && membershipAvailable && (

@@ -1,0 +1,68 @@
+/* IM takeover and simulation cards inside workspace settings. */
+
+.card {
+  max-width: 720px;
+  margin-bottom: 16px;
+  padding: 16px 20px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 16px;
+  background: var(--dsw-alias-bg-layer-2);
+  box-sizing: border-box;
+}
+
+.title {
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.intro,
+.hint,
+.sub {
+  margin: 0 0 12px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 10px 0;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+}
+
+.main {
+  flex: 1;
+  min-width: 0;
+}
+
+.name {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.error {
+  color: var(--dsw-alias-label-danger, #c0392b);
+  font-size: 12px;
+}
+
+.checks {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+}

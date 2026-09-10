@@ -1,0 +1,72 @@
+---
+description: "IM Accounts settings, workspace takeover and simulation cards, and the Better Sidebar IM conversation tab."
+kind: "package-reference"
+---
+
+# @deepseek-ai/dsh-client-ui-im
+
+English | [中文](README.zh.md)
+
+## Summary
+
+This plugin adds the accepted IM GUI: Settings → IM Accounts for DingTalk DWS and Wangwang credential-reference connection, Workspace Settings cards for takeover routes and simulation targets, and a Better Sidebar IM conversation tab. Native approval stays the only approval surface. Secrets never appear in the list, toast, or snapshot.
+
+## Table of Contents
+
+- [Use this package](#use-this-package)
+- [Understand the implementation](#understand-the-implementation)
+- [Further Exploration](#further-exploration)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
+
+-----
+
+<a id="use-this-package"></a>
+## Use this package
+
+Connect a DingTalk or Wangwang account under Settings → IM Accounts. Add takeover rules under Workspace Settings → IM Takeover; new rules start disabled, and disabling a specific rule keeps the binding. Select a configured target under Workspace Settings → IM Simulation before simulation tools appear. Open the IM conversation tab to inspect sender badges and delivery state, send manually when automatic handling is off, and switch between the simulated-user and tested-agent sessions.
+
+-----
+
+<a id="understand-the-implementation"></a>
+## Understand the implementation
+
+<details>
+<summary>Implementation internals — click to expand</summary>
+
+`apply` registers `settings.section` id `im-accounts`, two `workspace.settings.section` cards (`im-takeover`, `im-simulation`), and one official Sidebar tab (`@deepseek-ai/dsh-client-ui-im/conversation`). The three surfaces share one in-memory GUI snapshot; Wangwang secrets mint a credential reference and are discarded. Feishu is not offered. Composition: `tsconfig.client.json` references the package; `packages/bundle/web-app/cordis.patch.yml` carries the `ui-im` browser row.
+
+</details>
+
+-----
+
+<a id="further-exploration"></a>
+## Further Exploration
+
+- [IM Account Takeover Specification](../../.agents/design/im-takeover/specification.md)
+- [ui-workspace](../ui-workspace/README.md) — workspace settings modal that hosts `workspace.settings.section`
+- [ui-settings](../ui-settings/README.md) — settings section slot
+- [ui-sidebar-right](../ui-sidebar-right/README.md) — official Sidebar tab registry
+
+<a id="model-experience"></a>
+## Model Experience
+
+None, as this package is a browser GUI plugin and registers no prompt, tool schema, or session event.
+
+#### KV Cache effect
+
+None; UI state never alters a model request prefix.
+
+## Known Limitations and Deferred Work
+
+<a id="known-limitations-and-deferred-work"></a>
+
+- **In-memory GUI snapshot** — the three surfaces share a client store seeded from the accepted prototype. Host remotes for `imConfig` / `imDelivery` remain a later ticket; this GUI does not claim live account reads or outbound delivery.
+- **No operations board** — native approval is the only approval surface.
+- **No Feishu** — first-period platforms are DingTalk and Wangwang only.
+
+<a id="dev-note"></a>
+### Dev Note
+
+None.

@@ -59,7 +59,19 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     'conversation.hero.workspace.directoryFlow': { kind: 'single'; scope: 'root'; owner: DirectoryFlowOwnerProps }
     /** Directory-flow hole under the sidebar browsing region (declared by the WorkspaceBrowser entry). */
     'sidebar.workspaces.directoryFlow': { kind: 'single'; scope: 'root'; owner: DirectoryFlowOwnerProps }
+    /**
+     * Extra cards inside the workspace settings modal, after repository and
+     * collaboration. Feature plugins (IM takeover, IM simulation) register
+     * list entries; the modal supplies the Workspace id as owner share.
+     */
+    'workspace.settings.section': { kind: 'list'; scope: 'root'; owner: WorkspaceSettingsSectionOwnerProps }
   }
+}
+
+/** Owner share of one contributed workspace-settings card. */
+export interface WorkspaceSettingsSectionOwnerProps {
+  /** Workspace whose takeover and simulation cards are being edited. */
+  workspaceId: WorkspaceId
 }
 
 /** The two directory-flow holes; a flow package's client half registers its one component into both. */
@@ -287,7 +299,7 @@ export interface ProjectMembershipGateway {
 /** Full browser props: shell owner share + viewing store + injected actions + the locale seat. */
 export type WorkspaceBrowserProps =
   PropsRuntime<'sidebar.workspaces'>
-  & PropsRenderSlots<'sidebar.workspaces.directoryFlow'>
+  & PropsRenderSlots<'sidebar.workspaces.directoryFlow' | 'workspace.settings.section'>
   & PropsStore<ReturnType<typeof createWorkspaceViewStore>>
   & Omit<WorkspaceBrowserInjected, 'hooks'>
   & PropsHooks<WorkspaceBrowserInjected['hooks']>
