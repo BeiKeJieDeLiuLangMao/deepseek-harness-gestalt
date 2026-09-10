@@ -45,6 +45,8 @@ export interface FakeKnobs {
   infoDelayMs?: number
   hang?: boolean
   exitAfter?: number
+  /** Suppress the usual listen banner so readiness failures can observe an empty stderr tail. */
+  quiet?: boolean
   /** Exit before binding anything; simulates a binary that cannot start. */
   exitFast?: boolean
   /** Ignore SIGTERM on POSIX to exercise the SIGKILL escape in stop(). */
