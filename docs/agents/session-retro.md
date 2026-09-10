@@ -16,6 +16,10 @@ Collect improvement candidates from the session's own observable history: naviga
 
 Candidates never land on their own. The writer reports its candidate list to the requesting coordinator, which synthesizes the collected candidates and presents them to the user for an explicit keep-or-drop decision per item. Only accepted items are landed, through the delivery workflow's merger path, and the affected checks re-run. A delivery does not merge before that decision.
 
+## Historical lessons
+
+Kept items are also written to gitignored `.agents/local/lessons/` so later sessions can count repeats by `id`, skill, and phase. The archive is local machine state, not git history. The [`retro`](../../.agents/skills/retro/SKILL.md) skill owns the file layout.
+
 ## Reference
 
 - [`retro`](../../.agents/skills/retro/SKILL.md) — the user-invoked retrospective skill that runs this standard on the session the user names, defaulting to the current one.
