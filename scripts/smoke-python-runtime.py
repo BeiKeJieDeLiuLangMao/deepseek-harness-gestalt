@@ -244,7 +244,15 @@ def write_profile_patch(
 def write_advanced_profile_patch(root: Path, name: str, sessions: Path) -> Path:
     """Write the shared custom, snapshot, and restart profile patch."""
     return write_profile_patch(root, name, sessions, [
-        {"id": "tools", "config": {"mode": "both"}},
+        {
+            "id": "tools",
+            "config": {
+                # A patch replaces this row's whole config. Restate base toolSearch
+                # so deferred Browser tools keep registering under PTC mode.
+                "toolSearch": {"maxResultBytes": 65536},
+                "mode": "both",
+            },
+        },
         {
             "id": "system-prompt",
             "config": {

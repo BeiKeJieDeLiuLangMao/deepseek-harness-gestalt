@@ -98,6 +98,18 @@ def live_smoke(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
     return state
 
 
+def test_advanced_profile_patch_restates_tool_search(tmp_path: Path) -> None:
+    sessions = tmp_path / "sessions"
+    sessions.mkdir()
+    patch = SMOKE["write_advanced_profile_patch"](tmp_path, "custom.patch.yml", sessions)
+    rows = json.loads(patch.read_text())
+    tools = next(row for row in rows if row.get("id") == "tools")
+    assert tools["config"] == {
+        "toolSearch": {"maxResultBytes": 65536},
+        "mode": "both",
+    }
+
+
 def test_live_smoke_requires_fresh_external_content(live_smoke: SimpleNamespace) -> None:
     SMOKE["smoke_sdk_live"]()
     assert len(live_smoke.prompts) == 2
