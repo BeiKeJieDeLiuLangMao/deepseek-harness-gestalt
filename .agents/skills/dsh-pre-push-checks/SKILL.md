@@ -24,6 +24,8 @@ pnpm --silent run change-scope --base <verified-base-ref>
 
 The command never guesses or fetches a base. Supply the ref verified from current remote or stack state; use `--head <ref>` when inspecting a commit other than `HEAD`. Its versioned JSON records committed paths relative to the resolved merge base, while staged, unstaged, and untracked paths describe the current worktree. After merging a changed base, rerun the report, reassess which behavior the combined scope can affect, and rerun only checks invalidated by the merge.
 
+3. If this checkout is a new isolated worktree, run `pnpm install` in that worktree before any local check. A copied or incomplete `node_modules` is not evidence. If typecheck fails because a workspace package is missing (`zod`, `@deepseek-ai/dsh-client-ui-*`, and similar), fix the install; do not `git push --no-verify`.
+
 ## Select relevant evidence
 
 There is no universal local baseline beyond the hooks. Every behavior change needs the narrowest available test or purpose-built check that would fail for its regression; add broader checks only for surfaces the diff actually reaches.

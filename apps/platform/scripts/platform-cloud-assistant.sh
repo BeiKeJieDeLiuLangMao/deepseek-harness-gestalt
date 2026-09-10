@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 platform_cloud_run() {
-  local instance_id="$1" command_file="$2" command_timeout="${3:-300}"
+  local instance_id="$1" command_file="$2" command_timeout="${3:-300}" output_file="${4:-}"
   local command_content response invoke_id result status exit_code error_code error_info
   local attempt max_attempts
 
@@ -30,6 +30,10 @@ platform_cloud_run() {
       Success)
         exit_code=$(jq -er '.Invocation.InvocationResults.InvocationResult[0].ExitCode' <<< "$result")
         if [ "$exit_code" = 0 ]; then
+          if [ -n "$output_file" ]; then
+            install -m 600 /dev/null "$output_file"
+            jq -er '.Invocation.InvocationResults.InvocationResult[0].Output' <<< "$result" | base64 --decode > "$output_file"
+          fi
           return 0
         fi
         ;;

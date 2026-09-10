@@ -1,7 +1,23 @@
 import { readFileSync } from 'node:fs'
+import { generateKeyPairSync, randomUUID, sign } from 'node:crypto'
 import { connect as connectTls, createServer as createTlsServer } from 'node:tls'
 import type { RedisClientType } from 'redis'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { Context } from '@deepseek-ai/cordis'
+import {
+  mobileInstallationRevocationBinding,
+  parseAccountProofJti,
+  parseInstallationId,
+  selectPlatformEnvironment,
+  validatePlatformEnvironmentPair,
+  type AccountProof,
+} from '@deepseek-ai/dsh-platform-account'
+import {
+  MemoryAccountBackend,
+  PlatformAccount,
+  accountProofPayload,
+  hashAccountToken,
+} from '@deepseek-ai/dsh-platform-account-core'
 
 interface CapturedRedisOptions {
   socket?: {
@@ -20,7 +36,7 @@ const redis = vi.hoisted(() => ({
 
 vi.mock('redis', () => ({ createClient: redis.createClient }))
 
-import { connectRedis } from '../src/redis-bus.ts'
+import { connectRedis, RedisAccountInvalidationBus } from '../src/redis-bus.ts'
 
 const TLS_CERTIFICATE = readFileSync(
   new URL('../../../packages/platform/remote-access-http/tests/fixtures/localhost-cert.pem', import.meta.url),
@@ -164,7 +180,124 @@ describe('operated Redis connection ownership', () => {
     expect(failure.errors).toEqual([closeFailure, destroyFailure])
     expectResourcesReleased(fixture.state)
   })
+
+  it('recovers a durable Mobile invalidation after the Redis publisher returns', async () => {
+    vi.useFakeTimers()
+    const environment = selectPlatformEnvironment(validatePlatformEnvironmentPair({
+      development: {
+        environment: 'development', origin: 'https://platform.dev.example.com',
+        callbackUrl: 'https://platform.dev.example.com/v1/account/oauth/github/callback',
+        githubClientId: 'redis-development', credentialReference: 'credentials://redis-development',
+        databaseIdentity: 'redis-development', identityNamespace: 'redis-development',
+      },
+      production: {
+        environment: 'production', origin: 'https://platform.example.com',
+        callbackUrl: 'https://platform.example.com/v1/account/oauth/github/callback',
+        githubClientId: 'redis-production', credentialReference: 'credentials://redis-production',
+        databaseIdentity: 'redis-production', identityNamespace: 'redis-production',
+      },
+    }), 'development')
+    const backend = new MemoryAccountBackend(environment.databaseIdentity)
+    const publish = vi.fn()
+      .mockRejectedValueOnce(new Error('Redis publisher unavailable'))
+      .mockResolvedValue(1)
+    const bus = new RedisAccountInvalidationBus(
+      { publish } as unknown as RedisClientType,
+      {} as RedisClientType,
+    )
+    const github = {
+      environment,
+      authorizationUrl(input: { callbackUrl: string; state: string; codeChallenge: string }) {
+        const url = new URL('https://github.com/login/oauth/authorize')
+        url.searchParams.set('state', input.state)
+        return url.toString()
+      },
+      async exchange() {
+        return { providerSubject: 902, login: 'redis-user', avatarUrl: 'https://avatars.example/redis-user' }
+      },
+    }
+    const options = {
+      backend, invalidation: bus, github, environment,
+      clock: { now: () => 1_000 },
+      config: {
+        tokenSigningKey: Buffer.alloc(32, 7),
+        pollingSigningKey: Buffer.alloc(32, 9),
+        sessionInvalidationRetryIntervalMs: 100,
+      },
+    }
+    const first = new PlatformAccount(new Context(), options)
+    const second = new PlatformAccount(new Context(), {
+      ...options,
+      config: { ...options.config, sessionInvalidationRetryIntervalMs: 60_000 },
+    })
+    try {
+      const desktop = await redisLogin(first, 'redis-desktop', 'desktop')
+      const mobile = await redisLogin(first, 'redis-mobile', 'mobile')
+      const close = vi.fn()
+      await second.trackConnection(mobile.session.sessionId, close)
+      await expect(first.revokeMobileInstallation({
+        accessToken: desktop.session.accessToken,
+        installationId: parseInstallationId('redis-mobile'),
+        proof: desktop.proof(
+          'revoke-mobile-installation',
+          mobileInstallationRevocationBinding(
+            hashAccountToken(desktop.session.accessToken),
+            parseInstallationId('redis-mobile'),
+          ),
+        ),
+      })).rejects.toThrow('not fully published')
+      expect(close).not.toHaveBeenCalled()
+      await expect(backend.pendingMobileSessionInvalidations(environment.identityNamespace))
+        .resolves.toEqual([mobile.session.sessionId])
+
+      await vi.advanceTimersByTimeAsync(100)
+
+      expect(close).toHaveBeenCalledOnce()
+      expect(publish).toHaveBeenCalledTimes(2)
+      await expect(backend.pendingMobileSessionInvalidations(environment.identityNamespace)).resolves.toEqual([])
+    } finally {
+      await first.dispose()
+      await second.dispose()
+      vi.useRealTimers()
+    }
+  })
 })
+
+async function redisLogin(
+  account: PlatformAccount,
+  installationId: string,
+  installationKind: 'desktop' | 'mobile',
+) {
+  const pair = generateKeyPairSync('ec', { namedCurve: 'P-256' })
+  const attempt = await account.beginLogin(installationKind === 'desktop'
+    ? {
+      installationId: parseInstallationId(installationId), installationKind,
+      presentation: { name: installationId, platform: 'linux' }, publicKey: pair.publicKey.export({ format: 'jwk' }),
+    }
+    : {
+      installationId: parseInstallationId(installationId), installationKind,
+      presentation: { name: installationId, platform: 'ios' }, publicKey: pair.publicKey.export({ format: 'jwk' }),
+    })
+  await account.completeGitHubCallback({ code: 'code', state: attempt.state })
+  const proof = (operation: string, binding: string): AccountProof => {
+    const jti = parseAccountProofJti(randomUUID())
+    return {
+      jti,
+      issuedAt: 1_000,
+      signature: sign('sha256', accountProofPayload({ operation, binding, issuedAt: 1_000, jti }), {
+        key: pair.privateKey,
+        dsaEncoding: 'ieee-p1363',
+      }).toString('base64url'),
+    }
+  }
+  const session = await account.pollLogin({
+    attemptId: attempt.id,
+    pollingToken: attempt.pollingToken,
+    proof: proof('login-poll', `${attempt.id}:${hashAccountToken(attempt.pollingToken)}`),
+  })
+  if (session.status !== 'complete') throw new Error('expected complete Redis fixture login')
+  return { session, proof }
+}
 
 function redisOptions() {
   return {

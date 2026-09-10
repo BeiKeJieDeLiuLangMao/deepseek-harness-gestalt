@@ -1,6 +1,7 @@
 # Agent Note: Project membership publishes state only at its durable commit point
 
 Status: implemented
+Archived: 2026-09-09
 
 English | [中文](2026-08-27-project-membership-commit-point-rollback.zh.md)
 

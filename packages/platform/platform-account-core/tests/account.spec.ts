@@ -1,4 +1,4 @@
-import { createHmac, generateKeyPairSync, randomUUID, sign } from 'node:crypto'
+import { createHash, createHmac, generateKeyPairSync, randomUUID, sign } from 'node:crypto'
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
 import type {
@@ -13,6 +13,11 @@ import {
   ACCOUNT_DESKTOP_INSTALLATION_LIMIT,
   ACCOUNT_MOBILE_INSTALLATION_LIMIT,
   AccountError,
+  accountDeletionBinding,
+  mobileInstallationRevocationBinding,
+  parseAccountDeletionId,
+  parseAccountDeletionProjects,
+  parseAccountDeletionSuccessors,
   OPEN_REGISTRATION_HARD_CAP_RETRY_AFTER_SECONDS,
   parseAccountProofJti,
   parseInstallationId,
@@ -31,6 +36,7 @@ import {
   accountProofPayload,
   hashAccountToken,
   type AccountBackend,
+  type AccountDeletionOptions,
   type GitHubIdentity,
   type GitHubIdentityProvider,
   type PlatformAccountConfig,
@@ -100,6 +106,7 @@ function github(): GitHubIdentityProvider & { exchanges: Array<{ code: string; v
 const CONFIG: PlatformAccountConfig = {
   tokenSigningKey: Buffer.alloc(32, 7),
   pollingSigningKey: Buffer.alloc(32, 9),
+  sessionInvalidationRetryIntervalMs: 60_000,
 }
 
 function accountHarness(options: {
@@ -109,6 +116,7 @@ function accountHarness(options: {
   clock?: { now(): number }
   config?: PlatformAccountConfig
   capacity?: PlatformCapacityState
+  deletion?: AccountDeletionOptions | false
 } = {}) {
   const backend = options.backend ?? new MemoryAccountBackend(ENVIRONMENT.databaseIdentity)
   const invalidation = options.invalidation ?? new MemoryAccountInvalidationBus()
@@ -118,11 +126,16 @@ function accountHarness(options: {
   const capacity = options.capacity
   const accountOptions = {
     backend, invalidation, github: provider, environment: ENVIRONMENT, clock, config,
+    ...(options.deletion === false ? {} : { deletion: options.deletion ?? {
+      owner: { async plan() { return [] }, async revoke() {}, async cleanup() { return [] } },
+      retryIntervalMs: 60_000, completedReceiptLifetimeMs: 60_000,
+    } }),
     ...(capacity === undefined ? {} : { capacity }),
   }
-  const first = new PlatformAccount(new Context(), accountOptions)
+  const firstContext = new Context()
+  const first = new PlatformAccount(firstContext, accountOptions)
   const second = new PlatformAccount(new Context(), accountOptions)
-  return { backend, invalidation, provider, clock, config, first, second }
+  return { backend, invalidation, provider, clock, config, first, second, firstContext }
 }
 
 async function login(
@@ -387,6 +400,100 @@ describe('PlatformAccount', () => {
     await expect(readSession(session.sessionId)).resolves.toMatchObject({ active: false })
   })
 
+  it('deletes a newly created account and invalidates every installation across instances', async () => {
+    const { first, second } = accountHarness()
+    const desktop = await login(first, installationKey(), parseInstallationId('delete-desktop'))
+    const mobile = await login(second, installationKey(), parseInstallationId('delete-mobile'), 'mobile')
+    expect(mobile.session.account.id).toBe(desktop.session.account.id)
+    const desktopClosed = vi.fn()
+    const mobileClosed = vi.fn()
+    await first.trackConnection(desktop.session.sessionId, desktopClosed)
+    await second.trackConnection(mobile.session.sessionId, mobileClosed)
+    const operationId = parseAccountDeletionId(randomUUID())
+    const recoveryToken = randomUUID()
+
+    await second.deleteAccount({
+      accessToken: mobile.session.accessToken,
+      operationId,
+      recoveryToken,
+      successors: [],
+      proof: mobile.key.proof('delete-account', `${hashAccountToken(mobile.session.accessToken)}:${accountDeletionBinding({
+        operationId, recoveryTokenHash: hashAccountToken(recoveryToken), successors: [],
+      })}`),
+    })
+    expect(desktopClosed).toHaveBeenCalledOnce()
+    expect(mobileClosed).toHaveBeenCalledOnce()
+    for (const installation of [desktop, mobile]) {
+      await expect(first.current({
+        accessToken: installation.session.accessToken,
+        proof: installation.key.proof('current', hashAccountToken(installation.session.accessToken)),
+      })).rejects.toMatchObject({ code: 'SESSION_REVOKED' })
+    }
+    const registered = await login(first, installationKey(), parseInstallationId('delete-new'))
+    expect(registered.session.account.id).not.toBe(mobile.session.account.id)
+  })
+
+  it('retains deletion after owner cleanup fails and blocks a concurrent fresh login', async () => {
+    const { first, second } = accountHarness({ deletion: {
+      owner: {
+        async plan() { return [] },
+        async revoke() {},
+        async cleanup() { throw new Error('attachment cleanup unavailable') },
+      },
+      retryIntervalMs: 60_000,
+      completedReceiptLifetimeMs: 60_000,
+    } })
+    const mobile = await login(first, installationKey(), parseInstallationId('pending-delete'), 'mobile')
+    const operationId = parseAccountDeletionId(randomUUID())
+    const recoveryToken = randomUUID()
+    const result = await first.deleteAccount({
+      accessToken: mobile.session.accessToken, operationId, recoveryToken, successors: [],
+      proof: mobile.key.proof('delete-account', `${hashAccountToken(mobile.session.accessToken)}:${accountDeletionBinding({
+        operationId, recoveryTokenHash: hashAccountToken(recoveryToken), successors: [],
+      })}`),
+    })
+    expect(result.status).toBe('deleting')
+    await expect(login(second, installationKey(), parseInstallationId('cannot-recreate')))
+      .rejects.toMatchObject({ code: 'ACCOUNT_DELETING' })
+    await first.dispose()
+    await second.dispose()
+  })
+
+  it('recovers an accepted deletion on another instance without the revoked session', async () => {
+    let unavailable = true
+    const cleanup = vi.fn(async () => {
+      if (unavailable) throw new Error('cleanup unavailable')
+      return []
+    })
+    const { first, second } = accountHarness({ deletion: {
+      owner: { async plan() { return [] }, async revoke() {}, cleanup },
+      retryIntervalMs: 60_000, completedReceiptLifetimeMs: 60_000,
+    } })
+    const mobile = await login(first, installationKey(), parseInstallationId('recover-delete'), 'mobile')
+    const operationId = parseAccountDeletionId(randomUUID())
+    const recoveryToken = randomUUID()
+    const binding = accountDeletionBinding({ operationId, recoveryTokenHash: hashAccountToken(recoveryToken), successors: [] })
+    await first.deleteAccount({
+      accessToken: mobile.session.accessToken, operationId, recoveryToken, successors: [],
+      proof: mobile.key.proof('delete-account', `${hashAccountToken(mobile.session.accessToken)}:${binding}`),
+    })
+    await first.dispose()
+    unavailable = false
+    await expect(second.recoverAccountDeletion({
+      operationId, recoveryToken,
+      proof: installationKey().proof('recover-account-deletion', binding),
+    })).rejects.toMatchObject({ code: 'PROOF_INVALID' })
+    expect(cleanup).toHaveBeenCalledTimes(1)
+    await expect(second.recoverAccountDeletion({
+      operationId, recoveryToken,
+      proof: mobile.key.proof('recover-account-deletion', binding),
+    })).resolves.toEqual({ operationId, status: 'complete', projects: [] })
+    await expect(second.current({ accessToken: mobile.session.accessToken,
+      proof: mobile.key.proof('current', hashAccountToken(mobile.session.accessToken)),
+    })).rejects.toMatchObject({ code: 'SESSION_REVOKED' })
+    await second.dispose()
+  })
+
   it('invalidates and closes only the current installation across instances', async () => {
     const { first, second } = accountHarness()
     const key = installationKey()
@@ -612,6 +719,9 @@ describe('PlatformAccount', () => {
   it.each([
     { tokenSigningKey: Buffer.alloc(31) },
     { pollingSigningKey: Buffer.alloc(31) },
+    { sessionInvalidationRetryIntervalMs: 0 },
+    { sessionInvalidationRetryIntervalMs: 1.5 },
+    { sessionInvalidationRetryIntervalMs: Number.MAX_SAFE_INTEGER + 1 },
   ])('rejects invalid provider config %#', (override) => {
     expect(() => accountHarness({ config: { ...CONFIG, ...override } })).toThrow()
   })
@@ -877,6 +987,390 @@ describe('PlatformAccount', () => {
       })
   })
 
+  it('frees one Mobile quota slot, cancels an authorized replacement, and permits later sign-in', async () => {
+    const { first, second } = accountHarness()
+    const desktop = await login(first, installationKey(), parseInstallationId('installation-manager'))
+    const mobiles = []
+    for (let index = 0; index < ACCOUNT_MOBILE_INSTALLATION_LIMIT; index += 1) {
+      mobiles.push(await login(
+        first,
+        installationKey(),
+        parseInstallationId(`managed-mobile-${String(index)}`),
+        'mobile',
+      ))
+    }
+    await expect(login(first, installationKey(), parseInstallationId('mobile-eleven'), 'mobile'))
+      .rejects.toMatchObject({ code: 'QUOTA' })
+    const authorizedKey = installationKey()
+    const authorized = await first.beginLogin({
+      installationId: parseInstallationId('managed-mobile-0'),
+      installationKind: 'mobile',
+      presentation: { name: 'Replacement attempt', platform: 'android' },
+      publicKey: authorizedKey.publicKey,
+    })
+    await first.completeGitHubCallback({ code: 'code', state: authorized.state })
+    const firstClose = vi.fn()
+    const secondClose = vi.fn()
+    await first.trackConnection(mobiles[0]!.session.sessionId, firstClose)
+    await second.trackConnection(mobiles[0]!.session.sessionId, secondClose)
+
+    const listed = await first.listMobileInstallations({
+      accessToken: desktop.session.accessToken,
+      proof: desktop.key.proof('list-mobile-installations', hashAccountToken(desktop.session.accessToken)),
+    })
+    expect(listed).toHaveLength(ACCOUNT_MOBILE_INSTALLATION_LIMIT)
+    expect(listed[0]).toEqual({
+      id: 'managed-mobile-0',
+      reference: createHash('sha256').update('managed-mobile-0').digest('hex').slice(0, 12),
+      name: 'managed-mobile-0 presentation',
+      platform: 'ios',
+    })
+    const remaining = await first.revokeMobileInstallation({
+      accessToken: desktop.session.accessToken,
+      installationId: parseInstallationId('managed-mobile-0'),
+      proof: desktop.key.proof(
+        'revoke-mobile-installation',
+        mobileInstallationRevocationBinding(
+          hashAccountToken(desktop.session.accessToken),
+          parseInstallationId('managed-mobile-0'),
+        ),
+      ),
+    })
+
+    expect(remaining).toHaveLength(ACCOUNT_MOBILE_INSTALLATION_LIMIT - 1)
+    expect(firstClose).toHaveBeenCalledOnce()
+    expect(secondClose).toHaveBeenCalledOnce()
+    await expect(first.refresh({
+      refreshToken: mobiles[0]!.session.refreshToken,
+      proof: mobiles[0]!.key.proof('refresh', hashAccountToken(mobiles[0]!.session.refreshToken)),
+    })).rejects.toMatchObject({ code: 'SESSION_REVOKED' })
+    await expect(first.pollLogin({
+      attemptId: authorized.id,
+      pollingToken: authorized.pollingToken,
+      proof: authorizedKey.proof('login-poll', `${authorized.id}:${hashAccountToken(authorized.pollingToken)}`),
+    })).rejects.toMatchObject({ code: 'LOGIN_ATTEMPT_USED' })
+    const eleventh = await login(first, installationKey(), parseInstallationId('mobile-eleven'), 'mobile')
+    await expect(login(first, installationKey(), parseInstallationId('managed-mobile-0'), 'mobile'))
+      .rejects.toMatchObject({ code: 'QUOTA' })
+    await first.revokeMobileInstallation({
+      accessToken: desktop.session.accessToken,
+      installationId: parseInstallationId('mobile-eleven'),
+      proof: desktop.key.proof(
+        'revoke-mobile-installation',
+        mobileInstallationRevocationBinding(
+          hashAccountToken(desktop.session.accessToken),
+          parseInstallationId('mobile-eleven'),
+        ),
+      ),
+    })
+    await expect(first.refresh({
+      refreshToken: eleventh.session.refreshToken,
+      proof: eleventh.key.proof('refresh', hashAccountToken(eleventh.session.refreshToken)),
+    })).rejects.toMatchObject({ code: 'SESSION_REVOKED' })
+    await expect(login(first, installationKey(), parseInstallationId('managed-mobile-0'), 'mobile'))
+      .resolves.toMatchObject({ session: { account: { id: desktop.session.account.id } } })
+  })
+
+  it('requires Desktop authority and hides foreign or Desktop removal targets', async () => {
+    let providerSubject = 13994321
+    const provider = github()
+    provider.exchange = async (code, verifier) => {
+      provider.exchanges.push({ code, verifier })
+      return { providerSubject, login: `user-${String(providerSubject)}`, avatarUrl: `https://avatars.example/${String(providerSubject)}` }
+    }
+    const { first } = accountHarness({ provider })
+    const desktop = await login(first, installationKey(), parseInstallationId('owner-desktop'))
+    const ownedMobile = await login(first, installationKey(), parseInstallationId('owned-mobile'), 'mobile')
+    await expect(first.listMobileInstallations({
+      accessToken: ownedMobile.session.accessToken,
+      proof: ownedMobile.key.proof('list-mobile-installations', hashAccountToken(ownedMobile.session.accessToken)),
+    })).rejects.toMatchObject({ code: 'INSTALLATION_FORBIDDEN' })
+    await expect(first.revokeMobileInstallation({
+      accessToken: ownedMobile.session.accessToken,
+      installationId: parseInstallationId('owned-mobile'),
+      proof: ownedMobile.key.proof(
+        'revoke-mobile-installation',
+        mobileInstallationRevocationBinding(
+          hashAccountToken(ownedMobile.session.accessToken),
+          parseInstallationId('owned-mobile'),
+        ),
+      ),
+    })).rejects.toMatchObject({ code: 'INSTALLATION_FORBIDDEN' })
+    providerSubject = 7
+    await login(first, installationKey(), parseInstallationId('foreign-mobile'), 'mobile')
+    for (const target of ['owner-desktop', 'foreign-mobile', 'absent-mobile']) {
+      const installationId = parseInstallationId(target)
+      await expect(first.revokeMobileInstallation({
+        accessToken: desktop.session.accessToken,
+        installationId,
+        proof: desktop.key.proof(
+          'revoke-mobile-installation',
+          mobileInstallationRevocationBinding(hashAccountToken(desktop.session.accessToken), installationId),
+        ),
+      })).rejects.toMatchObject({ code: 'INSTALLATION_NOT_FOUND' })
+    }
+  })
+
+  it('lists a legacy Mobile Session without inventing presentation and still removes it', async () => {
+    const backend = new MemoryAccountBackend(ENVIRONMENT.databaseIdentity)
+    const harness = accountHarness({ backend })
+    const desktop = await login(harness.first, installationKey(), parseInstallationId('legacy-manager'))
+    const mobile = await login(harness.first, installationKey(), parseInstallationId('legacy-mobile'), 'mobile')
+    const internals = backend as unknown as { sessions: Map<AccountSessionId, { presentation?: unknown }> }
+    const record = internals.sessions.get(mobile.session.sessionId)
+    if (record === undefined) throw new Error('expected legacy Mobile Session')
+    delete record.presentation
+
+    await expect(harness.first.listMobileInstallations({
+      accessToken: desktop.session.accessToken,
+      proof: desktop.key.proof('list-mobile-installations', hashAccountToken(desktop.session.accessToken)),
+    })).resolves.toEqual([{
+      id: 'legacy-mobile',
+      reference: createHash('sha256').update('legacy-mobile').digest('hex').slice(0, 12),
+    }])
+    await expect(harness.first.revokeMobileInstallation({
+      accessToken: desktop.session.accessToken,
+      installationId: parseInstallationId('legacy-mobile'),
+      proof: desktop.key.proof(
+        'revoke-mobile-installation',
+        mobileInstallationRevocationBinding(
+          hashAccountToken(desktop.session.accessToken),
+          parseInstallationId('legacy-mobile'),
+        ),
+      ),
+    })).resolves.toEqual([])
+  })
+
+  it('rechecks the Desktop caller revision and deletion marker inside Mobile removal', async () => {
+    const harness = accountHarness()
+    const desktop = await login(harness.first, installationKey(), parseInstallationId('rechecked-desktop'))
+    await login(harness.first, installationKey(), parseInstallationId('rechecked-mobile'), 'mobile')
+    const initiating = await harness.backend.getSession(desktop.session.sessionId)
+    if (initiating === undefined) throw new Error('expected initiating session')
+    await harness.backend.rotateRefresh(initiating.id, initiating.refreshHash, 'rotated-caller-refresh')
+    await expect(harness.backend.revokeMobileInstallation(
+      initiating,
+      parseInstallationId('rechecked-mobile'),
+    )).rejects.toMatchObject({ code: 'SESSION_REVOKED' })
+    const current = await harness.backend.getSession(initiating.id)
+    if (current === undefined) throw new Error('expected current initiating session')
+    await harness.backend.beginAccountDeletion({
+      operationId: parseAccountDeletionId('removal-deletion'),
+      accountId: current.accountId,
+      identityNamespace: current.identityNamespace,
+      installationId: current.installationId,
+      publicKey: current.publicKey,
+      recoveryTokenHash: 'a'.repeat(43),
+      successors: [],
+      sessionIds: [],
+      status: 'deleting',
+      projects: [],
+    }, current)
+    await expect(harness.backend.revokeMobileInstallation(
+      current,
+      parseInstallationId('rechecked-mobile'),
+    )).rejects.toMatchObject({ code: 'ACCOUNT_DELETING' })
+  })
+
+  it('recovers failed Mobile invalidations after restart without Account deletion', async () => {
+    vi.useFakeTimers()
+    const backend = new MemoryAccountBackend(ENVIRONMENT.databaseIdentity)
+    const invalidation = new MemoryAccountInvalidationBus()
+    const sender = new PlatformAccount(new Context(), {
+      backend, invalidation, github: github(), environment: ENVIRONMENT,
+      clock: { now: () => NOW },
+      config: { ...CONFIG, sessionInvalidationRetryIntervalMs: 100 },
+    })
+    const receiver = new PlatformAccount(new Context(), {
+      backend, invalidation, github: github(), environment: ENVIRONMENT,
+      clock: { now: () => NOW },
+      config: { ...CONFIG, sessionInvalidationRetryIntervalMs: 60_000 },
+    })
+    let recovered: PlatformAccount | undefined
+    try {
+      const desktop = await login(sender, installationKey(), parseInstallationId('retry-manager'))
+      const mobile = await login(sender, installationKey(), parseInstallationId('retry-mobile'), 'mobile')
+      const session = await backend.getSession(mobile.session.sessionId)
+      if (session === undefined) throw new Error('expected Mobile Session')
+      const duplicateId = 'retry-mobile-duplicate-session' as AccountSessionId
+      const internals = backend as unknown as { sessions: Map<AccountSessionId, typeof session> }
+      internals.sessions.set(duplicateId, {
+        ...structuredClone(session),
+        id: duplicateId,
+        refreshHash: 'duplicate-refresh-hash',
+      })
+      const firstClose = vi.fn()
+      const laterClose = vi.fn()
+      await receiver.trackConnection(session.id, firstClose)
+      await receiver.trackConnection(duplicateId, laterClose)
+      const realPublish = invalidation.publish.bind(invalidation)
+      let unavailable = true
+      vi.spyOn(invalidation, 'publish').mockImplementation(async (sessionId) => {
+        if (sessionId === session.id && unavailable) {
+          unavailable = false
+          throw new Error('Redis publish unavailable')
+        }
+        await realPublish(sessionId)
+      })
+
+      await expect(sender.revokeMobileInstallation({
+        accessToken: desktop.session.accessToken,
+        installationId: parseInstallationId('retry-mobile'),
+        proof: desktop.key.proof(
+          'revoke-mobile-installation',
+          mobileInstallationRevocationBinding(
+            hashAccountToken(desktop.session.accessToken),
+            parseInstallationId('retry-mobile'),
+          ),
+        ),
+      })).rejects.toThrow('not fully published')
+      expect(firstClose).not.toHaveBeenCalled()
+      expect(laterClose).toHaveBeenCalledOnce()
+      await expect(backend.pendingMobileSessionInvalidations(ENVIRONMENT.identityNamespace))
+        .resolves.toEqual([session.id])
+
+      await sender.dispose()
+      recovered = new PlatformAccount(new Context(), {
+        backend, invalidation, github: github(), environment: ENVIRONMENT,
+        clock: { now: () => NOW },
+        config: { ...CONFIG, sessionInvalidationRetryIntervalMs: 100 },
+      })
+
+      await vi.advanceTimersByTimeAsync(100)
+
+      expect(firstClose).toHaveBeenCalledOnce()
+      await expect(backend.pendingMobileSessionInvalidations(ENVIRONMENT.identityNamespace)).resolves.toEqual([])
+    } finally {
+      await sender.dispose()
+      await recovered?.dispose()
+      await receiver.dispose()
+      vi.useRealTimers()
+    }
+  })
+
+  it('retries only the matching committed Mobile invalidation after removal already committed', async () => {
+    const backend = new MemoryAccountBackend(ENVIRONMENT.databaseIdentity)
+    const invalidation = new MemoryAccountInvalidationBus()
+    const { first, second } = accountHarness({ backend, invalidation })
+    try {
+      const desktop = await login(first, installationKey(), parseInstallationId('idempotent-manager'))
+      const mobile = await login(first, installationKey(), parseInstallationId('idempotent-mobile'), 'mobile')
+      const publish = vi.spyOn(invalidation, 'publish')
+        .mockRejectedValueOnce(new Error('Redis publish unavailable'))
+      const request = () => ({
+        accessToken: desktop.session.accessToken,
+        installationId: parseInstallationId('idempotent-mobile'),
+        proof: desktop.key.proof(
+          'revoke-mobile-installation',
+          mobileInstallationRevocationBinding(
+            hashAccountToken(desktop.session.accessToken),
+            parseInstallationId('idempotent-mobile'),
+          ),
+        ),
+      })
+
+      await expect(first.revokeMobileInstallation(request())).rejects.toThrow('not fully published')
+      const foreignSessionId = 'foreign-pending-session' as AccountSessionId
+      const internals = backend as unknown as { pendingMobileInvalidations: Map<AccountSessionId, {
+        identityNamespace: string
+        accountId: PlatformAccountId
+        installationId: ReturnType<typeof parseInstallationId>
+      }> }
+      internals.pendingMobileInvalidations.set(foreignSessionId, {
+        identityNamespace: ENVIRONMENT.identityNamespace,
+        accountId: 'foreign-account' as PlatformAccountId,
+        installationId: parseInstallationId('idempotent-mobile'),
+      })
+
+      await expect(first.revokeMobileInstallation(request())).resolves.toEqual([])
+      expect(publish).toHaveBeenLastCalledWith(mobile.session.sessionId)
+      await expect(backend.pendingMobileSessionInvalidations(ENVIRONMENT.identityNamespace))
+        .resolves.toEqual([foreignSessionId])
+    } finally {
+      await first.dispose()
+      await second.dispose()
+    }
+  })
+
+  it('rejects Mobile removal when the initiating Session lost its Account relationship', async () => {
+    const backend = new MemoryAccountBackend(ENVIRONMENT.databaseIdentity)
+    const { first, second } = accountHarness({ backend })
+    try {
+      const desktop = await login(first, installationKey(), parseInstallationId('orphan-manager'))
+      await login(first, installationKey(), parseInstallationId('orphan-mobile'), 'mobile')
+      const initiating = await backend.getSession(desktop.session.sessionId)
+      if (initiating === undefined) throw new Error('expected initiating Session')
+      const internals = backend as unknown as { accounts: Map<PlatformAccountId, unknown> }
+      internals.accounts.delete(initiating.accountId)
+
+      await expect(backend.revokeMobileInstallation(
+        initiating,
+        parseInstallationId('orphan-mobile'),
+      )).rejects.toMatchObject({ code: 'SESSION_REVOKED' })
+    } finally {
+      await first.dispose()
+      await second.dispose()
+    }
+  })
+
+  it('contains a failed Mobile invalidation recovery inventory read', async () => {
+    vi.useFakeTimers()
+    const backend = new MemoryAccountBackend(ENVIRONMENT.databaseIdentity)
+    const context = new Context()
+    const warn = vi.spyOn(context.logger, 'warn').mockImplementation(() => {})
+    vi.spyOn(backend, 'pendingMobileSessionInvalidations')
+      .mockRejectedValueOnce(new Error('database unavailable'))
+    const account = new PlatformAccount(context, {
+      backend,
+      invalidation: new MemoryAccountInvalidationBus(),
+      github: github(),
+      environment: ENVIRONMENT,
+      clock: { now: () => NOW },
+      config: { ...CONFIG, sessionInvalidationRetryIntervalMs: 100 },
+    })
+    try {
+      await vi.advanceTimersByTimeAsync(100)
+      expect(warn).toHaveBeenCalledWith(
+        'Account Session invalidation recovery failed: Error: database unavailable',
+      )
+    } finally {
+      await account.dispose()
+      warn.mockRestore()
+      vi.useRealTimers()
+    }
+  })
+
+  it('drains an in-flight Mobile invalidation inventory without rearming after disposal', async () => {
+    vi.useFakeTimers()
+    const backend = new MemoryAccountBackend(ENVIRONMENT.databaseIdentity)
+    let resolveInventory!: (ids: readonly AccountSessionId[]) => void
+    const inventory = new Promise<readonly AccountSessionId[]>((resolve) => { resolveInventory = resolve })
+    vi.spyOn(backend, 'pendingMobileSessionInvalidations').mockReturnValueOnce(inventory)
+    const account = new PlatformAccount(new Context(), {
+      backend,
+      invalidation: new MemoryAccountInvalidationBus(),
+      github: github(),
+      environment: ENVIRONMENT,
+      clock: { now: () => NOW },
+      config: { ...CONFIG, sessionInvalidationRetryIntervalMs: 100 },
+    })
+    try {
+      await vi.advanceTimersByTimeAsync(100)
+      let disposalSettled = false
+      const disposal = account.dispose().finally(() => { disposalSettled = true })
+      await vi.advanceTimersByTimeAsync(0)
+      expect(disposalSettled).toBe(false)
+      resolveInventory([])
+      await disposal
+      expect(disposalSettled).toBe(true)
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      resolveInventory([])
+      await account.dispose()
+      vi.useRealTimers()
+    }
+  })
+
   it('rejects a concurrent eleventh Desktop installation while the tenth completes', async () => {
     const { first, second } = accountHarness()
     for (let index = 0; index < ACCOUNT_DESKTOP_INSTALLATION_LIMIT - 1; index += 1) {
@@ -1044,4 +1538,209 @@ describe('PlatformAccount', () => {
       proof: key.proof('login-poll', `${attempt.id}:${hashAccountToken(attempt.pollingToken)}`),
     })).rejects.toMatchObject({ code: 'PLATFORM_CAPACITY', retryAfter: 12 })
   })
+})
+
+
+async function deletionRequest(account: PlatformAccount) {
+  const mobile = await login(account, installationKey(), parseInstallationId(randomUUID()), 'mobile')
+  const receipt = { operationId: parseAccountDeletionId(randomUUID()), recoveryToken: randomUUID() }
+  const binding = (successors: ReturnType<typeof parseAccountDeletionSuccessors>) => accountDeletionBinding({
+    ...receipt, recoveryTokenHash: hashAccountToken(receipt.recoveryToken), successors })
+  return { mobile, receipt,
+    start: (successors: ReturnType<typeof parseAccountDeletionSuccessors> = []) => ({ ...receipt, successors,
+      accessToken: mobile.session.accessToken,
+      proof: mobile.key.proof('delete-account', `${hashAccountToken(mobile.session.accessToken)}:${binding(successors)}`) }),
+    recover: (successors?: ReturnType<typeof parseAccountDeletionSuccessors>) => ({ ...receipt,
+      ...(successors === undefined ? {} : { successors }),
+      proof: mobile.key.proof('recover-account-deletion', binding(successors ?? [])) }),
+  }
+}
+
+describe('durable account deletion lifecycle', () => {
+  const projects = parseAccountDeletionProjects([{ projectId: 'shared', name: 'Shared', candidates: [
+    { membershipId: 'successor', accountId: 'other-account', label: 'Other member' },
+  ] }])
+  const choices = parseAccountDeletionSuccessors([{ projectId: 'shared', successorMembershipId: 'successor' }])
+
+  it('requires explicit joined successors and reselects through the same accepted receipt', async () => {
+    const owner = { plan: vi.fn(async () => projects), revoke: vi.fn(async () => {}), cleanup: vi.fn(async () => projects) }
+    const { first, second } = accountHarness({ deletion: { owner, retryIntervalMs: 60_000, completedReceiptLifetimeMs: 60_000 } })
+    const request = await deletionRequest(first)
+    for (const invalid of [[], [...choices, ...choices], parseAccountDeletionSuccessors([{ projectId: 'shared', successorMembershipId: 'absent' }])]) {
+      await expect(first.deleteAccount(request.start(invalid))).rejects.toMatchObject({ code: 'DELETION_SELECTION_REQUIRED' })
+    }
+    expect(owner.revoke).not.toHaveBeenCalled()
+    expect((await first.deleteAccount(request.start(choices))).status).toBe('action-required')
+    expect((await second.recoverAccountDeletion(request.recover())).projects).toEqual(projects)
+    owner.cleanup.mockResolvedValueOnce([])
+    expect((await second.recoverAccountDeletion(request.recover(choices))).status).toBe('complete')
+    expect((await first.deleteAccount(request.start(choices))).status).toBe('complete')
+    await expect(first.recoverAccountDeletion(request.recover(choices))).rejects.toMatchObject({ code: 'DELETION_INVALID' })
+    await first.dispose(); await second.dispose()
+  })
+
+  it('finishes action-required cleanup if shared project ownership no longer needs replacement', async () => {
+    const owner = { plan: vi.fn(async () => [] as ReturnType<typeof parseAccountDeletionProjects>),
+      revoke: vi.fn(async () => {}), cleanup: vi.fn(async () => projects) }
+    const { first, second } = accountHarness({ deletion: { owner, retryIntervalMs: 60_000, completedReceiptLifetimeMs: 60_000 } })
+    const request = await deletionRequest(first)
+    expect((await first.deleteAccount(request.start())).status).toBe('action-required')
+    owner.cleanup.mockResolvedValueOnce([])
+    expect((await first.recoverAccountDeletion(request.recover())).status).toBe('complete')
+    await first.dispose(); await second.dispose()
+  })
+
+  it('contains publication failure without reporting completed cleanup', async () => {
+    const { first, second, invalidation, backend } = accountHarness()
+    const request = await deletionRequest(first)
+    const publish = vi.spyOn(invalidation, 'publish').mockRejectedValueOnce(new Error('bus offline'))
+    await expect(first.deleteAccount(request.start())).rejects.toThrow('not fully published')
+    expect((await backend.getAccountDeletion(request.receipt.operationId))?.status).toBe('deleting')
+    publish.mockRestore()
+    expect((await second.recoverAccountDeletion(request.recover())).status).toBe('complete')
+    await first.dispose(); await second.dispose()
+  })
+
+  it('rejects mismatched receipts and expired completed receipts', async () => {
+    let now = NOW
+    const { first, second, backend } = accountHarness({ clock: { now: () => now } })
+    const request = await deletionRequest(first)
+    await first.deleteAccount(request.start())
+    await expect(first.recoverAccountDeletion({ ...request.recover(), recoveryToken: 'wrong' })).rejects.toMatchObject({ code: 'DELETION_INVALID' })
+    const record = (await backend.getAccountDeletion(request.receipt.operationId))!
+    await backend.saveAccountDeletion({ ...record, identityNamespace: 'other' })
+    await expect(first.recoverAccountDeletion(request.recover())).rejects.toMatchObject({ code: 'DELETION_INVALID' })
+    await backend.saveAccountDeletion(record)
+    now += 60_001
+    await expect(first.recoverAccountDeletion(request.recover())).rejects.toThrow('expired')
+    await backend.expireAccountDeletions(now)
+    expect(await backend.getAccountDeletion(request.receipt.operationId)).toBeUndefined()
+    await first.dispose(); await second.dispose()
+    await expect(first.recoverAccountDeletion(request.recover())).rejects.toMatchObject({ code: 'DELETION_UNAVAILABLE' })
+  })
+
+  it('validates configuration and refuses a second owner registration', async () => {
+    const { first, second } = accountHarness()
+    const options = { owner: { async plan() { return [] }, async revoke() {}, async cleanup() { return [] } },
+      retryIntervalMs: 1, completedReceiptLifetimeMs: 1 }
+    expect(() =>{  first.configureAccountDeletion(options) }).toThrow('already configured')
+    for (const value of [0, 0.5]) {
+      expect(() => accountHarness({ deletion: { ...options, retryIntervalMs: value } })).toThrow('positive safe integers')
+    }
+    await first.dispose(); await second.dispose()
+  })
+
+  it('retries pending cleanup and survives an intervening persistence outage', async () => {
+    vi.useFakeTimers()
+    const owner = { async plan() { return [] }, async revoke() {}, cleanup: vi.fn(async (): Promise<ReturnType<typeof parseAccountDeletionProjects>> => { throw new Error('offline') }) }
+    const { first, second, backend } = accountHarness({ deletion: { owner, retryIntervalMs: 100, completedReceiptLifetimeMs: 1000 } })
+    try {
+      const request = await deletionRequest(first)
+      await first.deleteAccount(request.start())
+      await second.dispose()
+      vi.spyOn(backend, 'pendingAccountDeletions').mockRejectedValueOnce(new Error('database unavailable'))
+      await vi.advanceTimersByTimeAsync(100)
+      expect((await backend.getAccountDeletion(request.receipt.operationId))?.status).toBe('deleting')
+      owner.cleanup.mockImplementation(async () => [])
+      await vi.advanceTimersByTimeAsync(100)
+      expect((await backend.getAccountDeletion(request.receipt.operationId))?.status).toBe('complete')
+      await vi.advanceTimersByTimeAsync(100)
+    } finally { await first.dispose(); vi.useRealTimers() }
+  })
+})
+
+it('preserves unrelated accounts and attempts while enforcing the memory backend deletion commit', async () => {
+  const { first, second, backend, provider } = accountHarness()
+  const request = await deletionRequest(first)
+  const initiating = (await backend.getSession(request.mobile.session.sessionId))!
+  vi.spyOn(provider, 'exchange').mockResolvedValue({ providerSubject: 42, login: 'other', avatarUrl: 'https://avatars.example/other' })
+  const other = await login(second, installationKey(), parseInstallationId('other-installation'))
+  const pending = await second.beginLogin({ installationId: parseInstallationId('pending-unrelated'), installationKind: 'desktop',
+    presentation: { name: 'Other', platform: 'linux' }, publicKey: installationKey().publicKey })
+  const pendingRecord = (await backend.getAttempt(pending.id))!
+  await backend.createAttempt({ ...pendingRecord, id: parseLoginAttemptId('other-namespace'), state: 'other-state', identityNamespace: 'other' })
+  await first.deleteAccount(request.start())
+  const record = (await backend.getAccountDeletion(request.receipt.operationId))!
+  await expect(backend.beginAccountDeletion(record, initiating)).rejects.toMatchObject({ code: 'DELETION_INVALID' })
+  await expect(backend.beginAccountDeletion({ ...record, operationId: parseAccountDeletionId('missing-session') }, initiating)).rejects.toMatchObject({ code: 'SESSION_REVOKED' })
+  const otherSession = (await backend.getSession(other.session.sessionId))!
+  await expect(backend.beginAccountDeletion({ ...record, operationId: parseAccountDeletionId('changed-session') }, { ...otherSession, revision: -1 })).rejects.toMatchObject({ code: 'SESSION_REVOKED' })
+  await backend.revokeSession(otherSession.id)
+  await expect(backend.beginAccountDeletion({ ...record, operationId: parseAccountDeletionId('revoked-session') }, otherSession)).rejects.toMatchObject({ code: 'SESSION_REVOKED' })
+  expect(await backend.getAccount(other.session.account.id)).toBeDefined()
+  expect(await backend.getAttempt(pending.id)).toBeDefined()
+  expect(await backend.getAttempt(parseLoginAttemptId('other-namespace'))).toBeDefined()
+  await backend.completeAccountDeletion(record.operationId, NOW)
+  await expect(backend.completeAccountDeletion(parseAccountDeletionId('missing'), NOW)).rejects.toMatchObject({ code: 'DELETION_INVALID' })
+  await backend.withAccountDeletionLock(record.operationId, async () => {
+    const operation = vi.fn(async () => {})
+    expect(await backend.withAccountDeletionLock(record.operationId, operation)).toBe(false)
+    expect(operation).not.toHaveBeenCalled()
+  })
+  await first.dispose(); await second.dispose()
+})
+
+it('reports an expired receipt when cleanup completes concurrently with receipt expiry', async () => {
+  const { first, second, backend } = accountHarness()
+  const request = await deletionRequest(first)
+  const complete = backend.completeAccountDeletion.bind(backend)
+  vi.spyOn(backend, 'completeAccountDeletion').mockImplementation(async (id, at) => {
+    await complete(id, at)
+    await backend.expireAccountDeletions(at + 1)
+  })
+  await expect(first.deleteAccount(request.start())).rejects.toMatchObject({ code: 'DELETION_INVALID' })
+  await first.dispose(); await second.dispose()
+})
+
+it('drains an in-flight recovery inventory without starting cleanup after disposal', async () => {
+  vi.useFakeTimers()
+  const { first, second, backend } = accountHarness()
+  await second.dispose()
+  let resolve!: (ids: readonly ReturnType<typeof parseAccountDeletionId>[]) => void
+  const inventory = new Promise<readonly ReturnType<typeof parseAccountDeletionId>[]>((done) => { resolve = done })
+  vi.spyOn(backend, 'pendingAccountDeletions').mockReturnValueOnce(inventory)
+  try {
+    await vi.advanceTimersByTimeAsync(60_000)
+    const disposal = first.dispose()
+    resolve([parseAccountDeletionId('pending')])
+    await disposal
+    expect(await backend.getAccountDeletion(parseAccountDeletionId('pending'))).toBeUndefined()
+  } finally { vi.useRealTimers() }
+})
+
+it('recovers later accounts and expires receipts when the first account revocation remains unavailable', async () => {
+  vi.useFakeTimers()
+  let now = NOW
+  let unavailable: PlatformAccountId | undefined
+  let cleanupAvailable = false
+  const owner = { async plan() { return [] }, async revoke(id: PlatformAccountId) {
+    if (id === unavailable) throw new Error('account relay unavailable')
+  }, async cleanup() {
+    if (!cleanupAvailable) throw new Error('cleanup paused')
+    return []
+  } }
+  const { first, second, backend, provider, firstContext } = accountHarness({ clock: { now: () => now },
+    deletion: { owner, retryIntervalMs: 100, completedReceiptLifetimeMs: 1000 } })
+  const warn = vi.spyOn(firstContext.logger, 'warn').mockImplementation(() => {})
+  try {
+    await second.dispose()
+    const blocked = await deletionRequest(first)
+    await first.deleteAccount(blocked.start())
+    unavailable = blocked.mobile.session.account.id
+    vi.spyOn(provider, 'exchange').mockResolvedValue({ providerSubject: 42, login: 'other', avatarUrl: 'https://avatars.example/other' })
+    const later = await deletionRequest(first)
+    await first.deleteAccount(later.start())
+    const expiredId = parseAccountDeletionId('expired-complete')
+    const record = (await backend.getAccountDeletion(blocked.receipt.operationId))!
+    await backend.saveAccountDeletion({ ...record, operationId: expiredId, status: 'complete', completedAt: NOW - 2000 })
+    cleanupAvailable = true
+    now += 100
+    await vi.advanceTimersByTimeAsync(100)
+    expect((await backend.getAccountDeletion(blocked.receipt.operationId))?.status).toBe('deleting')
+    expect((await backend.getAccountDeletion(later.receipt.operationId))?.status).toBe('complete')
+    expect(await backend.getAccountDeletion(expiredId)).toBeUndefined()
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining(blocked.receipt.operationId))
+    await vi.advanceTimersByTimeAsync(100)
+    expect((await backend.getAccountDeletion(blocked.receipt.operationId))?.status).toBe('deleting')
+  } finally { await first.dispose(); warn.mockRestore(); vi.useRealTimers() }
 })

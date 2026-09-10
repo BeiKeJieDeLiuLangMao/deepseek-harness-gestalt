@@ -98,6 +98,8 @@ Stop recorded PIDs, then verify. Do not use a command-line substring kill that c
 - the scratch root, `DSH_HOME`, and user-data directories are gone;
 - on macOS, PostgreSQL SysV shared-memory segments whose `CPID`/`LPID` match the recorded PIDs are gone.
 
+When freeing operated-Platform Mobile installation quota, drive the already-signed-in product Desktop Installation. Do not mint a new Desktop Installation for cleanup; that consumes a separate desktop quota. Isolated test instances still must not use the user's normal `DSH_HOME`. If the installed Desktop build lacks the Mobile-installation Settings UI, a source Desktop at the specification SHA may reuse the normal Electron `--user-data-dir` (`~/Library/Application Support/DeepSeek Gestalt` on macOS) without copying `DSH_HOME` or creating a new user-data directory. Revoke only by full opaque Installation ids.
+
 The Sub2API Electron runner already fails if those survivors remain; agent-started instances use the same completion bar.
 
 Scripted unit, protocol, snapshot, and Electron CI lanes retain their existing runners and complement this product GUI evidence; they do not replace a Codex computer-use walk through the actual native route. GIF recording still follows [record-browser-gif](../record-browser-gif/SKILL.md). Web-only browser automation follows [ego-browser](../ego-browser/SKILL.md), which reads and writes the `ego` record in this memo. UI prototypes follow [prototype/UI.md](../prototype/UI.md). Fidelity comparison and the dedicated acceptance walk follow [the fidelity-and-acceptance-route decision](../../notes/implemented/process/2026-09-03-ui-fidelity-and-acceptance-route.md) and use this skill for one isolated instance per goal.

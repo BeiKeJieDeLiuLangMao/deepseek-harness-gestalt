@@ -14,6 +14,7 @@ import {
 } from 'electron'
 import {
   ACCOUNT_ACCEPT_PRIVACY, ACCOUNT_BEGIN_LOGIN, ACCOUNT_CANCEL_LOGIN, ACCOUNT_GET_SNAPSHOT,
+  ACCOUNT_REFRESH_MOBILE_INSTALLATIONS, ACCOUNT_REVOKE_MOBILE_INSTALLATION,
   ACCOUNT_SIGN_OUT, ACCOUNT_SNAPSHOT_CHANGED,
   PROJECT_MEMBERSHIP_BY_REMOTE, PROJECT_MEMBERSHIP_CHANGE_ROLE, PROJECT_MEMBERSHIP_CREATE, PROJECT_MEMBERSHIP_DECIDE,
   PROJECT_MEMBERSHIP_INVITE, PROJECT_MEMBERSHIP_ISSUED, PROJECT_MEMBERSHIP_PENDING, PROJECT_MEMBERSHIP_REMOVE,
@@ -38,7 +39,7 @@ import { PlatformAccountHttpTransport } from '@deepseek-ai/dsh-platform-account-
 import { RemoteAccessHttpTransport } from '@deepseek-ai/dsh-remote-access-client'
 import { parsePersonalPairingId } from '@deepseek-ai/dsh-remote-access'
 import type { DesktopRelayLifecycle } from '@deepseek-ai/dsh-remote-access-client/desktop-relay-lifecycle'
-import type { SelectedPlatformEnvironment } from '@deepseek-ai/dsh-platform-account'
+import { parseInstallationId, type SelectedPlatformEnvironment } from '@deepseek-ai/dsh-platform-account'
 import {
   parseCompanionOperationId,
   REMOTE_PROTOCOL_LIMITS,
@@ -950,6 +951,9 @@ function installIpc(): void {
     return account.getSnapshot()
   })
   ipcMain.handle(ACCOUNT_CANCEL_LOGIN, () => account.cancelLogin())
+  ipcMain.handle(ACCOUNT_REFRESH_MOBILE_INSTALLATIONS, () => account.refreshMobileInstallations())
+  ipcMain.handle(ACCOUNT_REVOKE_MOBILE_INSTALLATION, (_event, raw: unknown) =>
+    account.revokeMobileInstallation(parseInstallationId(raw)))
   ipcMain.handle(ACCOUNT_SIGN_OUT, async () => {
     const snapshot = await account.signOut()
     await pairing.deactivate('mobile-access-disabled')

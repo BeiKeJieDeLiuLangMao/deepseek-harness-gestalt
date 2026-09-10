@@ -6,6 +6,7 @@ import type { SessionListState, WorkspaceView } from '@deepseek-ai/dsh-client-ru
 import css from './MobileAccount.module.css'
 import type { MobileCompanionPresentation } from './companion-history.ts'
 import type { MobilePairingSnapshot } from './personal-pairing-model.ts'
+import { MobileAccountDeletion } from './MobileAccountDeletion.tsx'
 import { MobileBrowse } from './MobileBrowse.tsx'
 import { MobilePairing, type MobilePairingActions } from './MobilePairing.tsx'
 import type { MobilePresentationClock } from './mobile-clock.ts'
@@ -104,6 +105,10 @@ export function MobileAccount({ installation, pairing, companion, locale, theme,
     }
   }
 
+  if (snapshot.deletion !== undefined) {
+    return <MobileAccountDeletion installation={installation} deletion={snapshot.deletion} locale={activeLocale} />
+  }
+
   if (!signedIn) {
     const text = LOGIN_TEXT[activeLocale]
     return (
@@ -174,6 +179,7 @@ export function MobileAccount({ installation, pairing, companion, locale, theme,
           onLocaleChange={selectLocale}
           onBack={() => { setScreen('home') }}
           onSignOut={signOut}
+          onDeleteAccount={async () => { await installation.prepareAccountDeletion() }}
           {...(pairing === undefined ? {} : { onOpenPairing: () => { setScreen('pairing') } })}
           {...(companion?.onClearCache === undefined ? {} : { onClearCache: companion.onClearCache })}
         />
@@ -234,7 +240,7 @@ const LOGIN_TEXT = {
     retention: '保留期',
     retentionValue: 'IP ≤ 7 天 · 安全事件 ≤ 30 天',
     accountDeletion: '账号删除',
-    accountDeletionValue: '首个版本暂不提供',
+    accountDeletionValue: '登录后在账号页发起',
     consent: '我已阅读中英文隐私说明',
     preparing: '准备安全授权…',
     polling: '等待 GitHub 授权…',
@@ -250,7 +256,7 @@ const LOGIN_TEXT = {
     retention: 'Retention',
     retentionValue: 'IP ≤ 7 days · security events ≤ 30 days',
     accountDeletion: 'Account deletion',
-    accountDeletionValue: 'Not available in the first release',
+    accountDeletionValue: 'Available from the signed-in Account page',
     consent: 'I have read both privacy notices',
     preparing: 'Preparing secure authorization…',
     polling: 'Waiting for GitHub authorization…',
@@ -267,6 +273,7 @@ function AccountView({
   locale,
   onBack,
   onSignOut,
+  onDeleteAccount,
   onLocaleChange,
   onOpenPairing,
   onClearCache,
@@ -278,10 +285,13 @@ function AccountView({
   locale: 'zh' | 'en'
   onBack: () => void
   onSignOut: () => void
+  onDeleteAccount: () => Promise<void>
   onLocaleChange: (locale: 'zh' | 'en') => void
   onOpenPairing?: () => void
   onClearCache?: () => void | Promise<void>
 }): ReactNode {
+  const [deletionError, setDeletionError] = useState(false)
+  const [deletionLoading, setDeletionLoading] = useState(false)
   const text = locale === 'zh'
     ? {
       account: '账号', signedInAccount: '已登录账号',
@@ -320,6 +330,12 @@ function AccountView({
         <button type="button" className={css.secondary} onClick={() => { void onClearCache() }}>{text.clearCache}</button>
       )}
       <button type="button" className={css.secondary} onClick={onSignOut}>{text.signOut}</button>
+      <button type="button" className={css.secondary} disabled={deletionLoading} onClick={() => {
+        setDeletionLoading(true)
+        setDeletionError(false)
+        void onDeleteAccount().catch(() => { setDeletionError(true) }).finally(() => { setDeletionLoading(false) })
+      }}>{locale === 'zh' ? '删除账号' : 'Delete account'}</button>
+      {deletionError && <p role="alert" className={css.error}>{locale === 'zh' ? '暂时无法准备账号删除，请稍后重试。' : 'Account deletion could not be prepared. Please retry.'}</p>}
     </section>
   )
 }

@@ -5,7 +5,7 @@ import {
   PlatformAccountHttpTransport,
   PlatformAccountInstallation,
 } from '@deepseek-ai/dsh-platform-account-client'
-import { parseInstallationId } from '@deepseek-ai/dsh-platform-account'
+import { parseInstallationId, type PlatformAccountId } from '@deepseek-ai/dsh-platform-account'
 import { parsePersonalPairingId } from '@deepseek-ai/dsh-remote-access'
 import {
   BrowserRelayEndpointSocket,
@@ -54,6 +54,7 @@ import {
 import { mobileSystemBrowser } from './system-browser.ts'
 import { loadMobilePlatformEnvironment } from './platform-environment.ts'
 import { loadPackagedMobileRuntimeIdentity } from './runtime-identity.ts'
+import { IndexedDbCompanionCacheStore, companionCacheDatabaseName } from './companion-cache.ts'
 import { MobileCompanionProjectionCacheRuntime } from './companion-cache-runtime.ts'
 import { launchMobileProduct } from './mobile-product-launch.ts'
 import { randomUuid } from './random-uuid.ts'
@@ -85,6 +86,8 @@ async function mountMobileProduct(): Promise<void> {
     environment.identityNamespace,
   ))
   const presentation = mobileInstallationPresentation(await Device.getInfo())
+  const pairingStateStore = new NativeMobilePairingStateStore(protectedStorage, environment.databaseIdentity)
+  let forgetAccountKeys: (accountId: PlatformAccountId) => Promise<void> = async () => {}
   const installation = new PlatformAccountInstallation({
     environment,
     installationId: parsedInstallationId,
@@ -93,6 +96,12 @@ async function mountMobileProduct(): Promise<void> {
     transport: new PlatformAccountHttpTransport({ environment }),
     store: new IndexedDbInstallationAccountStore(`deepseek-gestalt-platform-account:${environment.databaseIdentity}`),
     systemBrowser: mobileSystemBrowser,
+    onAccountDeleted: async (accountId) => {
+      await pairing.deactivate()
+      await forgetAccountKeys(accountId)
+      await new IndexedDbCompanionCacheStore(companionCacheDatabaseName(environment.environment, accountId)).clearAccount()
+      await pairingStateStore.removeAccount(accountId)
+    },
   })
 
   const unavailablePairing = {
@@ -122,10 +131,8 @@ async function mountMobileProduct(): Promise<void> {
       throw new TypeError('Mobile Relay inbound bytes must admit one maximum Relay message')
     }
     const handshake = new SnowMobileHandshakeClient()
-    const attachmentKeys = new PairingCompanionKeyVault(new NativeMobilePairingStateStore(
-      protectedStorage,
-      environment.databaseIdentity,
-    ))
+    const attachmentKeys = new PairingCompanionKeyVault(pairingStateStore)
+    forgetAccountKeys = accountId => attachmentKeys.forgetDeletedAccount(accountId)
     let attachmentOwner: SnowMobileAttachmentOwner | undefined
     let channel: SnowCompanionProtocolChannel | undefined
     let receiver: MobileNoiseCompanionReceiver | undefined

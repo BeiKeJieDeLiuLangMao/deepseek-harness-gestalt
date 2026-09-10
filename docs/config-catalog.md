@@ -2213,6 +2213,8 @@ export interface PlatformAccountOptions {
   clock?: AccountClock
   /** Shared two-instance capacity watermark; omitted compositions never shed login. */
   capacity?: PlatformCapacityState
+  /** Explicit deletion owner and retry budgets for this composition. */
+  deletion?: AccountDeletionOptions
 }
 
 /** Persistence operations requiring atomic compare-and-mutate behavior. */
@@ -2244,6 +2246,28 @@ export interface AccountBackend {
   rotateRefresh(sessionId: AccountSessionId, expectedHash: string, replacementHash: string): Promise<SessionRecord | undefined>
   /** Revoke one session and report whether it was active. */
   revokeSession(sessionId: AccountSessionId): Promise<boolean>
+  /** List active Mobile Installation sessions owned by one Account. */
+  listActiveMobileInstallations(accountId: PlatformAccountId): Promise<readonly SessionRecord[]>
+  /** Atomically revoke one owned Mobile Installation and its already-authorized login attempts. */
+  revokeMobileInstallation(initiating: SessionRecord, installationId: InstallationId): Promise<readonly AccountSessionId[]>
+  /** List committed Mobile Session invalidations still awaiting bus delivery. */
+  pendingMobileSessionInvalidations(identityNamespace: string): Promise<readonly AccountSessionId[]>
+  /** Remove one Mobile Session invalidation after the bus accepted it. */
+  completeMobileSessionInvalidation(sessionId: AccountSessionId): Promise<void>
+  /** Atomically mark deletion and revoke all sessions, refusing a changed initiating session. */
+  beginAccountDeletion(record: AccountDeletionRecord, initiating: SessionRecord): Promise<AccountDeletionRecord>
+  /** Read a deletion independently of its revoked sessions. */
+  getAccountDeletion(id: AccountDeletionId): Promise<AccountDeletionRecord | undefined>
+  /** Persist progress while the operation lock is held. */
+  saveAccountDeletion(record: AccountDeletionRecord): Promise<void>
+  /** Serialize cleanup across instances; return false when another worker holds the operation. */
+  withAccountDeletionLock(id: AccountDeletionId, operation: () => Promise<void>): Promise<boolean>
+  /** List unfinished operations in the provider's namespace. */
+  pendingAccountDeletions(identityNamespace: string): Promise<readonly AccountDeletionId[]>
+  /** Erase the Account and mark the recovery record complete while holding its operation lock. */
+  completeAccountDeletion(id: AccountDeletionId, completedAt: number): Promise<void>
+  /** Remove completed recovery records after the configured lifetime. */
+  expireAccountDeletions(completedBefore: number): Promise<void>
   /** Atomically reject replayed proof ids inside their validity window. */
   consumeProof(jti: AccountProofJti, expiresAt: number, now: number): Promise<boolean>
   /** Count live installations of one kind for an Account. */
@@ -2275,18 +2299,30 @@ export interface GitHubIdentityProvider {
   exchange(code: string, verifier: string): Promise<GitHubIdentity>
 }
 
-/** Secret signing material for one Platform Account provider. */
+/** Signing material and recovery budget for one Platform Account provider. */
 export interface PlatformAccountConfig {
   /** Shared secret used to sign short-lived access tokens. */
   tokenSigningKey: Uint8Array
   /** Shared secret used to sign five-minute polling tokens. */
   pollingSigningKey: Uint8Array
+  /** Interval for retrying committed Session invalidations after delivery failure. */
+  sessionInvalidationRetryIntervalMs: number
 }
 
 /** Clock adapter for expiry and deterministic keyless scenarios. */
 export interface AccountClock {
   /** @returns current Unix epoch milliseconds. */
   now(): number
+}
+
+/** Explicit operational budgets and the product's existing data owners. */
+export interface AccountDeletionOptions {
+  /** Product owners responsible for access revocation and data cleanup. */
+  owner: AccountDeletionOwner
+  /** Interval for retrying unfinished deletion after process recovery. */
+  retryIntervalMs: number
+  /** Time completed recovery receipts remain queryable before erasure. */
+  completedReceiptLifetimeMs: number
 }
 
 /** Durable Login Attempt state owned by an {@link AccountBackend}. */
@@ -2368,11 +2404,47 @@ export interface AccountRecord extends PlatformAccountView {
   /** Provider identity namespace that owns the account. */
   identityNamespace: string
 }
+
+/** Account metadata retained only while deletion cleanup still needs its identity. */
+export interface AccountDeletionRecord {
+  /** Stable operation identity retained across retries. */
+  operationId: AccountDeletionId
+  /** Account whose authority is revoked and data is cleaned. */
+  accountId: PlatformAccountId
+  /** Environment namespace that owns this deletion. */
+  identityNamespace: string
+  /** Installation that confirmed deletion. */
+  installationId: InstallationId
+  /** Public P-256 key required for recovery proof verification. */
+  publicKey: JsonWebKey
+  /** Digest of the initiating Installation recovery token. */
+  recoveryTokenHash: string
+  /** Explicit joined-member ownership transfers approved by the Account. */
+  successors: readonly AccountDeletionSuccessor[]
+  /** Revoked sessions whose connections require invalidation. */
+  sessionIds: readonly AccountSessionId[]
+  /** Durable cleanup progress; complete requires every owner to finish. */
+  status: AccountDeletionView['status']
+  /** Shared projects requiring replacement successor choices. */
+  projects: readonly AccountDeletionProject[]
+  /** Completion time in milliseconds; absent until all cleanup finishes. */
+  completedAt?: number
+}
+
+/** Existing product owners revoke access and erase their account-owned data. */
+export interface AccountDeletionOwner {
+  /** Return current sole-owner projects and joined successor candidates. */
+  plan(accountId: PlatformAccountId): Promise<readonly AccountDeletionProject[]>
+  /** Idempotently revoke pairing, route and attachment access before slow cleanup. */
+  revoke(accountId: PlatformAccountId): Promise<void>
+  /** Finish cleanup, or return projects whose successor choices need replacement. */
+  cleanup(accountId: PlatformAccountId, successors: readonly AccountDeletionSuccessor[]): Promise<readonly AccountDeletionProject[]>
+}
 ```
 
-Depends on: [`AccountProofJti`](../packages/platform/platform-account/src/index.ts) · [`AccountSessionId`](subsystems/platform-account.md) · [`InstallationId`](subsystems/platform-account.md) · [`InstallationKind`](../packages/platform/platform-account/src/index.ts) · [`InstallationPresentation`](../packages/platform/platform-account/src/index.ts) · [`LoginAttemptId`](subsystems/platform-account.md) · [`PlatformAccountId`](subsystems/platform-account.md) · [`PlatformAccountView`](subsystems/platform-account.md) · [`PlatformCapacityState`](../packages/platform/platform-account/src/index.ts) · [`PlatformEnvironment`](../packages/platform/platform-account/src/index.ts) · [`SelectedPlatformEnvironment`](../packages/platform/platform-account/src/index.ts)
+Depends on: [`AccountDeletionId`](../packages/platform/platform-account/src/index.ts) · [`AccountDeletionProject`](subsystems/platform-account.md) · [`AccountDeletionSuccessor`](subsystems/platform-account.md) · [`AccountDeletionView`](subsystems/platform-account.md) · [`AccountProofJti`](../packages/platform/platform-account/src/index.ts) · [`AccountSessionId`](subsystems/platform-account.md) · [`InstallationId`](subsystems/platform-account.md) · [`InstallationKind`](../packages/platform/platform-account/src/index.ts) · [`InstallationPresentation`](../packages/platform/platform-account/src/index.ts) · [`LoginAttemptId`](subsystems/platform-account.md) · [`PlatformAccountId`](subsystems/platform-account.md) · [`PlatformAccountView`](subsystems/platform-account.md) · [`PlatformCapacityState`](../packages/platform/platform-account/src/index.ts) · [`PlatformEnvironment`](../packages/platform/platform-account/src/index.ts) · [`SelectedPlatformEnvironment`](../packages/platform/platform-account/src/index.ts)
 
-Source: [`packages/platform/platform-account-core/src/index.ts:522`](../packages/platform/platform-account-core/src/index.ts)
+Source: [`packages/platform/platform-account-core/src/index.ts:707`](../packages/platform/platform-account-core/src/index.ts)
 
 <a id="deepseek-aidsh-platform-account-http"></a>
 
@@ -2388,7 +2460,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/platform/platform-account-http/src/index.ts:31`](../packages/platform/platform-account-http/src/index.ts)
+Source: [`packages/platform/platform-account-http/src/index.ts:34`](../packages/platform/platform-account-http/src/index.ts)
 
 <a id="deepseek-aidsh-project-membership-core"></a>
 

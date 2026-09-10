@@ -16,6 +16,10 @@
 
 候选不会自行落地。writer 把候选列表报告给请求它的协调者，协调者综合所有候选并逐项呈给用户显式决定保留或放弃。只有被接受的项通过交付工作流的 merger 路径落地，并重跑受影响检查。交付在该决策之前不合并。
 
+## 历史教训
+
+被保留的项同时写入 gitignored `.agents/local/lessons/`，供后续会话按 `id`、skill 与阶段累计重复次数。该档案是本机状态，不是 git 历史。文件布局由 [`retro`](../../.agents/skills/retro/SKILL.md) skill 拥有。
+
 ## 参考
 
 - [`retro`](../../.agents/skills/retro/SKILL.md) — 用户启动的复盘 skill，按用户指定的会话运行本标准，缺省为当前会话。

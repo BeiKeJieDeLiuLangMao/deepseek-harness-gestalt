@@ -3,6 +3,7 @@
  * @module @deepseek-ai/dsh-platform-account
  */
 
+import type { AccountDeletionRequest, AccountDeletionView, AccountDeletionRecovery, AccountDeletionProject } from './deletion.ts'
 import { Context, Service } from '@deepseek-ai/cordis'
 import type { SelectedPlatformEnvironment } from './environment.ts'
 import type {
@@ -14,11 +15,13 @@ import type {
   LoginAttemptId,
   LoginAttemptView,
   LoginPollResult,
+  MobileAccountInstallationView,
   PlatformAccountId,
   PlatformAccountView,
   PublicAccountIdentity,
 } from './types.ts'
 
+export * from './deletion.ts'
 export * from './environment.ts'
 export * from './errors.ts'
 export * from './parsers.ts'
@@ -98,6 +101,27 @@ export abstract class AccountService extends Service {
   }): Promise<AuthenticatedInstallationView>
 
   /**
+   * List active Mobile Installations owned by the calling Desktop's Account.
+   * @param input - Desktop Account access token and proof bound to this list operation.
+   * @returns authenticated presentation plus an opaque removal target and display reference.
+   */
+  abstract listMobileInstallations(input: {
+    accessToken: string
+    proof: AccountProof
+  }): Promise<readonly MobileAccountInstallationView[]>
+
+  /**
+   * Remotely sign one Mobile Installation out of the calling Desktop's Account.
+   * @param input - Desktop authorization and proof bound to the opaque target Installation id.
+   * @returns the active Mobile Installation list after durable revocation.
+   */
+  abstract revokeMobileInstallation(input: {
+    accessToken: string
+    proof: AccountProof
+    installationId: import('./types.ts').InstallationId
+  }): Promise<readonly MobileAccountInstallationView[]>
+
+  /**
    * Read the public identity of many accounts in one batch.
    * @param accountIds - accounts to resolve, typically one roster.
    * @returns the public identity per known account; unknown accounts are absent.
@@ -114,6 +138,27 @@ export abstract class AccountService extends Service {
   abstract publicIdentityByGithubLogin(githubLogin: string): Promise<PublicAccountIdentity | undefined>
 
   /**
+   * Inspect shared projects requiring explicit ownership successors.
+   * @param input - Current Installation authorization.
+   * @returns Projects requiring a successor selected from joined members.
+   */
+  abstract planAccountDeletion(input: { accessToken: string; proof: AccountProof }): Promise<readonly AccountDeletionProject[]>
+
+  /**
+   * Resume the initiating Installation's deletion without an Account Session.
+   * @param input - Restricted recovery receipt and optional replacement choices.
+   * @returns Durable progress or an explicit successor-selection requirement.
+   */
+  abstract recoverAccountDeletion(input: AccountDeletionRecovery): Promise<AccountDeletionView>
+
+  /**
+   * Delete this Account and invalidate every Installation.
+   * @param input - Confirmed operation, recovery material and Installation proof.
+   * @returns Durable deletion progress.
+   */
+  abstract deleteAccount(input: AccountDeletionRequest): Promise<AccountDeletionView>
+
+  /**
    * Revoke only the current installation Account Session.
    * @param input - access token and installation proof.
    */
@@ -121,7 +166,7 @@ export abstract class AccountService extends Service {
 
   /**
    * Track a Platform connection so cross-instance session invalidation closes it.
-   * Unbound session ids are resolved through the Account backend; missing or inactive sessions are rejected.
+   * Every admission checks durable session activity, including ids already cached for connection counting.
    * @param sessionId - Account Session owning the connection.
    * @param close - idempotent close callback.
    * @returns disposer removing the tracked connection.

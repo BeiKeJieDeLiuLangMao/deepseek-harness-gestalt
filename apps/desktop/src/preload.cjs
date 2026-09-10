@@ -19,6 +19,8 @@ contextBridge.exposeInMainWorld('dshDesktop', {
   accountAcceptPrivacy: () => ipcRenderer.invoke('account:acceptPrivacy'),
   accountBeginLogin: () => ipcRenderer.invoke('account:beginLogin'),
   accountCancelLogin: () => ipcRenderer.invoke('account:cancelLogin'),
+  accountRefreshMobileInstallations: () => ipcRenderer.invoke('account:refreshMobileInstallations'),
+  accountRevokeMobileInstallation: (installationId) => ipcRenderer.invoke('account:revokeMobileInstallation', installationId),
   accountSignOut: () => ipcRenderer.invoke('account:signOut'),
   onAccountSnapshot: (listener) => {
     const wrapped = (_event, snapshot) => { listener(snapshot) }

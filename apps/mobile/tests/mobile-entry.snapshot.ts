@@ -3,9 +3,11 @@ import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   parseInstallationId,
+  AccountError,
   parseMobileInstallationPresentation,
   loadOperatedPlatformEnvironment,
   type AccountSessionView,
+  parseAccountDeletionProjects,
   type LoginAttemptView,
 } from '@deepseek-ai/dsh-platform-account'
 import {
@@ -72,6 +74,67 @@ afterEach(() => {
 })
 
 describe('Mobile shipped entry foreground mutation gate', () => {
+  it('renders successor confirmation and recoverable deletion through the Mobile entry', async () => {
+    let cleanupAvailable = false
+    const projects = parseAccountDeletionProjects([{ projectId: 'shared-project', name: 'Shared project',
+      candidates: [{ membershipId: 'successor-bob', accountId: 'account-bob', label: 'Bob' }] }])
+    const transport: PlatformAccountTransport = {
+      environment,
+      beginLogin: async () => attempt,
+      pollLogin: async () => ({ status: 'complete', ...accountSession }),
+      refresh: async () => accountSession,
+      current: async () => accountSession.account,
+      listMobileInstallations: async () => [],
+      revokeMobileInstallation: async () => [],
+      signOut: async () => {},
+      planAccountDeletion: async () => projects,
+      deleteAccount: async input => ({ operationId: input.operationId, status: 'deleting', projects: [] }),
+      recoverAccountDeletion: async input => ({ operationId: input.operationId, status: cleanupAvailable ? 'complete' : 'deleting', projects: [] }),
+    }
+    const options = { environment,
+      installationId: parseInstallationId('deletion-entry'), installationKind: 'mobile' as const,
+      presentation: { name: 'Deletion entry', platform: 'ios' as const }, transport,
+      store: new MemoryInstallationAccountStore(), systemBrowser: { open() {} },
+      onAccountDeleted: vi.fn().mockRejectedValueOnce(new Error('native cleanup unavailable')).mockResolvedValue(undefined) }
+    const installation = new PlatformAccountInstallation(options)
+    const root = document.createElement('div')
+    document.body.append(root)
+    let mounted = mountMobileEntry(root, { installation, companion: new CompanionForegroundRuntime(),
+      clock: fixedMobilePresentationClock(10_000) })
+    try {
+      fireEvent.click(await screen.findByRole('checkbox'))
+      await waitFor(() => { expect(screen.getByRole('button', { name: 'Continue with GitHub' }).hasAttribute('disabled')).toBe(false) })
+      fireEvent.click(screen.getByRole('button', { name: 'Continue with GitHub' }))
+      fireEvent.click(await screen.findByRole('button', { name: 'View account' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Delete account' }))
+      const dialog = await screen.findByRole('dialog')
+      expect(dialog.textContent).toMatchInlineSnapshot('"Delete accountThis permanently deletes your cloud account and profile, revokes sign-in and pairing on every device, and clears cloud encrypted attachments and this account’s pairing keys and caches on this device. Desktop workspace files and other members’ data are retained. This cannot be undone.Shared project — New ownerSelect a joined memberBobPermanently delete accountCancel"')
+      expect(screen.getByRole('button', { name: 'Permanently delete account' }).hasAttribute('disabled')).toBe(true)
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+      expect(installation.getSnapshot().status).toBe('signed-in')
+      fireEvent.click(screen.getByRole('button', { name: 'Delete account' }))
+      fireEvent.change(await screen.findByRole('combobox'), { target: { value: 'successor-bob' } })
+      fireEvent.click(screen.getByRole('button', { name: 'Permanently delete account' }))
+      expect((await screen.findByRole('status')).textContent).toMatchInlineSnapshot('"Deletion is in progress. You can close the app and recover progress when you reopen it."')
+      cleanupAvailable = true
+      await waitFor(() => { expect(screen.getByRole('button', { name: 'Continue deletion' }).hasAttribute('disabled')).toBe(false) })
+      fireEvent.click(screen.getByRole('button', { name: 'Continue deletion' }))
+      await waitFor(() => { expect(installation.getSnapshot().deletion?.status).toBe('retry') })
+      expect((await screen.findByRole('alert')).textContent).toMatchInlineSnapshot('"Deletion is not complete. Retry to check progress and continue cleanup."')
+      const recovery = vi.spyOn(transport, 'recoverAccountDeletion').mockRejectedValue(new AccountError('DELETION_INVALID', 'receipt expired'))
+      mounted.unmount()
+      const restarted = new PlatformAccountInstallation(options)
+      mounted = mountMobileEntry(root, { installation: restarted, companion: new CompanionForegroundRuntime(),
+        clock: fixedMobilePresentationClock(10_000) })
+      await waitFor(() => { expect(restarted.getSnapshot().deletion?.status).toBe('complete') })
+      expect(recovery).not.toHaveBeenCalled()
+      expect((await screen.findByText('Your account is deleted and cleanup on this device is complete.')).textContent).toMatchInlineSnapshot('"Your account is deleted and cleanup on this device is complete."')
+    } finally {
+      mounted.unmount()
+      root.remove()
+    }
+  })
+
   it('binds receipts and history pages to the current-generation bundled entry', async () => {
     const runtime = new CompanionForegroundRuntime()
     const disposeRuntime = installCompanionRuntime(runtime)
@@ -342,7 +405,12 @@ function installationWithCompletedLogin(): PlatformAccountInstallation {
     }),
     refresh: vi.fn<PlatformAccountTransport['refresh']>(),
     current: vi.fn<PlatformAccountTransport['current']>(),
+    listMobileInstallations: vi.fn<PlatformAccountTransport['listMobileInstallations']>(),
+    revokeMobileInstallation: vi.fn<PlatformAccountTransport['revokeMobileInstallation']>(),
     signOut: vi.fn<PlatformAccountTransport['signOut']>().mockResolvedValue(undefined),
+    planAccountDeletion: vi.fn<PlatformAccountTransport['planAccountDeletion']>(),
+    deleteAccount: vi.fn<PlatformAccountTransport['deleteAccount']>(),
+    recoverAccountDeletion: vi.fn<PlatformAccountTransport['recoverAccountDeletion']>(),
   }
   return new PlatformAccountInstallation({
     environment,

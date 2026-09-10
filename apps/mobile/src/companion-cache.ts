@@ -516,6 +516,22 @@ export class IndexedDbCompanionCacheStore implements CompanionCacheStore {
     })
   }
 
+  /** Clear all content and operation receipts after the account's cache writers have stopped. */
+  async clearAccount(): Promise<void> {
+    const database = await this.#database
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const transaction = database.transaction(['content', 'receipts'], 'readwrite')
+        transaction.objectStore('content').clear()
+        transaction.objectStore('receipts').clear()
+        transaction.oncomplete = () => { resolve() }
+        transaction.onabort = transaction.onerror = () => { reject(transaction.error ?? new Error('Account cache cleanup failed')) }
+      })
+    } finally {
+      database.close()
+    }
+  }
+
   async saveContent(
     desktopId: CompanionDesktopId,
     kind: CompanionCacheContentKind,
