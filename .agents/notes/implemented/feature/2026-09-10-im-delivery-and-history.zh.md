@@ -21,7 +21,7 @@
 在 `@deepseek-ai/dsh-im-core/delivery` 中实现了公共 `ImDeliveryService` 服务及独立的 `im_delivery` 存储领域：
 - **领域表设计**：包含 `inbound_messages`、`outbound_messages`、`cursors` 与 `dedup` 四张表。
 - **Scope 标识编码**：采用严格转义防冒号碰撞，隔离真实通道（`real:${platform}:${accountId}:${conversationId}`）与模拟实例（`sim:${instanceId}:${conversationId}`）。
-- **幂等去重**：落库前通过带作用域的外部键执行原子去重检查。
+- **崩溃窗口恢复与可推导游标**：StorageDomain 无跨表事务。为消除消息落库与游标表更新之间的崩溃不一致窗口，入站消息采用确定性主键（`${scopeId}::${externalMessageId}`），且游标状态（`lastReceivedSequenceNumber`、`lastReceivedExternalMessageId`、`unsubmittedCount`）在恢复或查询时可从底层消息记录完全推导校验，彻底杜绝崩溃重启导致的游标落后或未提交消息重复提交。
 - **先写入后游标**：必须完成入站消息写入后，才推进 `lastReceivedSequenceNumber` 与 `unsubmittedCount`。
 - **阶段流转**：通过 `markSubmitted` 将状态流转为 `submitted` 并推进 `lastSubmittedSequenceNumber`。
 - **出站检查与未知回执保护**：发送前验证 AI 回复的路由有效性，放行人工手动发送。回执不明保持 `result_unknown`，绝不盲目重发。

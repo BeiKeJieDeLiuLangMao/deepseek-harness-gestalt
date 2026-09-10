@@ -89,7 +89,7 @@ describe('im-core real Loader cordis.yml composition and persistence reload', ()
       ruleId: 'rule-loader-1',
       workspaceId: 'ws-loader-1',
       routeStatus: 'matched',
-      inboundMessageId: 'msg_real:dingtalk:acc-loader-dt:group-dyn-101_1',
+      inboundMessageId: 'real:dingtalk:acc-loader-dt:group-dyn-101::ext-msg-loader-1',
       cursorLastReceived: 1,
     })
 

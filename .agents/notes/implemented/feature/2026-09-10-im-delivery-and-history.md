@@ -21,7 +21,7 @@ Live IM account takeover requires reliable message history, cursor progression, 
 Implemented `ImDeliveryService` under `@deepseek-ai/dsh-im-core/delivery` with a dedicated storage domain (`im_delivery`):
 - **Domain Tables**: `inbound_messages`, `outbound_messages`, `cursors`, and `dedup`.
 - **Scope Identifier Encoding**: Colon-safe delimiter escaping (`%3A`, `%25`) ensuring strict isolation between real platform scopes (`real:${platform}:${accountId}:${conversationId}`) and simulation scopes (`sim:${instanceId}:${conversationId}`).
-- **Deduplication**: Enforced via atomic record lookups on scoped external keys before persistence.
+- **Crash-Window Recovery & Derivable Cursor**: StorageDomain lacks cross-table transactions. To guarantee consistency against mid-write crashes between message persistence and cursor advancement, inbound records use deterministic primary keys (`${scopeId}::${externalMessageId}`). Cursor state (`lastReceivedSequenceNumber`, `lastReceivedExternalMessageId`, `unsubmittedCount`) is fully derivable from inbound records upon recovery or query, guaranteeing that crash-window restarts neither duplicate messages nor leave cursors lagging.
 - **Write-First Inbound**: Writes inbound message record before updating cursor `lastReceivedSequenceNumber` and `unsubmittedCount`.
 - **Stage Tracking**: `markSubmitted` updates message stage to `submitted` and advances `lastSubmittedSequenceNumber`.
 - **Outbound Pre-Send & Ambiguity Guard**: Pre-send validates route enabled state and account pause for AI intent while allowing human owner manual send. Settle preserves `result_unknown` without auto-retry.

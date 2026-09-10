@@ -108,15 +108,80 @@ export class ImDeliveryService extends Service {
   }
 
   /**
+   * Reconcile or retrieve cursor for a scope.
+   * If a crash occurred between message write and cursor write,
+   * this reconciles cursor state by deriving lastReceivedSequenceNumber,
+   * unsubmittedCount, and lastReceivedExternalMessageId directly from inbound records.
+   */
+  private async getOrReconcileCursor(scopeId: ImScopeId): Promise<ImConversationCursor | undefined> {
+    const { inboundTable, cursorsTable } = this.requireDomain()
+    const stored = cursorsTable.get(scopeId)
+
+    // Compute derived ground truth from inbound_messages
+    let maxReceivedSeq = 0
+    let lastExternalId = stored?.lastReceivedExternalMessageId
+    let unsubmittedCount = 0
+    let maxSubmittedSeq = stored?.lastSubmittedSequenceNumber ?? 0
+
+    for (const [, msg] of inboundTable.entries()) {
+      if (msg.scopeId !== scopeId) continue
+      if (msg.sequenceNumber > maxReceivedSeq) {
+        maxReceivedSeq = msg.sequenceNumber
+        lastExternalId = msg.externalMessageId
+      }
+      if (msg.stage === 'received') {
+        unsubmittedCount += 1
+      } else {
+        maxSubmittedSeq = Math.max(maxSubmittedSeq, msg.sequenceNumber)
+      }
+    }
+
+    if (!stored) {
+      if (maxReceivedSeq === 0) return undefined
+      const created: ImConversationCursor = {
+        scopeId,
+        lastReceivedExternalMessageId: lastExternalId,
+        lastReceivedSequenceNumber: maxReceivedSeq,
+        lastSubmittedSequenceNumber: maxSubmittedSeq,
+        lastSentSequenceNumber: 0,
+        unsubmittedCount,
+        updatedAt: new Date().toISOString(),
+      }
+      await cursorsTable.put(scopeId, created)
+      return created
+    }
+
+    // If stored cursor lags behind due to a crash window, reconcile it
+    if (
+      stored.lastReceivedSequenceNumber < maxReceivedSeq ||
+      stored.unsubmittedCount !== unsubmittedCount ||
+      stored.lastSubmittedSequenceNumber < maxSubmittedSeq
+    ) {
+      const reconciled: ImConversationCursor = {
+        ...stored,
+        lastReceivedSequenceNumber: Math.max(stored.lastReceivedSequenceNumber, maxReceivedSeq),
+        lastReceivedExternalMessageId: lastExternalId,
+        lastSubmittedSequenceNumber: Math.max(stored.lastSubmittedSequenceNumber, maxSubmittedSeq),
+        unsubmittedCount,
+        updatedAt: new Date().toISOString(),
+      }
+      await cursorsTable.put(scopeId, reconciled)
+      return reconciled
+    }
+
+    return stored
+  }
+
+  /**
    * Receive an incoming message from external platform or simulation.
    *
    * Invariants:
-   * 1. Check deduplication by (scopeId, externalMessageId).
-   * 2. If already exists, return duplicate = true, the existing record, and unchanged cursor.
+   * 1. Check deduplication by (scopeId, externalMessageId) using deterministic key or dedupTable.
+   * 2. If already exists, return duplicate = true, the existing record, and reconciled cursor.
    * 3. If new:
-   *    a. Write inbound record first with stage: 'received'.
+   *    a. Write inbound record first with deterministic primary key `scopeId::externalMessageId`.
    *    b. Record dedup entry.
-   *    c. Advance cursor lastReceivedSequenceNumber and increment unsubmittedCount.
+   *    c. Advance cursor and reconcile unsubmittedCount.
    *
    * @param options - Message payload, sender classification, and external ID.
    * @returns ReceiveInboundResult containing deduplication flag, stored record, and updated cursor.
@@ -126,25 +191,31 @@ export class ImDeliveryService extends Service {
     const scopeId = encodeScopeId(options.scope)
     const dedupKey = encodeExternalMessageKey(scopeId, options.externalMessageId)
 
-    const existingDedup = dedupTable.get(dedupKey)
-    if (existingDedup) {
-      const existingMessage = inboundTable.get(existingDedup.messageId)
-      const cursor = cursorsTable.get(scopeId)
+    // Check primary deterministic key or secondary dedup table
+    const deterministicId = brandString<ImMessageId>(dedupKey)
+    let existingMessage = inboundTable.get(deterministicId)
+    if (!existingMessage) {
+      const existingDedup = dedupTable.get(dedupKey)
+      if (existingDedup) {
+        existingMessage = inboundTable.get(existingDedup.messageId)
+      }
+    }
+
+    if (existingMessage) {
+      const cursor = await this.getOrReconcileCursor(scopeId)
       return {
         duplicate: true,
-        message: existingMessage as InboundMessageRecord,
+        message: existingMessage,
         cursor: cursor as ImConversationCursor,
       }
     }
 
     const now = options.receivedAt ?? new Date().toISOString()
-    const currentCursor = cursorsTable.get(scopeId)
+    const currentCursor = await this.getOrReconcileCursor(scopeId)
     const nextSeq = (currentCursor?.lastReceivedSequenceNumber ?? 0) + 1
 
-    const generatedId = brandString<ImMessageId>(`msg_${scopeId}_${nextSeq}`)
-
     const record: InboundMessageRecord = {
-      messageId: generatedId,
+      messageId: deterministicId,
       scopeId,
       externalMessageId: options.externalMessageId,
       senderClassification: options.senderClassification,
@@ -156,13 +227,13 @@ export class ImDeliveryService extends Service {
       ...(options.metadata ? { metadata: options.metadata } : {}),
     }
 
-    // Step a: Write inbound message record first
-    await inboundTable.put(generatedId, record)
+    // Step a: Write inbound message record first with deterministic scopeId::externalMessageId ID
+    await inboundTable.put(deterministicId, record)
 
     // Step b: Write dedup entry
     await dedupTable.put(dedupKey, {
       externalKey: dedupKey,
-      messageId: generatedId,
+      messageId: deterministicId,
       scopeId,
       externalMessageId: options.externalMessageId,
       recordedAt: now,
@@ -235,12 +306,12 @@ export class ImDeliveryService extends Service {
 
   /**
    * Get cursor for a given scope.
+   * Reconciles cursor if any crash window discrepancy exists.
    * @param scopeId - Branded scope ID.
    * @returns Current cursor or undefined.
    */
   async getCursor(scopeId: ImScopeId): Promise<ImConversationCursor | undefined> {
-    const { cursorsTable } = this.requireDomain()
-    return cursorsTable.get(scopeId)
+    return this.getOrReconcileCursor(scopeId)
   }
 
   /**
