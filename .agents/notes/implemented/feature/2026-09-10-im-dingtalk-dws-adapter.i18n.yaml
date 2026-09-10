@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-10-im-dingtalk-dws-adapter.md
+2026-09-10-im-dingtalk-dws-adapter.md: 91dd3c93602638f5d0e7d1663c59bfe5836d4a31
+2026-09-10-im-dingtalk-dws-adapter.zh.md: e08b30eb04d813b6c53fb58a56599fc0ec9f7939
