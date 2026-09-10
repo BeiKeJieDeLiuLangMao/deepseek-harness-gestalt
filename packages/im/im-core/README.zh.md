@@ -86,4 +86,4 @@ DeepSeek Harness 的 IM 领域配置、账号与路由核心服务。
 
 ## 装配验收
 
-`tests/assembled-acceptance.spec.ts` 是账号接管的无密钥装配场景：一个已配置钉钉账号、一条指定群规则、夹具适配器、模拟用户工作区、被测工作区、发送者分类、真实/模拟出站对等，以及停止隔离。它把真实钉钉登录、真实旺旺读取、真实出站、真实模型调用和原生 Desktop GUI computer-use 列为需另行授权的 live lane。
+`tests/assembled-acceptance.spec.tsx` 是无密钥装配场景：真实 Loader `cordis.yml` 装配 im-core 与钉钉夹具适配器、生产被测 Agent、模拟用户工作区、发送者分类、真实/模拟出站对等、停止隔离，以及同一条记录的 Sidebar 呈现。它把真实钉钉登录、真实旺旺读取、真实出站、真实模型调用和原生 Desktop GUI computer-use 列为需另行授权的 live lane。

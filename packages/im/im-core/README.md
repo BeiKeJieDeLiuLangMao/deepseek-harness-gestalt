@@ -86,4 +86,4 @@ Mounted at `ctx.imConfig` for configuration and routing, `ctx.imDelivery` for me
 
 ## Assembled acceptance
 
-`tests/assembled-acceptance.spec.ts` is the keyless assembled scenario for account takeover: one configured DingTalk account, a specific group route, a fixture adapter, a simulated-user workspace, a tested workspace, sender classification, real/sim outbound parity, and stop isolation. It names live DingTalk login, live Wangwang reads, live outbound, real model calls, and native Desktop GUI computer-use as separately authorized lanes.
+`tests/assembled-acceptance.spec.tsx` is the keyless assembled scenario: a real Loader `cordis.yml` of im-core and the DingTalk fixture adapter, a production tested Agent, a simulated-user workspace, sender classification, real/sim outbound parity, stop isolation, and Sidebar presentation of the same records. It names live DingTalk login, live Wangwang reads, live outbound, real model calls, and native Desktop GUI computer-use as separately authorized lanes.

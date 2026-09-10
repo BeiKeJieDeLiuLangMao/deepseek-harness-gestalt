@@ -10,7 +10,7 @@ T1–T7 each prove a seam. Assembled acceptance still has to show one configured
 
 ## Decision
 
-`packages/im/im-core/tests/assembled-acceptance.spec.ts` boots the real IM config, delivery, execution, and simulation services with a fixture DingTalk adapter. It proves route matching, mention trigger, `external` / `human_dsh` / `ai_outbound` classification, simulated outbound that never calls adapters, fixture real outbound that calls only the stub, and stop that leaves a second instance running. `packages/client/ui-im/src/client/presentation.ts` maps those records onto sender badges and delivery states; `result_unknown` is not success. `IM_LIVE_LANE_BEHAVIORS` names live DingTalk login, live Wangwang reads, live outbound, real model calls, and native Desktop GUI computer-use.
+`packages/im/im-core/tests/assembled-acceptance.spec.tsx` boots a real Cordis Loader `cordis.yml` of im-core delivery, coordination, simulation, and `@deepseek-ai/dsh-im-dingtalk` over a stub DWS subprocess. A production tested Agent from AgentLoop receives mention-triggered steer. The same history is mapped through `conversationMessagesFromRecords` into `ConversationTab`. Simulated outbound never captures DWS argv; fixture real group send includes `--group`. `result_unknown` is not success. `IM_LIVE_LANE_BEHAVIORS` names live DingTalk login, live Wangwang reads, live outbound, real model calls, and native Desktop GUI computer-use.
 
 ## Alternatives considered
 

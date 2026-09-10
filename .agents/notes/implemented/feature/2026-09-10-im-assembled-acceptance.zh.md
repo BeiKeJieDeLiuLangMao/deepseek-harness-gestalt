@@ -10,7 +10,7 @@ T1–T7 各自证明一条接缝。装配验收仍须把已配置账号、路由
 
 ## Decision
 
-`packages/im/im-core/tests/assembled-acceptance.spec.ts` 用夹具钉钉适配器启动真实的 IM 配置、投递、执行与模拟服务。它证明路由命中、@ 触发、`external` / `human_dsh` / `ai_outbound` 分类、不调用适配器的模拟出站、只打桩的夹具真实出站，以及停止后第二个实例仍可运行。`packages/client/ui-im/src/client/presentation.ts` 把这些记录映射为发送者徽标与投递状态；`result_unknown` 不是成功。`IM_LIVE_LANE_BEHAVIORS` 点名真实钉钉登录、真实旺旺读取、真实出站、真实模型调用和原生 Desktop GUI computer-use。
+`packages/im/im-core/tests/assembled-acceptance.spec.tsx` 用真实 Cordis Loader 的 `cordis.yml` 装配 im-core 投递、协调、模拟和 `@deepseek-ai/dsh-im-dingtalk`，钉钉 DWS 走 stub subprocess。被测工作区上的生产 Agent 接收 mention 触发的 steer。同一条历史经 `conversationMessagesFromRecords` 写入 `ConversationTab`。模拟出站不捕获 DWS argv；夹具真实群发送带 `--group`。`result_unknown` 不是成功。`IM_LIVE_LANE_BEHAVIORS` 点名真实钉钉登录、真实旺旺读取、真实出站、真实模型调用和原生 Desktop GUI computer-use。
 
 ## Alternatives considered
 
