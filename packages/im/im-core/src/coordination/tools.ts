@@ -131,15 +131,22 @@ export function registerImTools(ctx: Context): () => void {
               workspaceId = routeResult.workspaceId
             }
           } else if (parsedScope.kind === 'sim') {
-            const simConfig = await ctx.imConfig.getSimulationConfig(
-              brandString<WorkspaceId>(parsedScope.instanceId),
-            )
-            if (!simConfig) {
+            const sim = ctx.get('imSimulation') as
+              | {
+                getInstance?: (id: string) => {
+                  workspaceId: WorkspaceId
+                  testedWorkspaceId?: WorkspaceId
+                  status?: string
+                } | undefined
+              }
+              | undefined
+            const simInstance = sim?.getInstance?.(parsedScope.instanceId)
+            if (!simInstance || simInstance.status === 'stopped') {
               throw new Error(
-                `IM simulation is not configured for simulation scope "${args.scopeId}"; cannot simulate delivery.`,
+                `IM simulation instance is not running for simulation scope "${args.scopeId}"; cannot simulate delivery.`,
               )
             }
-            workspaceId = simConfig.workspaceId
+            workspaceId = simInstance.testedWorkspaceId ?? simInstance.workspaceId
           } else {
             throw new Error('Unsupported scope kind for IM send message')
           }
@@ -269,6 +276,32 @@ export function registerImTools(ctx: Context): () => void {
 
           if (parsedScope.kind === 'real') {
             throw new Error(`Unsupported IM platform for real send: ${parsedScope.platform}`)
+          }
+
+          if (parsedScope.kind === 'sim') {
+            const imSim = ctx.get('imSimulation') as
+              | {
+                handleSimOutbound: (
+                  outbound: typeof outbound,
+                  instanceId: string,
+                  conversationId: string,
+                ) => Promise<{ status: string; requestId: ImOutboundRequestId; scopeId: ImScopeId }>
+              }
+              | undefined
+            if (!imSim) {
+              throw new Error('IM simulation transport (imSimulation) is not available; cannot send simulated outbound')
+            }
+            const settled = await imSim.handleSimOutbound(
+              outbound,
+              parsedScope.instanceId,
+              parsedScope.conversationId,
+            )
+            return {
+              status: settled.status,
+              requestId: settled.requestId,
+              scopeId: settled.scopeId,
+              sent: settled.status === 'sent',
+            }
           }
 
           return {

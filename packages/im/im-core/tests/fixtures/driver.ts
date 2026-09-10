@@ -35,6 +35,9 @@ if (!deliveryService) throw new Error('imDelivery service not loaded by real Loa
 const execution = ctx.get('imExecution')
 if (!execution) throw new Error('imExecution service not loaded by real Loader')
 
+const simulation = ctx.get('imSimulation')
+if (!simulation) throw new Error('imSimulation service not loaded by real Loader')
+
 const reportFile = './im-loader-report.json'
 
 if (action === 'write') {

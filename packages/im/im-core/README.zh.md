@@ -10,7 +10,7 @@ DeepSeek Harness 的 IM 领域配置、账号与路由核心服务。
 
 ## 服务
 
-配置与路由服务挂载于 `ctx.imConfig`，消息历史、游标进度与出站生命周期追踪服务挂载于 `ctx.imDelivery`，执行协调与触发准入服务挂载于 `ctx.imExecution`。
+配置与路由服务挂载于 `ctx.imConfig`，消息历史、游标进度与出站生命周期追踪服务挂载于 `ctx.imDelivery`，执行协调与触发准入服务挂载于 `ctx.imExecution`，本地模拟通道服务挂载于 `ctx.imSimulation`。
 
 ### 公共方法：imConfig
 
@@ -45,10 +45,25 @@ DeepSeek Harness 的 IM 领域配置、账号与路由核心服务。
 - `admitInbound(options: AdmitInboundOptions): Promise<AdmitInboundResult>`
 - `resetIntervalTracker(scopeId: ImScopeId, nowMs?: number): void`
 
+### 公共方法：imSimulation
+
+- `getInstance(instanceId: ImSimulationInstanceId): ImSimulationInstance | undefined`
+- `listInstances(): ImSimulationInstance[]`
+- `createInstance(options: CreateSimulationInstanceOptions): Promise<ImSimulationInstance>`
+- `stopInstance(instanceId: ImSimulationInstanceId): Promise<ImSimulationInstance>`
+- `injectMemberMessage(options: InjectMemberMessageOptions): Promise<InboundMessageRecord>`
+- `injectManagedHumanMessage(options: InjectManagedHumanMessageOptions): Promise<InboundMessageRecord>`
+- `importJsonlHistory(options: ImportJsonlHistoryOptions): Promise<{ importedCount: number; messageIds: ImMessageId[] }>`
+- `handleSimOutbound(outbound: OutboundMessageRecord, instanceId: string, conversationId: string): Promise<OutboundMessageRecord>`
+
 ### 注册工具
 
-- `im_send_message`：向指定 IM 会话作用域发送出站回复消息，并严格校验模拟配置。
+- `im_send_message`：向指定 IM 会话作用域发送出站回复。真实通道走适配器；模拟通道在本地结算。
 - `im_query_history`：在指定的 IM 会话作用域内查询历史消息。
+- `im_sim_create`：在 `registerSimulationTools` 之后，按工作区已配置目标创建模拟实例。
+- `im_sim_stop`：停止模拟实例。停止后不可恢复。
+- `im_sim_send_as_member`：向模拟实例注入群成员发言。
+- `im_sim_send_as_managed_human`：向模拟实例注入托管账号真人发言（`human_dsh`）。
 
 ## 不变量
 
@@ -59,6 +74,8 @@ DeepSeek Harness 的 IM 领域配置、账号与路由核心服务。
 - **未配置不触发**：未匹配规则的会话解析为 `unconfigured`，防止敏感工作区被误触发。
 - **群触发条件校验**：群聊规则必须至少配置一项正数触发条件（@提到、每 N 条新消息或固定间隔秒数）。
 - **模拟目标限制**：工作区模拟配置的目标必须为已配置的合法账号，且必须有覆盖该目标会话的已配置路由规则。路由规则可归属于其他被测工作区，停用规则或暂停账号依然允许模拟。
+- **模拟工具门控**：仅当工作区选定已配置目标后才注册模拟工具。实例在创建时冻结该目标；之后的 `setSimulationConfig` 不得改写已有实例。
+- **模拟隔离与终止**：独立实例不共享会话状态。显式停止后不可恢复。模拟出站仅本地结算，绝不调用钉钉或旺旺适配器。JSONL 导入只作为可查询背景历史，不触发 admitInbound。账号暂停不影响模拟投递。
 - **投递阶段与游标推进**：严格区分阶段（`received` != `submitted` != `sent`）。入站消息必须先落库存储，再推进游标序列号。
 - **幂等去重与 Scope 隔离**：消息按 `(scopeId, externalMessageId)` 严格去重。转义编码防止真实 Scope 与模拟 Scope 发生冒号碰撞。
 - **出站安全与未知状态处置**：不明确回执标记为 `result_unknown`，严禁盲目自动重试。会话停用时阻止待发 AI 出站消息，重新启用时绝不批量补发。

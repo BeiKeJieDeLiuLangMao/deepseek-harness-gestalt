@@ -10,7 +10,7 @@ IM domain configuration, accounts, and routing core service for DeepSeek Harness
 
 ## Service
 
-Mounted at `ctx.imConfig` for configuration and routing, `ctx.imDelivery` for message history, cursor progress, and outbound lifecycle tracking, and `ctx.imExecution` for execution coordination and trigger admission.
+Mounted at `ctx.imConfig` for configuration and routing, `ctx.imDelivery` for message history, cursor progress, and outbound lifecycle tracking, `ctx.imExecution` for execution coordination and trigger admission, and `ctx.imSimulation` for local simulation transport.
 
 ### Public Methods: imConfig
 
@@ -45,10 +45,25 @@ Mounted at `ctx.imConfig` for configuration and routing, `ctx.imDelivery` for me
 - `admitInbound(options: AdmitInboundOptions): Promise<AdmitInboundResult>`
 - `resetIntervalTracker(scopeId: ImScopeId, nowMs?: number): void`
 
+### Public Methods: imSimulation
+
+- `getInstance(instanceId: ImSimulationInstanceId): ImSimulationInstance | undefined`
+- `listInstances(): ImSimulationInstance[]`
+- `createInstance(options: CreateSimulationInstanceOptions): Promise<ImSimulationInstance>`
+- `stopInstance(instanceId: ImSimulationInstanceId): Promise<ImSimulationInstance>`
+- `injectMemberMessage(options: InjectMemberMessageOptions): Promise<InboundMessageRecord>`
+- `injectManagedHumanMessage(options: InjectManagedHumanMessageOptions): Promise<InboundMessageRecord>`
+- `importJsonlHistory(options: ImportJsonlHistoryOptions): Promise<{ importedCount: number; messageIds: ImMessageId[] }>`
+- `handleSimOutbound(outbound: OutboundMessageRecord, instanceId: string, conversationId: string): Promise<OutboundMessageRecord>`
+
 ### Registered Tools
 
-- `im_send_message`: Send an outbound reply message to an IM conversation scope with simulation configuration checks.
+- `im_send_message`: Send an outbound reply message to an IM conversation scope. Real scopes use adapters; simulation scopes settle locally.
 - `im_query_history`: Query historical messages within an IM conversation scope.
+- `im_sim_create`: Create a simulation instance against the workspace's configured target after `registerSimulationTools`.
+- `im_sim_stop`: Stop a simulation instance. Stop is terminal.
+- `im_sim_send_as_member`: Inject a speaking-member message into a simulation instance.
+- `im_sim_send_as_managed_human`: Inject a managed-account human (`human_dsh`) message into a simulation instance.
 
 ## Invariants
 
@@ -59,6 +74,8 @@ Mounted at `ctx.imConfig` for configuration and routing, `ctx.imDelivery` for me
 - **Unconfigured No-Trigger**: Unmatched conversations resolve to `unconfigured` to prevent accidental access.
 - **Group Trigger Invariant**: Group routes require at least one trigger condition (mention, everyN, or fixedIntervalSeconds) with positive numbers.
 - **Simulation Target Restriction**: Workspace simulation targets must reference existing configured accounts and match a configured route rule for that target conversation. Route rules may belong to another workspace, and paused accounts or disabled rules still permit simulation.
+- **Simulation Tool Gate**: Simulation tools appear only after a workspace selects a configured target. An instance freezes that target at creation; later `setSimulationConfig` changes do not retarget it.
+- **Simulation Isolation And Stop**: Independent instances never share conversation state. Explicit stop is terminal. Simulated outbound settles locally and never calls DingTalk or Wangwang adapters. JSONL import is query-only background history and does not admit inbound. Account pause does not block simulation delivery.
 - **Delivery Stages & Cursor Ordering**: Distinct stages (`received` != `submitted` != `sent`). Inbound messages are written to domain storage before advancing cursor sequence numbers.
 - **Deduplication & Scope Isolation**: Messages are deduplicated on `(scopeId, externalMessageId)`. Colon-safe encoding prevents collision between real scopes and simulation scopes.
 - **Outbound Safety & Result-Unknown**: Ambiguous receipts resolve to `result_unknown` and are never blindly retried automatically. Disabling a conversation cancels pending AI outbound messages without batch flushing on re-enable.
