@@ -10,7 +10,7 @@ IM domain configuration, accounts, and routing core service for DeepSeek Harness
 
 ## Service
 
-Mounted at `ctx.imConfig` for configuration and routing, and `ctx.imDelivery` for message history, cursor progress, and outbound lifecycle tracking.
+Mounted at `ctx.imConfig` for configuration and routing, `ctx.imDelivery` for message history, cursor progress, and outbound lifecycle tracking, and `ctx.imExecution` for execution coordination and trigger admission.
 
 ### Public Methods: imConfig
 
@@ -40,6 +40,16 @@ Mounted at `ctx.imConfig` for configuration and routing, and `ctx.imDelivery` fo
 - `getOutbound(requestId: ImOutboundRequestId): Promise<OutboundMessageRecord | undefined>`
 - `cancelPendingAiOutbound(scopeId: ImScopeId, reason: string): Promise<OutboundMessageRecord[]>`
 
+### Public Methods: imExecution
+
+- `admitInbound(options: AdmitInboundOptions): Promise<AdmitInboundResult>`
+- `resetIntervalTracker(scopeId: ImScopeId, nowMs?: number): void`
+
+### Registered Tools
+
+- `im_send_message`: Send an outbound reply message to an IM conversation scope with simulation configuration checks.
+- `im_query_history`: Query historical messages within an IM conversation scope.
+
 ## Invariants
 
 - **Credential Reference**: Only opaque nominal `CredentialRef` is stored; secrets are kept behind the credential seam.
@@ -52,4 +62,7 @@ Mounted at `ctx.imConfig` for configuration and routing, and `ctx.imDelivery` fo
 - **Delivery Stages & Cursor Ordering**: Distinct stages (`received` != `submitted` != `sent`). Inbound messages are written to domain storage before advancing cursor sequence numbers.
 - **Deduplication & Scope Isolation**: Messages are deduplicated on `(scopeId, externalMessageId)`. Colon-safe encoding prevents collision between real scopes and simulation scopes.
 - **Outbound Safety & Result-Unknown**: Ambiguous receipts resolve to `result_unknown` and are never blindly retried automatically. Disabling a conversation cancels pending AI outbound messages without batch flushing on re-enable.
+- **Group Trigger OR & Single-Batch Steer**: Group conversations evaluate mention, everyN, and fixedInterval under OR logic. Overlapping conditions steer exactly once per batch with message deduplication and sequenceNumber ordering.
+- **Steer & Flush Transactional Progression**: `agent.steer` and session flush must succeed before `markSubmitted` advances cursor progress. Failures prevent progression.
+- **AI Outbound & External Authority**: AI outbound messages never trigger steering and do not count toward everyN. External IM text is never granted execution authority.
 - **No Invariant Companion Needed**: `im-core` manages state through `StorageDomain`, which owns atomic record and change guarantees. There are no divergent observations or separate process bridges requiring an independent `./invariant` companion.
