@@ -24,6 +24,9 @@ export { SimulationSection } from './SimulationSection.tsx'
 export { ConversationTab } from './ConversationTab.tsx'
 export { createImGuiFace } from './controller.ts'
 export { createImGuiStore, prototypeGuiSnapshot } from './model.ts'
+export {
+  conversationMessagesFromRecords, deliveryStateOf, IM_LIVE_LANE_BEHAVIORS, senderBadgeOf,
+} from './presentation.ts'
 export { IM_DEFINITION_ID, IM_TAB_ID, buildOfficialImDefinition } from './registry.ts'
 export { en, NS, zh } from './locales.ts'
 export type { ImKey } from './locales.ts'

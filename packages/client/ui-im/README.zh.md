@@ -62,7 +62,7 @@ kind: "package-reference"
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **内存 GUI 快照** — 三块表面共用从已认可原型播种的客户端 store。`imConfig` / `imDelivery` 的 Host remotes 留给后续票据；本 GUI 不声称真实读账号或真实出站。
+- **内存 GUI 快照** — 三块表面共用从已认可原型播种的客户端 store。`imConfig` / `imDelivery` 的 Host remotes 留给后续票据；本 GUI 不声称真实读账号或真实出站。`presentation.ts` 把装配域记录映射为发送者徽标与投递状态；`result_unknown` 绝不是成功。`IM_LIVE_LANE_BEHAVIORS` 点名真实钉钉登录、真实旺旺读取、真实出站、真实模型调用和原生 Desktop GUI computer-use。
 - **没有独立运行看板** — 审批只走原生审批界面。
 - **没有飞书** — 首期平台仅钉钉与旺旺。
 

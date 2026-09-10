@@ -194,7 +194,9 @@ export function registerImTools(ctx: Context): () => void {
 
           const outbound = await ctx.imDelivery.registerOutbound({
             requestId,
-            scope: parsedScope,
+            scope: parsedScope.kind === 'real'
+              ? { ...parsedScope, conversationKind }
+              : parsedScope,
             ...(workspaceId !== undefined ? { workspaceId } : {}),
             intent: 'ai',
             content: { text: args.text },
