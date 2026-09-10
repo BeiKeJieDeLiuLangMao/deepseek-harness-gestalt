@@ -11,12 +11,12 @@
     "directory": "packages/typert/protocol"
   },
   "type": "module",
-  "main": "lib/index.js",
+  "main": "lib/types/index.js",
   "types": "lib/types/index.d.ts",
   "exports": {
     ".": {
       "types": "./lib/types/index.d.ts",
-      "default": "./lib/index.js"
+      "default": "./lib/types/index.js"
     },
     "./types": {
       "types": "./lib/types/types.d.ts",
@@ -26,7 +26,6 @@
     "./package.json": "./package.json"
   },
   "files": [
-    "lib/index.js",
     "lib/types/**/*.js",
     "lib/types/**/*.d.ts"
   ],
