@@ -52,7 +52,7 @@ export function AccountPoolControl({ t, useAccountPool }: AccountPoolControlProp
       <div className={css.kernelBar}>
         <div className={css.kernelInfo}>
           <span className={css.kernelBadge}>DESKTOP BUILT-IN</span>
-          <strong className={css.kernelTitle}>{t('sub2api.title')}</strong>
+          <strong className={css.kernelTitle} data-testid="account-pool-title">{t('sub2api.title')}</strong>
           <span className={css.kernelDesc}>{t('sub2api.offerBody')}</span>
         </div>
         <div className={css.kernelActions}>
