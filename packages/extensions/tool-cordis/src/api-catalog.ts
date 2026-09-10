@@ -1483,9 +1483,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'inbound rows oldest first.',
       },
       {
-        signature: '@Remote(\'listOutbound\') async remoteExportListOutbound(options: ListImOutboundOptions): Promise<ImGuiOutboundView[]>',
+        signature: '@Remote(\'listOutbound\') async remoteExportListOutbound(options: ImGuiListOutboundOptions): Promise<ImGuiOutboundView[]>',
         description: 'GUI Remote outbound list: text and status only. Does not flush adapters.',
-        parameters: [{ name: 'options', description: 'branded conversation scope.' }],
+        parameters: [{ name: 'options', description: 'real or simulation conversation scope.' }],
         returns: 'outbound rows oldest first.',
       },
       {
@@ -6234,11 +6234,15 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ImGuiHistoryQueryOptions',
-    declaration: 'export interface ImGuiHistoryQueryOptions {\n    readonly scopeId: ImScopeId;\n}',
+    declaration: 'export interface ImGuiHistoryQueryOptions {\n    readonly scope: ImDeliveryScope;\n}',
   },
   {
     name: 'ImGuiInboundView',
     declaration: 'export interface ImGuiInboundView {\n    readonly messageId: ImMessageId;\n    readonly scopeId: ImScopeId;\n    readonly senderClassification: ImSenderClassification;\n    readonly senderNick?: string;\n    readonly senderId?: string;\n    readonly stage: ImMessageStage;\n    readonly text: string;\n    readonly sequenceNumber: number;\n    readonly receivedAt: string;\n}',
+  },
+  {
+    name: 'ImGuiListOutboundOptions',
+    declaration: 'export interface ImGuiListOutboundOptions {\n    readonly scope: ImDeliveryScope;\n}',
   },
   {
     name: 'ImGuiOutboundView',

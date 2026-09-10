@@ -10,7 +10,7 @@ Accounts, routes, and simulation targets already persist through `imConfig` remo
 
 ## Decision
 
-`ImDeliveryService` extends `TypertRemoteService` and exposes GUI adapters `queryHistory`, `listOutbound`, and `registerManualOutbound`. Those adapters return text-only views because inbound/outbound records carry unconstrained `unknown` payloads that cannot ride the Typert wire. `listOutbound` takes a single `{ scopeId }` object. `packages/api/remotes` already mounts the generated `@deepseek-ai/dsh-im-core/remote` contribution, which now includes the `imDelivery` namespace. `ui-im` injects `remote.imDelivery`, refreshes the stream from history plus outbound, and queues GUI manual send as `human_manual`. In-process `registerOutbound` still does not flush adapters. Config remotes remain in [IM config GUI remotes](2026-09-11-im-config-gui-remotes.md).
+`ImDeliveryService` extends `TypertRemoteService` and exposes GUI adapters `queryHistory`, `listOutbound`, and `registerManualOutbound`. Those adapters return text-only views because inbound/outbound records carry unconstrained `unknown` payloads that cannot ride the Typert wire. GUI remotes take a `{ scope }` object and Host encodes the scope id, because a client value import of `encodeScopeId` is not an inline-safe wire layer. `packages/api/remotes` already mounts the generated `@deepseek-ai/dsh-im-core/remote` contribution, which now includes the `imDelivery` namespace. `ui-im` injects `remote.imDelivery`, refreshes the stream from history plus outbound, and queues GUI manual send as `human_manual`. In-process `registerOutbound` still does not flush adapters. Config remotes remain in [IM config GUI remotes](2026-09-11-im-config-gui-remotes.md).
 
 ## Alternatives considered
 
@@ -21,6 +21,8 @@ Accounts, routes, and simulation targets already persist through `imConfig` remo
 **Put the full inbound/outbound records on the wire.** Rejected because Typert forbids unconstrained `unknown` payloads.
 
 **Pass a bare `scopeId` positional argument to `listOutbound`.** Rejected because Typert Remote payloads must be one plain object.
+
+**Let the GUI encode `scopeId` with `encodeScopeId`.** Rejected because `@deepseek-ai/dsh-im-core/client` is not an inline-safe wire layer for client bundles.
 
 ## Consequences
 

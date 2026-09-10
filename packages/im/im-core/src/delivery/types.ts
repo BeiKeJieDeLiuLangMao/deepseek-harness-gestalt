@@ -180,9 +180,14 @@ export interface ListImOutboundOptions {
   readonly scopeId: ImScopeId
 }
 
-/** GUI Remote history query. Pagination stays local on `queryHistory`. */
+/** GUI Remote history query. Host encodes the scope; pagination stays local. */
 export interface ImGuiHistoryQueryOptions {
-  readonly scopeId: ImScopeId
+  readonly scope: ImDeliveryScope
+}
+
+/** GUI Remote outbound list. Host encodes the scope and does not flush adapters. */
+export interface ImGuiListOutboundOptions {
+  readonly scope: ImDeliveryScope
 }
 
 /** GUI-safe inbound row: text and sender facts only, no raw payload. */

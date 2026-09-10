@@ -168,7 +168,18 @@ const _deepseek_ai_dsh_im_core_imConfig_upsertAccount_result$schema = z.object({
   'updatedAt': z.string().readonly(),
 })
 const _deepseek_ai_dsh_im_core_imDelivery_listOutbound_parameter_0$schema = z.object({
-  'scopeId': z.intersection(z.string(), z.unknown()).readonly(),
+  'scope': z.union([z.object({
+  'kind': z.literal("real").readonly(),
+  'platform': z.union([z.literal("dingtalk"), z.literal("wangwang")]).readonly(),
+  'accountId': z.intersection(z.string(), z.unknown()).readonly(),
+  'conversationId': z.string().readonly(),
+  'conversationKind': z.union([z.literal("direct"), z.literal("group")]).readonly().optional(),
+}), z.object({
+  'kind': z.literal("sim").readonly(),
+  'instanceId': z.string().readonly(),
+  'conversationId': z.string().readonly(),
+  'conversationKind': z.union([z.literal("direct"), z.literal("group")]).readonly().optional(),
+})]).readonly(),
 })
 const _deepseek_ai_dsh_im_core_imDelivery_listOutbound_result$schema = z.array(z.object({
   'requestId': z.intersection(z.string(), z.unknown()).readonly(),
@@ -179,7 +190,18 @@ const _deepseek_ai_dsh_im_core_imDelivery_listOutbound_result$schema = z.array(z
   'createdAt': z.string().readonly(),
 }))
 const _deepseek_ai_dsh_im_core_imDelivery_queryHistory_parameter_0$schema = z.object({
-  'scopeId': z.intersection(z.string(), z.unknown()).readonly(),
+  'scope': z.union([z.object({
+  'kind': z.literal("real").readonly(),
+  'platform': z.union([z.literal("dingtalk"), z.literal("wangwang")]).readonly(),
+  'accountId': z.intersection(z.string(), z.unknown()).readonly(),
+  'conversationId': z.string().readonly(),
+  'conversationKind': z.union([z.literal("direct"), z.literal("group")]).readonly().optional(),
+}), z.object({
+  'kind': z.literal("sim").readonly(),
+  'instanceId': z.string().readonly(),
+  'conversationId': z.string().readonly(),
+  'conversationKind': z.union([z.literal("direct"), z.literal("group")]).readonly().optional(),
+})]).readonly(),
 })
 const _deepseek_ai_dsh_im_core_imDelivery_queryHistory_result$schema = z.array(z.object({
   'messageId': z.intersection(z.string(), z.unknown()).readonly(),
@@ -528,7 +550,7 @@ export const TYPERT = {
           source: 'json',
           codec: {
             mode: 'strict',
-            typeSymbol: '@deepseek-ai/dsh-im-core/client#ListImOutboundOptions',
+            typeSymbol: '@deepseek-ai/dsh-im-core/client#ImGuiListOutboundOptions',
             schema: _deepseek_ai_dsh_im_core_imDelivery_listOutbound_parameter_0$schema,
           },
         },
@@ -538,7 +560,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-im-core#imDelivery/listOutbound:result',
         schema: _deepseek_ai_dsh_im_core_imDelivery_listOutbound_result$schema,
       },
-      sourceLocation: {"file":"packages/im/im-core/src/delivery/service.ts","line":454,"column":9},
+      sourceLocation: {"file":"packages/im/im-core/src/delivery/service.ts","line":445,"column":9},
     },
     {
       id: '@deepseek-ai/dsh-im-core#imDelivery/queryHistory',
@@ -564,7 +586,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-im-core#imDelivery/queryHistory:result',
         schema: _deepseek_ai_dsh_im_core_imDelivery_queryHistory_result$schema,
       },
-      sourceLocation: {"file":"packages/im/im-core/src/delivery/service.ts","line":448,"column":9},
+      sourceLocation: {"file":"packages/im/im-core/src/delivery/service.ts","line":435,"column":9},
     },
     {
       id: '@deepseek-ai/dsh-im-core#imDelivery/registerManualOutbound',
@@ -590,7 +612,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-im-core/client#ImGuiOutboundView',
         schema: _deepseek_ai_dsh_im_core_imDelivery_registerManualOutbound_result$schema,
       },
-      sourceLocation: {"file":"packages/im/im-core/src/delivery/service.ts","line":460,"column":9},
+      sourceLocation: {"file":"packages/im/im-core/src/delivery/service.ts","line":455,"column":9},
     },
   ],
   model: {
@@ -807,8 +829,8 @@ export const TYPERT = {
             "kind": "method",
             "name": "receiveInbound",
             "signature": "async receiveInbound(options: ReceiveInboundOptions): Promise<ReceiveInboundResult>",
-            "summary": "Receive an incoming message from external platform or simulation.",
-            "jsDoc": "/**\n * Receive an incoming message from external platform or simulation.\n *\n * Invariants:\n * 1. Check deduplication by (scopeId, externalMessageId) using deterministic key or dedupTable.\n * 2. If already exists, return duplicate = true, the existing record, and reconciled cursor.\n * 3. If new:\n *    a. Write inbound record first with deterministic primary key `scopeId::externalMessageId`.\n *    b. Record dedup entry.\n *    c. Advance cursor and reconcile unsubmittedCount.\n *\n * @param options - Message payload, sender classification, and external ID.\n * @returns ReceiveInboundResult containing deduplication flag, stored record, and updated cursor.\n */"
+            "summary": "Receive an inbound message.",
+            "jsDoc": "/**\n * Receive an inbound message. Deduplicates on `(scopeId, externalMessageId)`,\n * writes the inbound record before advancing the cursor, and returns the\n * stored record with the reconciled cursor.\n * @param options - Message payload, sender classification, and external ID.\n * @returns ReceiveInboundResult containing deduplication flag, stored record, and updated cursor.\n */"
           },
           {
             "kind": "method",
@@ -835,8 +857,8 @@ export const TYPERT = {
             "kind": "method",
             "name": "registerOutbound",
             "signature": "async registerOutbound(options: RegisterOutboundOptions): Promise<OutboundMessageRecord>",
-            "summary": "Register an outbound message request and perform pre-send validation.",
-            "jsDoc": "/**\n * Register an outbound message request and perform pre-send validation.\n *\n * Invariants:\n * 1. If intent === 'ai' and scope is real:\n *    - Check if the account is paused -> pre_send_failed\n *    - Resolve route rule for the conversation:\n *      - If status === 'disabled' or 'unconfigured' -> pre_send_failed (never flush disabled conversations)\n *      - If rule exists but enabled === false -> pre_send_failed\n * 2. If pre-send validation fails, record status: 'pre_send_failed' with reason.\n * 3. Otherwise status: 'pending'.\n * 4. Human manual sends (intent === 'human_manual') are permitted even if account is paused or rule is disabled.\n * 5. Simulation scopes are never blocked by account-level pause or disabled real routes.\n *\n * @param options - Request ID, target scope, workspace, intent, and message content.\n * @returns Stored OutboundMessageRecord.\n */"
+            "summary": "Register an outbound request and run pre-send validation.",
+            "jsDoc": "/**\n * Register an outbound request and run pre-send validation.\n * Real AI outbound fails closed when the account is paused or the route is\n * disabled/unconfigured. Human manual and simulation scopes are not blocked.\n * @param options - Request ID, target scope, workspace, intent, and message content.\n * @returns Stored OutboundMessageRecord.\n */"
           },
           {
             "kind": "method",
@@ -857,28 +879,28 @@ export const TYPERT = {
             "name": "listOutbound",
             "signature": "async listOutbound(options: ListImOutboundOptions): Promise<OutboundMessageRecord[]>",
             "summary": "List outbound records for one scope.",
-            "jsDoc": "/** List outbound records for one scope. Does not flush adapters. */"
+            "jsDoc": "/**\n * List outbound records for one scope. Does not flush adapters.\n * @param options - branded conversation scope.\n * @returns outbound records oldest first.\n */"
           },
           {
             "kind": "method",
             "name": "remoteExportQueryHistory",
             "signature": "@Remote('queryHistory') async remoteExportQueryHistory(options: ImGuiHistoryQueryOptions): Promise<ImGuiInboundView[]>",
             "summary": "GUI Remote history: text and sender facts only.",
-            "jsDoc": "/** GUI Remote history: text and sender facts only. */"
+            "jsDoc": "/**\n * GUI Remote history: text and sender facts only.\n * @param options - branded conversation scope.\n * @returns inbound rows oldest first.\n */"
           },
           {
             "kind": "method",
             "name": "remoteExportListOutbound",
-            "signature": "@Remote('listOutbound') async remoteExportListOutbound(options: ListImOutboundOptions): Promise<ImGuiOutboundView[]>",
+            "signature": "@Remote('listOutbound') async remoteExportListOutbound(options: ImGuiListOutboundOptions): Promise<ImGuiOutboundView[]>",
             "summary": "GUI Remote outbound list: text and status only.",
-            "jsDoc": "/** GUI Remote outbound list: text and status only. Does not flush adapters. */"
+            "jsDoc": "/**\n * GUI Remote outbound list: text and status only. Does not flush adapters.\n * @param options - real or simulation conversation scope.\n * @returns outbound rows oldest first.\n */"
           },
           {
             "kind": "method",
             "name": "remoteExportRegisterManualOutbound",
             "signature": "@Remote('registerManualOutbound') async remoteExportRegisterManualOutbound( options: ImGuiRegisterManualOutboundOptions, ): Promise<ImGuiOutboundView>",
             "summary": "GUI Remote manual send: queues `human_manual` outbound and does not flush adapters.",
-            "jsDoc": "/** GUI Remote manual send: queues `human_manual` outbound and does not flush adapters. */"
+            "jsDoc": "/**\n * GUI Remote manual send: queues `human_manual` outbound and does not flush adapters.\n * @param options - request id, target scope, and text.\n * @returns the queued outbound row.\n */"
           },
           {
             "kind": "method",
@@ -911,11 +933,15 @@ export const TYPERT = {
           },
           {
             "name": "ImGuiHistoryQueryOptions",
-            "declaration": "export interface ImGuiHistoryQueryOptions {\n    readonly scopeId: ImScopeId;\n}"
+            "declaration": "export interface ImGuiHistoryQueryOptions {\n    readonly scope: ImDeliveryScope;\n}"
           },
           {
             "name": "ImGuiInboundView",
             "declaration": "export interface ImGuiInboundView {\n    readonly messageId: ImMessageId;\n    readonly scopeId: ImScopeId;\n    readonly senderClassification: ImSenderClassification;\n    readonly senderNick?: string;\n    readonly senderId?: string;\n    readonly stage: ImMessageStage;\n    readonly text: string;\n    readonly sequenceNumber: number;\n    readonly receivedAt: string;\n}"
+          },
+          {
+            "name": "ImGuiListOutboundOptions",
+            "declaration": "export interface ImGuiListOutboundOptions {\n    readonly scope: ImDeliveryScope;\n}"
           },
           {
             "name": "ImGuiOutboundView",

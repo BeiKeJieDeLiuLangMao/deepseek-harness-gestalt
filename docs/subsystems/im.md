@@ -472,10 +472,10 @@ async listOutbound(options: ListImOutboundOptions): Promise<OutboundMessageRecor
 
 /**
  * GUI Remote outbound list: text and status only. Does not flush adapters.
- * @param options - branded conversation scope.
+ * @param options - real or simulation conversation scope.
  * @returns outbound rows oldest first.
  */
-@Remote('listOutbound') async remoteExportListOutbound(options: ListImOutboundOptions): Promise<ImGuiOutboundView[]>
+@Remote('listOutbound') async remoteExportListOutbound(options: ImGuiListOutboundOptions): Promise<ImGuiOutboundView[]>
 
 /**
  * GUI Remote manual send: queues `human_manual` outbound and does not flush adapters.

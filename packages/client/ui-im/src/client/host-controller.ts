@@ -6,12 +6,11 @@ import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
-import {
-  encodeScopeId,
-  type ImAccountId,
-  type ImAccountMetadata,
-  type ImOutboundRequestId,
-  type ImRouteRuleId,
+import type {
+  ImAccountId,
+  ImAccountMetadata,
+  ImOutboundRequestId,
+  ImRouteRuleId,
 } from '@deepseek-ai/dsh-im-core/client'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 import type { ImGuiFace } from './faces.ts'
@@ -54,10 +53,9 @@ export function createHostImGuiFace(
     let inbound: Awaited<ReturnType<ImDeliveryRemote['queryHistory']>> = { ok: true, value: [] }
     let outbound: Awaited<ReturnType<ImDeliveryRemote['listOutbound']>> = { ok: true, value: [] }
     if (scope !== undefined) {
-      const scopeId = encodeScopeId(scope)
       ;[inbound, outbound] = await Promise.all([
-        delivery.queryHistory({ scopeId }),
-        delivery.listOutbound({ scopeId }),
+        delivery.queryHistory({ scope }),
+        delivery.listOutbound({ scope }),
       ])
     }
     if (!inbound.ok || !outbound.ok) return

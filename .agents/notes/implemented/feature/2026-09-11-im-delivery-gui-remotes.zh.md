@@ -10,7 +10,7 @@ Status: implemented
 
 ## Decision
 
-`ImDeliveryService` 继承 `TypertRemoteService`，暴露 GUI 适配器 `queryHistory`、`listOutbound` 和 `registerManualOutbound`。这些适配器只返回文本视图，因为入站/出站记录带有不能上 Typert 线的 unconstrained `unknown` payload。`listOutbound` 只收 `{ scopeId }` 对象。`packages/api/remotes` 已挂载生成的 `@deepseek-ai/dsh-im-core/remote` contribution，现在包含 `imDelivery` 命名空间。`ui-im` 注入 `remote.imDelivery`，用历史加出站刷新对话流，并把 GUI 人工发送按 `human_manual` 入队。进程内 `registerOutbound` 仍不 flush 适配器。配置 remotes 仍见 [IM config GUI remotes](2026-09-11-im-config-gui-remotes.zh.md)。
+`ImDeliveryService` 继承 `TypertRemoteService`，暴露 GUI 适配器 `queryHistory`、`listOutbound` 和 `registerManualOutbound`。这些适配器只返回文本视图，因为入站/出站记录带有不能上 Typert 线的 unconstrained `unknown` payload。GUI remotes 收 `{ scope }` 对象，由 Host 编码 scope id，因为客户端不能值导入 `encodeScopeId`。`packages/api/remotes` 已挂载生成的 `@deepseek-ai/dsh-im-core/remote` contribution，现在包含 `imDelivery` 命名空间。`ui-im` 注入 `remote.imDelivery`，用历史加出站刷新对话流，并把 GUI 人工发送按 `human_manual` 入队。进程内 `registerOutbound` 仍不 flush 适配器。配置 remotes 仍见 [IM config GUI remotes](2026-09-11-im-config-gui-remotes.zh.md)。
 
 ## Alternatives considered
 
@@ -21,6 +21,8 @@ Status: implemented
 **把完整入站/出站记录上线。** 否决，因为 Typert 禁止 unconstrained `unknown` payload。
 
 **给 `listOutbound` 传裸 `scopeId` 位置参数。** 否决，因为 Typert Remote payload 必须是一个普通对象。
+
+**让 GUI 用 `encodeScopeId` 编码 `scopeId`。** 否决，因为 `@deepseek-ai/dsh-im-core/client` 不是客户端 bundle 的 inline-safe 线上层。
 
 ## Consequences
 

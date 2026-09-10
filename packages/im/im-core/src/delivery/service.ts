@@ -20,6 +20,7 @@ import type {
   ImConversationCursor,
   ImGuiHistoryQueryOptions,
   ImGuiInboundView,
+  ImGuiListOutboundOptions,
   ImGuiOutboundView,
   ImGuiRegisterManualOutboundOptions,
   ImHistoryQueryOptions,
@@ -432,17 +433,17 @@ export class ImDeliveryService extends TypertRemoteService {
    */
   @Remote('queryHistory')
   async remoteExportQueryHistory(options: ImGuiHistoryQueryOptions): Promise<ImGuiInboundView[]> {
-    return (await this.queryHistory({ scopeId: options.scopeId })).map(guiInboundViewOf)
+    return (await this.queryHistory({ scopeId: encodeScopeId(options.scope) })).map(guiInboundViewOf)
   }
 
   /**
    * GUI Remote outbound list: text and status only. Does not flush adapters.
-   * @param options - branded conversation scope.
+   * @param options - real or simulation conversation scope.
    * @returns outbound rows oldest first.
    */
   @Remote('listOutbound')
-  async remoteExportListOutbound(options: ListImOutboundOptions): Promise<ImGuiOutboundView[]> {
-    return (await this.listOutbound(options)).map(guiOutboundViewOf)
+  async remoteExportListOutbound(options: ImGuiListOutboundOptions): Promise<ImGuiOutboundView[]> {
+    return (await this.listOutbound({ scopeId: encodeScopeId(options.scope) })).map(guiOutboundViewOf)
   }
 
   /**
