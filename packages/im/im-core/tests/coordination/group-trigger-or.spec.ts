@@ -134,7 +134,7 @@ describe('IM Execution Coordination - Group Trigger OR', () => {
       externalMessageId: 'ext-email-1',
       senderClassification: 'external',
       senderEvidence: {},
-      content: { text: 'please mail support@example.com about this' },
+      content: { text: 'please mail a@b.com about this' },
     })
     const steerSpy = vi.fn()
     const result = await ctx.imExecution.admitInbound({
