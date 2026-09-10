@@ -1,6 +1,5 @@
 /**
- * Map Host IM config records onto the GUI snapshot. Conversation stream
- * presentation stays local until imDelivery remotes exist.
+ * Map Host IM config and delivery records onto the GUI snapshot.
  */
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type {
@@ -8,12 +7,16 @@ import type {
   CreateImRouteRuleOptions,
   ImAccountId,
   ImAccountMetadata,
+  ImDeliveryScope,
   ImGroupTriggerConfig,
   ImRouteRule,
   ImRouteRuleId,
+  ImGuiInboundView,
+  ImGuiOutboundView,
   ImWorkspaceSimulationConfig,
   SetWorkspaceSimulationTargetOptions,
 } from '@deepseek-ai/dsh-im-core/client'
+import { conversationMessagesFromRecords, type ImDomainConversationRecord } from './presentation.ts'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 import {
   parseTargets,
@@ -21,6 +24,7 @@ import {
   type ImAccountView,
   type ImConversationView,
   type ImGuiSnapshot,
+  type ImPanelMode,
   type ImPlatformId,
   type ImRouteDraft,
   type ImRouteView,
@@ -194,13 +198,132 @@ export function createAccountOptions(
 }
 
 /**
- * Rebuild account, route, and simulation rows from Host records.
- * Conversation stream stays as the previous local presentation.
+ * Pick the conversation scope the Sidebar presents from Host config.
+ * Simulation bindings win; otherwise the first takeover rule.
+ * All-scope rules use a stable `gui-all` conversation id.
+ * @param routes - durable takeover rules.
+ * @param simulations - workspace simulation bindings.
+ * @returns a real delivery scope, or undefined when nothing is configured.
+ */
+export function selectedConversationScope(
+  accounts: readonly ImAccountMetadata[],
+  routes: readonly ImRouteRule[],
+  simulations: readonly ImWorkspaceSimulationConfig[],
+): ImDeliveryScope | undefined {
+  const simulation = simulations[0]
+  if (simulation !== undefined) {
+    const account = accounts.find(row => row.id === simulation.targetAccountId)
+    return {
+      kind: 'real',
+      platform: account?.platform ?? 'dingtalk',
+      accountId: simulation.targetAccountId,
+      conversationId: simulation.targetConversationId ?? 'gui-all',
+      conversationKind: simulation.conversationKind,
+    }
+  }
+  const route = routes[0]
+  if (route === undefined) return undefined
+  const account = accounts.find(row => row.id === route.accountId)
+  return {
+    kind: 'real',
+    platform: account?.platform ?? 'dingtalk',
+    accountId: route.accountId,
+    conversationId: route.target.kind === 'specific' ? route.target.conversationId : 'gui-all',
+    conversationKind: route.conversationKind,
+  }
+}
+
+/**
+ * Map inbound and outbound Host records onto one Sidebar stream.
+ * Outbound `result_unknown` stays distinct from `sent`.
+ * @param inbound - history for the selected scope.
+ * @param outbound - queued and settled outbound for the same scope.
+ * @returns domain rows oldest first.
+ */
+export function conversationRecordsFromDelivery(
+  inbound: readonly ImGuiInboundView[],
+  outbound: readonly ImGuiOutboundView[],
+): ImDomainConversationRecord[] {
+  const rows: Array<ImDomainConversationRecord & { readonly at: string }> = [
+    ...inbound.map(record => ({
+      id: record.messageId,
+      text: record.text,
+      who: record.senderNick ?? record.senderId ?? record.senderClassification,
+      sender: record.senderClassification,
+      inboundStage: record.stage,
+      at: record.receivedAt,
+    })),
+    ...outbound.map(record => ({
+      id: record.requestId,
+      text: record.text,
+      who: record.intent === 'human_manual' ? 'self' : '数字员工',
+      sender: record.intent === 'human_manual' ? 'human_dsh' as const : 'ai_outbound' as const,
+      outboundStatus: record.status,
+      at: record.createdAt,
+    })),
+  ]
+  rows.sort((left, right) => left.at.localeCompare(right.at))
+  return rows.map(({ at: _at, ...record }) => record)
+}
+
+/**
+ * Present the selected Host conversation without claiming live outbound.
  * @param accounts - durable IM accounts.
  * @param routes - durable takeover rules.
  * @param simulations - workspace simulation bindings.
- * @param conversation - previous local conversation presentation.
- * @returns GUI snapshot with Host-backed config rows.
+ * @param inbound - history for the selected scope.
+ * @param outbound - outbound records for the selected scope.
+ * @param previous - prior conversation chrome such as role.
+ * @returns Sidebar conversation view.
+ */
+export function conversationFromHost(
+  accounts: readonly ImAccountMetadata[],
+  routes: readonly ImRouteRule[],
+  simulations: readonly ImWorkspaceSimulationConfig[],
+  inbound: readonly ImGuiInboundView[],
+  outbound: readonly ImGuiOutboundView[],
+  previous: ImConversationView,
+): ImConversationView {
+  const scope = selectedConversationScope(accounts, routes, simulations)
+  if (scope === undefined || scope.kind !== 'real') {
+    return {
+      ...emptyConversation(),
+      role: previous.role,
+      unconfigured: true,
+    }
+  }
+  const account = accounts.find(row => row.id === scope.accountId)
+  const route = routes.find((row) => {
+    if (row.accountId !== scope.accountId) return false
+    if (row.conversationKind !== (scope.conversationKind ?? 'direct')) return false
+    if (row.target.kind === 'all') return scope.conversationId === 'gui-all'
+    return row.target.conversationId === scope.conversationId
+  })
+  const panel: ImPanelMode = account?.status !== 'connected'
+    ? 'offline'
+    : route === undefined
+      ? 'unknown'
+      : route.enabled ? 'live' : 'disabled'
+  const kindLabel = scope.conversationKind === 'direct' ? '私聊' : '群聊'
+  return {
+    title: `${kindLabel}：${scope.conversationId}`,
+    accountName: account?.displayName ?? '',
+    panel,
+    role: previous.role,
+    unconfigured: false,
+    messages: conversationMessagesFromRecords(conversationRecordsFromDelivery(inbound, outbound)),
+    ...(previous.simUserSessionId === undefined ? {} : { simUserSessionId: previous.simUserSessionId }),
+    ...(previous.testedSessionId === undefined ? {} : { testedSessionId: previous.testedSessionId }),
+  }
+}
+
+/**
+ * Rebuild account, route, simulation, and conversation rows from Host records.
+ * @param accounts - durable IM accounts.
+ * @param routes - durable takeover rules.
+ * @param simulations - workspace simulation bindings.
+ * @param conversation - previous conversation chrome plus Host stream rows.
+ * @returns GUI snapshot with Host-backed config and conversation.
  */
 export function snapshotFromHost(
   accounts: readonly ImAccountMetadata[],

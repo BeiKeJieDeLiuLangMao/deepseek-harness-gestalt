@@ -8,17 +8,25 @@
 import { Context, Service } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { KvTable } from '@deepseek-ai/dsh-storage-domain'
+import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
+import type {} from 'zod'
+import { guiInboundViewOf, guiOutboundViewOf } from './gui-views.ts'
+import { encodeExternalMessageKey, encodeScopeId } from './scope.ts'
 import {
   imDeliveryDomainSpec,
   type ImInboundDedupRecord,
 } from './spec.ts'
 import type {
   ImConversationCursor,
-  ImDeliveryScope,
+  ImGuiHistoryQueryOptions,
+  ImGuiInboundView,
+  ImGuiOutboundView,
+  ImGuiRegisterManualOutboundOptions,
   ImHistoryQueryOptions,
   ImMessageId,
   ImOutboundRequestId,
   ImScopeId,
+  ListImOutboundOptions,
   InboundMessageRecord,
   MarkSubmittedOptions,
   OutboundMessageRecord,
@@ -28,42 +36,12 @@ import type {
   SettleOutboundOptions,
 } from './types.ts'
 
-/**
- * Validated scope encoder avoiding delimiter collision via strict component escaping.
- * Escapes `%` -> `%25` and `:` -> `%3A`.
- */
-export function escapeScopeComponent(part: string): string {
-  return part.replace(/%/g, '%25').replace(/:/g, '%3A')
-}
-
-export function unescapeScopeComponent(part: string): string {
-  return part.replace(/%3A/g, ':').replace(/%25/g, '%')
-}
-
-/**
- * Strictly encode an ImDeliveryScope into an ImScopeId.
- * Guarantees no colon collision across platform, accountId, instanceId, or conversationId.
- */
-export function encodeScopeId(scope: ImDeliveryScope): ImScopeId {
-  if (scope.kind === 'real') {
-    const raw = `real:${escapeScopeComponent(scope.platform)}:${escapeScopeComponent(scope.accountId)}:${escapeScopeComponent(scope.conversationId)}`
-    return brandString<ImScopeId>(raw)
-  }
-  const raw = `sim:${escapeScopeComponent(scope.instanceId)}:${escapeScopeComponent(scope.conversationId)}`
-  return brandString<ImScopeId>(raw)
-}
-
-/**
- * Strictly encode deduplication key for externalMessageId within a scope.
- */
-export function encodeExternalMessageKey(scopeId: ImScopeId, externalMessageId: string): string {
-  return `${scopeId}::${escapeScopeComponent(externalMessageId)}`
-}
+export { encodeExternalMessageKey, encodeScopeId, escapeScopeComponent, unescapeScopeComponent } from './scope.ts'
 
 /**
  * Service managing IM message delivery, deduplication, cursor progress, and outbound safety.
  */
-export class ImDeliveryService extends Service {
+export class ImDeliveryService extends TypertRemoteService {
   static inject = ['storageDomain', 'imConfig']
 
   private inboundTable?: KvTable<ImMessageId, InboundMessageRecord>
@@ -101,12 +79,7 @@ export class ImDeliveryService extends Service {
     }
   }
 
-  /**
-   * Reconcile or retrieve cursor for a scope.
-   * If a crash occurred between message write and cursor write,
-   * this reconciles cursor state by deriving lastReceivedSequenceNumber,
-   * unsubmittedCount, and lastReceivedExternalMessageId directly from inbound records.
-   */
+  /** Reconcile cursor sequence numbers from inbound records after a crash window. */
   private async getOrReconcileCursor(scopeId: ImScopeId): Promise<ImConversationCursor | undefined> {
     const { inboundTable, cursorsTable } = this.requireDomain()
     const stored = cursorsTable.get(scopeId)
@@ -167,16 +140,9 @@ export class ImDeliveryService extends Service {
   }
 
   /**
-   * Receive an incoming message from external platform or simulation.
-   *
-   * Invariants:
-   * 1. Check deduplication by (scopeId, externalMessageId) using deterministic key or dedupTable.
-   * 2. If already exists, return duplicate = true, the existing record, and reconciled cursor.
-   * 3. If new:
-   *    a. Write inbound record first with deterministic primary key `scopeId::externalMessageId`.
-   *    b. Record dedup entry.
-   *    c. Advance cursor and reconcile unsubmittedCount.
-   *
+   * Receive an inbound message. Deduplicates on `(scopeId, externalMessageId)`,
+   * writes the inbound record before advancing the cursor, and returns the
+   * stored record with the reconciled cursor.
    * @param options - Message payload, sender classification, and external ID.
    * @returns ReceiveInboundResult containing deduplication flag, stored record, and updated cursor.
    */
@@ -341,19 +307,9 @@ export class ImDeliveryService extends Service {
   }
 
   /**
-   * Register an outbound message request and perform pre-send validation.
-   *
-   * Invariants:
-   * 1. If intent === 'ai' and scope is real:
-   *    - Check if the account is paused -> pre_send_failed
-   *    - Resolve route rule for the conversation:
-   *      - If status === 'disabled' or 'unconfigured' -> pre_send_failed (never flush disabled conversations)
-   *      - If rule exists but enabled === false -> pre_send_failed
-   * 2. If pre-send validation fails, record status: 'pre_send_failed' with reason.
-   * 3. Otherwise status: 'pending'.
-   * 4. Human manual sends (intent === 'human_manual') are permitted even if account is paused or rule is disabled.
-   * 5. Simulation scopes are never blocked by account-level pause or disabled real routes.
-   *
+   * Register an outbound request and run pre-send validation.
+   * Real AI outbound fails closed when the account is paused or the route is
+   * disabled/unconfigured. Human manual and simulation scopes are not blocked.
    * @param options - Request ID, target scope, workspace, intent, and message content.
    * @returns Stored OutboundMessageRecord.
    */
@@ -454,6 +410,56 @@ export class ImDeliveryService extends Service {
   async getOutbound(requestId: ImOutboundRequestId): Promise<OutboundMessageRecord | undefined> {
     const { outboundTable } = this.requireDomain()
     return outboundTable.get(requestId)
+  }
+
+  /**
+   * List outbound records for one scope. Does not flush adapters.
+   * @param options - branded conversation scope.
+   * @returns outbound records oldest first.
+   */
+  async listOutbound(options: ListImOutboundOptions): Promise<OutboundMessageRecord[]> {
+    const { outboundTable } = this.requireDomain()
+    return [...outboundTable.entries()]
+      .map(([, record]) => record)
+      .filter(record => record.scopeId === options.scopeId)
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+  }
+
+  /**
+   * GUI Remote history: text and sender facts only.
+   * @param options - branded conversation scope.
+   * @returns inbound rows oldest first.
+   */
+  @Remote('queryHistory')
+  async remoteExportQueryHistory(options: ImGuiHistoryQueryOptions): Promise<ImGuiInboundView[]> {
+    return (await this.queryHistory({ scopeId: options.scopeId })).map(guiInboundViewOf)
+  }
+
+  /**
+   * GUI Remote outbound list: text and status only. Does not flush adapters.
+   * @param options - branded conversation scope.
+   * @returns outbound rows oldest first.
+   */
+  @Remote('listOutbound')
+  async remoteExportListOutbound(options: ListImOutboundOptions): Promise<ImGuiOutboundView[]> {
+    return (await this.listOutbound(options)).map(guiOutboundViewOf)
+  }
+
+  /**
+   * GUI Remote manual send: queues `human_manual` outbound and does not flush adapters.
+   * @param options - request id, target scope, and text.
+   * @returns the queued outbound row.
+   */
+  @Remote('registerManualOutbound')
+  async remoteExportRegisterManualOutbound(
+    options: ImGuiRegisterManualOutboundOptions,
+  ): Promise<ImGuiOutboundView> {
+    return guiOutboundViewOf(await this.registerOutbound({
+      requestId: options.requestId,
+      scope: options.scope,
+      intent: 'human_manual',
+      content: { text: options.text },
+    }))
   }
 
   /**

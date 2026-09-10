@@ -167,6 +167,55 @@ const _deepseek_ai_dsh_im_core_imConfig_upsertAccount_result$schema = z.object({
   'createdAt': z.string().readonly(),
   'updatedAt': z.string().readonly(),
 })
+const _deepseek_ai_dsh_im_core_imDelivery_listOutbound_parameter_0$schema = z.object({
+  'scopeId': z.intersection(z.string(), z.unknown()).readonly(),
+})
+const _deepseek_ai_dsh_im_core_imDelivery_listOutbound_result$schema = z.array(z.object({
+  'requestId': z.intersection(z.string(), z.unknown()).readonly(),
+  'scopeId': z.intersection(z.string(), z.unknown()).readonly(),
+  'intent': z.union([z.literal("ai"), z.literal("human_manual")]).readonly(),
+  'text': z.string().readonly(),
+  'status': z.union([z.literal("pending"), z.literal("sent"), z.literal("pre_send_failed"), z.literal("result_unknown"), z.literal("confirmed_failed")]).readonly(),
+  'createdAt': z.string().readonly(),
+}))
+const _deepseek_ai_dsh_im_core_imDelivery_queryHistory_parameter_0$schema = z.object({
+  'scopeId': z.intersection(z.string(), z.unknown()).readonly(),
+})
+const _deepseek_ai_dsh_im_core_imDelivery_queryHistory_result$schema = z.array(z.object({
+  'messageId': z.intersection(z.string(), z.unknown()).readonly(),
+  'scopeId': z.intersection(z.string(), z.unknown()).readonly(),
+  'senderClassification': z.union([z.literal("external"), z.literal("ai_outbound"), z.literal("human_native"), z.literal("human_dsh"), z.literal("unknown")]).readonly(),
+  'senderNick': z.string().readonly().optional(),
+  'senderId': z.string().readonly().optional(),
+  'stage': z.union([z.literal("received"), z.literal("submitted"), z.literal("sent")]).readonly(),
+  'text': z.string().readonly(),
+  'sequenceNumber': z.number().readonly(),
+  'receivedAt': z.string().readonly(),
+}))
+const _deepseek_ai_dsh_im_core_imDelivery_registerManualOutbound_parameter_0$schema = z.object({
+  'requestId': z.intersection(z.string(), z.unknown()).readonly(),
+  'scope': z.union([z.object({
+  'kind': z.literal("real").readonly(),
+  'platform': z.union([z.literal("dingtalk"), z.literal("wangwang")]).readonly(),
+  'accountId': z.intersection(z.string(), z.unknown()).readonly(),
+  'conversationId': z.string().readonly(),
+  'conversationKind': z.union([z.literal("direct"), z.literal("group")]).readonly().optional(),
+}), z.object({
+  'kind': z.literal("sim").readonly(),
+  'instanceId': z.string().readonly(),
+  'conversationId': z.string().readonly(),
+  'conversationKind': z.union([z.literal("direct"), z.literal("group")]).readonly().optional(),
+})]).readonly(),
+  'text': z.string().readonly(),
+})
+const _deepseek_ai_dsh_im_core_imDelivery_registerManualOutbound_result$schema = z.object({
+  'requestId': z.intersection(z.string(), z.unknown()).readonly(),
+  'scopeId': z.intersection(z.string(), z.unknown()).readonly(),
+  'intent': z.union([z.literal("ai"), z.literal("human_manual")]).readonly(),
+  'text': z.string().readonly(),
+  'status': z.union([z.literal("pending"), z.literal("sent"), z.literal("pre_send_failed"), z.literal("result_unknown"), z.literal("confirmed_failed")]).readonly(),
+  'createdAt': z.string().readonly(),
+})
 
 export const TYPERT = {
   package: '@deepseek-ai/dsh-im-core',
@@ -465,6 +514,84 @@ export const TYPERT = {
       },
       sourceLocation: {"file":"packages/im/im-core/src/service.ts","line":108,"column":9},
     },
+    {
+      id: '@deepseek-ai/dsh-im-core#imDelivery/listOutbound',
+      service: 'imDelivery',
+      namespace: 'imDelivery',
+      method: 'listOutbound',
+      implementation: 'remoteExportListOutbound',
+      invocation: { kind: 'direct' },
+      parameters: [
+        {
+          name: 'options',
+          wire: 'options',
+          source: 'json',
+          codec: {
+            mode: 'strict',
+            typeSymbol: '@deepseek-ai/dsh-im-core/client#ListImOutboundOptions',
+            schema: _deepseek_ai_dsh_im_core_imDelivery_listOutbound_parameter_0$schema,
+          },
+        },
+      ],
+      result: {
+        mode: 'strict',
+        typeSymbol: '@deepseek-ai/dsh-im-core#imDelivery/listOutbound:result',
+        schema: _deepseek_ai_dsh_im_core_imDelivery_listOutbound_result$schema,
+      },
+      sourceLocation: {"file":"packages/im/im-core/src/delivery/service.ts","line":454,"column":9},
+    },
+    {
+      id: '@deepseek-ai/dsh-im-core#imDelivery/queryHistory',
+      service: 'imDelivery',
+      namespace: 'imDelivery',
+      method: 'queryHistory',
+      implementation: 'remoteExportQueryHistory',
+      invocation: { kind: 'direct' },
+      parameters: [
+        {
+          name: 'options',
+          wire: 'options',
+          source: 'json',
+          codec: {
+            mode: 'strict',
+            typeSymbol: '@deepseek-ai/dsh-im-core/client#ImGuiHistoryQueryOptions',
+            schema: _deepseek_ai_dsh_im_core_imDelivery_queryHistory_parameter_0$schema,
+          },
+        },
+      ],
+      result: {
+        mode: 'strict',
+        typeSymbol: '@deepseek-ai/dsh-im-core#imDelivery/queryHistory:result',
+        schema: _deepseek_ai_dsh_im_core_imDelivery_queryHistory_result$schema,
+      },
+      sourceLocation: {"file":"packages/im/im-core/src/delivery/service.ts","line":448,"column":9},
+    },
+    {
+      id: '@deepseek-ai/dsh-im-core#imDelivery/registerManualOutbound',
+      service: 'imDelivery',
+      namespace: 'imDelivery',
+      method: 'registerManualOutbound',
+      implementation: 'remoteExportRegisterManualOutbound',
+      invocation: { kind: 'direct' },
+      parameters: [
+        {
+          name: 'options',
+          wire: 'options',
+          source: 'json',
+          codec: {
+            mode: 'strict',
+            typeSymbol: '@deepseek-ai/dsh-im-core/client#ImGuiRegisterManualOutboundOptions',
+            schema: _deepseek_ai_dsh_im_core_imDelivery_registerManualOutbound_parameter_0$schema,
+          },
+        },
+      ],
+      result: {
+        mode: 'strict',
+        typeSymbol: '@deepseek-ai/dsh-im-core/client#ImGuiOutboundView',
+        schema: _deepseek_ai_dsh_im_core_imDelivery_registerManualOutbound_result$schema,
+      },
+      sourceLocation: {"file":"packages/im/im-core/src/delivery/service.ts","line":460,"column":9},
+    },
   ],
   model: {
     "services": [
@@ -727,6 +854,34 @@ export const TYPERT = {
           },
           {
             "kind": "method",
+            "name": "listOutbound",
+            "signature": "async listOutbound(options: ListImOutboundOptions): Promise<OutboundMessageRecord[]>",
+            "summary": "List outbound records for one scope.",
+            "jsDoc": "/** List outbound records for one scope. Does not flush adapters. */"
+          },
+          {
+            "kind": "method",
+            "name": "remoteExportQueryHistory",
+            "signature": "@Remote('queryHistory') async remoteExportQueryHistory(options: ImGuiHistoryQueryOptions): Promise<ImGuiInboundView[]>",
+            "summary": "GUI Remote history: text and sender facts only.",
+            "jsDoc": "/** GUI Remote history: text and sender facts only. */"
+          },
+          {
+            "kind": "method",
+            "name": "remoteExportListOutbound",
+            "signature": "@Remote('listOutbound') async remoteExportListOutbound(options: ListImOutboundOptions): Promise<ImGuiOutboundView[]>",
+            "summary": "GUI Remote outbound list: text and status only.",
+            "jsDoc": "/** GUI Remote outbound list: text and status only. Does not flush adapters. */"
+          },
+          {
+            "kind": "method",
+            "name": "remoteExportRegisterManualOutbound",
+            "signature": "@Remote('registerManualOutbound') async remoteExportRegisterManualOutbound( options: ImGuiRegisterManualOutboundOptions, ): Promise<ImGuiOutboundView>",
+            "summary": "GUI Remote manual send: queues `human_manual` outbound and does not flush adapters.",
+            "jsDoc": "/** GUI Remote manual send: queues `human_manual` outbound and does not flush adapters. */"
+          },
+          {
+            "kind": "method",
             "name": "cancelPendingAiOutbound",
             "signature": "async cancelPendingAiOutbound(scopeId: ImScopeId, reason: string): Promise<OutboundMessageRecord[]>",
             "summary": "Cancel pending outbound AI messages for a specific scope.",
@@ -753,6 +908,22 @@ export const TYPERT = {
           {
             "name": "ImDeliveryScope",
             "declaration": "export type ImDeliveryScope = ImRealDeliveryScope | ImSimDeliveryScope;"
+          },
+          {
+            "name": "ImGuiHistoryQueryOptions",
+            "declaration": "export interface ImGuiHistoryQueryOptions {\n    readonly scopeId: ImScopeId;\n}"
+          },
+          {
+            "name": "ImGuiInboundView",
+            "declaration": "export interface ImGuiInboundView {\n    readonly messageId: ImMessageId;\n    readonly scopeId: ImScopeId;\n    readonly senderClassification: ImSenderClassification;\n    readonly senderNick?: string;\n    readonly senderId?: string;\n    readonly stage: ImMessageStage;\n    readonly text: string;\n    readonly sequenceNumber: number;\n    readonly receivedAt: string;\n}"
+          },
+          {
+            "name": "ImGuiOutboundView",
+            "declaration": "export interface ImGuiOutboundView {\n    readonly requestId: ImOutboundRequestId;\n    readonly scopeId: ImScopeId;\n    readonly intent: ImOutboundIntent;\n    readonly text: string;\n    readonly status: ImOutboundStatus;\n    readonly createdAt: string;\n}"
+          },
+          {
+            "name": "ImGuiRegisterManualOutboundOptions",
+            "declaration": "export interface ImGuiRegisterManualOutboundOptions {\n    readonly requestId: ImOutboundRequestId;\n    readonly scope: ImDeliveryScope;\n    readonly text: string;\n}"
           },
           {
             "name": "ImHistoryQueryOptions",
@@ -813,6 +984,10 @@ export const TYPERT = {
           {
             "name": "InboundMessageRecord",
             "declaration": "export interface InboundMessageRecord {\n    readonly messageId: ImMessageId;\n    readonly scopeId: ImScopeId;\n    readonly externalMessageId: string;\n    readonly senderClassification: ImSenderClassification;\n    readonly senderEvidence: ImSenderEvidence;\n    readonly stage: ImMessageStage;\n    readonly content: ImMessageContent;\n    readonly sequenceNumber: number;\n    readonly receivedAt: string;\n    readonly submittedAt?: string;\n    readonly metadata?: Readonly<Record<string, string>>;\n}"
+          },
+          {
+            "name": "ListImOutboundOptions",
+            "declaration": "export interface ListImOutboundOptions {\n    readonly scopeId: ImScopeId;\n}"
           },
           {
             "name": "MarkSubmittedOptions",

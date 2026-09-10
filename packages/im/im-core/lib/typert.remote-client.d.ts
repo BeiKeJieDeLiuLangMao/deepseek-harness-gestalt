@@ -3,7 +3,7 @@ import type {
   RemoteResult,
   TypertRemoteContribution,
 } from '@deepseek-ai/dsh-typert-protocol'
-import type { CreateImAccountOptions, CreateImRouteRuleOptions, ImAccountId, ImAccountMetadata, ImRouteRule, ImRouteRuleId, ImWorkspaceSimulationConfig, SetWorkspaceSimulationTargetOptions, UpdateImRouteRuleOptions } from '@deepseek-ai/dsh-im-core/client'
+import type { CreateImAccountOptions, CreateImRouteRuleOptions, ImAccountId, ImAccountMetadata, ImGuiHistoryQueryOptions, ImGuiInboundView, ImGuiOutboundView, ImGuiRegisterManualOutboundOptions, ImRouteRule, ImRouteRuleId, ImWorkspaceSimulationConfig, ListImOutboundOptions, SetWorkspaceSimulationTargetOptions, UpdateImRouteRuleOptions } from '@deepseek-ai/dsh-im-core/client'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 
 declare module '@deepseek-ai/dsh-typert-protocol' {
@@ -21,6 +21,11 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     updateRouteRule: (id: ImRouteRuleId, updates: UpdateImRouteRuleOptions) => Promise<RemoteResult<ImRouteRule>>
     upsertAccount: (options: CreateImAccountOptions) => Promise<RemoteResult<ImAccountMetadata>>
   }
+  interface TypertRemoteNamespace$696d44656c6976657279 {
+    listOutbound: (options: ListImOutboundOptions) => Promise<RemoteResult<ImGuiOutboundView[]>>
+    queryHistory: (options: ImGuiHistoryQueryOptions) => Promise<RemoteResult<ImGuiInboundView[]>>
+    registerManualOutbound: (options: ImGuiRegisterManualOutboundOptions) => Promise<RemoteResult<ImGuiOutboundView>>
+  }
   interface TypertRemoteMap {
     'imConfig/createRouteRule': (options: CreateImRouteRuleOptions) => Promise<RemoteResult<ImRouteRule>>
     'imConfig/deleteAccount': (id: ImAccountId) => Promise<RemoteResult<boolean>>
@@ -34,9 +39,13 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'imConfig/setSimulationConfig': (options: SetWorkspaceSimulationTargetOptions) => Promise<RemoteResult<ImWorkspaceSimulationConfig>>
     'imConfig/updateRouteRule': (id: ImRouteRuleId, updates: UpdateImRouteRuleOptions) => Promise<RemoteResult<ImRouteRule>>
     'imConfig/upsertAccount': (options: CreateImAccountOptions) => Promise<RemoteResult<ImAccountMetadata>>
+    'imDelivery/listOutbound': (options: ListImOutboundOptions) => Promise<RemoteResult<ImGuiOutboundView[]>>
+    'imDelivery/queryHistory': (options: ImGuiHistoryQueryOptions) => Promise<RemoteResult<ImGuiInboundView[]>>
+    'imDelivery/registerManualOutbound': (options: ImGuiRegisterManualOutboundOptions) => Promise<RemoteResult<ImGuiOutboundView>>
   }
   interface TypertRemoteNamespaceMap {
     'imConfig': TypertRemoteNamespace$696d436f6e666967
+    'imDelivery': TypertRemoteNamespace$696d44656c6976657279
   }
 }
 

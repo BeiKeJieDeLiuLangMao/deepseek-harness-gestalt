@@ -470,6 +470,7 @@ flowchart LR
   svc_fs --> pkg_tool_fs
   svc_imConfig --> pkg_client_ui_im
   svc_imConfig --> pkg_im_dingtalk
+  svc_imDelivery --> pkg_client_ui_im
   svc_imDelivery --> pkg_im_dingtalk
   svc_imDelivery --> pkg_im_wangwang
   svc_invariants --> pkg_agent
@@ -676,7 +677,7 @@ flowchart LR
 | `ctx.memberQuestionWorkspaceBinding` | `core` | [`member-question-receiver`](../packages/interaction/member-question-receiver) | - | - | - | Publishes the receiver-owned Workspace binding registry; no current production package calls this key directly. |
 | `ctx.subagentRoutePreauthorization` | `seam` | [`subagent-route-preauthorization`](../packages/subagent/subagent-route-preauthorization) | [`subagent-route-preauthorization-static`](../packages/subagent/subagent-route-preauthorization-static) | [`tool-subagent`](../packages/subagent/tool-subagent) | - | Resolves route-specific preauthorization before tool-subagent starts a delegated run. |
 | `ctx.imConfig` | `core` | [`im-core`](../packages/im/im-core) | - | [`im-dingtalk`](../packages/im/im-dingtalk), [`client-ui-im`](../packages/client/ui-im) | - | Owns durable IM accounts, workspace route rules, group triggers, and simulation target bindings over StorageDomain. |
-| `ctx.imDelivery` | `core` | [`im-core`](../packages/im/im-core) | - | [`im-dingtalk`](../packages/im/im-dingtalk), [`im-wangwang`](../packages/im/im-wangwang) | - | Owns inbound deduplication, conversation cursors, and outbound settlement including result_unknown. |
+| `ctx.imDelivery` | `core` | [`im-core`](../packages/im/im-core) | - | [`im-dingtalk`](../packages/im/im-dingtalk), [`im-wangwang`](../packages/im/im-wangwang), [`client-ui-im`](../packages/client/ui-im) | - | Owns inbound deduplication, conversation cursors, and outbound settlement including result_unknown. |
 | `ctx.imExecution` | `core` | [`im-core`](../packages/im/im-core) | - | - | - | Admits inbound messages into the target workspace Agent and registers im_send_message plus im_query_history. |
 | `ctx.imSimulation` | `core` | [`im-core`](../packages/im/im-core) | - | - | - | Owns in-process simulation instances against a configured workspace target and never calls live adapters. |
 | `ctx.imDingtalk` | `seam` | [`im-dingtalk`](../packages/im/im-dingtalk) | [`im-dingtalk`](../packages/im/im-dingtalk) | - | - | Idle DWS adapter: startConsumer is explicit, so an empty profile does not spawn dws. |

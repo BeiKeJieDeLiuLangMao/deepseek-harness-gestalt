@@ -296,11 +296,17 @@ async getAccount(id: ImAccountId): Promise<ImAccountMetadata | undefined>
 async getRouteRule(id: ImRouteRuleId): Promise<ImRouteRule | undefined>
 
 /**
+ * List every route rule for the GUI Remote. Workspace filtering stays local.
+ * @returns All saved route rules.
+ */
+@Remote('listRouteRules') async remoteExportListRouteRules(): Promise<ImRouteRule[]>
+
+/**
  * List route rules, optionally filtered by workspace identifier.
  * @param workspaceId - Optional workspace identifier filter.
  * @returns Array of matching route rules.
  */
-@Remote('listRouteRules') async listRouteRules(workspaceId?: WorkspaceId): Promise<ImRouteRule[]>
+async listRouteRules(workspaceId?: WorkspaceId): Promise<ImRouteRule[]>
 
 /**
  * Create or replace a route rule for an account and conversation target.
@@ -386,16 +392,9 @@ Service managing IM message delivery, deduplication, cursor progress, and outbou
 
 ```ts cordis-catalog
 /**
- * Receive an incoming message from external platform or simulation.
- *
- * Invariants:
- * 1. Check deduplication by (scopeId, externalMessageId) using deterministic key or dedupTable.
- * 2. If already exists, return duplicate = true, the existing record, and reconciled cursor.
- * 3. If new:
- *    a. Write inbound record first with deterministic primary key `scopeId::externalMessageId`.
- *    b. Record dedup entry.
- *    c. Advance cursor and reconcile unsubmittedCount.
- *
+ * Receive an inbound message. Deduplicates on `(scopeId, externalMessageId)`,
+ * writes the inbound record before advancing the cursor, and returns the
+ * stored record with the reconciled cursor.
  * @param options - Message payload, sender classification, and external ID.
  * @returns ReceiveInboundResult containing deduplication flag, stored record, and updated cursor.
  */
@@ -428,19 +427,9 @@ async getCursor(scopeId: ImScopeId): Promise<ImConversationCursor | undefined>
 async queryHistory(options: ImHistoryQueryOptions): Promise<InboundMessageRecord[]>
 
 /**
- * Register an outbound message request and perform pre-send validation.
- *
- * Invariants:
- * 1. If intent === 'ai' and scope is real:
- *    - Check if the account is paused -> pre_send_failed
- *    - Resolve route rule for the conversation:
- *      - If status === 'disabled' or 'unconfigured' -> pre_send_failed (never flush disabled conversations)
- *      - If rule exists but enabled === false -> pre_send_failed
- * 2. If pre-send validation fails, record status: 'pre_send_failed' with reason.
- * 3. Otherwise status: 'pending'.
- * 4. Human manual sends (intent === 'human_manual') are permitted even if account is paused or rule is disabled.
- * 5. Simulation scopes are never blocked by account-level pause or disabled real routes.
- *
+ * Register an outbound request and run pre-send validation.
+ * Real AI outbound fails closed when the account is paused or the route is
+ * disabled/unconfigured. Human manual and simulation scopes are not blocked.
  * @param options - Request ID, target scope, workspace, intent, and message content.
  * @returns Stored OutboundMessageRecord.
  */
@@ -466,6 +455,34 @@ async settleOutbound(options: SettleOutboundOptions): Promise<OutboundMessageRec
  * @returns The outbound record if found, or undefined.
  */
 async getOutbound(requestId: ImOutboundRequestId): Promise<OutboundMessageRecord | undefined>
+
+/**
+ * List outbound records for one scope. Does not flush adapters.
+ * @param options - branded conversation scope.
+ * @returns outbound records oldest first.
+ */
+async listOutbound(options: ListImOutboundOptions): Promise<OutboundMessageRecord[]>
+
+/**
+ * GUI Remote history: text and sender facts only.
+ * @param options - branded conversation scope.
+ * @returns inbound rows oldest first.
+ */
+@Remote('queryHistory') async remoteExportQueryHistory(options: ImGuiHistoryQueryOptions): Promise<ImGuiInboundView[]>
+
+/**
+ * GUI Remote outbound list: text and status only. Does not flush adapters.
+ * @param options - branded conversation scope.
+ * @returns outbound rows oldest first.
+ */
+@Remote('listOutbound') async remoteExportListOutbound(options: ListImOutboundOptions): Promise<ImGuiOutboundView[]>
+
+/**
+ * GUI Remote manual send: queues `human_manual` outbound and does not flush adapters.
+ * @param options - request id, target scope, and text.
+ * @returns the queued outbound row.
+ */
+@Remote('registerManualOutbound') async remoteExportRegisterManualOutbound( options: ImGuiRegisterManualOutboundOptions, ): Promise<ImGuiOutboundView>
 
 /**
  * Cancel pending outbound AI messages for a specific scope.

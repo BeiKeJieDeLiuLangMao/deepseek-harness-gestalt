@@ -1,17 +1,25 @@
 /**
- * Host-backed IM GUI controller: persist accounts, routes, and simulation
- * targets through imConfig remotes, then refresh the shared snapshot.
+ * Host-backed IM GUI controller: persist accounts, routes, simulation
+ * targets, and the conversation stream through imConfig and imDelivery remotes.
  */
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
-import type { ImAccountId, ImAccountMetadata, ImRouteRuleId } from '@deepseek-ai/dsh-im-core/client'
+import {
+  encodeScopeId,
+  type ImAccountId,
+  type ImAccountMetadata,
+  type ImOutboundRequestId,
+  type ImRouteRuleId,
+} from '@deepseek-ai/dsh-im-core/client'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 import type { ImGuiFace } from './faces.ts'
 import {
+  conversationFromHost,
   createAccountOptions,
   createRouteOptionsFromDraft,
+  selectedConversationScope,
   snapshotFromHost,
   simulationOptionsFromKey,
 } from './host-snapshot.ts'
@@ -20,15 +28,20 @@ import { simulationTargets, type ImGuiSnapshot } from './model.ts'
 /** Generated imConfig Remote namespace mounted by api-remotes. */
 export type ImConfigRemote = ClientContext['remote']['imConfig']
 
+/** Generated imDelivery Remote namespace mounted by api-remotes. */
+export type ImDeliveryRemote = ClientContext['remote']['imDelivery']
+
 /**
  * Bind Host remotes as the slot inject face.
  * @param store - GUI snapshot store.
  * @param remote - generated imConfig Remote namespace.
+ * @param delivery - generated imDelivery Remote namespace.
  * @returns the shared GUI face for Settings, workspace cards, and the Sidebar tab.
  */
 export function createHostImGuiFace(
   store: SnapshotStore<ImGuiSnapshot>,
   remote: ImConfigRemote,
+  delivery: ImDeliveryRemote,
 ): ImGuiFace {
   const refresh = async (): Promise<void> => {
     const [accounts, routes, simulations] = await Promise.all([
@@ -37,11 +50,31 @@ export function createHostImGuiFace(
       remote.listSimulationConfigs(),
     ])
     if (!accounts.ok || !routes.ok || !simulations.ok) return
+    const scope = selectedConversationScope(accounts.value, routes.value, simulations.value)
+    let inbound: Awaited<ReturnType<ImDeliveryRemote['queryHistory']>> = { ok: true, value: [] }
+    let outbound: Awaited<ReturnType<ImDeliveryRemote['listOutbound']>> = { ok: true, value: [] }
+    if (scope !== undefined) {
+      const scopeId = encodeScopeId(scope)
+      ;[inbound, outbound] = await Promise.all([
+        delivery.queryHistory({ scopeId }),
+        delivery.listOutbound({ scopeId }),
+      ])
+    }
+    if (!inbound.ok || !outbound.ok) return
     store.update((draft) => {
-      const next = snapshotFromHost(accounts.value, routes.value, simulations.value, draft.conversation)
+      const conversation = conversationFromHost(
+        accounts.value,
+        routes.value,
+        simulations.value,
+        inbound.value,
+        outbound.value,
+        draft.conversation,
+      )
+      const next = snapshotFromHost(accounts.value, routes.value, simulations.value, conversation)
       draft.accounts = next.accounts
       draft.routes = next.routes
       draft.simulationByWorkspace = next.simulationByWorkspace
+      draft.conversation = next.conversation
     })
   }
   void refresh()
@@ -113,15 +146,22 @@ export function createHostImGuiFace(
     manualSend: (text) => {
       const trimmed = text.trim()
       if (trimmed === '') return
-      store.update((draft) => {
-        draft.conversation.messages.push({
-          id: `manual-${Date.now()}`,
+      void (async () => {
+        const [accounts, routes, simulations] = await Promise.all([
+          remote.listAccounts(),
+          remote.listRouteRules(),
+          remote.listSimulationConfigs(),
+        ])
+        if (!accounts.ok || !routes.ok || !simulations.ok) return
+        const scope = selectedConversationScope(accounts.value, routes.value, simulations.value)
+        if (scope === undefined) return
+        const result = await delivery.registerManualOutbound({
+          requestId: brandString<ImOutboundRequestId>(`manual-${Date.now()}`),
+          scope,
           text: trimmed,
-          sender: 'human_dsh',
-          delivery: 'sent',
-          who: draft.conversation.accountName || 'self',
         })
-      })
+        if (result.ok) await refresh()
+      })()
     },
     setPanel: (panel) => {
       store.update((draft) => { draft.conversation.panel = panel })

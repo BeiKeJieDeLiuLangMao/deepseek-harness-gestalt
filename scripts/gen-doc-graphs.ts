@@ -851,7 +851,7 @@ const SERVICE_ROLES: ServiceRole[] = [
     pkg: 'im-core',
     title: 'IM delivery and outbound lifecycle',
     mode: 'core',
-    consumers: ['im-dingtalk', 'im-wangwang'],
+    consumers: ['im-dingtalk', 'im-wangwang', 'client-ui-im'],
     note: 'Owns inbound deduplication, conversation cursors, and outbound settlement including result_unknown.',
   },
   {

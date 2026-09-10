@@ -35,7 +35,7 @@ kind: "package-reference"
 <details>
 <summary>实现细节——点击展开</summary>
 
-`apply` 注册 `settings.section`（id `im-accounts`）、两张 `workspace.settings.section` 卡片（`im-takeover`、`im-simulation`），以及一个官方 Sidebar 标签（`@deepseek-ai/dsh-client-ui-im/conversation`）。账号、路由与模拟目标经 `ctx.remote.imConfig` 持久化；旺旺密钥只用于生成凭据引用后即丢弃。对话流在 `imDelivery` remotes 就绪前仍是本地的。不提供飞书。组合：`tsconfig.client.json` 引用本包；`packages/bundle/web-app/cordis.patch.yml` 带有 `ui-im` 浏览器行。
+`apply` 注册 `settings.section`（id `im-accounts`）、两张 `workspace.settings.section` 卡片（`im-takeover`、`im-simulation`），以及一个官方 Sidebar 标签（`@deepseek-ai/dsh-client-ui-im/conversation`）。账号、路由与模拟目标经 `ctx.remote.imConfig` 持久化。对话流从 `ctx.remote.imDelivery`（`queryHistory`、`listOutbound`）刷新；人工发送调用 `registerManualOutbound`，不 flush 适配器。旺旺密钥只用于生成凭据引用后即丢弃。不提供飞书。组合：`tsconfig.client.json` 引用本包；`packages/bundle/web-app/cordis.patch.yml` 带有 `ui-im` 浏览器行。
 
 </details>
 
@@ -62,7 +62,7 @@ kind: "package-reference"
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **对话流仍是本地的** — 账号、路由与模拟目标经 `imConfig` remotes 持久化。`imDelivery` 的 Host remotes 仍是后续工作；本 GUI 不声称真实出站。`presentation.ts` 把装配域记录映射为发送者徽标与投递状态；`result_unknown` 绝不是成功。`IM_LIVE_LANE_BEHAVIORS` 点名真实钉钉登录、真实旺旺读取、真实出站、真实模型调用和原生 Desktop GUI computer-use。
+- **对话流由 Host 驱动，不是真实出站** — 账号、路由与模拟目标经 `imConfig` remotes 持久化。Sidebar 流列出 `imDelivery` 历史与已入队出站；`registerManualOutbound` 不 flush 适配器。`presentation.ts` 把装配域记录映射为发送者徽标与投递状态；`result_unknown` 绝不是成功。`IM_LIVE_LANE_BEHAVIORS` 点名真实钉钉登录、真实旺旺读取、真实出站、真实模型调用和原生 Desktop GUI computer-use。
 - **没有独立运行看板** — 审批只走原生审批界面。
 - **没有飞书** — 首期平台仅钉钉与旺旺。
 

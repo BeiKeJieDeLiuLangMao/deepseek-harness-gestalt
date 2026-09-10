@@ -35,10 +35,11 @@ DeepSeek Harness 的 IM 领域配置、账号与路由核心服务。
 - `receiveInbound(options: ReceiveInboundOptions): Promise<ReceiveInboundResult>`
 - `markSubmitted(options: MarkSubmittedOptions): Promise<ImConversationCursor>`
 - `getCursor(scopeId: ImScopeId): Promise<ImConversationCursor | undefined>`
-- `queryHistory(options: ImHistoryQueryOptions): Promise<InboundMessageRecord[]>`
-- `registerOutbound(options: RegisterOutboundOptions): Promise<OutboundMessageRecord>`
+- `queryHistory(options: ImHistoryQueryOptions): Promise<InboundMessageRecord[]>` — GUI Remote `queryHistory` 返回 `ImGuiInboundView[]`
+- `registerOutbound(options: RegisterOutboundOptions): Promise<OutboundMessageRecord>` — GUI Remote `registerManualOutbound` 按 `human_manual` 入队，不 flush 适配器
 - `settleOutbound(options: SettleOutboundOptions): Promise<OutboundMessageRecord>`
 - `getOutbound(requestId: ImOutboundRequestId): Promise<OutboundMessageRecord | undefined>`
+- `listOutbound(options: ListImOutboundOptions): Promise<OutboundMessageRecord[]>` — GUI Remote `listOutbound` 返回 `ImGuiOutboundView[]`，不 flush 适配器
 - `cancelPendingAiOutbound(scopeId: ImScopeId, reason: string): Promise<OutboundMessageRecord[]>`
 
 ### 公共方法：imExecution

@@ -175,6 +175,46 @@ export interface ImHistoryQueryOptions {
   readonly stages?: ImMessageStage[]
 }
 
+/** Options for listing outbound records of one conversation scope. */
+export interface ListImOutboundOptions {
+  readonly scopeId: ImScopeId
+}
+
+/** GUI Remote history query. Pagination stays local on `queryHistory`. */
+export interface ImGuiHistoryQueryOptions {
+  readonly scopeId: ImScopeId
+}
+
+/** GUI-safe inbound row: text and sender facts only, no raw payload. */
+export interface ImGuiInboundView {
+  readonly messageId: ImMessageId
+  readonly scopeId: ImScopeId
+  readonly senderClassification: ImSenderClassification
+  readonly senderNick?: string
+  readonly senderId?: string
+  readonly stage: ImMessageStage
+  readonly text: string
+  readonly sequenceNumber: number
+  readonly receivedAt: string
+}
+
+/** GUI-safe outbound row: text and status only, no raw payload. */
+export interface ImGuiOutboundView {
+  readonly requestId: ImOutboundRequestId
+  readonly scopeId: ImScopeId
+  readonly intent: ImOutboundIntent
+  readonly text: string
+  readonly status: ImOutboundStatus
+  readonly createdAt: string
+}
+
+/** GUI Remote manual-send queue. Does not flush adapters. */
+export interface ImGuiRegisterManualOutboundOptions {
+  readonly requestId: ImOutboundRequestId
+  readonly scope: ImDeliveryScope
+  readonly text: string
+}
+
 /**
  * Inbound delivery input request.
  */

@@ -16,6 +16,8 @@ import {
   createAccountOptions,
   createRouteOptionsFromDraft,
   routeViewFromRule,
+  conversationFromHost,
+  conversationRecordsFromDelivery,
   snapshotFromHost,
   simulationKeyFromConfig,
 } from '../src/client/host-snapshot.ts'
@@ -104,5 +106,58 @@ describe('IM Host snapshot mapping', () => {
       targets: ['度假开发联调群'],
       enabled: true,
     }])).toBe('specific:route-group:度假开发联调群')
+  })
+
+  it('maps Host inbound and outbound onto the Sidebar stream without treating result_unknown as sent', () => {
+    const account: ImAccountMetadata = {
+      id: brandString<ImAccountId>('acc-dt'),
+      platform: 'dingtalk',
+      displayName: '陈小宇',
+      status: 'connected',
+      paused: false,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    }
+    const rule: ImRouteRule = {
+      id: brandString<ImRouteRuleId>('route-group'),
+      accountId: account.id,
+      conversationKind: 'group',
+      target: { kind: 'specific', conversationId: '度假开发联调群' },
+      workspaceId: brandString<WorkspaceId>('ws-tested'),
+      enabled: false,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    }
+    const inbound = [{
+      messageId: 'm1' as never,
+      scopeId: 'real:dingtalk:acc-dt:度假开发联调群' as never,
+      senderClassification: 'external' as const,
+      senderNick: '张伟',
+      stage: 'submitted' as const,
+      text: '周末发布回滚方案谁来跟？',
+      sequenceNumber: 1,
+      receivedAt: '2026-01-01T00:00:00.000Z',
+    }]
+    const outbound = [{
+      requestId: 'req-1' as never,
+      scopeId: 'real:dingtalk:acc-dt:度假开发联调群' as never,
+      intent: 'human_manual' as const,
+      text: '已从 DSH 补了一句。',
+      status: 'result_unknown' as const,
+      createdAt: '2026-01-01T00:00:01.000Z',
+    }]
+    expect(conversationRecordsFromDelivery(inbound, outbound).map(row => row.outboundStatus ?? row.inboundStage))
+      .toEqual(['submitted', 'result_unknown'])
+    const conversation = conversationFromHost(
+      [account],
+      [rule],
+      [],
+      inbound,
+      outbound,
+      emptyGuiSnapshot().conversation,
+    )
+    expect(conversation.panel).toBe('disabled')
+    expect(conversation.unconfigured).toBe(false)
+    expect(conversation.messages.map(row => row.delivery)).toEqual(['submitted', 'result_unknown'])
   })
 })

@@ -262,4 +262,35 @@ describe('ImDeliveryService - Outbound Delivery & Safety', () => {
     expect(outAllDis.status).toBe('pre_send_failed')
     expect(outAllDis.preSendFailureReason).toBe('conversation_route_disabled')
   })
+
+  it('lists outbound records for one scope without flushing adapters', async () => {
+    const accountId = brandString<ImAccountId>('acc-list')
+    await configService.upsertAccount({
+      id: accountId,
+      platform: 'dingtalk',
+      displayName: 'List Account',
+      paused: false,
+    })
+    const scope: ImDeliveryScope = {
+      kind: 'real',
+      platform: 'dingtalk',
+      accountId,
+      conversationId: 'conv-list',
+    }
+    await deliveryService.registerOutbound({
+      requestId: brandString<ImOutboundRequestId>('req-list-1'),
+      scope,
+      intent: 'human_manual',
+      content: { text: 'manual' },
+    })
+    await deliveryService.registerOutbound({
+      requestId: brandString<ImOutboundRequestId>('req-other'),
+      scope: { ...scope, conversationId: 'conv-other' },
+      intent: 'human_manual',
+      content: { text: 'other' },
+    })
+    const listed = await deliveryService.listOutbound({ scopeId: encodeScopeId(scope) })
+    expect(listed.map(record => record.requestId)).toEqual(['req-list-1'])
+    expect(listed[0]?.status).toBe('pending')
+  })
 })

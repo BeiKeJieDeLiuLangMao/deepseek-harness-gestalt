@@ -472,6 +472,7 @@ flowchart LR
   svc_fs --> pkg_tool_fs
   svc_imConfig --> pkg_client_ui_im
   svc_imConfig --> pkg_im_dingtalk
+  svc_imDelivery --> pkg_client_ui_im
   svc_imDelivery --> pkg_im_dingtalk
   svc_imDelivery --> pkg_im_wangwang
   svc_invariants --> pkg_agent
@@ -678,7 +679,7 @@ flowchart LR
 | `ctx.memberQuestionWorkspaceBinding` | `core` | [`member-question-receiver`](../packages/interaction/member-question-receiver) | - | - | - | 发布 receiver 所拥有的 Workspace binding 注册表；当前没有生产包直接调用此键。 |
 | `ctx.subagentRoutePreauthorization` | `seam` | [`subagent-route-preauthorization`](../packages/subagent/subagent-route-preauthorization) | [`subagent-route-preauthorization-static`](../packages/subagent/subagent-route-preauthorization-static) | [`tool-subagent`](../packages/subagent/tool-subagent) | - | 在 tool-subagent 启动委派运行之前解析特定路由的预授权。 |
 | `ctx.imConfig` | `core` | [`im-core`](../packages/im/im-core) | - | [`im-dingtalk`](../packages/im/im-dingtalk), [`client-ui-im`](../packages/client/ui-im) | - | 在 StorageDomain 上拥有持久 IM 账号、工作区路由规则、群触发与模拟目标绑定。 |
-| `ctx.imDelivery` | `core` | [`im-core`](../packages/im/im-core) | - | [`im-dingtalk`](../packages/im/im-dingtalk), [`im-wangwang`](../packages/im/im-wangwang) | - | 拥有入站去重、会话游标，以及包含 `result_unknown` 的出站结算。 |
+| `ctx.imDelivery` | `core` | [`im-core`](../packages/im/im-core) | - | [`im-dingtalk`](../packages/im/im-dingtalk), [`im-wangwang`](../packages/im/im-wangwang), [`client-ui-im`](../packages/client/ui-im) | - | 拥有入站去重、会话游标，以及包含 `result_unknown` 的出站结算。 |
 | `ctx.imExecution` | `core` | [`im-core`](../packages/im/im-core) | - | - | - | 将入站消息准入目标工作区 Agent，并注册 `im_send_message` 与 `im_query_history`。 |
 | `ctx.imSimulation` | `core` | [`im-core`](../packages/im/im-core) | - | - | - | 针对已配置工作区目标拥有进程内模拟实例，且永不调用真实适配器。 |
 | `ctx.imDingtalk` | `seam` | [`im-dingtalk`](../packages/im/im-dingtalk) | [`im-dingtalk`](../packages/im/im-dingtalk) | - | - | 空闲 DWS 适配器：`startConsumer` 是显式调用，因此空 profile 不会拉起 dws。 |

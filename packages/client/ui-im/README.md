@@ -35,7 +35,7 @@ Connect a DingTalk or Wangwang account under Settings → IM Accounts. Add takeo
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-`apply` registers `settings.section` id `im-accounts`, two `workspace.settings.section` cards (`im-takeover`, `im-simulation`), and one official Sidebar tab (`@deepseek-ai/dsh-client-ui-im/conversation`). Accounts, routes, and simulation targets persist through `ctx.remote.imConfig`; Wangwang secrets mint a credential reference and are discarded. The conversation stream stays local until `imDelivery` remotes exist. Feishu is not offered. Composition: `tsconfig.client.json` references the package; `packages/bundle/web-app/cordis.patch.yml` carries the `ui-im` browser row.
+`apply` registers `settings.section` id `im-accounts`, two `workspace.settings.section` cards (`im-takeover`, `im-simulation`), and one official Sidebar tab (`@deepseek-ai/dsh-client-ui-im/conversation`). Accounts, routes, and simulation targets persist through `ctx.remote.imConfig`. The conversation stream refreshes from `ctx.remote.imDelivery` (`queryHistory`, `listOutbound`); manual send calls `registerManualOutbound` and does not flush adapters. Wangwang secrets mint a credential reference and are discarded. Feishu is not offered. Composition: `tsconfig.client.json` references the package; `packages/bundle/web-app/cordis.patch.yml` carries the `ui-im` browser row.
 
 </details>
 
@@ -62,7 +62,7 @@ None; UI state never alters a model request prefix.
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **Conversation stream stays local** — accounts, routes, and simulation targets persist through `imConfig` remotes. Host remotes for `imDelivery` remain later work; this GUI does not claim live outbound. `presentation.ts` maps assembled domain records onto sender badges and delivery states; `result_unknown` is never success. `IM_LIVE_LANE_BEHAVIORS` names live DingTalk login, live Wangwang reads, live outbound, real model calls, and native Desktop GUI computer-use.
+- **Conversation stream is Host-backed, not live outbound** — accounts, routes, and simulation targets persist through `imConfig` remotes. The Sidebar stream lists `imDelivery` history and queued outbound; `registerManualOutbound` does not flush adapters. `presentation.ts` maps assembled domain records onto sender badges and delivery states; `result_unknown` is never success. `IM_LIVE_LANE_BEHAVIORS` names live DingTalk login, live Wangwang reads, live outbound, real model calls, and native Desktop GUI computer-use.
 - **No operations board** — native approval is the only approval surface.
 - **No Feishu** — first-period platforms are DingTalk and Wangwang only.
 

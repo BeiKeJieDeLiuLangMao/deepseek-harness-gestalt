@@ -43,7 +43,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 
 /** Services required before activation. */
 export const inject = [
-  'slots', 'locale', 'sidebarRightTabs', 'remote', 'remote.imConfig',
+  'slots', 'locale', 'sidebarRightTabs', 'remote', 'remote.imConfig', 'remote.imDelivery',
 ] as const
 
 /**
@@ -52,7 +52,11 @@ export const inject = [
  */
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-im: dictionaries')
-  const face = createHostImGuiFace(createImGuiStore(emptyGuiSnapshot()), ctx.remote.imConfig)
+  const face = createHostImGuiFace(
+    createImGuiStore(emptyGuiSnapshot()),
+    ctx.remote.imConfig,
+    ctx.remote.imDelivery,
+  )
   const t = ctx.locale.bind(NS)
   ctx.slots.inject('settings.section', () => ctx.slots.register({
     name: 'settings.section',

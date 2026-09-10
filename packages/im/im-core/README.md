@@ -35,10 +35,11 @@ Mounted at `ctx.imConfig` for configuration and routing, `ctx.imDelivery` for me
 - `receiveInbound(options: ReceiveInboundOptions): Promise<ReceiveInboundResult>`
 - `markSubmitted(options: MarkSubmittedOptions): Promise<ImConversationCursor>`
 - `getCursor(scopeId: ImScopeId): Promise<ImConversationCursor | undefined>`
-- `queryHistory(options: ImHistoryQueryOptions): Promise<InboundMessageRecord[]>`
-- `registerOutbound(options: RegisterOutboundOptions): Promise<OutboundMessageRecord>`
+- `queryHistory(options: ImHistoryQueryOptions): Promise<InboundMessageRecord[]>` — GUI Remote `queryHistory` returns `ImGuiInboundView[]`
+- `registerOutbound(options: RegisterOutboundOptions): Promise<OutboundMessageRecord>` — GUI Remote `registerManualOutbound` queues `human_manual` and never flushes adapters
 - `settleOutbound(options: SettleOutboundOptions): Promise<OutboundMessageRecord>`
 - `getOutbound(requestId: ImOutboundRequestId): Promise<OutboundMessageRecord | undefined>`
+- `listOutbound(options: ListImOutboundOptions): Promise<OutboundMessageRecord[]>` — GUI Remote `listOutbound` returns `ImGuiOutboundView[]` and does not flush adapters
 - `cancelPendingAiOutbound(scopeId: ImScopeId, reason: string): Promise<OutboundMessageRecord[]>`
 
 ### Public Methods: imExecution

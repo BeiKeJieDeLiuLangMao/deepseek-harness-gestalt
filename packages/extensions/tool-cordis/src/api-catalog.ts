@@ -1362,7 +1362,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'The route rule record if found, or undefined.',
       },
       {
-        signature: '@Remote(\'listRouteRules\') async listRouteRules(workspaceId?: WorkspaceId): Promise<ImRouteRule[]>',
+        signature: '@Remote(\'listRouteRules\') async remoteExportListRouteRules(): Promise<ImRouteRule[]>',
+        description: 'List every route rule for the GUI Remote. Workspace filtering stays local.',
+        parameters: [],
+        returns: 'All saved route rules.',
+      },
+      {
+        signature: 'async listRouteRules(workspaceId?: WorkspaceId): Promise<ImRouteRule[]>',
         description: 'List route rules, optionally filtered by workspace identifier.',
         parameters: [{ name: 'workspaceId', description: 'Optional workspace identifier filter.' }],
         returns: 'Array of matching route rules.',
@@ -1424,7 +1430,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     methods: [
       {
         signature: 'async receiveInbound(options: ReceiveInboundOptions): Promise<ReceiveInboundResult>',
-        description: 'Receive an incoming message from external platform or simulation.\n\nInvariants: 1. Check deduplication by (scopeId, externalMessageId) using deterministic key or dedupTable. 2. If already exists, return duplicate = true, the existing record, and reconciled cursor. 3. If new: a. Write inbound record first with deterministic primary key `scopeId::externalMessageId`. b. Record dedup entry. c. Advance cursor and reconcile unsubmittedCount.',
+        description: 'Receive an inbound message. Deduplicates on `(scopeId, externalMessageId)`, writes the inbound record before advancing the cursor, and returns the stored record with the reconciled cursor.',
         parameters: [{ name: 'options', description: 'Message payload, sender classification, and external ID.' }],
         returns: 'ReceiveInboundResult containing deduplication flag, stored record, and updated cursor.',
       },
@@ -1448,7 +1454,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'async registerOutbound(options: RegisterOutboundOptions): Promise<OutboundMessageRecord>',
-        description: 'Register an outbound message request and perform pre-send validation.\n\nInvariants: 1. If intent === \'ai\' and scope is real: - Check if the account is paused -> pre_send_failed - Resolve route rule for the conversation: - If status === \'disabled\' or \'unconfigured\' -> pre_send_failed (never flush disabled conversations) - If rule exists but enabled === false -> pre_send_failed 2. If pre-send validation fails, record status: \'pre_send_failed\' with reason. 3. Otherwise status: \'pending\'. 4. Human manual sends (intent === \'human_manual\') are permitted even if account is paused or rule is disabled. 5. Simulation scopes are never blocked by account-level pause or disabled real routes.',
+        description: 'Register an outbound request and run pre-send validation. Real AI outbound fails closed when the account is paused or the route is disabled/unconfigured. Human manual and simulation scopes are not blocked.',
         parameters: [{ name: 'options', description: 'Request ID, target scope, workspace, intent, and message content.' }],
         returns: 'Stored OutboundMessageRecord.',
       },
@@ -1463,6 +1469,30 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Get outbound message record by requestId.',
         parameters: [{ name: 'requestId', description: 'Outbound request identifier.' }],
         returns: 'The outbound record if found, or undefined.',
+      },
+      {
+        signature: 'async listOutbound(options: ListImOutboundOptions): Promise<OutboundMessageRecord[]>',
+        description: 'List outbound records for one scope. Does not flush adapters.',
+        parameters: [{ name: 'options', description: 'branded conversation scope.' }],
+        returns: 'outbound records oldest first.',
+      },
+      {
+        signature: '@Remote(\'queryHistory\') async remoteExportQueryHistory(options: ImGuiHistoryQueryOptions): Promise<ImGuiInboundView[]>',
+        description: 'GUI Remote history: text and sender facts only.',
+        parameters: [{ name: 'options', description: 'branded conversation scope.' }],
+        returns: 'inbound rows oldest first.',
+      },
+      {
+        signature: '@Remote(\'listOutbound\') async remoteExportListOutbound(options: ListImOutboundOptions): Promise<ImGuiOutboundView[]>',
+        description: 'GUI Remote outbound list: text and status only. Does not flush adapters.',
+        parameters: [{ name: 'options', description: 'branded conversation scope.' }],
+        returns: 'outbound rows oldest first.',
+      },
+      {
+        signature: '@Remote(\'registerManualOutbound\') async remoteExportRegisterManualOutbound( options: ImGuiRegisterManualOutboundOptions, ): Promise<ImGuiOutboundView>',
+        description: 'GUI Remote manual send: queues `human_manual` outbound and does not flush adapters.',
+        parameters: [{ name: 'options', description: 'request id, target scope, and text.' }],
+        returns: 'the queued outbound row.',
       },
       {
         signature: 'async cancelPendingAiOutbound(scopeId: ImScopeId, reason: string): Promise<OutboundMessageRecord[]>',
@@ -6203,6 +6233,22 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ImGroupTriggerConfig {\n    readonly mention?: boolean;\n    readonly everyN?: number;\n    readonly fixedIntervalSeconds?: number;\n}',
   },
   {
+    name: 'ImGuiHistoryQueryOptions',
+    declaration: 'export interface ImGuiHistoryQueryOptions {\n    readonly scopeId: ImScopeId;\n}',
+  },
+  {
+    name: 'ImGuiInboundView',
+    declaration: 'export interface ImGuiInboundView {\n    readonly messageId: ImMessageId;\n    readonly scopeId: ImScopeId;\n    readonly senderClassification: ImSenderClassification;\n    readonly senderNick?: string;\n    readonly senderId?: string;\n    readonly stage: ImMessageStage;\n    readonly text: string;\n    readonly sequenceNumber: number;\n    readonly receivedAt: string;\n}',
+  },
+  {
+    name: 'ImGuiOutboundView',
+    declaration: 'export interface ImGuiOutboundView {\n    readonly requestId: ImOutboundRequestId;\n    readonly scopeId: ImScopeId;\n    readonly intent: ImOutboundIntent;\n    readonly text: string;\n    readonly status: ImOutboundStatus;\n    readonly createdAt: string;\n}',
+  },
+  {
+    name: 'ImGuiRegisterManualOutboundOptions',
+    declaration: 'export interface ImGuiRegisterManualOutboundOptions {\n    readonly requestId: ImOutboundRequestId;\n    readonly scope: ImDeliveryScope;\n    readonly text: string;\n}',
+  },
+  {
     name: 'ImHistoryQueryOptions',
     declaration: 'export interface ImHistoryQueryOptions {\n    readonly scopeId: ImScopeId;\n    readonly limit?: number;\n    readonly beforeSequenceNumber?: number;\n    readonly afterSequenceNumber?: number;\n    readonly stages?: ImMessageStage[];\n}',
   },
@@ -6485,6 +6531,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'KvUnitDescriptor',
     declaration: 'export interface KvUnitDescriptor {\n    readonly name: string;\n    readonly version: number;\n    readonly tables: readonly string[];\n    readonly hasGlobal: boolean;\n    readonly layout?: \'single\' | \'per-record\';\n    readonly compatibleVersions?: readonly number[];\n}',
+  },
+  {
+    name: 'ListImOutboundOptions',
+    declaration: 'export interface ListImOutboundOptions {\n    readonly scopeId: ImScopeId;\n}',
   },
   {
     name: 'LlmAdapter',

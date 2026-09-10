@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-11-im-config-gui-remotes.md
-2026-09-11-im-config-gui-remotes.md: d66b7a9234c5aaa30e33e945eae9fc1d3a6f616d
-2026-09-11-im-config-gui-remotes.zh.md: 1ebf26aef1164ce65c73e673c283aa9fd57285e6
+2026-09-11-im-config-gui-remotes.md: c0c7975a010f08050b653f276e6eb8adf0d1624f
+2026-09-11-im-config-gui-remotes.zh.md: 2dd48ce618c05ce15fed24abf66307a60a9bd26f
