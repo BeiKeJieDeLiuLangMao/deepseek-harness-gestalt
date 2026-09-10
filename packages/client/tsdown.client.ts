@@ -487,7 +487,7 @@ function clientConfig(id: string, entry: string): UserConfig {
     name: `${id}/client`,
     entry: { client: entry },
     // Browser bundle lands next to the node half (single lib/ artifact dir;
-    // the entryFileNames pin keeps it exactly lib/client.cjs). clean must stay
+    // the entryFileNames pin keeps it exactly lib/client.js). clean must stay
     // off — a default clean would wipe the node-half output emitted above.
     outDir: 'lib',
     format: 'cjs',

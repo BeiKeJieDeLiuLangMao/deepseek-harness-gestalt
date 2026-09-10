@@ -31,10 +31,10 @@ function buildFixture(environment: Record<string, string>): string {
   roots.push(root)
   write(join(root, 'package.json'), `${JSON.stringify({ version: environment.DSH_CLIENT_VERSION ?? '0.0.1' })}\n`)
   write(join(root, 'apps/web/dist/index.html'), '<main></main>')
-  write(join(root, 'packages/client/example/lib/client.cjs'), 'module.exports = {}\n')
-  write(join(root, 'packages/client/example/lib/client.cjs.map'), `${JSON.stringify({
+  write(join(root, 'packages/client/example/lib/client.js'), 'module.exports = {}\n')
+  write(join(root, 'packages/client/example/lib/client.js.map'), `${JSON.stringify({
     version: 3,
-    file: 'client.cjs',
+    file: 'client.js',
     sources: [],
     sourcesContent: [],
     names: [],
@@ -155,7 +155,7 @@ describe('release families', () => {
     expect(() => { dsh.verifyBuildArtifacts(missing) }).toThrow(/record.*missing/)
     expect(() => { vendor.verifyBuildArtifacts(missing) }).not.toThrow()
 
-    write(join(official, 'packages/client/example/lib/client.cjs'), 'module.exports = { changed: true }\n')
+    write(join(official, 'packages/client/example/lib/client.js'), 'module.exports = { changed: true }\n')
     expect(() => { dsh.verifyBuildArtifacts(official) }).toThrow(/artifacts differ/)
   })
 

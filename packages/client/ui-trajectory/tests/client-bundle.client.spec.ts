@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Real tsdown artifact: lib/client.cjs hands off through
+ * Real tsdown artifact: lib/client.js hands off through
  * window.__ModuleLoader__.load, resolves externals through the injected
  * require, returns the exports (apply + inject), and a mounted apply
  * registers the view tab into a real SlotRegistry ring. Skips when dist/ is
@@ -23,7 +23,7 @@ function readBundle(): string | undefined {
   try {
     // import.meta.url is http-scheme in the jsdom pool; vitest runs from the
     // repo root, so resolve the artifact repo-relatively instead.
-    return readFileSync(resolve('packages/client/ui-trajectory/lib/client.cjs'), 'utf8')
+    return readFileSync(resolve('packages/client/ui-trajectory/lib/client.js'), 'utf8')
   } catch {
     return undefined
   }

@@ -12,7 +12,7 @@
     },
     "./client": {
       "types": "./lib/types/client/index.d.ts",
-      "default": "./lib/client.cjs"
+      "default": "./lib/client.js"
     },
     "./src/*": "./src/*",
     "./package.json": "./package.json"

@@ -200,9 +200,12 @@ export function collectClientPackageViolations(facts: ClientPackageFacts): strin
   ].sort((left, right) => left.localeCompare(right))
 }
 
+const LEFTOVER_CLIENT_CJS = 'lib/client.cjs'
+const LEFTOVER_CLIENT_CJS_MAP = 'lib/client.cjs.map'
+
 /**
- * Verify that dynamic package manifests publish the CommonJS browser factory
- * with an extension that remains CommonJS inside an ESM package.
+ * Verify that dynamic package manifests publish the browser factory at
+ * `lib/client.js` and do not retain leftover `lib/client.cjs` paths.
  * @param root - Absolute repository root.
  * @param declarations - Workspace browser-module declarations.
  * @returns Stable manifest diagnostics.
@@ -226,9 +229,12 @@ export function collectClientArtifactViolations(
     const files = Array.isArray(manifest.files) && manifest.files.every(value => typeof value === 'string')
       ? manifest.files
       : []
-    if (!files.includes(DYNAMIC_CLIENT_ARTIFACT.relativePath) || files.includes('lib/client.js')) {
+    const leftover = [LEFTOVER_CLIENT_CJS, LEFTOVER_CLIENT_CJS_MAP].filter(path => files.includes(path))
+    if (!files.includes(DYNAMIC_CLIENT_ARTIFACT.relativePath) || leftover.length > 0) {
       violations.push(
-        `${declaration.manifest}: files must publish ${DYNAMIC_CLIENT_ARTIFACT.relativePath} instead of lib/client.js`,
+        leftover.length > 0
+          ? `${declaration.manifest}: files must publish ${DYNAMIC_CLIENT_ARTIFACT.relativePath} instead of ${leftover.join(', ')}`
+          : `${declaration.manifest}: files must publish ${DYNAMIC_CLIENT_ARTIFACT.relativePath}`,
       )
     }
   }
@@ -294,7 +300,11 @@ function normalizeClientArtifactManifest(manifest: Manifest): boolean {
   }
   if (Array.isArray(manifest.files) && manifest.files.every(value => typeof value === 'string')) {
     const files = manifest.files
-    const normalized = files.map(value => value === 'lib/client.js' ? DYNAMIC_CLIENT_ARTIFACT.relativePath : value)
+    const normalized = files.map((value) => {
+      if (value === LEFTOVER_CLIENT_CJS) return DYNAMIC_CLIENT_ARTIFACT.relativePath
+      if (value === LEFTOVER_CLIENT_CJS_MAP) return DYNAMIC_CLIENT_ARTIFACT.sourceMapPath
+      return value
+    })
     if (!normalized.includes(DYNAMIC_CLIENT_ARTIFACT.relativePath)) normalized.push(DYNAMIC_CLIENT_ARTIFACT.relativePath)
     if (normalized.length !== files.length || normalized.some((value, index) => value !== files[index])) {
       manifest.files = normalized

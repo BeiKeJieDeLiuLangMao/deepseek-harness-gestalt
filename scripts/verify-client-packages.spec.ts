@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
+  collectClientArtifactViolations,
   collectClientPackageViolations,
   collectLocalSourceSpecifiers,
   collectRuntimeSourcePackageUses,
@@ -340,5 +341,34 @@ describe('manifest declarations', () => {
     expect(fixed.dependencies).toEqual(subject.dependencies)
     expect(fixed.peerDependencies).toEqual(subject.peerDependencies)
     expect(fixed.devDependencies).toEqual(subject.devDependencies)
+  })
+
+  it('rejects leftover lib/client.cjs publication paths and rewrites them to lib/client.js', () => {
+    const root = mkdtempSync(join(tmpdir(), 'client-packages-artifact-'))
+    roots.push(root)
+    const subject = pkg('feature')
+    const manifest = {
+      name: subject.name,
+      dsh: { client: { platform: 'web' } },
+      exports: {
+        './client': { types: './lib/types/client/index.d.ts', default: './lib/client.cjs' },
+      },
+      files: ['lib/index.js', 'lib/client.cjs', 'lib/client.cjs.map', 'lib/types/**/*.d.ts'],
+    }
+    mkdirSync(dirname(join(root, subject.manifest)), { recursive: true })
+    writeFileSync(join(root, subject.manifest), JSON.stringify(manifest))
+
+    expect(collectClientArtifactViolations(root, [subject])).toEqual([
+      subject.manifest + ': exports["./client"].default must be ./lib/client.js; found ./lib/client.cjs',
+      subject.manifest + ': files must publish lib/client.js instead of lib/client.cjs, lib/client.cjs.map',
+    ])
+
+    expect(fixClientPackageManifests(root, facts([subject], { declarations: [subject] })))
+      .toEqual([subject.manifest])
+    expect(collectClientArtifactViolations(root, [subject])).toEqual([])
+    expect(JSON.parse(readFileSync(join(root, subject.manifest), 'utf8'))).toMatchObject({
+      exports: { './client': { default: './lib/client.js' } },
+      files: ['lib/index.js', 'lib/client.js', 'lib/client.js.map', 'lib/types/**/*.d.ts'],
+    })
   })
 })
