@@ -34,7 +34,15 @@ const NO_MODEL_EXPERIENCE_SECTION: Readonly<Record<string, string>> = {
   'packages/util/brand': 'The package only constructs plain string values and registers nothing model-facing.',
   'packages/util/home-paths': 'The package only resolves harness-owned host paths; model-facing consumers own any rendered use.',
   'packages/util/launch-environment': 'The package only resolves host environment values; model-facing consumers own any rendered use.',
+  'packages/util/request-trust': 'The package only judges HTTP request trust headers; model-facing consumers own any rendered use.',
   'packages/util/workspace-path': 'The package only formats Workspace paths for browser UI; it never constructs model input.',
+  'packages/phone/phone-environment': { kind: 'indirect', reason: 'The Host-side environment service delegates model rendering to dsh-tool-phone.' },
+  'packages/phone/phone-environment-android': { kind: 'indirect', reason: 'The Android environment Provider reaches the model through dsh-tool-phone.' },
+  'packages/phone/phone-environment-ios': { kind: 'indirect', reason: 'The iOS environment Provider reaches the model through dsh-tool-phone.' },
+  'packages/phone/phone-runtime': { kind: 'indirect', reason: 'The Host-side device fleet service delegates model rendering to dsh-tool-phone.' },
+  'packages/phone/phone-stream': { kind: 'none', reason: 'The Host-side reverse-proxy registers no prompt, schema, or model-visible surface.' },
+  'packages/client/ui-phone': { kind: 'none', reason: 'The browser UI, Host settings namespace, and video playback register no prompt, tool schema, session event, or provider request.' },
+
   'packages/util/values': 'The package only validates, snapshots, compares, freezes, or rejects caller-owned values; consumers own every model-facing use.',
 }
 

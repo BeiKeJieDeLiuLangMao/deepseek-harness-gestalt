@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-09-03-ui-fidelity-and-acceptance-route.md
-2026-09-03-ui-fidelity-and-acceptance-route.md: b6437e1e0b2494082ec0e1d0bb24f8296d209119
-2026-09-03-ui-fidelity-and-acceptance-route.zh.md: 0c17b7d96af35685cb0397f89f6c3634927397e4
+2026-09-03-ui-fidelity-and-acceptance-route.md: 3cae03922c687854cc94e158dfbb46516a46f105
+2026-09-03-ui-fidelity-and-acceptance-route.zh.md: 075bdcc43225b6169c67029a44993caa84e80d9c

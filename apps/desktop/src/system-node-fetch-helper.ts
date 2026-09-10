@@ -8,6 +8,9 @@ import { desktopRelayProxyCandidates } from './system-network.ts'
 const MAX_REQUEST_BYTES = 1024 * 1024
 const MAX_RESPONSE_BYTES = REMOTE_PROTOCOL_LIMITS.attachmentBlobBytes
 
+type NodeFetchInput = Parameters<typeof fetch>[0]
+type NodeFetchBody = NonNullable<Parameters<typeof fetch>[1]>['body']
+
 type FetchMessage = {
   type: 'fetch'
   url: string
@@ -147,7 +150,7 @@ function fetchBody(status: number, body: Uint8Array): ArrayBuffer | null {
   return Uint8Array.from(body).buffer
 }
 
-function parseUrl(input: RequestInfo | URL): URL {
+function parseUrl(input: NodeFetchInput): URL {
   if (input instanceof Request) throw new TypeError('Desktop Platform HTTP does not accept Request objects')
   const url = new URL(typeof input === 'string' ? input : input.href)
   if (url.protocol !== 'https:' || url.username !== '' || url.password !== '') {
@@ -162,7 +165,7 @@ function parseMethod(value: string | undefined): FetchMessage['method'] {
   throw new TypeError(`Desktop Platform HTTP method is unsupported: ${method}`)
 }
 
-function requestBody(value: BodyInit | null | undefined): Uint8Array | undefined {
+function requestBody(value: NodeFetchBody | null | undefined): Uint8Array | undefined {
   if (value === undefined || value === null) return undefined
   const bytes = typeof value === 'string' ? new TextEncoder().encode(value)
     : value instanceof Uint8Array ? new Uint8Array(value)

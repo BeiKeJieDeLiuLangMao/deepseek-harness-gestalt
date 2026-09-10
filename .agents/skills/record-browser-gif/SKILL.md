@@ -15,6 +15,8 @@ A pull request that changes product-user-visible GUI behavior MUST include a dem
 
 The recording itself is part of the evidence: use a real server booted from that pull request's branch tree, a real API key, and real model rounds. Never substitute fixture queries, mock transports, synthetic event injection, or test-only hooks unless the user explicitly asked for a fixture recording. Next to the embed, state the exact demonstrated commit SHA, the tree and origin that served it, any mode flags or browser-state exceptions, and whether a real model round ran, so reviewers know exactly what the recording proves.
 
+This skill records browser-visible evidence. A browser-operable backend does not replace the Codex computer-use acceptance of an in-scope native Electron route; that route must already pass through [`dsh-desktop-test-instance`](../dsh-desktop-test-instance/SKILL.md).
+
 ## Keep recording separate from publication
 
 - Recording produces frame images and one local `.gif` artifact only; it never mutates remote state.
@@ -22,11 +24,11 @@ The recording itself is part of the evidence: use a real server booted from that
 - Preserve the requested recording conditions. A real-server or real-API demo must not use fixture queries, mock transports, synthetic event injection, or test-only hooks. If credentials or the server are unavailable, report that limitation instead of substituting a fixture.
 - Never read or expose credential values. Use the application's normal configuration path and a benign demonstration prompt.
 
-## Enter only after review freezes the code
+## Record from a reviewed commit
 
-Before invoking this skill for pull-request evidence, require the acceptance flow to pass once without recording and require semantic Standards and Spec review to have no code findings. Record the exact reviewed commit as the frozen head. This skill is the last expensive evidence step, not a debugging loop.
+Before invoking this skill for pull-request evidence, require both the complete acceptance flow to pass once without recording and semantic Standards and Spec review to have no code findings. Record the exact reviewed commit as the recording commit. This skill is the last expensive evidence step, not a debugging loop.
 
-If code changes after that freeze, stop. Run the affected checks and semantic review again before recording from the new head. Documentation-only pull-request metadata edits do not move the served commit and do not invalidate the recording.
+If code changes before recording, stop and run the affected checks and semantic review before recording from the new head. After publication, retain the GIF only when the delivery ledger maps the later change to behavior, route steps, and environment outside that storyboard. Keep the original demonstrated commit in its provenance; never relabel the GIF as evidence from the newer head. Re-record an affected storyboard from one coherent run, and broaden revalidation when impact is uncertain. Documentation-only pull-request metadata edits do not move the served commit or invalidate the recording.
 
 ## Stage the application
 
@@ -109,7 +111,7 @@ git push origin gif-assets
 
 Before that push, verify that `gif-assets` contains media only and that the staged GIF's checksum matches the verified local artifact. After pushing, use authenticated GitHub API or raw requests to confirm the remote path, byte size, checksum, `200` response, and `image/gif` content type. An anonymous `404` does not disprove a private-repository asset; authenticate the verification instead. This proves the repository-member review path, not public availability.
 
-Immediately before editing the pull-request body, re-read its live head and compare it with the commit recorded next to the GIF. Stop and re-record when it moved. After the edit, re-read the live head and require it to remain at that recorded commit. Separately, render the body through GitHub's Markdown API and confirm that the expected `<img>` is present.
+Immediately before first embedding the GIF, re-read the pull-request head and compare it with the recorded commit. Stop and re-record when it moved. After that edit, require the live head to remain at the recorded commit. If a later head retains this GIF under the impact rule above, keep the original commit provenance and record which unchanged behavior, route, and environment the GIF still demonstrates. Separately, render the body through GitHub's Markdown API and confirm that the expected `<img>` is present.
 
 Embed the GIF in the pull request body with the raw blob URL; the `?raw=true` suffix is required, because the plain blob URL renders GitHub's file page instead of the image:
 

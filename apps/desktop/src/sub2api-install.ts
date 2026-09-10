@@ -123,7 +123,7 @@ export async function downloadToFile(
   const total = totalHeader === null ? undefined : Number(totalHeader)
   let received = 0
   let lastReported = -1
-  const source = Readable.fromWeb(response.body as import('node:stream/web').ReadableStream)
+  const source = Readable.fromWeb(response.body)
   source.on('data', (chunk: Buffer) => {
     received += chunk.length
     if (total !== undefined && Number.isFinite(total) && total > 0) {

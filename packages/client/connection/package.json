@@ -36,6 +36,7 @@
   "dependencies": {
     "@deepseek-ai/dsh-credentials": "workspace:^",
     "@deepseek-ai/schemastery": "workspace:^",
+    "ws": "^8.21.0",
     "zod": "^4.4.3"
   },
   "files": [
@@ -54,9 +55,12 @@
     "@deepseek-ai/dsh-host-directory-picker": "workspace:^",
     "@deepseek-ai/dsh-host-webserver": "workspace:^",
     "@deepseek-ai/dsh-llm": "workspace:^",
+    "@deepseek-ai/dsh-request-trust": "workspace:^",
     "@deepseek-ai/dsh-session": "workspace:^",
     "@deepseek-ai/dsh-settings": "workspace:^",
     "@deepseek-ai/dsh-tool-todo": "workspace:^",
-    "@deepseek-ai/dsh-util-values": "workspace:^"
+    "@deepseek-ai/dsh-tools": "workspace:^",
+    "@deepseek-ai/dsh-util-values": "workspace:^",
+    "@types/ws": "^8.18.1"
   }
 }

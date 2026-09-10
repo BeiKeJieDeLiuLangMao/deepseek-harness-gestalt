@@ -1,0 +1,66 @@
+{
+  "version": "0.1.17",
+  "tag": "gestalt-v0.1.17",
+  "source": {
+    "baselineKind": "previous-release",
+    "baselineRepository": "gestaltrun/deepseek-harness-gestalt",
+    "releaseRepository": "gestaltrun/deepseek-harness-gestalt",
+    "baselineCommit": "6dd74fadaa297d1045db6877a0e156574399bee5"
+  },
+  "content": {
+    "zh": {
+      "intro": "DeepSeek Gestalt 0.1.17 收录上一版本之后的 {{commitCount}} 个提交。",
+      "sections": [
+        {
+          "heading": "产品变更",
+          "items": [
+            "新增无需密钥的桌面手机 Electron 验收通道与可配置的 mobilecli 服务端口。",
+            "在桌面端手机 tab 中把 H264 流渲染为可见且可交互的设备画面。",
+            "桌面端手机浮层在工作台设置注册完成后再提供服务。",
+            "在 Desktop 产物中携带手机设备运行时不变量诊断所需的分片。",
+            "以明确的 CommonJS 扩展名发布动态浏览器 factory，同时保持其浏览器路由。",
+            "复用桌面端手机重连卡片，不改变交互行为。",
+            "补全手机能力的 CI 与工具目录投影，并闭合 CLI 的 request-trust 与手机工具运行时依赖。",
+            "在不使用排除项的前提下补齐 phone-runtime、phone-stream 与 ui-phone 全部源文件的行为覆盖率。",
+            "清零已交付 Desktop 手机能力面的 contracts-ready lint 债务。",
+            "让 Desktop Web 开发 watcher 解析包显式声明的 TSX client 入口。",
+            "校准手机设备 Web 快照与跨平台 CI fixture，并补全 Desktop CLI 的 phone-stream 安装闭包。",
+            "让 Desktop 从「手机设备」设置中准备、校验并热激活固定版本的 mobilecli 运行时。",
+            "让 Desktop 准备并启动固定 Android SDK、API 35 镜像与私有默认模拟器。",
+            "让 Desktop 准备并启动 iOS 模拟器、准备 iOS 设备控制代理，并为 iPhone 真机就绪失败提供可操作说明。",
+            "每台手机只展示一次，并在 H264 画面不可用时回退到可控制的 MJPEG 画面。",
+            "把桌面端手机 tab 的 swipe 编成 WDA 终点位移时长手势，使 iOS Simulator 界面可以滚动。",
+            "保留持久 assistant 中断标记，使 Mobile Companion 在分页历史与实时替换中显示既有停止标记。"
+          ]
+        }
+      ]
+    },
+    "en": {
+      "intro": "DeepSeek Gestalt 0.1.17 contains the {{commitCount}} commits after the previous Desktop Bundle.",
+      "sections": [
+        {
+          "heading": "Product changes",
+          "items": [
+            "Add a keyless Desktop phone Electron acceptance lane and configurable mobilecli server port.",
+            "Render the Desktop phone tab's H264 stream as a visible, interactive device picture.",
+            "Wait for Desktop workbench settings registration before serving the phone overlay.",
+            "Include the phone device runtime chunks required by Desktop invariant diagnostics.",
+            "Publish dynamic browser factories with an explicit CommonJS extension while preserving their browser routes.",
+            "Share the Desktop phone reconnect card without changing its interaction behavior.",
+            "Complete phone CI and tool-catalog projections and the CLI request-trust and phone-tool runtime dependency closure.",
+            "Complete behavior coverage without exclusions for every phone-runtime, phone-stream, and ui-phone source file.",
+            "Close the contracts-ready lint debt across the delivered Desktop phone surface.",
+            "Let the Desktop Web development watcher resolve package-declared TSX client entries.",
+            "Align Phone Devices Web snapshots and cross-platform CI fixtures, and complete the Desktop CLI phone-stream installation closure.",
+            "Let Desktop prepare, verify, and hot-activate the pinned mobilecli runtime from Phone Devices settings.",
+            "Let Desktop prepare and start a pinned Android SDK, API 35 image, and private default emulator.",
+            "Let Desktop prepare and start an iOS Simulator, prepare the iOS device-control agent, and explain actionable physical-iPhone readiness failures.",
+            "Show each phone once and fall back to a controllable MJPEG picture when its H264 stream is unusable.",
+            "Encode Desktop phone-tab swipes as WDA destination-move travel pauses so iOS Simulator UI scrolls.",
+            "Preserve durable assistant interruption so Mobile Companion renders the existing stopped marker in paged history and live replacements."
+          ]
+        }
+      ]
+    }
+  }
+}

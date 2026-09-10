@@ -127,8 +127,10 @@ describe('web e2e: a finished turn ends with the files it produced', () => {
     await scaffold?.close()
   })
 
-  it.skipIf(MODE === 'record')('adapts a ten-file summary without leaving one line', async () => {
+  it.skipIf(MODE === 'record').each(['no-preference', 'reduce'] as const)('keeps a narrow ten-file summary on one line with +8 and a folder action (%s motion)', async (reducedMotion) => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-produced-files'))
+    await page.emulateMedia({ reducedMotion })
+    await page.setViewportSize({ width: 1280, height: 900 })
     const groupRow = page.locator('[role="treeitem"]').first()
     await groupRow.waitFor({ timeout: 15_000 })
     if (await groupRow.getAttribute('aria-expanded') !== 'true') await groupRow.click()
@@ -137,6 +139,13 @@ describe('web e2e: a finished turn ends with the files it produced', () => {
     await sessionRow.click()
 
     await expect.poll(() => page.getByText(DONE, { exact: true }).count(), { timeout: 15_000 }).toBe(1)
+    // The collapsed sidebar must leave a lane too narrow for the third chip.
+    await page.setViewportSize({ width: 640, height: 900 })
+    const collapsedFrame = page.locator('[data-sidebar-collapsed="true"]')
+    await collapsedFrame.waitFor({ timeout: 10_000 })
+    await collapsedFrame.evaluate(async (frame) => {
+      await Promise.all(frame.getAnimations().map(animation => animation.finished))
+    })
     const row = page.locator('[data-produced-files-row]')
     await row.waitFor({ timeout: 15_000 })
     const chips = row.getByRole('button')

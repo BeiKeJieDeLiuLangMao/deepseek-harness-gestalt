@@ -469,7 +469,12 @@ jobs:
           } else {
             pnpm install --frozen-lockfile
           }
-      - name: Run blocking Windows builds
+
+      - name: Install Chromium for built-artifact smoke
+        shell: pwsh
+        run: pnpm --filter @deepseek-ai/dsh-mobile exec playwright install chromium
+
+      - name: Run native build and runtime gates
         shell: pwsh
         run: pnpm run check:ci:windows-blocking
 

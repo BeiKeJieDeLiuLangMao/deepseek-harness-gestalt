@@ -9,7 +9,9 @@ import type { WorkspaceId, WorkspaceSnapshot, WorkspaceView } from '@deepseek-ai
 import type { SessionPendingInteractionSnapshot } from '@deepseek-ai/dsh-client-ui-session/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
+import { en as commonEn } from '@deepseek-ai/dsh-client-locale/src/locales/en.ts'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
+import type { ProjectMembershipErrorCode } from '@deepseek-ai/dsh-project-membership'
 import type {
   ProjectMembershipGateway, WorkspaceBrowserProps, WorkspacePendingInvitation,
 } from '../src/client/contract/slots.ts'
@@ -22,13 +24,14 @@ import {
   membershipUserMessage,
   WorkspaceSettingsModal,
 } from '../src/client/WorkspaceSettings.tsx'
-import { zh } from '../src/client/locales.ts'
+import { en, zh } from '../src/client/locales.ts'
 
 afterEach(cleanup)
 
 beforeEach(() => { localStorage.clear() })
 
 const t: WorkspaceBrowserProps['t'] = makeTranslate(zh, commonZh)
+const tEn: WorkspaceBrowserProps['t'] = makeTranslate(en, commonEn)
 
 const sid = (id: string) => id as SessionId
 const wid = (id: string) => id as WorkspaceId
@@ -770,7 +773,7 @@ describe('workspace settings and invite wizard (M4)', () => {
     const tags = screen.getAllByLabelText(t('members.tagsPlaceholder'))[1]!
     fireEvent.blur(tags)
     expect(setMemberTags).not.toHaveBeenCalled()
-    fireEvent.change(tags, { target: { value: ' triage, , qa ' } })
+    fireEvent.change(tags, { target: { value: ' triage， , qa ' } })
     fireEvent.keyDown(tags, { key: 'Escape' })
     expect(setMemberTags).not.toHaveBeenCalled()
     fireEvent.keyDown(tags, { key: 'Enter' })
@@ -953,6 +956,32 @@ describe('workspace settings and invite wizard (M4)', () => {
     expect(screen.getByText('多人协作')).toBeTruthy()
     fireEvent.change(screen.getByLabelText('云项目名称'), { target: { value: 'Assembled' } })
     expect(screen.getByRole<HTMLButtonElement>('button', { name: '创建云项目' }).disabled).toBe(false)
+  })
+
+  it('maps every stable Project Membership failure to safe localized copy', () => {
+    const expected = {
+      DUPLICATE_INVITEE: ['该成员已被邀请或已在项目中。', 'That person is already invited or already a member.'],
+      ROLE_REQUIRED: ['没有权限执行该操作。', 'You do not have permission to do that.'],
+      NOT_A_MEMBER: ['你不是该项目的成员。', 'You are not a member of that project.'],
+      PROJECT_NOT_FOUND: ['找不到该云项目。', 'That cloud project could not be found.'],
+      MEMBERSHIP_NOT_FOUND: ['找不到该项目成员。', 'That project member could not be found.'],
+      INVITATION_NOT_FOUND: ['该邀请已失效，请等待新的待确认邀请。', 'This invitation is no longer pending. Wait for a new one.'],
+      INVITATION_NOT_PENDING: ['该邀请已失效，请等待新的待确认邀请。', 'This invitation is no longer pending. Wait for a new one.'],
+      PROJECT_NAME_TAKEN: ['该云项目名称已被使用。', 'That cloud project name is already in use.'],
+      PROJECT_REMOTE_TAKEN: ['该 Git remote 已绑定到另一个云项目。', 'That Git remote is already bound to another cloud project.'],
+      INVALID_PROJECT_NAME: ['请输入有效的云项目名称。', 'Enter a valid cloud project name.'],
+      INVALID_REMOTE_URL: ['Git remote 地址无效。', 'The Git remote URL is invalid.'],
+      INVALID_TAGS: ['职能标签无效，请检查数量、长度和重复项。', 'The function tags are invalid. Check the count, length, and duplicates.'],
+      LAST_OWNER: ['不能移除最后一位负责人。', 'The last owner cannot be removed.'],
+      INVALID_LINK: ['本地工作区关联无效。', 'The local workspace link is invalid.'],
+    } satisfies Record<ProjectMembershipErrorCode, readonly [zh: string, en: string]>
+
+    for (const [code, [zhCopy, enCopy]] of Object.entries(expected)) {
+      const wrapped = `Error invoking remote method: Project Membership request failed (409 ${code}): private diagnostic`
+      expect(membershipUserMessage(new Error(wrapped), t)).toBe(zhCopy)
+      expect(membershipUserMessage(new Error(wrapped), tEn)).toBe(enCopy)
+    }
+    expect(membershipUserMessage('PREFIX_INVALID_TAGS_SUFFIX', t)).toBe(t('error.generic'))
   })
 
   it('maps Electron IPC prefixes and closes a retracted invitation without leaving the raw 409', async () => {

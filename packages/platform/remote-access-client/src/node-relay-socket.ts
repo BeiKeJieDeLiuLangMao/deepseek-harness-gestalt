@@ -41,14 +41,14 @@ export class NodeRelayEndpointSocket implements RelayEndpointSocket {
    * @param signal - lifecycle cancellation.
    * @param limits - bounded live inbound queue.
    * @param options - optional native proxy agent and test-only TLS trust override.
-   * @returns connected Relay socket.
+   * @returns connected Relay endpoint socket that the caller must close.
    */
   static async connect(
     url: string,
     signal: AbortSignal,
     limits: RelayInboundQueueLimits,
     options?: NodeRelayConnectionOptions,
-  ): Promise<NodeRelayEndpointSocket> {
+  ): Promise<RelayEndpointSocket> {
     const parsed = new URL(url)
     if (parsed.protocol !== 'wss:') throw new TypeError('Node Relay endpoint must use WSS')
     const socket = new WebSocket(parsed, {

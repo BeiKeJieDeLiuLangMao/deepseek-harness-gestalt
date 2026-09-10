@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Real tsdown artifact shape: lib/client.js hands off through
+ * Real tsdown artifact: lib/client.cjs hands off through
  * window.__ModuleLoader__.load, resolves externals through the injected
  * require, returns the exports (apply + inject), and a mounted apply
  * registers the view tab into a real SlotRegistry ring. Skips when dist/ is
@@ -23,7 +23,7 @@ function readBundle(): string | undefined {
   try {
     // import.meta.url is http-scheme in the jsdom pool; vitest runs from the
     // repo root, so resolve the artifact repo-relatively instead.
-    return readFileSync(resolve('packages/client/ui-trajectory/lib/client.js'), 'utf8')
+    return readFileSync(resolve('packages/client/ui-trajectory/lib/client.cjs'), 'utf8')
   } catch {
     return undefined
   }
@@ -42,7 +42,6 @@ describe('tsdown client artifact', () => {
     ;(window as Win).__ModuleLoader__ = { load: (h) => { handoff = h } }
     // The implied-eval ban targets accidental string execution, not this
     // deliberate built-bundle fixture running in the window scope.
-    // oxlint-disable-next-line typescript/no-implied-eval, typescript/no-unsafe-call
     new Function(code!)()
     expect(handoff).toBeDefined()
     const modules = new Map<string, unknown>([

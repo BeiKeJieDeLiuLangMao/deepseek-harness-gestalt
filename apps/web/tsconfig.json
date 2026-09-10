@@ -108,6 +108,7 @@
     "tests/complex-history.perf.ts",
     "tests/pwsh-terminal.e2e.ts",
     "tests/workflow-run.e2e.ts",
+    "tests/phone-stream-fallback.e2e.ts",
     "tests/desktop-chrome.e2e.ts",
     "tests/browser-dock.e2e.ts",
     "tests/desktop-schedule.snapshot.ts",

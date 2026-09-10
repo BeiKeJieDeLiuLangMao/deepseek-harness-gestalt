@@ -2,10 +2,64 @@
   "name": "@deepseek-ai/dsh-desktop",
   "productName": "DeepSeek Gestalt",
   "description": "DeepSeek Gestalt Desktop Host: Electron window around bundled dsh web",
-  "version": "0.1.15",
+  "version": "0.1.17",
   "private": true,
   "type": "module",
   "main": "out/main.mjs",
+  "imports": {
+    "#testing/desktop/companion-product": {
+      "types": "./lib/types/src/companion-product.d.ts",
+      "default": "./lib/types/src/companion-product.js"
+    },
+    "#testing/desktop/companion-operation-ledger": {
+      "types": "./lib/types/src/companion-operation-ledger.d.ts",
+      "default": "./lib/types/src/companion-operation-ledger.js"
+    },
+    "#testing/desktop/remote-relay": {
+      "types": "./lib/types/src/remote-relay.d.ts",
+      "default": "./lib/types/src/remote-relay.js"
+    },
+    "#testing/mobile/companion-lifecycle": {
+      "types": "@deepseek-ai/dsh-mobile/lib/types/src/companion-lifecycle.d.ts",
+      "default": "@deepseek-ai/dsh-mobile/lib/types/src/companion-lifecycle.js"
+    },
+    "#testing/mobile/companion-cache": {
+      "types": "@deepseek-ai/dsh-mobile/lib/types/src/companion-cache.d.ts",
+      "default": "@deepseek-ai/dsh-mobile/lib/types/src/companion-cache.js"
+    },
+    "#testing/mobile/companion-surface": {
+      "types": "@deepseek-ai/dsh-mobile/lib/types/src/companion-surface.d.ts",
+      "default": "@deepseek-ai/dsh-mobile/lib/types/src/companion-surface.js"
+    },
+    "#testing/mobile/noise-companion-product": {
+      "types": "@deepseek-ai/dsh-mobile/lib/types/src/noise-companion-product.d.ts",
+      "default": "@deepseek-ai/dsh-mobile/lib/types/src/noise-companion-product.js"
+    },
+    "#testing/mobile/noise-companion": {
+      "types": "@deepseek-ai/dsh-mobile/lib/types/src/noise-companion.d.ts",
+      "default": "@deepseek-ai/dsh-mobile/lib/types/src/noise-companion.js"
+    },
+    "#testing/mobile/MobileBrowse": {
+      "types": "@deepseek-ai/dsh-mobile/lib/types/src/MobileBrowse.d.ts",
+      "default": "@deepseek-ai/dsh-mobile/lib/MobileBrowse.js"
+    },
+    "#testing/mobile/mobile-clock": {
+      "types": "@deepseek-ai/dsh-mobile/lib/types/src/mobile-clock.d.ts",
+      "default": "@deepseek-ai/dsh-mobile/lib/types/src/mobile-clock.js"
+    },
+    "#testing/mobile/companion-keys": {
+      "types": "@deepseek-ai/dsh-mobile/lib/types/src/companion-keys.d.ts",
+      "default": "@deepseek-ai/dsh-mobile/lib/types/src/companion-keys.js"
+    },
+    "#testing/mobile/personal-pairing": {
+      "types": "@deepseek-ai/dsh-mobile/lib/types/src/personal-pairing.d.ts",
+      "default": "@deepseek-ai/dsh-mobile/lib/types/src/personal-pairing.js"
+    },
+    "#testing/mobile/development-keyless-pairing": {
+      "types": "@deepseek-ai/dsh-mobile/lib/types/tests/fixtures/development-keyless-pairing.fixture.d.ts",
+      "default": "@deepseek-ai/dsh-mobile/lib/types/tests/fixtures/development-keyless-pairing.fixture.js"
+    }
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt.git",
@@ -20,6 +74,10 @@
     "test:e2e-critical-path-electron": "tsx tests/critical-path-e2e/run-electron.ts",
     "test:e2e-project-members-electron": "tsx tests/member-question-e2e/run-electron.ts",
     "test:e2e-sub2api": "node scripts/run-e2e-sub2api.mjs",
+    "typecheck:fake-policy": "tsc -p tests/tsconfig.fake-policy.json",
+    "typecheck:source-e2e": "tsc -p tests/tsconfig.source-e2e.json",
+    "typecheck:e2e-electron": "pnpm run typecheck:fake-policy && pnpm run typecheck:source-e2e && tsc -p tests/e2e-electron/tsconfig.json",
+    "test:e2e-electron": "node scripts/run-e2e-electron.mjs",
     "package": "node scripts/build-main.mjs && electron-builder --publish never",
     "package:unsigned": "node scripts/build-main.mjs && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dir --arm64 --publish never -c.mac.notarize=false"
   },
@@ -30,8 +88,12 @@
     "@deepseek-ai/dsh-atomic-write": "workspace:^",
     "@deepseek-ai/dsh-browser-runtime-electron": "workspace:^",
     "@deepseek-ai/dsh-client-ui-desktop": "workspace:^",
+    "@deepseek-ai/dsh-client-ui-phone": "workspace:^",
     "@deepseek-ai/dsh-home-paths": "workspace:^",
     "@deepseek-ai/dsh-noise-channel": "workspace:^",
+    "@deepseek-ai/dsh-phone-runtime": "workspace:^",
+    "@deepseek-ai/dsh-phone-environment": "workspace:^",
+    "@deepseek-ai/dsh-phone-stream": "workspace:^",
     "@deepseek-ai/dsh-platform-account": "workspace:^",
     "@deepseek-ai/dsh-platform-account-client": "workspace:^",
     "@deepseek-ai/dsh-project-membership-client": "workspace:^",
@@ -40,6 +102,7 @@
     "@deepseek-ai/dsh-remote-access-client": "workspace:^",
     "@deepseek-ai/dsh-remote-protocol": "workspace:^",
     "@deepseek-ai/dsh-session": "workspace:^",
+    "@deepseek-ai/dsh-tool-phone": "workspace:^",
     "electron-updater": "^6.8.3",
     "https-proxy-agent": "^7.0.6",
     "js-yaml": "^4.2.0",
@@ -60,6 +123,7 @@
     "@deepseek-ai/dsh-llm-mock-server": "workspace:^",
     "@deepseek-ai/dsh-member-question-receiver": "workspace:^",
     "@deepseek-ai/dsh-member-question-sender": "workspace:^",
+    "@deepseek-ai/dsh-mobile": "workspace:^",
     "@deepseek-ai/dsh-tool-ask-user": "workspace:^",
     "@deepseek-ai/dsh-platform-account-core": "workspace:^",
     "@deepseek-ai/dsh-platform-account-http": "workspace:^",
@@ -94,6 +158,7 @@
     "electron": "41.2.1",
     "electron-builder": "^26.8.1",
     "esbuild": "^0.24.0",
+    "fflate": "^0.8.2",
     "jsdom": "29.1.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",

@@ -18,12 +18,15 @@ import { MockAdapter, textResponse } from '../../../core/agent-loop/tests/mock-a
 import TeamService, { TeamId, TeamMessageId } from '../src/index.ts'
 import { teamProjectionDefinition } from '../src/projection.ts'
 import type { TeamMemberSnapshot, TeamMessageSnapshot, TeamTaskSnapshot } from '../src/index.ts'
+import { TeamJournal } from '../src/journal.ts'
+import { TeamMailbox } from '../src/mailbox.ts'
 import { TestSessionQuery } from './test-session-query.ts'
 
 const SIGNAL = new AbortController().signal
 const PERSISTENCE_TEST_TIMEOUT_MS = 15_000
 const roots: string[] = []
 const contexts = new Set<Context>()
+const recoverySchedulingCleanups: Array<() => void> = []
 
 /** Detached durable Team read through the same projection definition as the service. */
 function durable(agent: Agent): {
@@ -61,6 +64,7 @@ async function disposeContext(ctx: Context): Promise<void> {
 }
 
 afterEach(async () => {
+  for (const cleanup of recoverySchedulingCleanups.splice(0)) cleanup()
   const failures: unknown[] = []
   for (const ctx of [...contexts].reverse()) {
     try {
@@ -118,6 +122,39 @@ async function stack(
   }
 }
 
+/** Keep startup recovery pending until a sender has durably queued its message. */
+function recoverBeforeSenderDispatch(rootId: SessionId): void {
+  const resume = Promise.withResolvers<undefined>()
+  const entered = Promise.withResolvers<undefined>()
+  const recover = vi.spyOn(TeamMailbox.prototype, 'recoverFor')
+  recover.mockRestore()
+  const recovery = vi.spyOn(TeamMailbox.prototype, 'recoverFor').mockImplementation(async function (
+    this: TeamMailbox, agent, signal,
+  ) {
+    if (agent.id === rootId) await resume.promise
+    const pending = recover.call(this, agent, signal)
+    if (agent.id === rootId) entered.resolve(undefined)
+    await pending
+  })
+  const append = vi.spyOn(TeamJournal.prototype, 'appendAndFlush')
+  append.mockRestore()
+  const queued = vi.spyOn(TeamJournal.prototype, 'appendAndFlush').mockImplementation(async function (
+    this: TeamJournal, root, type, data,
+  ) {
+    await append.call(this, root, type, data)
+    if (root.id === rootId && type === 'team/message/queued') {
+      resume.resolve(undefined)
+      await entered.promise
+    }
+  })
+  recoverySchedulingCleanups.push(() => {
+    resume.resolve(undefined)
+    entered.resolve(undefined)
+    queued.mockRestore()
+    recovery.mockRestore()
+  })
+}
+
 function provisioning(childId: SessionId, name: string): TeamMemberSnapshot {
   return {
     id: childId,
@@ -161,6 +198,12 @@ async function persistedChild(
 
 for (const backend of backends) {
   describe(`${backend.name} Agent Teams recovery`, () => {
+    it('retains bound recovery implementations in spies', () => {
+      recoverBeforeSenderDispatch(SessionId('spy-root'))
+      expect(typeof TeamMailbox.prototype.recoverFor).toBe('function')
+      expect(typeof TeamJournal.prototype.appendAndFlush).toBe('function')
+    })
+
     it('reconciles a persisted child to active and a missing child to durable failed', {
       timeout: PERSISTENCE_TEST_TIMEOUT_MS,
     }, async () => {
