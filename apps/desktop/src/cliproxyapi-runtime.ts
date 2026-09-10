@@ -28,7 +28,7 @@ const ALLOWED_CORE_PATHS = new Set([
 ])
 
 /** Identity recorded beside one packaged CLIProxyAPI executable. */
-export interface CLIProxyAPIResourceManifest {
+interface CLIProxyAPIResourceManifest {
   readonly sourceSHA: string
   readonly platform: NodeJS.Platform
   readonly arch: string
@@ -102,11 +102,6 @@ export async function verifyCLIProxyAPIResource(
   const digest = createHash('sha256').update(await readFile(binary)).digest('hex')
   if (digest !== manifest.sha256) throw new Error('CLIProxyAPI resource SHA-256 does not match its manifest')
   return binary
-}
-
-/** Read a validated resource manifest without exposing executable bytes. */
-export async function readCLIProxyAPIResourceManifest(path: string): Promise<CLIProxyAPIResourceManifest> {
-  return parseManifest(JSON.parse(await readFile(path, 'utf8')) as unknown)
 }
 
 /** Owns one isolated core process and bounded replacement after unexpected exit. */
@@ -238,13 +233,13 @@ export class CLIProxyAPISupervisor {
     })
     const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((onResolve, onReject) => {
       child.once('error', onReject)
-      child.once('exit', (code, signal) => onResolve(Object.freeze({ code, signal })))
+      child.once('exit', (code, signal) => { onResolve(Object.freeze({ code, signal })) })
     })
     let stopTask: Promise<void> | undefined
     const stop = (): Promise<void> => stopTask ??= stopProcessTree(child, exited, this.options.stopGraceMs ?? 2_000)
     try {
       await waitForReady({
-        child, exited, port, inferenceKey, certPath,
+        child, port, inferenceKey, certPath,
         ...this.options.afterTlsHandshake === undefined ? {} : { afterTlsHandshake: this.options.afterTlsHandshake },
         timeoutMs: this.options.startupTimeoutMs,
         signal: this.controller.signal,
@@ -429,7 +424,7 @@ function requestPinnedHttps(options: {
     request.once('timeout', () => {
       request.destroy(new Error('CLIProxyAPI management request timed out'))
     })
-    request.once('close', () => options.signal.removeEventListener('abort', abort))
+    request.once('close', () => { options.signal.removeEventListener('abort', abort) })
     if (options.signal.aborted) abort()
     else request.end(body)
   })
@@ -463,17 +458,19 @@ async function reserveLoopbackPort(): Promise<number> {
     server.listen(0, '127.0.0.1', () => {
       const address = server.address()
       if (address === null || typeof address === 'string') {
-        server.close(() => reject(new Error('CLIProxyAPI dynamic port reservation failed')))
+        server.close(() => { reject(new Error('CLIProxyAPI dynamic port reservation failed')) })
         return
       }
-      server.close(error => error === undefined ? resolve(address.port) : reject(error))
+      server.close((error) => {
+        if (error === undefined) resolve(address.port)
+        else reject(error)
+      })
     })
   })
 }
 
 async function waitForReady(options: {
   child: ChildProcess
-  exited: Promise<unknown>
   port: number
   inferenceKey: string
   certPath: string
@@ -481,14 +478,11 @@ async function waitForReady(options: {
   timeoutMs: number
   signal: AbortSignal
 }): Promise<void> {
-  let failed = false
-  void options.exited.then(() => { failed = true }, () => { failed = true })
   const deadline = Date.now() + options.timeoutMs
   const ca = await readFile(options.certPath)
   while (Date.now() < deadline) {
     if (options.signal.aborted) throw new Error('CLIProxyAPI startup aborted')
     if (options.child.exitCode !== null || options.child.signalCode !== null) throw new Error('CLIProxyAPI exited before readiness')
-    if (failed) throw new Error('CLIProxyAPI failed before readiness')
     if (options.child.pid === undefined) throw new Error('CLIProxyAPI child has no process id')
     try {
       if (await pinnedAuthenticatedProbe({
@@ -500,8 +494,6 @@ async function waitForReady(options: {
         ...options.afterTlsHandshake === undefined ? {} : { afterTlsHandshake: options.afterTlsHandshake },
       })) return
     } catch (error) {
-      if (options.signal.aborted) throw new Error('CLIProxyAPI startup aborted')
-      if (options.child.exitCode !== null || options.child.signalCode !== null) throw new Error('CLIProxyAPI exited before readiness')
       if (error instanceof Error && /exited before readiness|startup aborted/u.test(error.message)) throw error
       // Connection refusal, TLS mismatch, and per-attempt timeout are not readiness.
     }
@@ -540,9 +532,9 @@ function connectPinnedTls(port: number, ca: Buffer, signal: AbortSignal): Promis
       ALPNProtocols: ['http/1.1'],
       minVersion: 'TLSv1.2',
     })
-    const timer = setTimeout(() => settle(new Error('CLIProxyAPI TLS handshake timed out')), 500)
-    const abort = (): void => settle(new Error('CLIProxyAPI startup aborted'))
-    const error = (cause: Error): void => settle(cause)
+    const timer = setTimeout(() => { settle(new Error('CLIProxyAPI TLS handshake timed out')) }, 500)
+    const abort = (): void => { settle(new Error('CLIProxyAPI startup aborted')) }
+    const error = (cause: Error): void => { settle(cause) }
     const secure = (): void => {
       if (!socket.authorized) settle(new Error('CLIProxyAPI TLS certificate is not the generation pin'))
       else settle(undefined, socket)
@@ -570,14 +562,14 @@ function connectPinnedTls(port: number, ca: Buffer, signal: AbortSignal): Promis
 function requestModelsOnTls(socket: TLSSocket, inferenceKey: string, signal: AbortSignal): Promise<string> {
   return new Promise((resolve, reject) => {
     let response = ''
-    const timer = setTimeout(() => settle(new Error('CLIProxyAPI readiness response timed out')), 500)
-    const abort = (): void => settle(new Error('CLIProxyAPI startup aborted'))
+    const timer = setTimeout(() => { settle(new Error('CLIProxyAPI readiness response timed out')) }, 500)
+    const abort = (): void => { settle(new Error('CLIProxyAPI startup aborted')) }
     const data = (chunk: Buffer): void => {
       response += chunk.toString()
       if (response.includes('\r\n\r\n')) settle(undefined, response)
     }
-    const error = (cause: Error): void => settle(cause)
-    const close = (): void => settle(new Error('CLIProxyAPI readiness socket closed'))
+    const error = (cause: Error): void => { settle(cause) }
+    const close = (): void => { settle(new Error('CLIProxyAPI readiness socket closed')) }
     let settled = false
     const settle = (failure?: Error, value?: string): void => {
       if (settled) return
@@ -634,7 +626,7 @@ async function settlesWithin(promise: Promise<unknown>, timeoutMs: number): Prom
   try {
     return await Promise.race([
       promise.then(() => true, () => true),
-      new Promise<boolean>((resolve) => { timer = setTimeout(() => resolve(false), timeoutMs) }),
+      new Promise<boolean>((resolve) => { timer = setTimeout(() => { resolve(false) }, timeoutMs) }),
     ])
   } finally {
     if (timer !== undefined) clearTimeout(timer)

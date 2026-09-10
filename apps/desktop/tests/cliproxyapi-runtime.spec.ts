@@ -61,7 +61,7 @@ describe('CLIProxyAPI supervisor', () => {
     expect(competitor?.listening).toBe(true)
     await supervisor.shutdown()
     expect(competitor?.listening).toBe(true)
-    await new Promise<void>(resolve => competitor?.close(() => resolve()))
+    await new Promise<void>((resolve) => { competitor?.close(() => { resolve() }) })
   })
 
   it('does not inherit external dotenv or storage configuration', async () => {

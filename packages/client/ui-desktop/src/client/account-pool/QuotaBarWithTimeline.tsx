@@ -27,8 +27,8 @@ export function QuotaBarWithTimeline({
       : boundedQuota < 70
         ? 'var(--dsw-alias-state-warning-primary, #f59e0b)'
         : 'var(--dsw-alias-state-success-primary, #10b981)'
-  const showQuotaFill = isReliable && boundedQuota !== undefined
-  const showTime = isReliable && boundedTime !== undefined
+  const quotaFill = isReliable ? boundedQuota : undefined
+  const timeFill = isReliable ? boundedTime : undefined
   return (
     <div className={css.container}>
       <div className={css.labelRow}>
@@ -37,32 +37,32 @@ export function QuotaBarWithTimeline({
           <span className={css.windowBadge}>{windowLabel}</span>
         </div>
         <div className={css.metaGroup}>
-          <span className={css.percentText} style={{ color: showQuotaFill ? quotaColor : 'var(--dsw-alias-label-tertiary, #94a3b8)' }}>
-            {showQuotaFill && boundedQuota !== undefined ? `${String(Math.round(boundedQuota))}%` : '未知'}
+          <span className={css.percentText} style={{ color: quotaFill === undefined ? 'var(--dsw-alias-label-tertiary, #94a3b8)' : quotaColor }}>
+            {quotaFill === undefined ? '未知' : `${String(Math.round(quotaFill))}%`}
           </span>
           <span className={css.resetTime}>{resetText}</span>
         </div>
       </div>
       <div className={css.track}>
-        {showQuotaFill && boundedQuota !== undefined && (
-          <div className={css.quotaFill} style={{ width: `${String(boundedQuota)}%`, backgroundColor: quotaColor }} />
+        {quotaFill !== undefined && (
+          <div className={css.quotaFill} style={{ width: `${String(quotaFill)}%`, backgroundColor: quotaColor }} />
         )}
-        {showTime && boundedTime !== undefined && (
-          <div className={css.timelineMarker} style={{ left: `${String(boundedTime)}%` }} title={`时间窗口剩余: ${String(Math.round(boundedTime))}%`}>
+        {timeFill !== undefined && (
+          <div className={css.timelineMarker} style={{ left: `${String(timeFill)}%` }} title={`时间窗口剩余: ${String(Math.round(timeFill))}%`}>
             <div className={css.needleArrow} style={{ borderTopColor: quotaColor }} />
             <div className={css.needleLine} style={{ background: quotaColor }} />
           </div>
         )}
       </div>
-      {showTime && boundedTime !== undefined && (
+      {timeFill !== undefined && (
         <div className={css.legendRow}>
           <span className={css.legendItem}>
             <span className={css.quotaDot} style={{ backgroundColor: quotaColor }} />
-            额度剩余 {String(Math.round(boundedQuota ?? 0))}%
+            额度剩余 {String(Math.round(quotaFill ?? 0))}%
           </span>
           <span className={css.legendItem}>
             <span className={css.timeDot} style={{ background: quotaColor }} />
-            时间窗口剩余 {String(Math.round(boundedTime))}%
+            时间窗口剩余 {String(Math.round(timeFill))}%
           </span>
         </div>
       )}

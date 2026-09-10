@@ -19,7 +19,9 @@ describe('gestalt account pool dynamic registration', () => {
     await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
     const address = server.address()
     if (address === null || typeof address === 'string') throw new Error('missing address')
-    disposals.push(async () => await new Promise<void>(resolve => server.close(() => resolve())))
+    disposals.push(async () => {
+      await new Promise<void>((resolve) => { server.close(() => { resolve() }) })
+    })
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
     disposals.push(async () => { await ctx.fiber.dispose() })
@@ -36,7 +38,9 @@ describe('gestalt account pool dynamic registration', () => {
       request.once('aborted', () => { requestAborted = true })
     })
     await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
-    disposals.push(async () => await new Promise<void>(resolve => server.close(() => resolve())))
+    disposals.push(async () => {
+      await new Promise<void>((resolve) => { server.close(() => { resolve() }) })
+    })
     const address = server.address()
     if (address === null || typeof address === 'string') throw new Error('missing address')
     const ctx = new Context()

@@ -22,7 +22,9 @@ describe('account-pool Loader composition', () => {
       response.end(JSON.stringify({ data: [{ id: 'loader-model' }] }))
     })
     await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
-    cleanup.push(async () => await new Promise<void>(resolve => server.close(() => resolve())))
+    cleanup.push(async () => {
+      await new Promise<void>((resolve) => { server.close(() => { resolve() }) })
+    })
     const address = server.address()
     if (address === null || typeof address === 'string') throw new Error('missing address')
     const root = await mkdtemp(join(tmpdir(), 'dsh-account-pool-loader-'))

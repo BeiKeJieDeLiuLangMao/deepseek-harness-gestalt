@@ -775,6 +775,7 @@
       ],
       "ignoreDependencies": [
         "@deepseek-ai/dsh-client-ui-phone",
+        "@deepseek-ai/dsh-llm-gestalt-account-pool",
         "@deepseek-ai/dsh-mobile",
         "@deepseek-ai/dsh-phone-environment",
         "@deepseek-ai/dsh-phone-runtime",

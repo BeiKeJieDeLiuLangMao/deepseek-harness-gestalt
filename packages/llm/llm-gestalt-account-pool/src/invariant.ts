@@ -6,7 +6,10 @@ const PACKAGE_NAME = '@deepseek-ai/dsh-llm-gestalt-account-pool'
 export const name = 'llm-gestalt-account-pool-invariant'
 export const inject = ['invariants']
 
-/** No independent event or mutable relation exists beyond the LLM registry contracts. */
+/**
+ * No runtime invariant: this adapter owns no independent event stream or
+ * mutable data beyond LLM registry contracts already asserted by dsh-llm.
+ */
 const install: InvariantInstaller = () => {}
 
 /** @returns the invariant registration disposer. */

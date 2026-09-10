@@ -109,7 +109,7 @@ export function apply(ctx: Context, config: Config): void {
         registration?.replace([PROVIDER])
       }
     } catch (error) {
-      if (disposed || request.signal.aborted) return
+      if (request.signal.aborted) return
       if (error instanceof LlmError && error.code === 'DUPLICATE_ADAPTER') {
         disposed = true
         ctx.logger('llm-gestalt-account-pool').error(error)
@@ -149,6 +149,13 @@ function trimV1(baseURL: string): string { return baseURL.replace(/\/v1\/?$/u, '
 
 function parseModels(value: unknown): ModelsResponse {
   if (value === null || typeof value !== 'object' || !('data' in value) || !Array.isArray(value.data)) throw new Error('account-pool catalog JSON is invalid')
-  const data = value.data.flatMap(entry => entry !== null && typeof entry === 'object' && 'id' in entry && typeof entry.id === 'string' && entry.id.length > 0 ? [{ id: entry.id }] : [])
+  const data: Array<{ id: string }> = []
+  for (const entry of value.data) {
+    if (entry === null || typeof entry !== 'object') continue
+    const record = entry as Record<string, unknown>
+    const id = record.id
+    if (typeof id !== 'string' || id.length === 0) continue
+    data.push({ id })
+  }
   return { data }
 }
