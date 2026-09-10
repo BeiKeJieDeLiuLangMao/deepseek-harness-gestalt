@@ -60,9 +60,11 @@ async function bench() {
     fork,
   } as never)
   const pickDirectory = vi.fn(() => Promise.resolve({ ok: true as const, value: '/projects/picked' }))
+  const gitRemote = vi.fn(async () => ({ ok: true as const, value: {} }))
+  const cloneGit = vi.fn()
   const directoryPicker = { pick: pickDirectory }
-  Object.assign(new TestRemote(ctx), { directoryPicker })
-  ctx.provide('remote.directoryPicker', directoryPicker as never)
+  const workspace = { gitRemote, cloneGit }
+  new TestRemote(ctx, { directoryPicker, workspace })
   const locale = new LocaleRuntime(ctx)
   // These specs assert the shipped Chinese copy. There is no jsdom `window`
   // in this lane, so browser-language detection never runs and the locale
@@ -72,6 +74,7 @@ async function bench() {
   return {
     ctx, slots: ctx.get('slots') as SlotRegistry, locale, create, rename,
     insertSessionBefore, open, clear, search, renameSession, binding, fork, pickDirectory,
+    gitRemote, cloneGit,
   }
 }
 
@@ -278,7 +281,8 @@ describe('ui-workspace apply', () => {
     const again = (b.slots.entries('sidebar.workspaces')[0]!.inject as () => WorkspaceBrowserInjected)()
     expect(again.hooks.pendingInvitations).toBe(firstSource)
     await expect(browser.projectMembership.localRemoteFor('ws' as never))
-      .rejects.toThrow('#590')
+      .resolves.toBeUndefined()
+    expect(b.gitRemote).toHaveBeenCalledWith({ workspaceId: 'ws' }, undefined)
     await fiber.dispose()
   })
 

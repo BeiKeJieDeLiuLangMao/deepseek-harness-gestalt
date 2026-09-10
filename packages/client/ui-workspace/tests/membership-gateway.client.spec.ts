@@ -1,12 +1,20 @@
 import { describe, expect, it, vi } from 'vitest'
 import { brandString } from '@deepseek-ai/dsh-brand'
+import { RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
 import type {
   FunctionTag, InvitationId, InvitationView, MembershipId, ProjectId, ProjectRole,
 } from '@deepseek-ai/dsh-project-membership'
-import type {
-  IssuedInvitationView, PendingInvitationView, PlatformAccountId, ProjectMembershipClient, RosterMemberView,
+import {
+  localWorkspaceRemoteUrl,
+  normalizeGitRemoteUrl,
+  type AuthenticatedProjectView,
+  type IssuedInvitationView,
+  type PendingInvitationView,
+  type PlatformAccountId,
+  type ProjectMembershipClient,
+  type RosterMemberView,
 } from '@deepseek-ai/dsh-project-membership-client'
-import { membershipGatewayOf } from '../src/client/membership-gateway.ts'
+import { membershipGatewayOf, type MembershipWorkspaceGit } from '../src/client/membership-gateway.ts'
 
 const projectId = brandString<ProjectId>('project-1')
 const invitationId = brandString<InvitationId>('invitation-1')
@@ -55,6 +63,23 @@ const pendingRow = (): PendingInvitationView => ({
   invitedAt: 1,
 })
 
+const authenticatedProject = (boundRemoteUrl: string): AuthenticatedProjectView => ({
+  id: projectId,
+  name: 'Assembled',
+  boundRemoteUrl,
+  createdAt: 1,
+  receivingAccountId: accountId,
+})
+
+function workspaceGit(overrides: Partial<MembershipWorkspaceGit> = {}): MembershipWorkspaceGit {
+  return {
+    gitRemote: vi.fn(async () => ({ ok: true as const, value: {} })),
+    cloneGit: vi.fn(),
+    pickParentDirectory: vi.fn(async () => ({ ok: true as const, value: '/projects' })),
+    ...overrides,
+  }
+}
+
 function client(overrides: Partial<ProjectMembershipClient> = {}): ProjectMembershipClient {
   return {
     createProject: vi.fn(),
@@ -83,7 +108,7 @@ describe('membershipGatewayOf', () => {
     const membership = client({
       invite,
     })
-    const gateway = membershipGatewayOf(membership)
+    const gateway = membershipGatewayOf(membership, workspaceGit())
     await expect(gateway.invite({
       projectId: 'project-1', githubLogin: 'mona', grantedRole: 'admin',
     })).resolves.toEqual({ invitationId: 'invitation-1', inviteeName: 'mona', grantedRole: 'admin' })
@@ -103,7 +128,7 @@ describe('membershipGatewayOf', () => {
     const changeRoleSpy = vi.spyOn(membership, 'changeRole')
     const setMemberTagsSpy = vi.spyOn(membership, 'setMemberTags')
     const removeMemberSpy = vi.spyOn(membership, 'removeMember')
-    const gateway = membershipGatewayOf(membership)
+    const gateway = membershipGatewayOf(membership, workspaceGit())
     await expect(gateway.roster('project-1')).resolves.toEqual({
       project: { id: 'project-1', name: 'Assembled', boundRemoteUrl: 'https://github.com/o/repo' },
       members: [{
@@ -143,7 +168,7 @@ describe('membershipGatewayOf', () => {
   it('forwards accept-with-link as the membership-client link body', async () => {
     const membership = client()
     const decideInvitationSpy = vi.spyOn(membership, 'decideInvitation')
-    const gateway = membershipGatewayOf(membership)
+    const gateway = membershipGatewayOf(membership, workspaceGit())
     await gateway.decideInvitation('invitation-3', {
       decision: 'accept-with-link',
       localWorkspaceId: 'ws' as never,
@@ -159,7 +184,7 @@ describe('membershipGatewayOf', () => {
 
   it('resolves the current client on each call and rejects while unbound', async () => {
     let current: ReturnType<typeof client> | undefined
-    const gateway = membershipGatewayOf(() => current)
+    const gateway = membershipGatewayOf(() => current, workspaceGit())
     await expect(gateway.pendingInvitations())
       .rejects.toThrow('requires a membership client')
     current = client()
@@ -173,15 +198,82 @@ describe('membershipGatewayOf', () => {
     expect(pendingInvitationsSpy).toHaveBeenCalledOnce()
   })
 
-  it('rejects workspace-keyed Git methods that Host membership does not provide', async () => {
-    const gateway = membershipGatewayOf(client())
-    await expect(gateway.createProject({ name: 'Assembled', localWorkspaceId: 'ws' as never }))
-      .rejects.toThrow('ProjectMembershipGateway.createProject requires Host workspace Git (#590)')
-    await expect(gateway.projectForWorkspace('ws' as never))
-      .rejects.toThrow('ProjectMembershipGateway.projectForWorkspace requires Host workspace Git (#590)')
-    await expect(gateway.localRemoteFor('ws' as never))
-      .rejects.toThrow('ProjectMembershipGateway.localRemoteFor requires Host workspace Git (#590)')
-    await expect(gateway.cloneWorkspace({ remoteUrl: 'https://github.com/o/repo', directoryName: 'repo' }))
-      .rejects.toThrow('ProjectMembershipGateway.cloneWorkspace requires Host workspace Git (#590)')
+  it('uses origin when present and local://workspace/<id> when Git reports none', async () => {
+    const origin = 'https://github.com/Org/Repo.git'
+    const gitRemote = vi.fn(async () => ({ ok: true as const, value: { remoteUrl: origin } }))
+    const createProject = vi.fn(async () => authenticatedProject(normalizeGitRemoteUrl(origin)))
+    const projectByRemote = vi.fn(async () => authenticatedProject(normalizeGitRemoteUrl(origin)))
+    const withOrigin = membershipGatewayOf(client({ createProject, projectByRemote }), workspaceGit({ gitRemote }))
+    await expect(withOrigin.localRemoteFor('ws' as never)).resolves.toBe(origin)
+    await expect(withOrigin.createProject({ name: 'Assembled', localWorkspaceId: 'ws' as never }))
+      .resolves.toEqual({
+        id: 'project-1',
+        name: 'Assembled',
+        boundRemoteUrl: 'https://github.com/Org/Repo',
+        receivingAccountId: 'account-1',
+      })
+    expect(createProject).toHaveBeenCalledWith({ name: 'Assembled', remoteUrl: origin })
+    await expect(withOrigin.projectForWorkspace('ws' as never)).resolves.toMatchObject({
+      id: 'project-1', receivingAccountId: 'account-1',
+    })
+    expect(projectByRemote).toHaveBeenCalledWith(normalizeGitRemoteUrl(origin))
+
+    const absent = vi.fn(async () => ({ ok: true as const, value: {} }))
+    const createLocal = vi.fn(async () => authenticatedProject(localWorkspaceRemoteUrl('ws')))
+    const lookupLocal = vi.fn(async () => undefined)
+    const withoutOrigin = membershipGatewayOf(
+      client({ createProject: createLocal, projectByRemote: lookupLocal }),
+      workspaceGit({ gitRemote: absent }),
+    )
+    await expect(withoutOrigin.localRemoteFor('ws' as never)).resolves.toBeUndefined()
+    await expect(withoutOrigin.createProject({ name: 'Assembled', localWorkspaceId: 'ws' as never }))
+      .resolves.toMatchObject({ boundRemoteUrl: 'local://workspace/ws' })
+    expect(createLocal).toHaveBeenCalledWith({ name: 'Assembled', remoteUrl: 'local://workspace/ws' })
+    await expect(withoutOrigin.projectForWorkspace('ws' as never)).resolves.toBeUndefined()
+    expect(lookupLocal).toHaveBeenCalledWith('local://workspace/ws')
+  })
+
+  it('returns undefined when clone parent pick is cancelled and maps a registered clone', async () => {
+    const cloneGit = vi.fn()
+    const cancelled = membershipGatewayOf(client(), workspaceGit({
+      pickParentDirectory: vi.fn(async () => ({ ok: true as const, value: null })),
+      cloneGit,
+    }))
+    await expect(cancelled.cloneWorkspace({ remoteUrl: 'https://github.com/o/repo', directoryName: 'repo' }))
+      .resolves.toBeUndefined()
+    expect(cloneGit).not.toHaveBeenCalled()
+
+    const cloned = membershipGatewayOf(client(), workspaceGit({
+      pickParentDirectory: vi.fn(async () => ({ ok: true as const, value: '/projects' })),
+      cloneGit: vi.fn(async () => ({
+        ok: true as const,
+        value: {
+          workspace: {
+            workspaceId: 'cloned' as never,
+            path: '/projects/repo',
+            title: 'Assembled',
+            sessionIds: [],
+            createdAt: '0',
+            updatedAt: '0',
+          },
+        },
+      })),
+    }))
+    await expect(cloned.cloneWorkspace({ remoteUrl: 'https://github.com/o/repo.git', directoryName: 'repo' }))
+      .resolves.toEqual({
+        workspaceId: 'cloned',
+        title: 'Assembled',
+        normalizedRemoteUrl: 'https://github.com/o/repo',
+      })
+  })
+
+  it('rejects Host Git failures without swallowing the message', async () => {
+    const gateway = membershipGatewayOf(client(), workspaceGit({
+      gitRemote: vi.fn(async () => ({
+        ok: false as const,
+        error: new RemoteError('gateway/internal', 'workspace Git timed out after 30000ms', {}),
+      })),
+    }))
+    await expect(gateway.localRemoteFor('ws' as never)).rejects.toThrow('workspace Git timed out after 30000ms')
   })
 })

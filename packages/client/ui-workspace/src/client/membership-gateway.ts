@@ -1,15 +1,27 @@
 /**
  * Adapt Desktop's ProjectMembershipClient into browsing-region callbacks.
- * Workspace-keyed Git lookup, create-by-workspace, and clone remain Host gaps (#590).
  * Call-time lookup keeps one injected gateway valid across late bind and replace.
+ * This adapter composes Host `gitRemote`, `cloneGit`, and directory pick.
  */
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type {
   FunctionTag, InvitationId, MembershipId, ProjectId, ProjectRole,
 } from '@deepseek-ai/dsh-project-membership'
-import type { ProjectMembershipClient } from '@deepseek-ai/dsh-project-membership-client'
+import {
+  localWorkspaceRemoteUrl,
+  normalizeGitRemoteUrl,
+  type AuthenticatedProjectView,
+  type ProjectMembershipClient,
+} from '@deepseek-ai/dsh-project-membership-client'
+import type {
+  WorkspaceCloneGitRequest,
+  WorkspaceCloneGitValue,
+  WorkspaceGitRemoteValue,
+  WorkspaceId,
+} from '@deepseek-ai/dsh-api-workspace-controller/types'
 import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
-import type { ProjectMembershipGateway, WorkspaceProjectRole } from './contract/slots.ts'
+import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
+import type { ProjectMembershipGateway, WorkspaceProjectRole, WorkspaceProjectView } from './contract/slots.ts'
 
 function projectIdOf(value: string): ProjectId {
   return brandString<ProjectId>(value)
@@ -32,10 +44,38 @@ function grantableInviteRole(role: WorkspaceProjectRole): Exclude<ProjectRole, '
   return role
 }
 
+async function unwrapRemote<T>(result: Promise<RemoteResult<T>>): Promise<T> {
+  const settled = await result
+  if (!settled.ok) throw new Error(settled.error.message)
+  return settled.value
+}
+
+function projectViewOf(project: AuthenticatedProjectView): WorkspaceProjectView {
+  return {
+    id: project.id,
+    name: project.name,
+    boundRemoteUrl: project.boundRemoteUrl,
+    receivingAccountId: project.receivingAccountId,
+  }
+}
+
 /** Availability of the optional membership client, plus an epoch for provider replace. */
 export type MembershipAvailabilitySnapshot = {
   available: boolean
   epoch: number
+}
+
+/**
+ * Injected Host Workspace Git and parent-directory pick. Apply closes these
+ * over `ctx.remote`; the gateway never imports Context.
+ */
+export interface MembershipWorkspaceGit {
+  /** Read the configured origin for one registered Workspace. */
+  gitRemote(workspaceId: WorkspaceId, signal?: AbortSignal): Promise<RemoteResult<WorkspaceGitRemoteValue>>
+  /** Clone a Git remote into a new child directory and register the Workspace. */
+  cloneGit(request: WorkspaceCloneGitRequest, signal?: AbortSignal): Promise<RemoteResult<WorkspaceCloneGitValue>>
+  /** Ask the operator for the clone parent directory; `null` is cancel. */
+  pickParentDirectory(): Promise<RemoteResult<string | null>>
 }
 
 const UNAVAILABLE: MembershipAvailabilitySnapshot = Object.freeze({ available: false, epoch: 0 })
@@ -43,14 +83,14 @@ const UNAVAILABLE: MembershipAvailabilitySnapshot = Object.freeze({ available: f
 /**
  * Adapt membership-client callbacks into the browsing-region gateway.
  * @param clientOrRead - current client, or a lookup evaluated on each call.
+ * @param workspaceGit - Host origin read, clone, and parent-directory pick.
  * @returns callback gateway for settings and the invite wizard.
  */
 export function membershipGatewayOf(
   clientOrRead: ProjectMembershipClient | (() => ProjectMembershipClient | undefined),
+  workspaceGit: MembershipWorkspaceGit,
 ): ProjectMembershipGateway {
   const readClient = typeof clientOrRead === 'function' ? clientOrRead : () => clientOrRead
-  const missingWorkspaceGit = (method: 'createProject' | 'projectForWorkspace' | 'localRemoteFor' | 'cloneWorkspace'): Promise<never> =>
-    Promise.reject(new Error(`ui-workspace: ProjectMembershipGateway.${method} requires Host workspace Git (#590)`))
   const requireClient = (): ProjectMembershipClient => {
     const client = readClient()
     if (client === undefined) {
@@ -58,9 +98,30 @@ export function membershipGatewayOf(
     }
     return client
   }
+  const localRemoteFor = async (workspaceId: WorkspaceId): Promise<string | undefined> => {
+    const value = await unwrapRemote(workspaceGit.gitRemote(workspaceId))
+    return value.remoteUrl
+  }
+  const remoteUrlFor = async (workspaceId: WorkspaceId): Promise<string> => {
+    const remote = await localRemoteFor(workspaceId)
+    return remote === undefined ? localWorkspaceRemoteUrl(workspaceId) : remote
+  }
   return {
-    createProject: () => missingWorkspaceGit('createProject'),
-    projectForWorkspace: () => missingWorkspaceGit('projectForWorkspace'),
+    createProject: async ({ name, localWorkspaceId }) => {
+      const created = await requireClient().createProject({
+        name,
+        remoteUrl: await remoteUrlFor(localWorkspaceId),
+      })
+      return projectViewOf(created)
+    },
+    projectForWorkspace: async (workspaceId) => {
+      const remote = await localRemoteFor(workspaceId)
+      const lookup = remote === undefined
+        ? localWorkspaceRemoteUrl(workspaceId)
+        : normalizeGitRemoteUrl(remote)
+      const project = await requireClient().projectByRemote(lookup)
+      return project === undefined ? undefined : projectViewOf(project)
+    },
     roster: async (projectId) => {
       const read = await requireClient().roster(projectIdOf(projectId))
       return {
@@ -124,8 +185,17 @@ export function membershipGatewayOf(
         grantedRole: row.grantedRole,
       }))
     },
-    localRemoteFor: () => missingWorkspaceGit('localRemoteFor'),
-    cloneWorkspace: () => missingWorkspaceGit('cloneWorkspace'),
+    localRemoteFor,
+    cloneWorkspace: async ({ remoteUrl, directoryName }) => {
+      const parentPath = await unwrapRemote(workspaceGit.pickParentDirectory())
+      if (parentPath === null) return undefined
+      const cloned = await unwrapRemote(workspaceGit.cloneGit({ remoteUrl, parentPath, directoryName }))
+      return {
+        workspaceId: cloned.workspace.workspaceId,
+        title: cloned.workspace.title,
+        normalizedRemoteUrl: normalizeGitRemoteUrl(remoteUrl),
+      }
+    },
   }
 }
 

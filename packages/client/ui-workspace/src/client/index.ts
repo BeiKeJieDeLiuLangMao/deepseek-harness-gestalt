@@ -93,7 +93,14 @@ export function apply(ctx: Context, config?: WorkspaceConfig): void {
   const membershipAvailability = createMembershipAvailabilitySource(
     () => ctx.get('projectMembershipClient') !== undefined,
   )
-  const projectMembership = membershipGatewayOf(() => ctx.get('projectMembershipClient'))
+  const projectMembership = membershipGatewayOf(
+    () => ctx.get('projectMembershipClient'),
+    {
+      gitRemote: (workspaceId, signal) => ctx.remote.workspace.gitRemote({ workspaceId }, signal),
+      cloneGit: (request, signal) => ctx.remote.workspace.cloneGit(request, signal),
+      pickParentDirectory: () => ctx.remote.directoryPicker.pick(),
+    },
+  )
   ctx.effect(() => {
     pendingInvitations.start()
     const stop = ctx.on('internal/service', (name: string) => {
