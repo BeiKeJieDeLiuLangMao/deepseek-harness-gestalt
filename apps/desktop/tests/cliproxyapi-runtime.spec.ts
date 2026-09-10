@@ -34,9 +34,7 @@ describe('CLIProxyAPI packaged resource', () => {
 describe('CLIProxyAPI supervisor', () => {
   it('refuses a reservation race without sending the inference key to the competing listener', async () => {
     const root = await scratch()
-    const executable = join(root, 'delayed-fixture.mjs')
-    await writeFile(executable, fixtureSource(300))
-    await chmod(executable, 0o755)
+    const executable = await writeFixture(root, 'delayed-fixture', fixtureSource(300))
     let receivedAuthorization: string | undefined
     let competitor: ReturnType<typeof createServer> | undefined
     const supervisor = new CLIProxyAPISupervisor({
@@ -70,9 +68,7 @@ describe('CLIProxyAPI supervisor', () => {
     await mkdir(external)
     await writeFile(join(external, '.env'), 'CLIPROXY_SENTINEL_DOTENV=outside\n')
     const observed = join(root, 'observed.json')
-    const executable = join(root, 'environment-fixture.mjs')
-    await writeFile(executable, environmentFixtureSource(observed))
-    await chmod(executable, 0o755)
+    const executable = await writeFixture(root, 'environment-fixture', environmentFixtureSource(observed))
     const previousCwd = process.cwd()
     const previous = Object.fromEntries(['PGSTORE_DSN', 'GITSTORE_REPO', 'OBJECTSTORE_URL', 'PROVIDER_CONFIG']
       .map(name => [name, process.env[name]]))
@@ -103,9 +99,7 @@ describe('CLIProxyAPI supervisor', () => {
   it('does not send the inference key after shutdown during the TLS handshake', async () => {
     const root = await scratch()
     const observed = join(root, 'authorization.json')
-    const executable = join(root, 'handshake-fixture.mjs')
-    await writeFile(executable, fixtureSource(0, `globalThis.observed = ${JSON.stringify(observed)}`))
-    await chmod(executable, 0o755)
+    const executable = await writeFixture(root, 'handshake-fixture', fixtureSource(0, `globalThis.observed = ${JSON.stringify(observed)}`))
     const supervisor = new CLIProxyAPISupervisor({
       binary: executable,
       stateRoot: join(root, 'state'),
@@ -120,9 +114,7 @@ describe('CLIProxyAPI supervisor', () => {
 
   it('publishes replacement capabilities with new ports and keys', async () => {
     const root = await scratch()
-    const executable = join(root, 'replacement-fixture.mjs')
-    await writeFile(executable, fixtureSource())
-    await chmod(executable, 0o755)
+    const executable = await writeFixture(root, 'replacement-fixture', fixtureSource())
     const observed: Array<{ baseURL: string; apiKey: string } | undefined> = []
     const supervisor = new CLIProxyAPISupervisor({
       binary: executable, stateRoot: join(root, 'state'), startupTimeoutMs: 5_000, restartLimit: 0,
@@ -139,9 +131,7 @@ describe('CLIProxyAPI supervisor', () => {
 
   it('forces only its owned child after the graceful-stop bound', async () => {
     const root = await scratch()
-    const executable = join(root, 'stubborn-fixture.mjs')
-    await writeFile(executable, fixtureSource(0, '', "process.on('SIGTERM', () => {})"))
-    await chmod(executable, 0o755)
+    const executable = await writeFixture(root, 'stubborn-fixture', fixtureSource(0, '', "process.on('SIGTERM', () => {})"))
     const supervisor = new CLIProxyAPISupervisor({
       binary: executable, stateRoot: join(root, 'state'), startupTimeoutMs: 5_000, restartLimit: 0, stopGraceMs: 50,
     })
@@ -149,14 +139,14 @@ describe('CLIProxyAPI supervisor', () => {
     const startedAt = Date.now()
     await supervisor.shutdown()
     expect(Date.now() - startedAt).toBeLessThan(2_000)
-    await expect(running.exited).resolves.toMatchObject({ signal: 'SIGKILL' })
+    const stopped = await running.exited
+    if (process.platform === 'win32') expect(stopped.signal).toBeNull()
+    else expect(stopped).toMatchObject({ signal: 'SIGKILL' })
   })
 
   it('uses isolated state, proves authenticated readiness, and reaches quiescence', async () => {
     const root = await scratch()
-    const executable = join(root, 'fixture.mjs')
-    await writeFile(executable, fixtureSource())
-    await chmod(executable, 0o755)
+    const executable = await writeFixture(root, 'fixture', fixtureSource())
     const stateRoot = join(root, 'state')
     const supervisor = new CLIProxyAPISupervisor({ binary: executable, stateRoot, startupTimeoutMs: 5_000, restartLimit: 0 })
     const running = await supervisor.start()
@@ -190,7 +180,7 @@ describe('CLIProxyAPI supervisor', () => {
       headers: { Authorization: 'Bearer $TOKEN$' },
     })).resolves.toMatchObject({ statusCode: 0, error: 'empty account reference' })
     expect(text).not.toContain(process.env.DEEPSEEK_API_KEY ?? '__absent__')
-    expect((await stat(config)).mode & 0o777).toBe(0o600)
+    if (process.platform !== 'win32') expect((await stat(config)).mode & 0o777).toBe(0o600)
     await supervisor.shutdown()
     await expect(running.management.request({
       authIndex: 'glm-0' as never,
@@ -212,6 +202,18 @@ async function scratch(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'dsh-cliproxyapi-'))
   roots.push(root)
   return root
+}
+
+async function writeFixture(root: string, name: string, source: string): Promise<string> {
+  const script = join(root, `${name}.mjs`)
+  await writeFile(script, source)
+  if (process.platform !== 'win32') {
+    await chmod(script, 0o755)
+    return script
+  }
+  const launcher = join(root, `${name}.cmd`)
+  await writeFile(launcher, `@echo off\r\n"${process.execPath}" "${script}" %*\r\n`)
+  return launcher
 }
 
 async function findConfig(stateRoot: string): Promise<string> {
