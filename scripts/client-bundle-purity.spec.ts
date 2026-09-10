@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it, vi } from 'vitest'
-import { clientBundle, requestedExternals } from '../packages/client/tsdown.client.ts'
+import { browserSourcePath, clientBundle, requestedExternals } from '../packages/client/tsdown.client.ts'
 
 type ResolveId = (source: string) => null | { id: string; external: boolean }
 
@@ -235,6 +235,14 @@ describe('client bundle debug artifacts', () => {
 
     const dependencySource = '../../../../node_modules/.pnpm/zod@4.4.3/node_modules/zod/index.js'
     expect(transform(dependencySource, sourceMapPath)).toBe(dependencySource)
+  })
+
+  it('maps better-sidebar sources through the shared repository-root rewrite', () => {
+    const sourceMapPath = clientSourceMapPath('client/ui-better-sidebar')
+    expect(browserSourcePath('../src/client/BrowserView.tsx', sourceMapPath))
+      .toBe('../../../packages/client/ui-better-sidebar/src/client/BrowserView.tsx')
+    expect(browserSourcePath('../../../core/session/src/types.ts', sourceMapPath))
+      .toBe('../../../packages/core/session/src/types.ts')
   })
 })
 

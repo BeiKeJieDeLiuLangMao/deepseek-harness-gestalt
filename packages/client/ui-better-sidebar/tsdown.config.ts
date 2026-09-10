@@ -42,11 +42,12 @@
  */
 import { spawnSync } from 'node:child_process'
 import { readFile } from 'node:fs/promises'
-import { basename, dirname, join, relative, resolve as resolvePath, sep } from 'node:path'
+import { basename, dirname, join, resolve as resolvePath } from 'node:path'
 import { builtinModules, createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import type { UserConfig } from 'tsdown'
 import { transform } from 'lightningcss'
+import { browserSourcePath } from '../tsdown.client.ts'
 
 const require = createRequire(import.meta.url)
 
@@ -91,7 +92,7 @@ const INLINE_SAFE = /^@deepseek-ai\/dsh-(session|llm|tools|brand)(\/|$)/
 const CSS_VIRTUAL_PREFIX = '\0dsh-css:'
 const CSS_VIRTUAL_SUFFIX = '.mjs'
 
-const REPOSITORY_ROOT = fileURLToPath(new URL('.', import.meta.url))
+const PACKAGE_ROOT = fileURLToPath(new URL('.', import.meta.url))
 
 let snapshotDtsEmitted = false
 
@@ -108,7 +109,7 @@ function emitSnapshotDts(): BuildPlugin {
       snapshotDtsEmitted = true
       const tsc = fileURLToPath(new URL('../../../node_modules/typescript/bin/tsc', import.meta.url))
       const result = spawnSync(process.execPath, [tsc, '-p', 'tsconfig.dts.json', '--pretty', 'false'], {
-        cwd: REPOSITORY_ROOT,
+        cwd: PACKAGE_ROOT,
         encoding: 'utf8',
       })
       if (result.status !== 0) {
@@ -132,14 +133,6 @@ function injectTag(pluginId: string, fileId: string, cssText: string): string {
     `  document.head.appendChild(tag);`,
     `}`,
   ].join('\n')
-}
-
-/** Rebase a physical lib-relative source onto the repository-shaped URL tree. */
-function browserSourcePath(source: string, sourcemapPath: string): string {
-  if (!source.startsWith('.')) return source
-  const physicalSource = resolvePath(dirname(sourcemapPath), source)
-  const repositoryPath = relative(REPOSITORY_ROOT, physicalSource).split(sep).join('/')
-  return `../../../${repositoryPath}`
 }
 
 /**

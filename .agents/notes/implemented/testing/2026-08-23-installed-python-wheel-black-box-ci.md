@@ -30,7 +30,7 @@ Fork and Dependabot pull requests never receive the repository secret. Their nat
 
 ### Required targets
 
-The pull-request `python-runtime` job calls the reusable builder for Linux x64, Linux arm64, macOS arm64, and Windows x64. Its aggregate result remains a dependency of `all checks passed`, so a failed, cancelled, or missing native carrier blocks the required verdict. The [Windows x64 runtime decision](../architecture/2026-08-23-python-sdk-windows-x64-runtime.md) owns the fourth target and its PowerShell-specific minimal snapshot.
+The pull-request `python-runtime` job calls the reusable builder for the three targets that workflow currently plans: Linux x64, Linux arm64, and macOS arm64. Its aggregate result remains a dependency of `all checks passed`, so a failed, cancelled, or missing native carrier blocks the required verdict. The [Windows x64 runtime decision](../architecture/2026-08-23-python-sdk-windows-x64-runtime.md) still owns the Windows product, GitLab `windows-2025` carrier, and PowerShell-specific minimal snapshot; GitHub pull-request CI does not pass `node24-win-x64` because the reusable plan job rejects that name.
 
 ## Existing decisions and supersession
 
@@ -48,4 +48,4 @@ This decision supersedes the single-target topology in the archived [required Py
 
 ## Consequences
 
-Every pull request pays for four native executable and wheel builds plus deterministic installed-artifact scenarios. Trusted same-repository pull requests also pay for one two-turn DeepSeek task per target. In exchange, the required result describes the files Python users install, proves every published carrier before merge, and cannot pass by importing the checkout or silently skipping the real provider.
+Every GitHub pull request pays for three native executable and wheel builds plus deterministic installed-artifact scenarios on Linux x64, Linux arm64, and macOS arm64. Trusted same-repository pull requests also pay for one two-turn DeepSeek task per those targets. In exchange, the required result describes the files Python users install on the planned GitHub carriers, and cannot pass by importing the checkout or silently skipping the real provider. Windows x64 remains a GitLab and product carrier until the reusable GitHub builder admits that target.

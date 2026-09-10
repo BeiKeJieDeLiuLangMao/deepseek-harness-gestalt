@@ -371,13 +371,13 @@ describe('CI workflow', () => {
       name: 'python runtime / release-shaped matrix',
       uses: './.github/workflows/build-exe-for-python-sdk.yml',
       with: {
-        targets: 'node24-linux-x64,node24-linux-arm64,node24-macos-arm64,node24-win-x64',
+        targets: 'node24-linux-x64,node24-linux-arm64,node24-macos-arm64',
         ci: true,
       },
-      secrets: {
-        DEEPSEEK_API_KEY_EXTERNAL: '${{ secrets.DEEPSEEK_API_KEY_EXTERNAL }}',
-      },
     })
+    expect(pythonRuntime).not.toHaveProperty('secrets')
+    expect(JSON.stringify(pythonRuntime)).not.toContain('node24-win-x64')
+    expect(JSON.stringify(pythonRuntime)).not.toContain('DEEPSEEK_API_KEY_EXTERNAL')
     expect(aggregate.needs).toContain('python-runtime')
   })
 

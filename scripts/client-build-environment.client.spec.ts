@@ -16,6 +16,7 @@ import {
   repositoryVersion,
   resolveClientBuildEnvironment,
   writeClientBuildRecord,
+  collectDynamicClientSourceMapViolations,
 } from './client-build-environment.ts'
 import { clientBundle } from '../packages/client/tsdown.client.ts'
 
@@ -52,6 +53,13 @@ function buildFixture(environment: Record<string, string>): string {
   roots.push(fixtureRoot)
   write(join(fixtureRoot, 'apps/web/dist/index.html'), '<main></main>')
   write(join(fixtureRoot, 'packages/client/example/lib/client.js'), 'module.exports = {}\n')
+  write(join(fixtureRoot, 'packages/client/example/lib/client.js.map'), `${JSON.stringify({
+    version: 3,
+    names: [],
+    mappings: 'AAAA',
+    sources: ['../../../packages/client/example/src/client/index.ts'],
+    sourcesContent: ['export {}\n'],
+  })}\n`)
   writeClientBuildRecord(fixtureRoot, environment)
   return fixtureRoot
 }
@@ -275,6 +283,41 @@ describe('client build environment', () => {
 
     write(join(official, 'apps/web/dist/index.html'), '<main>changed</main>')
     expect(() => { readClientBuildRecord(official) }).toThrow(/artifacts differ/)
+  })
+
+  it('rejects first-party maps that do not start at packages/ or vendor/', () => {
+    const fixtureRoot = mkdtempSync(join(tmpdir(), 'dsh-client-sourcemap-gate-'))
+    roots.push(fixtureRoot)
+    const mapPath = join(fixtureRoot, 'packages/client/ui-better-sidebar/lib/client.js.map')
+    write(join(fixtureRoot, 'packages/client/ui-better-sidebar/lib/client.js'), 'module.exports = {}\n')
+    write(mapPath, `${JSON.stringify({
+      version: 3,
+      names: [],
+      mappings: 'AAAA',
+      sources: [
+        '../../../src/client/BrowserView.tsx',
+        '../../../../../core/session/src/types.ts',
+        '../../../packages/client/ui-better-sidebar/src/client/index.ts',
+      ],
+      sourcesContent: ['a', 'b', 'c'],
+    })}\n`)
+
+    expect(collectDynamicClientSourceMapViolations(fixtureRoot)).toEqual([
+      'packages/client/ui-better-sidebar/lib/client.js.map: ../../../../../core/session/src/types.ts',
+      'packages/client/ui-better-sidebar/lib/client.js.map: ../../../src/client/BrowserView.tsx',
+    ])
+
+    write(mapPath, `${JSON.stringify({
+      version: 3,
+      names: [],
+      mappings: 'AAAA',
+      sources: [
+        '../../../packages/client/ui-better-sidebar/src/client/BrowserView.tsx',
+        '../../../packages/core/session/src/types.ts',
+      ],
+      sourcesContent: ['a', 'b'],
+    })}\n`)
+    expect(collectDynamicClientSourceMapViolations(fixtureRoot)).toEqual([])
   })
 
   it('keeps public client values out of workflow-wide environments', () => {

@@ -362,14 +362,14 @@ jobs:
         run: uv run --python 3.10 --group test --project python/sdk pytest
 
   # The reusable builder owns each published executable, wheel, clean-install,
-  # keyless black-box, and trusted real-API path. All native release targets are
-  # required because a platform wheel cannot be validated by another carrier.
+  # keyless black-box, and trusted real-API path. Its plan job currently admits
+  # the three native targets below; Windows x64 remains a product/GitLab carrier.
   python-runtime:
     if: github.event_name == 'pull_request'
     name: python runtime / release-shaped matrix
     uses: ./.github/workflows/build-exe-for-python-sdk.yml
     with:
-      targets: node24-linux-x64,node24-linux-arm64,node24-macos-arm64,node24-win-x64
+      targets: node24-linux-x64,node24-linux-arm64,node24-macos-arm64
       ci: true
 
   # The required pull-request Windows signal: the two blocking win32 surfaces

@@ -79,8 +79,13 @@ const SKIP_WORKSPACE_BUILD: UserConfig = { entry: '' }
 
 const REPOSITORY_ROOT = fileURLToPath(new URL('../..', import.meta.url))
 
-/** Rebase a physical lib-relative source onto a browser URL that mirrors the repository directories. */
-function browserSourcePath(source: string, sourcemapPath: string): string {
+/**
+ * Rebase a physical lib-relative source onto a browser URL that mirrors the repository directories.
+ * @param source - relative source path written into the generated map.
+ * @param sourcemapPath - absolute path of the emitting `client.js.map`.
+ * @returns `../../../packages/<group>/<package>/src/...` for workspace sources; otherwise the original path.
+ */
+export function browserSourcePath(source: string, sourcemapPath: string): string {
   if (!source.startsWith('.')) return source
   const physicalSource = resolvePath(dirname(sourcemapPath), source)
   const repositoryPath = relative(REPOSITORY_ROOT, physicalSource).split(sep).join('/')

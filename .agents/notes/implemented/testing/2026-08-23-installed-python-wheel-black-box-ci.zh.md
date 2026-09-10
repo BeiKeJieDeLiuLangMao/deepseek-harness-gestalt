@@ -30,7 +30,7 @@ Fork 与 Dependabot 拉取请求永远不会获得仓库密钥。它们的原生
 
 ### 必需目标
 
-拉取请求的 `python-runtime` job 会针对 Linux x64、Linux arm64、macOS arm64 与 Windows x64 调用可复用构建器。其聚合结果仍是 `all checks passed` 的依赖项，因此任一原生载体失败、取消或缺失都会阻止必需判定通过。[Windows x64 运行时决策](../architecture/2026-08-23-python-sdk-windows-x64-runtime.zh.md)负责第四个目标及其 PowerShell 专属极简快照。
+拉取请求的 `python-runtime` job 会针对该 workflow 当前能规划的三个目标调用可复用构建器：Linux x64、Linux arm64 与 macOS arm64。其聚合结果仍是 `all checks passed` 的依赖项，因此任一原生载体失败、取消或缺失都会阻止必需判定通过。[Windows x64 运行时决策](../architecture/2026-08-23-python-sdk-windows-x64-runtime.zh.md)仍负责 Windows 产品、GitLab `windows-2025` 载体及其 PowerShell 专属极简快照；GitHub 拉取请求 CI 不传入 `node24-win-x64`，因为可复用 plan job 会拒绝该名称。
 
 ## Existing decisions and supersession
 
@@ -48,4 +48,4 @@ Fork 与 Dependabot 拉取请求永远不会获得仓库密钥。它们的原生
 
 ## Consequences
 
-每个拉取请求都会承担四个原生可执行文件及 wheel 包构建，并运行确定性的安装后产物场景。可信的同仓库拉取请求还会在每个目标上承担一次双轮 DeepSeek 任务。相应地，必需结果描述 Python 用户实际安装的文件，在合并前证明每个已发布载体，并且不能通过导入 checkout 或静默跳过真实提供方而通过。
+每个 GitHub 拉取请求都会在 Linux x64、Linux arm64 与 macOS arm64 上承担三个原生可执行文件及 wheel 包构建，并运行确定性的安装后产物场景。可信的同仓库拉取请求还会在这些目标上承担一次双轮 DeepSeek 任务。相应地，必需结果描述 Python 用户在 GitHub 已规划载体上实际安装的文件，并且不能通过导入 checkout 或静默跳过真实提供方而通过。Windows x64 仍是 GitLab 与产品载体，直到可复用 GitHub 构建器接纳该目标。
