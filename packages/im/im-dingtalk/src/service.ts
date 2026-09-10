@@ -350,9 +350,11 @@ export class DingTalkDwsAdapterServiceImpl extends DingTalkDwsAdapterService {
         rawOutput: stderr,
       }
     } catch (err) {
+      // If error occurred after spawn was created (e.g. timeout reading pipe or stream crash),
+      // status is unknown to avoid double-send
       return {
         status: 'result_unknown',
-        error: String(err),
+        error: `In-flight execution failed: ${String(err)}`,
       }
     }
   }
