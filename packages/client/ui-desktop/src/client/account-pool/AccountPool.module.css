@@ -1,0 +1,252 @@
+.prototypeHost {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  width: 100%;
+  padding-bottom: 24px;
+}
+
+/* Built-in kernel status banner */
+.kernelBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: var(--dsw-alias-interactive-bg-subtle, rgba(0, 0, 0, 0.04));
+  border: 1px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.08));
+}
+
+.kernelInfo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.kernelBadge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #0284c7;
+  color: white;
+  letter-spacing: 0.04em;
+}
+
+.kernelTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary, #0f172a);
+}
+
+.kernelDesc {
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary, #64748b);
+}
+
+.kernelActions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.healthyDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #10b981;
+}
+
+.runtimeText {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-secondary, #64748b);
+  font-family: monospace;
+}
+
+/* Workspace Header */
+.workspaceHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 8px;
+}
+
+.headerLeft {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pageTitle {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--dsw-alias-label-primary, #0f172a);
+}
+
+.summaryCounts {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary, #64748b);
+}
+
+.countActive {
+  color: #10b981;
+  font-weight: 600;
+}
+
+.countError {
+  color: #ef4444;
+  font-weight: 600;
+}
+
+.headerRight {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+/* Global Face Switcher A/B */
+.globalFaceSwitch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.switchTitle {
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary, #94a3b8);
+}
+
+.switchGroup {
+  display: flex;
+  border-radius: 8px;
+  padding: 2px;
+  background: var(--dsw-alias-interactive-bg-subtle, rgba(0, 0, 0, 0.05));
+  border: 1px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.08));
+}
+
+.faceBtn {
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-secondary, #64748b);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.faceBtnActive {
+  background: var(--dsw-alias-bg-layer-1, #ffffff);
+  color: var(--dsw-alias-label-primary, #0f172a);
+  font-weight: 600;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+}
+
+/* Add Dropdown Menu */
+.addDropdownContainer {
+  position: relative;
+}
+
+.dropdownMenu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 1000;
+  width: 220px;
+  background: var(--dsw-alias-bg-layer-2, #ffffff);
+  border: 1px solid var(--dsw-alias-border-inverted, rgba(0, 0, 0, 0.1));
+  border-radius: 12px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.18);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+}
+
+.dropdownHeader {
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-tertiary, #94a3b8);
+}
+
+.dropdownItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-primary, #1e293b);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s ease;
+}
+
+.dropdownItem:hover {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, 0.05));
+}
+
+.dropIcon {
+  width: 18px;
+  font-weight: bold;
+  color: #10b981;
+}
+
+/* Filter Bar */
+.filterBar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+/* Grid Layouts */
+.cardsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  gap: 16px;
+}
+
+.cardsGridDense {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 12px;
+}
+
+/* Variant C Overview Strip */
+.overviewStrip {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin-bottom: 8px;
+}
+
+.overviewCard {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 18px;
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-layer-1, #ffffff);
+  border: 1px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.08));
+}
+
+.overviewLabel {
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary, #64748b);
+}
+
+.overviewCard strong {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--dsw-alias-label-primary, #0f172a);
+}

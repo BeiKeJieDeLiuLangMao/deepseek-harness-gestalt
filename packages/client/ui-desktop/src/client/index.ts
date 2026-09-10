@@ -12,21 +12,21 @@ import { BrandSeat } from './BrandSeat.tsx'
 import { DragStrip } from './DragStrip.tsx'
 import { UpdateControl } from './UpdateControl.tsx'
 import { AccountControl } from './AccountControl.tsx'
-import { Sub2ApiControl } from './Sub2ApiControl.tsx'
+import { AccountPoolControl } from './account-pool/AccountPoolControl.tsx'
 import { DesktopChromeOverlay } from './DesktopChromeOverlay.tsx'
 import { bindDesktopUpdater, createUpdaterSource } from './status-source.ts'
 import { bindDesktopAccount, createDesktopAccountSource } from './account-source.ts'
 import { bindDesktopPairing, createDesktopPairingSource } from './pairing-source.ts'
-import { bindDesktopSub2Api, createDesktopSub2ApiSource } from './sub2api-source.ts'
+import { bindDesktopAccountPool, createDesktopAccountPoolSource } from './account-pool-source.ts'
 import { en, zh, type DesktopKey } from './locales.ts'
 
-export type { DesktopBridge, Sub2ApiPhase, DesktopSub2ApiSnapshot, UpdaterPhase, UpdaterStatus } from '../protocol.ts'
+export type { DesktopBridge, AccountPoolPhase, DesktopAccountPoolSnapshot, UpdaterPhase, UpdaterStatus } from '../protocol.ts'
 export type { DesktopKey } from './locales.ts'
 export type { UpdateControlProps } from './UpdateControl.tsx'
-export type { Sub2ApiControlProps } from './Sub2ApiControl.tsx'
+export type { AccountPoolControlProps } from './account-pool/AccountPoolControl.tsx'
 export { bindDesktopUpdater, createUpdaterSource, INITIAL_UPDATER_STATUS } from './status-source.ts'
 export { bindDesktopAccount, createDesktopAccountSource, INITIAL_ACCOUNT_SNAPSHOT } from './account-source.ts'
-export { bindDesktopSub2Api, createDesktopSub2ApiSource, INITIAL_SUB2API_SNAPSHOT } from './sub2api-source.ts'
+export { bindDesktopAccountPool, createDesktopAccountPoolSource, INITIAL_ACCOUNT_POOL_SNAPSHOT } from './account-pool-source.ts'
 export type { AccountControlProps } from './AccountControl.tsx'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -52,7 +52,7 @@ export function apply(ctx: ClientContext): void {
   const updater = createUpdaterSource()
   const account = createDesktopAccountSource()
   const pairing = createDesktopPairingSource()
-  const sub2api = createDesktopSub2ApiSource()
+  const accountPool = createDesktopAccountPoolSource()
   /* v8 ignore next -- the client half always has window */
   const desktop = typeof window === 'undefined' ? undefined : window.dshDesktop
   if (desktop !== undefined) {
@@ -62,7 +62,7 @@ export function apply(ctx: ClientContext): void {
     if (desktop.projectMembership !== undefined) {
       ctx.provide('projectMembershipClient', desktop.projectMembership)
     }
-    ctx.effect(() => bindDesktopSub2Api(sub2api, desktop), 'ui-desktop: sub2api status')
+    ctx.effect(() => bindDesktopAccountPool(accountPool, desktop), 'ui-desktop: account-pool status')
   }
 
   ctx.slots.inject('sidebar.brand', () => ctx.slots.register(
@@ -91,9 +91,9 @@ export function apply(ctx: ClientContext): void {
       order: 51,
       label: () => ctx.locale.bind(NS)('sub2api.settingsNav'),
       locale: NS,
-      inject: () => ({ hooks: { sub2api } }),
+      inject: () => ({ hooks: { accountPool } }),
     },
-    Sub2ApiControl,
+    AccountPoolControl,
   ))
   ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register(
     {

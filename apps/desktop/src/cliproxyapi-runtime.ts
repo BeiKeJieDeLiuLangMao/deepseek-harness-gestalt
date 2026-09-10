@@ -14,6 +14,18 @@ const PROVIDER_ID = 'gestalt-account-pool'
 const READINESS_INTERVAL_MS = 50
 const MANAGEMENT_PROBE_TIMEOUT_MS = 15_000
 const MANAGEMENT_MAX_BODY_BYTES = 1_048_576
+const ALLOWED_CORE_PATHS = new Set([
+  '/v0/management/auth-files',
+  '/v0/management/auth-files/status',
+  '/v0/management/anthropic-auth-url',
+  '/v0/management/codex-auth-url',
+  '/v0/management/antigravity-auth-url',
+  '/v0/management/kimi-auth-url',
+  '/v0/management/xai-auth-url',
+  '/v0/management/get-auth-status',
+  '/v0/management/oauth-session',
+  '/v0/management/glm-coding-plan',
+])
 
 /** Identity recorded beside one packaged CLIProxyAPI executable. */
 export interface CLIProxyAPIResourceManifest {
@@ -33,12 +45,21 @@ export interface CLIProxyAPIInferenceCapability {
   readonly caPath: string
 }
 
+/** One Host-private management HTTP request against the current generation. */
+export interface CLIProxyAPICoreRequest {
+  readonly method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
+  readonly path: string
+  readonly body?: string
+}
+
 /** One ready Desktop-owned core generation. */
 export interface RunningCLIProxyAPI {
   readonly child: ChildProcess
   readonly capability: CLIProxyAPIInferenceCapability
   /** Host-private quota probe channel bound to this generation; never exported to renderer. */
   readonly management: QuotaObservationTransport
+  /** Host-private management HTTP against this generation; never exported to renderer. */
+  readonly coreRequest: (request: CLIProxyAPICoreRequest) => Promise<{ statusCode: number; body: string }>
   readonly exited: Promise<{ code: number | null; signal: NodeJS.Signals | null }>
   stop(): Promise<void>
 }
@@ -107,6 +128,20 @@ export class CLIProxyAPISupervisor {
     if (options.stopGraceMs !== undefined && (!Number.isSafeInteger(options.stopGraceMs) || options.stopGraceMs <= 0)) {
       throw new TypeError('CLIProxyAPI stopGraceMs must be a positive safe integer')
     }
+  }
+
+  private generationIsCurrent(child: ChildProcess): boolean {
+    if (this.shutdownTask !== undefined) return false
+    const live = this.current
+    if (live !== undefined && live.child !== child) return false
+    return child.exitCode === null && child.signalCode === null
+  }
+
+  /** Host-private management HTTP against the current generation. */
+  coreRequest(request: CLIProxyAPICoreRequest): Promise<{ statusCode: number; body: string }> {
+    const current = this.current
+    if (current === undefined) return Promise.reject(new Error('CLIProxyAPI management generation is not current'))
+    return current.coreRequest(request)
   }
 
   /** Start or join the current generation. */
@@ -228,14 +263,7 @@ export class CLIProxyAPISupervisor {
       }),
       management: Object.freeze({
         request: async (request: QuotaProbeRequest): Promise<QuotaProbeResponse> => {
-          if (this.shutdownTask !== undefined) {
-            return { statusCode: 0, error: 'CLIProxyAPI management generation is not current' }
-          }
-          const live = this.current
-          if (live !== undefined && live.child !== child) {
-            return { statusCode: 0, error: 'CLIProxyAPI management generation is not current' }
-          }
-          if (child.exitCode !== null || child.signalCode !== null) {
+          if (!this.generationIsCurrent(child)) {
             return { statusCode: 0, error: 'CLIProxyAPI management generation is not current' }
           }
           const authIndex = request.authIndex.trim()
@@ -249,6 +277,25 @@ export class CLIProxyAPISupervisor {
           }
         },
       }),
+      coreRequest: async (request: CLIProxyAPICoreRequest): Promise<{ statusCode: number; body: string }> => {
+        if (!this.generationIsCurrent(child)) {
+          throw new Error('CLIProxyAPI management generation is not current')
+        }
+        const pathname = request.path.split('?')[0] ?? request.path
+        if (!ALLOWED_CORE_PATHS.has(pathname)) {
+          throw new Error('CLIProxyAPI management path is not a Host product operation')
+        }
+        const ca = await readFile(certPath)
+        return await requestPinnedHttps({
+          port,
+          path: request.path,
+          method: request.method,
+          ca,
+          authorization: `Bearer ${managementKey}`,
+          ...request.body === undefined ? {} : { body: request.body },
+          signal: this.controller.signal,
+        })
+      },
       exited,
       stop,
     }
@@ -310,6 +357,7 @@ async function requestManagementApiCall(options: {
   const text = await requestPinnedHttps({
     port: options.port,
     path: '/v0/management/api-call',
+    method: 'POST',
     ca,
     authorization: `Bearer ${options.managementKey}`,
     body,
@@ -340,23 +388,27 @@ async function requestManagementApiCall(options: {
 function requestPinnedHttps(options: {
   port: number
   path: string
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
   ca: Buffer
   authorization: string
-  body: string
+  body?: string
   signal: AbortSignal
 }): Promise<{ statusCode: number; body: string }> {
   return new Promise((resolve, reject) => {
+    const body = options.body
     const request = httpsRequest({
       host: '127.0.0.1',
       port: options.port,
       path: options.path,
-      method: 'POST',
+      method: options.method,
       ca: options.ca,
       servername: 'localhost',
       headers: {
         Authorization: options.authorization,
-        'content-type': 'application/json',
-        'content-length': String(Buffer.byteLength(options.body)),
+        ...(body === undefined ? {} : {
+          'content-type': 'application/json',
+          'content-length': String(Buffer.byteLength(body)),
+        }),
       },
       timeout: MANAGEMENT_PROBE_TIMEOUT_MS,
     }, (response) => {
@@ -379,7 +431,7 @@ function requestPinnedHttps(options: {
     })
     request.once('close', () => options.signal.removeEventListener('abort', abort))
     if (options.signal.aborted) abort()
-    else request.end(options.body)
+    else request.end(body)
   })
 }
 
