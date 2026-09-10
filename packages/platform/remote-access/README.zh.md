@@ -18,6 +18,8 @@ Platform 返回不含邀请 PSK 的路由元数据。Desktop 在本地创建完�
 
 部署持久状态仅限 route identity、credential digest、单调 revision 与撤销／关联状态。临时协调仅限会过期的 attachment 位置、失效事件与直达密文 Pub/Sub。实例退出会关闭其 socket；Mobile 与 Desktop 获取新的 non-sticky 连接，Desktop 发送权威加密 resync，而不迁移在线 socket。容量、目录、心跳、缓冲、连接与 attach timeout 都是组合中显式校验的配置值。
 
+生产 Account 删除组合取得受信任的 `accountDeletion` owner，与公开 Personal Pairing 鉴权分离。它禁用已捕获的 Desktop 权威，等待 Relay 和端点撤销，再移除该账号的配对、邮箱、重放、配额和 challenge 引用。运行时公开令牌已经撤销；该 owner 不能恢复登录或创建新配对。附件密文属于独立的附件 owner，必须在 Account 完成前清理。
+
 ## Model Experience
 
 无，因为配对元数据、设备主体来源与设置状态从不进入模型请求。

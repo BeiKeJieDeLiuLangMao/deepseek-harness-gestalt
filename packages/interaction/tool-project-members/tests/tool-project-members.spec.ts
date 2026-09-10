@@ -65,6 +65,14 @@ function unreachable(): Error {
  * member may enumerate a roster.
  */
 class MemoryProjectMembership extends ProjectMembershipService {
+  override async accountDeletionProjects(): Promise<never> {
+    throw new Error('This composition does not delete accounts')
+  }
+
+  override async deleteAccountMemberships(): Promise<never> {
+    throw new Error('This composition does not delete accounts')
+  }
+
   private readonly projects = new Map<ProjectId, ProjectView>()
   private readonly members = new Map<ProjectId, MemberView[]>()
 

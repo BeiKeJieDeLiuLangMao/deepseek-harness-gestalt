@@ -11,6 +11,7 @@ const oss = vi.hoisted(() => ({
     id: 'unrelated', prefix: 'logs/', status: 'Enabled', days: 30, date: '',
   }] })),
   putBucketLifecycle: vi.fn(async () => ({})),
+  listV2: vi.fn(async () => ({ isTruncated: false, objects: [] as Array<{ name: string }> })),
 }))
 
 vi.mock('ali-oss', () => ({
@@ -22,17 +23,21 @@ vi.mock('ali-oss', () => ({
     delete = oss.delete
     getBucketLifecycle = oss.getBucketLifecycle
     putBucketLifecycle = oss.putBucketLifecycle
+    listV2 = oss.listV2
   },
 }))
 
 import {
   createEcsRamRoleOssClient,
   ensureEcsRamRoleOssLifecycle,
+  verifyEmptyEcsRamRoleOssPrefix,
   parseEcsRamRole,
 } from '../src/oss-client.ts'
 
 beforeEach(() => {
   oss.options = undefined
+  oss.listV2.mockReset()
+  oss.listV2.mockResolvedValue({ isTruncated: false, objects: [] })
   oss.put.mockClear()
   oss.get.mockClear()
   oss.delete.mockClear()
@@ -163,6 +168,25 @@ describe('ECS RAM role OSS client', () => {
       endpoint: 'oss-cn-hangzhou.aliyuncs.com', bucket: 'valid-bucket', auth: 'ecs-ram-role/role',
       objectPrefix: 'remote-attachments/test', timeoutMs: 10,
     }, vi.fn(async () => new Response('')))).rejects.toThrow('metadata token is empty')
+  })
+
+  it('checks empty attachment evidence without altering lifecycle or deleting unexpected objects', async () => {
+    const config = {
+      endpoint: 'oss-cn-hangzhou-internal.aliyuncs.com', bucket: 'gestalt-secret', auth: 'ecs-ram-role/role',
+      objectPrefix: 'remote-attachments/production', timeoutMs: 1000,
+    }
+    await expect(verifyEmptyEcsRamRoleOssPrefix(config, metadataCredentials)).rejects.toThrow('lifecycle changed')
+    oss.getBucketLifecycle.mockResolvedValue({ rules: [{
+      id: 'gestalt-remote-attachments-one-day', prefix: 'remote-attachments/production/', status: 'Enabled', days: 1, date: '',
+    }] })
+    await expect(verifyEmptyEcsRamRoleOssPrefix(config, metadataCredentials)).resolves.toBeUndefined()
+    expect(oss.listV2).toHaveBeenCalledWith({ prefix: 'remote-attachments/production/', 'max-keys': 1 })
+    oss.listV2.mockResolvedValueOnce({ isTruncated: false, objects: [{ name: 'unexpected' }] })
+    await expect(verifyEmptyEcsRamRoleOssPrefix(config, metadataCredentials)).rejects.toThrow('objects changed')
+    oss.listV2.mockResolvedValueOnce({ isTruncated: true, objects: [] })
+    await expect(verifyEmptyEcsRamRoleOssPrefix(config, metadataCredentials)).rejects.toThrow('objects changed')
+    expect(oss.putBucketLifecycle).not.toHaveBeenCalled()
+    expect(oss.delete).not.toHaveBeenCalled()
   })
 
   it('accepts the exact namespaced lifecycle and creates it when the bucket has none', async () => {

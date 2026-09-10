@@ -103,6 +103,14 @@ class CatalogAttachmentStore extends AttachmentStore {
  * inject resolve during schema harvest. Registration never reads a roster.
  */
 class CatalogProjectMembership extends ProjectMembershipService {
+  override accountDeletionProjects(): Promise<never> {
+    return Promise.reject(unreachable('account deletion planning'))
+  }
+
+  override deleteAccountMemberships(): Promise<never> {
+    return Promise.reject(unreachable('account deletion'))
+  }
+
   override roster(): Promise<never> {
     return Promise.reject(unreachable('roster reads'))
   }

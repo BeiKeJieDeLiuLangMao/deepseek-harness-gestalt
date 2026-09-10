@@ -6,6 +6,7 @@ import {
   ACCOUNT_DESKTOP_INSTALLATION_LIMIT,
   ACCOUNT_MOBILE_INSTALLATION_LIMIT,
   AccountError,
+  type AccountDeletionId,
   OPEN_REGISTRATION_HARD_CAP_RETRY_AFTER_SECONDS,
   parseDesktopInstallationPresentation,
   parseInstallationId,
@@ -22,6 +23,7 @@ import {
 } from '@deepseek-ai/dsh-platform-account'
 import type {
   AccountBackend,
+  AccountDeletionRecord,
   AccountRecord,
   CreatedSession,
   GitHubIdentity,
@@ -29,7 +31,18 @@ import type {
   SessionRecord,
 } from '@deepseek-ai/dsh-platform-account-core'
 
+import { parseAccountDeletionRecord } from '@deepseek-ai/dsh-platform-account-core'
+
 const SCHEMA = `
+CREATE TABLE IF NOT EXISTS account_deletions (
+  id text PRIMARY KEY,
+  account_id text NOT NULL,
+  identity_namespace text NOT NULL,
+  record jsonb NOT NULL,
+  completed_at bigint
+);
+CREATE UNIQUE INDEX IF NOT EXISTS account_deletions_active_account
+  ON account_deletions (account_id) WHERE completed_at IS NULL;
 CREATE TABLE IF NOT EXISTS account_attempts (
   id text PRIMARY KEY,
   environment text NOT NULL,
@@ -69,6 +82,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS account_sessions_refresh_hash
   ON account_sessions (refresh_hash) WHERE refresh_hash IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS account_sessions_active_install
   ON account_sessions (identity_namespace, installation_id) WHERE active;
+CREATE TABLE IF NOT EXISTS account_mobile_session_invalidations (
+  session_id text PRIMARY KEY,
+  identity_namespace text NOT NULL,
+  account_id text NOT NULL,
+  installation_id text NOT NULL
+);
 CREATE TABLE IF NOT EXISTS account_proofs (
   jti text PRIMARY KEY,
   expires_at bigint NOT NULL
@@ -118,6 +137,7 @@ interface SessionRow {
 
 /** Durable Account persistence over one PostgreSQL database identity. */
 export class PostgresAccountBackend implements AccountBackend {
+  private deletionTail: Promise<unknown> = Promise.resolve()
   /**
    * @param databaseIdentity - deployment database identity bound to this backend.
    * @param pool - shared connection pool.
@@ -299,6 +319,223 @@ export class PostgresAccountBackend implements AccountBackend {
     return result.rowCount === 1
   }
 
+  async listActiveMobileInstallations(accountId: PlatformAccountId): Promise<readonly SessionRecord[]> {
+    const result = await this.pool.query<SessionRow>(
+      `SELECT * FROM account_sessions
+        WHERE account_id = $1 AND installation_kind = 'mobile' AND active = TRUE
+        ORDER BY installation_id`,
+      [accountId],
+    )
+    return result.rows.map(sessionFromRow)
+  }
+
+  async revokeMobileInstallation(
+    initiating: SessionRecord,
+    installationId: InstallationId,
+  ): Promise<readonly AccountSessionId[]> {
+    const client = await this.pool.connect()
+    try {
+      await client.query('BEGIN')
+      const attempts = await client.query<{ id: string }>(
+        `SELECT id FROM account_attempts
+          WHERE identity_namespace = $1
+            AND installation_id = $2
+            AND status = 'authorized'
+            AND identity->>'providerSubject' = (
+              SELECT github_id::text FROM account_accounts WHERE id = $3
+            )
+          ORDER BY id
+          FOR UPDATE`,
+        [initiating.identityNamespace, installationId, initiating.accountId],
+      )
+      const account = await client.query(
+        'SELECT id FROM account_accounts WHERE id = $1 FOR UPDATE',
+        [initiating.accountId],
+      )
+      if (account.rows.length !== 1) throw new AccountError('SESSION_REVOKED', 'Account is unavailable')
+      const deleting = await client.query(
+        'SELECT id FROM account_deletions WHERE account_id = $1 AND completed_at IS NULL',
+        [initiating.accountId],
+      )
+      if (deleting.rows.length > 0) throw new AccountError('ACCOUNT_DELETING', 'Account deletion is in progress')
+      const caller = await client.query<SessionRow>(
+        'SELECT * FROM account_sessions WHERE id = $1 FOR UPDATE',
+        [initiating.id],
+      )
+      const current = caller.rows[0]
+      if (current === undefined || !current.active || current.revision !== initiating.revision
+        || current.account_id !== initiating.accountId || current.installation_kind !== 'desktop') {
+        throw new AccountError('SESSION_REVOKED', 'Desktop Account Session changed before removal')
+      }
+      const targets = await client.query<{ id: AccountSessionId }>(
+        `UPDATE account_sessions
+            SET active = FALSE, revision = revision + 1, refresh_hash = NULL
+          WHERE account_id = $1
+            AND installation_id = $2
+            AND installation_kind = 'mobile'
+            AND active = TRUE
+          RETURNING id`,
+        [initiating.accountId, installationId],
+      )
+      if (targets.rows.length === 0) {
+        const pending = await client.query<{ session_id: AccountSessionId }>(
+          `SELECT session_id FROM account_mobile_session_invalidations
+            WHERE account_id = $1 AND installation_id = $2
+            ORDER BY session_id`,
+          [initiating.accountId, installationId],
+        )
+        if (pending.rows.length > 0) {
+          await client.query('COMMIT')
+          return pending.rows.map(row => row.session_id)
+        }
+        throw new AccountError('INSTALLATION_NOT_FOUND', 'Mobile Installation is unavailable')
+      }
+      const attemptIds = attempts.rows.map(row => row.id)
+      if (attemptIds.length > 0) {
+        await client.query(
+          `UPDATE account_attempts SET status = 'used', identity = NULL
+            WHERE id = ANY($1::text[]) AND status = 'authorized'`,
+          [attemptIds],
+        )
+      }
+      for (const target of targets.rows) {
+        await client.query(
+          `INSERT INTO account_mobile_session_invalidations (
+            session_id, identity_namespace, account_id, installation_id
+          ) VALUES ($1,$2,$3,$4) ON CONFLICT (session_id) DO NOTHING`,
+          [target.id, initiating.identityNamespace, initiating.accountId, installationId],
+        )
+      }
+      await client.query('COMMIT')
+      return targets.rows.map(row => row.id)
+    } catch (error) {
+      await client.query('ROLLBACK')
+      throw error
+    } finally {
+      client.release()
+    }
+  }
+
+  async pendingMobileSessionInvalidations(identityNamespace: string): Promise<readonly AccountSessionId[]> {
+    const result = await this.pool.query<{ session_id: AccountSessionId }>(
+      `SELECT session_id FROM account_mobile_session_invalidations
+        WHERE identity_namespace = $1
+        ORDER BY session_id`,
+      [identityNamespace],
+    )
+    return result.rows.map(row => row.session_id)
+  }
+
+  async completeMobileSessionInvalidation(sessionId: AccountSessionId): Promise<void> {
+    await this.pool.query(
+      'DELETE FROM account_mobile_session_invalidations WHERE session_id = $1',
+      [sessionId],
+    )
+  }
+
+  async beginAccountDeletion(record: AccountDeletionRecord, initiating: SessionRecord): Promise<AccountDeletionRecord> {
+    const client = await this.pool.connect()
+    try {
+      await client.query('BEGIN')
+      const account = await client.query('SELECT id FROM account_accounts WHERE id = $1 FOR UPDATE', [record.accountId])
+      if (account.rows.length !== 1) throw new AccountError('SESSION_REVOKED', 'Account is unavailable')
+      const session = await client.query<SessionRow>('SELECT * FROM account_sessions WHERE id = $1 FOR UPDATE', [initiating.id])
+      const current = session.rows[0]
+      if (current === undefined || !current.active || current.revision !== initiating.revision || current.account_id !== record.accountId) {
+        throw new AccountError('SESSION_REVOKED', 'Account Session changed before deletion')
+      }
+      const revoked = await client.query<{ id: AccountSessionId }>(
+        `UPDATE account_sessions SET active = FALSE, revision = revision + 1, refresh_hash = NULL
+          WHERE account_id = $1 RETURNING id`, [record.accountId],
+      )
+      const accepted = { ...record, sessionIds: revoked.rows.map(row => row.id) }
+      await client.query(
+        `INSERT INTO account_deletions (id, account_id, identity_namespace, record)
+         VALUES ($1,$2,$3,$4::jsonb)`,
+        [record.operationId, record.accountId, record.identityNamespace, JSON.stringify(accepted)],
+      )
+      await client.query('COMMIT')
+      return accepted
+    } catch (error) {
+      await client.query('ROLLBACK')
+      throw error
+    } finally { client.release() }
+  }
+
+  async getAccountDeletion(id: AccountDeletionId): Promise<AccountDeletionRecord | undefined> {
+    const result = await this.pool.query<{ record: unknown }>('SELECT record FROM account_deletions WHERE id = $1', [id])
+    return result.rows[0] === undefined ? undefined : parseAccountDeletionRecord(result.rows[0].record)
+  }
+
+  async saveAccountDeletion(record: AccountDeletionRecord): Promise<void> {
+    const result = await this.pool.query(
+      'UPDATE account_deletions SET record = $2::jsonb WHERE id = $1 AND completed_at IS NULL',
+      [record.operationId, JSON.stringify(record)],
+    )
+    if (result.rowCount !== 1) throw new AccountError('DELETION_INVALID', 'deletion progress changed')
+  }
+
+  async withAccountDeletionLock(id: AccountDeletionId, operation: () => Promise<void>): Promise<boolean> {
+    const result = this.deletionTail.then(async () => await this.lockAccountDeletion(id, operation))
+    this.deletionTail = result.then(() => undefined, () => undefined)
+    return await result
+  }
+
+  private async lockAccountDeletion(id: AccountDeletionId, operation: () => Promise<void>): Promise<boolean> {
+    const client = await this.pool.connect()
+    const identity = `account-deletion:${this.databaseIdentity}:${id}`
+    let locked = false
+    try {
+      const result = await client.query<{ locked: boolean }>('SELECT pg_try_advisory_lock(hashtextextended($1, 0)) AS locked', [identity])
+      locked = result.rows[0]?.locked === true
+      if (!locked) return false
+      await operation()
+      return true
+    } finally {
+      try {
+        if (locked) await client.query('SELECT pg_advisory_unlock(hashtextextended($1, 0))', [identity])
+      } finally { client.release() }
+    }
+  }
+
+  async pendingAccountDeletions(identityNamespace: string): Promise<readonly AccountDeletionId[]> {
+    const result = await this.pool.query<{ id: AccountDeletionId }>(
+      'SELECT id FROM account_deletions WHERE identity_namespace = $1 AND completed_at IS NULL', [identityNamespace],
+    )
+    return result.rows.map(row => row.id)
+  }
+
+  async completeAccountDeletion(id: AccountDeletionId, completedAt: number): Promise<void> {
+    const client = await this.pool.connect()
+    try {
+      await client.query('BEGIN')
+      const found = await client.query<{ record: unknown }>('SELECT record FROM account_deletions WHERE id = $1 FOR UPDATE', [id])
+      if (found.rows[0] === undefined) throw new AccountError('DELETION_INVALID', 'deletion operation is unavailable')
+      const record = parseAccountDeletionRecord(found.rows[0].record)
+      if (record.status !== 'complete') {
+        await client.query(
+          `DELETE FROM account_attempts WHERE identity_namespace = $1 AND (
+            installation_id IN (SELECT installation_id FROM account_sessions WHERE account_id = $2)
+            OR identity->>'providerSubject' = (SELECT github_id::text FROM account_accounts WHERE id = $2))`,
+          [record.identityNamespace, record.accountId],
+        )
+        await client.query('DELETE FROM account_sessions WHERE account_id = $1', [record.accountId])
+        await client.query('DELETE FROM account_accounts WHERE id = $1', [record.accountId])
+        const complete: AccountDeletionRecord = { ...record, status: 'complete', projects: [], successors: [], sessionIds: [], completedAt }
+        await client.query('UPDATE account_deletions SET record = $2::jsonb, completed_at = $3 WHERE id = $1',
+          [id, JSON.stringify(complete), completedAt])
+      }
+      await client.query('COMMIT')
+    } catch (error) {
+      await client.query('ROLLBACK')
+      throw error
+    } finally { client.release() }
+  }
+
+  async expireAccountDeletions(completedBefore: number): Promise<void> {
+    await this.pool.query('DELETE FROM account_deletions WHERE completed_at < $1', [completedBefore])
+  }
+
   async consumeProof(jti: AccountProofJti, expiresAt: number, now: number): Promise<boolean> {
     await this.pool.query('DELETE FROM account_proofs WHERE expires_at < $1', [now])
     const result = await this.pool.query(
@@ -355,10 +592,12 @@ export class PostgresAccountBackend implements AccountBackend {
 
 async function upsertAccount(client: PoolClient, namespace: string, identity: GitHubIdentity): Promise<AccountRecord> {
   const existing = await client.query<AccountRow>(
-    'SELECT * FROM account_accounts WHERE identity_namespace = $1 AND github_id = $2',
+    'SELECT * FROM account_accounts WHERE identity_namespace = $1 AND github_id = $2 FOR UPDATE',
     [namespace, identity.providerSubject],
   )
   if (existing.rows[0] !== undefined) {
+    const deleting = await client.query('SELECT id FROM account_deletions WHERE account_id = $1 AND completed_at IS NULL', [existing.rows[0].id])
+    if (deleting.rows.length > 0) throw new AccountError('ACCOUNT_DELETING', 'Account deletion is in progress')
     const updated = await client.query<AccountRow>(
       `UPDATE account_accounts SET github_login = $3, avatar_url = $4
         WHERE identity_namespace = $1 AND github_id = $2

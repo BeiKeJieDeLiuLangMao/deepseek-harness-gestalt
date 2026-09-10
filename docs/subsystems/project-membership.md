@@ -6,9 +6,11 @@ English | [中文](project-membership.zh.md)
 
 Every mutation executes its role gate inside the operation: admins invite but cannot touch owner rows or remove owners, only owners grant the owner role, and the final owner cannot be demoted or removed (`LAST_OWNER`). Reads are gated too — `roster` requires an active membership, so removed accounts lose enumeration immediately. Each roster-affecting commit publishes a [`project-membership/roster-invalidated`](#cordis-surface) event strictly after durability, advancing a per-project projection version that cache consumers key on.
 
-[`@deepseek-ai/dsh-project-membership-core`](../../packages/platform/project-membership-core/README.md) is the file-backed provider: state lives per environment namespace (`development`/`production`) below the configured storage path, every mutation serializes through one write chain and republishes the whole document through an atomic rename. Roles govern only this collaboration plane and stay disjoint from Git-provider permissions in both directions. Routed member questions remain fail-closed behind the standing encryption review recorded in [the placement Agent Note](../../.agents/notes/implemented/feature/2026-08-27-project-membership-core.md).
+[`@deepseek-ai/dsh-project-membership-core`](../../packages/platform/project-membership-core/README.md) owns the provider algorithms. Its default file adapter stores state per environment namespace (`development`/`production`) below the configured storage path, every mutation serializes through one write chain and republishes the whole document through an atomic rename. Roles govern only this collaboration plane and stay disjoint from Git-provider permissions in both directions. Routed member questions remain fail-closed behind the standing encryption review recorded in [the placement Agent Note](../../.agents/notes/implemented/feature/2026-08-27-project-membership-core.md).
 
 Presence is live Desktop Installation connection, owned by the [HTTP Consumer](../../packages/platform/project-membership-http/README.md) and [Desktop Host](../../apps/desktop/README.md): last-window close POSTs `/v1/projects/presence/close`, roster readers see Offline immediately, TTL expiry remains the crash and partition path, and a routed ask of an offline member fails fast with `MEMBER_OFFLINE` and writes nothing to a queue. Feature-level assembled evidence is the keyless A1/B1/B2 walk in [`apps/desktop/tests/member-question-e2e/assembled-project-members.spec.ts`](../../apps/desktop/tests/member-question-e2e/assembled-project-members.spec.ts); visible Desktop coverage is `pnpm run test:e2e-project-members-electron`.
+
+Account deletion uses `accountDeletionProjects` and `deleteAccountMemberships` through a trusted product owner. Sole owners choose another joined member, promotion precedes removal, unresolved choices preserve the project, and projects without other members lose cloud records only. Operated multi-instance persistence holds a PostgreSQL namespace transaction across reload, role checks, roster-version persistence and commit; file persistence remains single-writer. [Account deletion](platform-account.md#account-deletion) owns the recovery receipt.
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -85,6 +87,21 @@ Source: [`packages/platform/project-membership-desktop/src/index.ts`](../../pack
 Project-membership capability. Every mutation executes its role gate inside the operation itself: schema omission or listener order never substitutes for the check that decides the outcome.
 
 ```ts cordis-catalog
+/**
+ * List shared projects requiring an explicit successor for account deletion.
+ * @param accountId - Account authenticated by the Account deletion owner.
+ * @returns Sole-owner projects and their other joined members.
+ */
+abstract accountDeletionProjects(accountId: PlatformAccountId): Promise<readonly AccountDeletionProject[]>
+
+/**
+ * Remove one deleting Account's personal membership records without deleting other members' data.
+ * @param accountId - Account whose durable deletion has already revoked ordinary authorization.
+ * @param successors - Explicit, proof-bound choices for sole-owner shared projects.
+ * @returns Projects requiring replacement choices; an empty list means cleanup completed.
+ */
+abstract deleteAccountMemberships( accountId: PlatformAccountId, successors: readonly AccountDeletionSuccessor[], ): Promise<readonly AccountDeletionProject[]>
+
 /**
  * Create one project; the actor becomes its first owner.
  * @param actor - authenticated account performing the mutation.
@@ -214,7 +231,7 @@ abstract projectByRemote(actor: PlatformAccountId, normalizedRemoteUrl: string):
 abstract rosterVersion(projectId: ProjectId): Promise<number>
 ```
 
-Types: [PlatformAccountId](platform-account.md)
+Types: [AccountDeletionProject](platform-account.md) · [AccountDeletionSuccessor](platform-account.md) · [PlatformAccountId](platform-account.md)
 
 Source: [`packages/platform/project-membership/src/index.ts`](../../packages/platform/project-membership/src/index.ts)
 

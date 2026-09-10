@@ -29,7 +29,15 @@ import {
   encodePairingTransactionState,
 } from './pairing-state-codec.ts'
 
+import type { PlatformAccountWriteFence } from './account-write-fence.ts'
+
 const SCHEMA = `
+CREATE TABLE IF NOT EXISTS remote_access_account_deletions (
+  database_identity text NOT NULL,
+  account_id text NOT NULL,
+  snapshot jsonb NOT NULL,
+  PRIMARY KEY (database_identity, account_id)
+);
 CREATE TABLE IF NOT EXISTS remote_access_desktops (
   database_identity text NOT NULL,
   access_key text NOT NULL,
@@ -106,6 +114,7 @@ export class PostgresPersonalPairingAuthorityStore implements PersonalPairingAut
   constructor(
     readonly databaseIdentity: string,
     private readonly pool: PlatformSqlPool,
+    private readonly accountWriteFence?: PlatformAccountWriteFence,
   ) {}
 
   /** Create pairing-authority tables if they are absent. */
@@ -175,12 +184,96 @@ export class PostgresPersonalPairingAuthorityStore implements PersonalPairingAut
     })
   }
 
+  /**
+   * Capture every attachment and Desktop owner before revocation removes pairing rows.
+   * @param accountId - Account with a durable accepted deletion.
+   * @returns The same persisted cleanup identities on every retry.
+   */
+  async captureAccountDeletion(accountId: PlatformAccountId): Promise<{
+    desktopInstallationIds: readonly InstallationId[]
+    pairingIds: readonly PersonalPairingId[]
+  }> {
+    const read = async () => {
+      const retained = await this.pool.query('SELECT snapshot FROM remote_access_account_deletions WHERE database_identity = $1 AND account_id = $2', [this.databaseIdentity, accountId])
+      return retained.rows[0]?.snapshot
+    }
+    let snapshot = await read()
+    if (snapshot === undefined) {
+      await this.runPairingTransactionWithClient(async (state, _access, client) => {
+        const desktops = await client.query('SELECT desktop_installation_id FROM remote_access_desktops WHERE database_identity = $1 AND account_id = $2', [this.databaseIdentity, accountId])
+        const pairings = await client.query('SELECT pairing_id FROM remote_access_mobile_pairings WHERE database_identity = $1 AND account_id = $2', [this.databaseIdentity, accountId])
+        const desktopInstallationIds = new Set(desktops.rows.map(row => parseInstallationId(row.desktop_installation_id)))
+        const pairingIds = new Set(pairings.rows.map(row => parsePersonalPairingId(row.pairing_id)))
+        for (const record of state.pairings.values()) {
+          if (record.devicePrincipal.accountId !== accountId) continue
+          desktopInstallationIds.add(record.desktopInstallationId)
+          pairingIds.add(record.id)
+        }
+        for (const record of state.endpointPublications.values()) {
+          if (record.accountId !== accountId) continue
+          desktopInstallationIds.add(record.desktopInstallationId)
+          pairingIds.add(record.pairing.id)
+        }
+        for (const record of [...state.endpointMailbox.challenges, ...state.endpointMailbox.pending]) {
+          if (record.accountId === accountId) desktopInstallationIds.add(record.desktopInstallationId)
+        }
+        for (const record of state.endpointPublicationRevocations.values()) {
+          if (record.accountId !== accountId) continue
+          desktopInstallationIds.add(record.desktopInstallationId)
+          pairingIds.add(record.pairingId)
+        }
+        for (const record of state.challenges.values()) {
+          if (record.accountId === accountId) desktopInstallationIds.add(record.desktopInstallationId)
+        }
+        for (const record of state.pending.values()) {
+          if (record.accountId === accountId) desktopInstallationIds.add(record.desktopInstallationId)
+        }
+        const captured = { desktopInstallationIds: [...desktopInstallationIds], pairingIds: [...pairingIds] }
+        await client.query(
+          `INSERT INTO remote_access_account_deletions (database_identity, account_id, snapshot)
+         VALUES ($1,$2,$3::jsonb) ON CONFLICT (database_identity, account_id) DO NOTHING`,
+          [this.databaseIdentity, accountId, JSON.stringify(captured)],
+        )
+        return captured
+      })
+      snapshot = await read()
+    }
+    if (snapshot === null || typeof snapshot !== 'object') throw new TypeError('Account pairing cleanup snapshot is invalid')
+    const record = snapshot as Record<string, unknown>
+    if (!Array.isArray(record.desktopInstallationIds) || !Array.isArray(record.pairingIds)) throw new TypeError('Account pairing cleanup identities are invalid')
+    return { desktopInstallationIds: record.desktopInstallationIds.map((id: unknown) => parseInstallationId(id)),
+      pairingIds: record.pairingIds.map((id: unknown) => parsePersonalPairingId(id)) }
+  }
+
+  /**
+   * Remove disabled Account associations after routes, pairings and attachments have finished cleanup.
+   * @param accountId - Account whose data owners have completed their work.
+   */
+  async completeAccountDeletion(accountId: PlatformAccountId): Promise<void> {
+    const active = await this.pool.query(
+      `SELECT access_key FROM remote_access_desktops WHERE database_identity = $1 AND account_id = $2
+        AND (active_route_id IS NOT NULL OR jsonb_array_length(revoking_route_ids) > 0)`, [this.databaseIdentity, accountId],
+    )
+    if (active.rows.length > 0) throw new Error('Account still owns an active or pending Relay route')
+    await this.pool.query('DELETE FROM remote_access_mobile_pairings WHERE database_identity = $1 AND account_id = $2', [this.databaseIdentity, accountId])
+    await this.pool.query('DELETE FROM remote_access_desktops WHERE database_identity = $1 AND account_id = $2', [this.databaseIdentity, accountId])
+    await this.pool.query('DELETE FROM remote_access_account_deletions WHERE database_identity = $1 AND account_id = $2', [this.databaseIdentity, accountId])
+  }
+
   async runPairingTransaction<T>(
     operation: (
       state: PersonalPairingTransactionState,
       access: PersonalPairingAccessTransaction,
     ) => Promise<T>,
   ): Promise<T> {
+    return await this.runPairingTransactionWithClient(operation)
+  }
+
+  private async runPairingTransactionWithClient<T>(operation: (
+    state: PersonalPairingTransactionState,
+    access: PersonalPairingAccessTransaction,
+    client: PlatformSqlClient,
+  ) => Promise<T>): Promise<T> {
     const client = await this.pool.connect()
     try {
       await client.query('BEGIN')
@@ -197,7 +290,13 @@ export class PostgresPersonalPairingAuthorityStore implements PersonalPairingAut
         [this.databaseIdentity],
       )
       const state = decodePairingTransactionState(loaded.rows[0]?.state)
-      const result = await operation(state, this.transactionAccess(client))
+      const before = pairingWriteReferences(state)
+      const result = await operation(state, this.transactionAccess(client), client)
+      if (this.accountWriteFence !== undefined) {
+        const accounts = new Set<PlatformAccountId>()
+        for (const [key, accountId] of pairingWriteReferences(state)) if (!before.has(key)) accounts.add(accountId)
+        for (const accountId of [...accounts].sort()) await this.accountWriteFence(client, accountId)
+      }
       await client.query(
         `UPDATE remote_access_pairing_transactions
             SET state = $2::jsonb
@@ -247,7 +346,8 @@ export class PostgresPersonalPairingAuthorityStore implements PersonalPairingAut
     desktopInstallationId: InstallationId,
     freshRouteId: RelayRouteId,
   ): Promise<RelayRouteId> {
-    return await this.enableDesktopUsing(this.pool, accountId, desktopInstallationId, freshRouteId)
+    return await this.runPairingTransaction(async (_state, access) =>
+      await access.enableDesktop(accountId, desktopInstallationId, freshRouteId))
   }
 
   private async enableDesktopUsing(
@@ -256,6 +356,7 @@ export class PostgresPersonalPairingAuthorityStore implements PersonalPairingAut
     desktopInstallationId: InstallationId,
     freshRouteId: RelayRouteId,
   ): Promise<RelayRouteId> {
+    await this.accountWriteFence?.(client, accountId)
     const key = accessKey(accountId, desktopInstallationId)
     const result = await client.query(
       `INSERT INTO remote_access_desktops (
@@ -379,6 +480,7 @@ export class PostgresPersonalPairingAuthorityStore implements PersonalPairingAut
     const client = await this.pool.connect()
     try {
       await client.query('BEGIN')
+      await this.accountWriteFence?.(client, authority.accountId)
       await client.query(
         `INSERT INTO remote_access_mobile_pairings (
            database_identity, pending_pairing_id, pairing_id, account_id,
@@ -584,4 +686,17 @@ function decodeRouteIds(value: unknown): string[] {
 
 function accessKey(accountId: string, installationId: InstallationId): string {
   return JSON.stringify([accountId, installationId])
+}
+
+
+function pairingWriteReferences(state: PersonalPairingTransactionState): Map<string, PlatformAccountId> {
+  const references = new Map<string, PlatformAccountId>()
+  for (const [id, record] of state.challenges) references.set(`challenge:${id}`, record.accountId)
+  for (const [id, record] of state.pending) references.set(`pending:${id}`, record.accountId)
+  for (const [id, record] of state.endpointPublications) references.set(`publication:${id}`, record.accountId)
+  for (const [id, record] of state.pairings) references.set(`pairing:${id}`, record.devicePrincipal.accountId)
+  for (const [id, record] of state.blobs) references.set(`blob:${id}`, parsePlatformAccountId(record.accountId))
+  for (const record of state.endpointMailbox.challenges) references.set(`mailbox-challenge:${record.challengeId}`, record.accountId)
+  for (const record of state.endpointMailbox.pending) references.set(`mailbox-pending:${record.pendingPairingId}`, record.accountId)
+  return references
 }

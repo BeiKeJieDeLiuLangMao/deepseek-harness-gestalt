@@ -1,5 +1,6 @@
 /** PostgreSQL ciphertext store shared by every operated Platform instance. */
 
+import type { PlatformAccountId } from '@deepseek-ai/dsh-platform-account'
 import { createHash, randomBytes } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import {
@@ -26,6 +27,8 @@ import type { PlatformSqlClient, PlatformSqlPool } from './postgres-pairing-stor
 import {
   legacyDrainLockIdentity,
   migrateAttachmentStoragePhase,
+  retainAttachmentAccountOwner,
+  revokeAccountAttachments,
   recordAttachmentQuotaRelease,
   readAttachmentStoragePhase,
   releasePendingAttachmentQuota,
@@ -92,6 +95,8 @@ export interface PostgresRemoteAttachmentStoreOptions {
   capabilityLifetimeMs: number
   maxRetainedBlobs: number
   quotaCleanup: AttachmentBlobReservationCleanup
+  /** Operated authority check executed inside the publish reservation transaction. */
+  authorizePairing?: (client: PlatformSqlClient, pairingId: PersonalPairingId) => Promise<PlatformAccountId>
 }
 
 /** Durable pairing-scoped ciphertext store with one-time capability consumption. */
@@ -100,6 +105,7 @@ export class PostgresRemoteAttachmentStore extends RemoteAttachmentStoreService 
   readonly capabilityLifetimeMs: number
   private readonly maxRetainedBlobs: number
   private readonly quotaCleanup: AttachmentBlobReservationCleanup
+  private readonly authorizePairing: PostgresRemoteAttachmentStoreOptions['authorizePairing']
 
   /**
    * @param ctx - operated Platform context.
@@ -118,6 +124,7 @@ export class PostgresRemoteAttachmentStore extends RemoteAttachmentStoreService 
     this.capabilityLifetimeMs = options.capabilityLifetimeMs
     this.maxRetainedBlobs = options.maxRetainedBlobs
     this.quotaCleanup = options.quotaCleanup
+    this.authorizePairing = options.authorizePairing
     if (!Number.isSafeInteger(this.maxBlobBytes) || this.maxBlobBytes <= 0
       || this.maxBlobBytes > REMOTE_PROTOCOL_LIMITS.attachmentBlobBytes) {
       throw new TypeError('PostgreSQL remote attachment maxBlobBytes exceeds the protocol ceiling')
@@ -528,6 +535,38 @@ export class PostgresRemoteAttachmentStore extends RemoteAttachmentStoreService 
     }
   }
 
+  /**
+   * Complete known attachment cleanup for an account, including its previously removed pairings.
+   * @param accountId - Account whose session and pairing access is revoked.
+   * @param pairingIds - Pairing identities captured before authority revocation.
+   */
+  async revokeAccount(accountId: PlatformAccountId, pairingIds: readonly PersonalPairingId[]): Promise<void> {
+    await revokeAccountAttachments(this.pool, this.databaseIdentity, accountId, pairingIds, ids => this.revokePairings(ids))
+  }
+
+  /**
+   * Await publication recovery, erase revoked pairings' ciphertext and release quota.
+   * @param pairingIds - Persisted pairing owners captured before Account revocation.
+   */
+  async revokePairings(pairingIds: readonly PersonalPairingId[]): Promise<void> {
+    if (pairingIds.length === 0) return
+    await this.reconcilePublishIntents()
+    await this.transaction(async (client) => {
+      await this.lockCapacity(client)
+      const pending = await client.query(
+        'SELECT capability_digest FROM remote_attachment_postgres_publish_intents WHERE database_identity = $1 AND pairing_id = ANY($2::text[])',
+        [this.databaseIdentity, pairingIds],
+      )
+      if (pending.rows.length > 0) throw new Error('Account attachment publication is still settling')
+      const removed = await client.query(
+        'DELETE FROM remote_attachment_blobs WHERE database_identity = $1 AND pairing_id = ANY($2::text[]) RETURNING quota_reservation_id',
+        [this.databaseIdentity, pairingIds],
+      )
+      await this.recordQuotaReleases(client, removed.rows)
+    })
+    await this.flushQuotaReleases()
+  }
+
   override async revoke(input: { pairingId: PersonalPairingId; capability: AttachmentCapability }): Promise<void> {
     await this.reconcilePublishIntents()
     await this.flushQuotaReleases()
@@ -606,6 +645,8 @@ export class PostgresRemoteAttachmentStore extends RemoteAttachmentStoreService 
   ): Promise<void> {
     await this.clientTransaction(client, async () => {
       await this.lockCapacity(client)
+      const accountId = await this.authorizePairing?.(client, input.pairingId)
+      if (accountId !== undefined) await retainAttachmentAccountOwner(client, this.databaseIdentity, input.pairingId, accountId)
       await this.reconcilePublishIntentsInTransaction(client)
       const retired = await client.query(
         `DELETE FROM remote_attachment_blobs

@@ -81,7 +81,11 @@ describe('Desktop Platform Account over an HTTP fixture', () => {
           github,
           environment: ENVIRONMENT,
           clock: { now: () => now },
-          config: { tokenSigningKey: Buffer.alloc(32, 7), pollingSigningKey: Buffer.alloc(32, 9) },
+          config: {
+            tokenSigningKey: Buffer.alloc(32, 7),
+            pollingSigningKey: Buffer.alloc(32, 9),
+            sessionInvalidationRetryIntervalMs: 60_000,
+          },
         })
       },
     }

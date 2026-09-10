@@ -117,7 +117,11 @@ export async function startLocalKeylessPlatform(
           invalidation: new MemoryAccountInvalidationBus(),
           github,
           environment,
-          config: { tokenSigningKey: Buffer.alloc(32, 17), pollingSigningKey: Buffer.alloc(32, 23) },
+          config: {
+            tokenSigningKey: Buffer.alloc(32, 17),
+            pollingSigningKey: Buffer.alloc(32, 23),
+            sessionInvalidationRetryIntervalMs: 60_000,
+          },
         })
       },
     })

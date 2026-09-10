@@ -14,6 +14,8 @@ DeepSeek Gestalt 的 Desktop Host。Electron 拥有窗口、菜单、GitHub 自�
 
 成功关闭手机访问后，会先提交 Platform 撤销，再清除本地 active 与 pending Relay grant，因此之后重新开启不会恢复已撤销的 authority。
 
+Host 拥有的 Account controller 会在 Settings 打开时刷新已登录账号的活跃 Mobile Installation，并使用 Desktop Installation 密钥签署每次列表或选中移除请求。Renderer 快照包含设备展示、短显示引用与 opaque 操作目标；preload 只接收该目标，绝不暴露 Account token 或签名材料。
+
 Desktop Platform 账号从打包 main 入口旁的 `operated-platform.json` 读取一套实际运行的生产身份。构建必须显式指定源文件，拒绝缺失或未知字段，并根据 `production` 标记、六个公开身份字段与最大尺寸 Companion 附件的正数 Host deadline 重建应用 archive 中的产物；它绝不复制调用方提供的 JSON，也不会嵌入 OAuth secret。localhost、非 HTTPS origin、回调不匹配或 deadline 无效会在 Electron 创建窗口、启动 Web Host、读取账号存储或发送流量之前使模块启动失败。操作系统加密不可用仍会作为明确的能力失败显示。加密记录通过 `dsh-atomic-write` 的随机独占同级文件、仅所有者权限、符号链接安全 rename 与失败清理完成替换。
 
 Window Chrome 在 Desktop 侧栏、Session 内容与顶部 Workbench 上统一使用一条 36px 行。在 macOS 上，侧栏与 Session 区域可在 traffic lights 周围拖动窗口；Workbench 只把 `+` 后的未占用空间作为拖拽区，标签与控件仍可交互。Windows 使用同一行，最小化、最大化和关闭按钮各占 46px。纯浏览器 `dsh web` 保留 34px Workbench 标签栏，且不渲染窗口拖拽区。未支持平台的开发运行保留系统窗口框架。

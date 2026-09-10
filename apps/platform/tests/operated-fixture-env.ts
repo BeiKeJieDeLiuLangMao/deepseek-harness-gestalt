@@ -22,6 +22,7 @@ export function operatedFixtureEnv(): NodeJS.Dict<string> {
     PLATFORM_APSARADB_CA_BASE64: APSARADB_CA_BASE64,
     PLATFORM_POSTGRES_DATABASE: 'product-entry-fixture',
     PLATFORM_IDENTITY_NAMESPACE: 'identity-fixture',
+    PLATFORM_ACCOUNT_SESSION_INVALIDATION_RETRY_INTERVAL_MS: '5000',
     PLATFORM_REDIS_HOST: 'redis.operated.fixture',
     PLATFORM_REDIS_USER: 'fixture',
     PLATFORM_REDIS_PASSWORD: 'redis-secret-fixture',
