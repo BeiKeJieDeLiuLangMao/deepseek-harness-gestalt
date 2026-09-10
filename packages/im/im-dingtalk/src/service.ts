@@ -278,8 +278,9 @@ export class DingTalkDwsAdapterServiceImpl extends DingTalkDwsAdapterService {
       argv.push('--profile', profile)
     }
 
+    let handle: SubprocessHandle
     try {
-      const handle = this.ctx.subprocess.spawn({
+      handle = this.ctx.subprocess.spawn({
         argv,
         cwd,
         graceMs,
@@ -289,7 +290,15 @@ export class DingTalkDwsAdapterServiceImpl extends DingTalkDwsAdapterService {
           stderr: { maxBytes: 65536 },
         },
       })
+    } catch (spawnErr) {
+      // Local spawn failure (e.g. binary not found, invalid argv, permissions) means the request never left the host
+      return {
+        status: 'pre_send_failed',
+        error: `Local process spawn failed before transmission: ${String(spawnErr)}`,
+      }
+    }
 
+    try {
       const outcome = await handle.done
       const stdout = handle.stdoutReader !== undefined ? handle.stdoutReader.read().text : ''
       const stderr = handle.stderrReader !== undefined ? handle.stderrReader.read().text : ''
@@ -306,6 +315,16 @@ export class DingTalkDwsAdapterServiceImpl extends DingTalkDwsAdapterService {
             openTaskId = match[1]
           }
         }
+
+        // Defensive guard: exit 0 without a valid receipt (openTaskId) is ambiguous/receiptless
+        if (!openTaskId) {
+          return {
+            status: 'result_unknown',
+            error: 'DWS command exited 0 but produced no openTaskId receipt; status undetermined',
+            rawOutput: stdout,
+          }
+        }
+
         return {
           status: 'sent',
           openTaskId,
@@ -361,8 +380,9 @@ export class DingTalkDwsAdapterServiceImpl extends DingTalkDwsAdapterService {
       argv.push('--profile', profile)
     }
 
+    let handle: SubprocessHandle
     try {
-      const handle = this.ctx.subprocess.spawn({
+      handle = this.ctx.subprocess.spawn({
         argv,
         cwd,
         graceMs,
@@ -372,7 +392,15 @@ export class DingTalkDwsAdapterServiceImpl extends DingTalkDwsAdapterService {
           stderr: { maxBytes: 65536 },
         },
       })
+    } catch (spawnErr) {
+      return {
+        openTaskId,
+        status: 'unknown',
+        errorMessage: `Local process spawn failed: ${String(spawnErr)}`,
+      }
+    }
 
+    try {
       const outcome = await handle.done
       const stdout = handle.stdoutReader !== undefined ? handle.stdoutReader.read().text : ''
       const stderr = handle.stderrReader !== undefined ? handle.stderrReader.read().text : ''

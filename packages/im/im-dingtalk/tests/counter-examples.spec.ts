@@ -3,6 +3,8 @@
  * 1. consumer异常退出后进入reconnectDelay倒计时 → 立即dispose → 定时器被取消，绝不再spawn
  * 2. stdin/terminate失败不吞为false quiescence：当child.waitForExit返回false时，stopConsumer向调用者显式报错，而非盲目假装静默成功
  * 3. receiveInbound发生严重拒绝(reject)时：错误被logger警告记录，consumer状态记录lastError并终止运行
+ * 4. exit0 JSON无openTaskId收敛防护：exit0但没有解析出receipt（openTaskId）时，不得判为sent，必须收敛为result_unknown
+ * 5. 本机spawn参数/binary缺失失败：在调用传输前即报错，必须明确为pre_send_failed以便safe retry，不能混淆为在途result_unknown
  */
 
 import { describe, expect, it, vi } from 'vitest'
@@ -16,6 +18,23 @@ import { Readable, Writable } from 'node:stream'
 
 describe('DingTalk DWS Adapter Counter-Example Defenses', () => {
   const accId = brandString<ImAccountId>('acc-dt-counter')
+
+  function createMockHandle(spec: SubprocessSpawnSpec, stdoutText: string, exitCode = 0, status: 'exited' | 'timeout' | 'signalled' = 'exited'): SubprocessHandle {
+    return {
+      spec,
+      stdin: new Writable({ write(_c, _e, cb) { cb() } }),
+      stdout: new Readable({ read() { this.push(null) } }),
+      stderr: new Readable({ read() { this.push(null) } }),
+      stdoutReader: { read: () => ({ text: stdoutText, truncated: false }) },
+      stderrReader: { read: () => ({ text: exitCode === 0 ? '' : stdoutText, truncated: false }) },
+      terminate: vi.fn(),
+      waitForExit: vi.fn(async () => true),
+      done: Promise.resolve({
+        status,
+        exitCode: status === 'exited' ? exitCode : undefined,
+      } as unknown as SubprocessOutcome),
+    }
+  }
 
   it('counter-example 1: consumer abnormal exit -> scheduled reconnect -> immediate dispose -> no new spawn', async () => {
     const ctx = new Context()
@@ -152,7 +171,7 @@ describe('DingTalk DWS Adapter Counter-Example Defenses', () => {
       warn: warnSpy,
       info: vi.fn(),
       error: vi.fn(),
-    })) as any
+    })) as unknown as typeof ctx.logger
 
     const service = new DingTalkDwsAdapterServiceImpl(ctx)
     await service.startConsumer(accId)
@@ -170,5 +189,61 @@ describe('DingTalk DWS Adapter Counter-Example Defenses', () => {
     expect(warnedMessages.some(m => m.includes('disk quota exceeded'))).toBe(true)
 
     await service.stopConsumer(accId).catch(() => {})
+  })
+
+  it('counter-example 4: exit 0 without receipt (no openTaskId) must NOT be marked sent, but result_unknown', async () => {
+    const ctx = new Context()
+    ctx.imConfig = {
+      getAccount: vi.fn(async () => ({ id: accId, paused: false })),
+    } as unknown as typeof ctx.imConfig
+
+    // dws exits 0 successfully, but returns ambiguous json or text with no openTaskId
+    ctx.subprocess = {
+      spawn: vi.fn((spec: SubprocessSpawnSpec) => {
+        return createMockHandle(spec, JSON.stringify({ success: true, message: 'delivered to internal buffer' }), 0)
+      }),
+    } as unknown as typeof ctx.subprocess
+
+    const service = new DingTalkDwsAdapterServiceImpl(ctx)
+    const result = await service.sendMessage({
+      accountId: accId,
+      conversationKind: 'group',
+      targetId: 'cid-group-1',
+      text: 'Message that got no openTaskId',
+    })
+
+    // Must NOT be marked sent because without openTaskId receipt status cannot converge
+    expect(result.status).not.toBe('sent')
+    expect(result.status).toBe('result_unknown')
+    expect(result.error).toContain('no openTaskId receipt')
+  })
+
+  it('counter-example 5: local spawn failure before send is pre_send_failed and safe to retry', async () => {
+    const ctx = new Context()
+    ctx.imConfig = {
+      getAccount: vi.fn(async () => ({ id: accId, paused: false })),
+    } as unknown as typeof ctx.imConfig
+
+    // spawn throws immediately (binary not found ENOENT or invalid local argv/perm)
+    ctx.subprocess = {
+      spawn: vi.fn(() => {
+        const err = new Error('spawn dws ENOENT')
+        Reflect.set(err, 'code', 'ENOENT')
+        throw err
+      }),
+    } as unknown as typeof ctx.subprocess
+
+    const service = new DingTalkDwsAdapterServiceImpl(ctx)
+    const result = await service.sendMessage({
+      accountId: accId,
+      conversationKind: 'group',
+      targetId: 'cid-group-1',
+      text: 'Message where spawn fails locally',
+    })
+
+    // Because the request never left the local machine, it must be pre_send_failed, NOT result_unknown!
+    expect(result.status).toBe('pre_send_failed')
+    expect(result.status).not.toBe('result_unknown')
+    expect(result.error).toContain('Local process spawn failed before transmission')
   })
 })

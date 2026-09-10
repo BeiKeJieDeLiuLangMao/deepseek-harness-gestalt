@@ -157,7 +157,7 @@ describe('DingTalk DWS Message Targets and Send Status Inquiry', () => {
     expect(resSignalled.status).toBe('result_unknown')
     expect(resSignalled.error).toContain('Execution signalled')
 
-    // 4. Unexpected spawn error thrown
+    // 4. Unexpected spawn error thrown (never transmitted -> pre_send_failed)
     ctx.subprocess = {
       spawn: vi.fn(() => { throw new Error('Cannot allocate process') }),
     } as unknown as typeof ctx.subprocess
@@ -167,7 +167,7 @@ describe('DingTalk DWS Message Targets and Send Status Inquiry', () => {
       targetId: 'cid-1',
       text: 'err',
     })
-    expect(resSpawnErr.status).toBe('result_unknown')
+    expect(resSpawnErr.status).toBe('pre_send_failed')
     expect(resSpawnErr.error).toContain('Cannot allocate process')
   })
 
