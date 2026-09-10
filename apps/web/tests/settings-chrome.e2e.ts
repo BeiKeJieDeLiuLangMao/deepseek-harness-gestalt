@@ -720,7 +720,7 @@ describe('web e2e: the Desktop composition settings overlay document', () => {
     await expect.poll(() => add.count()).toBe(1)
     await add.click()
     for (const kind of ['KIMI', 'XAI', 'CODEX', 'ANTHROPIC', 'ANTIGRAVITY', 'GLM'] as const) {
-      await expect.poll(() => pool.getByRole('button', { name: kind }).count()).toBe(1)
+      await expect.poll(() => pool.getByRole('button', { name: kind, exact: true }).count()).toBe(1)
     }
     // Closing reports through the overlay result channel with the Host's
     // request id — the page has no local close state in this mode. The Host
