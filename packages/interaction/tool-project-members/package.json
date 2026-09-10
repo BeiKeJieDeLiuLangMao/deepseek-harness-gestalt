@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-tool-project-members",
   "description": "Model-facing project_members roster query tool over the ctx.projectMembership seam",
-  "version": "0.1.2-rc.1",
+  "version": "0.1.5-alpha.2",
   "publishConfig": {
     "access": "public"
   },

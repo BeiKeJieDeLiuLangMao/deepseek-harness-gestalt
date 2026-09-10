@@ -1,8 +1,10 @@
 {
   "name": "@deepseek-ai/dsh-remote-access-http",
   "description": "HTTP Personal Pairing and WSS Remote Relay consumers",
-  "version": "0.1.2-rc.1",
-  "publishConfig": { "access": "public" },
+  "version": "0.1.5-alpha.2",
+  "publishConfig": {
+    "access": "public"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
@@ -12,12 +14,22 @@
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
   "exports": {
-    ".": { "types": "./lib/types/index.d.ts", "default": "./lib/index.js" },
-    "./relay": { "types": "./lib/types/relay.d.ts", "default": "./lib/relay.js" },
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./relay": {
+      "types": "./lib/types/relay.d.ts",
+      "default": "./lib/relay.js"
+    },
     "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
-  "files": ["lib/index.js", "lib/relay.js", "lib/types/**/*.d.ts"],
+  "files": [
+    "lib/index.js",
+    "lib/relay.js",
+    "lib/types/**/*.d.ts"
+  ],
   "license": "MIT",
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
@@ -39,5 +51,8 @@
     "@deepseek-ai/dsh-remote-protocol": "workspace:^",
     "@types/ws": "^8.18.1"
   },
-  "dependencies": { "@deepseek-ai/schemastery": "workspace:^", "ws": "^8.21.0" }
+  "dependencies": {
+    "@deepseek-ai/schemastery": "workspace:^",
+    "ws": "^8.21.0"
+  }
 }

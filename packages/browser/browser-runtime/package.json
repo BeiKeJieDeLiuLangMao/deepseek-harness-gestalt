@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-browser-runtime",
   "description": "Provider-neutral Browser Runtime Service Definition and typed lifecycle vocabulary",
-  "version": "0.1.2-rc.1",
+  "version": "0.1.5-alpha.2",
   "publishConfig": {
     "access": "public"
   },

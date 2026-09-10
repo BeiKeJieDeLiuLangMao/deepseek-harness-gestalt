@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-member-question-sender",
   "description": "Member-question sender Service Definition and codec-backed Provider that delivers member-question operations over project peer grants",
-  "version": "0.1.2-rc.1",
+  "version": "0.1.5-alpha.2",
   "publishConfig": {
     "access": "public"
   },
