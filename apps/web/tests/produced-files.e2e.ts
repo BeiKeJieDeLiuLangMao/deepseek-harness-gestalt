@@ -3,7 +3,6 @@
 // assembled lane adapts from a coarse width budget and offers no folder
 // handoff: chips open in the right Sidebar's text preview, which has no
 // directory form, so the row shows nothing rather than a dead button.
-import { fileURLToPath } from 'node:url'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
@@ -112,7 +111,7 @@ describe('web e2e: a finished turn ends with the files it produced', () => {
   let tripwire: ReturnType<typeof watchConsole>
 
   beforeAll(async () => {
-    scaffold = await launchWebScaffold({ nativeOpen: true })
+    scaffold = await launchWebScaffold()
     await seedSession(scaffold, producedFixture(), SEED_ID)
     browser = await chromium.launch()
     page = await newEnglishPage(browser)

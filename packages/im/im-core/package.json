@@ -1,0 +1,56 @@
+{
+  "name": "@deepseek-ai/dsh-im-core",
+  "description": "IM domain configuration, accounts, and routing for the DeepSeek Harness",
+  "version": "0.1.5-alpha.2",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "directory": "packages/im/im-core"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./types": {
+      "types": "./lib/types/types.d.ts",
+      "default": "./lib/types/types.js"
+    },
+    "./spec": {
+      "types": "./lib/types/spec.d.ts",
+      "default": "./lib/types/spec.js"
+    },
+    "./src/*": "./src/*",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/index.js",
+    "lib/types/**/*.js",
+    "lib/types/**/*.d.ts"
+  ],
+  "license": "MIT",
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "workspace:^",
+    "@deepseek-ai/dsh-credentials": "workspace:^",
+    "@deepseek-ai/dsh-storage": "workspace:^",
+    "@deepseek-ai/dsh-storage-domain": "workspace:^",
+    "@deepseek-ai/dsh-workspace": "workspace:^"
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh-brand": "workspace:^",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "workspace:^",
+    "@deepseek-ai/dsh-credentials": "workspace:^",
+    "@deepseek-ai/dsh-storage": "workspace:^",
+    "@deepseek-ai/dsh-storage-domain": "workspace:^",
+    "@deepseek-ai/dsh-workspace": "workspace:^"
+  }
+}
