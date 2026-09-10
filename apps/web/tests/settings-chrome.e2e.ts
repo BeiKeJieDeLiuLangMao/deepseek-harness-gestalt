@@ -30,7 +30,6 @@ const DIALOG_EN_EXPECTED = join(SNAPSHOT_DIR, 'dialog-en.expected.md')
 // overlay view paints above official pages.
 const DESKTOP_SETTINGS_EXPECTED = join(SNAPSHOT_DIR, 'desktop-settings.expected.md')
 const DESKTOP_ACCOUNT_WAITING_EXPECTED = join(SNAPSHOT_DIR, 'desktop-account-waiting.expected.md')
-const SUB2API_ERROR_EXPECTED = join(SNAPSHOT_DIR, 'sub2api-error.expected.md')
 const PHONE_DEVICES_EXPECTED = join(SNAPSHOT_DIR, 'phone-devices.expected.md')
 const PHONE_DEVICES_RUNTIME_READY_EXPECTED = join(SNAPSHOT_DIR, 'phone-devices-runtime-ready.expected.md')
 const PLUGIN_ROW_SELECTOR = '[data-plugin-entry$="ui-settings"]'
@@ -713,23 +712,16 @@ describe('web e2e: the Desktop composition settings overlay document', () => {
       await captureStableAria(page, '[data-desktop-account-control="authorizing"]', scaffold.workspaceCwd),
       MODE,
     )
-    // The Sub2API offer card is a render-only projection of the fixture
-    // bridge's missing snapshot: the offer copy plus the enable affordance,
-    // with the data-directory and uninstall semantics spelled out.
     await dialog.getByRole('button', { name: '账号池' }).click()
-    const offer = dialog.locator('[data-desktop-sub2api-state="missing"]')
-    await expect.poll(() => offer.count(), { timeout: 10_000 }).toBe(1)
-    await expect.poll(() => offer.getByRole('heading', { name: 'Sub2API 账号池' }).count()).toBe(1)
-    await expect.poll(() => offer.getByText(/~\/\.dsh\/sub2api\/data/).count()).toBe(1)
-    const enable = offer.getByRole('button', { name: '下载并启用' })
-    await expect.poll(() => enable.count()).toBe(1)
-    await enable.click()
-    await expect.poll(() => dialog.locator('[data-desktop-sub2api-state="error"]').count()).toBe(1)
-    await compareOrRefreshGolden(SUB2API_ERROR_EXPECTED, await captureStableAria(
-      page,
-      '[data-desktop-sub2api-state="error"]',
-      scaffold.workspaceCwd,
-    ), MODE)
+    const pool = dialog.locator('[data-desktop-account-pool-state]')
+    await expect.poll(() => pool.count(), { timeout: 10_000 }).toBe(1)
+    await expect.poll(() => pool.getByText('内置账号池').count()).toBe(1)
+    const add = pool.getByRole('button', { name: '+ 添加账号 ▾' })
+    await expect.poll(() => add.count()).toBe(1)
+    await add.click()
+    for (const kind of ['KIMI', 'XAI', 'CODEX', 'ANTHROPIC', 'ANTIGRAVITY', 'GLM'] as const) {
+      await expect.poll(() => pool.getByRole('button', { name: kind }).count()).toBe(1)
+    }
     // Closing reports through the overlay result channel with the Host's
     // request id — the page has no local close state in this mode. The Host
     // then hides the view and pushes the null state; the page unmounts.
@@ -748,7 +740,7 @@ describe('web e2e: the Desktop composition settings overlay document', () => {
       'desktop-account-waiting.expected.md',
       'desktop-settings.expected.md', 'dialog-en.expected.md', 'dialog.expected.md',
       'phone-devices-runtime-ready.expected.md', 'phone-devices.expected.md',
-      'plugins.expected.md', 'sub2api-error.expected.md',
+      'plugins.expected.md',
     ])
   }, 60_000)
 })
