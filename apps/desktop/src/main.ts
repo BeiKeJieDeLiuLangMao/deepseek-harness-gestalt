@@ -377,7 +377,6 @@ async function boot(): Promise<void> {
     await installCompanionHost(running)
     if (!isCurrentWebHost(running)) return
     observeHostExit(running)
-    sub2api.onHostOriginChanged()
     smokeLog('host ' + running.url + ' pid ' + String(running.child.pid))
     await revealHost(target, running.launchUrl)
     if (hostLifecycle.closed || hostLifecycle.current !== running || host !== running) return
