@@ -16,8 +16,8 @@ import {
   type DesktopSub2ApiActions,
   type Sub2ApiControllerOptions,
   type Sub2ApiHostControl,
+  type DesktopSub2ApiSnapshot,
 } from '../src/sub2api.ts'
-import type { DesktopSub2ApiSnapshot } from '@deepseek-ai/dsh-client-ui-desktop/protocol'
 import { manifestListsBundle, SUB2API_BUNDLE_NAME } from '../src/sub2api-profile.ts'
 import type { Sub2ApiInstall, Sub2ApiInstallInput, Sub2ApiInstallResult } from '../src/sub2api-install.ts'
 

@@ -6,7 +6,7 @@ import {
   parsePendingPairingId,
   parsePersonalPairingId,
 } from '@deepseek-ai/dsh-remote-access'
-import type { DesktopAccountSnapshot, DesktopBridge, DesktopPairingSnapshot, DesktopSub2ApiSnapshot } from '../src/protocol.ts'
+import type { DesktopAccountSnapshot, DesktopBridge, DesktopPairingSnapshot, DesktopAccountPoolSnapshot } from '../src/protocol.ts'
 import { AccountControl } from '../src/client/AccountControl.tsx'
 import { en } from '../src/client/locales.ts'
 
@@ -228,11 +228,16 @@ function bridge(snapshot: DesktopAccountSnapshot): DesktopBridge {
     pairingReject: vi.fn(),
     pairingRevoke: vi.fn(),
     onPairingSnapshot: () => () => {},
-    sub2ApiGetSnapshot: vi.fn(() => Promise.resolve<DesktopSub2ApiSnapshot>({ state: 'missing', enabled: true })),
-    sub2ApiEnable: vi.fn(() => Promise.resolve<DesktopSub2ApiSnapshot>({ state: 'missing', enabled: true })),
-    sub2ApiDisable: vi.fn(() => Promise.resolve<DesktopSub2ApiSnapshot>({ state: 'missing', enabled: true })),
-    sub2ApiUninstall: vi.fn(() => Promise.resolve<DesktopSub2ApiSnapshot>({ state: 'missing', enabled: true })),
-    onSub2ApiSnapshot: () => () => {},
+    accountPoolGetSnapshot: vi.fn(() => Promise.resolve<DesktopAccountPoolSnapshot>({ state: 'starting', accounts: [] })),
+    accountPoolRefresh: vi.fn(() => Promise.resolve<DesktopAccountPoolSnapshot>({ state: 'starting', accounts: [] })),
+    accountPoolSetEnabled: vi.fn(() => Promise.resolve<DesktopAccountPoolSnapshot>({ state: 'starting', accounts: [] })),
+    accountPoolDelete: vi.fn(() => Promise.resolve<DesktopAccountPoolSnapshot>({ state: 'starting', accounts: [] })),
+    accountPoolStartLogin: vi.fn(),
+    accountPoolLoginStatus: vi.fn(() => Promise.resolve<DesktopAccountPoolSnapshot>({ state: 'starting', accounts: [] })),
+    accountPoolCancelLogin: vi.fn(() => Promise.resolve<DesktopAccountPoolSnapshot>({ state: 'starting', accounts: [] })),
+    accountPoolSubmitGlmKey: vi.fn(() => Promise.resolve<DesktopAccountPoolSnapshot>({ state: 'starting', accounts: [] })),
+    accountPoolRefreshQuota: vi.fn(() => Promise.resolve<DesktopAccountPoolSnapshot>({ state: 'starting', accounts: [] })),
+    onAccountPoolSnapshot: () => () => {},
     chromeOverlayShow: async () => {},
     chromeOverlayHide: async () => {},
     chromeOverlayGetState: async () => null,

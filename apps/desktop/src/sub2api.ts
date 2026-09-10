@@ -14,7 +14,15 @@
 import { readdir, rm, stat } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
-import type { DesktopSub2ApiSnapshot } from '@deepseek-ai/dsh-client-ui-desktop/protocol'
+
+/** Legacy Sub2API offer-card snapshot retained for the unused installer until it is deleted. */
+export interface DesktopSub2ApiSnapshot {
+  readonly state: 'missing' | 'downloading' | 'verifying' | 'installed' | 'starting' | 'running' | 'error'
+  readonly enabled: boolean
+  readonly version?: string
+  readonly downloadPercent?: number
+  readonly error?: string
+}
 import { installSub2Api } from './sub2api-install.ts'
 import type { Sub2ApiInstallResult } from './sub2api-install.ts'
 import {

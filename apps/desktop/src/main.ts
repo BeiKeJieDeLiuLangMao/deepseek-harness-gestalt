@@ -8,7 +8,7 @@ import { hostname } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
-  app, autoUpdater as electronAutoUpdater, BrowserWindow, Menu, WebContentsView, ipcMain, nativeTheme, net, powerMonitor, safeStorage,
+  app, autoUpdater as electronAutoUpdater, BrowserWindow, Menu, WebContentsView, ipcMain, nativeTheme, powerMonitor, safeStorage,
   session, shell,
   type IpcMainEvent, type IpcMainInvokeEvent,
 } from 'electron'
@@ -23,12 +23,15 @@ import {
   CHROME_OVERLAY_GET_STATE, CHROME_OVERLAY_HIDE, CHROME_OVERLAY_RESULT,
   CHROME_OVERLAY_SHOW, CHROME_OVERLAY_STATE,
   PAIRING_GET_SNAPSHOT, PAIRING_REJECT, PAIRING_REVOKE, PAIRING_SET_ENABLED, PAIRING_SNAPSHOT_CHANGED,
-  SUB2API_DISABLE, SUB2API_ENABLE, SUB2API_GET_SNAPSHOT,
-  SUB2API_SNAPSHOT_CHANGED, SUB2API_UNINSTALL,
+  ACCOUNT_POOL_CANCEL_LOGIN, ACCOUNT_POOL_DELETE, ACCOUNT_POOL_GET_SNAPSHOT,
+  ACCOUNT_POOL_LOGIN_STATUS, ACCOUNT_POOL_REFRESH, ACCOUNT_POOL_REFRESH_QUOTA,
+  ACCOUNT_POOL_SET_ENABLED, ACCOUNT_POOL_SNAPSHOT_CHANGED, ACCOUNT_POOL_START_LOGIN,
+  ACCOUNT_POOL_SUBMIT_GLM_KEY,
   UPDATER_CHECK_NOW, UPDATER_DOWNLOAD_NOW, UPDATER_GET_STATUS,
   UPDATER_QUIT_AND_INSTALL, UPDATER_STATUS_CHANGED,
   WINDOW_CLOSE, WINDOW_MAXIMIZE, WINDOW_MINIMIZE,
-  type DesktopSub2ApiSnapshot,
+  type AccountPoolLoginKind,
+  type DesktopAccountPoolSnapshot,
   type UpdaterStatus,
 } from '@deepseek-ai/dsh-client-ui-desktop/protocol'
 import { PlatformAccountHttpTransport } from '@deepseek-ai/dsh-platform-account-client'
@@ -77,10 +80,7 @@ import {
 } from './personal-pairing.ts'
 import { DesktopSnowPairingVault, EncryptedDesktopSnowPairingStore } from './snow-pairing-vault.ts'
 import { DesktopShutdown, disposeDesktopOwners, disposeDesktopPresence, settleDesktopCleanup } from './shutdown.ts'
-import {
-  createDesktopSub2Api, sub2ApiBootHostStartTimeout, uninstallSub2ApiFromIpc,
-  type DesktopSub2ApiActions,
-} from './sub2api.ts'
+import { createDesktopAccountPool, type DesktopAccountPoolActions } from './account-pool.ts'
 import { startDesktopBrowserRuntime, type DesktopBrowserRuntime } from './browser-runtime.ts'
 import { parseBrowserPresentRequest, parseBrowserPresentTarget } from './browser-present.ts'
 import {
@@ -173,8 +173,8 @@ let pairing: DesktopPairingActions = new UnavailableDesktopPairingController(
   'Personal Pairing waits for the independent Noise security review.',
 )
 let stopPairingEvents: (() => void) | undefined
-let sub2api: DesktopSub2ApiActions | undefined
-let stopSub2ApiEvents: (() => void) | undefined
+let accountPool: DesktopAccountPoolActions | undefined
+let stopAccountPoolEvents: (() => void) | undefined
 let accountSignedIn = false
 const desktopShutdown = new DesktopShutdown({
   stopHost: () => hostLifecycle.shutdown(),
@@ -328,22 +328,21 @@ async function boot(): Promise<void> {
     projectMembershipPresence.setSignedIn(accountSignedIn)
     stopPairingEvents = pairing.subscribe(pushPairingSnapshot)
     stopAccountEvents = account.subscribe(handleAccountSnapshot)
-    sub2api = await createDesktopSub2Api({
-      fetch: async (input, init) => await net.fetch(input instanceof URL ? input.href : input, init),
-      host: {
-        restart: async startTimeoutMs => (await replaceWebHost(startTimeoutMs)).url,
-        origin: () => host?.url,
-      },
+    accountPool = createDesktopAccountPool({
+      supervisor: () => cliProxyAPI,
+      management: () => cliProxyAPIManagement,
     })
-    stopSub2ApiEvents = sub2api.subscribe(pushSub2ApiSnapshot)
+    stopAccountPoolEvents = accountPool.subscribe(pushAccountPoolSnapshot)
     await startCLIProxyAPI().catch((error: unknown) => {
       console.error('dsh desktop: account pool unavailable', error)
       smokeLog('cliproxyapi unavailable')
     })
+    void accountPool.refresh().catch((error: unknown) => {
+      console.error('dsh desktop: account pool roster unavailable', error)
+    })
     installIntegrationsOnce()
-    const initialHostStartTimeout = sub2ApiBootHostStartTimeout(sub2api.getSnapshot())
     const startInitialHost = (): Promise<RunningWebHost> =>
-      startHost(initialHostStartTimeout)
+      startHost()
     const started = respawned
       ? { value: await startInitialHost(), retried: false }
       : await startWithOneRetry(
@@ -355,7 +354,7 @@ async function boot(): Promise<void> {
     host = started.value
     installCompanionHost(host)
     observeHostExit(host)
-    sub2api.onHostOriginChanged()
+
     smokeLog('host ' + host.url + ' pid ' + String(host.child.pid))
     await revealHost(target, host.url)
     if (hostLifecycle.closed) return
@@ -643,7 +642,6 @@ async function replaceWebHost(startTimeoutMs?: number): Promise<RunningWebHost> 
     if (hostLifecycle.closed || hostLifecycle.current !== started) throw new Error('dsh web startup aborted')
     void ensureChromeOverlay(window, started.url)
   }
-  sub2api?.onHostOriginChanged()
   return started
 }
 
@@ -881,7 +879,7 @@ async function cleanupDesktop(mode: 'exit' | 'allow-quit'): Promise<void> {
     () => { if (mode === 'exit') { const current = updater; updater = undefined; current?.dispose() } },
     () => { const stop = stopAccountEvents; stopAccountEvents = undefined; stop?.() },
     () => { const stop = stopPairingEvents; stopPairingEvents = undefined; stop?.() },
-    () => { const stop = stopSub2ApiEvents; stopSub2ApiEvents = undefined; stop?.() },
+    () => { const stop = stopAccountPoolEvents; stopAccountPoolEvents = undefined; stop?.() },
     async () => {
       const current = cliProxyAPI
       cliProxyAPI = undefined
@@ -889,7 +887,7 @@ async function cleanupDesktop(mode: 'exit' | 'allow-quit'): Promise<void> {
       cliProxyAPIManagement = undefined
       await current?.shutdown()
     },
-    () => { const current = sub2api; sub2api = undefined; current?.dispose() },
+    () => { accountPool = undefined },
     () => { clearCompanionHost() },
     () => disposeDesktopPresence(presence),
     () => disposeDesktopOwners(account, pairing),
@@ -994,15 +992,52 @@ function installIpc(): void {
     rejectPairingFromIpc(pairing, pendingPairingId))
   ipcMain.handle(PAIRING_REVOKE, (_event, pairingId: unknown) =>
     revokePairingFromIpc(pairing, pairingId))
-  ipcMain.handle(SUB2API_GET_SNAPSHOT, () =>
-    sub2api?.getSnapshot() ?? { state: 'missing', enabled: true })
-  ipcMain.handle(SUB2API_ENABLE, () => sub2api?.enable()
-    ?? Promise.resolve({ state: 'missing', enabled: true }))
-  ipcMain.handle(SUB2API_DISABLE, () => sub2api?.disable()
-    ?? Promise.resolve({ state: 'missing', enabled: true }))
-  ipcMain.handle(SUB2API_UNINSTALL, (_event, deleteData: unknown) => {
-    if (sub2api === undefined) return Promise.resolve({ state: 'missing', enabled: true })
-    return uninstallSub2ApiFromIpc(sub2api, deleteData)
+  ipcMain.handle(ACCOUNT_POOL_GET_SNAPSHOT, () =>
+    accountPool?.getSnapshot() ?? { state: 'error', accounts: [], error: 'CLIProxyAPI account pool is unavailable' })
+  ipcMain.handle(ACCOUNT_POOL_REFRESH, () => accountPool?.refresh()
+    ?? Promise.resolve({ state: 'error', accounts: [], error: 'CLIProxyAPI account pool is unavailable' }))
+  ipcMain.handle(ACCOUNT_POOL_SET_ENABLED, (_event, raw: unknown) => {
+    const request = raw as { name?: unknown; enabled?: unknown }
+    if (typeof request.name !== 'string' || typeof request.enabled !== 'boolean') {
+      return Promise.resolve(accountPool?.getSnapshot() ?? { state: 'error', accounts: [] })
+    }
+    return accountPool?.setEnabled(request.name, request.enabled)
+      ?? Promise.resolve({ state: 'error', accounts: [], error: 'CLIProxyAPI account pool is unavailable' })
+  })
+  ipcMain.handle(ACCOUNT_POOL_DELETE, (_event, name: unknown) => {
+    if (typeof name !== 'string') return Promise.resolve(accountPool?.getSnapshot() ?? { state: 'error', accounts: [] })
+    return accountPool?.deleteAccount(name)
+      ?? Promise.resolve({ state: 'error', accounts: [], error: 'CLIProxyAPI account pool is unavailable' })
+  })
+  ipcMain.handle(ACCOUNT_POOL_START_LOGIN, (_event, kind: unknown) => {
+    const allowed = ['kimi', 'xai', 'codex', 'anthropic', 'antigravity', 'glm'] as const
+    if (!allowed.includes(kind as AccountPoolLoginKind)) throw new Error('unsupported account-pool login')
+    return accountPool?.startLogin(kind as AccountPoolLoginKind)
+  })
+  ipcMain.handle(ACCOUNT_POOL_LOGIN_STATUS, (_event, state: unknown) => {
+    if (typeof state !== 'string') return Promise.resolve(accountPool?.getSnapshot() ?? { state: 'error', accounts: [] })
+    return accountPool?.loginStatus(state)
+      ?? Promise.resolve({ state: 'error', accounts: [], error: 'CLIProxyAPI account pool is unavailable' })
+  })
+  ipcMain.handle(ACCOUNT_POOL_CANCEL_LOGIN, (_event, state: unknown) => {
+    if (typeof state !== 'string') return Promise.resolve(accountPool?.getSnapshot() ?? { state: 'error', accounts: [] })
+    return accountPool?.cancelLogin(state)
+      ?? Promise.resolve({ state: 'error', accounts: [], error: 'CLIProxyAPI account pool is unavailable' })
+  })
+  ipcMain.handle(ACCOUNT_POOL_SUBMIT_GLM_KEY, (_event, raw: unknown) => {
+    const input = raw as { apiKey?: unknown; site?: unknown; organization?: unknown; project?: unknown }
+    if (typeof input.apiKey !== 'string') throw new Error('GLM Coding Plan key is required')
+    return accountPool?.submitGlmKey({
+      apiKey: input.apiKey,
+      ...typeof input.site === 'string' ? { site: input.site } : {},
+      ...typeof input.organization === 'string' ? { organization: input.organization } : {},
+      ...typeof input.project === 'string' ? { project: input.project } : {},
+    }) ?? Promise.resolve({ state: 'error', accounts: [], error: 'CLIProxyAPI account pool is unavailable' })
+  })
+  ipcMain.handle(ACCOUNT_POOL_REFRESH_QUOTA, (_event, authIndex: unknown) => {
+    if (typeof authIndex !== 'string') return Promise.resolve(accountPool?.getSnapshot() ?? { state: 'error', accounts: [] })
+    return accountPool?.refreshQuota(authIndex)
+      ?? Promise.resolve({ state: 'error', accounts: [], error: 'CLIProxyAPI account pool is unavailable' })
   })
   ipcMain.handle(BROWSER_PRESENT, (_event, raw: unknown) => {
     const request = parseBrowserPresentRequest(raw)
@@ -1177,10 +1212,10 @@ function pushPairingSnapshot(snapshot: ReturnType<DesktopPairingActions['getSnap
   )
 }
 
-function pushSub2ApiSnapshot(snapshot: DesktopSub2ApiSnapshot): void {
+function pushAccountPoolSnapshot(snapshot: DesktopAccountPoolSnapshot): void {
   projectDesktopRendererEvent(
     [window?.webContents, overlayView?.webContents],
-    SUB2API_SNAPSHOT_CHANGED,
+    ACCOUNT_POOL_SNAPSHOT_CHANGED,
     snapshot,
   )
 }

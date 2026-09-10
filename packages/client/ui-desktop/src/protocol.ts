@@ -77,16 +77,26 @@ export const PAIRING_REJECT = 'pairing:reject'
 export const PAIRING_REVOKE = 'pairing:revoke'
 /** IPC event pushed for every Mobile Access or pairing transition. */
 export const PAIRING_SNAPSHOT_CHANGED = 'pairing:snapshot-changed'
-/** IPC / preload channel for the optional Sub2API component state. */
-export const SUB2API_GET_SNAPSHOT = 'sub2api:getSnapshot'
-/** IPC / preload channel enabling (download, install, restart) the component. */
-export const SUB2API_ENABLE = 'sub2api:enable'
-/** IPC / preload channel disabling the component for future boots. */
-export const SUB2API_DISABLE = 'sub2api:disable'
-/** IPC / preload channel uninstalling the component; payload deletes data when true. */
-export const SUB2API_UNINSTALL = 'sub2api:uninstall'
-/** IPC event pushed for every Sub2API component transition. */
-export const SUB2API_SNAPSHOT_CHANGED = 'sub2api:snapshot-changed'
+/** IPC / preload channel for the built-in account-pool snapshot. */
+export const ACCOUNT_POOL_GET_SNAPSHOT = 'accountPool:getSnapshot'
+/** IPC / preload channel refreshing the redacted roster. */
+export const ACCOUNT_POOL_REFRESH = 'accountPool:refresh'
+/** IPC / preload channel enabling or disabling one auth file. */
+export const ACCOUNT_POOL_SET_ENABLED = 'accountPool:setEnabled'
+/** IPC / preload channel deleting one auth file. */
+export const ACCOUNT_POOL_DELETE = 'accountPool:delete'
+/** IPC / preload channel starting a supported login. */
+export const ACCOUNT_POOL_START_LOGIN = 'accountPool:startLogin'
+/** IPC / preload channel polling an in-flight login. */
+export const ACCOUNT_POOL_LOGIN_STATUS = 'accountPool:loginStatus'
+/** IPC / preload channel cancelling an in-flight OAuth session. */
+export const ACCOUNT_POOL_CANCEL_LOGIN = 'accountPool:cancelLogin'
+/** IPC / preload channel submitting a GLM Coding Plan key. */
+export const ACCOUNT_POOL_SUBMIT_GLM_KEY = 'accountPool:submitGlmKey'
+/** IPC / preload channel refreshing one account quota observation. */
+export const ACCOUNT_POOL_REFRESH_QUOTA = 'accountPool:refreshQuota'
+/** IPC event pushed for every account-pool snapshot. */
+export const ACCOUNT_POOL_SNAPSHOT_CHANGED = 'accountPool:snapshot-changed'
 /** IPC / preload channel: place one official page over the sidebar viewport. */
 export const BROWSER_PRESENT = 'browser:present'
 /** IPC / preload channel: hide one official page when its tab is not visible. */
@@ -242,27 +252,54 @@ export interface DesktopPairingSnapshot {
   readonly error?: string
 }
 
-/** Lifecycle the Desktop-only Sub2API offer card renders. */
-export type Sub2ApiPhase =
-  | 'missing'
-  | 'downloading'
-  | 'verifying'
-  | 'installed'
-  | 'starting'
-  | 'running'
-  | 'error'
+/** Built-in account-pool lifecycle projected to Settings. */
+export type AccountPoolPhase = 'starting' | 'ready' | 'error'
 
-/** Immutable Sub2API component snapshot pushed to the page. */
-export interface DesktopSub2ApiSnapshot {
-  /** Current phase. */
-  readonly state: Sub2ApiPhase
-  /** false while the installer-owned disable row sits in the profile patch layer. */
+/** Supported account-pool login kinds. */
+export type AccountPoolLoginKind = 'kimi' | 'xai' | 'codex' | 'anthropic' | 'antigravity' | 'glm'
+
+/** One Host-started login, without secrets. */
+export interface AccountPoolLoginStart {
+  readonly kind: AccountPoolLoginKind
+  readonly flow: 'device' | 'pkce' | 'glm-key'
+  readonly state?: string
+  readonly url?: string
+  readonly userCode?: string
+  readonly expiresIn?: number
+  readonly error?: string
+}
+
+/** One redacted quota window for a card face. */
+export interface DesktopAccountPoolQuotaWindow {
+  readonly key: string
+  readonly label: string
+  readonly remainingPercent?: number
+  readonly timeRemainingPercent?: number
+  readonly status: 'known' | 'partial' | 'unsupported' | 'failure'
+}
+
+/** One redacted account-pool card. */
+export interface DesktopAccountPoolAccount {
+  readonly authIndex: string
+  readonly name: string
+  readonly provider: string
+  readonly label: string
+  readonly email?: string
+  readonly status: string
+  readonly statusMessage?: string
   readonly enabled: boolean
-  /** Installed bundle package version, when present on disk. */
-  readonly version?: string
-  /** 0–100 while downloading the runtime pack (Content-Length permitting). */
-  readonly downloadPercent?: number
-  /** Human-readable actionable failure when state is error. */
+  readonly successCount: number
+  readonly failCount: number
+  readonly createdAt?: string
+  readonly projectId?: string
+  readonly quota: readonly DesktopAccountPoolQuotaWindow[]
+}
+
+/** Immutable account-pool snapshot pushed to the page. */
+export interface DesktopAccountPoolSnapshot {
+  readonly state: AccountPoolPhase
+  readonly accounts: readonly DesktopAccountPoolAccount[]
+  readonly login?: AccountPoolLoginStart
   readonly error?: string
 }
 
@@ -323,19 +360,28 @@ export interface DesktopBridge {
   readonly pairingRevoke: (pairingId: PersonalPairingId) => Promise<DesktopPairingSnapshot>
   /** Subscribe to Mobile Access and Personal Pairing transitions. */
   readonly onPairingSnapshot: (listener: (snapshot: DesktopPairingSnapshot) => void) => () => void
-  /** Read the optional Sub2API component state. */
-  readonly sub2ApiGetSnapshot: () => Promise<DesktopSub2ApiSnapshot>
-  /** Download, verify, install, restart the Web Host, and wait for health. */
-  readonly sub2ApiEnable: () => Promise<DesktopSub2ApiSnapshot>
-  /** Disable the component for future Web Host boots and restart now. */
-  readonly sub2ApiDisable: () => Promise<DesktopSub2ApiSnapshot>
-  /**
-   * Uninstall the component and delete the extracted files.
-   * @param deleteData - also delete `$DSH_HOME/sub2api/data` (accounts, keys).
-   */
-  readonly sub2ApiUninstall: (deleteData: boolean) => Promise<DesktopSub2ApiSnapshot>
-  /** Subscribe to Sub2API component transitions. */
-  readonly onSub2ApiSnapshot: (listener: (snapshot: DesktopSub2ApiSnapshot) => void) => () => void
+  /** Read the built-in account-pool snapshot. */
+  readonly accountPoolGetSnapshot: () => Promise<DesktopAccountPoolSnapshot>
+  /** Refresh the redacted roster. */
+  readonly accountPoolRefresh: () => Promise<DesktopAccountPoolSnapshot>
+  /** Enable or disable one auth file. */
+  readonly accountPoolSetEnabled: (name: string, enabled: boolean) => Promise<DesktopAccountPoolSnapshot>
+  /** Delete one auth file. */
+  readonly accountPoolDelete: (name: string) => Promise<DesktopAccountPoolSnapshot>
+  /** Start a supported login. */
+  readonly accountPoolStartLogin: (kind: AccountPoolLoginKind) => Promise<AccountPoolLoginStart>
+  /** Poll an in-flight login. */
+  readonly accountPoolLoginStatus: (state: string) => Promise<DesktopAccountPoolSnapshot>
+  /** Cancel an in-flight OAuth session. */
+  readonly accountPoolCancelLogin: (state: string) => Promise<DesktopAccountPoolSnapshot>
+  /** Submit a GLM Coding Plan key; the key never returns in the snapshot. */
+  readonly accountPoolSubmitGlmKey: (
+    input: { apiKey: string; site?: string; organization?: string; project?: string },
+  ) => Promise<DesktopAccountPoolSnapshot>
+  /** Refresh one account quota observation. */
+  readonly accountPoolRefreshQuota: (authIndex: string) => Promise<DesktopAccountPoolSnapshot>
+  /** Subscribe to account-pool snapshots. */
+  readonly onAccountPoolSnapshot: (listener: (snapshot: DesktopAccountPoolSnapshot) => void) => () => void
   /** Place one official Runtime page over the sidebar viewport. */
   readonly browserPresent?: (request: DesktopBrowserPresentRequest) => Promise<void>
   /** Hide one official Runtime page when its tab is not visible. */
