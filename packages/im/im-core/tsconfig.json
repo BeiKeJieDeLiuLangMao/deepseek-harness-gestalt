@@ -43,6 +43,9 @@
     },
     {
       "path": "../../core/session"
+    },
+    {
+      "path": "../../typert/protocol"
     }
   ]
 }

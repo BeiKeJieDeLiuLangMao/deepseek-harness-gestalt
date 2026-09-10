@@ -6,60 +6,38 @@
 
 import { Context, Service } from '@deepseek-ai/cordis'
 import type { DomainGlobal, KvTable } from '@deepseek-ai/dsh-storage-domain'
+import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
+import type {} from 'zod'
+import {
+  accountNotFound,
+  assertGroupTrigger,
+  conflictingSpecificRoute,
+  hasValidGroupTrigger,
+  invalidTrigger,
+  routeConflict,
+  routeNotFound,
+  simulationUnconfigured,
+} from './config-errors.ts'
 import { imDomainSpec, type ImDomainState } from './spec.ts'
 import type {
+  CreateImAccountOptions,
+  CreateImRouteRuleOptions,
   ImAccountId,
   ImAccountMetadata,
-  ImAccountStatus,
-  ImConversationKind,
-  ImGroupTriggerConfig,
   ImResolveRouteRequest,
   ImResolveRouteResult,
   ImRouteRule,
   ImRouteRuleId,
-  ImRouteTarget,
   ImWorkspaceSimulationConfig,
+  SetWorkspaceSimulationTargetOptions,
+  UpdateImRouteRuleOptions,
 } from './types.ts'
-
-export interface CreateImAccountOptions {
-  id: ImAccountId
-  platform: 'dingtalk' | 'wangwang'
-  displayName: string
-  credentialRef?: ImAccountMetadata['credentialRef']
-  status?: ImAccountStatus
-  paused?: boolean
-  platformMetadata?: Record<string, string>
-}
-
-export interface CreateImRouteRuleOptions {
-  id: ImRouteRuleId
-  accountId: ImAccountId
-  conversationKind: ImConversationKind
-  target: ImRouteTarget
-  workspaceId: WorkspaceId
-  enabled?: boolean
-  groupTrigger?: ImGroupTriggerConfig
-}
-
-export interface SetWorkspaceSimulationTargetOptions {
-  workspaceId: WorkspaceId
-  targetAccountId: ImAccountId
-  conversationKind: ImConversationKind
-  targetConversationId?: string
-}
-
-function hasValidGroupTrigger(trigger: ImGroupTriggerConfig): boolean {
-  if (trigger.mention === true) return true
-  if (trigger.everyN !== undefined && trigger.everyN > 0) return true
-  if (trigger.fixedIntervalSeconds !== undefined && trigger.fixedIntervalSeconds > 0) return true
-  return false
-}
 
 /**
  * IM configuration service managing accounts, route rules, and simulation target binding.
  */
-export class ImConfigService extends Service {
+export class ImConfigService extends TypertRemoteService {
   static inject = ['storageDomain']
 
   private accountsTable?: KvTable<ImAccountId, ImAccountMetadata>
@@ -113,6 +91,7 @@ export class ImConfigService extends Service {
    * List all registered IM accounts.
    * @returns Array of registered account metadata records.
    */
+  @Remote('listAccounts')
   async listAccounts(): Promise<ImAccountMetadata[]> {
     const { accountsTable } = this.requireDomain()
     return [...accountsTable.entries()]
@@ -125,6 +104,7 @@ export class ImConfigService extends Service {
    * @param options - Account creation/update parameters.
    * @returns The saved account metadata.
    */
+  @Remote('upsertAccount')
   async upsertAccount(options: CreateImAccountOptions): Promise<ImAccountMetadata> {
     const { accountsTable } = this.requireDomain()
     const existing = accountsTable.get(options.id)
@@ -167,11 +147,12 @@ export class ImConfigService extends Service {
    * @param paused - Whether automated handling should be paused.
    * @returns The updated account metadata.
    */
+  @Remote('pauseAccount')
   async pauseAccount(id: ImAccountId, paused: boolean): Promise<ImAccountMetadata> {
     const { accountsTable } = this.requireDomain()
     const account = accountsTable.get(id)
     if (!account) {
-      throw new Error(`IM account not found: ${id}`)
+      throw accountNotFound(id, `IM account not found: ${id}`)
     }
     return accountsTable.update(id, current => ({
       ...current,
@@ -185,6 +166,7 @@ export class ImConfigService extends Service {
    * @param id - Account identifier to delete.
    * @returns True if deleted, false if the account did not exist.
    */
+  @Remote('deleteAccount')
   async deleteAccount(id: ImAccountId): Promise<boolean> {
     const { accountsTable, rulesTable } = this.requireDomain()
     const existing = accountsTable.get(id)
@@ -218,6 +200,7 @@ export class ImConfigService extends Service {
    * @param workspaceId - Optional workspace identifier filter.
    * @returns Array of matching route rules.
    */
+  @Remote('listRouteRules')
   async listRouteRules(workspaceId?: WorkspaceId): Promise<ImRouteRule[]> {
     const { rulesTable } = this.requireDomain()
     const rules: ImRouteRule[] = []
@@ -230,51 +213,38 @@ export class ImConfigService extends Service {
   }
 
   /**
-   * Create a new route rule for an account and conversation target.
+   * Create or replace a route rule for an account and conversation target.
+   * Replacing the same id keeps `createdAt` and updates target, trigger, and enabled.
    * @param options - Route rule definition options.
-   * @returns The created route rule.
+   * @returns The saved route rule.
    */
+  @Remote('createRouteRule')
   async createRouteRule(options: CreateImRouteRuleOptions): Promise<ImRouteRule> {
     const { accountsTable, rulesTable } = this.requireDomain()
     // Validate account exists
     const account = accountsTable.get(options.accountId)
     if (!account) {
-      throw new Error(`Cannot bind route rule to non-existent account: ${options.accountId}`)
+      throw accountNotFound(
+        options.accountId,
+        `Cannot bind route rule to non-existent account: ${options.accountId}`,
+      )
     }
-
-    // Validate group trigger requirements
-    if (options.conversationKind === 'group') {
-      if (!options.groupTrigger) {
-        throw new Error('Group trigger configuration is required for group conversations')
-      }
-      if (!hasValidGroupTrigger(options.groupTrigger)) {
-        throw new Error('Group trigger must have at least one valid condition with positive numbers')
-      }
-    } else if (options.groupTrigger !== undefined) {
-      throw new Error('Group triggers are not allowed for direct conversations')
-    }
-
-    // Check same conversation single workspace invariant:
-    // A specific conversation can only be bound to one workspace. Rebinding requires explicit update.
+    assertGroupTrigger(options.conversationKind, options.groupTrigger)
     const allRules = await this.listRouteRules()
     if (options.target.kind === 'specific') {
       const targetConvId = options.target.conversationId
-      const conflict = allRules.find(
-        r =>
-          r.accountId === options.accountId &&
-          r.conversationKind === options.conversationKind &&
-          r.target.kind === 'specific' &&
-          r.target.conversationId === targetConvId &&
-          r.id !== options.id,
+      const conflict = conflictingSpecificRoute(
+        allRules,
+        options.accountId,
+        options.conversationKind,
+        targetConvId,
+        options.id,
       )
-      if (conflict) {
-        throw new Error(
-          `Conversation ${targetConvId} is already bound to workspace ${conflict.workspaceId}. Explicit rebind required.`,
-        )
-      }
+      if (conflict) throw routeConflict(targetConvId, conflict.workspaceId)
     }
 
     const now = new Date().toISOString()
+    const existing = rulesTable.get(options.id)
     const rule: ImRouteRule = {
       id: options.id,
       accountId: options.accountId,
@@ -283,7 +253,7 @@ export class ImConfigService extends Service {
       workspaceId: options.workspaceId,
       enabled: options.enabled ?? true,
       ...(options.groupTrigger !== undefined ? { groupTrigger: options.groupTrigger } : {}),
-      createdAt: now,
+      createdAt: existing?.createdAt ?? now,
       updatedAt: now,
     }
 
@@ -297,19 +267,20 @@ export class ImConfigService extends Service {
    * @param updates - Partial updates for workspace, enabled state, or trigger conditions.
    * @returns The updated route rule.
    */
+  @Remote('updateRouteRule')
   async updateRouteRule(
     id: ImRouteRuleId,
-    updates: Partial<Pick<ImRouteRule, 'workspaceId' | 'enabled' | 'groupTrigger'>>,
+    updates: UpdateImRouteRuleOptions,
   ): Promise<ImRouteRule> {
     const { rulesTable } = this.requireDomain()
     const existing = rulesTable.get(id)
     if (!existing) {
-      throw new Error(`Route rule not found: ${id}`)
+      throw routeNotFound(id, `Route rule not found: ${id}`)
     }
 
     if (existing.conversationKind === 'group' && updates.groupTrigger !== undefined) {
       if (!hasValidGroupTrigger(updates.groupTrigger)) {
-        throw new Error('Group trigger must have at least one valid condition with positive numbers')
+        throw invalidTrigger('empty', 'Group trigger must have at least one valid condition with positive numbers')
       }
     }
 
@@ -327,6 +298,7 @@ export class ImConfigService extends Service {
    * @param id - Route rule identifier.
    * @returns True if deleted, false if the rule did not exist.
    */
+  @Remote('deleteRouteRule')
   async deleteRouteRule(id: ImRouteRuleId): Promise<boolean> {
     const { rulesTable } = this.requireDomain()
     const existing = rulesTable.get(id)
@@ -438,9 +410,22 @@ export class ImConfigService extends Service {
    * @param workspaceId - Workspace identifier.
    * @returns The simulation configuration if set, or undefined.
    */
+  @Remote('getSimulationConfig')
   async getSimulationConfig(workspaceId: WorkspaceId): Promise<ImWorkspaceSimulationConfig | undefined> {
     const { simulationsTable } = this.requireDomain()
     return simulationsTable.get(workspaceId)
+  }
+
+  /**
+   * List every workspace simulation target binding.
+   * @returns Saved simulation configurations.
+   */
+  @Remote('listSimulationConfigs')
+  async listSimulationConfigs(): Promise<ImWorkspaceSimulationConfig[]> {
+    const { simulationsTable } = this.requireDomain()
+    return [...simulationsTable.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([, config]) => config)
   }
 
   /**
@@ -452,12 +437,16 @@ export class ImConfigService extends Service {
    * @param options - Target account and conversation options.
    * @returns The saved simulation configuration.
    */
+  @Remote('setSimulationConfig')
   async setSimulationConfig(options: SetWorkspaceSimulationTargetOptions): Promise<ImWorkspaceSimulationConfig> {
     const { accountsTable, rulesTable, simulationsTable } = this.requireDomain()
     // Invariant: Simulation target must refer to an already configured account
     const account = accountsTable.get(options.targetAccountId)
     if (!account) {
-      throw new Error(`Cannot configure simulation target: account ${options.targetAccountId} does not exist`)
+      throw accountNotFound(
+        options.targetAccountId,
+        `Cannot configure simulation target: account ${options.targetAccountId} does not exist`,
+      )
     }
 
     // Invariant: Simulation target must match a configured route rule (specific or all) for the target account and conversationKind.
@@ -474,7 +463,8 @@ export class ImConfigService extends Service {
     const matchesAll = matchingRules.some(r => r.target.kind === 'all')
 
     if (!matchesSpecific && !matchesAll) {
-      throw new Error(
+      throw simulationUnconfigured(
+        'no-matching-route',
         `Cannot configure simulation target: no matching route rule found for account ${options.targetAccountId}, kind ${options.conversationKind}${options.targetConversationId ? ` and conversation ${options.targetConversationId}` : ''}`,
       )
     }
@@ -496,6 +486,7 @@ export class ImConfigService extends Service {
    * @param workspaceId - Workspace identifier.
    * @returns True if deleted, false if none existed.
    */
+  @Remote('deleteSimulationConfig')
   async deleteSimulationConfig(workspaceId: WorkspaceId): Promise<boolean> {
     const { simulationsTable } = this.requireDomain()
     const existing = simulationsTable.get(workspaceId)

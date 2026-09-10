@@ -214,6 +214,7 @@
       "@deepseek-ai/dsh-client-ui-browser": ["./packages/client/ui-browser/src"],
       "@deepseek-ai/dsh-client-ui-phone": ["./packages/client/ui-phone/src"],
       "@deepseek-ai/dsh-client-ui-im": ["./packages/client/ui-im/src"],
+      "@deepseek-ai/dsh-im-core/client": ["./packages/im/im-core/src/client.ts"],
       "@deepseek-ai/dsh-im-core/types": ["./packages/im/im-core/src/types.ts"],
       "@deepseek-ai/dsh-im-core/spec": ["./packages/im/im-core/src/spec.ts"],
       "@deepseek-ai/dsh-im-core/delivery": ["./packages/im/im-core/src/delivery/index.ts"],

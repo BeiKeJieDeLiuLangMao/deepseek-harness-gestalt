@@ -9,12 +9,13 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
+import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import { AccountsSection } from './AccountsSection.tsx'
 import { TakeoverSection } from './TakeoverSection.tsx'
 import { SimulationSection } from './SimulationSection.tsx'
 import { ConversationTab } from './ConversationTab.tsx'
-import { createImGuiFace } from './controller.ts'
-import { createImGuiStore } from './model.ts'
+import { createHostImGuiFace } from './host-controller.ts'
+import { createImGuiStore, emptyGuiSnapshot } from './model.ts'
 import { buildOfficialImDefinition, IM_DEFINITION_ID } from './registry.ts'
 import { en, NS, zh, type ImKey } from './locales.ts'
 
@@ -23,7 +24,8 @@ export { TakeoverSection } from './TakeoverSection.tsx'
 export { SimulationSection } from './SimulationSection.tsx'
 export { ConversationTab } from './ConversationTab.tsx'
 export { createImGuiFace } from './controller.ts'
-export { createImGuiStore, prototypeGuiSnapshot } from './model.ts'
+export { createHostImGuiFace } from './host-controller.ts'
+export { createImGuiStore, emptyGuiSnapshot, prototypeGuiSnapshot } from './model.ts'
 export {
   conversationMessagesFromRecords, deliveryStateOf, IM_LIVE_LANE_BEHAVIORS, senderBadgeOf,
 } from './presentation.ts'
@@ -41,7 +43,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 
 /** Services required before activation. */
 export const inject = [
-  'slots', 'locale', 'sidebarRightTabs',
+  'slots', 'locale', 'sidebarRightTabs', 'remote', 'remote.imConfig',
 ] as const
 
 /**
@@ -50,7 +52,7 @@ export const inject = [
  */
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-im: dictionaries')
-  const face = createImGuiFace(createImGuiStore())
+  const face = createHostImGuiFace(createImGuiStore(emptyGuiSnapshot()), ctx.remote.imConfig)
   const t = ctx.locale.bind(NS)
   ctx.slots.inject('settings.section', () => ctx.slots.register({
     name: 'settings.section',

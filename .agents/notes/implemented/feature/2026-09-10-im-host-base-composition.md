@@ -22,4 +22,4 @@ T1–T8 prove IM domain, adapters, tools, simulation, and GUI on isolated Loader
 
 ## Consequences
 
-Base-backed web, headless, sdk, and acp profiles load IM Host services. GUI Host remotes and Wangwang merchant overlays remain later work. Live DingTalk consume, live outbound, and real model rounds stay separately authorized.
+Base-backed web, headless, sdk, and acp profiles load IM Host services. The Web GUI persists accounts, routes, and simulation targets through `imConfig` remotes; `imDelivery` remotes and Wangwang merchant overlays remain later work. Live DingTalk consume, live outbound, and real model rounds stay separately authorized.

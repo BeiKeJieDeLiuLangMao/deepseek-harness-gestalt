@@ -11,6 +11,7 @@ import {
 /**
  * Bind store mutations as the slot inject face.
  * @param store - GUI snapshot store.
+ * @returns the in-memory GUI face used by tests and prototype fixtures.
  */
 export function createImGuiFace(store: SnapshotStore<ImGuiSnapshot>): ImGuiFace {
   return {

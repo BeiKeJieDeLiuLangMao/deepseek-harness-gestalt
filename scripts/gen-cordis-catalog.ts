@@ -849,6 +849,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   AdmitInboundResult: 'im.md',
   CreateImAccountOptions: 'im.md',
   CreateImRouteRuleOptions: 'im.md',
+  UpdateImRouteRuleOptions: 'im.md',
   CreateSimulationInstanceOptions: 'im.md',
   DingTalkConsumerState: 'im.md',
   DingTalkDwsAdapterConfig: 'im.md',

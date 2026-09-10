@@ -22,4 +22,4 @@ T1–T8 在隔离 Loader 夹具上证明了 IM 域、适配器、工具、模拟
 
 ## Consequences
 
-基于 base 的 web、headless、sdk 与 acp profile 会加载 IM Host 服务。GUI Host remotes 与旺旺商户 overlay 仍是后续工作。真实钉钉消费、真实出站和真实模型 round 仍需另行授权。
+基于 base 的 web、headless、sdk 与 acp profile 会加载 IM Host 服务。Web GUI 经 `imConfig` remotes 持久化账号、路由与模拟目标；`imDelivery` remotes 与旺旺商户 overlay 仍是后续工作。真实钉钉消费、真实出站和真实模型 round 仍需另行授权。

@@ -34,6 +34,18 @@
     },
     {
       "path": "../ui-workspace"
+    },
+    {
+      "path": "../../api/remotes/tsconfig.client.json"
+    },
+    {
+      "path": "../../im/im-core"
+    },
+    {
+      "path": "../../util/brand"
+    },
+    {
+      "path": "../../workspace/workspace"
     }
   ]
 }

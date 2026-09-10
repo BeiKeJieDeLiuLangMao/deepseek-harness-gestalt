@@ -843,7 +843,7 @@ const SERVICE_ROLES: ServiceRole[] = [
     pkg: 'im-core',
     title: 'IM account and route configuration',
     mode: 'core',
-    consumers: ['im-dingtalk'],
+    consumers: ['im-dingtalk', 'client-ui-im'],
     note: 'Owns durable IM accounts, workspace route rules, group triggers, and simulation target bindings over StorageDomain.',
   },
   {

@@ -33,6 +33,9 @@
       "path": "../../goal/goal"
     },
     {
+      "path": "../../im/im-core"
+    },
+    {
       "path": "../../preset/agent-presets"
     },
     {

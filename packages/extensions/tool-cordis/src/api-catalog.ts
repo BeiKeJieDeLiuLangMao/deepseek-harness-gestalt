@@ -1332,25 +1332,25 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'The account metadata if found, or undefined.',
       },
       {
-        signature: 'async listAccounts(): Promise<ImAccountMetadata[]>',
+        signature: '@Remote(\'listAccounts\') async listAccounts(): Promise<ImAccountMetadata[]>',
         description: 'List all registered IM accounts.',
         parameters: [],
         returns: 'Array of registered account metadata records.',
       },
       {
-        signature: 'async upsertAccount(options: CreateImAccountOptions): Promise<ImAccountMetadata>',
+        signature: '@Remote(\'upsertAccount\') async upsertAccount(options: CreateImAccountOptions): Promise<ImAccountMetadata>',
         description: 'Create or update an IM account record.',
         parameters: [{ name: 'options', description: 'Account creation/update parameters.' }],
         returns: 'The saved account metadata.',
       },
       {
-        signature: 'async pauseAccount(id: ImAccountId, paused: boolean): Promise<ImAccountMetadata>',
+        signature: '@Remote(\'pauseAccount\') async pauseAccount(id: ImAccountId, paused: boolean): Promise<ImAccountMetadata>',
         description: 'Pause or resume an IM account.',
         parameters: [{ name: 'id', description: 'Account identifier to update.' }, { name: 'paused', description: 'Whether automated handling should be paused.' }],
         returns: 'The updated account metadata.',
       },
       {
-        signature: 'async deleteAccount(id: ImAccountId): Promise<boolean>',
+        signature: '@Remote(\'deleteAccount\') async deleteAccount(id: ImAccountId): Promise<boolean>',
         description: 'Delete an IM account and cascade delete its associated route rules.',
         parameters: [{ name: 'id', description: 'Account identifier to delete.' }],
         returns: 'True if deleted, false if the account did not exist.',
@@ -1362,25 +1362,25 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'The route rule record if found, or undefined.',
       },
       {
-        signature: 'async listRouteRules(workspaceId?: WorkspaceId): Promise<ImRouteRule[]>',
+        signature: '@Remote(\'listRouteRules\') async listRouteRules(workspaceId?: WorkspaceId): Promise<ImRouteRule[]>',
         description: 'List route rules, optionally filtered by workspace identifier.',
         parameters: [{ name: 'workspaceId', description: 'Optional workspace identifier filter.' }],
         returns: 'Array of matching route rules.',
       },
       {
-        signature: 'async createRouteRule(options: CreateImRouteRuleOptions): Promise<ImRouteRule>',
-        description: 'Create a new route rule for an account and conversation target.',
+        signature: '@Remote(\'createRouteRule\') async createRouteRule(options: CreateImRouteRuleOptions): Promise<ImRouteRule>',
+        description: 'Create or replace a route rule for an account and conversation target. Replacing the same id keeps `createdAt` and updates target, trigger, and enabled.',
         parameters: [{ name: 'options', description: 'Route rule definition options.' }],
-        returns: 'The created route rule.',
+        returns: 'The saved route rule.',
       },
       {
-        signature: 'async updateRouteRule( id: ImRouteRuleId, updates: Partial<Pick<ImRouteRule, \'workspaceId\' | \'enabled\' | \'groupTrigger\'>>, ): Promise<ImRouteRule>',
+        signature: '@Remote(\'updateRouteRule\') async updateRouteRule( id: ImRouteRuleId, updates: UpdateImRouteRuleOptions, ): Promise<ImRouteRule>',
         description: 'Update mutable settings of an existing route rule.',
         parameters: [{ name: 'id', description: 'Route rule identifier.' }, { name: 'updates', description: 'Partial updates for workspace, enabled state, or trigger conditions.' }],
         returns: 'The updated route rule.',
       },
       {
-        signature: 'async deleteRouteRule(id: ImRouteRuleId): Promise<boolean>',
+        signature: '@Remote(\'deleteRouteRule\') async deleteRouteRule(id: ImRouteRuleId): Promise<boolean>',
         description: 'Delete an existing route rule.',
         parameters: [{ name: 'id', description: 'Route rule identifier.' }],
         returns: 'True if deleted, false if the rule did not exist.',
@@ -1392,19 +1392,25 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'Resolution outcome including matched status, ruleId, workspaceId, or disabled/paused indicators.',
       },
       {
-        signature: 'async getSimulationConfig(workspaceId: WorkspaceId): Promise<ImWorkspaceSimulationConfig | undefined>',
+        signature: '@Remote(\'getSimulationConfig\') async getSimulationConfig(workspaceId: WorkspaceId): Promise<ImWorkspaceSimulationConfig | undefined>',
         description: 'Get the simulation configuration for a workspace.',
         parameters: [{ name: 'workspaceId', description: 'Workspace identifier.' }],
         returns: 'The simulation configuration if set, or undefined.',
       },
       {
-        signature: 'async setSimulationConfig(options: SetWorkspaceSimulationTargetOptions): Promise<ImWorkspaceSimulationConfig>',
+        signature: '@Remote(\'listSimulationConfigs\') async listSimulationConfigs(): Promise<ImWorkspaceSimulationConfig[]>',
+        description: 'List every workspace simulation target binding.',
+        parameters: [],
+        returns: 'Saved simulation configurations.',
+      },
+      {
+        signature: '@Remote(\'setSimulationConfig\') async setSimulationConfig(options: SetWorkspaceSimulationTargetOptions): Promise<ImWorkspaceSimulationConfig>',
         description: 'Configure the IM simulation target for a workspace. Target account must exist, and a configured route rule must cover the target conversation.\n\nNote: The route rule may belong to any workspace (e.g. testing an agent in another workspace). Disabled or account-paused route rules still permit simulation testing.',
         parameters: [{ name: 'options', description: 'Target account and conversation options.' }],
         returns: 'The saved simulation configuration.',
       },
       {
-        signature: 'async deleteSimulationConfig(workspaceId: WorkspaceId): Promise<boolean>',
+        signature: '@Remote(\'deleteSimulationConfig\') async deleteSimulationConfig(workspaceId: WorkspaceId): Promise<boolean>',
         description: 'Delete the simulation configuration for a workspace.',
         parameters: [{ name: 'workspaceId', description: 'Workspace identifier.' }],
         returns: 'True if deleted, false if none existed.',
@@ -5718,11 +5724,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'CreateImAccountOptions',
-    declaration: 'export interface CreateImAccountOptions {\n    id: ImAccountId;\n    platform: \'dingtalk\' | \'wangwang\';\n    displayName: string;\n    credentialRef?: ImAccountMetadata[\'credentialRef\'];\n    status?: ImAccountStatus;\n    paused?: boolean;\n    platformMetadata?: Record<string, string>;\n}',
+    declaration: 'export interface CreateImAccountOptions {\n    readonly id: ImAccountId;\n    readonly platform: ImPlatform;\n    readonly displayName: string;\n    readonly credentialRef?: CredentialRef;\n    readonly status?: ImAccountStatus;\n    readonly paused?: boolean;\n    readonly platformMetadata?: Readonly<Record<string, string>>;\n}',
   },
   {
     name: 'CreateImRouteRuleOptions',
-    declaration: 'export interface CreateImRouteRuleOptions {\n    id: ImRouteRuleId;\n    accountId: ImAccountId;\n    conversationKind: ImConversationKind;\n    target: ImRouteTarget;\n    workspaceId: WorkspaceId;\n    enabled?: boolean;\n    groupTrigger?: ImGroupTriggerConfig;\n}',
+    declaration: 'export interface CreateImRouteRuleOptions {\n    readonly id: ImRouteRuleId;\n    readonly accountId: ImAccountId;\n    readonly conversationKind: ImConversationKind;\n    readonly target: ImRouteTarget;\n    readonly workspaceId: WorkspaceId;\n    readonly enabled?: boolean;\n    readonly groupTrigger?: ImGroupTriggerConfig;\n}',
   },
   {
     name: 'CreateProjectInput',
@@ -8086,7 +8092,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SetWorkspaceSimulationTargetOptions',
-    declaration: 'export interface SetWorkspaceSimulationTargetOptions {\n    workspaceId: WorkspaceId;\n    targetAccountId: ImAccountId;\n    conversationKind: ImConversationKind;\n    targetConversationId?: string;\n}',
+    declaration: 'export interface SetWorkspaceSimulationTargetOptions {\n    readonly workspaceId: WorkspaceId;\n    readonly targetAccountId: ImAccountId;\n    readonly conversationKind: ImConversationKind;\n    readonly targetConversationId?: string;\n}',
   },
   {
     name: 'ShellExecRequest',
@@ -8775,6 +8781,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'TypertTypeModel',
     declaration: 'export interface TypertTypeModel {\n    readonly name: string;\n    readonly declaration: string;\n}',
+  },
+  {
+    name: 'UpdateImRouteRuleOptions',
+    declaration: 'export interface UpdateImRouteRuleOptions {\n    readonly workspaceId?: WorkspaceId;\n    readonly enabled?: boolean;\n    readonly groupTrigger?: ImGroupTriggerConfig;\n}',
   },
   {
     name: 'UpdateTeamTaskRequest',

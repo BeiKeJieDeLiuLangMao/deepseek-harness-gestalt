@@ -21,11 +21,12 @@ DeepSeek Harness 的 IM 领域配置、账号与路由核心服务。
 - `deleteAccount(id: ImAccountId): Promise<boolean>`
 - `getRouteRule(id: ImRouteRuleId): Promise<ImRouteRule | undefined>`
 - `listRouteRules(workspaceId?: WorkspaceId): Promise<ImRouteRule[]>`
-- `createRouteRule(options: CreateImRouteRuleOptions): Promise<ImRouteRule>`
-- `updateRouteRule(id: ImRouteRuleId, updates: Partial<Pick<ImRouteRule, 'workspaceId' | 'enabled' | 'groupTrigger'>>): Promise<ImRouteRule>`
+- `createRouteRule(options: CreateImRouteRuleOptions): Promise<ImRouteRule>` — 同一 id 会替换 target、trigger 与 enabled，并保留 `createdAt`
+- `updateRouteRule(id: ImRouteRuleId, updates: UpdateImRouteRuleOptions): Promise<ImRouteRule>`
 - `deleteRouteRule(id: ImRouteRuleId): Promise<boolean>`
 - `resolveRoute(request: ImResolveRouteRequest): Promise<ImResolveRouteResult>`
 - `getSimulationConfig(workspaceId: WorkspaceId): Promise<ImWorkspaceSimulationConfig | undefined>`
+- `listSimulationConfigs(): Promise<ImWorkspaceSimulationConfig[]>`
 - `setSimulationConfig(options: SetWorkspaceSimulationTargetOptions): Promise<ImWorkspaceSimulationConfig>`
 - `deleteSimulationConfig(workspaceId: WorkspaceId): Promise<boolean>`
 

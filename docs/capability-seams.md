@@ -273,6 +273,7 @@ flowchart LR
   pkg_im_core["im-core"]
   svc_imConfig["ctx.imConfig<br/>IM account and route configuration"]
   pkg_im_dingtalk["im-dingtalk"]
+  pkg_client_ui_im["client-ui-im"]
   svc_imDelivery["ctx.imDelivery<br/>IM delivery and outbound lifecycle"]
   pkg_im_wangwang["im-wangwang"]
   svc_imExecution["ctx.imExecution<br/>IM trigger admission and tools"]
@@ -467,6 +468,7 @@ flowchart LR
   svc_fileReferences --> pkg_api_session_controller
   svc_fileUploads --> pkg_api_session_controller
   svc_fs --> pkg_tool_fs
+  svc_imConfig --> pkg_client_ui_im
   svc_imConfig --> pkg_im_dingtalk
   svc_imDelivery --> pkg_im_dingtalk
   svc_imDelivery --> pkg_im_wangwang
@@ -673,7 +675,7 @@ flowchart LR
 | `ctx.memberQuestionReceiver` | `seam` | [`member-question-receiver`](../packages/interaction/member-question-receiver) | [`member-question-receiver`](../packages/interaction/member-question-receiver) | [`api-session-controller`](../packages/api/session-controller) | - | Authenticates member answers, settles pending questions, and supplies the Session controller materializer. |
 | `ctx.memberQuestionWorkspaceBinding` | `core` | [`member-question-receiver`](../packages/interaction/member-question-receiver) | - | - | - | Publishes the receiver-owned Workspace binding registry; no current production package calls this key directly. |
 | `ctx.subagentRoutePreauthorization` | `seam` | [`subagent-route-preauthorization`](../packages/subagent/subagent-route-preauthorization) | [`subagent-route-preauthorization-static`](../packages/subagent/subagent-route-preauthorization-static) | [`tool-subagent`](../packages/subagent/tool-subagent) | - | Resolves route-specific preauthorization before tool-subagent starts a delegated run. |
-| `ctx.imConfig` | `core` | [`im-core`](../packages/im/im-core) | - | [`im-dingtalk`](../packages/im/im-dingtalk) | - | Owns durable IM accounts, workspace route rules, group triggers, and simulation target bindings over StorageDomain. |
+| `ctx.imConfig` | `core` | [`im-core`](../packages/im/im-core) | - | [`im-dingtalk`](../packages/im/im-dingtalk), [`client-ui-im`](../packages/client/ui-im) | - | Owns durable IM accounts, workspace route rules, group triggers, and simulation target bindings over StorageDomain. |
 | `ctx.imDelivery` | `core` | [`im-core`](../packages/im/im-core) | - | [`im-dingtalk`](../packages/im/im-dingtalk), [`im-wangwang`](../packages/im/im-wangwang) | - | Owns inbound deduplication, conversation cursors, and outbound settlement including result_unknown. |
 | `ctx.imExecution` | `core` | [`im-core`](../packages/im/im-core) | - | - | - | Admits inbound messages into the target workspace Agent and registers im_send_message plus im_query_history. |
 | `ctx.imSimulation` | `core` | [`im-core`](../packages/im/im-core) | - | - | - | Owns in-process simulation instances against a configured workspace target and never calls live adapters. |

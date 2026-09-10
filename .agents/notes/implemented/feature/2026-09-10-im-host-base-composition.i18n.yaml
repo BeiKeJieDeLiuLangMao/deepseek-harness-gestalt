@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-10-im-host-base-composition.md
-2026-09-10-im-host-base-composition.md: 320d513c86b579492d2869ec8e8186e717445420
-2026-09-10-im-host-base-composition.zh.md: 44ba11daeaad7f9c0dff63386de8b3784780df9c
+2026-09-10-im-host-base-composition.md: 13525f8e2848e65019cfd64d124c215c7a8964a5
+2026-09-10-im-host-base-composition.zh.md: a56223290e2c15658c61d940a63e0f948e55047b

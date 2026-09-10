@@ -264,14 +264,14 @@ async getAccount(id: ImAccountId): Promise<ImAccountMetadata | undefined>
  * List all registered IM accounts.
  * @returns Array of registered account metadata records.
  */
-async listAccounts(): Promise<ImAccountMetadata[]>
+@Remote('listAccounts') async listAccounts(): Promise<ImAccountMetadata[]>
 
 /**
  * Create or update an IM account record.
  * @param options - Account creation/update parameters.
  * @returns The saved account metadata.
  */
-async upsertAccount(options: CreateImAccountOptions): Promise<ImAccountMetadata>
+@Remote('upsertAccount') async upsertAccount(options: CreateImAccountOptions): Promise<ImAccountMetadata>
 
 /**
  * Pause or resume an IM account.
@@ -279,14 +279,14 @@ async upsertAccount(options: CreateImAccountOptions): Promise<ImAccountMetadata>
  * @param paused - Whether automated handling should be paused.
  * @returns The updated account metadata.
  */
-async pauseAccount(id: ImAccountId, paused: boolean): Promise<ImAccountMetadata>
+@Remote('pauseAccount') async pauseAccount(id: ImAccountId, paused: boolean): Promise<ImAccountMetadata>
 
 /**
  * Delete an IM account and cascade delete its associated route rules.
  * @param id - Account identifier to delete.
  * @returns True if deleted, false if the account did not exist.
  */
-async deleteAccount(id: ImAccountId): Promise<boolean>
+@Remote('deleteAccount') async deleteAccount(id: ImAccountId): Promise<boolean>
 
 /**
  * Look up one route rule by its identifier.
@@ -300,14 +300,15 @@ async getRouteRule(id: ImRouteRuleId): Promise<ImRouteRule | undefined>
  * @param workspaceId - Optional workspace identifier filter.
  * @returns Array of matching route rules.
  */
-async listRouteRules(workspaceId?: WorkspaceId): Promise<ImRouteRule[]>
+@Remote('listRouteRules') async listRouteRules(workspaceId?: WorkspaceId): Promise<ImRouteRule[]>
 
 /**
- * Create a new route rule for an account and conversation target.
+ * Create or replace a route rule for an account and conversation target.
+ * Replacing the same id keeps `createdAt` and updates target, trigger, and enabled.
  * @param options - Route rule definition options.
- * @returns The created route rule.
+ * @returns The saved route rule.
  */
-async createRouteRule(options: CreateImRouteRuleOptions): Promise<ImRouteRule>
+@Remote('createRouteRule') async createRouteRule(options: CreateImRouteRuleOptions): Promise<ImRouteRule>
 
 /**
  * Update mutable settings of an existing route rule.
@@ -315,14 +316,14 @@ async createRouteRule(options: CreateImRouteRuleOptions): Promise<ImRouteRule>
  * @param updates - Partial updates for workspace, enabled state, or trigger conditions.
  * @returns The updated route rule.
  */
-async updateRouteRule( id: ImRouteRuleId, updates: Partial<Pick<ImRouteRule, 'workspaceId' | 'enabled' | 'groupTrigger'>>, ): Promise<ImRouteRule>
+@Remote('updateRouteRule') async updateRouteRule( id: ImRouteRuleId, updates: UpdateImRouteRuleOptions, ): Promise<ImRouteRule>
 
 /**
  * Delete an existing route rule.
  * @param id - Route rule identifier.
  * @returns True if deleted, false if the rule did not exist.
  */
-async deleteRouteRule(id: ImRouteRuleId): Promise<boolean>
+@Remote('deleteRouteRule') async deleteRouteRule(id: ImRouteRuleId): Promise<boolean>
 
 /**
  * Resolves the route rule for an incoming conversation.
@@ -346,7 +347,13 @@ async resolveRoute(request: ImResolveRouteRequest): Promise<ImResolveRouteResult
  * @param workspaceId - Workspace identifier.
  * @returns The simulation configuration if set, or undefined.
  */
-async getSimulationConfig(workspaceId: WorkspaceId): Promise<ImWorkspaceSimulationConfig | undefined>
+@Remote('getSimulationConfig') async getSimulationConfig(workspaceId: WorkspaceId): Promise<ImWorkspaceSimulationConfig | undefined>
+
+/**
+ * List every workspace simulation target binding.
+ * @returns Saved simulation configurations.
+ */
+@Remote('listSimulationConfigs') async listSimulationConfigs(): Promise<ImWorkspaceSimulationConfig[]>
 
 /**
  * Configure the IM simulation target for a workspace.
@@ -357,14 +364,14 @@ async getSimulationConfig(workspaceId: WorkspaceId): Promise<ImWorkspaceSimulati
  * @param options - Target account and conversation options.
  * @returns The saved simulation configuration.
  */
-async setSimulationConfig(options: SetWorkspaceSimulationTargetOptions): Promise<ImWorkspaceSimulationConfig>
+@Remote('setSimulationConfig') async setSimulationConfig(options: SetWorkspaceSimulationTargetOptions): Promise<ImWorkspaceSimulationConfig>
 
 /**
  * Delete the simulation configuration for a workspace.
  * @param workspaceId - Workspace identifier.
  * @returns True if deleted, false if none existed.
  */
-async deleteSimulationConfig(workspaceId: WorkspaceId): Promise<boolean>
+@Remote('deleteSimulationConfig') async deleteSimulationConfig(workspaceId: WorkspaceId): Promise<boolean>
 ```
 
 Types: [WorkspaceId](workspace.md)

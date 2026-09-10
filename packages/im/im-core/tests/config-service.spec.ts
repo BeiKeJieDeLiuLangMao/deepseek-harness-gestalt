@@ -425,6 +425,20 @@ describe('ImConfigService Seam CRUD & resolveRoute', () => {
       ruleId: rule1Id,
       workspaceId: ws2,
     })
+
+    const createdAt = (await service.getRouteRule(rule1Id))?.createdAt
+    expect(createdAt).toBeDefined()
+    const replaced = await service.createRouteRule({
+      id: rule1Id,
+      accountId,
+      conversationKind: 'direct',
+      target: { kind: 'specific', conversationId: 'conv-rebound' },
+      workspaceId: ws2,
+      enabled: false,
+    })
+    expect(replaced.createdAt).toBe(createdAt)
+    expect(replaced.target).toEqual({ kind: 'specific', conversationId: 'conv-rebound' })
+    expect(replaced.enabled).toBe(false)
   })
 
   it('validates group trigger conditions (mention, everyN, fixedInterval, positive numbers, required for group)', async () => {
@@ -592,6 +606,7 @@ describe('ImConfigService Seam CRUD & resolveRoute', () => {
 
     const retrieved = await service.getSimulationConfig(wsSim)
     expect(retrieved).toMatchObject(simConfig)
+    expect(await service.listSimulationConfigs()).toEqual([simConfig])
 
     // Re-set simulation config on same workspace to test update path
     await service.setSimulationConfig({

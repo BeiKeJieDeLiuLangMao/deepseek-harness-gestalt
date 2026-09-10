@@ -32,6 +32,21 @@ async function mount() {
   const locale = new LocaleRuntime(ctx)
   locale.setLocale('zh')
   ctx.provide('locale', locale)
+  const ok = async <T>(value: T) => ({ ok: true as const, value })
+  const imConfig = {
+    listAccounts: () => ok([]),
+    listRouteRules: () => ok([]),
+    listSimulationConfigs: () => ok([]),
+    upsertAccount: () => ok(undefined),
+    pauseAccount: () => ok(undefined),
+    deleteAccount: () => ok(undefined),
+    createRouteRule: () => ok(undefined),
+    updateRouteRule: () => ok(undefined),
+    setSimulationConfig: () => ok(undefined),
+    deleteSimulationConfig: () => ok(undefined),
+  }
+  ctx.provide('remote', { imConfig })
+  ctx.provide('remote.imConfig', imConfig)
   const fiber = ctx.plugin({
     inject: [...inject],
     apply: (pluginCtx: Context) => { apply(pluginCtx) },
@@ -42,7 +57,7 @@ async function mount() {
 
 describe('ui-im client apply', () => {
   it('declares slots, locale, and Sidebar tab service edges', () => {
-    expect([...inject]).toEqual(['slots', 'locale', 'sidebarRightTabs'])
+    expect([...inject]).toEqual(['slots', 'locale', 'sidebarRightTabs', 'remote', 'remote.imConfig'])
   })
 
   it('registers IM Accounts, workspace cards, and the conversation tab', async () => {

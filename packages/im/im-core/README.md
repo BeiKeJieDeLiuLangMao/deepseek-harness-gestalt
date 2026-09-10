@@ -21,11 +21,12 @@ Mounted at `ctx.imConfig` for configuration and routing, `ctx.imDelivery` for me
 - `deleteAccount(id: ImAccountId): Promise<boolean>`
 - `getRouteRule(id: ImRouteRuleId): Promise<ImRouteRule | undefined>`
 - `listRouteRules(workspaceId?: WorkspaceId): Promise<ImRouteRule[]>`
-- `createRouteRule(options: CreateImRouteRuleOptions): Promise<ImRouteRule>`
-- `updateRouteRule(id: ImRouteRuleId, updates: Partial<Pick<ImRouteRule, 'workspaceId' | 'enabled' | 'groupTrigger'>>): Promise<ImRouteRule>`
+- `createRouteRule(options: CreateImRouteRuleOptions): Promise<ImRouteRule>` — same id replaces target, trigger, and enabled while keeping `createdAt`
+- `updateRouteRule(id: ImRouteRuleId, updates: UpdateImRouteRuleOptions): Promise<ImRouteRule>`
 - `deleteRouteRule(id: ImRouteRuleId): Promise<boolean>`
 - `resolveRoute(request: ImResolveRouteRequest): Promise<ImResolveRouteResult>`
 - `getSimulationConfig(workspaceId: WorkspaceId): Promise<ImWorkspaceSimulationConfig | undefined>`
+- `listSimulationConfigs(): Promise<ImWorkspaceSimulationConfig[]>`
 - `setSimulationConfig(options: SetWorkspaceSimulationTargetOptions): Promise<ImWorkspaceSimulationConfig>`
 - `deleteSimulationConfig(workspaceId: WorkspaceId): Promise<boolean>`
 

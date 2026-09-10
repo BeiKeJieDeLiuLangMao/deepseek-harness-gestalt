@@ -136,3 +136,40 @@ export interface ImWorkspaceSimulationConfig {
   readonly targetConversationId?: string
   readonly updatedAt: string
 }
+
+/** Create or replace one IM account record. Secrets never appear here. */
+export interface CreateImAccountOptions {
+  readonly id: ImAccountId
+  readonly platform: ImPlatform
+  readonly displayName: string
+  readonly credentialRef?: CredentialRef
+  readonly status?: ImAccountStatus
+  readonly paused?: boolean
+  readonly platformMetadata?: Readonly<Record<string, string>>
+}
+
+/** Create one takeover route rule. New GUI rules pass `enabled: false`. */
+export interface CreateImRouteRuleOptions {
+  readonly id: ImRouteRuleId
+  readonly accountId: ImAccountId
+  readonly conversationKind: ImConversationKind
+  readonly target: ImRouteTarget
+  readonly workspaceId: WorkspaceId
+  readonly enabled?: boolean
+  readonly groupTrigger?: ImGroupTriggerConfig
+}
+
+/** Mutable fields of an existing route rule. */
+export interface UpdateImRouteRuleOptions {
+  readonly workspaceId?: WorkspaceId
+  readonly enabled?: boolean
+  readonly groupTrigger?: ImGroupTriggerConfig
+}
+
+/** Bind a workspace simulation target to a configured account and route. */
+export interface SetWorkspaceSimulationTargetOptions {
+  readonly workspaceId: WorkspaceId
+  readonly targetAccountId: ImAccountId
+  readonly conversationKind: ImConversationKind
+  readonly targetConversationId?: string
+}
