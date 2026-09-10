@@ -71,10 +71,10 @@ describe('gestalt account pool dynamic registration', () => {
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
     disposals.push(async () => { await ctx.fiber.dispose() })
-    expect(() => apply(ctx, { baseURL: 'http://127.0.0.1:1/v1', apiKey: 'short' })).toThrow(/inference key/)
-    expect(() => apply(ctx, { baseURL: 'http://example.test/v1', apiKey: 'internal-inference-key-650' })).toThrow(/loopback/)
-    expect(() => apply(ctx, { baseURL: 'ftp://127.0.0.1/v1', apiKey: 'internal-inference-key-650' })).toThrow(/loopback/)
-    expect(() => apply(ctx, { baseURL: 'http://127.0.0.1:1/v1', apiKey: 'internal-inference-key-650', refreshIntervalMs: 0 })).toThrow(/positive/)
+    expect(() => { apply(ctx, { baseURL: 'http://127.0.0.1:1/v1', apiKey: 'short' }) }).toThrow(/inference key/)
+    expect(() => { apply(ctx, { baseURL: 'http://example.test/v1', apiKey: 'internal-inference-key-650' }) }).toThrow(/loopback/)
+    expect(() => { apply(ctx, { baseURL: 'ftp://127.0.0.1/v1', apiKey: 'internal-inference-key-650' }) }).toThrow(/loopback/)
+    expect(() => { apply(ctx, { baseURL: 'http://127.0.0.1:1/v1', apiKey: 'internal-inference-key-650', refreshIntervalMs: 0 }) }).toThrow(/positive/)
   })
 
   it('keeps the route unpublished when the catalog JSON is invalid', async () => {
