@@ -14,6 +14,7 @@ import {
   type ImScopeId,
   type InboundMessageRecord,
 } from '../delivery/index.ts'
+import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 import type { ImConversationKind } from '../types.ts'
 import { parseScopeId, registerImTools } from './tools.ts'
 import type {
@@ -136,8 +137,33 @@ export class ImExecutionService extends Service {
       workspaceId = routeResult.workspaceId
       groupTrigger = routeResult.groupTrigger
     } else {
-      // Simulation scope
-      resolvedKind = options.scope?.conversationKind ?? 'direct'
+      const sim = this.ctx.get('imSimulation') as
+        | {
+          getInstance?: (id: string) => {
+            workspaceId: WorkspaceId
+            testedWorkspaceId?: WorkspaceId
+            status: string
+            target: { accountId: string; conversationKind: ImConversationKind; conversationId: string }
+          } | undefined
+        }
+        | undefined
+      const instance = sim?.getInstance?.(parsedScope.instanceId)
+      if (!instance || instance.status === 'stopped') {
+        return { triggered: false }
+      }
+      workspaceId = instance.testedWorkspaceId ?? instance.workspaceId
+      resolvedKind = options.scope?.conversationKind ?? instance.target.conversationKind
+      if (resolvedKind === 'group') {
+        const rules = await this.ctx.imConfig.listRouteRules()
+        const matchedRule = rules.find(
+          r =>
+            r.accountId === instance.target.accountId
+            && r.conversationKind === resolvedKind
+            && (r.target.kind === 'all'
+              || (r.target.kind === 'specific' && r.target.conversationId === instance.target.conversationId)),
+        )
+        groupTrigger = matchedRule?.groupTrigger
+      }
     }
 
     // ai_outbound messages never trigger steer

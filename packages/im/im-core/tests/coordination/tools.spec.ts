@@ -290,44 +290,11 @@ describe('IM Tools - im_send_message and im_query_history', () => {
 
     const sendTool = ctx.tools.get('im_send_message')!
 
-    // Workspace has NO simulation configuration
     await expect(
       sendTool.execute(
         { scopeId: simScopeId, text: 'Fake sim message' },
         mockExec,
       ),
-    ).rejects.toThrow(/simulation is not configured/)
-  })
-
-  it('configured simulation scope may remain pending', async () => {
-    const accountId = brandString<ImAccountId>('acc-sim-ok')
-    const workspaceId = brandString<WorkspaceId>('ws-sim-ok')
-    await configService.upsertAccount({
-      id: accountId,
-      platform: 'dingtalk',
-      displayName: 'Sim Account',
-      status: 'connected',
-      paused: false,
-    })
-    await configService.createRouteRule({
-      id: brandString<ImRouteRuleId>('rule-sim-ok'),
-      accountId,
-      conversationKind: 'direct',
-      target: { kind: 'all' },
-      workspaceId,
-      enabled: true,
-    })
-    await configService.setSimulationConfig({
-      workspaceId,
-      targetAccountId: accountId,
-      conversationKind: 'direct',
-    })
-    const sendTool = ctx.tools.get('im_send_message')!
-    const result = (await sendTool.execute(
-      { scopeId: `sim:${workspaceId}:conv-sim-ok`, text: 'Simulated reply' },
-      mockExec,
-    )) as { status: string; sent: boolean }
-    expect(result.status).toBe('pending')
-    expect(result.sent).toBe(false)
+    ).rejects.toThrow(/simulation instance is not running/)
   })
 })

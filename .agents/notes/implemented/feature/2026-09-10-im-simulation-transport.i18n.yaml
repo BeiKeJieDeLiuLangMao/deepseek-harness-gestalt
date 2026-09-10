@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-10-im-simulation-transport.md
+2026-09-10-im-simulation-transport.md: 0db736215068f00e20fd921bff8fc45151044f3d
+2026-09-10-im-simulation-transport.zh.md: 3e5c66b5b111551fd65b53dc53ec877629c75399

@@ -34,6 +34,10 @@
       "types": "./lib/types/coordination/index.d.ts",
       "default": "./lib/types/coordination/index.js"
     },
+    "./simulation": {
+      "types": "./lib/types/simulation/index.d.ts",
+      "default": "./lib/types/simulation/index.js"
+    },
     "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
