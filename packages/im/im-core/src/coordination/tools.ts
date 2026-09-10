@@ -224,7 +224,7 @@ export function registerImTools(ctx: Context): () => void {
               isAi: true,
             })
             if (sent.status === 'result_unknown') {
-              await ctx.imDelivery.settleOutbound({
+              const settled = await ctx.imDelivery.settleOutbound({
                 requestId,
                 status: 'result_unknown',
                 receipt: {
@@ -233,9 +233,9 @@ export function registerImTools(ctx: Context): () => void {
                 },
               })
               return {
-                status: 'result_unknown',
-                requestId,
-                scopeId: outbound.scopeId,
+                status: settled.status,
+                requestId: settled.requestId,
+                scopeId: settled.scopeId,
                 sent: false,
               }
             }
