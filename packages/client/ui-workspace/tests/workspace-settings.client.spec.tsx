@@ -229,7 +229,7 @@ describe('workspace settings and invite wizard (M4)', () => {
     expect(cloneDirectoryName(':', '..')).toBe('project')
   })
 
-  it('closes settings when membership unloads and ignores a stale project lookup', async () => {
+  it('hides collaboration when membership unloads and keeps contributed cards', async () => {
     const firstLookup = deferred<undefined>()
     const first = gateway({
       projectForWorkspace: vi.fn().mockReturnValue(firstLookup.promise),
@@ -237,19 +237,41 @@ describe('workspace settings and invite wizard (M4)', () => {
     const membership = liveMembership(true, 0)
     vi.useFakeTimers()
     try {
-      mount(first, { useMembership: membership.hook })
+      mount(first, {
+        useMembership: membership.hook,
+        renderSlot: ((name: string) => (
+          name === 'workspace.settings.section' ? <div data-testid="im-takeover">IM 接管</div> : null
+        )) as never,
+      })
       openWorkspaceMenu()
       fireEvent.click(screen.getByRole('menuitem', { name: '工作区设置' }))
       expect(screen.getByText('正在查找已绑定的云项目…')).toBeTruthy()
+      expect(screen.getByTestId('im-takeover')).toBeTruthy()
       membership.set({ available: false, epoch: 1 })
       await flush()
       expect(screen.queryByText('正在查找已绑定的云项目…')).toBeNull()
+      expect(screen.getByRole('dialog', { name: '工作区设置' })).toBeTruthy()
+      expect(screen.getByTestId('im-takeover')).toBeTruthy()
       firstLookup.resolve(undefined)
       await flush()
-      expect(screen.queryByRole('dialog')).toBeNull()
+      expect(screen.getByRole('dialog', { name: '工作区设置' })).toBeTruthy()
+      expect(screen.getByTestId('im-takeover')).toBeTruthy()
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('opens settings without a membership client and still renders contributed cards', () => {
+    mount(undefined, {
+      renderSlot: ((name: string) => (
+        name === 'workspace.settings.section' ? <div>IM 接管</div> : null
+      )) as never,
+    })
+    openWorkspaceMenu()
+    fireEvent.click(screen.getByRole('menuitem', { name: '工作区设置' }))
+    expect(screen.getByRole('dialog', { name: '工作区设置' })).toBeTruthy()
+    expect(screen.queryByText('多人协作')).toBeNull()
+    expect(screen.getByText('IM 接管')).toBeTruthy()
   })
 
   it('offers 工作区设置 as the first workspace-row menu item', () => {

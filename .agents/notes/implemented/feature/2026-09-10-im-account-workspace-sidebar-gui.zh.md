@@ -10,7 +10,7 @@ Status: implemented
 
 ## Decision
 
-`@deepseek-ai/dsh-client-ui-im` 注册设置分区 `im-accounts`、工作区卡片 `im-takeover` 与 `im-simulation`，以及官方 Sidebar 标签 `@deepseek-ai/dsh-client-ui-im/conversation`。`ui-workspace` 把 `workspace.settings.section` 声明为 `sidebar.workspaces` 的 list 子槽，设置弹窗在成员管理之后渲染这些卡片。新接管规则默认停用。停用指定规则会保留绑定，不回退到「全部」。工作区选中已配置目标之前，模拟工具保持不可用。发送者徽标覆盖 `external` / `ai_outbound` / `human_native` / `human_dsh` / `unknown`。`result_unknown` 不显示为已发送。自动处理关闭时仍可手动发送。审批仍只走原生审批界面。
+`@deepseek-ai/dsh-client-ui-im` 注册设置分区 `im-accounts`、工作区卡片 `im-takeover` 与 `im-simulation`，以及官方 Sidebar 标签 `@deepseek-ai/dsh-client-ui-im/conversation`。`ui-workspace` 把 `workspace.settings.section` 声明为 `sidebar.workspaces` 的 list 子槽，设置弹窗在成员管理之后渲染这些卡片。没有 live membership client 时，工作区设置仍保持打开，只隐藏协作与邀请向导。新接管规则默认停用。停用指定规则会保留绑定，不回退到「全部」。工作区选中已配置目标之前，模拟工具保持不可用。发送者徽标覆盖 `external` / `ai_outbound` / `human_native` / `human_dsh` / `unknown`。`result_unknown` 不显示为已发送。自动处理关闭时仍可手动发送。审批仍只走原生审批界面。
 
 ## Alternatives considered
 

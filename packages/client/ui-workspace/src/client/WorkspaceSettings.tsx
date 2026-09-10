@@ -97,8 +97,11 @@ function membershipFailureCode(text: string): keyof typeof MEMBERSHIP_ERROR_COPY
 /**
  * The workspace settings modal. Unmounted when closed; the bound project and
  * its roster live in local state so a reopened modal re-reads fresh facts.
+ * Collaboration hides without a live membership client; contributed cards stay.
  */
-export function WorkspaceSettingsModal({ workspaceId, workspaceTitle, workspacePath, gateway, onClose, t, renderSlot }: {
+export function WorkspaceSettingsModal({
+  workspaceId, workspaceTitle, workspacePath, gateway, membershipAvailable = true, onClose, t, renderSlot,
+}: {
   /** Exact local Workspace whose Cloud Project relationship is being managed. */
   workspaceId: WorkspaceId
   /** Title of the workspace being configured (heading context only). */
@@ -106,6 +109,11 @@ export function WorkspaceSettingsModal({ workspaceId, workspaceTitle, workspaceP
   /** Absolute local path shown under the settings-page title. */
   workspacePath?: string
   gateway: ProjectMembershipGateway
+  /**
+   * Whether Cloud Project membership is live. Collaboration stays hidden
+   * without it; contributed cards still render.
+   */
+  membershipAvailable?: boolean
   onClose: () => void
   t: SettingsTranslate
   /**
@@ -122,6 +130,12 @@ export function WorkspaceSettingsModal({ workspaceId, workspaceTitle, workspaceP
   const trimmedName = name.trim()
   const createBlocked = creating || trimmedName === ''
   useEffect(() => {
+    if (!membershipAvailable) {
+      setProject(null)
+      setRemote(null)
+      setCreateError(null)
+      return
+    }
     let alive = true
     gateway.projectForWorkspace(workspaceId).then((existing) => {
       if (!alive) return
@@ -140,7 +154,7 @@ export function WorkspaceSettingsModal({ workspaceId, workspaceTitle, workspaceP
       setCreateError(membershipUserMessage(reason, t))
     })
     return () => { alive = false }
-  }, [gateway, workspaceId])
+  }, [gateway, membershipAvailable, workspaceId])
   const submitCreate = () => {
     /* v8 ignore next -- the create button uses the same createBlocked predicate. */
     if (createBlocked) return
@@ -174,41 +188,43 @@ export function WorkspaceSettingsModal({ workspaceId, workspaceTitle, workspaceP
             <code className={css.infoCode}>{remote ?? t('settings.remoteUnavailable')}</code>
           </div>
         </section>
-        <section className={css.settingsCard}>
-          <div className={css.cardTitle}>{t('settings.collaboration')}</div>
-          {project === undefined
-            ? <div className={css.sectionDesc}>{t('upgrade.loading')}</div>
-            : project === null
-              ? (
-                <div>
-                  <div className={css.sectionDesc}>{t('upgrade.desc')}</div>
-                  <label className={css.fieldLabel}>
-                    {t('upgrade.projectName')}
-                    <input
-                      className={css.fieldInput}
-                      value={name}
-                      aria-label={t('upgrade.projectName')}
-                      disabled={creating}
-                      onChange={(e) => { setName(e.target.value); setCreateError(null) }}
-                    />
-                  </label>
-                  {createError !== null && <div className={css.actionError} role="alert">{createError}</div>}
-                  <Button variant="primary" disabled={createBlocked} onClick={submitCreate}>
-                    {creating ? t('upgrade.creating') : t('upgrade.create')}
-                  </Button>
-                </div>
-              )
-              : (
-                <div>
-                  <div className={css.infoRow}>
-                    <span className={css.infoLabel}>{t('settings.project')}</span>
-                    <span className={css.infoValue}>{project.name}</span>
-                    <code className={css.infoCode}>{project.id}</code>
+        {membershipAvailable && (
+          <section className={css.settingsCard}>
+            <div className={css.cardTitle}>{t('settings.collaboration')}</div>
+            {project === undefined
+              ? <div className={css.sectionDesc}>{t('upgrade.loading')}</div>
+              : project === null
+                ? (
+                  <div>
+                    <div className={css.sectionDesc}>{t('upgrade.desc')}</div>
+                    <label className={css.fieldLabel}>
+                      {t('upgrade.projectName')}
+                      <input
+                        className={css.fieldInput}
+                        value={name}
+                        aria-label={t('upgrade.projectName')}
+                        disabled={creating}
+                        onChange={(e) => { setName(e.target.value); setCreateError(null) }}
+                      />
+                    </label>
+                    {createError !== null && <div className={css.actionError} role="alert">{createError}</div>}
+                    <Button variant="primary" disabled={createBlocked} onClick={submitCreate}>
+                      {creating ? t('upgrade.creating') : t('upgrade.create')}
+                    </Button>
                   </div>
-                  <MemberManagement gateway={gateway} project={project} t={t} />
-                </div>
-              )}
-        </section>
+                )
+                : (
+                  <div>
+                    <div className={css.infoRow}>
+                      <span className={css.infoLabel}>{t('settings.project')}</span>
+                      <span className={css.infoValue}>{project.name}</span>
+                      <code className={css.infoCode}>{project.id}</code>
+                    </div>
+                    <MemberManagement gateway={gateway} project={project} t={t} />
+                  </div>
+                )}
+          </section>
+        )}
         {renderSlot?.({ workspaceId })}
       </article>
     </Modal>

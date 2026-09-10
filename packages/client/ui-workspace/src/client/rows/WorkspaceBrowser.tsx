@@ -1124,10 +1124,6 @@ export function WorkspaceBrowser({
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const [settingsTarget, setSettingsTarget] = useState<{ workspaceId: WorkspaceId; title: string; path: string } | null>(null)
   useEffect(() => {
-    if (membershipAvailable) return
-    setSettingsTarget(null)
-  }, [membershipAvailable])
-  useEffect(() => {
     if (deleteCommittedId === null
       || workspaces.some(workspace => workspace.workspaceId === deleteCommittedId)) return
     setDeleting(false)
@@ -1457,13 +1453,14 @@ export function WorkspaceBrowser({
         {deleting && <div className={css.deleteStatus} role="status">{t('delete.pending')}</div>}
         {deleteError !== null && <div className={css.renameError} role="alert">{deleteError}</div>}
       </Modal>
-      {settingsTarget !== null && membershipAvailable && (
+      {settingsTarget !== null && (
         <WorkspaceSettingsModal
-          key={membershipEpoch}
+          key={`${membershipEpoch}:${String(membershipAvailable)}`}
           workspaceId={settingsTarget.workspaceId}
           workspaceTitle={settingsTarget.title}
           workspacePath={settingsTarget.path}
           gateway={projectMembership}
+          membershipAvailable={membershipAvailable}
           onClose={() => { setSettingsTarget(null) }}
           t={t}
           renderSlot={owner => renderSlot('workspace.settings.section', owner)}

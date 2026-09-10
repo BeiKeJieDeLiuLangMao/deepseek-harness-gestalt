@@ -168,8 +168,9 @@ export type WorkspaceBrowserInjected = {
   createWorkspace: (input: { path: string }) => Promise<WorkspaceView>
   /**
    * Late-bound Cloud Project membership transport. Callbacks resolve the
-   * current membership client at call time. Modal availability rides
-   * `hooks.membership`; absence of a live client closes settings and the wizard.
+   * current membership client at call time. Collaboration and the invite
+   * wizard ride `hooks.membership`; absence of a live client hides those
+   * surfaces and leaves workspace settings and contributed cards open.
    */
   projectMembership: ProjectMembershipGateway
 }
