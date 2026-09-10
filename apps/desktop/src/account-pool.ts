@@ -183,12 +183,19 @@ export function createDesktopAccountPool(options: {
     submitGlmKey: async (input) => {
       const apiKey = input.apiKey.trim()
       if (apiKey.length === 0) return publish({ ...snapshot, error: 'GLM Coding Plan key is required' })
-      const { statusCode, payload } = await requestJson('PUT', '/v0/management/glm-coding-plan', [{
+      const site = input.site === 'international' ? 'international' : 'cn'
+      const entry = {
         'api-key': apiKey,
-        ...input.site === undefined ? {} : { site: input.site },
+        site,
         ...input.organization === undefined ? {} : { organization: input.organization },
         ...input.project === undefined ? {} : { project: input.project },
-      }])
+      }
+      const existing = await requestJson('GET', '/v0/management/glm-coding-plan')
+      const views = asRecord(existing.payload)?.['glm-coding-plan']
+      const count = Array.isArray(views) ? views.length : 0
+      const { statusCode, payload } = count === 0
+        ? await requestJson('PUT', '/v0/management/glm-coding-plan', [entry])
+        : await requestJson('PATCH', '/v0/management/glm-coding-plan', { index: count, value: entry })
       if (statusCode < 200 || statusCode >= 300) {
         return publish({ ...snapshot, error: readError(payload) ?? 'GLM Coding Plan key was not accepted' })
       }

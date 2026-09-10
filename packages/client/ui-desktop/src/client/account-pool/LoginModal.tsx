@@ -10,13 +10,13 @@ export interface LoginModalProps {
   onClose: () => void
   onStart: (kind: AccountPoolLoginKind) => void
   onCancel: (state: string) => void
-  onSubmitGlmKey: (input: { apiKey: string; site: 'cn' | 'intl'; organization?: string; project?: string }) => void
+  onSubmitGlmKey: (input: { apiKey: string; site: 'cn' | 'international'; organization?: string; project?: string }) => void
 }
 
 export function LoginModal({ initialProvider, login, onClose, onStart, onCancel, onSubmitGlmKey }: LoginModalProps) {
   const [provider, setProvider] = useState<AccountPoolLoginKind>(initialProvider)
   const [glmApiKey, setGlmApiKey] = useState('')
-  const [glmSite, setGlmSite] = useState<'cn' | 'intl'>('cn')
+  const [glmSite, setGlmSite] = useState<'cn' | 'international'>('cn')
   const [organization, setOrganization] = useState('')
   const [project, setProject] = useState('')
   const isGlm = provider === 'glm'
@@ -69,9 +69,9 @@ export function LoginModal({ initialProvider, login, onClose, onStart, onCancel,
               </div>
               <div className={css.fieldGroup}>
                 <label className={css.fieldLabel}>站点：</label>
-                <select className={css.textInput} value={glmSite} onChange={(event) => { setGlmSite(event.target.value as 'cn' | 'intl') }}>
+                <select className={css.textInput} value={glmSite} onChange={(event) => { setGlmSite(event.target.value as 'cn' | 'international') }}>
                   <option value="cn">open.bigmodel.cn</option>
-                  <option value="intl">api.z.ai</option>
+                  <option value="international">api.z.ai</option>
                 </select>
               </div>
               <div className={css.fieldGroup}>
