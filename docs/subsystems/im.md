@@ -643,7 +643,7 @@ async createInstance(options: CreateSimulationInstanceOptions): Promise<ImSimula
  * @param instanceId - Identifier of the instance to stop.
  * @returns Updated simulation instance with status: 'stopped'.
  */
-async stopInstance(instanceId: ImSimulationInstanceId): Promise<ImSimulationInstance>
+@Remote('stopInstance') async stopInstance(instanceId: ImSimulationInstanceId): Promise<ImSimulationInstance>
 
 /**
  * Inject a message from a speaking group member into the simulation scope.

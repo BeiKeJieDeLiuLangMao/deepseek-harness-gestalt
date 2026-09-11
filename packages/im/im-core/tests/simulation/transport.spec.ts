@@ -152,6 +152,24 @@ describe('IM simulation transport and workspace tool gating', () => {
     expect(view).not.toHaveProperty('content')
   })
 
+  it('stops a GUI simulation instance and refuses further member inject', async () => {
+    await configService.setSimulationConfig({
+      workspaceId: simUserWorkspaceId,
+      targetAccountId: accountId,
+      conversationKind: 'direct',
+    })
+    const instance = await simulationService.remoteExportCreateInstance({
+      workspaceId: simUserWorkspaceId,
+    })
+    const stopped = await simulationService.stopInstance(instance.instanceId)
+    expect(stopped.status).toBe('stopped')
+    await expect(simulationService.remoteExportInjectMemberMessage({
+      instanceId: instance.instanceId,
+      memberId: 'member-gui',
+      text: 'after stop',
+    })).rejects.toThrow(/stopped/)
+  })
+
   it('mounts simulation tools on Agents whose workspace has a simulation target', async () => {
     ctx.provide('workspaceRegistry', {
       list: () => [

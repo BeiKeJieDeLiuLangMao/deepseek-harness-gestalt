@@ -293,5 +293,22 @@ export function createHostImGuiFace(
         if (result.ok) await refresh()
       })()
     },
+    stopSimulation: () => {
+      if (simulation === undefined) return
+      void (async () => {
+        const [configs, listed] = await Promise.all([
+          remote.listSimulationConfigs(),
+          simulation.listInstances(),
+        ])
+        if (!configs.ok || !listed.ok) return
+        const workspaceId = configs.value[0]?.workspaceId
+        const instance = listed.value.find(row =>
+          row.status === 'running' && row.workspaceId === workspaceId,
+        )
+        if (instance === undefined) return
+        const result = await simulation.stopInstance(instance.instanceId)
+        if (result.ok) await refresh()
+      })()
+    },
   }
 }

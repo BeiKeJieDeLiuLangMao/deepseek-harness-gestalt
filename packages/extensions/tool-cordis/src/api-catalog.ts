@@ -1603,7 +1603,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'Created simulation instance with frozen target snapshot.',
       },
       {
-        signature: 'async stopInstance(instanceId: ImSimulationInstanceId): Promise<ImSimulationInstance>',
+        signature: '@Remote(\'stopInstance\') async stopInstance(instanceId: ImSimulationInstanceId): Promise<ImSimulationInstance>',
         description: 'Explicitly stop a simulation instance. Stop is terminal; stopped instances cannot be resumed.',
         parameters: [{ name: 'instanceId', description: 'Identifier of the instance to stop.' }],
         returns: 'Updated simulation instance with status: \'stopped\'.',

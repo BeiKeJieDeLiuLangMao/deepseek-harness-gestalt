@@ -99,6 +99,7 @@ export const zh = {
   createSimulation: '创建模拟实例',
   memberHint: '以群成员身份发送（不经过 Agent）…',
   sendAsMember: '以成员发送',
+  stopSimulation: '结束模拟实例',
 } satisfies Record<string, string>
 
 /** The IM GUI namespace key union. */
@@ -200,4 +201,5 @@ export const en = {
   createSimulation: 'Create simulation instance',
   memberHint: 'Send as a group member (not through the agent)…',
   sendAsMember: 'Send as member',
+  stopSimulation: 'Stop simulation instance',
 } satisfies Record<ImKey, string>

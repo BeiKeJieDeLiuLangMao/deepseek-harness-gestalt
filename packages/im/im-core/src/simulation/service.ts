@@ -234,6 +234,7 @@ export class ImSimulationService extends TypertRemoteService {
    * @param instanceId - Identifier of the instance to stop.
    * @returns Updated simulation instance with status: 'stopped'.
    */
+  @Remote('stopInstance')
   async stopInstance(instanceId: ImSimulationInstanceId): Promise<ImSimulationInstance> {
     const existing = this.instances.get(instanceId)
     if (!existing) {

@@ -85,6 +85,11 @@ export function createImGuiFace(store: SnapshotStore<ImGuiSnapshot>): ImGuiFace 
         })
       })
     },
+    stopSimulation: () => {
+      store.update((draft) => {
+        delete draft.conversation.simulationInstanceId
+      })
+    },
   }
 }
 

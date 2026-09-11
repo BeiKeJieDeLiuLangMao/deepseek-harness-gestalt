@@ -309,6 +309,21 @@ const _deepseek_ai_dsh_im_core_imSimulation_listInstances_result$schema = z.arra
   'createdAt': z.string().readonly(),
   'stoppedAt': z.string().readonly().optional(),
 }))
+const _deepseek_ai_dsh_im_core_imSimulation_stopInstance_parameter_0$schema = z.intersection(z.string(), z.unknown())
+const _deepseek_ai_dsh_im_core_imSimulation_stopInstance_result$schema = z.object({
+  'instanceId': z.intersection(z.string(), z.unknown()).readonly(),
+  'workspaceId': z.intersection(z.string(), z.unknown()).readonly(),
+  'testedWorkspaceId': z.intersection(z.string(), z.unknown()).readonly(),
+  'target': z.object({
+  'accountId': z.intersection(z.string(), z.unknown()).readonly(),
+  'conversationKind': z.union([z.literal("direct"), z.literal("group")]).readonly(),
+  'conversationId': z.string().readonly(),
+}).readonly(),
+  'speakingMembers': z.array(z.string()).readonly().optional(),
+  'status': z.union([z.literal("running"), z.literal("stopped")]).readonly(),
+  'createdAt': z.string().readonly(),
+  'stoppedAt': z.string().readonly().optional(),
+})
 
 export const TYPERT_REMOTE = {
   package: '@deepseek-ai/dsh-im-core',
@@ -775,6 +790,31 @@ export const TYPERT_REMOTE = {
         schema: _deepseek_ai_dsh_im_core_imSimulation_listInstances_result$schema,
       },
       sourceLocation: {"file":"packages/im/im-core/src/simulation/service.ts","line":128,"column":9},
+    },
+    {
+      id: '@deepseek-ai/dsh-im-core#imSimulation/stopInstance',
+      service: 'imSimulation',
+      namespace: 'imSimulation',
+      method: 'stopInstance',
+      invocation: { kind: 'direct' },
+      parameters: [
+        {
+          name: 'instanceId',
+          wire: 'instanceId',
+          source: 'json',
+          codec: {
+            mode: 'strict',
+            typeSymbol: '@deepseek-ai/dsh-im-core/client#ImSimulationInstanceId',
+            schema: _deepseek_ai_dsh_im_core_imSimulation_stopInstance_parameter_0$schema,
+          },
+        },
+      ],
+      result: {
+        mode: 'strict',
+        typeSymbol: '@deepseek-ai/dsh-im-core/client#ImSimulationInstance',
+        schema: _deepseek_ai_dsh_im_core_imSimulation_stopInstance_result$schema,
+      },
+      sourceLocation: {"file":"packages/im/im-core/src/simulation/service.ts","line":238,"column":9},
     },
   ],
 }
