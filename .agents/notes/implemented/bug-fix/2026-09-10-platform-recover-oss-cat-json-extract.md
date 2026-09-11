@@ -26,6 +26,7 @@ Platform Deploy recovery and the unresolved-lock probe feed `aliyun oss cat` std
 - A second JSON value fails closed and does not delete the lock.
 - A zero-exit `oss cat` that is not one JSON object is an undetermined lock, not a missing object.
 - Recovery tests that stub `jq` keep that stub except chatter cases, which invoke real `jq` on the extracted document.
+- Durable field reads strip CR so Git Bash `jq` CRLF lines still match `PLATFORM_ECS_INSTANCE_IDS`.
 
 ## Testing
 
