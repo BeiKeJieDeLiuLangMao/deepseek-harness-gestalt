@@ -8,6 +8,7 @@ import type {} from '@deepseek-ai/dsh-agent-presets'
 import { assertFixtureInventory, launchWebScaffold, type WebScaffold } from './scaffold.ts'
 
 const DESKTOP_OVERLAY = fileURLToPath(new URL('../../desktop/cordis.patch.yml', import.meta.url))
+const DESKTOP_INSTALL_ANCHOR = fileURLToPath(new URL('../../desktop/package.json', import.meta.url))
 const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/desktop-schedule', import.meta.url))
 const FIXTURE = join(SNAPSHOT_DIR, 'session.v3.jsonl')
 const PROMPT = 'List the reminders in this Desktop Session, then reply exactly NO_REMINDERS and stop.'
@@ -27,6 +28,7 @@ describe('Desktop default Schedule turn', () => {
   beforeAll(async () => {
     scaffold = await launchWebScaffold({
       extraOverlayPath: DESKTOP_OVERLAY,
+      extraInstallAnchors: [DESKTOP_INSTALL_ANCHOR],
       replayFixture: FIXTURE,
     })
     agentHandle = await scaffold.ctx.agents.create({
