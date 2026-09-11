@@ -2,9 +2,13 @@
 
 [English](README.md) | 中文
 
-Desktop 仅为其拥有的 CLIProxyAPI 进程组合此插件。Host 通过子进程环境提供 IPv4-loopback HTTPS `/v1` 端点、仅用于 inference 的 key，以及作为 `NODE_EXTRA_CA_CERTS` 的运行代证书；这些值既不存入 settings，也不暴露给 renderer 代码。
+## Summary
 
-插件认证访问 `/v1/models`，仅在返回目录至少包含一个模型时发布 `gestalt-account-pool`，目录变化后重新发布拓扑，并在核心不可用时撤回 route。Registry 冲突会在注册时失败，而不会替换用户 provider。不发布运行时 invariant 伴生体，因为本适配器没有独立于 `dsh-llm` 已断言注册表契约之外的事件流或可变数据。
+Desktop 仅为其拥有的 CLIProxyAPI 进程组合此插件。Host 提供 loopback HTTPS `/v1` 端点、仅用于 inference 的 key，以及作为 `NODE_EXTRA_CA_CERTS` 的运行代证书；这些值既不存入 settings，也不暴露给 renderer 代码。目录至少有一个模型时发布 `gestalt-account-pool`，核心不可用时撤回 route。
+
+## Composition
+
+插件认证访问 `/v1/models`，目录变化后重新发布拓扑，并在核心不可用时撤回 route。Registry 冲突会在注册时失败，而不会替换用户 provider。不发布运行时 invariant 伴生体，因为本适配器没有独立于 `dsh-llm` 已断言注册表契约之外的事件流或可变数据。
 
 ## Model Experience
 

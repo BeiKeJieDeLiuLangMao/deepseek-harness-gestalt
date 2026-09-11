@@ -2,7 +2,9 @@
 
 English | [中文](README.zh.md)
 
-Read-only quota observation for CLIProxyAPI account-pool credentials. One entry — `createQuotaObserver({ transport })` — probes an account through the injected trusted transport and returns a sanitized `QuotaObservation`: a `known` / `partial` / `unsupported` / `failure` verdict, the sampling instant `observedAt`, and per-window facts. No runtime invariant companion is published because this pure observation library owns no event stream or mutable runtime data; probe construction, parsing, and sanitization are enforced by unit and assembly tests over a fake transport.
+## Summary
+
+Read-only quota observation for CLIProxyAPI account-pool credentials. `createQuotaObserver({ transport })` probes one account through the injected trusted transport and returns a sanitized `QuotaObservation` with a `known` / `partial` / `unsupported` / `failure` verdict, `observedAt`, and per-window facts. The package never holds secrets or mutates accounts. No runtime invariant companion is published because this library owns no event stream or mutable runtime data.
 
 ## Trust and read-only model
 
