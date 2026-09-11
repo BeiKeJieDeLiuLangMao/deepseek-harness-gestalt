@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-10-platform-recover-oss-cat-json-extract.md
-2026-09-10-platform-recover-oss-cat-json-extract.md: 5ba616bed78d76a063a80227fc69a7c5862d8470
-2026-09-10-platform-recover-oss-cat-json-extract.zh.md: cb896b716ba6aae67d8d965d19f463d329b06939
+2026-09-10-platform-recover-oss-cat-json-extract.md: 42f5b5b38b02ea5c2aa422c68c7839695876d334
+2026-09-10-platform-recover-oss-cat-json-extract.zh.md: 06ba54b75d8d8e73eb332a0cb94072f7dad47f50
