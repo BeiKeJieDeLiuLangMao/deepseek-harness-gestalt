@@ -3,9 +3,9 @@
     - button "Use the bash tool to" [disabled]
   - img
   - text: Minimal mode
-  - button "More actions":
+  - button "Open sidebar":
     - img
-  - button "Open right sidebar":
+  - button "Open the bottom panel":
     - img
   - tablist:
     - tab "Chat" [selected]

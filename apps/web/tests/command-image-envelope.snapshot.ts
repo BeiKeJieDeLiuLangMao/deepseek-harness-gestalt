@@ -13,19 +13,19 @@ import { installAssembledBootEnv, mountAssembledApp } from './assembled-boot.ts'
 
 installAssembledBootEnv()
 
-/** Open a fresh fixture session and return its composer textarea. */
-async function freshComposer(): Promise<HTMLTextAreaElement> {
+/** Open a fresh fixture session and return its composer surface. */
+async function freshComposer(): Promise<HTMLElement> {
   const tree = await screen.findByRole('tree', { name: 'Sessions' }, { timeout: 10_000 })
   const start = tree.querySelector<HTMLButtonElement>('button[aria-label="New session in fixture"]')
   if (start === null) throw new Error('fixture Workspace new-session action missing')
   fireEvent.click(start)
-  return await screen.findByPlaceholderText('Describe what you want to build, / commands, @ files or sessions', {}, { timeout: 10_000 }) as HTMLTextAreaElement
+  return await screen.findByLabelText('Describe what you want to build, / commands, @ files or sessions', {}, { timeout: 10_000 })
 }
 
 /** Paste one tiny PNG into the composer and wait for its rail thumbnail. */
-async function pasteImage(textarea: HTMLTextAreaElement, name: string): Promise<void> {
+async function pasteImage(composer: HTMLElement, name: string): Promise<void> {
   const image = new File([new Uint8Array([137, 80, 78, 71])], name, { type: 'image/png' })
-  fireEvent.paste(textarea, {
+  fireEvent.paste(composer, {
     clipboardData: {
       items: [{ kind: 'file', type: 'image/png', getAsFile: () => image }],
       getData: () => '',
@@ -40,12 +40,13 @@ async function pasteImage(textarea: HTMLTextAreaElement, name: string): Promise<
 
 it('refuses an image-carrying submit to a non-declaring command and keeps draft and images', async () => {
   mountAssembledApp()
-  const textarea = await freshComposer()
-  await pasteImage(textarea, 'ref.png')
+  const composer = await freshComposer()
+  await pasteImage(composer, 'ref.png')
 
   // /echo is a leadingInput fixture command without `input.images`.
-  fireEvent.change(textarea, { target: { value: '/echo hello' } })
-  fireEvent.keyDown(textarea, { key: 'Enter' })
+  composer.textContent = '/echo hello'
+  fireEvent.input(composer)
+  fireEvent.keyDown(composer, { key: 'Enter' })
 
   // The refusal rides the same transient error banner as other composer
   // failures; session activity remains on its separate status live region.
@@ -59,37 +60,39 @@ it('refuses an image-carrying submit to a non-declaring command and keeps draft 
   expect([...document.querySelectorAll('[role="status"]')]
     .some(candidate => candidate.textContent?.includes('image attachments') ?? false)).toBe(false)
   // The whole envelope is retained: draft text and the rail thumbnail.
-  expect(textarea.value).toBe('/echo hello')
+  expect(composer.textContent).toBe('/echo hello')
   const rail = document.querySelector('[role="group"][aria-label="Pending images"]')
   expect([...(rail?.querySelectorAll('img') ?? [])].map(img => img.getAttribute('alt'))).toEqual(['ref.png'])
 })
 
 it('consumes images through a declaring command and clears the composer on success', async () => {
   mountAssembledApp()
-  const textarea = await freshComposer()
-  await pasteImage(textarea, 'goal-ref.png')
+  const composer = await freshComposer()
+  await pasteImage(composer, 'goal-ref.png')
 
   // /goal declares `input.images` in the fixture catalog; the claim submit
   // serializes the pasted bytes and the fixture executor admits them.
-  fireEvent.change(textarea, { target: { value: '/goal rebuild the cathedral' } })
-  fireEvent.keyDown(textarea, { key: 'Enter' })
+  composer.textContent = '/goal rebuild the cathedral'
+  fireEvent.input(composer)
+  fireEvent.keyDown(composer, { key: 'Enter' })
 
   await waitFor(() => {
-    expect(textarea.value).toBe('')
+    expect(composer.textContent).toBe('')
     expect(document.querySelector('[role="group"][aria-label="Pending images"]')).toBeNull()
   }, { timeout: 5_000 })
 })
 
 it('submits a bare /plan with an image as an image-only plan request', async () => {
   mountAssembledApp()
-  const textarea = await freshComposer()
-  await pasteImage(textarea, 'plan-task.png')
+  const composer = await freshComposer()
+  await pasteImage(composer, 'plan-task.png')
 
-  fireEvent.change(textarea, { target: { value: '/plan' } })
-  fireEvent.keyDown(textarea, { key: 'Enter' })
+  composer.textContent = '/plan'
+  fireEvent.input(composer)
+  fireEvent.keyDown(composer, { key: 'Enter' })
 
   await waitFor(() => {
-    expect(textarea.value).toBe('')
+    expect(composer.textContent).toBe('')
     expect(document.querySelector('[role="group"][aria-label="Pending images"]')).toBeNull()
   }, { timeout: 5_000 })
   expect([...document.querySelectorAll('[role="alert"]')]

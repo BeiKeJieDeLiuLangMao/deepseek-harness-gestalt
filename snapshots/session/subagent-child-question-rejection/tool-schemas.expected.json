@@ -57,10 +57,6 @@
               ]
             }
           },
-          "to_project_member": {
-            "type": "string",
-            "description": "Public GitHub login of one current member other than the asking account. Copy project_members.displayName from a row whose self is false (case-insensitive match). Do not pass project_members.accountId or a row whose self is true. When present, the question is routed to that member instead of the local user and background is required."
-          },
           "background": {
             "type": "string",
             "description": "Agent-authored Decision Brief background. Required with to_project_member; 1 to 600 characters, enforced at construction."

@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/testing/2026-09-11-ci-catalog-toolsearch-pins.md
-2026-09-11-ci-catalog-toolsearch-pins.md: 41ca3888be79344b2ebcdd40da3f33f4ccd6edeb
-2026-09-11-ci-catalog-toolsearch-pins.zh.md: 6926889f272df59ede8c7566cec04f3a4a53a1d5
+2026-09-11-ci-catalog-toolsearch-pins.md: 27b16a920154dc29a8ad99d73103f7b8c2c7a7fe
+2026-09-11-ci-catalog-toolsearch-pins.zh.md: b89f9ea7043afbd77e2f45f7e7d83a34b89c5083
