@@ -23,6 +23,7 @@ import { registerSimulationTools } from './tools.ts'
 import type {
   CreateSimulationInstanceOptions,
   ImGuiCreateSimulationInstanceOptions,
+  ImGuiInjectManagedHumanMessageOptions,
   ImGuiInjectMemberMessageOptions,
   ImportJsonlHistoryOptions,
   ImSimulationInstance,
@@ -160,6 +161,18 @@ export class ImSimulationService extends TypertRemoteService {
     options: ImGuiInjectMemberMessageOptions,
   ): Promise<ImGuiInboundView> {
     return guiInboundViewOf(await this.injectMemberMessage(options))
+  }
+
+  /**
+   * GUI Remote managed-human inject. Returns a text-only inbound row.
+   * @param options - running instance and text.
+   * @returns GUI inbound view for the injected human_dsh message.
+   */
+  @Remote('injectManagedHumanMessage')
+  async remoteExportInjectManagedHumanMessage(
+    options: ImGuiInjectManagedHumanMessageOptions,
+  ): Promise<ImGuiInboundView> {
+    return guiInboundViewOf(await this.injectManagedHumanMessage(options))
   }
 
   /**

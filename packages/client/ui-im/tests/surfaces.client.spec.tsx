@@ -44,6 +44,7 @@ function bind(store = createImGuiStore(prototypeGuiSnapshot())) {
     setRole: face.setRole,
     createSimulation: face.createSimulation,
     injectMember: face.injectMember,
+    injectManagedHuman: face.injectManagedHuman,
     stopSimulation: face.stopSimulation,
   }
   return {
@@ -168,6 +169,21 @@ describe('IM GUI surfaces', () => {
       text: '周末谁值班',
       sender: 'external',
       who: '成员',
+    })
+  })
+
+  it('sends as the managed-account human in the tested-agent role', () => {
+    const seed = prototypeGuiSnapshot()
+    const { conversation, store } = bind(createImGuiStore({
+      ...seed,
+      conversation: { ...seed.conversation, role: 'tested', simulationInstanceId: 'sim-gui' },
+    }))
+    render(<ConversationTab {...conversation} />)
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: '我先看支付回调' } })
+    fireEvent.click(screen.getByRole('button', { name: zh.sendAsManagedHuman }))
+    expect(store.getSnapshot().conversation.messages.at(-1)).toMatchObject({
+      text: '我先看支付回调',
+      sender: 'human_dsh',
     })
   })
 

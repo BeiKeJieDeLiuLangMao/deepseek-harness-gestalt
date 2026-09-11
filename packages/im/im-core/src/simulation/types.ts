@@ -61,6 +61,14 @@ export interface InjectMemberMessageOptions {
   readonly externalMessageId?: string
 }
 
+/** GUI Remote managed-human inject. Host fills the external message id. */
+export interface ImGuiInjectManagedHumanMessageOptions {
+  readonly instanceId: ImSimulationInstanceId
+  readonly text: string
+  readonly humanNick?: string
+}
+
+/** Inject one managed-account human inbound into a running simulation instance. */
 export interface InjectManagedHumanMessageOptions {
   readonly instanceId: ImSimulationInstanceId
   readonly text: string

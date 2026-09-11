@@ -152,6 +152,26 @@ describe('IM simulation transport and workspace tool gating', () => {
     expect(view).not.toHaveProperty('content')
   })
 
+  it('injects a GUI managed-human inbound as a text-only history row', async () => {
+    await configService.setSimulationConfig({
+      workspaceId: simUserWorkspaceId,
+      targetAccountId: accountId,
+      conversationKind: 'direct',
+    })
+    const instance = await simulationService.remoteExportCreateInstance({
+      workspaceId: simUserWorkspaceId,
+    })
+    const view = await simulationService.remoteExportInjectManagedHumanMessage({
+      instanceId: instance.instanceId,
+      text: '我先看支付回调',
+      humanNick: '陈小宇',
+    })
+    expect(view.text).toBe('我先看支付回调')
+    expect(view.senderClassification).toBe('human_dsh')
+    expect(view.senderNick).toBe('陈小宇')
+    expect(view).not.toHaveProperty('content')
+  })
+
   it('stops a GUI simulation instance and refuses further member inject', async () => {
     await configService.setSimulationConfig({
       workspaceId: simUserWorkspaceId,

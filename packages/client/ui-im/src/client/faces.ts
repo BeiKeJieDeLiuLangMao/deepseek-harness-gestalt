@@ -33,6 +33,8 @@ export interface ImGuiFace {
   createSimulation: () => void
   /** Inject a simulated group-member inbound into the running instance. */
   injectMember: (text: string) => void
+  /** Inject a managed-account human_dsh inbound into the running instance. */
+  injectManagedHuman: (text: string) => void
   /** Stop the running Host simulation instance. Stop is terminal. */
   stopSimulation: () => void
 }

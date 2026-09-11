@@ -145,10 +145,14 @@ export function ConversationTab(props: ConversationTabProps) {
           className={css.input}
           aria-label={conversation.role === 'simuser' && conversation.simulationInstanceId !== undefined
             ? props.t('memberHint')
-            : props.t('composerHint')}
+            : conversation.role === 'tested' && conversation.simulationInstanceId !== undefined
+              ? props.t('managedHumanHint')
+              : props.t('composerHint')}
           placeholder={conversation.role === 'simuser' && conversation.simulationInstanceId !== undefined
             ? props.t('memberHint')
-            : props.t('composerHint')}
+            : conversation.role === 'tested' && conversation.simulationInstanceId !== undefined
+              ? props.t('managedHumanHint')
+              : props.t('composerHint')}
           disabled={!canSend}
           value={draft}
           onChange={(event) => { setDraft(event.target.value) }}
@@ -163,6 +167,17 @@ export function ConversationTab(props: ConversationTabProps) {
             }}
           >
             {props.t('sendAsMember')}
+          </Button>
+        ) : conversation.role === 'tested' && conversation.simulationInstanceId !== undefined ? (
+          <Button
+            variant="primary"
+            disabled={!canSend || draft.trim() === ''}
+            onClick={() => {
+              props.injectManagedHuman(draft)
+              setDraft('')
+            }}
+          >
+            {props.t('sendAsManagedHuman')}
           </Button>
         ) : (
           <Button

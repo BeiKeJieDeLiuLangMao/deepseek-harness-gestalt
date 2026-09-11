@@ -85,6 +85,19 @@ export function createImGuiFace(store: SnapshotStore<ImGuiSnapshot>): ImGuiFace 
         })
       })
     },
+    injectManagedHuman: (text) => {
+      const trimmed = text.trim()
+      if (trimmed === '') return
+      store.update((draft) => {
+        draft.conversation.messages.push({
+          id: `human-${Date.now()}`,
+          text: trimmed,
+          sender: 'human_dsh',
+          delivery: 'received',
+          who: draft.conversation.accountName || 'self',
+        })
+      })
+    },
     stopSimulation: () => {
       store.update((draft) => {
         delete draft.conversation.simulationInstanceId

@@ -293,6 +293,35 @@ export function createHostImGuiFace(
         if (result.ok) await refresh()
       })()
     },
+    injectManagedHuman: (text) => {
+      const trimmed = text.trim()
+      if (trimmed === '' || simulation === undefined) return
+      void (async () => {
+        const [accounts, routes, simulations, listed] = await Promise.all([
+          remote.listAccounts(),
+          remote.listRouteRules(),
+          remote.listSimulationConfigs(),
+          simulation.listInstances(),
+        ])
+        if (!accounts.ok || !routes.ok || !simulations.ok || !listed.ok) return
+        const scope = selectedStreamScope(
+          accounts.value,
+          routes.value,
+          simulations.value,
+          listed.value,
+          store.getSnapshot().conversation.role,
+        )
+        if (scope === undefined || scope.kind !== 'sim') return
+        const instance = listed.value.find(row => row.instanceId === scope.instanceId)
+        if (instance === undefined) return
+        const result = await simulation.injectManagedHumanMessage({
+          instanceId: instance.instanceId,
+          text: trimmed,
+          humanNick: store.getSnapshot().conversation.accountName || 'self',
+        })
+        if (result.ok) await refresh()
+      })()
+    },
     stopSimulation: () => {
       if (simulation === undefined) return
       void (async () => {

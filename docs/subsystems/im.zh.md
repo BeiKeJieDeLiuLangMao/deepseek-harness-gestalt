@@ -625,6 +625,13 @@ listInstances(): ImSimulationInstance[]
 @Remote('injectMemberMessage') async remoteExportInjectMemberMessage( options: ImGuiInjectMemberMessageOptions, ): Promise<ImGuiInboundView>
 
 /**
+ * GUI Remote managed-human inject. Returns a text-only inbound row.
+ * @param options - running instance and text.
+ * @returns GUI inbound view for the injected human_dsh message.
+ */
+@Remote('injectManagedHumanMessage') async remoteExportInjectManagedHumanMessage( options: ImGuiInjectManagedHumanMessageOptions, ): Promise<ImGuiInboundView>
+
+/**
  * Create a new simulation instance against the workspace's configured simulation target.
  *
  * Invariants:

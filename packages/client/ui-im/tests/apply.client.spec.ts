@@ -55,6 +55,7 @@ async function mount() {
     listInstances: () => ok([]),
     createInstance: () => ok(undefined),
     injectMemberMessage: () => ok(undefined),
+    injectManagedHumanMessage: () => ok(undefined),
     stopInstance: () => ok(undefined),
   }
   ctx.provide('remote', { imConfig, imDelivery, imSimulation })

@@ -8,6 +8,7 @@ export type * from './types.ts'
 export type {
   CreateSimulationInstanceOptions,
   ImGuiCreateSimulationInstanceOptions,
+  ImGuiInjectManagedHumanMessageOptions,
   ImGuiInjectMemberMessageOptions,
   ImSimulationInstance,
   ImSimulationInstanceId,

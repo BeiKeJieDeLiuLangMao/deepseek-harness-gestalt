@@ -99,6 +99,8 @@ export const zh = {
   createSimulation: '创建模拟实例',
   memberHint: '以群成员身份发送（不经过 Agent）…',
   sendAsMember: '以成员发送',
+  managedHumanHint: '以托管账号本人身份发送（不经过 Agent）…',
+  sendAsManagedHuman: '以本人发送',
   stopSimulation: '结束模拟实例',
 } satisfies Record<string, string>
 
@@ -201,5 +203,7 @@ export const en = {
   createSimulation: 'Create simulation instance',
   memberHint: 'Send as a group member (not through the agent)…',
   sendAsMember: 'Send as member',
+  managedHumanHint: 'Send as the managed-account human (not through the agent)…',
+  sendAsManagedHuman: 'Send as self',
   stopSimulation: 'Stop simulation instance',
 } satisfies Record<ImKey, string>

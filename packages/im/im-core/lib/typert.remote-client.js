@@ -278,6 +278,22 @@ const _deepseek_ai_dsh_im_core_imSimulation_createInstance_result$schema = z.obj
   'createdAt': z.string().readonly(),
   'stoppedAt': z.string().readonly().optional(),
 })
+const _deepseek_ai_dsh_im_core_imSimulation_injectManagedHumanMessage_parameter_0$schema = z.object({
+  'instanceId': z.intersection(z.string(), z.unknown()).readonly(),
+  'text': z.string().readonly(),
+  'humanNick': z.string().readonly().optional(),
+})
+const _deepseek_ai_dsh_im_core_imSimulation_injectManagedHumanMessage_result$schema = z.object({
+  'messageId': z.intersection(z.string(), z.unknown()).readonly(),
+  'scopeId': z.intersection(z.string(), z.unknown()).readonly(),
+  'senderClassification': z.union([z.literal("external"), z.literal("ai_outbound"), z.literal("human_native"), z.literal("human_dsh"), z.literal("unknown")]).readonly(),
+  'senderNick': z.string().readonly().optional(),
+  'senderId': z.string().readonly().optional(),
+  'stage': z.union([z.literal("received"), z.literal("submitted"), z.literal("sent")]).readonly(),
+  'text': z.string().readonly(),
+  'sequenceNumber': z.number().readonly(),
+  'receivedAt': z.string().readonly(),
+})
 const _deepseek_ai_dsh_im_core_imSimulation_injectMemberMessage_parameter_0$schema = z.object({
   'instanceId': z.intersection(z.string(), z.unknown()).readonly(),
   'memberId': z.string().readonly(),
@@ -747,7 +763,33 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@deepseek-ai/dsh-im-core/client#ImSimulationInstance',
         schema: _deepseek_ai_dsh_im_core_imSimulation_createInstance_result$schema,
       },
-      sourceLocation: {"file":"packages/im/im-core/src/simulation/service.ts","line":138,"column":9},
+      sourceLocation: {"file":"packages/im/im-core/src/simulation/service.ts","line":139,"column":9},
+    },
+    {
+      id: '@deepseek-ai/dsh-im-core#imSimulation/injectManagedHumanMessage',
+      service: 'imSimulation',
+      namespace: 'imSimulation',
+      method: 'injectManagedHumanMessage',
+      implementation: 'remoteExportInjectManagedHumanMessage',
+      invocation: { kind: 'direct' },
+      parameters: [
+        {
+          name: 'options',
+          wire: 'options',
+          source: 'json',
+          codec: {
+            mode: 'strict',
+            typeSymbol: '@deepseek-ai/dsh-im-core/client#ImGuiInjectManagedHumanMessageOptions',
+            schema: _deepseek_ai_dsh_im_core_imSimulation_injectManagedHumanMessage_parameter_0$schema,
+          },
+        },
+      ],
+      result: {
+        mode: 'strict',
+        typeSymbol: '@deepseek-ai/dsh-im-core/client#ImGuiInboundView',
+        schema: _deepseek_ai_dsh_im_core_imSimulation_injectManagedHumanMessage_result$schema,
+      },
+      sourceLocation: {"file":"packages/im/im-core/src/simulation/service.ts","line":172,"column":9},
     },
     {
       id: '@deepseek-ai/dsh-im-core#imSimulation/injectMemberMessage',
@@ -773,7 +815,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@deepseek-ai/dsh-im-core/client#ImGuiInboundView',
         schema: _deepseek_ai_dsh_im_core_imSimulation_injectMemberMessage_result$schema,
       },
-      sourceLocation: {"file":"packages/im/im-core/src/simulation/service.ts","line":159,"column":9},
+      sourceLocation: {"file":"packages/im/im-core/src/simulation/service.ts","line":160,"column":9},
     },
     {
       id: '@deepseek-ai/dsh-im-core#imSimulation/listInstances',
@@ -789,7 +831,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@deepseek-ai/dsh-im-core#imSimulation/listInstances:result',
         schema: _deepseek_ai_dsh_im_core_imSimulation_listInstances_result$schema,
       },
-      sourceLocation: {"file":"packages/im/im-core/src/simulation/service.ts","line":128,"column":9},
+      sourceLocation: {"file":"packages/im/im-core/src/simulation/service.ts","line":129,"column":9},
     },
     {
       id: '@deepseek-ai/dsh-im-core#imSimulation/stopInstance',
@@ -814,7 +856,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@deepseek-ai/dsh-im-core/client#ImSimulationInstance',
         schema: _deepseek_ai_dsh_im_core_imSimulation_stopInstance_result$schema,
       },
-      sourceLocation: {"file":"packages/im/im-core/src/simulation/service.ts","line":238,"column":9},
+      sourceLocation: {"file":"packages/im/im-core/src/simulation/service.ts","line":251,"column":9},
     },
   ],
 }
