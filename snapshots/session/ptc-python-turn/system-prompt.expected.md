@@ -371,6 +371,8 @@ class SubagentArgs(TypedDict):
     description: str
     # The complete, self-contained task for the subagent. It does not share this conversation's context, so include everything it needs.
     prompt: str
+    # Optional workspace image file paths attached to the child prompt.
+    images: NotRequired[list[str]]
     # Whether to run in the background and return a durable subagent id immediately. Defaults to true. Set false to wait for the result when your next action depends on it.
     run_in_background: NotRequired[bool]
     # Additional keys beyond those declared are allowed.
@@ -393,6 +395,8 @@ class SubagentForkArgs(TypedDict):
     description: str
     # The task for the subagent. It already sees this conversation's completed turns, so build on them freely and state only what is new.
     prompt: str
+    # Optional workspace image file paths attached to the child prompt.
+    images: NotRequired[list[str]]
     # Additional keys beyond those declared are allowed.
 
 class SubagentForkOutput1(TypedDict):
@@ -431,13 +435,6 @@ class TodoWriteOutputCounts(TypedDict):
 class TodoWriteOutput(TypedDict):
     todos: list[TodoWriteOutputTodos]
     counts: TodoWriteOutputCounts
-
-class ToolSearchArgs(TypedDict):
-    # Words describing the needed capability.
-    query: str
-    # Maximum matches to return (default 5).
-    limit: NotRequired[int]
-    # Additional keys beyond those declared are allowed.
 
 class UpdateGoalArgs(TypedDict):
     # Exact id returned by get_goal.
@@ -603,8 +600,6 @@ class Tools(Protocol):
         """Delegate a task to a subagent that inherits this conversation: a child agent seeded with all completed turns so far (it does not see the current in-flight turn). Use this when the subtask builds on this conversation's context — a follow-up analysis, a review, a continuation — without consuming this conversation's context for the work itself. You receive its result, not its intermediate steps. This call waits for the subagent and returns its result."""
     async def todo_write(self, args: TodoWriteArgs) -> TodoWriteOutput:
         """Record and update a structured task list for the current work. Send the ENTIRE list every call — it REPLACES the previous list (there are no partial updates, no per-item edits). Use it to plan multi-step work and show progress: add one todo per concrete step before you start. Mark every todo being actively worked on `in_progress` — several at once when work genuinely runs in parallel (e.g. concurrent subagents or background commands), one for sequential work; while work remains, at least one task should be `in_progress`. Mark a todo `completed` the moment it is done (do not batch completions), and allow no `in_progress` item only once all work is complete. Skip the list for trivial single-step tasks. Statuses: `pending` (not started), `in_progress` (being worked on now), `completed` (finished)."""
-    async def tool_search(self, args: ToolSearchArgs) -> list[Any]:
-        """Search deferred tools by name and description. Returns matching callable schemas for subsequent requests."""
     async def update_goal(self, args: UpdateGoalArgs) -> UpdateGoalOutput1 | UpdateGoalOutput2:
         """Update the exact current goal revision. edit, pause, and resume require a direct top-level human request. During an automatic continuation of the current goal, complete and blocked are also allowed. blocked is rejected before the configured minimum round count; the model remains responsible for judging that the same condition persisted across those rounds and must explain it in blocked_reason."""
     async def web_fetch(self, args: WebFetchArgs) -> WebFetchOutput:
