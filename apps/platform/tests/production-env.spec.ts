@@ -1,9 +1,9 @@
 import { spawn, spawnSync } from 'node:child_process'
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
-import { basename, delimiter as pathDelimiter, dirname, join, resolve } from 'node:path'
+import { delimiter as pathDelimiter, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import * as yaml from 'js-yaml'
 import { describe, expect, it } from 'vitest'
@@ -45,75 +45,153 @@ function executableNames(name: string): string[] {
   return [name, ...extensions.flatMap(ext => [`${name}${ext}`, `${name}${ext.toLowerCase()}`])]
 }
 
+function hiddenNameSet(names: readonly string[]): Set<string> {
+  return new Set(names.flatMap(name => executableNames(name).map(candidate => candidate.toLowerCase())))
+}
+
 function recoveryPath(path = process.env.PATH ?? ''): string {
   const nodeDir = resolve(process.execPath, '..')
   return path.split(pathDelimiter).includes(nodeDir) ? path : `${nodeDir}${pathDelimiter}${path}`
 }
 
-function executableInDir(dir: string, name: string): string | undefined {
-  if (!dir) return
-  for (const candidate of executableNames(name)) {
-    const full = join(dir, candidate)
-    if (existsSync(full)) return full
+function isWindowsAppsDir(dir: string): boolean {
+  return /(^|[\\/])WindowsApps$/i.test(dir.replace(/[/\\]+$/, ''))
+}
+
+function dirEntries(dir: string): string[] | undefined {
+  try {
+    return readdirSync(dir)
+  } catch {
+    // Skip unreadable PATH entries instead of treating them as empty.
+    return
   }
+}
+
+function executableInDir(dir: string, name: string): string | undefined {
+  if (!dir || isWindowsAppsDir(dir)) return
+  const entries = dirEntries(dir)
+  if (entries === undefined) return
+  const wanted = new Set(executableNames(name).map(candidate => candidate.toLowerCase()))
+  const match = entries.find(entry => wanted.has(entry.toLowerCase()))
+  return match === undefined ? undefined : join(dir, match)
+}
+
+function dirContainsHidden(dir: string, hidden: ReadonlySet<string>): boolean {
+  if (!dir || isWindowsAppsDir(dir)) return true
+  const entries = dirEntries(dir)
+  if (entries === undefined) return true
+  return entries.some(entry => hidden.has(entry.toLowerCase()))
 }
 
 function pathHasExecutable(path: string, name: string): boolean {
   return path.split(pathDelimiter).some(dir => executableInDir(dir, name) !== undefined)
 }
 
-function placeExecutable(dir: string, name: string, target: string): void {
-  const names = new Set([...executableNames(name), basename(target)])
-  for (const candidate of names) {
-    const dest = join(dir, candidate)
-    if (existsSync(dest)) continue
-    try {
-      symlinkSync(target, dest)
-      continue
-    } catch {
-      // Windows hosted runners often cannot symlink without Developer Mode.
-    }
-    try {
-      copyFileSync(target, dest)
-    } catch {
-      // Skip a PATH name we cannot copy (permissions or a locked dest).
-    }
+function hostBash(): string {
+  const fromPath = recoveryPath().split(pathDelimiter)
+    .map(dir => executableInDir(dir, 'bash'))
+    .find(full => full !== undefined)
+  if (fromPath === undefined) throw new Error('cannot locate host bash')
+  return fromPath
+}
+
+function spawnEnv(path: string, extra: NodeJS.Dict<string> = {}): NodeJS.ProcessEnv {
+  return {
+    ...process.env,
+    PATH: path,
+    ...extra,
   }
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replaceAll('\'', '\'\\\'\'')}'`
+}
+
+function placeExecutable(dir: string, name: string, target: string, hidden: ReadonlySet<string>): void {
+  if (hidden.has(name.toLowerCase())) return
+  const dest = join(dir, name)
+  if (existsSync(dest)) return
+  if (process.platform === 'win32') {
+    for (const candidate of executableNames(name)) {
+      if (hidden.has(candidate.toLowerCase())) continue
+      const winDest = join(dir, candidate)
+      if (existsSync(winDest)) continue
+      try {
+        copyFileSync(target, winDest)
+        continue
+      } catch {
+        try {
+          symlinkSync(target, winDest)
+        } catch {
+          writeFileSync(winDest, `@echo off\r\n${target} %*\r\n`)
+        }
+      }
+    }
+    return
+  }
+  writeFileSync(dest, `#!/bin/sh\nexec ${shellQuote(target)} "$@"\n`)
+  chmodSync(dest, 0o755)
+}
+
+function commandLocation(path: string, name: string): string {
+  return spawnSync(hostBash(), ['--noprofile', '--norc', '-c', `command -v ${JSON.stringify(name)} || true`], {
+    encoding: 'utf8',
+    env: spawnEnv(path),
+  }).stdout.trim()
+}
+
+function commandOnPath(path: string, name: string): boolean {
+  return commandLocation(path, name) !== ''
 }
 
 // Chatter recovery must stay green when PATH has neither python3 nor jq, matching Windows Git Bash.
 function pathWithoutExecutables(names: readonly string[]): { PATH: string; dispose: () => void } {
-  const hidden = new Set(names)
+  const hidden = hiddenNameSet(names)
   const root = mkdtempSync(join(tmpdir(), 'dsh-recovery-path-'))
   const keepBin = join(root, 'bin')
   mkdirSync(keepBin)
   const keep = ['bash', 'dirname', 'mktemp', 'cat', 'sed', 'tr', 'tail', 'true', 'node', 'python']
-    .filter(name => !hidden.has(name))
-  const next = [keepBin]
-  for (const dir of recoveryPath().split(pathDelimiter)) {
-    if (!dir) continue
-    if (names.some(name => executableInDir(dir, name) !== undefined)) {
-      for (const name of keep) {
-        const target = name === 'node' && dirname(process.execPath) === dir
-          ? process.execPath
-          : executableInDir(dir, name)
-        if (target === undefined) continue
-        placeExecutable(keepBin, name, target)
-      }
-      continue
-    }
-    next.push(dir)
+    .filter(name => !hidden.has(name.toLowerCase()))
+  const sourceDirs = recoveryPath().split(pathDelimiter).filter(Boolean)
+  for (const name of keep) {
+    const target = name === 'node' ? process.execPath : sourceDirs
+      .map(dir => executableInDir(dir, name))
+      .find(full => full !== undefined)
+    if (target === undefined) continue
+    placeExecutable(keepBin, name, target, hidden)
   }
-  const nodeTarget = process.execPath
-  if (executableInDir(dirname(nodeTarget), 'python3') !== undefined
-    || executableInDir(dirname(nodeTarget), 'jq') !== undefined
-    || !pathHasExecutable(next.join(pathDelimiter), 'node')) {
-    placeExecutable(keepBin, 'node', nodeTarget)
+  const next = [keepBin]
+  const required = ['bash', 'tr', 'mktemp', 'cat']
+  if (required.some(name => executableInDir(keepBin, name) === undefined)) {
+    for (const dir of sourceDirs) {
+      if (dirContainsHidden(dir, hidden)) continue
+      next.push(dir)
+    }
+  }
+  const dropLeaking = (name: string): boolean => {
+    const located = commandLocation(next.join(pathDelimiter), name)
+    if (located === '') return false
+    const index = next.findIndex(dir => located === dir || located.startsWith(`${dir}/`)
+      || located.startsWith(`${dir}\\`)
+      || located.toLowerCase().startsWith(`${dir.toLowerCase()}/`)
+      || located.toLowerCase().startsWith(`${dir.toLowerCase()}\\`))
+    if (index > 0) {
+      next.splice(index, 1)
+      return true
+    }
+    throw new Error(`cannot hide ${name}: Git Bash still resolves ${located}`)
+  }
+  for (let round = 0; round < next.length; round++) {
+    if (!names.some(name => dropLeaking(name))) break
   }
   const path = next.join(pathDelimiter)
-  const missing = ['bash', 'tr', 'mktemp', 'cat'].filter(name => !pathHasExecutable(path, name))
+  const missing = required.filter(name => !pathHasExecutable(path, name) && !commandOnPath(path, name))
   if (missing.length > 0) {
     throw new Error(`cannot hide ${names.join(', ')} while keeping ${missing.join(', ')} on PATH`)
+  }
+  for (const name of names) {
+    const located = commandLocation(path, name)
+    if (located !== '') throw new Error(`cannot hide ${name}: Git Bash still resolves ${located}`)
   }
   return {
     PATH: path,
@@ -121,13 +199,6 @@ function pathWithoutExecutables(names: readonly string[]): { PATH: string; dispo
       rmSync(root, { recursive: true, force: true })
     },
   }
-}
-
-function commandOnPath(path: string, name: string): boolean {
-  return spawnSync('bash', ['-c', `command -v ${JSON.stringify(name)} >/dev/null`], {
-    encoding: 'utf8',
-    env: { PATH: path },
-  }).status === 0
 }
 
 function bashPath(filePath: string, platform: NodeJS.Platform = process.platform): string {
@@ -453,10 +524,9 @@ function runRecoveryHarness(
     '}',
     'source "$RECOVERY_SCRIPT"',
   ].join('\n')
-  return spawnSync('bash', ['-c', harness], {
+  return spawnSync(hostBash(), ['-c', harness], {
     encoding: 'utf8',
-    env: {
-      PATH: path,
+    env: spawnEnv(path, {
       RECOVERY_SCRIPT: bashPath(recoveryScript),
       RECOVERY_PHASE: phase,
       RECOVERY_FAILURE: failure,
@@ -469,7 +539,7 @@ function runRecoveryHarness(
       PLATFORM_OSS_BUCKET: 'bucket',
       PLATFORM_DEPLOY_OSS_UPLOAD_ENDPOINT: 'oss-cn-hangzhou.aliyuncs.com',
       PLATFORM_DEPLOY_OSS_OBJECT_PREFIX: 'deploy-artifacts/platform',
-    },
+    }),
   })
 }
 
@@ -1455,7 +1525,7 @@ describe('Platform release workflows', () => {
     expect(ambiguous.stdout).not.toContain('RUN:')
   })
 
-  it('extracts one JSON object from oss cat CLI chatter', { timeout: 15_000 }, () => {
+  it('extracts one JSON object from oss cat CLI chatter', { timeout: 20_000 }, () => {
     const hidden = pathWithoutExecutables(['python3', 'jq'])
     try {
       expect(commandOnPath(hidden.PATH, 'python3')).toBe(false)

@@ -26,7 +26,7 @@ Platform Deploy recovery and the unresolved-lock probe feed `aliyun oss cat` std
 - A second JSON value fails closed and does not delete the lock.
 - A zero-exit `oss cat` that is not one JSON object is an undetermined lock, not a missing object.
 - Recovery tests that stub `jq` keep that stub except chatter cases, which parse the extracted document with real `jq` when present and otherwise with `node`.
-- Chatter cases hide `python3` and `jq` on PATH and still extract through `python` or `node`. The PATH wrapper keeps Git Bash `usr/bin` as a directory when those names are absent, and copies keep-list tools when symlink creation fails.
+- Chatter cases hide `python3` and `jq` on PATH and still extract through `python` or `node`. The PATH wrapper copies keep-list tools into a temp directory, never keeps `WindowsApps`, and drops any remaining directory that Git Bash still resolves as `python3` or `jq`.
 - Durable field reads strip CR so Git Bash `jq` CRLF lines still match `PLATFORM_ECS_INSTANCE_IDS`.
 - A host without `python3` still extracts through `python` or `node`.
 - The real-host bootstrap recovery harness copies `platform-oss-json.sh` beside recover.
