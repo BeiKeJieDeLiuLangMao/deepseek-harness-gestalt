@@ -9,7 +9,7 @@ import { assertFixtureInventory, launchWebScaffold, type WebScaffold } from './s
 
 const DESKTOP_OVERLAY = fileURLToPath(new URL('../../desktop/cordis.patch.yml', import.meta.url))
 const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/desktop-schedule', import.meta.url))
-const FIXTURE = join(SNAPSHOT_DIR, 'session.jsonl')
+const FIXTURE = join(SNAPSHOT_DIR, 'session.v3.jsonl')
 const PROMPT = 'List the reminders in this Desktop Session, then reply exactly NO_REMINDERS and stop.'
 
 /** Extract text from one durable assistant message. */
@@ -103,6 +103,6 @@ describe('Desktop default Schedule turn', () => {
     `)
     expect(scheduleCalls).toHaveLength(1)
     expect(listResult.data.message.content[0]?.isError).toBe(false)
-    await assertFixtureInventory(SNAPSHOT_DIR, ['session.jsonl'])
+    await assertFixtureInventory(SNAPSHOT_DIR, ['session.v3.jsonl'])
   })
 })
