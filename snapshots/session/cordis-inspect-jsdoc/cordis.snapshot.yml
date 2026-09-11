@@ -23,6 +23,8 @@
 - id: tools
   name: '@deepseek-ai/dsh-tools'
   config:
+    toolSearch:
+      maxResultBytes: 65536
     mode: both
 
 - id: system-prompt

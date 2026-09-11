@@ -105,7 +105,7 @@ probePromise()
       const dedicatedFaces = [
         [
           'Desktop Companion Client test',
-          'apps/desktop/tests/companion-host-assembled.spec.ts',
+          'apps/desktop/tests/companion-fixture/driver.spec.ts',
           'apps/desktop/tests/tsconfig.json',
         ],
         [

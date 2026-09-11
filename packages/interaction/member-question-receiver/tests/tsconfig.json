@@ -24,6 +24,9 @@
       "path": "../../../api/gateway/tsconfig.host.json"
     },
     {
+      "path": "../../../api/gateway/tsconfig.client.json"
+    },
+    {
       "path": "../../../util/atomic-write"
     },
     {

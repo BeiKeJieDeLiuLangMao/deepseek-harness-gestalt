@@ -1,4 +1,5 @@
 /** Register Better workbench capabilities on the official Sidebar. */
+export type { BetterSidebarService } from './context.ts'
 import type { SidebarContext } from '../context-types.ts'
 import { loadChunk, revalidateChunksOnReactivate, setChunkModuleSystem } from './chunk-loader.ts'
 import { registerImeGuard } from './ime-guard.ts'

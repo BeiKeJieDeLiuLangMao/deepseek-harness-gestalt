@@ -26,6 +26,8 @@
 - id: tools
   name: '@deepseek-ai/dsh-tools'
   config:
+    toolSearch:
+      maxResultBytes: 65536
     mode: ptc
 
 - id: code-runtime

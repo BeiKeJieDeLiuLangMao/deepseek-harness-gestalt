@@ -12,7 +12,7 @@ import type { Agent, AgentHandle, CreateAgentOptions, Inbox } from '@deepseek-ai
 import { createInboxStub } from '@deepseek-ai/dsh-agent-loop-testkit'
 import { apply as applyClientRemote, inject as clientRemoteInject } from '@deepseek-ai/dsh-api-gateway/client'
 import TypertGatewayService from '@deepseek-ai/dsh-api-gateway'
-import type {} from '@deepseek-ai/dsh-api-session-controller/remote'
+import type {} from './typert.remote-client.d.ts'
 import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import LocalAttachmentStore from '@deepseek-ai/dsh-attachment-local'

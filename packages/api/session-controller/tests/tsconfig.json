@@ -22,6 +22,9 @@
       "path": "../../gateway/tsconfig.host.json"
     },
     {
+      "path": "../../gateway/tsconfig.client.json"
+    },
+    {
       "path": "../tsconfig.host.json"
     },
     {
