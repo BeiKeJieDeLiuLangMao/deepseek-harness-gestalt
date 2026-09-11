@@ -12,6 +12,11 @@ import {
   type BrowserTarget,
 } from '@deepseek-ai/dsh-browser-workspace/client'
 
+/**
+ * Unwrap one Browser Workspace Remote result or throw its reported failure.
+ * @param result - settling result from a generated Browser Workspace method.
+ * @returns the successful payload.
+ */
 export const unwrapRemote = unwrapBrowserWorkspaceRemote
 
 /** Official page chrome verbs closed over the current Session. */

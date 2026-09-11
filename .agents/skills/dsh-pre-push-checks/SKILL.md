@@ -94,8 +94,9 @@ When a required GitHub check fails, run the owning local gate and wait for it to
 
 | Required check | Owning local gate |
 |---|---|
-| `node 24 / static` | `pnpm run doc-sync`. The minimum when only catalogs or website links moved is `pnpm run docs:build:mpa` plus `pnpm run verify-tool-catalog`, `pnpm run verify-config-catalog`, and `pnpm run verify-cordis-inspect-catalog`. |
-| `node 24 / snapshots and artifacts` | `pnpm run test:snapshot -t <failed scenario>`. For class-pinned headers or authored Session fixtures, refresh with `DSH_SNAPSHOT=refresh` (or `test:snapshot:record` when the model transcript changed), then replay. Do not hand-edit live pins from JSDoc or CI annotations. |
+| `node 24 / static` | `pnpm run doc-sync`. The minimum when only catalogs, website links, or export JSDoc moved is `pnpm run docs:build:mpa` plus `pnpm run verify-tool-catalog`, `pnpm run verify-config-catalog`, `pnpm run verify-cordis-inspect-catalog`, and `pnpm run verify-export-jsdoc`. |
+| `node 24 / snapshots and artifacts` | `pnpm run test:snapshot -t <failed scenario>` with `DSH_EXAMPLE_MODE=lib` when the failure is an assembled Web snapshot. For class-pinned headers or authored Session fixtures, refresh with `DSH_SNAPSHOT=refresh` (or `test:snapshot:record` when the model transcript changed), then replay. Do not hand-edit live pins from JSDoc or CI annotations. |
+| `node 24 / benchmarks` | Run the failing `*.bench.ts` file. Recalibrate a hosted wall-time budget only from that job's recorded median, with the existing 1.25× headroom and a recorded-median control. |
 | Windows `Install (immutable)` or Cloudflare pages preview | Not a product gate. Do not push a product change to chase them. |
 
 If a failure looks environment-specific, prove it:

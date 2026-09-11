@@ -60,7 +60,9 @@ export default defineConfig({
     // refresh write-back harvests volatile values from fixtures already on
     // disk, so concurrent writers would corrupt expected outputs.
     testTimeout: 120_000,
-    hookTimeout: 30_000,
+    // Lib-mode includes assembled Web snapshots that boot a Host scaffold in
+    // beforeAll; 30s is enough for headless replay files, not for that boot.
+    hookTimeout: 120_000,
     fileParallelism: (process.env.DSH_SNAPSHOT || 'replay') === 'replay' && snapshotMaxConcurrency > 1,
     maxConcurrency: snapshotMaxConcurrency,
   },

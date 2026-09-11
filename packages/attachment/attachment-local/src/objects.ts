@@ -47,6 +47,7 @@ export function objectPath(root: string, sha256: string): string {
  * A synced file alone does not survive a crash when its directory entry never
  * reached storage, so the publication directory is synced before a durable
  * reference is reported.
+ * @param path - directory whose entries must reach durable storage.
  */
 export async function syncDirectory(path: string): Promise<void> {
   /* v8 ignore next -- Windows cannot open directory handles; NTFS metadata journaling owns entry durability there. */
@@ -91,6 +92,8 @@ export async function ensureDurableDirectory(path: string, boundary: string): Pr
  * Establish this process's proof that one DSH_HOME entry and every ancestor
  * below the filesystem root are durable. Mere existence is insufficient: a
  * concurrent process may have created the directory but not synced its parent.
+ * @param path - absolute DSH_HOME directory to make durable.
+ * @returns the resolved absolute home path.
  */
 export async function ensureDurableHome(path: string): Promise<string> {
   const home = resolve(path)
