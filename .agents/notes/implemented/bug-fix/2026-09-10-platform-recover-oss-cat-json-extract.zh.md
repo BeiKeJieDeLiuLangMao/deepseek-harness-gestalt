@@ -25,7 +25,7 @@ Platform Deploy 的 recovery 与未完成部署探测会把 `aliyun oss cat` 的
 - 锁对象前后的 CLI 耗时行仍可恢复，并仍会删除 `active-state.json`。
 - 第二份 JSON 值会 fail closed，且不删除该锁。
 - 退出码为 0 但不是一份 JSON 对象的 `oss cat` 视为无法判定的锁，而不是缺失对象。
-- 对 `jq` 打桩的 recovery 测试保持该桩，但 chatter 用例会对提取后的文档调用真实 `jq`。
+- 对 `jq` 打桩的 recovery 测试保持该桩，但 chatter 用例会解析提取后的文档：有 `jq` 时用真实 `jq`，否则用 `node`。
 - 持久字段读取会去掉 CR，因此 Git Bash 下 `jq` 的 CRLF 行仍能与 `PLATFORM_ECS_INSTANCE_IDS` 对齐。
 - 没有 `python3` 的主机仍可通过 `python` 或 `node` 提取。
 

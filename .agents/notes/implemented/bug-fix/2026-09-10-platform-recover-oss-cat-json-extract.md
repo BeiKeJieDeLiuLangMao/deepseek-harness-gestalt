@@ -25,7 +25,7 @@ Platform Deploy recovery and the unresolved-lock probe feed `aliyun oss cat` std
 - Prefix or suffix CLI timing lines around one lock object still recover and still delete `active-state.json`.
 - A second JSON value fails closed and does not delete the lock.
 - A zero-exit `oss cat` that is not one JSON object is an undetermined lock, not a missing object.
-- Recovery tests that stub `jq` keep that stub except chatter cases, which invoke real `jq` on the extracted document.
+- Recovery tests that stub `jq` keep that stub except chatter cases, which parse the extracted document with real `jq` when present and otherwise with `node`.
 - Durable field reads strip CR so Git Bash `jq` CRLF lines still match `PLATFORM_ECS_INSTANCE_IDS`.
 - A host without `python3` still extracts through `python` or `node`.
 
