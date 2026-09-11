@@ -36,6 +36,7 @@ const cloudAssistantSource = readFileSync(new URL('../scripts/platform-cloud-ass
 const hostDeploySource = readFileSync(new URL('../scripts/platform-host-deploy.sh', import.meta.url), 'utf8')
 const recoveryScript = fileURLToPath(new URL('../scripts/platform-recover.sh', import.meta.url))
 const recoverySource = readFileSync(recoveryScript, 'utf8')
+const ossJsonSource = readFileSync(new URL('../scripts/platform-oss-json.sh', import.meta.url), 'utf8')
 const repoRoot = resolve(import.meta.dirname, '../../..')
 
 function bashPath(filePath: string, platform: NodeJS.Platform = process.platform): string {
@@ -261,6 +262,7 @@ function runRecoveryHarness(
   phase: 'rollbackable' | 'commit-pending' | 'committed',
   failure: 'none' | 'second-rollback' | 'state-write' | 'target-mismatch' = 'none',
   mode: 'rolling' | 'bootstrap' = 'rolling',
+  chatter: 'none' | 'prefix' | 'suffix' | 'second-json' = 'none',
 ) {
   const harness = [
     'set -u',
@@ -270,12 +272,21 @@ function runRecoveryHarness(
     'trap \'cat "$LOG"\' EXIT',
     'aliyun() {',
     '  if [ "$1 $2" = "oss cat" ]; then',
+    '    if [ "$RECOVERY_CHATTER" = prefix ]; then',
+    '      printf \'\\n\\n\\n0.006891(s) elapsed\\n\'',
+    '    fi',
     '    if [ "$RECOVERY_MODE" = bootstrap ]; then',
     '      printf \'{"version":2,"mode":"bootstrap","phase":"%s","objectRoot":"deploy-artifacts/platform/123-1","candidateCommit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","instanceIds":["i-first123","i-second456"]}\\n\' "$RECOVERY_PHASE"',
     '    else',
     '      printf \'{"version":1,"phase":"%s","objectRoot":"deploy-artifacts/platform/123-1","instanceIds":["i-first123","i-second456"]}\\n\' "$RECOVERY_PHASE"',
     '    fi',
-    '    printf \'%1000000s\' \'\'',
+    '    if [ "$RECOVERY_CHATTER" = suffix ]; then',
+    '      printf \'\\naverage: 419(byte/s)\\n\'',
+    '    elif [ "$RECOVERY_CHATTER" = second-json ]; then',
+    '      printf \'\\n{"version":1}\\n\'',
+    '    else',
+    '      printf \'%1000000s\' \'\'',
+    '    fi',
     '  elif [ "$1 $2" = "oss cp" ]; then',
     '    printf \'STATE:committed\\n\' >> "$LOG"',
     '    [ "$RECOVERY_FAILURE" != state-write ]',
@@ -284,6 +295,34 @@ function runRecoveryHarness(
     '  fi',
     '}',
     'jq() {',
+    '  if [ "${RECOVERY_CHATTER:-none}" != none ]; then',
+    '    if type -P jq >/dev/null 2>&1; then',
+    '      command jq "$@"',
+    '      return',
+    '    fi',
+    '    _jq_input=$(cat)',
+    '    printf \'%s\' "$_jq_input" | node -e \'',
+    'const fs = require("fs");',
+    'const args = process.argv.slice(1).filter((arg) => arg !== "--");',
+    'const flag = args[0];',
+    'const query = args[1] || "";',
+    'const fail = flag === "-e" || flag === "-er";',
+    'let obj;',
+    'try { obj = JSON.parse(fs.readFileSync(0, "utf8")); } catch { process.exit(fail ? 1 : 0); }',
+    'const out = (value) => process.stdout.write(String(value) + "\\n");',
+    'if (query === ".kind // empty") { out(obj.kind ?? ""); process.exit(0); }',
+    'if (query.includes(".version") && (obj.version === 1 || obj.version === 2)) { out(obj.version); process.exit(0); }',
+    'if (query.includes(".mode") && (obj.mode === "rolling" || obj.mode === "bootstrap")) { out(obj.mode); process.exit(0); }',
+    'if (query.includes(".phase") && ["rollbackable","commit-pending","committed"].includes(obj.phase)) { out(obj.phase); process.exit(0); }',
+    'if (query.includes(".objectRoot") && obj.objectRoot) { out(obj.objectRoot); process.exit(0); }',
+    'if (query.includes(".candidateCommit") && /^[0-9a-f]{40}$/.test(obj.candidateCommit || "")) { out(obj.candidateCommit); process.exit(0); }',
+    'if (query.includes(".instanceIds") && Array.isArray(obj.instanceIds) && obj.instanceIds.length === 2) {',
+    '  out(obj.instanceIds.join("\\n")); process.exit(0);',
+    '}',
+    'process.exit(fail ? 1 : 0);',
+    '\' -- "$@"',
+    '    return',
+    '  fi',
     '  case "$1" in',
     '    -er)',
     '      case "$2" in',
@@ -330,6 +369,7 @@ function runRecoveryHarness(
       RECOVERY_PHASE: phase,
       RECOVERY_FAILURE: failure,
       RECOVERY_MODE: mode,
+      RECOVERY_CHATTER: chatter,
       PLATFORM_ALIYUN_REGION: 'cn-hangzhou',
       PLATFORM_ECS_INSTANCE_IDS: failure === 'target-mismatch'
         ? 'i-newfirst,i-newsecond'
@@ -355,6 +395,7 @@ function runRealBootstrapRecoveryHarness(
   const log = join(temp, 'docker.log')
   writeFileSync(log, '')
   writeFileSync(recoveryCopy, recoverySource)
+  writeFileSync(join(temp, 'platform-oss-json.sh'), ossJsonSource)
   writeFileSync(cloudCopy, 'true\n')
   writeFileSync(hostCopy, hostDeploySource
     .replace('candidate_env=/run/dsh-platform-candidate.env', `candidate_env=${JSON.stringify(candidateEnv)}`)
@@ -1061,6 +1102,8 @@ describe('Platform release workflows', () => {
     const applySource = String(apply.run)
     expect(applySource).toContain('set -eEuo pipefail')
     expect(applySource).toContain('source apps/platform/scripts/platform-cloud-assistant.sh')
+    expect(applySource).toContain('source apps/platform/scripts/platform-oss-json.sh')
+    expect(applySource).toContain('platform_extract_json_object')
     expect(applySource).toContain('source apps/platform/scripts/platform-public-readiness.sh')
     expect(applySource).toContain('aliyun oss cp')
     expect(applySource).toContain('aliyun oss sign')
@@ -1128,6 +1171,11 @@ describe('Platform release workflows', () => {
       && step.run.includes('platform-recover.sh'))?.run)
     expect(recoverWorkflowSource.trim()).toBe('bash apps/platform/scripts/platform-recover.sh')
     expect(recoverySource).toContain('active-state.json')
+    expect(recoverySource).toContain('platform-oss-json.sh')
+    expect(recoverySource).toContain('platform_extract_json_object')
+    expect(ossJsonSource).toContain('command -v python3')
+    expect(ossJsonSource).toContain('command -v python')
+    expect(ossJsonSource).toContain('command -v node')
     expect(recoverySource).toContain('run_recovery_on_all rollback 2100')
     expect(recoverySource).toContain('run_recovery_on_all complete-rollback-cleanup 2100')
     expect(recoverySource).toContain('write_recovery_command cutover')
@@ -1312,6 +1360,22 @@ describe('Platform release workflows', () => {
     expect(ambiguous.status).toBe(1)
     expect(ambiguous.stderr).toContain('bootstrap recovery state is ambiguous')
     expect(ambiguous.stdout).not.toContain('RUN:')
+  })
+
+  it('extracts one JSON object from oss cat CLI chatter', () => {
+    const prefix = runRecoveryHarness('rollbackable', 'none', 'rolling', 'prefix')
+    expect(prefix.status, prefix.stderr).toBe(0)
+    expect(prefix.stdout).toContain('RUN:rollback:i-first123:2100')
+    expect(prefix.stdout).toContain('DELETE:oss://bucket/deploy-artifacts/platform/active-state.json')
+
+    const suffix = runRecoveryHarness('rollbackable', 'none', 'rolling', 'suffix')
+    expect(suffix.status, suffix.stderr).toBe(0)
+    expect(suffix.stdout).toContain('DELETE:oss://bucket/deploy-artifacts/platform/active-state.json')
+
+    const extra = runRecoveryHarness('rollbackable', 'none', 'rolling', 'second-json')
+    expect(extra.status).not.toBe(0)
+    expect(extra.stderr).toContain('platform: oss cat stdout contains extra JSON')
+    expect(extra.stdout).not.toContain('DELETE:')
   })
 
   it('keeps durable state after partial instance or state-write failure', () => {
