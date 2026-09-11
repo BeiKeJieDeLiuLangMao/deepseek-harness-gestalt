@@ -45,7 +45,7 @@ pnpm run duplication    # cross-file TypeScript clone detection
 pnpm run build          # tsc emits lib/types, tsdown bundles runtime
 pnpm run hygiene        # publint + workspace/package/dependency checks + NodeNext consumer check
 pnpm run check:windows-wine  # ONLY when diagnosing a known Windows failure (needs wine); CI owns this signal
-pnpm run doc-sync       # all documentation gates; leaf list in scripts/run-gates.ts
+pnpm run doc-sync       # all documentation gates; leaf list in scripts/run-gates.ts. Adding packages/*/tool-*, changing public ToolRuntime methods, or changing catalog link targets: run the matching verify-*-catalog (and docs:build:mpa when the catalog is a website source) before commit.
 pnpm run test:docs      # quick documentation checks (no build; doc-quick aggregate)
 pnpm run website:build  # VitePress build (doubles as dead-link check)
 pnpm dsh --profile headless "task"  # run one task from source (needs DEEPSEEK_API_KEY)

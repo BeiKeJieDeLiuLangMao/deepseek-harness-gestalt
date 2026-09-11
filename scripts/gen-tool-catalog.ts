@@ -299,7 +299,7 @@ const TOOL_PACKAGES: ToolPackage[] = [
     pkg: '@deepseek-ai/dsh-tools',
     dir: 'tools',
     source: {
-      run_code: 'packages/core/tools/src/code-mode.ts',
+      run_code: 'packages/core/tools/src/ptc.ts',
       tool_search: 'packages/core/tools/src/index.ts',
     },
     requires: ['ctx.tools', 'ctx.codeRuntime (execution time)', 'ctx.systemPrompt'],

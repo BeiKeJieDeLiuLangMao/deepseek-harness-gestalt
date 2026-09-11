@@ -204,7 +204,7 @@ ask_user_question 会暂停本地调用，直到当前 UI provider 返回人类�
 }
 ```
 
-来源：[`packages/core/tools/src/code-mode.ts`](../packages/core/tools/src/code-mode.ts)
+来源：[`packages/core/tools/src/ptc.ts`](../packages/core/tools/src/ptc.ts)
 
 ### `tool_search`
 

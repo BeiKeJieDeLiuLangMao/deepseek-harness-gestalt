@@ -67,7 +67,7 @@ pnpm exec vitest related packages/<group>/<package>/src/<changed>.ts \
 
 ## Full local rehearsal
 
-Run the complete local approximation only when the user explicitly requests it, while diagnosing a CI failure, or when the change spans the repository so broadly that no narrower set is credible. Use the current workflow and package scripts as the inventory; do not recreate the removed `check:pre-push` aggregate.
+Run the complete local approximation only when the user explicitly requests it, or when the change spans the repository so broadly that no narrower set is credible. Use the current workflow and package scripts as the inventory; do not recreate the removed `check:pre-push` aggregate. Diagnosing a required CI failure uses the owning-gate table under Handle failures, not this full rehearsal.
 
 ## Protect history-rewriting pushes
 
@@ -89,6 +89,14 @@ If post-sync evidence fails, leave the lease-protected published heads in place,
 ## Handle failures
 
 If a relevant check fails before an ordinary push, stop and fix or explain the blocker. Do not push and hope CI differs. For the post-sync exception, block the merge and follow the repair procedure above.
+
+When a required GitHub check fails, run the owning local gate and wait for it to pass before another push for that failure. The coordinating session that implements because no writer is available follows the same table.
+
+| Required check | Owning local gate |
+|---|---|
+| `node 24 / static` | `pnpm run doc-sync`. The minimum when only catalogs or website links moved is `pnpm run docs:build:mpa` plus `pnpm run verify-tool-catalog`, `pnpm run verify-config-catalog`, and `pnpm run verify-cordis-inspect-catalog`. |
+| `node 24 / snapshots and artifacts` | `pnpm run test:snapshot -t <failed scenario>`. For class-pinned headers or authored Session fixtures, refresh with `DSH_SNAPSHOT=refresh` (or `test:snapshot:record` when the model transcript changed), then replay. Do not hand-edit live pins from JSDoc or CI annotations. |
+| Windows `Install (immutable)` or Cloudflare pages preview | Not a product gate. Do not push a product change to chase them. |
 
 If a failure looks environment-specific, prove it:
 
