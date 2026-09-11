@@ -951,11 +951,11 @@ export function attachLocale(service: { getSnapshot(): { active: string } } | un
  * that text wins over the zh/en chain. Detaching (or the store's active
  * being `undefined`) restores the zh/en chain unchanged.
  *
- * The Sidebar root subscribes to the store separately (see Sidebar.tsx)
- * so an override change re-renders the whole tree — the locale service's
- * own revision bump (which better-locale triggers via `publish(active, true)`)
- * does NOT fire the existing `localeRevision` uSES because that snapshot
- * reads `getSnapshot().active` (unchanged) rather than `revision`.
+ * Official tab bodies subscribe through locale / better-locale attach in
+ * `index.ts`. An override change re-renders those trees — the locale
+ * service's own revision bump (which better-locale triggers via
+ * `publish(active, true)`) does NOT fire a `localeRevision` uSES that
+ * snapshots `getSnapshot().active` (unchanged) rather than `revision`.
  */
 export function attachBetterLocale(store: typeof betterLocaleStore): void {
   betterLocaleStore = store

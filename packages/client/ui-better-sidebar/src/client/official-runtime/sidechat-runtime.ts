@@ -4,7 +4,9 @@ import type {
   SidebarRightProjection, SidebarRightTabCloseContext,
 } from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { SidebarContext, SidebarSessionList } from '../../context-types.ts'
+import type {
+  SidebarContext, SidebarSessionList, SidebarSessionSummary, SidebarSubagentAddress,
+} from '../../context-types.ts'
 import { SIDE_LABEL_PREFIX, SIDE_NEW_THREAD_TITLE } from '../../sidechat-core.ts'
 import {
   api, noteKnownSidechatSession, registerSidechatDraft,
@@ -43,6 +45,86 @@ function titleOf(displayTitle: string): string {
   return displayTitle.startsWith(SIDE_LABEL_PREFIX)
     ? displayTitle.slice(SIDE_LABEL_PREFIX.length)
     : displayTitle
+}
+
+function catalogLabel(sessions: SidebarSessionList, parentSessionId: string, childSessionId: string): string | undefined {
+  for (const entry of sessions.subagentsByParent?.[parentSessionId]?.entries ?? []) {
+    if (entry.kind === 'child' && entry.id === childSessionId) return entry.label
+  }
+  return undefined
+}
+
+function durableSideLabel(summary: SidebarSessionSummary | undefined, catalog: string | undefined): string | undefined {
+  if (summary?.title?.startsWith(SIDE_LABEL_PREFIX) === true) return summary.title
+  if (catalog?.startsWith(SIDE_LABEL_PREFIX) === true) return catalog
+  if (summary?.displayTitle.startsWith(SIDE_LABEL_PREFIX) === true) return summary.displayTitle
+  return undefined
+}
+
+/**
+ * Open or focus the official Side Chat occurrence for one catalog child.
+ * @param ctx - official workbench and Session projection.
+ * @param address - catalog-derived parent and child ids.
+ * @returns whether the child is a Side Chat and the shell Session must stay put.
+ */
+export function openOfficialSidechatFromCatalog(
+  ctx: OfficialSidechatContext,
+  address: SidebarSubagentAddress,
+): boolean {
+  const sessions = ctx.sessions.list.getSnapshot()
+  const summary = sessions.byId[address.childSessionId]
+  const label = durableSideLabel(summary, catalogLabel(sessions, address.parentSessionId, address.childSessionId))
+  if (label === undefined) return false
+  const threadId = SessionId(address.childSessionId)
+  const parentSessionId = SessionId(address.parentSessionId)
+  noteKnownSidechatSession(threadId)
+  void ctx.sidebarRight.forSession(parentSessionId).openTab(OFFICIAL_SIDECHAT_KIND, {
+    instanceId: threadId,
+    title: titleOf(label),
+    payload: restoreOfficialSidechatPayload(threadId),
+  }).catch((error: unknown) => {
+    console.error('[dsh-better-sidebar] open Side Chat from catalog failed:', error)
+  })
+  return true
+}
+
+/**
+ * Divert catalog and list selection of a `Side: ` child onto its official tab.
+ * Ordinary subagent rows keep stock Session selection.
+ * @param sessions - Client Sessions service on the live context.
+ * @param ctx - official workbench used to open or focus the matching tab.
+ * @returns a disposer that restores the original methods.
+ */
+export function interceptOfficialSidechatCatalogOpen(
+  sessions: Pick<OfficialSidechatContext['sessions'], 'open' | 'openSubagent'>,
+  ctx: OfficialSidechatContext,
+): () => void {
+  const originalOpen = sessions.open
+  const originalOpenSubagent = sessions.openSubagent
+  if (originalOpenSubagent !== undefined) {
+    const openSubagent = originalOpenSubagent.bind(sessions)
+    sessions.openSubagent = (address) => {
+      if (!openOfficialSidechatFromCatalog(ctx, address)) openSubagent(address)
+    }
+  }
+  if (originalOpen !== undefined) {
+    const open = originalOpen.bind(sessions)
+    sessions.open = (id) => {
+      const sessionsSnapshot = ctx.sessions.list.getSnapshot()
+      const summary = sessionsSnapshot.byId[id]
+      const parentId = summary?.parentId
+      if (parentId !== undefined && openOfficialSidechatFromCatalog(ctx, {
+        parentSessionId: parentId,
+        childSessionId: id,
+        mode: 'continuable',
+      })) return
+      open(id)
+    }
+  }
+  return () => {
+    sessions.open = originalOpen
+    sessions.openSubagent = originalOpenSubagent
+  }
 }
 
 /**

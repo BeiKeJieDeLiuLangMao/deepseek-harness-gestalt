@@ -245,7 +245,7 @@ describe('web e2e: Browser Dock preview', () => {
         }
         await route.continue()
       })
-      const close = page.locator('[data-dsh-better-sidebar]').getByRole('button', { name: 'Close', exact: true })
+      const close = page.locator('[data-dockkit-tab-close]')
       expect(await close.count()).toBe(1)
       await close.click()
       await expect.poll(() => revisions.length).toBe(2)

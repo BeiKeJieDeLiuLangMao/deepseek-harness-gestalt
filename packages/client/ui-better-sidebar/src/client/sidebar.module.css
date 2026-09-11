@@ -2759,3 +2759,34 @@ body[data-dsh-tab-dragging] .windowDragSpace {
   -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 7v10'/%3E%3Cpath d='M6 5v14'/%3E%3Crect width='12' height='18' x='10' y='3' rx='2'/%3E%3C/svg%3E") center / contain no-repeat;
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 7v10'/%3E%3Cpath d='M6 5v14'/%3E%3Crect width='12' height='18' x='10' y='3' rx='2'/%3E%3C/svg%3E") center / contain no-repeat;
 }
+
+/* File-tree "open with" submenu: primitives Menu grows nested lists up and
+   right with no viewport clamp. menu-flip.ts publishes these tokens on body
+   for the lifetime of that menu. */
+:global(body[data-dsh-sidebar-submenu] div[role="menu"] button[aria-expanded="true"]) {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+:global(body[data-dsh-sidebar-submenu] div[role="menu"] div[role="menu"]) {
+  left: calc(100% + 4px);
+}
+
+:global(body[data-dsh-sidebar-submenu] div[role="menu"] div[role="menu"]::before) {
+  left: -4px;
+  width: 4px;
+}
+
+:global(body[data-dsh-sidebar-submenu~="down"] div[role="menu"] div[role="menu"]) {
+  top: -4px;
+  bottom: auto;
+}
+
+:global(body[data-dsh-sidebar-submenu~="left"] div[role="menu"] div[role="menu"]) {
+  left: auto;
+  right: calc(100% + 4px);
+}
+
+:global(body[data-dsh-sidebar-submenu~="left"] div[role="menu"] div[role="menu"]::before) {
+  left: auto;
+  right: -4px;
+}

@@ -11,7 +11,7 @@
  * all funnel through here: one session at a time, shown in a full-window
  * progress overlay with cancel, followed by a tree refresh and a one-line
  * hint under the search row (success fades, failures and cancels stay).
- * OS file drags are shielded at the panel host (see Sidebar.tsx), so a
+ * OS file drags are shielded at the official Sidebar panel host, so a
  * drop over the file window uploads here and never reaches DSH's chat
  * intake.
  */

@@ -10,9 +10,9 @@
  * near the top, and past the right edge whenever the panel is narrow.
  *
  * The host primitive is not ours to patch, so the fix is a body attribute
- * written while one of OUR submenu-bearing menus is open: layout.css flips
- * the submenu's growth direction per token. The attribute's lifetime IS the
- * scope — only our menus set it, and layout.css rules for
+ * written while one of OUR submenu-bearing menus is open: sidebar.module.css
+ * flips the submenu's growth direction per token. The attribute's lifetime
+ * IS the scope — only our menus set it, and the CSS rules for
  * `div[role="menu"] div[role="menu"]` only apply while it exists, so
  * host-owned menus are never touched.
  */

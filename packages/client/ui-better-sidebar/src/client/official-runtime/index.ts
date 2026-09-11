@@ -12,7 +12,7 @@ import { TERMINAL_FONT_SIZE_MAX, TERMINAL_FONT_SIZE_MIN } from '../../prefs-shar
 import type { TerminalPreferenceSource } from '../TerminalView.tsx'
 import { OfficialSidechatBody } from './SideChatBody.tsx'
 import {
-  closeOfficialSidechat, subscribeOfficialSidechatRuntime,
+  closeOfficialSidechat, interceptOfficialSidechatCatalogOpen, subscribeOfficialSidechatRuntime,
 } from './sidechat-runtime.ts'
 import {
   createOfficialSidechatPayload, createOfficialUiTerminalPayload,
@@ -253,6 +253,7 @@ export function registerOfficialRuntimeTabs(
   ]
   if (options.subscribe !== false) {
     disposers.push(
+      interceptOfficialSidechatCatalogOpen(ctx.sessions, ctx),
       subscribeOfficialSidechatRuntime(ctx),
       subscribeOfficialAgentTerminals(ctx),
       subscribeOfficialBottomTerminal(ctx),

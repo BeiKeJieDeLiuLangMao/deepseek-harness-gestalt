@@ -43,7 +43,7 @@ function isDesktopOverlayDocument(): boolean {
   return new URLSearchParams(location.search.replace(/^\?/, '')).get('dsh-desktop-overlay') === '1'
 }
 
-/** Register the official file, runtime, activity, settings, and retained shell adapters. */
+/** Register the official file, runtime, activity, and settings adapters. */
 export function apply(ctx: SidebarContext): void {
   const interactive = !isDesktopOverlayDocument()
   setChunkModuleSystem(ctx.modules)

@@ -12,8 +12,8 @@ import {
   restoreOfficialSidechatPayload,
 } from '../src/client/official-runtime/payload.ts'
 import {
-  closeOfficialSidechat, OFFICIAL_SIDECHAT_TOMBSTONES, officialSidechatTombstonesOf,
-  subscribeOfficialSidechatRuntime, type OfficialSidechatContext,
+  closeOfficialSidechat, interceptOfficialSidechatCatalogOpen, OFFICIAL_SIDECHAT_TOMBSTONES,
+  officialSidechatTombstonesOf, subscribeOfficialSidechatRuntime, type OfficialSidechatContext,
 } from '../src/client/official-runtime/sidechat-runtime.ts'
 import {
   canOpenOfficialUiTerminal, closeOfficialTerminal, officialAgentTerminalRowsOf,
@@ -393,6 +393,86 @@ describe('official Side Chat occurrence owner', () => {
     expect(sidebarListeners.size).toBe(0)
     expect(sessionListeners.size).toBe(0)
     expect(workspaceListeners.size).toBe(0)
+  })
+
+  it('opens or focuses the official Side Chat tab instead of selecting a Side: catalog child', () => {
+    const openTab = vi.fn(() => Promise.resolve('side-tab' as OfficialTabId))
+    const open = vi.fn()
+    const openSubagent = vi.fn()
+    const sessions: SidebarSessionList = {
+      current: SessionId('session-a'),
+      byId: {
+        'session-a': { id: SessionId('session-a'), displayTitle: 'Main', blank: false },
+        'side-child': {
+          id: SessionId('side-child'),
+          displayTitle: 'question',
+          title: 'Side: question',
+          blank: false,
+          origin: 'subagent',
+          parentId: SessionId('session-a'),
+        },
+        'tool-child': {
+          id: SessionId('tool-child'),
+          displayTitle: 'explore',
+          title: 'explore',
+          blank: false,
+          origin: 'subagent',
+          parentId: SessionId('session-a'),
+        },
+      },
+      subagentsByParent: {
+        'session-a': {
+          entries: [
+            { kind: 'child', id: 'side-child', mode: 'continuable', label: 'Side: question', activity: 'inactive', hasChildren: false },
+            { kind: 'child', id: 'tool-child', mode: 'continuable', label: 'explore', activity: 'inactive', hasChildren: false },
+          ],
+          parentAvailable: true,
+          state: 'ready',
+          error: null,
+        },
+      },
+    }
+    const liveSessions = {
+      list: { getSnapshot: () => sessions, subscribe: () => () => {} },
+      open,
+      openSubagent,
+    }
+    const ctx = {
+      sidebarRight: { forSession: () => ({ openTab }) },
+      sessions: liveSessions,
+    } as unknown as OfficialSidechatContext
+
+    const restore = interceptOfficialSidechatCatalogOpen(liveSessions, ctx)
+    liveSessions.openSubagent({
+      parentSessionId: 'session-a',
+      childSessionId: 'side-child',
+      mode: 'continuable',
+    })
+    expect(openSubagent).not.toHaveBeenCalled()
+    expect(openTab).toHaveBeenCalledWith('sidechat', {
+      instanceId: 'side-child',
+      title: 'question',
+      payload: { rootThreadId: 'side-child', threadId: 'side-child' },
+    })
+
+    liveSessions.openSubagent({
+      parentSessionId: 'session-a',
+      childSessionId: 'tool-child',
+      mode: 'continuable',
+    })
+    expect(openSubagent).toHaveBeenCalledOnce()
+
+    liveSessions.open(SessionId('side-child'))
+    expect(open).not.toHaveBeenCalled()
+    expect(openTab).toHaveBeenCalledTimes(2)
+
+    restore()
+    liveSessions.openSubagent({
+      parentSessionId: 'session-a',
+      childSessionId: 'side-child',
+      mode: 'continuable',
+    })
+    expect(openSubagent).toHaveBeenCalledTimes(2)
   })
 })
 

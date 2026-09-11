@@ -10,7 +10,7 @@ Web Client 同时挂载官方 Session 工作台与第二个 Better Sidebar React
 
 ## Decision
 
-Better Client 入口现在通过官方 Sidebar service 与 keyed Slot 注册文件与 viewer、变更、任务、Side Chat、终端、Browser 回退、设置、produced-file 与系统 path 路由，以及 Host `sidebar_open` 投递流。Browser Workspace 与 Phone 从各自所属包注册优先级更高或独立的官方 definition。入口不再创建 React root、提供 `ctx.betterSidebar`、构造 Better 布局 store 或注册表、导入 Better 布局样式表，也不再安装旧的打开处理器。
+Better Client 入口现在通过官方 Sidebar service 与 keyed Slot 注册文件与 viewer、变更、任务、Side Chat、终端、Browser 回退、设置、produced-file 与系统 path 路由，以及 Host `sidebar_open` 投递流。持久化标题以 `Side: ` 开头的目录或列表选择会在普通 owner 上打开或聚焦对应 Side Chat 标签页，而不是把该 child 选为外壳 Session。Browser Workspace 与 Phone 从各自所属包注册优先级更高或独立的官方 definition。入口不再创建 React root、提供 `ctx.betterSidebar`、构造 Better 布局 store 或注册表、导入 Better 布局样式表，也不再安装旧的打开处理器。
 
 Desktop 设置 overlay 会注册 definition、viewer inventory、自定义设置 seat、locale 数据、IME 与设置图标 adapter。它不会订阅 Side Chat、终端、变更与任务自动化、Browser 链接拦截或 Host 打开投递。Browser Workspace 同样会在 overlay 发布 face，但不调和 Runtime 页面。这些规则在保留 overlay 设置 inventory 的同时，只留下一个活动 Session 工作台与一组外部 owner 订阅。
 

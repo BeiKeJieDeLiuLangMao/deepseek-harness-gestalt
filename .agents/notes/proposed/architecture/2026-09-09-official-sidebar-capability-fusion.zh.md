@@ -6,7 +6,7 @@ Status: proposed
 
 ## 问题
 
-Web 组合目前挂载了两个右侧工作台。`ui-sidebar-right` 持有框架的 `rightbar` slot、一份 DockKit 表面、`ctx.sidebarRight`、`ctx.sidebarRightTabs`，以及引导、文件和文本预览类型。`ui-better-sidebar` 另行把 React 根追加到 `document.body`，并持有另一块右面板、底面板、浮窗、注册表、布局 store 和 `dsh-sidebar:v1:*` 状态。两块重复面板暴露不同能力，并把文件、Browser、Phone、Side Chat、Terminal、Changes、Tasks、Member Question 与模型发起的打开操作送进不同状态 owner。
+Web 组合目前挂载一块官方右侧工作台。`ui-sidebar-right` 持有框架的 `rightbar` slot、一份 DockKit 表面、`ctx.sidebarRight`、`ctx.sidebarRightTabs`，以及引导、文件和文本预览类型。`ui-better-sidebar` 把剩余能力注册到该官方表面，不再挂载直接 React 根；Host `/sidebar` 路由与 snapshot 标签类型在每项能力有正式 provider 前仍保留。文件、Browser、Phone、Side Chat、Terminal、Changes、Tasks、Member Question 与模型发起的打开操作，对每个剩余 snapshot 类型仍需要单一状态 owner。
 
 官方 workbench 提供更可靠的组合模型：tab 定义、keyed 正文/标题/菜单slot、类型化资源地址、逐 record occurrence、纯 DockKit 操作、两份持久表面、稳定多实例身份、事务式关闭、未激活 Session 打开与读取投影。它还不能表达另一块 workbench 承载的全部行为。若在补齐缺口之前移除第二套 UI，就会丢失 descriptor metadata、跨 Session Terminal pin、富查看器、运行时 tab、设置与第三方扩展。
 
@@ -47,7 +47,7 @@ tab record 消失或 `ui-sidebar-right` 卸载时，occurrence signal 才结束�
 | 能力 | 必须保留的行为 | 当前证据与迁移风险 |
 |---|---|---|
 | 官方右侧呈现 | 折叠 rail、push 模式、保留 track 的宽屏全屏、自动窄屏全屏、框架持有的 resize、至多两个横向 pane、引导重播种、undo/redo 和官方 float。 | `apps/web/tests/sidebar-right.e2e.ts` 与 `ui-sidebar-right` specs 覆盖这些路径。第二个根或残留全局 margin 会产生重复 UI 或双重布局挤压。 |
-| 底部工作台 | 独立 tab 与 split tree、可调高度、逐 Session 打开状态、首次打开 Terminal 选项，以及落入最后触达 bottom pane 的纯类型打开；内容打开落入可见的右侧工作台。 | 当前保留的 Better 测试只覆盖聚焦的 landing 与布局计算，没有完整组装路径。移除 Better 根之前必须实现 bottom slot。 |
+| 底部工作台 | 独立 tab 与 split tree、可调高度、逐 Session 打开状态、首次打开 Terminal 选项，以及落入最后触达 bottom pane 的纯类型打开；内容打开落入可见的右侧工作台。 | 官方 `ui-sidebar-right` 已持有 bottom slot。未使用的 Better 直接根已删除；剩余 snapshot 类型仍需要官方正文。 |
 | 持久化与恢复 | Session 隔离 topology、全局拖动宽度、bottom 状态、float geometry/z order、tab payload、pin、tombstone、窄屏加载折叠、畸形状态 fallback 和 `?dsh-sidebar-reset`。 | 迁移先原子写入新的官方 key，并保留每个 `dsh-sidebar:v1:*` key 原样用于回滚。重复 id、部分写入或静默 fallback 会破坏布局。 |
 | 第三方 tab | 稳定 definition id/kind、有序添加入口、availability、icon、badge、create/dedupe、URL target、持久 JSON payload、settings、open/activate/async-close hook、unavailable fallback 与 HMR 恢复。 | 当前 Better 测试覆盖部分 lifecycle 与 Phone 注册路径；官方注册表测试覆盖 takeover 与 unavailable fallback。未知合成 kind 和 payload 必须往返保留。 |
 | 文件与打开路径 | 保留官方引导、Files tree、`dsh-resource://file` Session/absolute owner、有界分页、1-based 行号导航、resource dedupe/revision，以及 Better path 输入/tree/search/reveal、write/rename/delete/upload/open-with 与合并/独立 editor 模式。 | `ui-chat` 已直接调用 `ctx.sidebarRight.openResource(fileAddress, { params: { line } })`。成员引用、文件夹 reveal、模型打开与任何旧 OS-open funnel 必须汇合且不能绕过 owner 或 fence 检查。 |

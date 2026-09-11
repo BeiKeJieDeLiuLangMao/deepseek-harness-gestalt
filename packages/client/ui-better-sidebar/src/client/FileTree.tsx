@@ -60,7 +60,7 @@ function parentOf(path: string): string {
 
 /** Only OS file drags belong to the upload surface; in-app drags (tab reorder,
  *  split zones) must pass through untouched to the pane's tab-drop handling
- *  (mirror of Sidebar.tsx's panel-host shield gate). */
+ *  (mirror of the official Sidebar panel-host shield). */
 function isFileDrag(event: DragEvent): boolean {
   return event.dataTransfer?.types.includes('Files') ?? false
 }
@@ -153,7 +153,7 @@ export function FileTree(props: {
   /** Open context menu: the row path (and whether it is a directory) plus the cursor position. */
   const [rowMenu, setRowMenu] = useState<{ path: string; isDir: boolean; x: number; y: number } | null>(null)
   // The row menu's "open with" submenu is the one submenu that can tower past
-  // the viewport; publish its flip geometry for layout.css while it is open.
+  // the viewport; publish its flip geometry while it is open.
   useSubmenuFlip(rowMenu)
   /** The row being renamed inline: its path plus the edit buffer. */
   const [renaming, setRenaming] = useState<{ path: string; value: string } | null>(null)

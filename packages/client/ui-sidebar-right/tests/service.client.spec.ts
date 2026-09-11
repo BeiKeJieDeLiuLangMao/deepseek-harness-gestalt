@@ -124,6 +124,20 @@ describe('SidebarRightController — opening', () => {
     expect(getPane(layout(), layout().activePaneId).activeTabId).toBe(tabOf('readme.txt'))
   })
 
+  it('expands a collapsed column when focusing an already-open page tab', () => {
+    const { controller, tabs, instance, publish, layout, titles } = harness()
+    tabs.register({ id: 'test/page', kind: 'page', title: () => 'page', single: true })
+    publish()
+    void controller.openTab('page')
+    expect(layout().expanded).toBe(true)
+    expect(titles()).toContain('page')
+    instance.actions.setExpanded(SESSION, false)
+    expect(layout().expanded).toBe(false)
+    void controller.openTab('page')
+    expect(layout().expanded).toBe(true)
+    expect(titles().filter(title => title === 'page')).toHaveLength(1)
+  })
+
   it('opens another tab for the same address when told not to reveal, and when another kind is named', () => {
     const { controller, tabs, publish, titles } = harness()
     tabs.register({ id: 'test/hex', kind: 'hex', patterns: [], title: () => 'hex view' })

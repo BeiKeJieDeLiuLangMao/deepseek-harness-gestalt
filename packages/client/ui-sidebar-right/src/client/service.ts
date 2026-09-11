@@ -635,7 +635,7 @@ export class SidebarRightController implements ISidebarRight {
     if (duplicate !== undefined) {
       if (placement.activate !== false) {
         actions.focusTab(sessionId, duplicate.id as TabId)
-        if (address.startsWith(RESOURCE_SCHEME) && !duplicate.floating) {
+        if (!duplicate.floating) {
           actions.setSurfaceExpanded(sessionId, duplicate.surface, true)
         }
       }

@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/proposed/architecture/2026-09-09-official-sidebar-capability-fusion.md
-2026-09-09-official-sidebar-capability-fusion.md: b33966ccc8400e1f5e197fca7e4fce33e10d8140
-2026-09-09-official-sidebar-capability-fusion.zh.md: 1b17300c3bc478452d05d490fd20597ab61d175f
+2026-09-09-official-sidebar-capability-fusion.md: 929bbc24bd96d5715e39f4d1a2609615013d7572
+2026-09-09-official-sidebar-capability-fusion.zh.md: 7fe51a34598ea4e7cd826a390546ec12a92c4973
