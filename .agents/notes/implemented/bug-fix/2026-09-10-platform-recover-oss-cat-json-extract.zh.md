@@ -10,7 +10,7 @@ Platform Deploy 的 recovery 与未完成部署探测会把 `aliyun oss cat` 的
 
 ## Decision
 
-`apps/platform/scripts/platform-oss-json.sh` 中的 `platform_extract_json_object` 从第一个 `{` 起用 `JSONDecoder.raw_decode` 取出一份对象，并拒绝随后的 JSON 值。剩余的非 JSON CLI 附言不是权威。`platform-recover.sh` 始终 source 该 helper，并在读取持久字段前把成功的 `oss cat` 标准输出经它过滤。未完成部署探测仍用合并后的标准输出与标准错误检测 `StatusCode=404`；退出码为 0 的探测必须仍能提取一份 JSON 对象，才算存在未完成锁。
+`apps/platform/scripts/platform-oss-json.sh` 中的 `platform_extract_json_object` 从第一个 `{` 起取出一份对象，并拒绝随后的 JSON 值。剩余的非 JSON CLI 附言不是权威。该 helper 优先使用 `python3`，其次 `python`，再次 `node`，因为 Windows Git Bash 的 recovery 测试没有 `python3`。`platform-recover.sh` 始终 source 该 helper，并在读取持久字段前把成功的 `oss cat` 标准输出经它过滤。未完成部署探测仍用合并后的标准输出与标准错误检测 `StatusCode=404`；退出码为 0 的探测必须仍能提取一份 JSON 对象，才算存在未完成锁。
 
 ## Alternatives considered
 
@@ -27,6 +27,7 @@ Platform Deploy 的 recovery 与未完成部署探测会把 `aliyun oss cat` 的
 - 退出码为 0 但不是一份 JSON 对象的 `oss cat` 视为无法判定的锁，而不是缺失对象。
 - 对 `jq` 打桩的 recovery 测试保持该桩，但 chatter 用例会对提取后的文档调用真实 `jq`。
 - 持久字段读取会去掉 CR，因此 Git Bash 下 `jq` 的 CRLF 行仍能与 `PLATFORM_ECS_INSTANCE_IDS` 对齐。
+- 没有 `python3` 的主机仍可通过 `python` 或 `node` 提取。
 
 ## Testing
 

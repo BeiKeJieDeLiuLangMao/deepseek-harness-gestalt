@@ -10,7 +10,7 @@ Platform Deploy recovery and the unresolved-lock probe feed `aliyun oss cat` std
 
 ## Decision
 
-`platform_extract_json_object` in `apps/platform/scripts/platform-oss-json.sh` finds the first `{`, `JSONDecoder.raw_decode`s one object, and rejects a following JSON value. Leftover non-JSON CLI chatter is not authority. `platform-recover.sh` always sources that helper and pipes successful `oss cat` stdout through it before reading durable fields. The unresolved-lock probe keeps combined stdout and stderr for `StatusCode=404` detection; a zero-exit probe must still extract one JSON object before it counts as an unresolved lock.
+`platform_extract_json_object` in `apps/platform/scripts/platform-oss-json.sh` finds the first `{`, decodes one object, and rejects a following JSON value. Leftover non-JSON CLI chatter is not authority. The helper prefers `python3`, then `python`, then `node`, because Windows Git Bash recovery tests do not have `python3`. `platform-recover.sh` always sources that helper and pipes successful `oss cat` stdout through it before reading durable fields. The unresolved-lock probe keeps combined stdout and stderr for `StatusCode=404` detection; a zero-exit probe must still extract one JSON object before it counts as an unresolved lock.
 
 ## Alternatives considered
 
@@ -27,6 +27,7 @@ Platform Deploy recovery and the unresolved-lock probe feed `aliyun oss cat` std
 - A zero-exit `oss cat` that is not one JSON object is an undetermined lock, not a missing object.
 - Recovery tests that stub `jq` keep that stub except chatter cases, which invoke real `jq` on the extracted document.
 - Durable field reads strip CR so Git Bash `jq` CRLF lines still match `PLATFORM_ECS_INSTANCE_IDS`.
+- A host without `python3` still extracts through `python` or `node`.
 
 ## Testing
 
