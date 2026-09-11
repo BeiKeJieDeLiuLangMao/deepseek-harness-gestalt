@@ -9,16 +9,7 @@
   ],
   "references": [
     {
-      "path": "../../../vendor/cordis"
-    },
-    {
-      "path": "../../../vendor/loader"
-    },
-    {
       "path": "../../boot/app-boot"
-    },
-    {
-      "path": "../../runtime-diagnostics/invariants"
     }
   ]
 }

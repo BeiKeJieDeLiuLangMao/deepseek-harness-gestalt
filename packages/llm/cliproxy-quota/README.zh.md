@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-CLIProxyAPI 账号池凭据的只读额度观测。唯一入口 `createQuotaObserver({ transport })` 经注入的 trusted transport 探测一个账号，返回脱敏的 `QuotaObservation`：`known` / `partial` / `unsupported` / `failure` 判定、采样时刻 `observedAt`，以及逐窗口事实。
+CLIProxyAPI 账号池凭据的只读额度观测。唯一入口 `createQuotaObserver({ transport })` 经注入的 trusted transport 探测一个账号，返回脱敏的 `QuotaObservation`：`known` / `partial` / `unsupported` / `failure` 判定、采样时刻 `observedAt`，以及逐窗口事实。不发布运行时 invariant 伴生体，因为本纯观测库没有事件流或可变运行时数据；探测构造、解析与脱敏由假 transport 上的单元与组装测试强制执行。
 
 ## 信任与只读模型
 

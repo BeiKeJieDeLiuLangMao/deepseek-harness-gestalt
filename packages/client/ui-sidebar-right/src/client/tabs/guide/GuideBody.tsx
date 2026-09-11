@@ -20,6 +20,7 @@ import type { SidebarRightProjection } from '../../service.ts'
 import type {
   SidebarRightDescriptorContext, SidebarRightDescriptorTab, SidebarRightGuideBox,
 } from '../../tab-registry.ts'
+import { descriptorTabsOf as descriptorTabsFromOfficial } from '../../tab-registry.ts'
 import type { SidebarRightPreferencesSnapshot } from '../../preferences.ts'
 import css from './GuideBody.module.css'
 
@@ -90,17 +91,9 @@ function ShippedGuide({ entries, onPick, t }: {
 }
 
 function descriptorTabsOf(projection: SidebarRightProjection, sessionId: string): SidebarRightDescriptorTab[] {
-  const session = projection.sessions.find(candidate => candidate.sessionId === sessionId)
-  return session?.tabs.map(tab => ({
-    id: tab.record.id,
-    kind: tab.record.kind,
-    contentId: tab.record.contentId,
-    title: tab.record.title,
-    surface: tab.surface,
-    floating: tab.floating,
-    payload: tab.state.payload,
-    pin: tab.state.pin,
-  })) ?? []
+  return descriptorTabsFromOfficial(
+    projection.sessions.find(candidate => candidate.sessionId === sessionId)?.tabs,
+  )
 }
 
 /** Resolve each entry's Session-aware availability without removing its card. */

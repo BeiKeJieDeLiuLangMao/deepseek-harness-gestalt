@@ -156,22 +156,11 @@ export class ScheduleService extends TypertRemoteService {
    */
   @Remote('delete')
   async delete(agent: Agent, id: ScheduleId): Promise<ScheduleDeleteResult> {
-    this.assertLive(agent)
-    this.assertId(id)
-    return this.transactions.run(agent.id, async () => {
-      this.assertLive(agent)
-      await flushSchedulePersistence(this.ctx, agent.session)
-      const runtime = this.runtimes.get(agent)?.runtime
-      runtime?.requestDrive()
-      const folded = this.fold(agent)
+    return this.mutate(agent, id, (folded) => {
       if (!folded.schedules.some(schedule => schedule.record.id === id)) {
         throw new ScheduleMutationError('schedule_not_found', `schedule ${JSON.stringify(id)} is not retained`)
       }
-      agent.session.append('schedule/change', { version: 1, operation: 'delete', id })
-      runtime?.requestDrive()
-      await flushSchedulePersistence(this.ctx, agent.session)
-      runtime?.requestDrive()
-      return { id, deleted: true }
+      return { operation: 'delete', result: { id, deleted: true } }
     })
   }
 
@@ -181,14 +170,7 @@ export class ScheduleService extends TypertRemoteService {
     id: ScheduleId,
     operation: 'pause' | 'resume',
   ): Promise<ScheduleView> {
-    this.assertLive(agent)
-    this.assertId(id)
-    return this.transactions.run(agent.id, async () => {
-      this.assertLive(agent)
-      await flushSchedulePersistence(this.ctx, agent.session)
-      const runtime = this.runtimes.get(agent)?.runtime
-      runtime?.requestDrive()
-      const folded = this.fold(agent)
+    return this.mutate(agent, id, (folded) => {
       const retained = folded.schedules.find(schedule => schedule.record.id === id)
       if (retained === undefined) {
         throw new ScheduleMutationError('schedule_not_found', `schedule ${JSON.stringify(id)} is not retained`)
@@ -200,11 +182,29 @@ export class ScheduleService extends TypertRemoteService {
           `schedule ${JSON.stringify(id)} cannot ${operation} from ${retained.paused ? 'paused' : 'active'} state`,
         )
       }
+      return { operation, result: scheduleView(retained.record, Date.now(), operation === 'pause') }
+    })
+  }
+
+  /** Fold, append, and persist one Session-scoped schedule mutation. */
+  private async mutate<T>(
+    agent: Agent,
+    id: ScheduleId,
+    apply: (folded: ReturnType<typeof foldScheduleEvents>) => { operation: 'delete' | 'pause' | 'resume'; result: T },
+  ): Promise<T> {
+    this.assertLive(agent)
+    this.assertId(id)
+    return this.transactions.run(agent.id, async () => {
+      this.assertLive(agent)
+      await flushSchedulePersistence(this.ctx, agent.session)
+      const runtime = this.runtimes.get(agent)?.runtime
+      runtime?.requestDrive()
+      const { operation, result } = apply(this.fold(agent))
       agent.session.append('schedule/change', { version: 1, operation, id })
       runtime?.requestDrive()
       await flushSchedulePersistence(this.ctx, agent.session)
       runtime?.requestDrive()
-      return scheduleView(retained.record, Date.now(), operation === 'pause')
+      return result
     })
   }
 

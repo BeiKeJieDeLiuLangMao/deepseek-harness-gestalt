@@ -46,6 +46,7 @@ import type { SidebarRightOpenTabOptions, SidebarRightProjection, SidebarRightTa
 import type {
   SidebarRightDescriptorContext, SidebarRightDescriptorTab, SidebarRightTabDefinition,
 } from '../tab-registry.ts'
+import { descriptorTabsOf as descriptorTabsFromOfficial } from '../tab-registry.ts'
 import type {
   createSidebarRightStore, DockSurfaceState, SidebarWorkbenchSurface, SurfaceState,
 } from '../stores.ts'
@@ -232,16 +233,9 @@ function descriptorTabsOf(
   projection: SidebarRightProjection,
   sessionId: SessionId,
 ): readonly SidebarRightDescriptorTab[] {
-  return projection.sessions.find(candidate => candidate.sessionId === sessionId)?.tabs.map(tab => ({
-    id: tab.record.id,
-    kind: tab.record.kind,
-    contentId: tab.record.contentId,
-    title: tab.record.title,
-    surface: tab.surface,
-    floating: tab.floating,
-    payload: tab.state.payload,
-    pin: tab.state.pin,
-  })) ?? []
+  return descriptorTabsFromOfficial(
+    projection.sessions.find(candidate => candidate.sessionId === sessionId)?.tabs,
+  )
 }
 
 function desktopAddTabItems(
@@ -356,6 +350,23 @@ function useDesktopAddTabMenu(
 /** The guide tab one pane holds, if any: a pane holds at most one. */
 function guideIn(layout: LayoutState, paneId: PaneId): TabId | undefined {
   return findPaneContentTab(layout, paneId, pageAddress(GUIDE_KIND), GUIDE_KIND)
+}
+
+function dockOccurrenceProps(panel: PanelProps): Pick<
+  Parameters<typeof DockSurface>[0],
+  'canCloseTab' | 'intents' | 'labels' | 'renderTab' | 'renderTabTitle'
+> {
+  const { sessionId, surface, actions, t, openTab } = panel
+  return {
+    canCloseTab: tabId => canCloseTab(surface, tabId),
+    intents: intentsFor(
+      sessionId, actions, openTab, panel.activateTab, panel.closeTab,
+      panel.workbenchSurface, panel.openAddTabMenu,
+    ),
+    labels: dockLabels(t),
+    renderTab: bodiesFor(panel),
+    renderTabTitle: titlesFor(panel),
+  }
 }
 
 /**
@@ -622,7 +633,7 @@ function PanelChrome({ sessionId, workbenchSurface, fullscreen, autoFullscreen, 
  * anchored to the frame's right edge and slid off it while collapsed.
  */
 function SidebarPanel(panel: PanelProps & { width: number; panelRef: RefObject<HTMLDivElement> }): ReactNode {
-  const { sessionId, surface, actions, t, openTab, width, reportRoom, fullscreen, autoFullscreen, panelRef } = panel
+  const { sessionId, surface, actions, t, width, reportRoom, fullscreen, autoFullscreen, panelRef } = panel
   const { expanded } = surface.layout
   return (
     <div
@@ -645,14 +656,7 @@ function SidebarPanel(panel: PanelProps & { width: number; panelRef: RefObject<H
           dropZones="horizontal"
           minPaneFraction={0.2}
           canAddTab={paneId => guideIn(surface.layout, paneId) === undefined}
-          canCloseTab={tabId => canCloseTab(surface, tabId)}
-          intents={intentsFor(
-            sessionId, actions, openTab, panel.activateTab, panel.closeTab,
-            panel.workbenchSurface, panel.openAddTabMenu,
-          )}
-          labels={dockLabels(t)}
-          renderTab={bodiesFor(panel)}
-          renderTabTitle={titlesFor(panel)}
+          {...dockOccurrenceProps(panel)}
           renderTabMenuItems={(tab, dismiss) => tabMenuItems(panel, tab, dismiss)}
           chrome={(
             <PanelChrome
@@ -673,20 +677,13 @@ function SidebarPanel(panel: PanelProps & { width: number; panelRef: RefObject<H
 
 /** Portal the floating layer out of whichever seat rendered it. */
 function Floats(panel: PanelProps): ReactNode {
-  const { sessionId, surface, actions, t, openTab } = panel
+  const { surface } = panel
   if (surface.layout.floats.length === 0) return null
   return createPortal(
     <div className={css.floatHost} data-sidebar-right-float-host {...osFileDragShield}>
       <FloatLayer
         state={surface.layout}
-        canCloseTab={tabId => canCloseTab(surface, tabId)}
-        intents={intentsFor(
-          sessionId, actions, openTab, panel.activateTab, panel.closeTab,
-          panel.workbenchSurface, panel.openAddTabMenu,
-        )}
-        labels={dockLabels(t)}
-        renderTab={bodiesFor(panel)}
-        renderTabTitle={titlesFor(panel)}
+        {...dockOccurrenceProps(panel)}
       />
     </div>,
     document.body,

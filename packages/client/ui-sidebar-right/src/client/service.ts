@@ -42,6 +42,7 @@ import type {
   SidebarRightCloseReason, SidebarRightDescriptorContext, SidebarRightDescriptorTab, SidebarRightTabClaim,
   SidebarRightTabCloseContext, SidebarRightTabDefinition, SidebarRightTabRegistry,
 } from './tab-registry.ts'
+import { descriptorTabsOf } from './tab-registry.ts'
 import { SidebarRightCloseCoordinator, type SidebarRightCloseOutcome } from './close-coordinator.ts'
 import type { SidebarRightState, SidebarWorkbenchSurface, SurfaceState, UpdateTabIntent } from './stores.ts'
 import { locateTab, workbenchTabs } from './stores.ts'
@@ -203,17 +204,17 @@ export interface SidebarRightProjection {
   readonly pinned: readonly SidebarRightTabProjection[]
 }
 
-/** Navigation and state operations explicitly aimed at one Session. */
-export interface SidebarRightSessionNavigator {
+/** Shared occurrence commands for the mounted face and one Session navigator. */
+export interface SidebarRightOccurrenceCommands {
   /**
-   * Open a resource in this Session.
+   * Open a resource.
    * @param address - a `dsh-resource://<type>/…` address.
    * @param options - routing, placement, navigation, and persistent metadata.
    * @returns the opened or revealed occurrence identity.
    */
   openResource<K extends string = string>(address: string, options?: SidebarRightOpenResourceOptions<K>): Promise<TabId>
   /**
-   * Open a page kind in this Session.
+   * Open a page kind.
    * @param kind - registered page kind.
    * @param options - identity, placement, navigation, and persistent metadata.
    * @returns the opened or revealed occurrence identity.
@@ -226,7 +227,7 @@ export interface SidebarRightSessionNavigator {
    */
   close(tabId: TabId): Promise<SidebarRightCloseOutcome>
   /**
-   * Update persistent state on one mounted-Session occurrence.
+   * Update persistent state on one occurrence.
    * @param tabId - occurrence identity.
    * @param patch - title, JSON payload, or pin changes.
    */
@@ -237,6 +238,10 @@ export interface SidebarRightSessionNavigator {
    * @param value - durable JSON, or `undefined` to delete the key.
    */
   setData(key: string, value: JsonValue | undefined): void
+}
+
+/** Navigation and state operations explicitly aimed at one Session. */
+export interface SidebarRightSessionNavigator extends SidebarRightOccurrenceCommands {
   /**
    * Close all occurrences and restore fresh surfaces.
    * @returns admission, committed closes, and release failures.
@@ -281,47 +286,7 @@ function projectSession(sessionId: SessionId, surface: SurfaceState): SidebarRig
 }
 
 /** The outward right-Sidebar face (`ctx.sidebarRight`). */
-export interface ISidebarRight {
-  /**
-   * Open a resource: claim it, place it, reveal the column, record the navigation.
-   *
-   * Without `options.kind` the registry ranks the types whose globs and
-   * `canOpen` accept the address and the best band wins; with it, that kind's
-   * type in force opens the address (its `canOpen` still applies). An address
-   * outside `dsh-resource://`, or one no type will open, is a wiring mistake,
-   * not a user error, so it throws. The column expands in the same step,
-   * because content the user cannot see is not opened.
-   * @param address - a `dsh-resource://<type>/…` address.
-   * @param options - placement, the opening type, and navigation parameters.
-   * @returns the opened or revealed occurrence identity.
-   */
-  openResource<K extends string = string>(address: string, options?: SidebarRightOpenResourceOptions<K>): Promise<TabId>
-  /**
-   * Open a page type by kind: the type in force for it, at the address this
-   * package records pages under. A kind nothing registered throws.
-   * @param kind - the page type's kind.
-   * @param options - placement and that kind's navigation parameters.
-   * @returns the opened or revealed occurrence identity.
-   */
-  openTab<K extends string>(kind: K, options?: SidebarRightOpenTabOptions<K>): Promise<TabId>
-  /**
-   * Close one tab of the mounted session.
-   * @param tabId - the tab to close.
-   * @returns admission, committed closes, and release failures.
-   */
-  close(tabId: TabId): Promise<SidebarRightCloseOutcome>
-  /**
-   * Update persistent state on one mounted-Session occurrence.
-   * @param tabId - occurrence identity.
-   * @param patch - title, JSON payload, or pin changes.
-   */
-  update<K extends string>(tabId: TabId, patch: SidebarRightUpdateTabOptions<K>): void
-  /**
-   * Set or delete namespaced Session-level extension data.
-   * @param key - non-empty extension-owned namespace key.
-   * @param value - durable JSON, or `undefined` to delete the key.
-   */
-  setData(key: string, value: JsonValue | undefined): void
+export interface ISidebarRight extends SidebarRightOccurrenceCommands {
   /**
    * Address a Session even before the Slot renderer has visited it.
    * @param sessionId - target Session identity.
@@ -685,16 +650,7 @@ export class SidebarRightController implements ISidebarRight {
     return {
       sessionId,
       preferences: this.tabs.preferences(),
-      tabs: session?.tabs.map(tab => ({
-        id: tab.record.id,
-        kind: tab.record.kind,
-        contentId: tab.record.contentId,
-        title: tab.record.title,
-        surface: tab.surface,
-        floating: tab.floating,
-        payload: tab.state.payload,
-        pin: tab.state.pin,
-      })) ?? [],
+      tabs: descriptorTabsOf(session?.tabs),
     }
   }
 

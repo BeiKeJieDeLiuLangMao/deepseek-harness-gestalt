@@ -45,7 +45,7 @@ Same-origin Host Consumer for phone IO, screen capture, and managed Android/iOS 
 <a id="extension-points"></a>
 ## Extension points
 
-Composition must provide `phoneDevices` and `webServer`; the fiber waits on both. The `./invariant` companion is empty because Host WebServer effects own route registration and disposal.
+Composition must provide `phoneDevices` and `webServer`; the fiber waits on both. No runtime invariant companion is published because Host WebServer effects own route registration and disposal.
 
 <a id="model-experience"></a>
 ## Model Experience

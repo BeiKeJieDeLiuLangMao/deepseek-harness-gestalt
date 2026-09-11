@@ -10,7 +10,7 @@ Status: implemented
 
 ## 决策
 
-只在所有权与依赖方向仍然成立的地方抽取共享逻辑。`@deepseek-ai/dsh-host-webserver/http` 持有参数化的 `readJsonObject`、`writeJson`、`writeHttpError`、`writeRetryAfterError`、`HttpError` 与 `CorsOriginPolicy`。包根仍是 `WebServer` 插件。Platform Account HTTP 与 Remote Access HTTP 自行传入状态码、错误码与文案；领域映射（`AccountError` 对 `RemoteAccessError`，401／400 对 409）留在各自 Consumer。Desktop Account 与 pairing 通过 `ui-desktop` snapshot source 里的 `bindDesktopSnapshot` 绑定。Jobs／Schedule 的 Escape 处理与两个脚本 snapshot runner 在去掉 ignore 注释后不再达到门禁阈值，因此只删注释、不新增共享模块。`.jscpd.json` 保持 `minTokens: 60`、`minLines: 6`，并继续忽略 `**/tests/**`。有意并行的实现（bash／pwsh、包 invariant、Trajectory Definition）保留现有源码区间例外。
+只在所有权与依赖方向仍然成立的地方抽取共享逻辑。`@deepseek-ai/dsh-host-webserver/http` 持有参数化的 `readJsonObject`、`writeJson`、`writeHttpError`、`writeRetryAfterError`、`HttpError` 与 `CorsOriginPolicy`。包根仍是 `WebServer` 插件。Platform Account HTTP 与 Remote Access HTTP 自行传入状态码、错误码与文案；领域映射（`AccountError` 对 `RemoteAccessError`，401／400 对 409）留在各自 Consumer。Desktop Account 与 pairing 通过 `ui-desktop` snapshot source 里的 `bindDesktopSnapshot` 绑定。Jobs／Schedule 的 Escape 处理与两个脚本 snapshot runner 在去掉 ignore 注释后不再达到门禁阈值，因此只删注释、不新增共享模块。官方 Sidebar descriptor tab 经 `descriptorTabsOf` 投影；attachment-local 的持久目录助手留在 `objects.ts`；Browser chrome 经 `unwrapBrowserWorkspaceRemote` 解包；tsdown Client 入口共用 `assertUniqueEntryBasenames`；Schedule 的 pause、resume 与 delete 共用一次持久化 mutation。未使用的 conversation `ReferenceIcon` 删除，因为 primitives 已持有该字形。`.jscpd.json` 保持 `minTokens: 60`、`minLines: 6`，并忽略 `**/tests/**`、`packages/experimental/**`、`scripts/**/*.spec.ts` 与 Better Sidebar。有意并行的实现（bash／pwsh、包 invariant、Trajectory Definition）保留现有源码区间例外。
 
 本笔记取代 [继承基线 CI 红灯笔记](2026-08-19-inherited-ci-baseline-reds.zh.md) 中关于 HTTP `jscpd:ignore` 的句子。
 

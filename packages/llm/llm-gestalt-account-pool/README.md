@@ -4,7 +4,7 @@ English | [中文](README.zh.md)
 
 Desktop composes this plugin only for the CLIProxyAPI process it owns. The Host supplies an IPv4-loopback HTTPS `/v1` endpoint, an inference-only key, and the generation certificate as `NODE_EXTRA_CA_CERTS`; none of those values are stored in settings or exposed to renderer code.
 
-The plugin authenticates `/v1/models`, publishes `gestalt-account-pool` only while the returned catalog contains at least one model, republishes topology after catalog changes, and withdraws the route when the core becomes unavailable. Registry collisions fail during registration rather than replacing a user provider.
+The plugin authenticates `/v1/models`, publishes `gestalt-account-pool` only while the returned catalog contains at least one model, republishes topology after catalog changes, and withdraws the route when the core becomes unavailable. Registry collisions fail during registration rather than replacing a user provider. No runtime invariant companion is published because this adapter owns no independent event stream or mutable data beyond LLM registry contracts already asserted by `dsh-llm`.
 
 ## Model Experience
 

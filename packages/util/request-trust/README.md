@@ -22,7 +22,7 @@ Protect local HTTP routes that a browser can reach with one zero-dependency requ
 <a id="package-contract"></a>
 ## Package contract
 
-The zero-dependency browser-trust fence shared by every local HTTP route a browser can reach: the `/api` carrier (`@deepseek-ai/dsh-client-connection`) and the phone-stream routes (`@deepseek-ai/dsh-phone-stream`). One judgment for the Host, Origin, and Fetch-Metadata rules, read from either HTTP representation — Node `IncomingMessage` headers and Fetch `Headers` — so per-route copies cannot drift.
+The zero-dependency browser-trust fence shared by every local HTTP route a browser can reach: the `/api` carrier (`@deepseek-ai/dsh-client-connection`) and the phone-stream routes (`@deepseek-ai/dsh-phone-stream`). One judgment for the Host, Origin, and Fetch-Metadata rules, read from either HTTP representation — Node `IncomingMessage` headers and Fetch `Headers` — so per-route copies cannot drift. No runtime invariant companion is published because this pure judgment module owns no event stream or mutable runtime data; its trust rules are enforced by unit tests at the shared module and both consuming routes.
 
 <a id="what-the-fence-decides"></a>
 ## What the fence decides

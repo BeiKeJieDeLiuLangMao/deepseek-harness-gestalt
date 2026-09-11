@@ -30,6 +30,6 @@ const install: InvariantInstaller = (_ctx, fail) => {
 }
 
 /** Register the Phone invariant companion. */
-export function apply(ctx: Context): void {
+export const apply = (ctx: Context): void => {
   ctx.invariants.register(PACKAGE_NAME, install)
 }

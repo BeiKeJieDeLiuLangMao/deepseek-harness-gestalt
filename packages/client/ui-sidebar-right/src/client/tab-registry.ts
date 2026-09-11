@@ -127,6 +127,51 @@ export interface SidebarRightDescriptorTab {
   readonly pin: SidebarRightTabPin | undefined
 }
 
+/** Official projection facts needed to build a descriptor tab. */
+export interface SidebarRightDescriptorTabSource {
+  readonly record: {
+    readonly id: string
+    readonly kind: string
+    readonly contentId: string
+    readonly title: string
+  }
+  readonly surface: SidebarWorkbenchSurface
+  readonly floating: boolean
+  readonly state: {
+    readonly payload?: SidebarRightTabPayload | undefined
+    readonly pin?: SidebarRightTabPin | undefined
+  }
+}
+
+/**
+ * Project one official occurrence into descriptor callbacks.
+ * @param tab - official projection facts for one occurrence.
+ * @returns the descriptor-facing occurrence view.
+ */
+export function descriptorTabOf(tab: SidebarRightDescriptorTabSource): SidebarRightDescriptorTab {
+  return {
+    id: tab.record.id,
+    kind: tab.record.kind,
+    contentId: tab.record.contentId,
+    title: tab.record.title,
+    surface: tab.surface,
+    floating: tab.floating,
+    payload: tab.state.payload,
+    pin: tab.state.pin,
+  }
+}
+
+/**
+ * Project one Session's official occurrences into descriptor callbacks.
+ * @param tabs - official projection facts for the Session.
+ * @returns descriptor-facing occurrence views, or an empty list.
+ */
+export function descriptorTabsOf(
+  tabs: readonly SidebarRightDescriptorTabSource[] | undefined,
+): SidebarRightDescriptorTab[] {
+  return tabs?.map(descriptorTabOf) ?? []
+}
+
 /** Pure current-state input shared by availability, badge, creation, and dedupe callbacks. */
 export interface SidebarRightDescriptorContext {
   readonly sessionId: SessionId

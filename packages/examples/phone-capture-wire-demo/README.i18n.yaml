@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/examples/phone-capture-wire-demo/README.md
-README.md: 3131d8cebe31429801bff85b8ebad1ac68cb5ded
-README.zh.md: 23fc2c904bc655ba819b69177283e6d85cdde929
+README.md: c76708f6824db0313b04486c79cc299807584b1f
+README.zh.md: 9769578482bfdf021d1a2fdbda91ef3b777a429e

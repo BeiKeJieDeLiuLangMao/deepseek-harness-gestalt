@@ -58,13 +58,15 @@ export type {
   SurfaceState, UpdateTabIntent,
 } from './stores.ts'
 export type {
-  ISidebarRight, SidebarRightBinding, SidebarRightOpenResourceOptions, SidebarRightOpenTabOptions,
-  SidebarRightPlacement, SidebarRightProjection, SidebarRightSessionNavigator, SidebarRightSessionProjection,
+  ISidebarRight, SidebarRightBinding, SidebarRightOccurrenceCommands, SidebarRightOpenResourceOptions,
+  SidebarRightOpenTabOptions, SidebarRightPlacement, SidebarRightProjection, SidebarRightSessionNavigator,
+  SidebarRightSessionProjection,
   SidebarRightTabProjection, SidebarRightUpdateTabOptions, SurfaceActions,
 } from './service.ts'
 export type {
   SidebarRightGuideBox, SidebarRightGuideEntry, SidebarRightTabClaim, SidebarRightTabDefinition,
   SidebarRightTabCloseContext, SidebarRightCloseReason, SidebarRightDescriptorContext,
+  SidebarRightDescriptorTabSource,
   SidebarRightDescriptorIcon, SidebarRightDescriptorTab, SidebarRightSettingControl,
   SidebarRightSettingDefinition, SidebarRightSettingOption, SidebarRightSettingsDeclaration,
   SidebarRightTabCreateRequest, SidebarRightTabCreateResult, SidebarRightTabPriority,

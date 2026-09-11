@@ -4,26 +4,15 @@
  * only mutation verbs and page observation.
  */
 
-import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
-import type {
-  BrowserPageState,
-  BrowserRuntimeState,
-  BrowserScreenshot,
-  BrowserTarget,
+import {
+  unwrapBrowserWorkspaceRemote,
+  type BrowserPageState,
+  type BrowserRuntimeState,
+  type BrowserScreenshot,
+  type BrowserTarget,
 } from '@deepseek-ai/dsh-browser-workspace/client'
 
-/**
- * Unwrap one Browser Workspace Remote result or throw its reported failure.
- * @param result - settling result from a generated Browser Workspace method.
- * @returns the successful payload.
- */
-export async function unwrapRemote<T>(result: Promise<RemoteResult<T>>): Promise<T> {
-  const settled = await result
-  if (!settled.ok) {
-    throw Object.assign(new Error(settled.error.message), { code: settled.error.code })
-  }
-  return settled.value
-}
+export const unwrapRemote = unwrapBrowserWorkspaceRemote
 
 /** Official page chrome verbs closed over the current Session. */
 export interface BrowserPageChromeActions {

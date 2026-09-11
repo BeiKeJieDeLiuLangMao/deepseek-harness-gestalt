@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-21-zero-clone-duplication-gate.md
-2026-08-21-zero-clone-duplication-gate.md: fc359a2095f1d76adb50523d382294b3034ba0e5
-2026-08-21-zero-clone-duplication-gate.zh.md: 9e247e62dbd02430674bd2f9a0827138e4a7fd38
+2026-08-21-zero-clone-duplication-gate.md: 406cfaa5602e54084beec9830f6e0e2b4bdd6543
+2026-08-21-zero-clone-duplication-gate.zh.md: be188c8ba37e2cfbba8f558a3a05263e9d157b38

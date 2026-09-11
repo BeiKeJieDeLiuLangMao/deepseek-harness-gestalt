@@ -9,9 +9,7 @@ import type { PreToolDecision } from '@deepseek-ai/dsh-tools'
 import ApprovalService, { type ApprovalOutcome } from '@deepseek-ai/dsh-user-approval'
 import { deviceId, PhoneDevicesError } from '@deepseek-ai/dsh-phone-runtime'
 import type { DeviceId, PhoneDeviceList, PhoneIoRequest } from '@deepseek-ai/dsh-phone-runtime'
-import InvariantRegistry from '@deepseek-ai/dsh-invariants'
 import * as ToolPhone from '@deepseek-ai/dsh-tool-phone'
-import * as ToolPhoneInvariant from '../src/invariant.ts'
 
 const signal = new AbortController().signal
 const PNG_PATH = '/tmp/dsh-home/phone/screenshots/emulator-5554.png'
@@ -592,7 +590,7 @@ describe('deferred phone device Consumer', () => {
     expect(ctx.tools.schemas().map(schema => schema.name)).toEqual(['tool_search'])
   })
 
-  it('uses the direct-call timeout default and disposes its empty invariant companion', async () => {
+  it('uses the direct-call timeout default', async () => {
     const ctx = new Context()
     contexts.push(ctx)
     ctx.provide('phoneDevices', fakeFleet() as never)
@@ -602,10 +600,6 @@ describe('deferred phone device Consumer', () => {
     expect(ctx.tools.catalogSchemas()).toHaveLength(6)
     expect(() => { ToolPhone.apply(new Context(), { timeoutMs: 0 }) }).toThrow(/positive safe integer/)
     expect(() => { ToolPhone.apply(new Context(), { timeoutMs: 1.5 }) }).toThrow(/positive safe integer/)
-
-    await ctx.plugin(InvariantRegistry)
-    const fiber = await ctx.plugin(ToolPhoneInvariant)
-    await expect(fiber.dispose()).resolves.toBeUndefined()
   })
 
   it('keeps PhoneDevicesError codes on the HarnessError wrapper', () => {

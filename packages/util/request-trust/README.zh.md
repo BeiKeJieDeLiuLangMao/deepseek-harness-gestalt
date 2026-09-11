@@ -22,7 +22,7 @@ kind: "package-reference"
 <a id="package-contract"></a>
 ## 包约定
 
-浏览器可触达的每个本地 HTTP 路由共享的零依赖浏览器信任栅栏：`/api` 载体（`@deepseek-ai/dsh-client-connection`）与 phone-stream 路由（`@deepseek-ai/dsh-phone-stream`）。Host、Origin 与 Fetch-Metadata 规则只有一份判定，且可从两种 HTTP 表示——Node `IncomingMessage` 头与 Fetch `Headers`——读取，各路由的副本因此不会漂移。
+浏览器可触达的每个本地 HTTP 路由共享的零依赖浏览器信任栅栏：`/api` 载体（`@deepseek-ai/dsh-client-connection`）与 phone-stream 路由（`@deepseek-ai/dsh-phone-stream`）。Host、Origin 与 Fetch-Metadata 规则只有一份判定，且可从两种 HTTP 表示——Node `IncomingMessage` 头与 Fetch `Headers`——读取，各路由的副本因此不会漂移。不发布运行时 invariant 伴生体，因为本纯判定模块没有事件流或可变运行时数据；其信任规则由共享模块与两条消费路由的单元测试强制执行。
 
 <a id="what-the-fence-decides"></a>
 ## 栅栏判定什么

@@ -2,8 +2,8 @@
 
 import { createHash, randomUUID } from 'node:crypto'
 import { constants, createReadStream } from 'node:fs'
-import { chmod, link, mkdir, open, readFile, unlink } from 'node:fs/promises'
-import { dirname, join, parse, resolve } from 'node:path'
+import { chmod, link, open, readFile, unlink } from 'node:fs/promises'
+import { dirname, join, resolve } from 'node:path'
 import {
   AttachmentError,
   AttachmentId,
@@ -18,29 +18,15 @@ import { normalizeImage } from './normalization.ts'
 import type { NormalizationPolicy } from './normalization.ts'
 import { detectImage, probeImage } from './image.ts'
 import type { DetectedImage } from './image.ts'
-
-const ID_PATTERN = /^sha256:([a-f0-9]{64})$/
-const durableHomes = new Set<string>()
-
-function digest(data: Uint8Array): string {
-  return createHash('sha256').update(data).digest('hex')
-}
-
-function displayName(value: string | undefined): string | undefined {
-  if (value === undefined) return undefined
-  // Strip both separator styles by hand: a POSIX host treats `\` as an
-  // ordinary character, so path.basename would keep a Windows client's full
-  // local path and leak it into the reference and the session log.
-  const leaf = value.slice(Math.max(value.lastIndexOf('/'), value.lastIndexOf('\\')) + 1)
-  const clean = leaf.replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 255)
-  return clean === '' ? undefined : clean
-}
-
-function ensureReference(ref: ImageAttachmentRef): string {
-  const match = ID_PATTERN.exec(String(ref.attachmentId))
-  if (match?.[1] === undefined) throw new AttachmentError('Attachment reference is invalid.', 'INVALID_ATTACHMENT_REF')
-  return match[1]
-}
+import {
+  digest,
+  displayName,
+  ensureDurableDirectory,
+  ensureDurableHome,
+  ensureReference,
+  objectPath,
+  syncDirectory,
+} from './objects.ts'
 
 /**
  * Derive the absolute immutable-object path for one normalized attachment.
@@ -49,8 +35,7 @@ function ensureReference(ref: ImageAttachmentRef): string {
  * @returns provider-local path without reading the object.
  */
 export function normalizedImagePath(root: string, ref: ImageAttachmentRef): string {
-  const sha256 = ensureReference(ref)
-  return join(root, 'objects', sha256.slice(0, 2), sha256)
+  return objectPath(root, ensureReference(ref))
 }
 
 async function inspectMetadata(
@@ -121,65 +106,6 @@ export async function prepareImageFile(
       ...downscaled ? { originalDimensions: { width: detected.width, height: detected.height } } : {},
     },
   }
-}
-
-/**
- * Make a directory's entries durable (fsync on a read-only directory handle).
- * A synced file alone does not survive a crash when its directory entry never
- * reached storage, so the publication directory is synced before a durable
- * reference is reported.
- */
-async function syncDirectory(path: string): Promise<void> {
-  /* v8 ignore next -- Windows cannot open directory handles; NTFS metadata journaling owns entry durability there. */
-  if (process.platform === 'win32') return
-  /* v8 ignore start -- Windows cannot exercise directory fsync; POSIX behavior tests enforce this peer. */
-  const handle = await open(path, constants.O_RDONLY)
-  try {
-    await handle.sync()
-  } finally {
-    await handle.close()
-  }
-  /* v8 ignore stop */
-}
-
-/**
- * Create one private directory tree and persist every ancestor entry up to a
- * caller-vouched durable boundary. The walk deliberately ignores what mkdir
- * reports as newly created: a concurrent first save can create a level this
- * process then merely observes, so "already existed" is not "already durable"
- * — the entry may still be unsynced in the creator, and a crash would drop a
- * directory the session checkpoint already references. Re-syncing a durable
- * entry is harmless; skipping an unsynced one is not.
- * @param path - absolute directory to create.
- * @param boundary - absolute ancestor the caller vouches is already durable.
- */
-async function ensureDurableDirectory(path: string, boundary: string): Promise<void> {
-  const target = resolve(path)
-  const stop = resolve(boundary)
-  await mkdir(target, { recursive: true, mode: 0o700 })
-  await chmod(target, 0o700)
-  let level = target
-  while (level !== stop) {
-    const parent = dirname(level)
-    await syncDirectory(parent)
-    /* v8 ignore next -- filesystem-root guard: callers pass a boundary that is an ancestor of path, so the walk reaches it first. */
-    if (parent === level) return
-    level = parent
-  }
-}
-
-/**
- * Establish this process's proof that one DSH_HOME entry and every ancestor
- * below the filesystem root are durable. Mere existence is insufficient: a
- * concurrent process may have created the directory but not synced its parent.
- */
-async function ensureDurableHome(path: string): Promise<string> {
-  const home = resolve(path)
-  if (!durableHomes.has(home)) {
-    await ensureDurableDirectory(home, parse(home).root)
-    durableHomes.add(home)
-  }
-  return home
 }
 
 /**

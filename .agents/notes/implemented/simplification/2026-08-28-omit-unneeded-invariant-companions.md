@@ -28,7 +28,7 @@ A package without a qualifying relationship omits `src/invariant.ts`, the `./inv
 
 ### Audit result
 
-The repository publishes 47 companions with independent observations. The retained set includes cross-event protocols such as session, command, approval, workflow, and hook lifecycles; event-to-state checks such as settings, storage-domain, Workspace, client modules, and slots; multi-producer assembly such as system prompt and time context; and durable data consumed by projections or policy state such as todo, plan mode, and sandbox mode.
+The repository publishes 52 companions with independent observations, including the official Phone definition companion. Empty installers remain omitted: phone-capture-wire-demo, request-trust, cliproxy-quota, llm-gestalt-account-pool, phone-stream, and tool-phone record the package-specific reason in their READMEs and drop `./invariant` publication. The retained set includes cross-event protocols such as session, command, approval, workflow, and hook lifecycles; event-to-state checks such as settings, storage-domain, Workspace, client modules, and slots; multi-producer assembly such as system prompt and time context; and durable data consumed by projections or policy state such as todo, plan mode, and sandbox mode.
 
 Existing package behavior tests remain responsible for omitted relationships, including webserver route registration and HMR disposal. Product behavior and root package entrypoints do not change; the omitted `./invariant` subpaths are removed under the repository's pre-release compatibility stance.
 

@@ -45,7 +45,7 @@ kind: "package-reference"
 <a id="extension-points"></a>
 ## 扩展点
 
-组合必须提供 `phoneDevices` 与 `webServer`；fiber 会等待二者。`./invariant` 伴生体为空，因为 Host WebServer 的 effect 持有路由注册与注销。
+组合必须提供 `phoneDevices` 与 `webServer`；fiber 会等待二者。不发布运行时 invariant 伴生体，因为 Host WebServer 的 effect 持有路由注册与注销。
 
 <a id="model-experience"></a>
 ## 模型体验

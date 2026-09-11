@@ -48,7 +48,7 @@ export function objectPath(root: string, sha256: string): string {
  * reached storage, so the publication directory is synced before a durable
  * reference is reported.
  */
-async function syncDirectory(path: string): Promise<void> {
+export async function syncDirectory(path: string): Promise<void> {
   /* v8 ignore next -- Windows cannot open directory handles; NTFS metadata journaling owns entry durability there. */
   if (process.platform === 'win32') return
   /* v8 ignore start -- Windows cannot exercise directory fsync; POSIX behavior tests enforce this peer. */
@@ -72,7 +72,7 @@ async function syncDirectory(path: string): Promise<void> {
  * @param path - absolute directory to create.
  * @param boundary - absolute ancestor the caller vouches is already durable.
  */
-async function ensureDurableDirectory(path: string, boundary: string): Promise<void> {
+export async function ensureDurableDirectory(path: string, boundary: string): Promise<void> {
   const target = resolve(path)
   const stop = resolve(boundary)
   await mkdir(target, { recursive: true, mode: 0o700 })
@@ -92,7 +92,7 @@ async function ensureDurableDirectory(path: string, boundary: string): Promise<v
  * below the filesystem root are durable. Mere existence is insufficient: a
  * concurrent process may have created the directory but not synced its parent.
  */
-async function ensureDurableHome(path: string): Promise<string> {
+export async function ensureDurableHome(path: string): Promise<string> {
   const home = resolve(path)
   if (!durableHomes.has(home)) {
     await ensureDurableDirectory(home, parse(home).root)

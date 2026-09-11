@@ -26,7 +26,7 @@ kind: "package-reference"
 <a id="package-contract"></a>
 ## 包约定
 
-只包含 bin 的应用，启动外部 `cordis.yml`，用于无密钥 Android 采集源 Host 线。叶子配置拥有 host-webserver、phone-runtime 与 phone-stream。`pnpm run build` 从 `src/bin.ts` 发出 `lib/bin.js`；`DSH_EXAMPLE_MODE=lib` 在纯 Node 下启动该产物。
+只包含 bin 的应用，启动外部 `cordis.yml`，用于无密钥 Android 采集源 Host 线。叶子配置拥有 host-webserver、phone-runtime 与 phone-stream。`pnpm run build` 从 `src/bin.ts` 发出 `lib/bin.js`；`DSH_EXAMPLE_MODE=lib` 在纯 Node 下启动该产物。不发布运行时 invariant 伴生体，因为本组合包没有独立事件流或可变数据；Loader 与构建入口测试覆盖其接线。
 
 <a id="config-discovery"></a>
 ## 配置发现

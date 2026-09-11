@@ -26,7 +26,7 @@ Boot an external `cordis.yml` through the shipped bin to exercise the keyless An
 <a id="package-contract"></a>
 ## Package contract
 
-Bin-only app that boots an external `cordis.yml` for the keyless Android capture-source Host wire. The leaf config owns host-webserver, phone-runtime, and phone-stream. `pnpm run build` emits `lib/bin.js` from `src/bin.ts`; `DSH_EXAMPLE_MODE=lib` launches that artifact under plain Node.
+Bin-only app that boots an external `cordis.yml` for the keyless Android capture-source Host wire. The leaf config owns host-webserver, phone-runtime, and phone-stream. `pnpm run build` emits `lib/bin.js` from `src/bin.ts`; `DSH_EXAMPLE_MODE=lib` launches that artifact under plain Node. No runtime invariant companion is published because this composition package owns no independent event stream or mutable data; Loader and built-entry tests cover its wiring.
 
 <a id="config-discovery"></a>
 ## Config discovery

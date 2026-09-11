@@ -125,6 +125,13 @@ export function clientBundle(
   }
 }
 
+function assertUniqueEntryBasenames(id: string, libEntry: readonly string[]): void {
+  const names = new Set(libEntry.map(entry => basename(entry, '.js')))
+  if (names.size !== libEntry.length) {
+    throw new Error(`tsdown: ${id} entries collide on an output name: ${libEntry.join(', ')}`)
+  }
+}
+
 /**
  * Build the tsdown config for a client library the compile shell links
  * statically (the static assembly channel: `apps/web` resolves the package
@@ -156,10 +163,7 @@ export function clientBundle(
 export function staticLinked(id: string, libEntry: readonly string[]): BuildFaceConfig {
   // Each entry names its own output file, so two entries with the same basename
   // would overwrite one artifact instead of emitting two.
-  const names = new Set(libEntry.map(entry => basename(entry, '.js')))
-  if (names.size !== libEntry.length) {
-    throw new Error(`tsdown: ${id} entries collide on an output name: ${libEntry.join(', ')}`)
-  }
+  assertUniqueEntryBasenames(id, libEntry)
   return clientOnly(libEntry.map(entry => staticLinkedConfig(id, entry)))
 }
 
@@ -176,10 +180,7 @@ export function browserSubpath(
   libEntry: readonly string[],
   options: BrowserSubpathOptions = {},
 ): BuildFaceConfig {
-  const names = new Set(libEntry.map(entry => basename(entry, '.js')))
-  if (names.size !== libEntry.length) {
-    throw new Error(`tsdown: ${id} entries collide on an output name: ${libEntry.join(', ')}`)
-  }
+  assertUniqueEntryBasenames(id, libEntry)
   return clientOnly(libEntry.map(entry => staticLinkedConfig(
     id,
     entry,
