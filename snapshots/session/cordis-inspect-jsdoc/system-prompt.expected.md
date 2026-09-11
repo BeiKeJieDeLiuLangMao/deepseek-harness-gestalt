@@ -370,6 +370,8 @@ interface ToolArgsMap {
       status: "pending" | "in_progress" | "completed";
     })[];
   } & Record<string, JsonValue>;
+  /** Search deferred tools by name and description. Returns matching callable schemas for subsequent requests. */
+  tool_search: unknown;
   /** Update the exact current goal revision. edit, pause, and resume require a direct top-level human request. During an automatic continuation of the current goal, complete and blocked are also allowed. blocked is rejected before the configured minimum round count; the model remains responsible for judging that the same condition persisted across those rounds and must explain it in blocked_reason. */
   update_goal: {
     /** Exact id returned by get_goal. */
@@ -665,6 +667,7 @@ interface ToolOutputMap {
       completed: number;
     };
   };
+  tool_search: JsonValue[];
   update_goal: {
     goal: null;
   } | {

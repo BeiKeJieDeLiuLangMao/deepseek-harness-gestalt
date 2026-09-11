@@ -5,9 +5,9 @@ import { Module } from 'node:module'
 import type { Context } from '@deepseek-ai/cordis'
 import CompanionMemberQuestionSender, {
   type MemberQuestionDeliveryPort,
-} from '@deepseek-ai/dsh-member-question-sender'
-import { parseInstallationId } from '@deepseek-ai/dsh-platform-account'
-import type { CompanionMemberQuestionSettledResult } from '@deepseek-ai/dsh-remote-protocol'
+} from '../../../packages/interaction/member-question-sender/src/index.ts'
+import { parseInstallationId } from '../../../packages/platform/platform-account/src/index.ts'
+import type { CompanionMemberQuestionSettledResult } from '../../../packages/platform/remote-protocol/src/index.ts'
 
 export const name = 'project-members-memory-member-question'
 

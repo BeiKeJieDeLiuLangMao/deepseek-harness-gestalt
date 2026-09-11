@@ -6,7 +6,7 @@
  * @module snapshots/session/member-question-routed-ask/memory-membership
  */
 
-import type { PlatformAccountId } from '@deepseek-ai/dsh-platform-account'
+import type { PlatformAccountId } from '../../../packages/platform/platform-account/src/index.ts'
 import {
   ProjectMembershipError,
   ProjectMembershipService,
@@ -16,7 +16,7 @@ import {
   type ProjectId,
   type ProjectView,
   type RosterView,
-} from '../../../packages/platform/project-membership/lib/index.js'
+} from '../../../packages/platform/project-membership/src/index.ts'
 
 /** The one demo project the in-memory store serves. */
 const PROJECT: ProjectView = {
