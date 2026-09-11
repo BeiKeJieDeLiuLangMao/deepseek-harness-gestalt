@@ -6,6 +6,7 @@ import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type { ISidebarRight } from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type { UiWorkspace } from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type {
   ImAccountId,
@@ -27,6 +28,7 @@ import {
   workspaceIdForRole,
 } from './host-snapshot.ts'
 import { simulationTargets, type ImGuiSnapshot } from './model.ts'
+import { IM_TAB_ID } from './registry.ts'
 
 /** Generated imConfig Remote namespace mounted by api-remotes. */
 export type ImConfigRemote = ClientContext['remote']['imConfig']
@@ -44,6 +46,7 @@ export type ImSimulationRemote = ClientContext['remote']['imSimulation']
  * @param delivery - generated imDelivery Remote namespace.
  * @param workspace - optional Workspace navigation used to open Session roles.
  * @param simulation - optional generated imSimulation Remote namespace.
+ * @param sidebar - optional Sidebar used to reopen the IM tab after a Session switch.
  * @returns the shared GUI face for Settings, workspace cards, and the Sidebar tab.
  */
 export function createHostImGuiFace(
@@ -52,6 +55,7 @@ export function createHostImGuiFace(
   delivery: ImDeliveryRemote,
   workspace?: Pick<UiWorkspace, 'openWorkspace'>,
   simulation?: ImSimulationRemote,
+  sidebar?: Pick<ISidebarRight, 'openTab'>,
 ): ImGuiFace {
   let refreshChain = Promise.resolve()
   const refresh = (): Promise<void> => {
@@ -253,6 +257,7 @@ export function createHostImGuiFace(
             else draft.conversation.testedSessionId = sessionId
           })
         })
+        await sidebar?.openTab(IM_TAB_ID)
         await refresh()
       })()
     },

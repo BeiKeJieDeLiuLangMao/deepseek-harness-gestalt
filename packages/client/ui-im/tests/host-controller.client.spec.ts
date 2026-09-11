@@ -260,11 +260,17 @@ describe('IM Host GUI controller', () => {
       deleteSimulationConfig: async () => ({ ok: true as const, value: false }),
     } as unknown as ImConfigRemote
     const store = createImGuiStore(emptyGuiSnapshot())
+    const openedTabs: string[] = []
     const face = createHostImGuiFace(store, remote, emptyDelivery(), {
       openWorkspace: async (workspaceId, beforeOpen) => {
         const sessionId = workspaceId === 'ws-simuser' ? 'sess-simuser' : 'sess-tested'
         opened.push({ workspaceId, sessionId })
         beforeOpen?.(sessionId as never)
+      },
+    }, undefined, {
+      openTab: async (kind) => {
+        openedTabs.push(kind)
+        return 'tab-im' as never
       },
     })
     await Promise.resolve()
@@ -286,6 +292,7 @@ describe('IM Host GUI controller', () => {
       role: 'tested',
       testedSessionId: 'sess-tested',
     })
+    expect(openedTabs).toEqual(['im-conversation', 'im-conversation'])
   })
 
   it('creates a Host simulation instance and refreshes the simuser stream', async () => {
