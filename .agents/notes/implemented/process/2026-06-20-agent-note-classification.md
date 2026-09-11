@@ -12,7 +12,7 @@ The repo's standing bias is [mechanical quality gates over prose guidelines](202
 
 ## Decision
 
-Add a second axis — the Agent Note's **class** — and encode it in the path: `{lifecycle}/{class}/yyyy-mm-dd-topic.md`. The folder *is* the label. A file's location declares its class, the closed set is "these folders and no others," and the existing [verify-md-links](2026-06-18-markdown-cross-link-lint.md) gate already protects the path rewrites the move required.
+Add a second axis — the Agent Note's **class** — and encode it in the path: `{lifecycle}/{class}/yyyy-mm-dd-topic.md`. The folder *is* the label. Class is the nested folder from the closed six; GitHub `area/*` / "platform/infra" is not a class. A file's location declares its class, the closed set is "these folders and no others," and the existing [verify-md-links](2026-06-18-markdown-cross-link-lint.md) gate already protects the path rewrites the move required.
 
 ### The closed set of six classes
 
@@ -31,7 +31,7 @@ The `architecture` / `process` line: **architecture** is about the source we shi
 
 Both are `doc-sync` members, in the `verify-md-wrap` style (tsx ESM, verify-don't-generate, exit non-zero on the first violation):
 
-- **`scripts/verify-agent-note-classification.ts`** — the closed lifecycle and class sets. It asserts every file under a lifecycle folder lives in a class folder from the canonical set (a loose `.md` at a lifecycle root, or an unknown class folder, fails) and rejects a centralized `INDEX.md`. The canonical sets live in `scripts/agent-note-tree.ts`, and [the README](../../README.md) documents each class in prose.
+- **`scripts/verify-agent-note-classification.ts`** — the closed lifecycle and class sets. It asserts every file under a lifecycle folder lives in a class folder from the canonical set (a loose `.md` at a lifecycle root, or an unknown class folder, fails) and rejects a centralized `INDEX.md`. An unknown class folder fails with the README sentence that GitHub `area/*` / "platform/infra" is not a class. The canonical sets live in `scripts/agent-note-tree.ts`, and [the README](../../README.md) documents each class in prose.
 - **`scripts/verify-doc-refs.ts`** — source comments that cite docs. Agent Note paths are referenced not only from Markdown but from TypeScript doc comments (root-relative prose like `.agents/notes/implemented/testing/2026-06-19-acp-snapshot-tests.md`). `verify-md-links` does not see those, so a reorganization could silently orphan them. This gate scans repo-authored `.ts` under `packages/**` and `examples/**` (excluding built `lib/` and `vendor/`) for `docs/….md` and `.agents/notes/….md` tokens, resolves each root-relative path, and asserts it exists. It requires the `.md` extension so extensionless prose is left alone.
 
 ## Alternatives considered
