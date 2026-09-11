@@ -15,6 +15,7 @@ import { ImConfigService } from './service.ts'
 import type { ImDeliveryService } from './delivery/service.ts'
 import type { ImExecutionService } from './coordination/service.ts'
 import type { ImSimulationService } from './simulation/service.ts'
+import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -22,6 +23,15 @@ declare module '@deepseek-ai/cordis' {
     imDelivery: ImDeliveryService
     imExecution: ImExecutionService
     imSimulation: ImSimulationService
+  }
+
+  interface Events {
+    /**
+     * Workspace simulation target binding was set or cleared.
+     * @param workspaceId - workspace whose simulation target changed.
+     * @mode emit
+     */
+    'imConfig/simulation-target'(workspaceId: WorkspaceId): void
   }
 }
 

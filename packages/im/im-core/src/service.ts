@@ -478,6 +478,7 @@ export class ImConfigService extends TypertRemoteService {
     }
 
     await simulationsTable.put(options.workspaceId, config)
+    this.ctx.emit('imConfig/simulation-target', options.workspaceId)
     return config
   }
 
@@ -493,6 +494,7 @@ export class ImConfigService extends TypertRemoteService {
     if (!existing) return false
 
     await simulationsTable.delete(workspaceId)
+    this.ctx.emit('imConfig/simulation-target', workspaceId)
     return true
   }
 }

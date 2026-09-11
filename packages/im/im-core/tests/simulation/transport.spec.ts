@@ -1,13 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
+import AgentRegistry from '@deepseek-ai/dsh-agent'
+import type { Agent } from '@deepseek-ai/dsh-agent'
 import { brandString } from '@deepseek-ai/dsh-brand'
+import { createScope } from '@deepseek-ai/dsh-scope'
+import { Session, SessionId, SESSION_FORMAT_VERSION, type SessionStore } from '@deepseek-ai/dsh-session'
 import Storage from '@deepseek-ai/dsh-storage'
 import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime, { type ToolRunContext } from '@deepseek-ai/dsh-tools'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
-import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { Session, SessionId, SessionStore } from '@deepseek-ai/dsh-session'
 import { TestMemoryStorageBackend } from '../memory-backend.ts'
 import { ImConfigService } from '../../src/service.ts'
 import type { ImAccountId, ImRouteRuleId } from '../../src/types.ts'
@@ -46,6 +48,7 @@ describe('IM simulation transport and workspace tool gating', () => {
     ctx.provide('storageDomain', facility)
     await ctx.plugin(SystemPrompt)
     await ctx.plugin(ToolRuntime)
+    await ctx.plugin(AgentRegistry)
     await ctx.plugin(ImConfigService)
     configService = ctx.imConfig
     await ctx.plugin(ImDeliveryService)
@@ -112,6 +115,32 @@ describe('IM simulation transport and workspace tool gating', () => {
     expect(ctx.tools.get('im_sim_create')).toBeDefined()
     expect(ctx.tools.get('im_sim_stop')).toBeDefined()
     dispose()
+  })
+
+  it('mounts simulation tools on Agents whose workspace has a simulation target', async () => {
+    ctx.provide('workspaceRegistry', {
+      list: () => [
+        { id: simUserWorkspaceId, path: '/sim-user' },
+        { id: testedWorkspaceId, path: '/tested' },
+      ],
+    } as never)
+    const simAgent = await mintLiveAgent(ctx, 'sess-sim', '/sim-user')
+    const testedAgent = await mintLiveAgent(ctx, 'sess-tested', '/tested')
+    await flush()
+    expect(ctx.tools.get('im_sim_create', simAgent)).toBeUndefined()
+    expect(ctx.tools.get('im_sim_create', testedAgent)).toBeUndefined()
+    await configService.setSimulationConfig({
+      workspaceId: simUserWorkspaceId,
+      targetAccountId: accountId,
+      conversationKind: 'direct',
+    })
+    await flush()
+    expect(ctx.tools.get('im_sim_create', simAgent)).toBeDefined()
+    expect(ctx.tools.get('im_sim_create', testedAgent)).toBeUndefined()
+    expect(ctx.tools.get('im_sim_create')).toBeUndefined()
+    await configService.deleteSimulationConfig(simUserWorkspaceId)
+    await flush()
+    expect(ctx.tools.get('im_sim_create', simAgent)).toBeUndefined()
   })
 
   it('freezes the creation target after later workspace configuration changes', async () => {
@@ -382,3 +411,28 @@ describe('IM simulation transport and workspace tool gating', () => {
     expect(human.senderClassification).not.toBe('ai_outbound')
   })
 })
+
+async function mintLiveAgent(ctx: Context, id: string, cwd: string): Promise<Agent> {
+  const sessionId = SessionId(id)
+  const session = Session.create(sessionId, [], {
+    version: SESSION_FORMAT_VERSION,
+    id: sessionId,
+    createdAt: 0,
+    isSeeded: false,
+    cwd,
+  })
+  const agent = { id: sessionId, session } as Agent
+  let agentCtx!: Context
+  await ctx.plugin(Object.assign((inner: Context) => {
+    agentCtx = createScope(inner, agent).ctx
+  }, { inject: ['tools', 'systemPrompt'] }))
+  Object.assign(agent, { ctx: agentCtx, status: 'idle' })
+  ctx.agents.register(agent)
+  return agent
+}
+
+async function flush(): Promise<void> {
+  await Promise.resolve()
+  await Promise.resolve()
+  await Promise.resolve()
+}

@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-11-im-simulation-tool-host-mount.md
+2026-09-11-im-simulation-tool-host-mount.md: e86840cf48c9c65202956a9ba30d683b83ab8f01
+2026-09-11-im-simulation-tool-host-mount.zh.md: 7f9026cc196c091811983ebd6a9268d472ad2de5

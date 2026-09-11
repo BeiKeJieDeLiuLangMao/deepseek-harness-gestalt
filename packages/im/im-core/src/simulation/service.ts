@@ -6,13 +6,17 @@
  */
 
 import { Context, Service } from '@deepseek-ai/cordis'
+import type { Agent } from '@deepseek-ai/dsh-agent'
 import { brandString } from '@deepseek-ai/dsh-brand'
+import type {} from '@deepseek-ai/dsh-workspace'
+import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 import {
   type ImDeliveryScope,
   type ImMessageId,
   type InboundMessageRecord,
   type OutboundMessageRecord,
 } from '../delivery/index.ts'
+import { registerSimulationTools } from './tools.ts'
 import type {
   CreateSimulationInstanceOptions,
   ImportJsonlHistoryOptions,
@@ -30,9 +34,66 @@ export class ImSimulationService extends Service {
   static inject = ['imConfig', 'imDelivery']
 
   private instances = new Map<ImSimulationInstanceId, ImSimulationInstance>()
+  private readonly agentTools = new Map<Agent, () => void>()
+  private readonly agentToolSync = new WeakMap<Agent, number>()
 
   constructor(ctx: Context) {
     super(ctx, 'imSimulation')
+  }
+
+  protected async [Service.init](): Promise<void> {
+    this.ctx.inject(['tools', 'agents'], (toolCtx: Context) => {
+      const attach = (agent: Agent): void => {
+        void this.syncAgentTools(agent)
+      }
+      this.ctx.on('agent/created', ({ agent }) => { attach(agent) })
+      this.ctx.on('agent/disposed', ({ agent }) => { this.dropAgentTools(agent) })
+      this.ctx.on('imConfig/simulation-target', (workspaceId) => {
+        for (const agent of toolCtx.agents.list()) {
+          if (this.workspaceIdForAgent(agent) === workspaceId) attach(agent)
+        }
+      })
+      for (const agent of toolCtx.agents.list()) attach(agent)
+    })
+  }
+
+  /**
+   * Register or drop simulation tools on one Agent according to its workspace
+   * simulation target. Tools stay on that Agent's scoped context.
+   * @param agent - live Agent whose session cwd maps to a workspace.
+   */
+  private async syncAgentTools(agent: Agent): Promise<void> {
+    const seq = (this.agentToolSync.get(agent) ?? 0) + 1
+    this.agentToolSync.set(agent, seq)
+    this.dropAgentTools(agent)
+    const workspaceId = this.workspaceIdForAgent(agent)
+    if (workspaceId === undefined) return
+    const dispose = await registerSimulationTools(agent.ctx, workspaceId, this.ctx)
+    if (this.agentToolSync.get(agent) !== seq) {
+      dispose()
+      return
+    }
+    this.agentTools.set(agent, dispose)
+  }
+
+  /**
+   * Map one Agent session cwd onto a workspace id.
+   * @param agent - live Agent.
+   * @returns the matching workspace id, or undefined when cwd is unbound.
+   */
+  private workspaceIdForAgent(agent: Agent): WorkspaceId | undefined {
+    const cwd = agent.session.header.cwd
+    if (cwd === undefined) return undefined
+    return this.ctx.get('workspaceRegistry')?.list().find(workspace => workspace.path === cwd)?.id
+  }
+
+  /**
+   * Unregister simulation tools previously attached to one Agent.
+   * @param agent - live or disposing Agent.
+   */
+  private dropAgentTools(agent: Agent): void {
+    this.agentTools.get(agent)?.()
+    this.agentTools.delete(agent)
   }
 
   /**

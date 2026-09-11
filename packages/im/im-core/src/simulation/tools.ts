@@ -24,15 +24,17 @@ import type { ImSimulationInstanceId } from './types.ts'
  * Simulation tools are registered only when the workspace has configured an IM simulation target.
  * An unconfigured workspace returns an empty disposer and does not register tools.
  *
- * @param ctx - Cordis Context with imSimulation, imConfig, and tools.
+ * @param ctx - context whose `tools` registry receives the scoped tools.
  * @param workspaceId - Workspace identifier.
+ * @param host - Host context that owns `imConfig` and `imSimulation`.
  * @returns Disposer function to unregister tools.
  */
 export async function registerSimulationTools(
   ctx: Context,
   workspaceId: WorkspaceId,
+  host: Context = ctx,
 ): Promise<() => void> {
-  const config = await ctx.imConfig.getSimulationConfig(workspaceId)
+  const config = await host.imConfig.getSimulationConfig(workspaceId)
   if (!config) {
     return () => {}
   }
@@ -91,14 +93,14 @@ export async function registerSimulationTools(
               `Simulation tools are bound to workspace "${workspaceId}"; cannot create an instance for "${args.workspaceId}".`,
             )
           }
-          const simConfig = await ctx.imConfig.getSimulationConfig(workspaceId)
+          const simConfig = await host.imConfig.getSimulationConfig(workspaceId)
           if (!simConfig) {
             throw new Error(
               `Simulation target is not configured for workspace "${workspaceId}". Simulation tools are unavailable.`,
             )
           }
 
-          const record = await ctx.imSimulation.createInstance({
+          const record = await host.imSimulation.createInstance({
             workspaceId,
             conversationId: args.conversationId ?? simConfig.targetConversationId ?? 'sim-conv-default',
             ...(args.instanceId ? { instanceId: brandString<ImSimulationInstanceId>(args.instanceId) } : {}),
@@ -154,7 +156,7 @@ export async function registerSimulationTools(
           ],
         },
         execute: async (args) => {
-          const record = await ctx.imSimulation.stopInstance(
+          const record = await host.imSimulation.stopInstance(
             brandString<ImSimulationInstanceId>(args.instanceId),
           )
           return {
@@ -211,7 +213,7 @@ export async function registerSimulationTools(
           ],
         },
         execute: async (args) => {
-          const message = await ctx.imSimulation.injectMemberMessage({
+          const message = await host.imSimulation.injectMemberMessage({
             instanceId: brandString<ImSimulationInstanceId>(args.instanceId),
             memberId: args.memberId,
             text: args.text,
@@ -268,7 +270,7 @@ export async function registerSimulationTools(
           ],
         },
         execute: async (args) => {
-          const message = await ctx.imSimulation.injectManagedHumanMessage({
+          const message = await host.imSimulation.injectManagedHumanMessage({
             instanceId: brandString<ImSimulationInstanceId>(args.instanceId),
             text: args.text,
             ...(args.humanNick ? { humanNick: args.humanNick } : {}),
