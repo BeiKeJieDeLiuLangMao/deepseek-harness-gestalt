@@ -20,6 +20,7 @@ import {
   conversationRecordsFromDelivery,
   snapshotFromHost,
   simulationKeyFromConfig,
+  workspaceIdForRole,
 } from '../src/client/host-snapshot.ts'
 import { emptyGuiSnapshot, emptyRouteDraft } from '../src/client/model.ts'
 
@@ -159,5 +160,44 @@ describe('IM Host snapshot mapping', () => {
     expect(conversation.panel).toBe('disabled')
     expect(conversation.unconfigured).toBe(false)
     expect(conversation.messages.map(row => row.delivery)).toEqual(['submitted', 'result_unknown'])
+  })
+
+  it('maps simulated-user and tested-agent roles onto Host workspaces', () => {
+    const account: ImAccountMetadata = {
+      id: brandString<ImAccountId>('acc-dt'),
+      platform: 'dingtalk',
+      displayName: '陈小宇',
+      status: 'connected',
+      paused: false,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    }
+    const rule: ImRouteRule = {
+      id: brandString<ImRouteRuleId>('route-group'),
+      accountId: account.id,
+      conversationKind: 'group',
+      target: { kind: 'all' },
+      workspaceId: brandString<WorkspaceId>('ws-tested'),
+      enabled: false,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    }
+    const simulation: ImWorkspaceSimulationConfig = {
+      workspaceId: brandString<WorkspaceId>('ws-simuser'),
+      targetAccountId: account.id,
+      conversationKind: 'group',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    }
+    const scope = {
+      kind: 'real' as const,
+      platform: 'dingtalk' as const,
+      accountId: account.id,
+      conversationId: 'gui-all',
+      conversationKind: 'group' as const,
+    }
+    expect(workspaceIdForRole('simuser', [rule], [simulation], scope)).toBe('ws-simuser')
+    expect(workspaceIdForRole('tested', [rule], [simulation], scope)).toBe('ws-tested')
+    expect(workspaceIdForRole('real', [rule], [simulation], scope)).toBeUndefined()
+    expect(workspaceIdForRole('simuser', [rule], [], scope)).toBeUndefined()
   })
 })

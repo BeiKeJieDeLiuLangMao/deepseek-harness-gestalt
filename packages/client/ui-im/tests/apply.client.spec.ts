@@ -54,6 +54,7 @@ async function mount() {
   ctx.provide('remote', { imConfig, imDelivery })
   ctx.provide('remote.imConfig', imConfig)
   ctx.provide('remote.imDelivery', imDelivery)
+  ctx.provide('uiWorkspace', { openWorkspace: async () => undefined })
   const fiber = ctx.plugin({
     inject: [...inject],
     apply: (pluginCtx: Context) => { apply(pluginCtx) },
@@ -64,7 +65,9 @@ async function mount() {
 
 describe('ui-im client apply', () => {
   it('declares slots, locale, and Sidebar tab service edges', () => {
-    expect([...inject]).toEqual(['slots', 'locale', 'sidebarRightTabs', 'remote', 'remote.imConfig', 'remote.imDelivery'])
+    expect([...inject]).toEqual([
+      'slots', 'locale', 'sidebarRightTabs', 'remote', 'remote.imConfig', 'remote.imDelivery', 'uiWorkspace',
+    ])
   })
 
   it('registers IM Accounts, workspace cards, and the conversation tab', async () => {

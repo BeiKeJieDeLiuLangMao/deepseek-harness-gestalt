@@ -6,6 +6,7 @@ import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type { UiWorkspace } from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type {
   ImAccountId,
   ImAccountMetadata,
@@ -22,6 +23,7 @@ import {
   selectedConversationScope,
   snapshotFromHost,
   simulationOptionsFromKey,
+  workspaceIdForRole,
 } from './host-snapshot.ts'
 import { simulationTargets, type ImGuiSnapshot } from './model.ts'
 
@@ -36,12 +38,14 @@ export type ImDeliveryRemote = ClientContext['remote']['imDelivery']
  * @param store - GUI snapshot store.
  * @param remote - generated imConfig Remote namespace.
  * @param delivery - generated imDelivery Remote namespace.
+ * @param workspace - optional Workspace navigation used to open Session roles.
  * @returns the shared GUI face for Settings, workspace cards, and the Sidebar tab.
  */
 export function createHostImGuiFace(
   store: SnapshotStore<ImGuiSnapshot>,
   remote: ImConfigRemote,
   delivery: ImDeliveryRemote,
+  workspace?: Pick<UiWorkspace, 'openWorkspace'>,
 ): ImGuiFace {
   const refresh = async (): Promise<void> => {
     const [accounts, routes, simulations] = await Promise.all([
@@ -192,6 +196,25 @@ export function createHostImGuiFace(
     },
     setRole: (role) => {
       store.update((draft) => { draft.conversation.role = role })
+      if (workspace === undefined || (role !== 'simuser' && role !== 'tested')) return
+      void (async () => {
+        const [accounts, routes, simulations] = await Promise.all([
+          remote.listAccounts(),
+          remote.listRouteRules(),
+          remote.listSimulationConfigs(),
+        ])
+        if (!accounts.ok || !routes.ok || !simulations.ok) return
+        const scope = selectedConversationScope(accounts.value, routes.value, simulations.value)
+        const workspaceId = workspaceIdForRole(role, routes.value, simulations.value, scope)
+        if (workspaceId === undefined) return
+        await workspace.openWorkspace(workspaceId, (sessionId) => {
+          store.update((draft) => {
+            draft.conversation.role = role
+            if (role === 'simuser') draft.conversation.simUserSessionId = sessionId
+            else draft.conversation.testedSessionId = sessionId
+          })
+        })
+      })()
     },
   }
 }

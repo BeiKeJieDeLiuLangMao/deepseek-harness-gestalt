@@ -220,4 +220,71 @@ describe('IM Host GUI controller', () => {
       reason: 'conversation_route_disabled',
     }])
   })
+
+  it('opens simulated-user and tested-agent Sessions through uiWorkspace', async () => {
+    const opened: Array<{ workspaceId: string; sessionId: string }> = []
+    const remote = {
+      listAccounts: async () => ({ ok: true as const, value: [{
+        id: 'acc-dt',
+        platform: 'dingtalk' as const,
+        displayName: '陈小宇',
+        status: 'connected' as const,
+        paused: false,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      }] }),
+      listRouteRules: async () => ({ ok: true as const, value: [{
+        id: 'route-group',
+        accountId: 'acc-dt',
+        conversationKind: 'group' as const,
+        target: { kind: 'all' as const },
+        workspaceId: 'ws-tested',
+        enabled: false,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      }] }),
+      listSimulationConfigs: async () => ({ ok: true as const, value: [{
+        workspaceId: 'ws-simuser',
+        targetAccountId: 'acc-dt',
+        conversationKind: 'group' as const,
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      }] }),
+      upsertAccount: async () => ({ ok: true as const, value: undefined as never }),
+      pauseAccount: async () => ({ ok: true as const, value: undefined as never }),
+      deleteAccount: async () => ({ ok: true as const, value: false }),
+      deleteRouteRule: async () => ({ ok: true as const, value: false }),
+      getSimulationConfig: async () => ({ ok: true as const, value: undefined }),
+      createRouteRule: async () => ({ ok: true as const, value: undefined as never }),
+      updateRouteRule: async () => ({ ok: true as const, value: undefined as never }),
+      setSimulationConfig: async () => ({ ok: true as const, value: undefined as never }),
+      deleteSimulationConfig: async () => ({ ok: true as const, value: false }),
+    } as unknown as ImConfigRemote
+    const store = createImGuiStore(emptyGuiSnapshot())
+    const face = createHostImGuiFace(store, remote, emptyDelivery(), {
+      openWorkspace: async (workspaceId, beforeOpen) => {
+        const sessionId = workspaceId === 'ws-simuser' ? 'sess-simuser' : 'sess-tested'
+        opened.push({ workspaceId, sessionId })
+        beforeOpen?.(sessionId as never)
+      },
+    })
+    await Promise.resolve()
+    face.setRole('simuser')
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(opened).toEqual([{ workspaceId: 'ws-simuser', sessionId: 'sess-simuser' }])
+    expect(store.getSnapshot().conversation).toMatchObject({
+      role: 'simuser',
+      simUserSessionId: 'sess-simuser',
+    })
+    face.setRole('tested')
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(opened[1]).toEqual({ workspaceId: 'ws-tested', sessionId: 'sess-tested' })
+    expect(store.getSnapshot().conversation).toMatchObject({
+      role: 'tested',
+      testedSessionId: 'sess-tested',
+    })
+  })
 })

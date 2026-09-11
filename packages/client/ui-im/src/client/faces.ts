@@ -27,6 +27,6 @@ export interface ImGuiFace {
   manualSend: (text: string) => void
   /** Switch the conversation strip between live / disabled / offline / unknown. */
   setPanel: (panel: ImGuiSnapshot['conversation']['panel']) => void
-  /** Switch the conversation tab between simulated-user and tested-agent views. */
+  /** Open the simulated-user or tested-agent workspace Session. */
   setRole: (role: ImGuiSnapshot['conversation']['role']) => void
 }

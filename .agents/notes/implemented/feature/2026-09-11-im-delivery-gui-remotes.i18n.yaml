@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-11-im-delivery-gui-remotes.md
-2026-09-11-im-delivery-gui-remotes.md: b40b74a63cd0ddb5ef9bd3b8e1f2a617bf0bfa38
-2026-09-11-im-delivery-gui-remotes.zh.md: 85555a1eecef04ad791603bb7e66faafc674b964
+2026-09-11-im-delivery-gui-remotes.md: c94195a8f2ccb23eb014448f0b5be007334f3bb7
+2026-09-11-im-delivery-gui-remotes.zh.md: 9137365811d9c060ef1fc9407c71d950dff46d96

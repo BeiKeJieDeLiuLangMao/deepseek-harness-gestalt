@@ -253,6 +253,27 @@ export function matchingRouteForScope(
 }
 
 /**
+ * Workspace that owns the simulated-user or tested-agent Session.
+ * Simulation config is the simulated-user workspace; the matching takeover
+ * rule is the tested workspace. Other roles do not open a Session.
+ * @param role - conversation-tab role the user asked to open.
+ * @param routes - durable takeover rules.
+ * @param simulations - workspace simulation bindings.
+ * @param scope - selected real conversation.
+ * @returns a workspace id, or undefined when that role has no Host binding.
+ */
+export function workspaceIdForRole(
+  role: ImConversationView['role'],
+  routes: readonly ImRouteRule[],
+  simulations: readonly ImWorkspaceSimulationConfig[],
+  scope: ImDeliveryScope | undefined,
+): WorkspaceId | undefined {
+  if (role === 'simuser') return simulations[0]?.workspaceId
+  if (role === 'tested' && scope !== undefined) return matchingRouteForScope(routes, scope)?.workspaceId
+  return undefined
+}
+
+/**
  * Map inbound and outbound Host records onto one Sidebar stream.
  * Outbound `result_unknown` stays distinct from `sent`.
  * @param inbound - history for the selected scope.
