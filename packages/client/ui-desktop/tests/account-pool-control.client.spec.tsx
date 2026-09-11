@@ -146,7 +146,7 @@ describe('AccountCard', () => {
     const onDelete = vi.fn()
     render(
       <AccountCard
-        t={t as never}
+        t={t}
         item={{
           authIndex: account.authIndex,
           name: account.name,
@@ -183,7 +183,7 @@ describe('AccountCard', () => {
     for (const provider of ['codex', 'anthropic', 'antigravity', 'xai', 'glm'] as const) {
       const { unmount } = render(
         <AccountCard
-          t={t as never}
+          t={t}
           item={{ ...account, authIndex: `${provider}-1`, provider, quota: [] }}
           globalFace="A"
           globalEpoch={0}
@@ -196,7 +196,7 @@ describe('AccountCard', () => {
     }
     render(
       <AccountCard
-        t={t as never}
+        t={t}
         item={{
           ...account,
           provider: 'unknown',
@@ -225,7 +225,7 @@ describe('LoginModal', () => {
     const onCancel = vi.fn()
     render(
       <LoginModal
-        t={t as never}
+        t={t}
         initialProvider="kimi"
         login={{ kind: 'kimi', flow: 'device', state: 's1', url: 'https://example.test/device', userCode: 'ABCD' }}
         onClose={vi.fn()}
@@ -242,7 +242,7 @@ describe('LoginModal', () => {
     const onStart = vi.fn()
     const { rerender } = render(
       <LoginModal
-        t={t as never}
+        t={t}
         initialProvider="anthropic"
         onClose={vi.fn()}
         onStart={onStart}
@@ -254,7 +254,7 @@ describe('LoginModal', () => {
     expect(onStart).toHaveBeenCalledWith('anthropic')
     rerender(
       <LoginModal
-        t={t as never}
+        t={t}
         initialProvider="anthropic"
         login={{ kind: 'anthropic', flow: 'pkce', error: 'denied' }}
         onClose={vi.fn()}
@@ -271,7 +271,7 @@ describe('LoginModal', () => {
     const onSubmitGlmKey = vi.fn()
     const { container } = render(
       <LoginModal
-        t={t as never}
+        t={t}
         initialProvider="xai"
         onClose={onClose}
         onStart={vi.fn()}
@@ -291,7 +291,7 @@ describe('LoginModal', () => {
     const onClose = vi.fn()
     render(
       <LoginModal
-        t={t as never}
+        t={t}
         initialProvider="glm"
         onClose={onClose}
         onStart={vi.fn()}
@@ -306,7 +306,7 @@ describe('LoginModal', () => {
   it('keeps the GLM form when the Host reports a glm-key login', () => {
     render(
       <LoginModal
-        t={t as never}
+        t={t}
         initialProvider="glm"
         login={{ kind: 'glm', flow: 'glm-key' }}
         onClose={vi.fn()}
@@ -321,7 +321,7 @@ describe('LoginModal', () => {
   it('shows PKCE browser-authorization copy without a device code', () => {
     render(
       <LoginModal
-        t={t as never}
+        t={t}
         initialProvider="codex"
         login={{ kind: 'codex', flow: 'pkce', state: 's2' }}
         onClose={vi.fn()}
@@ -338,7 +338,7 @@ describe('QuotaBarWithTimeline', () => {
   it('hides fill when the window is unreliable', () => {
     render(
       <QuotaBarWithTimeline
-        t={t as never}
+        t={t}
         name="5h"
         windowLabel="5h"
         resetText="未知"
@@ -353,7 +353,7 @@ describe('QuotaBarWithTimeline', () => {
   it('clamps overflow and still draws a time needle without a quota fill', () => {
     const { rerender } = render(
       <QuotaBarWithTimeline
-        t={t as never}
+        t={t}
         name="5h"
         windowLabel="5h"
         resetText="soon"
@@ -365,7 +365,7 @@ describe('QuotaBarWithTimeline', () => {
     expect(screen.getByText('100%')).toBeTruthy()
     rerender(
       <QuotaBarWithTimeline
-        t={t as never}
+        t={t}
         name="5h"
         windowLabel="5h"
         resetText="soon"
@@ -398,7 +398,7 @@ describe('account-pool source', () => {
 function renderControl(snapshot: DesktopAccountPoolSnapshot): ReturnType<typeof render> {
   return render(
     <AccountPoolControl
-      t={t as never}
+      t={t}
       useResource={() => { throw new Error('unused') }}
       usePanelInfo={selector => selector({ activePanelId: null })}
       useSessions={() => { throw new Error('unused') }}
