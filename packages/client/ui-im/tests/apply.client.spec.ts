@@ -54,6 +54,7 @@ async function mount() {
   const imSimulation = {
     listInstances: () => ok([]),
     createInstance: () => ok(undefined),
+    injectMemberMessage: () => ok(undefined),
   }
   ctx.provide('remote', { imConfig, imDelivery, imSimulation })
   ctx.provide('remote.imConfig', imConfig)

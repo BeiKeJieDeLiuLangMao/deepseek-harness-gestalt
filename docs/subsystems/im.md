@@ -618,6 +618,13 @@ listInstances(): ImSimulationInstance[]
 @Remote('createInstance') async remoteExportCreateInstance( options: ImGuiCreateSimulationInstanceOptions, ): Promise<ImSimulationInstance>
 
 /**
+ * GUI Remote member inject. Returns a text-only inbound row.
+ * @param options - running instance, member identity, and text.
+ * @returns GUI inbound view for the injected member message.
+ */
+@Remote('injectMemberMessage') async remoteExportInjectMemberMessage( options: ImGuiInjectMemberMessageOptions, ): Promise<ImGuiInboundView>
+
+/**
  * Create a new simulation instance against the workspace's configured simulation target.
  *
  * Invariants:

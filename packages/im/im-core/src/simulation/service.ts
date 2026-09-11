@@ -11,8 +11,10 @@ import { brandString } from '@deepseek-ai/dsh-brand'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type {} from '@deepseek-ai/dsh-workspace'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
+import { guiInboundViewOf } from '../delivery/gui-views.ts'
 import {
   type ImDeliveryScope,
+  type ImGuiInboundView,
   type ImMessageId,
   type InboundMessageRecord,
   type OutboundMessageRecord,
@@ -21,6 +23,7 @@ import { registerSimulationTools } from './tools.ts'
 import type {
   CreateSimulationInstanceOptions,
   ImGuiCreateSimulationInstanceOptions,
+  ImGuiInjectMemberMessageOptions,
   ImportJsonlHistoryOptions,
   ImSimulationInstance,
   ImSimulationInstanceId,
@@ -145,6 +148,18 @@ export class ImSimulationService extends TypertRemoteService {
       workspaceId: options.workspaceId,
       conversationId: simConfig.targetConversationId ?? 'gui-all',
     })
+  }
+
+  /**
+   * GUI Remote member inject. Returns a text-only inbound row.
+   * @param options - running instance, member identity, and text.
+   * @returns GUI inbound view for the injected member message.
+   */
+  @Remote('injectMemberMessage')
+  async remoteExportInjectMemberMessage(
+    options: ImGuiInjectMemberMessageOptions,
+  ): Promise<ImGuiInboundView> {
+    return guiInboundViewOf(await this.injectMemberMessage(options))
   }
 
   /**

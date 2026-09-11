@@ -31,4 +31,6 @@ export interface ImGuiFace {
   setRole: (role: ImGuiSnapshot['conversation']['role']) => void
   /** Create a Host simulation instance for the bound simulated-user workspace. */
   createSimulation: () => void
+  /** Inject a simulated group-member inbound into the running instance. */
+  injectMember: (text: string) => void
 }

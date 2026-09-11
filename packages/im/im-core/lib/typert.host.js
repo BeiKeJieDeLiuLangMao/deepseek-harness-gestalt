@@ -278,6 +278,23 @@ const _deepseek_ai_dsh_im_core_imSimulation_createInstance_result$schema = z.obj
   'createdAt': z.string().readonly(),
   'stoppedAt': z.string().readonly().optional(),
 })
+const _deepseek_ai_dsh_im_core_imSimulation_injectMemberMessage_parameter_0$schema = z.object({
+  'instanceId': z.intersection(z.string(), z.unknown()).readonly(),
+  'memberId': z.string().readonly(),
+  'text': z.string().readonly(),
+  'memberNick': z.string().readonly().optional(),
+})
+const _deepseek_ai_dsh_im_core_imSimulation_injectMemberMessage_result$schema = z.object({
+  'messageId': z.intersection(z.string(), z.unknown()).readonly(),
+  'scopeId': z.intersection(z.string(), z.unknown()).readonly(),
+  'senderClassification': z.union([z.literal("external"), z.literal("ai_outbound"), z.literal("human_native"), z.literal("human_dsh"), z.literal("unknown")]).readonly(),
+  'senderNick': z.string().readonly().optional(),
+  'senderId': z.string().readonly().optional(),
+  'stage': z.union([z.literal("received"), z.literal("submitted"), z.literal("sent")]).readonly(),
+  'text': z.string().readonly(),
+  'sequenceNumber': z.number().readonly(),
+  'receivedAt': z.string().readonly(),
+})
 const _deepseek_ai_dsh_im_core_imSimulation_listInstances_result$schema = z.array(z.object({
   'instanceId': z.intersection(z.string(), z.unknown()).readonly(),
   'workspaceId': z.intersection(z.string(), z.unknown()).readonly(),
@@ -718,7 +735,33 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-im-core/client#ImSimulationInstance',
         schema: _deepseek_ai_dsh_im_core_imSimulation_createInstance_result$schema,
       },
-      sourceLocation: {"file":"packages/im/im-core/src/simulation/service.ts","line":135,"column":9},
+      sourceLocation: {"file":"packages/im/im-core/src/simulation/service.ts","line":138,"column":9},
+    },
+    {
+      id: '@deepseek-ai/dsh-im-core#imSimulation/injectMemberMessage',
+      service: 'imSimulation',
+      namespace: 'imSimulation',
+      method: 'injectMemberMessage',
+      implementation: 'remoteExportInjectMemberMessage',
+      invocation: { kind: 'direct' },
+      parameters: [
+        {
+          name: 'options',
+          wire: 'options',
+          source: 'json',
+          codec: {
+            mode: 'strict',
+            typeSymbol: '@deepseek-ai/dsh-im-core/client#ImGuiInjectMemberMessageOptions',
+            schema: _deepseek_ai_dsh_im_core_imSimulation_injectMemberMessage_parameter_0$schema,
+          },
+        },
+      ],
+      result: {
+        mode: 'strict',
+        typeSymbol: '@deepseek-ai/dsh-im-core/client#ImGuiInboundView',
+        schema: _deepseek_ai_dsh_im_core_imSimulation_injectMemberMessage_result$schema,
+      },
+      sourceLocation: {"file":"packages/im/im-core/src/simulation/service.ts","line":159,"column":9},
     },
     {
       id: '@deepseek-ai/dsh-im-core#imSimulation/listInstances',
@@ -734,7 +777,7 @@ export const TYPERT = {
         typeSymbol: '@deepseek-ai/dsh-im-core#imSimulation/listInstances:result',
         schema: _deepseek_ai_dsh_im_core_imSimulation_listInstances_result$schema,
       },
-      sourceLocation: {"file":"packages/im/im-core/src/simulation/service.ts","line":125,"column":9},
+      sourceLocation: {"file":"packages/im/im-core/src/simulation/service.ts","line":128,"column":9},
     },
   ],
   model: {
@@ -1966,6 +2009,13 @@ export const TYPERT = {
           },
           {
             "kind": "method",
+            "name": "remoteExportInjectMemberMessage",
+            "signature": "@Remote('injectMemberMessage') async remoteExportInjectMemberMessage( options: ImGuiInjectMemberMessageOptions, ): Promise<ImGuiInboundView>",
+            "summary": "GUI Remote member inject.",
+            "jsDoc": "/**\n * GUI Remote member inject. Returns a text-only inbound row.\n * @param options - running instance, member identity, and text.\n * @returns GUI inbound view for the injected member message.\n */"
+          },
+          {
+            "kind": "method",
             "name": "createInstance",
             "signature": "async createInstance(options: CreateSimulationInstanceOptions): Promise<ImSimulationInstance>",
             "summary": "Create a new simulation instance against the workspace's configured simulation target.",
@@ -2027,6 +2077,14 @@ export const TYPERT = {
           {
             "name": "ImGuiCreateSimulationInstanceOptions",
             "declaration": "export interface ImGuiCreateSimulationInstanceOptions {\n    readonly workspaceId: WorkspaceId;\n}"
+          },
+          {
+            "name": "ImGuiInboundView",
+            "declaration": "export interface ImGuiInboundView {\n    readonly messageId: ImMessageId;\n    readonly scopeId: ImScopeId;\n    readonly senderClassification: ImSenderClassification;\n    readonly senderNick?: string;\n    readonly senderId?: string;\n    readonly stage: ImMessageStage;\n    readonly text: string;\n    readonly sequenceNumber: number;\n    readonly receivedAt: string;\n}"
+          },
+          {
+            "name": "ImGuiInjectMemberMessageOptions",
+            "declaration": "export interface ImGuiInjectMemberMessageOptions {\n    readonly instanceId: ImSimulationInstanceId;\n    readonly memberId: string;\n    readonly text: string;\n    readonly memberNick?: string;\n}"
           },
           {
             "name": "ImMessageContent",

@@ -270,5 +270,28 @@ export function createHostImGuiFace(
         }
       })()
     },
+    injectMember: (text) => {
+      const trimmed = text.trim()
+      if (trimmed === '' || simulation === undefined) return
+      void (async () => {
+        const [configs, listed] = await Promise.all([
+          remote.listSimulationConfigs(),
+          simulation.listInstances(),
+        ])
+        if (!configs.ok || !listed.ok) return
+        const workspaceId = configs.value[0]?.workspaceId
+        const instance = listed.value.find(row =>
+          row.status === 'running' && row.workspaceId === workspaceId,
+        )
+        if (instance === undefined) return
+        const result = await simulation.injectMemberMessage({
+          instanceId: instance.instanceId,
+          memberId: 'member-gui',
+          memberNick: '成员',
+          text: trimmed,
+        })
+        if (result.ok) await refresh()
+      })()
+    },
   }
 }

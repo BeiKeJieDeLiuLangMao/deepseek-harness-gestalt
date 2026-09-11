@@ -1,6 +1,6 @@
 /**
  * Better Sidebar IM conversation tab: sender badges, delivery states,
- * manual send when automatic handling is off, and both-session navigation.
+ * manual send, simulated-member inject, and both-session navigation.
  */
 import { useState } from 'react'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
@@ -138,22 +138,39 @@ export function ConversationTab(props: ConversationTabProps) {
       <div className={css.composer}>
         <textarea
           className={css.input}
-          aria-label={props.t('composerHint')}
-          placeholder={props.t('composerHint')}
+          aria-label={conversation.role === 'simuser' && conversation.simulationInstanceId !== undefined
+            ? props.t('memberHint')
+            : props.t('composerHint')}
+          placeholder={conversation.role === 'simuser' && conversation.simulationInstanceId !== undefined
+            ? props.t('memberHint')
+            : props.t('composerHint')}
           disabled={!canSend}
           value={draft}
           onChange={(event) => { setDraft(event.target.value) }}
         />
-        <Button
-          variant="primary"
-          disabled={!canSend || draft.trim() === ''}
-          onClick={() => {
-            props.manualSend(draft)
-            setDraft('')
-          }}
-        >
-          {props.t('send')}
-        </Button>
+        {conversation.role === 'simuser' && conversation.simulationInstanceId !== undefined ? (
+          <Button
+            variant="primary"
+            disabled={!canSend || draft.trim() === ''}
+            onClick={() => {
+              props.injectMember(draft)
+              setDraft('')
+            }}
+          >
+            {props.t('sendAsMember')}
+          </Button>
+        ) : (
+          <Button
+            variant="primary"
+            disabled={!canSend || draft.trim() === ''}
+            onClick={() => {
+              props.manualSend(draft)
+              setDraft('')
+            }}
+          >
+            {props.t('send')}
+          </Button>
+        )}
       </div>
     </div>
   )

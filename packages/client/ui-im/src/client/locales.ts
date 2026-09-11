@@ -97,6 +97,8 @@ export const zh = {
   openSimuser: '打开模拟用户 Session',
   openTested: '打开被测 Agent Session',
   createSimulation: '创建模拟实例',
+  memberHint: '以群成员身份发送（不经过 Agent）…',
+  sendAsMember: '以成员发送',
 } satisfies Record<string, string>
 
 /** The IM GUI namespace key union. */
@@ -196,4 +198,6 @@ export const en = {
   openSimuser: 'Open simulated-user session',
   openTested: 'Open tested-agent session',
   createSimulation: 'Create simulation instance',
+  memberHint: 'Send as a group member (not through the agent)…',
+  sendAsMember: 'Send as member',
 } satisfies Record<ImKey, string>

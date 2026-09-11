@@ -72,6 +72,19 @@ export function createImGuiFace(store: SnapshotStore<ImGuiSnapshot>): ImGuiFace 
       store.update((draft) => { draft.conversation.role = role })
     },
     createSimulation: () => {},
+    injectMember: (text) => {
+      const trimmed = text.trim()
+      if (trimmed === '') return
+      store.update((draft) => {
+        draft.conversation.messages.push({
+          id: `member-${Date.now()}`,
+          text: trimmed,
+          sender: 'external',
+          delivery: 'received',
+          who: '成员',
+        })
+      })
+    },
   }
 }
 

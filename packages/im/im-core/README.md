@@ -53,7 +53,7 @@ Mounted at `ctx.imConfig` for configuration and routing, `ctx.imDelivery` for me
 - `listInstances(): ImSimulationInstance[]` — GUI Remote `listInstances` is the unfiltered export
 - `createInstance(options: CreateSimulationInstanceOptions): Promise<ImSimulationInstance>` — GUI Remote `createInstance` takes `{ workspaceId }` and fills the conversation id from the workspace target
 - `stopInstance(instanceId: ImSimulationInstanceId): Promise<ImSimulationInstance>`
-- `injectMemberMessage(options: InjectMemberMessageOptions): Promise<InboundMessageRecord>`
+- `injectMemberMessage(options: InjectMemberMessageOptions): Promise<InboundMessageRecord>` — GUI Remote `injectMemberMessage` returns a text-only inbound view
 - `injectManagedHumanMessage(options: InjectManagedHumanMessageOptions): Promise<InboundMessageRecord>`
 - `importJsonlHistory(options: ImportJsonlHistoryOptions): Promise<{ importedCount: number; messageIds: ImMessageId[] }>`
 - `handleSimOutbound(outbound: OutboundMessageRecord, instanceId: string, conversationId: string): Promise<OutboundMessageRecord>`

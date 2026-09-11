@@ -361,4 +361,99 @@ describe('IM Host GUI controller', () => {
       simulationInstanceId: 'sim-gui',
     })
   })
+
+  it('injects a simulated member inbound through Host remotes', async () => {
+    const injected: unknown[] = []
+    const inbound = [{
+      messageId: 'msg-member',
+      scopeId: 'sim:sim-gui:gui-all',
+      senderClassification: 'external' as const,
+      senderNick: '成员',
+      senderId: 'member-gui',
+      stage: 'received' as const,
+      text: '周末谁值班',
+      sequenceNumber: 1,
+      receivedAt: '2026-01-01T00:00:01.000Z',
+    }]
+    const remote = {
+      listAccounts: async () => ({ ok: true as const, value: [{
+        id: 'acc-dt',
+        platform: 'dingtalk' as const,
+        displayName: '陈小宇',
+        status: 'connected' as const,
+        paused: false,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      }] }),
+      listRouteRules: async () => ({ ok: true as const, value: [{
+        id: 'route-group',
+        accountId: 'acc-dt',
+        conversationKind: 'group' as const,
+        target: { kind: 'all' as const },
+        workspaceId: 'ws-tested',
+        enabled: false,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      }] }),
+      listSimulationConfigs: async () => ({ ok: true as const, value: [{
+        workspaceId: 'ws-simuser',
+        targetAccountId: 'acc-dt',
+        conversationKind: 'group' as const,
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      }] }),
+      upsertAccount: async () => ({ ok: true as const, value: undefined as never }),
+      pauseAccount: async () => ({ ok: true as const, value: undefined as never }),
+      deleteAccount: async () => ({ ok: true as const, value: false }),
+      deleteRouteRule: async () => ({ ok: true as const, value: false }),
+      getSimulationConfig: async () => ({ ok: true as const, value: undefined }),
+      createRouteRule: async () => ({ ok: true as const, value: undefined as never }),
+      updateRouteRule: async () => ({ ok: true as const, value: undefined as never }),
+      setSimulationConfig: async () => ({ ok: true as const, value: undefined as never }),
+      deleteSimulationConfig: async () => ({ ok: true as const, value: false }),
+    } as unknown as ImConfigRemote
+    const instance = {
+      instanceId: 'sim-gui',
+      workspaceId: 'ws-simuser',
+      testedWorkspaceId: 'ws-tested',
+      target: { accountId: 'acc-dt', conversationKind: 'group' as const, conversationId: 'gui-all' },
+      status: 'running' as const,
+      createdAt: '2026-01-01T00:00:00.000Z',
+    }
+    const simulation = {
+      listInstances: async () => ({ ok: true as const, value: [instance] }),
+      createInstance: async () => ({ ok: true as const, value: instance as never }),
+      injectMemberMessage: async (options: unknown) => {
+        injected.push(options)
+        return { ok: true as const, value: inbound[0] as never }
+      },
+    } as unknown as ImSimulationRemote
+    const delivery = {
+      queryHistory: async () => ({ ok: true as const, value: injected.length === 0 ? [] : inbound }),
+      listOutbound: async () => ({ ok: true as const, value: [] }),
+      registerManualOutbound: async () => ({ ok: true as const, value: undefined as never }),
+      cancelPendingAiOutbound: async () => ({ ok: true as const, value: [] }),
+    } as unknown as ImDeliveryRemote
+    const store = createImGuiStore({
+      ...emptyGuiSnapshot(),
+      conversation: { ...emptyGuiSnapshot().conversation, role: 'simuser' },
+    })
+    const face = createHostImGuiFace(store, remote, delivery, undefined, simulation)
+    const drain = async (): Promise<void> => {
+      for (let i = 0; i < 12; i += 1) await Promise.resolve()
+    }
+    await drain()
+    face.injectMember('周末谁值班')
+    await drain()
+    expect(injected).toEqual([{
+      instanceId: 'sim-gui',
+      memberId: 'member-gui',
+      memberNick: '成员',
+      text: '周末谁值班',
+    }])
+    expect(store.getSnapshot().conversation.messages).toMatchObject([{
+      text: '周末谁值班',
+      sender: 'external',
+      who: '成员',
+    }])
+  })
 })

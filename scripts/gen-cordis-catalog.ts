@@ -862,6 +862,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   ImConversationCursor: 'im.md',
   ImGuiCancelPendingAiOutboundOptions: 'im.md',
   ImGuiCreateSimulationInstanceOptions: 'im.md',
+  ImGuiInjectMemberMessageOptions: 'im.md',
   ImGuiHistoryQueryOptions: 'im.md',
   ImGuiInboundView: 'im.md',
   ImGuiListOutboundOptions: 'im.md',

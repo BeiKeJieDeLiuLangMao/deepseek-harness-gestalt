@@ -53,7 +53,7 @@ DeepSeek Harness 的 IM 领域配置、账号与路由核心服务。
 - `listInstances(): ImSimulationInstance[]` — GUI Remote `listInstances` 为未过滤导出
 - `createInstance(options: CreateSimulationInstanceOptions): Promise<ImSimulationInstance>` — GUI Remote `createInstance` 收 `{ workspaceId }`，由 Host 用工作区目标填会话 id
 - `stopInstance(instanceId: ImSimulationInstanceId): Promise<ImSimulationInstance>`
-- `injectMemberMessage(options: InjectMemberMessageOptions): Promise<InboundMessageRecord>`
+- `injectMemberMessage(options: InjectMemberMessageOptions): Promise<InboundMessageRecord>` — GUI Remote `injectMemberMessage` 返回纯文本入站行
 - `injectManagedHumanMessage(options: InjectManagedHumanMessageOptions): Promise<InboundMessageRecord>`
 - `importJsonlHistory(options: ImportJsonlHistoryOptions): Promise<{ importedCount: number; messageIds: ImMessageId[] }>`
 - `handleSimOutbound(outbound: OutboundMessageRecord, instanceId: string, conversationId: string): Promise<OutboundMessageRecord>`

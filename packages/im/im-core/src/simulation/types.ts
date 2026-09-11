@@ -44,6 +44,15 @@ export interface ImGuiCreateSimulationInstanceOptions {
   readonly workspaceId: WorkspaceId
 }
 
+/** GUI Remote member inject. Host fills the external message id. */
+export interface ImGuiInjectMemberMessageOptions {
+  readonly instanceId: ImSimulationInstanceId
+  readonly memberId: string
+  readonly text: string
+  readonly memberNick?: string
+}
+
+/** Inject one speaking-member inbound into a running simulation instance. */
 export interface InjectMemberMessageOptions {
   readonly instanceId: ImSimulationInstanceId
   readonly memberId: string

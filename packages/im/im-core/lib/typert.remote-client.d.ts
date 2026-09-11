@@ -3,7 +3,7 @@ import type {
   RemoteResult,
   TypertRemoteContribution,
 } from '@deepseek-ai/dsh-typert-protocol'
-import type { CreateImAccountOptions, CreateImRouteRuleOptions, ImAccountId, ImAccountMetadata, ImGuiCancelPendingAiOutboundOptions, ImGuiCreateSimulationInstanceOptions, ImGuiHistoryQueryOptions, ImGuiInboundView, ImGuiListOutboundOptions, ImGuiOutboundView, ImGuiRegisterManualOutboundOptions, ImRouteRule, ImRouteRuleId, ImSimulationInstance, ImWorkspaceSimulationConfig, SetWorkspaceSimulationTargetOptions, UpdateImRouteRuleOptions } from '@deepseek-ai/dsh-im-core/client'
+import type { CreateImAccountOptions, CreateImRouteRuleOptions, ImAccountId, ImAccountMetadata, ImGuiCancelPendingAiOutboundOptions, ImGuiCreateSimulationInstanceOptions, ImGuiHistoryQueryOptions, ImGuiInboundView, ImGuiInjectMemberMessageOptions, ImGuiListOutboundOptions, ImGuiOutboundView, ImGuiRegisterManualOutboundOptions, ImRouteRule, ImRouteRuleId, ImSimulationInstance, ImWorkspaceSimulationConfig, SetWorkspaceSimulationTargetOptions, UpdateImRouteRuleOptions } from '@deepseek-ai/dsh-im-core/client'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 
 declare module '@deepseek-ai/dsh-typert-protocol' {
@@ -29,6 +29,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
   }
   interface TypertRemoteNamespace$696d53696d756c6174696f6e {
     createInstance: (options: ImGuiCreateSimulationInstanceOptions) => Promise<RemoteResult<ImSimulationInstance>>
+    injectMemberMessage: (options: ImGuiInjectMemberMessageOptions) => Promise<RemoteResult<ImGuiInboundView>>
     listInstances: () => Promise<RemoteResult<ImSimulationInstance[]>>
   }
   interface TypertRemoteMap {
@@ -49,6 +50,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'imDelivery/queryHistory': (options: ImGuiHistoryQueryOptions) => Promise<RemoteResult<ImGuiInboundView[]>>
     'imDelivery/registerManualOutbound': (options: ImGuiRegisterManualOutboundOptions) => Promise<RemoteResult<ImGuiOutboundView>>
     'imSimulation/createInstance': (options: ImGuiCreateSimulationInstanceOptions) => Promise<RemoteResult<ImSimulationInstance>>
+    'imSimulation/injectMemberMessage': (options: ImGuiInjectMemberMessageOptions) => Promise<RemoteResult<ImGuiInboundView>>
     'imSimulation/listInstances': () => Promise<RemoteResult<ImSimulationInstance[]>>
   }
   interface TypertRemoteNamespaceMap {

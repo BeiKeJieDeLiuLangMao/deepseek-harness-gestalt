@@ -131,6 +131,27 @@ describe('IM simulation transport and workspace tool gating', () => {
     expect(await simulationService.remoteExportListInstances()).toEqual([instance])
   })
 
+  it('injects a GUI member inbound as a text-only history row', async () => {
+    await configService.setSimulationConfig({
+      workspaceId: simUserWorkspaceId,
+      targetAccountId: accountId,
+      conversationKind: 'direct',
+    })
+    const instance = await simulationService.remoteExportCreateInstance({
+      workspaceId: simUserWorkspaceId,
+    })
+    const view = await simulationService.remoteExportInjectMemberMessage({
+      instanceId: instance.instanceId,
+      memberId: 'member-gui',
+      memberNick: '成员',
+      text: '周末谁值班',
+    })
+    expect(view.text).toBe('周末谁值班')
+    expect(view.senderClassification).toBe('external')
+    expect(view.senderNick).toBe('成员')
+    expect(view).not.toHaveProperty('content')
+  })
+
   it('mounts simulation tools on Agents whose workspace has a simulation target', async () => {
     ctx.provide('workspaceRegistry', {
       list: () => [

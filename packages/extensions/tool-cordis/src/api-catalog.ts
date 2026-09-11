@@ -1591,6 +1591,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'created simulation instance.',
       },
       {
+        signature: '@Remote(\'injectMemberMessage\') async remoteExportInjectMemberMessage( options: ImGuiInjectMemberMessageOptions, ): Promise<ImGuiInboundView>',
+        description: 'GUI Remote member inject. Returns a text-only inbound row.',
+        parameters: [{ name: 'options', description: 'running instance, member identity, and text.' }],
+        returns: 'GUI inbound view for the injected member message.',
+      },
+      {
         signature: 'async createInstance(options: CreateSimulationInstanceOptions): Promise<ImSimulationInstance>',
         description: 'Create a new simulation instance against the workspace\'s configured simulation target.\n\nInvariants: 1. Workspace must have configured simulation target in imConfig; throws if unconfigured. 2. Instance target snapshot (accountId, conversationKind, conversationId) is frozen at creation. Subsequent changes to workspace simulation config will not alter this instance.',
         parameters: [{ name: 'options', description: 'Workspace ID, conversation ID, optional conversation kind, instance ID, and speaking members.' }],
@@ -6273,6 +6279,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ImGuiInboundView',
     declaration: 'export interface ImGuiInboundView {\n    readonly messageId: ImMessageId;\n    readonly scopeId: ImScopeId;\n    readonly senderClassification: ImSenderClassification;\n    readonly senderNick?: string;\n    readonly senderId?: string;\n    readonly stage: ImMessageStage;\n    readonly text: string;\n    readonly sequenceNumber: number;\n    readonly receivedAt: string;\n}',
+  },
+  {
+    name: 'ImGuiInjectMemberMessageOptions',
+    declaration: 'export interface ImGuiInjectMemberMessageOptions {\n    readonly instanceId: ImSimulationInstanceId;\n    readonly memberId: string;\n    readonly text: string;\n    readonly memberNick?: string;\n}',
   },
   {
     name: 'ImGuiListOutboundOptions',
