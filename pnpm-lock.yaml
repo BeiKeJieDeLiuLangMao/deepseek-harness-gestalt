@@ -6735,6 +6735,10 @@ importers:
       '@deepseek-ai/dsh-app-boot':
         specifier: workspace:^
         version: link:../../boot/app-boot
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
 
   packages/experimental/agent-team:
     dependencies:
@@ -8476,6 +8480,9 @@ importers:
 
   packages/llm/cliproxy-quota:
     devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
       '@deepseek-ai/dsh-brand':
         specifier: workspace:^
         version: link:../../util/brand
@@ -12447,7 +12454,11 @@ importers:
         specifier: workspace:^
         version: link:../../../vendor/cordis
 
-  packages/util/request-trust: {}
+  packages/util/request-trust:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
 
   packages/util/time:
     devDependencies:
