@@ -1,9 +1,9 @@
 import { spawn, spawnSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { basename, delimiter as pathDelimiter, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import * as yaml from 'js-yaml'
 import { describe, expect, it } from 'vitest'
@@ -38,6 +38,70 @@ const recoveryScript = fileURLToPath(new URL('../scripts/platform-recover.sh', i
 const recoverySource = readFileSync(recoveryScript, 'utf8')
 const ossJsonSource = readFileSync(new URL('../scripts/platform-oss-json.sh', import.meta.url), 'utf8')
 const repoRoot = resolve(import.meta.dirname, '../../..')
+
+function executableNames(name: string): string[] {
+  if (process.platform !== 'win32') return [name]
+  const extensions = (process.env.PATHEXT ?? '.EXE;.CMD;.BAT').split(';').filter(Boolean)
+  return [name, ...extensions.flatMap(ext => [`${name}${ext}`, `${name}${ext.toLowerCase()}`])]
+}
+
+function recoveryPath(path = process.env.PATH ?? ''): string {
+  const nodeDir = resolve(process.execPath, '..')
+  return path.split(pathDelimiter).includes(nodeDir) ? path : `${nodeDir}${pathDelimiter}${path}`
+}
+
+function resolveOnPath(name: string, path = recoveryPath()): string | undefined {
+  for (const dir of path.split(pathDelimiter)) {
+    if (!dir) continue
+    for (const candidate of executableNames(name)) {
+      const full = join(dir, candidate)
+      if (existsSync(full)) return full
+    }
+  }
+}
+
+function linkExecutable(dir: string, name: string, target: string): void {
+  const names = new Set([...executableNames(name), basename(target)])
+  for (const candidate of names) {
+    const dest = join(dir, candidate)
+    if (existsSync(dest)) continue
+    try {
+      symlinkSync(target, dest)
+    } catch {
+      // Skip a PATH name we cannot link (existing dest, permissions, or Windows privilege).
+      continue
+    }
+  }
+}
+
+// Chatter recovery must stay green when PATH has neither python3 nor jq, matching Windows Git Bash.
+function pathWithoutExecutables(names: readonly string[]): { PATH: string; dispose: () => void } {
+  const hidden = new Set(names)
+  const root = mkdtempSync(join(tmpdir(), 'dsh-recovery-path-'))
+  const keep = ['bash', 'dirname', 'mktemp', 'cat', 'sed', 'tr', 'tail', 'true', 'node', 'python']
+    .filter(name => !hidden.has(name))
+  for (const name of keep) {
+    const target = name === 'node' ? process.execPath : resolveOnPath(name)
+    if (target === undefined) continue
+    linkExecutable(root, name, target)
+  }
+  if (!executableNames('bash').some(candidate => existsSync(join(root, candidate)))) {
+    throw new Error(`cannot hide ${names.join(', ')} while keeping bash on PATH`)
+  }
+  return {
+    PATH: root,
+    dispose: () => {
+      rmSync(root, { recursive: true, force: true })
+    },
+  }
+}
+
+function commandOnPath(path: string, name: string): boolean {
+  return spawnSync('bash', ['-c', `command -v ${JSON.stringify(name)} >/dev/null`], {
+    encoding: 'utf8',
+    env: { PATH: path },
+  }).status === 0
+}
 
 function bashPath(filePath: string, platform: NodeJS.Platform = process.platform): string {
   if (platform !== 'win32') return filePath
@@ -263,6 +327,7 @@ function runRecoveryHarness(
   failure: 'none' | 'second-rollback' | 'state-write' | 'target-mismatch' = 'none',
   mode: 'rolling' | 'bootstrap' = 'rolling',
   chatter: 'none' | 'prefix' | 'suffix' | 'second-json' = 'none',
+  path = recoveryPath(),
 ) {
   const harness = [
     'set -u',
@@ -364,7 +429,7 @@ function runRecoveryHarness(
   return spawnSync('bash', ['-c', harness], {
     encoding: 'utf8',
     env: {
-      PATH: process.env.PATH,
+      PATH: path,
       RECOVERY_SCRIPT: bashPath(recoveryScript),
       RECOVERY_PHASE: phase,
       RECOVERY_FAILURE: failure,
@@ -395,6 +460,7 @@ function runRealBootstrapRecoveryHarness(
   const log = join(temp, 'docker.log')
   writeFileSync(log, '')
   writeFileSync(recoveryCopy, recoverySource)
+  // Recover locates siblings via BASH_SOURCE; a copied recover script copies those siblings too.
   writeFileSync(join(temp, 'platform-oss-json.sh'), ossJsonSource)
   writeFileSync(cloudCopy, 'true\n')
   writeFileSync(hostCopy, hostDeploySource
@@ -1362,20 +1428,28 @@ describe('Platform release workflows', () => {
     expect(ambiguous.stdout).not.toContain('RUN:')
   })
 
-  it('extracts one JSON object from oss cat CLI chatter', () => {
-    const prefix = runRecoveryHarness('rollbackable', 'none', 'rolling', 'prefix')
-    expect(prefix.status, prefix.stderr).toBe(0)
-    expect(prefix.stdout).toContain('RUN:rollback:i-first123:2100')
-    expect(prefix.stdout).toContain('DELETE:oss://bucket/deploy-artifacts/platform/active-state.json')
+  it('extracts one JSON object from oss cat CLI chatter', { timeout: 15_000 }, () => {
+    const hidden = pathWithoutExecutables(['python3', 'jq'])
+    try {
+      expect(commandOnPath(hidden.PATH, 'python3')).toBe(false)
+      expect(commandOnPath(hidden.PATH, 'jq')).toBe(false)
+      expect(commandOnPath(hidden.PATH, 'python') || commandOnPath(hidden.PATH, 'node')).toBe(true)
+      const prefix = runRecoveryHarness('rollbackable', 'none', 'rolling', 'prefix', hidden.PATH)
+      expect(prefix.status, prefix.stderr).toBe(0)
+      expect(prefix.stdout).toContain('RUN:rollback:i-first123:2100')
+      expect(prefix.stdout).toContain('DELETE:oss://bucket/deploy-artifacts/platform/active-state.json')
 
-    const suffix = runRecoveryHarness('rollbackable', 'none', 'rolling', 'suffix')
-    expect(suffix.status, suffix.stderr).toBe(0)
-    expect(suffix.stdout).toContain('DELETE:oss://bucket/deploy-artifacts/platform/active-state.json')
+      const suffix = runRecoveryHarness('rollbackable', 'none', 'rolling', 'suffix', hidden.PATH)
+      expect(suffix.status, suffix.stderr).toBe(0)
+      expect(suffix.stdout).toContain('DELETE:oss://bucket/deploy-artifacts/platform/active-state.json')
 
-    const extra = runRecoveryHarness('rollbackable', 'none', 'rolling', 'second-json')
-    expect(extra.status).not.toBe(0)
-    expect(extra.stderr).toContain('platform: oss cat stdout contains extra JSON')
-    expect(extra.stdout).not.toContain('DELETE:')
+      const extra = runRecoveryHarness('rollbackable', 'none', 'rolling', 'second-json', hidden.PATH)
+      expect(extra.status).not.toBe(0)
+      expect(extra.stderr).toContain('platform: oss cat stdout contains extra JSON')
+      expect(extra.stdout).not.toContain('DELETE:')
+    } finally {
+      hidden.dispose()
+    }
   })
 
   it('keeps durable state after partial instance or state-write failure', () => {
