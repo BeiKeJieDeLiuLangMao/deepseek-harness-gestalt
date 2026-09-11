@@ -367,16 +367,16 @@
             "type": "string",
             "description": "A short (3-5 word) description of the delegated task, for display."
           },
+          "prompt": {
+            "type": "string",
+            "description": "The complete, self-contained task for the subagent. It does not share this conversation's context, so include everything it needs."
+          },
           "images": {
             "type": "array",
             "description": "Optional workspace image file paths attached to the child prompt.",
             "items": {
               "type": "string"
             }
-          },
-          "prompt": {
-            "type": "string",
-            "description": "The complete, self-contained task for the subagent. It does not share this conversation's context, so include everything it needs."
           }
         },
         "required": [
@@ -395,16 +395,16 @@
             "type": "string",
             "description": "A short (3-5 word) description of the delegated task, for display."
           },
+          "prompt": {
+            "type": "string",
+            "description": "The task for the subagent. It already sees this conversation's completed turns, so build on them freely and state only what is new."
+          },
           "images": {
             "type": "array",
             "description": "Optional workspace image file paths attached to the child prompt.",
             "items": {
               "type": "string"
             }
-          },
-          "prompt": {
-            "type": "string",
-            "description": "The task for the subagent. It already sees this conversation's completed turns, so build on them freely and state only what is new."
           },
           "run_in_background": {
             "type": "boolean",

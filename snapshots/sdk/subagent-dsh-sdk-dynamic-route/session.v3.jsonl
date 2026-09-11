@@ -2,7 +2,7 @@
 {"type":"permission/preset","data":{"preset":"workspace-write"}}
 {"type":"sandbox/mode","data":{"mode":"workspace-write"}}
 {"type":"approval/policy","data":{"policy":"ask"}}
-{"type":"subagent/model-selection-policy","data":{"allowedModels":[{"provider":"mock","model":"mock-routed"}]}}
+{"type":"subagent/model-selection-policy","data":{"allowedModels":[{"provider":"mock","model":"mock-deploy"},{"provider":"mock","model":"mock-routed"}]}}
 {"type":"agent/inbox/spliced","data":{"target":"next-turn","start":0,"inserted":[{"content":[{"type":"text","text":"Delegate once using the requested child route."}],"source":{"kind":"user"},"role":"user","id":"{{message:1}}"}]}}
 {"type":"turn/start","data":{"turn":1}}
 {"type":"agent/inbox/spliced","data":{"target":"next-turn","start":0,"removedCount":1,"inserted":[]}}
