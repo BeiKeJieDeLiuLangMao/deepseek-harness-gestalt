@@ -1,3 +1,5 @@
 # AGENTS.md — GitHub Actions
 
 Run Windows jobs selected by `windows-*` labels under native `pwsh`. The pull-request `windows` job deliberately runs Windows Node under Wine on hosted Linux and blocks `all checks passed`; the `windows-native-*` jobs use the runner expression in `ci.yml` and report through `windows-native-verdict`. Keep master-only standby, cache-seeding, and benchmark jobs in `ci-master.yml` so they do not appear in pull-request check panels. Dependabot and failover exceptions remain owned by the live workflow configuration. See the [failover runbook](../.agents/notes/implemented/process/2026-07-26-ci-failover-runbook.md).
+
+When a required Linux job (`node 24 / coverage`, `node 24 / snapshots and artifacts`) fails on a `vm-backup` runner with Docker inventory (`Cannot confirm the test transaction container inventory`) or `spawn pwsh ENOENT`, inspect `DSH_CI_FAILOVER_LINUX` and [switch back](../.agents/notes/implemented/process/2026-07-26-ci-failover-runbook.md#switch-back) to hosted instead of rerunning failed jobs on that pool.
