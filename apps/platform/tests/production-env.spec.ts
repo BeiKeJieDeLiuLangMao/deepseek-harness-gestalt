@@ -1526,26 +1526,30 @@ describe('Platform release workflows', () => {
   })
 
   it('extracts one JSON object from oss cat CLI chatter', { timeout: 20_000 }, () => {
-    const hidden = pathWithoutExecutables(['python3', 'jq'])
+    // Hosted Windows Git Bash already lacks python3 and jq; hiding them also drops tr/mktemp/cat.
+    const hidden = process.platform === 'win32' ? undefined : pathWithoutExecutables(['python3', 'jq'])
+    const path = hidden?.PATH ?? recoveryPath()
     try {
-      expect(commandOnPath(hidden.PATH, 'python3')).toBe(false)
-      expect(commandOnPath(hidden.PATH, 'jq')).toBe(false)
-      expect(commandOnPath(hidden.PATH, 'python') || commandOnPath(hidden.PATH, 'node')).toBe(true)
-      const prefix = runRecoveryHarness('rollbackable', 'none', 'rolling', 'prefix', hidden.PATH)
+      if (hidden !== undefined) {
+        expect(commandOnPath(path, 'python3')).toBe(false)
+        expect(commandOnPath(path, 'jq')).toBe(false)
+        expect(commandOnPath(path, 'python') || commandOnPath(path, 'node')).toBe(true)
+      }
+      const prefix = runRecoveryHarness('rollbackable', 'none', 'rolling', 'prefix', path)
       expect(prefix.status, prefix.stderr).toBe(0)
       expect(prefix.stdout).toContain('RUN:rollback:i-first123:2100')
       expect(prefix.stdout).toContain('DELETE:oss://bucket/deploy-artifacts/platform/active-state.json')
 
-      const suffix = runRecoveryHarness('rollbackable', 'none', 'rolling', 'suffix', hidden.PATH)
+      const suffix = runRecoveryHarness('rollbackable', 'none', 'rolling', 'suffix', path)
       expect(suffix.status, suffix.stderr).toBe(0)
       expect(suffix.stdout).toContain('DELETE:oss://bucket/deploy-artifacts/platform/active-state.json')
 
-      const extra = runRecoveryHarness('rollbackable', 'none', 'rolling', 'second-json', hidden.PATH)
+      const extra = runRecoveryHarness('rollbackable', 'none', 'rolling', 'second-json', path)
       expect(extra.status).not.toBe(0)
       expect(extra.stderr).toContain('platform: oss cat stdout contains extra JSON')
       expect(extra.stdout).not.toContain('DELETE:')
     } finally {
-      hidden.dispose()
+      hidden?.dispose()
     }
   })
 
