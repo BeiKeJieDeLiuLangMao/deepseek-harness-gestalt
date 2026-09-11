@@ -1,9 +1,9 @@
 import { spawn, spawnSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
-import { basename, delimiter as pathDelimiter, join, resolve } from 'node:path'
+import { basename, delimiter as pathDelimiter, dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import * as yaml from 'js-yaml'
 import { describe, expect, it } from 'vitest'
@@ -50,26 +50,33 @@ function recoveryPath(path = process.env.PATH ?? ''): string {
   return path.split(pathDelimiter).includes(nodeDir) ? path : `${nodeDir}${pathDelimiter}${path}`
 }
 
-function resolveOnPath(name: string, path = recoveryPath()): string | undefined {
-  for (const dir of path.split(pathDelimiter)) {
-    if (!dir) continue
-    for (const candidate of executableNames(name)) {
-      const full = join(dir, candidate)
-      if (existsSync(full)) return full
-    }
+function executableInDir(dir: string, name: string): string | undefined {
+  if (!dir) return
+  for (const candidate of executableNames(name)) {
+    const full = join(dir, candidate)
+    if (existsSync(full)) return full
   }
 }
 
-function linkExecutable(dir: string, name: string, target: string): void {
+function pathHasExecutable(path: string, name: string): boolean {
+  return path.split(pathDelimiter).some(dir => executableInDir(dir, name) !== undefined)
+}
+
+function placeExecutable(dir: string, name: string, target: string): void {
   const names = new Set([...executableNames(name), basename(target)])
   for (const candidate of names) {
     const dest = join(dir, candidate)
     if (existsSync(dest)) continue
     try {
       symlinkSync(target, dest)
-    } catch {
-      // Skip a PATH name we cannot link (existing dest, permissions, or Windows privilege).
       continue
+    } catch {
+      // Windows hosted runners often cannot symlink without Developer Mode.
+    }
+    try {
+      copyFileSync(target, dest)
+    } catch {
+      // Skip a PATH name we cannot copy (permissions or a locked dest).
     }
   }
 }
@@ -78,18 +85,38 @@ function linkExecutable(dir: string, name: string, target: string): void {
 function pathWithoutExecutables(names: readonly string[]): { PATH: string; dispose: () => void } {
   const hidden = new Set(names)
   const root = mkdtempSync(join(tmpdir(), 'dsh-recovery-path-'))
+  const keepBin = join(root, 'bin')
+  mkdirSync(keepBin)
   const keep = ['bash', 'dirname', 'mktemp', 'cat', 'sed', 'tr', 'tail', 'true', 'node', 'python']
     .filter(name => !hidden.has(name))
-  for (const name of keep) {
-    const target = name === 'node' ? process.execPath : resolveOnPath(name)
-    if (target === undefined) continue
-    linkExecutable(root, name, target)
+  const next = [keepBin]
+  for (const dir of recoveryPath().split(pathDelimiter)) {
+    if (!dir) continue
+    if (names.some(name => executableInDir(dir, name) !== undefined)) {
+      for (const name of keep) {
+        const target = name === 'node' && dirname(process.execPath) === dir
+          ? process.execPath
+          : executableInDir(dir, name)
+        if (target === undefined) continue
+        placeExecutable(keepBin, name, target)
+      }
+      continue
+    }
+    next.push(dir)
   }
-  if (!executableNames('bash').some(candidate => existsSync(join(root, candidate)))) {
-    throw new Error(`cannot hide ${names.join(', ')} while keeping bash on PATH`)
+  const nodeTarget = process.execPath
+  if (executableInDir(dirname(nodeTarget), 'python3') !== undefined
+    || executableInDir(dirname(nodeTarget), 'jq') !== undefined
+    || !pathHasExecutable(next.join(pathDelimiter), 'node')) {
+    placeExecutable(keepBin, 'node', nodeTarget)
+  }
+  const path = next.join(pathDelimiter)
+  const missing = ['bash', 'tr', 'mktemp', 'cat'].filter(name => !pathHasExecutable(path, name))
+  if (missing.length > 0) {
+    throw new Error(`cannot hide ${names.join(', ')} while keeping ${missing.join(', ')} on PATH`)
   }
   return {
-    PATH: root,
+    PATH: path,
     dispose: () => {
       rmSync(root, { recursive: true, force: true })
     },
