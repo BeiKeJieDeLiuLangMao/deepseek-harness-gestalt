@@ -10,7 +10,8 @@ const MOBILE_ROOT = normalizePath(resolve(fileURLToPath(new URL('..', import.met
 const DESKTOP_MANIFEST = normalizePath(fileURLToPath(new URL('../../desktop/package.json', import.meta.url)))
 const FIXTURE_ENTRY = normalizePath(fileURLToPath(new URL('./mobile-browse-artifact.fixture.tsx', import.meta.url)))
 const MOBILE_JS = normalizePath(fileURLToPath(new URL('../lib/MobileBrowse.js', import.meta.url)))
-const MOBILE_CSS = normalizePath(fileURLToPath(new URL('../lib/MobileBrowse.module.css', import.meta.url)))
+const MOBILE_CSS = normalizePath(fileURLToPath(new URL('../lib/src/MobileBrowse.module.css', import.meta.url)))
+const MOBILE_CSS_IMPORT = './src/MobileBrowse.module.css'
 const CLIENT_RUNTIME_SOURCE = normalizePath(fileURLToPath(new URL('../../../packages/client/runtime/lib/types/client/index.js', import.meta.url)))
 const desktopRequire = createRequire(DESKTOP_MANIFEST)
 const fixtureSource = `
@@ -41,7 +42,7 @@ function artifactResolutionGuard(): Plugin {
     },
     transform(code, id) {
       if (id.startsWith(`${MOBILE_ROOT}/src/`)) throw new Error(`Mobile artifact smoke transformed source module ${id}`)
-      if (id === MOBILE_JS && !code.includes('./MobileBrowse.module.css')) {
+      if (id === MOBILE_JS && !code.includes(MOBILE_CSS_IMPORT)) {
         throw new Error('MobileBrowse artifact lost its relative stylesheet import')
       }
       return null
@@ -54,7 +55,7 @@ function artifactResolutionGuard(): Plugin {
         if (resolved !== MOBILE_JS) throw new Error(`Desktop import map resolved MobileBrowse to ${resolved}, expected ${MOBILE_JS}`)
         return resolved
       }
-      if (source !== './MobileBrowse.module.css' || importer !== MOBILE_JS) return null
+      if (source !== MOBILE_CSS_IMPORT || importer !== MOBILE_JS) return null
       const resolved = await this.resolve(source, importer, { ...options, skipSelf: true })
       if (resolved === null || normalizePath(resolved.id) !== MOBILE_CSS) {
         throw new Error(`MobileBrowse stylesheet resolved to ${resolved?.id ?? 'nothing'}, expected ${MOBILE_CSS}`)
