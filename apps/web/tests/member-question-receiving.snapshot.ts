@@ -7,16 +7,23 @@ import {
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { launchWebScaffold } from './scaffold.ts'
 
 const expectedPath = new URL('./snapshots/member-question-receiving.expected.json', import.meta.url)
+const DEVELOPMENT_LOCAL_OVERLAY = fileURLToPath(new URL(
+  './fixtures/member-question-development-local.cordis.yml', import.meta.url,
+))
 const refreshing = process.env.DSH_SNAPSHOT === 'refresh'
 
 describe('member-question receiving keyless assembled snapshot', () => {
   it('keeps arrival model-free and continues the Host Session after a local answer', async () => {
     const harnessHome = await mkdtemp(join(tmpdir(), 'dsh-member-question-snapshot-'))
-    const scaffold = await launchWebScaffold({ harnessHome })
+    const scaffold = await launchWebScaffold({
+      harnessHome,
+      extraOverlayPath: DEVELOPMENT_LOCAL_OVERLAY,
+    })
     try {
       const receiver = scaffold.ctx.get('memberQuestionReceiver')
       if (receiver === undefined) throw new Error('member-question snapshot: receiver unavailable')
