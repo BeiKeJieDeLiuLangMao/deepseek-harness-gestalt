@@ -1,10 +1,14 @@
 /** Login dialog: device, PKCE, or GLM Coding Plan key. */
 import { useEffect, useState } from 'react'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { AccountPoolLoginKind, AccountPoolLoginStart } from '../../protocol.ts'
 import css from './LoginModal.module.css'
 
+type DesktopCopy = PropsLocale<'desktop'>['t']
+
 export interface LoginModalProps {
+  t: DesktopCopy
   initialProvider: AccountPoolLoginKind
   login?: AccountPoolLoginStart
   onClose: () => void
@@ -13,7 +17,7 @@ export interface LoginModalProps {
   onSubmitGlmKey: (input: { apiKey: string; site: 'cn' | 'international'; organization?: string; project?: string }) => void
 }
 
-export function LoginModal({ initialProvider, login, onClose, onStart, onCancel, onSubmitGlmKey }: LoginModalProps) {
+export function LoginModal({ t, initialProvider, login, onClose, onStart, onCancel, onSubmitGlmKey }: LoginModalProps) {
   const [provider, setProvider] = useState<AccountPoolLoginKind>(initialProvider)
   const [glmApiKey, setGlmApiKey] = useState('')
   const [glmSite, setGlmSite] = useState<'cn' | 'international'>('cn')
@@ -31,20 +35,20 @@ export function LoginModal({ initialProvider, login, onClose, onStart, onCancel,
       <div className={css.dialog} onClick={(event) => { event.stopPropagation() }}>
         <header className={css.header}>
           <div className={css.headerTitle}>
-            <h3>添加账号凭证</h3>
-            <p>Kimi/xAI 设备授权，Codex/Anthropic/Antigravity PKCE，GLM Coding Plan 密钥。</p>
+            <h3>{t('pool.login.title')}</h3>
+            <p>{t('pool.login.intro')}</p>
           </div>
           <button type="button" className={css.closeBtn} onClick={onClose}>✕</button>
         </header>
         <div className={css.body}>
           {step === 'select' && (
             <div className={css.providerList}>
-              <label className={css.label}>选择平台认证类型：</label>
+              <label className={css.label}>{t('pool.login.choose')}</label>
               <div className={css.grid}>
                 {(['kimi', 'xai', 'codex', 'anthropic', 'antigravity', 'glm'] as const).map(kind => (
                   <button key={kind} type="button" className={`${css.providerCard} ${provider === kind ? css.selected : ''}`} onClick={() => { setProvider(kind) }}>
                     <strong>{kind.toUpperCase()}</strong>
-                    <span>{kind === 'glm' ? 'Coding Plan 密钥' : kind === 'kimi' || kind === 'xai' ? '设备授权' : 'PKCE 重定向'}</span>
+                    <span>{kind === 'glm' ? t('pool.login.glm') : kind === 'kimi' || kind === 'xai' ? t('pool.login.device') : t('pool.login.pkce')}</span>
                   </button>
                 ))}
               </div>
@@ -53,34 +57,34 @@ export function LoginModal({ initialProvider, login, onClose, onStart, onCancel,
           {step === 'authorizing' && login !== undefined && (
             <div className={css.authStep}>
               <div className={css.spinner} />
-              <h4>正在等待 {provider.toUpperCase()} {isDevice ? '设备授权' : '浏览器授权'}…</h4>
+              <h4>{t('pool.login.waiting').replace('{provider}', provider.toUpperCase()).replace('{kind}', isDevice ? t('pool.login.device') : t('pool.login.browser'))}</h4>
               {login.url !== undefined && <div className={css.urlBox}>{login.url}</div>}
               {login.userCode !== undefined && (
-                <div className={css.deviceCodeBox}><span>设备用户码：</span><strong>{login.userCode}</strong></div>
+                <div className={css.deviceCodeBox}><span>{t('pool.login.userCode')}</span><strong>{login.userCode}</strong></div>
               )}
             </div>
           )}
           {step === 'apiKeyForm' && (
             <div className={css.formStep}>
-              <div className={css.formBadge}>GLM Coding Plan</div>
-              <h4 className={css.formTitle}>输入智谱 GLM Coding 订阅凭据</h4>
+              <div className={css.formBadge}>{t('pool.login.glmBadge')}</div>
+              <h4 className={css.formTitle}>{t('pool.login.glmTitle')}</h4>
               <div className={css.fieldGroup}>
-                <label className={css.fieldLabel}>订阅专用 API Key：</label>
+                <label className={css.fieldLabel}>{t('pool.login.apiKey')}</label>
                 <input type="password" className={css.textInput} value={glmApiKey} onChange={(event) => { setGlmApiKey(event.target.value) }} autoComplete="off" />
               </div>
               <div className={css.fieldGroup}>
-                <label className={css.fieldLabel}>站点：</label>
+                <label className={css.fieldLabel}>{t('pool.login.site')}</label>
                 <select className={css.textInput} value={glmSite} onChange={(event) => { setGlmSite(event.target.value as 'cn' | 'international') }}>
                   <option value="cn">open.bigmodel.cn</option>
                   <option value="international">api.z.ai</option>
                 </select>
               </div>
               <div className={css.fieldGroup}>
-                <label className={css.fieldLabel}>团队 organization（可选）：</label>
+                <label className={css.fieldLabel}>{t('pool.login.organization')}</label>
                 <input className={css.textInput} value={organization} onChange={(event) => { setOrganization(event.target.value) }} />
               </div>
               <div className={css.fieldGroup}>
-                <label className={css.fieldLabel}>项目 project（可选）：</label>
+                <label className={css.fieldLabel}>{t('pool.login.project')}</label>
                 <input className={css.textInput} value={project} onChange={(event) => { setProject(event.target.value) }} />
               </div>
             </div>
@@ -90,18 +94,18 @@ export function LoginModal({ initialProvider, login, onClose, onStart, onCancel,
         <footer className={css.footer}>
           {step === 'select' && (
             <>
-              <Button variant="ghost" onClick={onClose}>取消</Button>
+              <Button variant="ghost" onClick={onClose}>{t('sub2api.cancel')}</Button>
               <Button variant="primary" onClick={() => { onStart(provider) }}>
-                {`开始 ${provider.toUpperCase()} 登录`}
+                {t('pool.login.start').replace('{provider}', provider.toUpperCase())}
               </Button>
             </>
           )}
           {step === 'authorizing' && cancelState !== undefined && (
-            <Button variant="outline" onClick={() => { onCancel(cancelState) }}>取消</Button>
+            <Button variant="outline" onClick={() => { onCancel(cancelState) }}>{t('sub2api.cancel')}</Button>
           )}
           {step === 'apiKeyForm' && (
             <>
-              <Button variant="ghost" onClick={onClose}>取消</Button>
+              <Button variant="ghost" onClick={onClose}>{t('sub2api.cancel')}</Button>
               <Button variant="primary" onClick={() => {
                 onSubmitGlmKey({
                   apiKey: glmApiKey,
@@ -109,7 +113,7 @@ export function LoginModal({ initialProvider, login, onClose, onStart, onCancel,
                   ...organization.trim().length === 0 ? {} : { organization: organization.trim() },
                   ...project.trim().length === 0 ? {} : { project: project.trim() },
                 })
-              }}>保存并接入账号池</Button>
+              }}>{t('pool.login.save')}</Button>
             </>
           )}
         </footer>

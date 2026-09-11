@@ -33,6 +33,7 @@ function renderCard(view: PhoneEnvironmentView, rest: {
 } = {}) {
   render(
     <PhoneSettingsCard
+      t={((key: keyof typeof zh) => zh[key]) as never}
       enabled={rest.enabled ?? view.kind !== 'off'}
       view={view}
       onEnabledChange={rest.onEnabledChange ?? (() => {})}
@@ -296,7 +297,7 @@ describe('PhoneSettingsSection', () => {
       },
     })
     const props = {
-      t: (key: keyof typeof zh) => zh[key],
+      t: ((key: keyof typeof zh) => zh[key]) as never,
       usePhoneSettingsCard: bindSnapshotSelector(store),
       setEnabled: vi.fn(),
       redetect: vi.fn(),
@@ -343,7 +344,7 @@ describe('PhoneSettingsSection', () => {
       },
     })
     const props = {
-      t: (key: keyof typeof zh) => zh[key],
+      t: ((key: keyof typeof zh) => zh[key]) as never,
       usePhoneSettingsCard: bindSnapshotSelector(store),
       setEnabled: vi.fn(), redetect: vi.fn(), copyCommand: vi.fn(), nextAction: vi.fn(),
       prepareRuntime: vi.fn(), cancelRuntime: vi.fn(), refreshRuntime: vi.fn(),
@@ -376,7 +377,7 @@ describe('PhoneSettingsSection', () => {
       platforms: { android: { kind: 'deferred' }, ios: { kind: 'runtime-missing', plan } },
     })
     const props = {
-      t: (key: keyof typeof zh) => zh[key], usePhoneSettingsCard: bindSnapshotSelector(store),
+      t: ((key: keyof typeof zh) => zh[key]) as never, usePhoneSettingsCard: bindSnapshotSelector(store),
       setEnabled: vi.fn(), redetect: vi.fn(), copyCommand: vi.fn(), nextAction: vi.fn(),
       prepareRuntime: vi.fn(), cancelRuntime: vi.fn(), refreshRuntime: vi.fn(),
       prepareAndroid: vi.fn(), cancelAndroid: vi.fn(), refreshAndroid: vi.fn(), startAndroid: vi.fn(),

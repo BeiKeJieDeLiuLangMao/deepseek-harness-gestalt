@@ -23,9 +23,23 @@ const repoRoot = resolve(import.meta.dirname, '..')
 const corpusRoot = join(repoRoot, 'snapshots')
 const profiles = ['acp', 'sdk', 'session', 'web'] as const
 const snapshotAdapters = [
+  'apps/cli/tests/profiles/headless/tests/deferred-phone-tools.snapshot.ts',
+  'apps/cli/tests/web-browser-open.snapshot.ts',
+  'apps/desktop/tests/member-question-e2e/assembled-project-members.snapshot.ts',
+  'apps/desktop/tests/member-question-e2e/document-chunk-reassembly.snapshot.ts',
+  'apps/mobile/tests/mobile-entry.snapshot.ts',
+  'apps/mobile/tests/product-entry.snapshot.ts',
+  'apps/platform/tests/bootstrap-deployment.snapshot.ts',
+  'apps/platform/tests/homepage-discovery.snapshot.ts',
+  'apps/web/tests/command-image-envelope.snapshot.ts',
+  'apps/web/tests/desktop-schedule.snapshot.ts',
+  'apps/web/tests/home-path-tilde.snapshot.ts',
+  'apps/web/tests/member-question-receiving.snapshot.ts',
   'apps/web/tests/message-feedback-protocol.snapshot.ts',
   'apps/web/tests/minimal-preset.snapshot.ts',
   'apps/web/tests/preset-migration.snapshot.ts',
+  'scripts/noise-product-channel.snapshot.ts',
+  'scripts/noise-security-path.snapshot.ts',
   'snapshots/acp/acp.snapshot.ts',
   'snapshots/sdk/sdk.snapshot.ts',
   'snapshots/session/headless.snapshot.ts',

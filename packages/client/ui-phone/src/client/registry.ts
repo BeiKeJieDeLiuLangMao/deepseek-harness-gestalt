@@ -6,13 +6,14 @@ import type {
 } from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type { PhoneConnectionController } from './phone-connection.ts'
 import { phoneDeviceIdOf } from './phone-device-id.ts'
+import { zh } from './locales.ts'
 
 /** Official singleton Phone kind. */
 export const PHONE_TAB_ID = 'phone'
 /** Stable official definition id. */
 export const PHONE_DEFINITION_ID = '@deepseek-ai/dsh-client-ui-phone/phone'
 /** zh fallback used by React-free helpers and invariants. */
-export const PHONE_TAB_TITLE = '手机'
+export const PHONE_TAB_TITLE = zh.tab
 /** + menu position after Browser. */
 export const PHONE_TAB_ORDER = 55
 /** Platforms shown by the picker. */

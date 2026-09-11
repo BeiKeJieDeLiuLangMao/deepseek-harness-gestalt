@@ -34,7 +34,10 @@ export const SIDEBAR_RIGHT_TITLE_BAR_STRIP_MAX = 120
 /** Default of {@link SidebarRightPreferences.titleBarStripPx}. */
 export const SIDEBAR_RIGHT_TITLE_BAR_STRIP_DEFAULT = 40
 
-/** Supported frame compatibility schemes. */
+/**
+ * Supported frame compatibility schemes.
+ * @uiI18n protocol
+ */
 export const SIDEBAR_RIGHT_TITLE_BAR_SCHEMES = ['auto', 'web', 'preset', 'custom'] as const
 /** Frame compatibility scheme. */
 export type SidebarRightTitleBarScheme = typeof SIDEBAR_RIGHT_TITLE_BAR_SCHEMES[number]

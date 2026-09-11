@@ -877,7 +877,7 @@ workspaceDesktop(): { name: string; available: boolean; fileManager: 'finder' | 
 @Remote({ mode: 'stream' }) control(signal: AbortSignal): AsyncIterable<SessionControlFrame>
 ```
 
-Types: [SessionId](core.md) · [SessionInspection](persistence.md) · [SessionSearchRequest](session-query.md)
+Types: [ModelCatalog](llm-streaming.md) · [SessionId](core.md) · [SessionInspection](persistence.md) · [SessionSearchRequest](session-query.md)
 
 Source: [`packages/api/session-controller/src/index.ts`](../../packages/api/session-controller/src/index.ts)
 
@@ -1012,7 +1012,7 @@ list(): Session[]
 fork(source: SessionForkSource, boundary?: SessionSeq, childSessionId?: SessionId): Session
 ```
 
-Types: [CreateSessionOptions](persistence.md) · [PrepareSessionOptions](persistence.md) · [SessionId](core.md)
+Types: [CreateSessionOptions](persistence.md) · [PrepareSessionOptions](persistence.md) · [SessionId](core.md) · [SessionSeq](core.md)
 
 Source: [`packages/core/session/src/index.ts`](../../packages/core/session/src/index.ts)
 

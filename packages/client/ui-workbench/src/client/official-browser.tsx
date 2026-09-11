@@ -19,6 +19,8 @@ import type { OfficialBrowserPayload } from '@deepseek-ai/dsh-client-ui-better-s
 import { bindBrowserWorkspace, type BrowserWorkspaceRemoteFace } from './remote-bind.ts'
 
 export const OFFICIAL_BROWSER_KIND = 'browser'
+/** @uiI18n protocol */
+const OFFICIAL_BROWSER_FALLBACK_TITLE = 'Browser'
 
 export function officialBrowserTargetKey(target: BrowserTarget): string {
   return `${target.profileId}/${target.workspaceId}/${target.browserId}/${target.tabId}`
@@ -171,7 +173,7 @@ export class OfficialBrowserRuntime {
         if (claimed.has(key) || this.closing.has(key)) continue
         void this.ctx.sidebarRight.forSession(sessionId).openTab(OFFICIAL_BROWSER_KIND, {
           instanceId: key,
-          title: page.url ?? 'Browser',
+          title: page.url ?? OFFICIAL_BROWSER_FALLBACK_TITLE,
           payload: {
             target: { ...page.target },
             ...(page.url === undefined ? {} : { url: page.url }),

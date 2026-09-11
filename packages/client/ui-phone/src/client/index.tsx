@@ -12,7 +12,7 @@ import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type { DeviceId } from '@deepseek-ai/dsh-phone-runtime'
 import z from '@deepseek-ai/schemastery'
 import type { ReactNode } from 'react'
-import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
@@ -92,10 +92,12 @@ interface OfficialPhoneBodyInjected {
   readonly occupiedTitle: (name: string) => string
 }
 
-type OfficialPhoneBodyProps = PropsRuntime<'sidebar.right.pane.tab'> & OfficialPhoneBodyInjected
+type OfficialPhoneBodyProps = PropsRuntime<'sidebar.right.pane.tab'>
+  & PropsLocale<'settings.phone-devices'>
+  & OfficialPhoneBodyInjected
 
 export function OfficialPhoneBody({
-  useTabInfo, gate, source, runtime, createController, title, occupiedTitle,
+  t, useTabInfo, gate, source, runtime, createController, title, occupiedTitle,
 }: OfficialPhoneBodyProps): ReactNode {
   const { tab } = useTabInfo()
   const device = phoneDeviceTabMetaOf(tab.payload)
@@ -103,11 +105,12 @@ export function OfficialPhoneBody({
     tab.actions.update({ title: occupiedTitle(name), payload: { kind: 'device', serial, name } })
   }
   if (device === undefined) {
-    return <PhoneTab gate={gate} source={source} onOpenDevice={onOpenDevice} />
+    return <PhoneTab t={t} gate={gate} source={source} onOpenDevice={onOpenDevice} />
   }
   const controller = runtime.controllerFor(tab.sessionId, tab.id)
   return (
     <PhoneConnectedView
+      t={t}
       serial={device.serial}
       name={device.name}
       visible={tab.visible}
@@ -222,6 +225,7 @@ export function apply(ctx: ClientContext, config: Config): void {
       ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
         name: 'sidebar.right.pane.tab',
         key: PHONE_DEFINITION_ID,
+        locale: NS,
         inject: () => ({
           gate, source: listing, runtime: occurrenceRuntime, createController, title, occupiedTitle,
         }),

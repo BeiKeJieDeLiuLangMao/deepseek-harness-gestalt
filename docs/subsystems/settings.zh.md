@@ -353,6 +353,8 @@ Host service backing the generated `ctx.remote.settings` namespace. Every remote
 @Remote async testWebSearch( query: string | undefined, signal: AbortSignal, ): Promise<SettingsWebSearchProbeValue>
 ```
 
+Types: [AgentPresetDirectoryOpenValue](core.zh.md)
+
 Source: [`packages/api/settings-controller/src/index.ts`](../../packages/api/settings-controller/src/index.ts)
 
 <a id="settings-events"></a>

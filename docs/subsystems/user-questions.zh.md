@@ -390,7 +390,7 @@ abstract bindIfCurrent( accountId: PlatformAccountId, projectId: ProjectId, expe
 abstract resolve( accountId: PlatformAccountId, projectId: ProjectId, ): Promise<Branded<'WorkspaceId'>>
 ```
 
-Types: [Branded](core.zh.md) · [PlatformAccountId](platform-account.zh.md) · [ProjectId](project-membership.zh.md) · [WorkspaceId](workspace.zh.md)
+Types: [CompanionMemberQuestionSettledResult](remote-protocol.zh.md) · [PlatformAccountId](platform-account.zh.md) · [ProjectId](project-membership.zh.md) · [WorkspaceId](workspace.zh.md)
 
 Source: [`packages/interaction/member-question-receiver/src/index.ts`](../../packages/interaction/member-question-receiver/src/index.ts)
 
@@ -450,6 +450,8 @@ abstract withdraw(questionId: MemberQuestionId): Promise<void>
 abstract queryTerminal(questionId: MemberQuestionId): Promise<CompanionMemberQuestionSettledResult | undefined>
 ```
 
+Types: [CompanionMemberQuestionSettledResult](remote-protocol.zh.md)
+
 Source: [`packages/interaction/member-question-sender/src/index.ts`](../../packages/interaction/member-question-sender/src/index.ts)
 
 <a id="ctxmemberquestionworkspacebinding--memberquestionworkspacebinding"></a>
@@ -494,7 +496,7 @@ bindIfCurrent( accountId: PlatformAccountId, projectId: ProjectId, expectedWorks
 resolve(accountId: PlatformAccountId, projectId: ProjectId): Promise<Branded<'WorkspaceId'>>
 ```
 
-Types: [Branded](core.zh.md) · [PlatformAccountId](platform-account.zh.md) · [ProjectId](project-membership.zh.md) · [WorkspaceId](workspace.zh.md)
+Types: [PlatformAccountId](platform-account.zh.md) · [ProjectId](project-membership.zh.md) · [WorkspaceId](workspace.zh.md)
 
 Source: [`packages/interaction/member-question-receiver/src/types.ts`](../../packages/interaction/member-question-receiver/src/types.ts)
 

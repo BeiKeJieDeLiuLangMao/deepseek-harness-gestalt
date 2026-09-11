@@ -139,6 +139,16 @@ const desktopE2EProfile = applyDesktopE2EProfile({
 })
 const windowPresentation: DesktopWindowPresentation = desktopE2EProfile?.windowPresentation ?? 'visible'
 let systemFetch: typeof globalThis.fetch
+/**
+ * Native window title for the Desktop Host.
+ * @uiI18n brand
+ */
+const DESKTOP_WINDOW_TITLE = 'DeepSeek Gestalt'
+/**
+ * macOS application-menu item that starts an update check.
+ * @uiI18n protocol
+ */
+const DESKTOP_UPDATE_MENU_LABEL = 'Check for Updates…'
 const PRELOAD = join(here, 'preload.cjs')
 const OPERATED_PLATFORM_CONFIG = join(here, 'operated-platform.json')
 const CLIPROXYAPI_SOURCE_CONFIG = join(here, 'cliproxyapi-source.json')
@@ -434,17 +444,21 @@ async function handleDesktopCompanionOperation(
   }
   const attachmentKey = snowPairingVault.attachmentKey(selector)
   if (attachmentKey === undefined) {
+    /** @uiI18n diagnostic */
+    const pairingRevoked = 'Personal Pairing is no longer active'
     return {
       type: 'operation-failed', operationId: operation.operationId,
-      failure: { kind: 'business', code: 'pairing-revoked', message: 'Personal Pairing is no longer active' },
+      failure: { kind: 'business', code: 'pairing-revoked', message: pairingRevoked },
     }
   }
   const desktopName = account.installationPresentation()?.name
   if (desktopName === undefined) {
     attachmentKey.fill(0)
+    /** @uiI18n diagnostic */
+    const installationUnavailable = 'Desktop Installation presentation is unavailable'
     return {
       type: 'operation-failed', operationId: operation.operationId,
-      failure: { kind: 'business', code: 'installation-unavailable', message: 'Desktop Installation presentation is unavailable' },
+      failure: { kind: 'business', code: 'installation-unavailable', message: installationUnavailable },
     }
   }
   try {
@@ -518,7 +532,7 @@ function createWindow(): BrowserWindow {
     minHeight: 560,
     ...desktopWindowConstructorOptions(windowPresentation),
     backgroundColor: bootBackgroundColor(nativeTheme.shouldUseDarkColors),
-    title: 'DeepSeek Gestalt',
+    title: DESKTOP_WINDOW_TITLE,
     webPreferences: {
       preload: PRELOAD,
       contextIsolation: true,
@@ -1231,7 +1245,7 @@ function installMenu(): void {
       submenu: [
         { role: 'about' as const },
         { type: 'separator' as const },
-        { label: 'Check for Updates…', click: () => { updater?.checkForUpdates() } },
+        { label: DESKTOP_UPDATE_MENU_LABEL, click: () => { updater?.checkForUpdates() } },
         { type: 'separator' as const },
         { role: 'quit' as const },
       ],

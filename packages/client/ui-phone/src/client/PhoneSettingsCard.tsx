@@ -6,6 +6,7 @@
 import type { ReactNode } from 'react'
 import clsx from 'clsx'
 import type { DeviceId } from '@deepseek-ai/dsh-phone-runtime'
+import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type {
   PhoneEnvironmentCheck, PhoneEnvironmentError, PhoneEnvironmentView, PhoneReadyDevice,
 } from './phone-environment.ts'
@@ -13,7 +14,10 @@ import { PhoneTabIcon } from './phone-icon.tsx'
 import css from './PhoneSettingsCard.module.css'
 
 /** Props of the phone settings card, threaded from the slot inject face. */
+type PhoneCopy = PropsLocale<'settings.phone-devices'>['t']
+
 export interface PhoneSettingsCardProps {
+  readonly t: PhoneCopy
   /** Durable `ui-phone.enabled`; false keeps the off chrome. */
   readonly enabled: boolean
   /** Environment view the card switches on. */
@@ -30,43 +34,11 @@ export interface PhoneSettingsCardProps {
   readonly onOpenDevice: (deviceId: DeviceId) => void
 }
 
-const DEVICE_GROUPS: readonly {
-  readonly id: PhoneReadyDevice['group']
-  readonly title: string
-}[] = [
-  { id: 'android-emulator', title: '模拟器 · ANDROID' },
-  { id: 'ios-simulator', title: '模拟器 · IOS' },
-  { id: 'usb', title: 'USB 真机' },
+const DEVICE_GROUPS: readonly PhoneReadyDevice['group'][] = [
+  'android-emulator',
+  'ios-simulator',
+  'usb',
 ]
-
-type PhoneEnvironmentKind = PhoneEnvironmentView['kind']
-
-const TITLES = {
-  off: '手机设备',
-  probing: '手机设备',
-  'android-wizard': '创建第一台 Android 模拟器',
-  'ios-wizard': 'iOS 环境差两步',
-  ready: '手机设备',
-  errors: '手机设备',
-} satisfies Record<PhoneEnvironmentKind, string>
-
-const DESCRIPTIONS = {
-  off: '把 Android / iOS 模拟器与 USB 真机接入会话。启用后 Agent 获得设备工具，你可以在右侧面板实时观看画面并随时接管。',
-  probing: '正在检测本机的调试工具与模拟器运行时，检测完成后按缺失项给出指引。',
-  'android-wizard': '尚无设备。请在上方 Android 分栏一键准备默认模拟器，或连接已启用 USB 调试的真机。',
-  'ios-wizard': '仅 macOS 可用；需要完整 Xcode。先补齐模拟器运行时，再创建一台 iPhone 模拟器。',
-  ready: '环境就绪。点击任一设备的「打开面板」在右侧查看实时画面，Agent 的 device_* 工具同时生效。',
-  errors: '启用后发现的问题列在这里，每条都带下一步动作；处理完条目自动消失。',
-} satisfies Record<PhoneEnvironmentKind, string>
-
-const FOOTERS = {
-  off: <p className={css.foot}>关闭时不注册任何 device_* 工具，也不监听 adb / mobilecli 进程；本机环境不受影响。</p>,
-  probing: null,
-  'android-wizard': <p className={css.foot}>Android 自动准备与 USB 调试、RSA 信任等人工前置条件分开显示。</p>,
-  'ios-wizard': <p className={css.foot}>模拟器由设备控制代理连接；真机上的每次点击都有真实后果，涉及登录与支付的步骤请人工接管。</p>,
-  ready: <p className={css.foot}>停止的设备先用「启动」拉起再打开面板；清单变化会实时刷新，无需重启会话。</p>,
-  errors: null,
-} satisfies Record<PhoneEnvironmentKind, ReactNode>
 
 function assertNever(value: never): never {
   throw new Error(`unhandled phone environment view: ${JSON.stringify(value)}`)
@@ -78,7 +50,7 @@ function assertNever(value: never): never {
  * @returns the card.
  */
 export function PhoneSettingsCard(props: PhoneSettingsCardProps): ReactNode {
-  const { enabled, view, onEnabledChange, onRedetect, onCopy, onNextAction, onOpenDevice } = props
+  const { t, enabled, view, onEnabledChange, onRedetect, onCopy, onNextAction, onOpenDevice } = props
   return (
     <article className={css.card}>
       <header className={css.head}>
@@ -86,23 +58,23 @@ export function PhoneSettingsCard(props: PhoneSettingsCardProps): ReactNode {
           <PhoneTabIcon size={20} />
         </div>
         <div className={css.titleBlock}>
-          <h3 className={css.title}>{titleOf(view)}</h3>
-          <p className={css.description}>{descriptionOf(view)}</p>
+          <h3 className={css.title}>{titleOf(view, t)}</h3>
+          <p className={css.description}>{descriptionOf(view, t)}</p>
         </div>
         {view.kind === 'ready' && (
           <span className={css.summary}>
             <span className={clsx(css.dot, css.dotOn)} />
-            {`环境正常 · ${String(view.availableCount)} 台可用`}
+            {t('card.summary').replace('{count}', String(view.availableCount))}
           </span>
         )}
         {view.kind === 'ready' && (
-          <button type="button" className={css.ghost} onClick={onRedetect}>重新检测</button>
+          <button type="button" className={css.ghost} onClick={onRedetect}>{t('common.redetect')}</button>
         )}
         <label className={css.switch}>
           <input
             type="checkbox"
             role="switch"
-            aria-label="启用手机设备"
+            aria-label={t('card.enable')}
             checked={enabled}
             onChange={(event) => { onEnabledChange(event.target.checked) }}
           />
@@ -110,22 +82,32 @@ export function PhoneSettingsCard(props: PhoneSettingsCardProps): ReactNode {
           <span className={css.knob} />
         </label>
       </header>
-      {bodyOf(view, { onCopy, onNextAction, onOpenDevice })}
-      {footerOf(view)}
+      {bodyOf(view, t, { onCopy, onNextAction, onOpenDevice })}
+      {footerOf(view, t)}
     </article>
   )
 }
 
-function titleOf(view: PhoneEnvironmentView): string {
-  return TITLES[view.kind]
+function titleOf(view: PhoneEnvironmentView, t: PhoneCopy): string {
+  if (view.kind === 'android-wizard') return t('card.title.androidWizard')
+  if (view.kind === 'ios-wizard') return t('card.title.iosWizard')
+  return t('title')
 }
 
-function descriptionOf(view: PhoneEnvironmentView): string {
-  return DESCRIPTIONS[view.kind]
+function descriptionOf(view: PhoneEnvironmentView, t: PhoneCopy): string {
+  switch (view.kind) {
+    case 'off': return t('card.description.off')
+    case 'probing': return t('card.description.probing')
+    case 'android-wizard': return t('card.description.androidWizard')
+    case 'ios-wizard': return t('card.description.iosWizard')
+    case 'ready': return t('card.description.ready')
+    case 'errors': return t('card.description.errors')
+  }
 }
 
 function bodyOf(
   view: PhoneEnvironmentView,
+  t: PhoneCopy,
   actions: {
     onCopy: (command: string) => void
     onNextAction: (kind: string) => void
@@ -136,13 +118,13 @@ function bodyOf(
     case 'off':
       return null
     case 'probing':
-      return <ProbingBody checks={view.checks} />
+      return <ProbingBody t={t} checks={view.checks} />
     case 'android-wizard':
-      return <AndroidWizardBody platformToolsInstalled={view.platformToolsInstalled} onCopy={actions.onCopy} />
+      return <AndroidWizardBody t={t} platformToolsInstalled={view.platformToolsInstalled} onCopy={actions.onCopy} />
     case 'ios-wizard':
-      return <IosWizardBody />
+      return <IosWizardBody t={t} />
     case 'ready':
-      return <ReadyBody devices={view.devices} onOpenDevice={actions.onOpenDevice} />
+      return <ReadyBody t={t} devices={view.devices} onOpenDevice={actions.onOpenDevice} />
     case 'errors':
       return <ErrorsBody errors={view.errors} onNextAction={actions.onNextAction} />
     default:
@@ -150,16 +132,22 @@ function bodyOf(
   }
 }
 
-function footerOf(view: PhoneEnvironmentView): ReactNode {
-  return FOOTERS[view.kind]
+function footerOf(view: PhoneEnvironmentView, t: PhoneCopy): ReactNode {
+  switch (view.kind) {
+    case 'off': return <p className={css.foot}>{t('card.footer.off')}</p>
+    case 'android-wizard': return <p className={css.foot}>{t('card.footer.androidWizard')}</p>
+    case 'ios-wizard': return <p className={css.foot}>{t('card.footer.iosWizard')}</p>
+    case 'ready': return <p className={css.foot}>{t('card.footer.ready')}</p>
+    default: return null
+  }
 }
 
-function ProbingBody({ checks }: { checks: readonly PhoneEnvironmentCheck[] }): ReactNode {
+function ProbingBody({ t, checks }: { t: PhoneCopy; checks: readonly PhoneEnvironmentCheck[] }): ReactNode {
   return (
     <div className={css.body}>
       <div className={css.probeLine}>
         <span className={css.spinner} aria-hidden="true" />
-        正在探测 PATH、ANDROID_HOME 与 Xcode 组件…
+        {t('card.probing')}
       </div>
       <div className={css.checklist}>
         {checks.map(check => (
@@ -187,6 +175,7 @@ function CheckMark({ status }: { status: PhoneEnvironmentCheck['status'] }): Rea
 }
 
 function AndroidWizardBody(props: {
+  t: PhoneCopy
   platformToolsInstalled: boolean
   onCopy: (command: string) => void
 }): ReactNode {
@@ -196,38 +185,38 @@ function AndroidWizardBody(props: {
       <div className={css.steps}>
         <span className={clsx(css.stepchip, props.platformToolsInstalled && css.stepDone)}>
           <i>{props.platformToolsInstalled ? '✓' : '1'}</i>
-          platform-tools 已安装
+          {props.t('card.platformTools')}
         </span>
-        <span className={css.stepchip}><i>2</i>下载系统镜像</span>
-        <span className={css.stepchip}><i>3</i>创建 AVD</span>
-        <span className={css.stepchip}><i>4</i>启动模拟器</span>
+        <span className={css.stepchip}><i>2</i>{props.t('card.step.image')}</span>
+        <span className={css.stepchip}><i>3</i>{props.t('card.step.avd')}</span>
+        <span className={css.stepchip}><i>4</i>{props.t('card.step.boot')}</span>
       </div>
       <div className={clsx(css.alert, css.info)}>
-        <span className={clsx(css.iconDot, css.infoDot)} aria-hidden="true">A</span>
+        <span className={clsx(css.iconDot, css.infoDot)} aria-hidden="true" translate="no">A</span>
         <p>
-          Android 环境尚未准备
-          <small>使用上方 Android 分栏查看下载来源、磁盘需求与 SDK License，然后一键完成。</small>
+          {props.t('card.android.unready')}
+          <small>{props.t('card.android.unreadyDetail')}</small>
         </p>
       </div>
     </div>
   )
 }
 
-function IosWizardBody(): ReactNode {
+function IosWizardBody({ t }: { t: PhoneCopy }): ReactNode {
   return (
     <div className={css.body}>
       <div className={clsx(css.alert, css.warn)}>
         <span className={clsx(css.iconDot, css.warnDot)} aria-hidden="true">!</span>
         <p>
-          iOS 环境尚未准备
-          <small>使用上方 iOS 分栏检测完整 Xcode，并一键下载 iOS Runtime、创建默认模拟器。</small>
+          {t('card.ios.unready')}
+          <small>{t('card.ios.unreadyDetail')}</small>
         </p>
       </div>
       <div className={clsx(css.alert, css.info)}>
-        <span className={clsx(css.iconDot, css.infoDot)} aria-hidden="true">A</span>
+        <span className={clsx(css.iconDot, css.infoDot)} aria-hidden="true" translate="no">A</span>
         <p>
-          USB 真机需要人工授权
-          <small>设备解锁、信任、Developer Mode、Apple ID、系统权限和签名配置保持手动；设备控制代理会报告具体状态。</small>
+          {t('card.usb.manual')}
+          <small>{t('card.usb.manualDetail')}</small>
         </p>
       </div>
     </div>
@@ -235,17 +224,23 @@ function IosWizardBody(): ReactNode {
 }
 
 function ReadyBody(props: {
+  t: PhoneCopy
   devices: readonly PhoneReadyDevice[]
   onOpenDevice: (deviceId: DeviceId) => void
 }): ReactNode {
+  const groupTitle = (id: PhoneReadyDevice['group']): string => {
+    if (id === 'android-emulator') return props.t('card.group.androidEmulator')
+    if (id === 'ios-simulator') return props.t('card.group.iosSimulator')
+    return props.t('card.group.usb')
+  }
   return (
     <div className={css.body}>
       {DEVICE_GROUPS.map((group) => {
-        const rows = props.devices.filter(device => device.group === group.id)
+        const rows = props.devices.filter(device => device.group === group)
         if (rows.length === 0) return null
         return (
-          <section key={group.id} className={css.devGroup} aria-label={group.title}>
-            <div className={css.gname}>{group.title}</div>
+          <section key={group} className={css.devGroup} aria-label={groupTitle(group)}>
+            <div className={css.gname}>{groupTitle(group)}</div>
             {rows.map(device => (
               <div key={device.id} className={css.devRow}>
                 <span
@@ -260,7 +255,7 @@ function ReadyBody(props: {
                   disabled={!device.online}
                   onClick={() => { props.onOpenDevice(device.id) }}
                 >
-                  打开面板
+                  {props.t('card.openPanel')}
                 </button>
               </div>
             ))}

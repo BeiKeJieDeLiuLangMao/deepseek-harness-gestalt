@@ -64,6 +64,7 @@ class SidebarUnderTest {
           occupiedTitle: unknown
         }
         return OfficialPhoneBody({
+          t: (key: string) => key,
           useTabInfo: () => ({
             tab: {
               id: props.tab.id,

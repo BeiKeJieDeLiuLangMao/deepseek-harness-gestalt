@@ -203,4 +203,28 @@ async fetch(request: WebFetchRequest, signal?: AbortSignal): Promise<WebFetchRes
 ```
 
 Source: [`packages/web/web/src/index.ts`](../../packages/web/web/src/index.ts)
+
+<a id="ctxwebhookruntime--webhookruntime"></a>
+
+### `ctx.webhookRuntime` — `WebhookRuntime`
+
+Fire-and-forget rule runtime. Session creation is the only built-in action.
+
+```ts cordis-catalog
+/**
+ * Register one trusted programmatic rule.
+ * @param rule - unique id, provider kind, and arbitrary callback.
+ * @returns awaitable effect disposer that aborts and drains this rule's active callbacks.
+ */
+register<K extends string>(rule: WebhookRule<K>): () => Promise<void>
+
+/**
+ * Start every currently matching rule and return before any callback settles.
+ * @param delivery - authenticated provider data; snapshotted before dispatch.
+ * @throws synchronously when the runtime is closing or the delivery is malformed.
+ */
+dispatch<K extends string>(delivery: VerifiedWebhookDelivery<K>): void
+```
+
+Source: [`packages/webhook/webhook/src/index.ts`](../../packages/webhook/webhook/src/index.ts)
 <!-- END GENERATED cordis-surface -->
