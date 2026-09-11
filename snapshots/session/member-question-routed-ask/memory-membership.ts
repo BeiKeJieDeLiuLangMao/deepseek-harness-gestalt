@@ -16,7 +16,7 @@ import {
   type ProjectId,
   type ProjectView,
   type RosterView,
-} from '@deepseek-ai/dsh-project-membership'
+} from '../../../packages/platform/project-membership/lib/index.js'
 
 /** The one demo project the in-memory store serves. */
 const PROJECT: ProjectView = {

@@ -282,9 +282,13 @@ test('reserves PR kind and legacy labels for pull requests', () => {
 })
 
 test('removes reserved labels from Issues before validation', async (t) => {
+  const previousRepository = process.env.GITHUB_REPOSITORY
   const previousToken = process.env.GH_TOKEN
+  process.env.GITHUB_REPOSITORY = 'deepseek-harness/deepseek-harness'
   process.env.GH_TOKEN = 'test-token'
   t.after(() => {
+    if (previousRepository === undefined) delete process.env.GITHUB_REPOSITORY
+    else process.env.GITHUB_REPOSITORY = previousRepository
     if (previousToken === undefined) delete process.env.GH_TOKEN
     else process.env.GH_TOKEN = previousToken
   })
@@ -321,9 +325,13 @@ test('removes reserved labels from Issues before validation', async (t) => {
 })
 
 test('deletes a stale audit comment after repairing its only violation', async (t) => {
+  const previousRepository = process.env.GITHUB_REPOSITORY
   const previousToken = process.env.GH_TOKEN
+  process.env.GITHUB_REPOSITORY = 'deepseek-harness/deepseek-harness'
   process.env.GH_TOKEN = 'test-token'
   t.after(() => {
+    if (previousRepository === undefined) delete process.env.GITHUB_REPOSITORY
+    else process.env.GITHUB_REPOSITORY = previousRepository
     if (previousToken === undefined) delete process.env.GH_TOKEN
     else process.env.GH_TOKEN = previousToken
   })

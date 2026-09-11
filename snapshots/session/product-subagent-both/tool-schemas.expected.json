@@ -403,13 +403,6 @@
             "type": "string",
             "description": "The complete, self-contained task for the subagent. It does not share this conversation's context, so include everything it needs."
           },
-          "images": {
-            "type": "array",
-            "description": "Optional workspace image file paths attached to the child prompt.",
-            "items": {
-              "type": "string"
-            }
-          },
           "run_in_background": {
             "type": "boolean",
             "description": "Whether to run as a background job and return its id. Defaults to false; collect with job_output or stop with job_kill."
@@ -434,13 +427,6 @@
           "prompt": {
             "type": "string",
             "description": "The complete, self-contained task for the subagent. It does not share this conversation's context, so include everything it needs."
-          },
-          "images": {
-            "type": "array",
-            "description": "Optional workspace image file paths attached to the child prompt.",
-            "items": {
-              "type": "string"
-            }
           },
           "run_in_background": {
             "type": "boolean",
@@ -467,13 +453,6 @@
             "type": "string",
             "description": "The complete, self-contained task for the subagent. It does not share this conversation's context, so include everything it needs."
           },
-          "images": {
-            "type": "array",
-            "description": "Optional workspace image file paths attached to the child prompt.",
-            "items": {
-              "type": "string"
-            }
-          },
           "run_in_background": {
             "type": "boolean",
             "description": "Whether to run as a background job and return its id. Defaults to false; collect with job_output or stop with job_kill."
@@ -498,13 +477,6 @@
           "prompt": {
             "type": "string",
             "description": "The complete, self-contained task for the subagent. It does not share this conversation's context, so include everything it needs."
-          },
-          "images": {
-            "type": "array",
-            "description": "Optional workspace image file paths attached to the child prompt.",
-            "items": {
-              "type": "string"
-            }
           },
           "run_in_background": {
             "type": "boolean",

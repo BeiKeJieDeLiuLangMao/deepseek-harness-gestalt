@@ -10,7 +10,7 @@ Coverage and snapshots on the 0.1.5 merge failed after locale and header pins la
 
 ## Decision
 
-Re-export `BetterSidebarService` from the public Client entry so Typert Client catalog discovery reaches `src/client/context.ts`. Snapshot and profile patches that replace the `tools` config restate `toolSearch.maxResultBytes: 65536` beside `mode`. Generated-host specs import a committed `tests/typert.remote-client.d.ts` copy of the generated Remote merge, and the oxlint typed project references the Gateway Client face. SDK `result.expected.json` matches `normalizeResult` (`sessionId` and `finalResponse` only). Pin `images` only on in-process subagent tools; DSH SDK named tools omit it.
+Re-export `BetterSidebarService` from the public Client entry so Typert Client catalog discovery reaches `src/client/context.ts`. Snapshot and profile patches that replace the `tools` config restate `toolSearch.maxResultBytes: 65536` beside `mode`. Generated-host specs import a committed `tests/typert.remote-client.d.ts` copy of the generated Remote merge, and the oxlint typed project references the Gateway Client face. SDK `result.expected.json` matches `normalizeResult` (`sessionId` and `finalResponse` only). Pin `images` only on in-process `subagent` / `subagent_fork`; out-of-process named tools omit it. PTC schema pins follow live headers (`run_code` only). Issue-management HTTP tests pin `GITHUB_REPOSITORY` so Gestalt CI does not rewrite expected API paths. Snapshot plugins that Node cannot resolve as workspace packages import the package `lib/` file. Inspect catalog fixtures follow live `ToolRuntime` methods (`presentAs` returns a Promise disposer; `allowEligible` / `eligibilityAllow` are public).
 
 ## Alternatives considered
 
