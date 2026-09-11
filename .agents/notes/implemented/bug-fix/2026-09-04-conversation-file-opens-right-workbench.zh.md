@@ -24,4 +24,4 @@ Status: implemented
 
 ## Testing
 
-`packages/client/ui-better-sidebar/tests/open-tab-landing.client.spec.ts` 在底部 pane 为活动时通过 `openTab` 打开带路径的 editor、带 URL 的浏览器 seed，以及纯类型终端。
+`packages/client/ui-sidebar-right/tests/service-foundation.client.spec.ts` 和 `packages/client/ui-sidebar-right/tests/seat.client.spec.tsx` 在右侧工作台保持独立时，用 `surface: 'bottom'` 驱动官方 `openTab` / `openResource`。

@@ -24,4 +24,4 @@ Conversation and agent file opens expand the right panel. Bottom-pane terminals 
 
 ## Testing
 
-`packages/client/ui-better-sidebar/tests/open-tab-landing.client.spec.ts` drives `openTab` with a pathed editor, a URL browser seed, and a type-only terminal while the bottom pane is active.
+`packages/client/ui-sidebar-right/tests/service-foundation.client.spec.ts` and `packages/client/ui-sidebar-right/tests/seat.client.spec.tsx` drive official `openTab` / `openResource` with `surface: 'bottom'` while the right workbench stays independent.
