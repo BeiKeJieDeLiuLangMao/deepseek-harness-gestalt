@@ -50,8 +50,8 @@ Mounted at `ctx.imConfig` for configuration and routing, `ctx.imDelivery` for me
 ### Public Methods: imSimulation
 
 - `getInstance(instanceId: ImSimulationInstanceId): ImSimulationInstance | undefined`
-- `listInstances(): ImSimulationInstance[]`
-- `createInstance(options: CreateSimulationInstanceOptions): Promise<ImSimulationInstance>`
+- `listInstances(): ImSimulationInstance[]` — GUI Remote `listInstances` is the unfiltered export
+- `createInstance(options: CreateSimulationInstanceOptions): Promise<ImSimulationInstance>` — GUI Remote `createInstance` takes `{ workspaceId }` and fills the conversation id from the workspace target
 - `stopInstance(instanceId: ImSimulationInstanceId): Promise<ImSimulationInstance>`
 - `injectMemberMessage(options: InjectMemberMessageOptions): Promise<InboundMessageRecord>`
 - `injectManagedHumanMessage(options: InjectManagedHumanMessageOptions): Promise<InboundMessageRecord>`

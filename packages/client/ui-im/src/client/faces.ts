@@ -29,4 +29,6 @@ export interface ImGuiFace {
   setPanel: (panel: ImGuiSnapshot['conversation']['panel']) => void
   /** Open the simulated-user or tested-agent workspace Session. */
   setRole: (role: ImGuiSnapshot['conversation']['role']) => void
+  /** Create a Host simulation instance for the bound simulated-user workspace. */
+  createSimulation: () => void
 }

@@ -96,6 +96,7 @@ export const zh = {
   roleTested: '被测 Agent',
   openSimuser: '打开模拟用户 Session',
   openTested: '打开被测 Agent Session',
+  createSimulation: '创建模拟实例',
 } satisfies Record<string, string>
 
 /** The IM GUI namespace key union. */
@@ -194,4 +195,5 @@ export const en = {
   roleTested: 'Tested agent',
   openSimuser: 'Open simulated-user session',
   openTested: 'Open tested-agent session',
+  createSimulation: 'Create simulation instance',
 } satisfies Record<ImKey, string>

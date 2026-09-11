@@ -42,6 +42,7 @@ function bind(store = createImGuiStore(prototypeGuiSnapshot())) {
     manualSend: face.manualSend,
     setPanel: face.setPanel,
     setRole: face.setRole,
+    createSimulation: face.createSimulation,
   }
   return {
     store,
@@ -140,6 +141,16 @@ describe('IM GUI surfaces', () => {
     expect(store.getSnapshot().conversation.role).toBe('simuser')
     fireEvent.click(screen.getByRole('button', { name: zh.openTested }))
     expect(store.getSnapshot().conversation.role).toBe('tested')
+  })
+
+  it('offers create simulation instance in the simulated-user role', () => {
+    const seed = prototypeGuiSnapshot()
+    const { conversation } = bind(createImGuiStore({
+      ...seed,
+      conversation: { ...seed.conversation, role: 'simuser' },
+    }))
+    render(<ConversationTab {...conversation} />)
+    expect(screen.getByRole('button', { name: zh.createSimulation })).toBeTruthy()
   })
 
   it('walks the prototype experience route across the three surfaces', () => {

@@ -1,6 +1,6 @@
 /**
  * Host-backed IM GUI controller: persist accounts, routes, simulation
- * targets, and the conversation stream through imConfig and imDelivery remotes.
+ * targets, instances, and the conversation stream through Host remotes.
  */
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
@@ -21,6 +21,7 @@ import {
   createRouteOptionsFromDraft,
   matchingRouteForScope,
   selectedConversationScope,
+  selectedStreamScope,
   snapshotFromHost,
   simulationOptionsFromKey,
   workspaceIdForRole,
@@ -33,12 +34,16 @@ export type ImConfigRemote = ClientContext['remote']['imConfig']
 /** Generated imDelivery Remote namespace mounted by api-remotes. */
 export type ImDeliveryRemote = ClientContext['remote']['imDelivery']
 
+/** Generated imSimulation Remote namespace mounted by api-remotes. */
+export type ImSimulationRemote = ClientContext['remote']['imSimulation']
+
 /**
  * Bind Host remotes as the slot inject face.
  * @param store - GUI snapshot store.
  * @param remote - generated imConfig Remote namespace.
  * @param delivery - generated imDelivery Remote namespace.
  * @param workspace - optional Workspace navigation used to open Session roles.
+ * @param simulation - optional generated imSimulation Remote namespace.
  * @returns the shared GUI face for Settings, workspace cards, and the Sidebar tab.
  */
 export function createHostImGuiFace(
@@ -46,39 +51,57 @@ export function createHostImGuiFace(
   remote: ImConfigRemote,
   delivery: ImDeliveryRemote,
   workspace?: Pick<UiWorkspace, 'openWorkspace'>,
+  simulation?: ImSimulationRemote,
 ): ImGuiFace {
-  const refresh = async (): Promise<void> => {
-    const [accounts, routes, simulations] = await Promise.all([
-      remote.listAccounts(),
-      remote.listRouteRules(),
-      remote.listSimulationConfigs(),
-    ])
-    if (!accounts.ok || !routes.ok || !simulations.ok) return
-    const scope = selectedConversationScope(accounts.value, routes.value, simulations.value)
-    let inbound: Awaited<ReturnType<ImDeliveryRemote['queryHistory']>> = { ok: true, value: [] }
-    let outbound: Awaited<ReturnType<ImDeliveryRemote['listOutbound']>> = { ok: true, value: [] }
-    if (scope !== undefined) {
-      ;[inbound, outbound] = await Promise.all([
-        delivery.queryHistory({ scope }),
-        delivery.listOutbound({ scope }),
+  let refreshChain = Promise.resolve()
+  const refresh = (): Promise<void> => {
+    const run = async (): Promise<void> => {
+      const [accounts, routes, simulations] = await Promise.all([
+        remote.listAccounts(),
+        remote.listRouteRules(),
+        remote.listSimulationConfigs(),
       ])
-    }
-    if (!inbound.ok || !outbound.ok) return
-    store.update((draft) => {
-      const conversation = conversationFromHost(
+      if (!accounts.ok || !routes.ok || !simulations.ok) return
+      const instances = simulation === undefined
+        ? { ok: true as const, value: [] }
+        : await simulation.listInstances()
+      if (!instances.ok) return
+      const scope = selectedStreamScope(
         accounts.value,
         routes.value,
         simulations.value,
-        inbound.value,
-        outbound.value,
-        draft.conversation,
+        instances.value,
+        store.getSnapshot().conversation.role,
       )
-      const next = snapshotFromHost(accounts.value, routes.value, simulations.value, conversation)
-      draft.accounts = next.accounts
-      draft.routes = next.routes
-      draft.simulationByWorkspace = next.simulationByWorkspace
-      draft.conversation = next.conversation
-    })
+      let inbound: Awaited<ReturnType<ImDeliveryRemote['queryHistory']>> = { ok: true, value: [] }
+      let outbound: Awaited<ReturnType<ImDeliveryRemote['listOutbound']>> = { ok: true, value: [] }
+      if (scope !== undefined) {
+        ;[inbound, outbound] = await Promise.all([
+          delivery.queryHistory({ scope }),
+          delivery.listOutbound({ scope }),
+        ])
+      }
+      if (!inbound.ok || !outbound.ok) return
+      store.update((draft) => {
+        const conversation = conversationFromHost(
+          accounts.value,
+          routes.value,
+          simulations.value,
+          inbound.value,
+          outbound.value,
+          draft.conversation,
+          instances.value,
+        )
+        const next = snapshotFromHost(accounts.value, routes.value, simulations.value, conversation)
+        draft.accounts = next.accounts
+        draft.routes = next.routes
+        draft.simulationByWorkspace = next.simulationByWorkspace
+        draft.conversation = next.conversation
+      })
+    }
+    const next = refreshChain.then(run, run)
+    refreshChain = next.then(() => undefined, () => undefined)
+    return next
   }
   void refresh()
   return {
@@ -156,7 +179,17 @@ export function createHostImGuiFace(
           remote.listSimulationConfigs(),
         ])
         if (!accounts.ok || !routes.ok || !simulations.ok) return
-        const scope = selectedConversationScope(accounts.value, routes.value, simulations.value)
+        const instances = simulation === undefined
+          ? { ok: true as const, value: [] }
+          : await simulation.listInstances()
+        if (!instances.ok) return
+        const scope = selectedStreamScope(
+          accounts.value,
+          routes.value,
+          simulations.value,
+          instances.value,
+          store.getSnapshot().conversation.role,
+        )
         if (scope === undefined) return
         const result = await delivery.registerManualOutbound({
           requestId: brandString<ImOutboundRequestId>(`manual-${Date.now()}`),
@@ -196,7 +229,10 @@ export function createHostImGuiFace(
     },
     setRole: (role) => {
       store.update((draft) => { draft.conversation.role = role })
-      if (workspace === undefined || (role !== 'simuser' && role !== 'tested')) return
+      if (workspace === undefined || (role !== 'simuser' && role !== 'tested')) {
+        void refresh()
+        return
+      }
       void (async () => {
         const [accounts, routes, simulations] = await Promise.all([
           remote.listAccounts(),
@@ -206,7 +242,10 @@ export function createHostImGuiFace(
         if (!accounts.ok || !routes.ok || !simulations.ok) return
         const scope = selectedConversationScope(accounts.value, routes.value, simulations.value)
         const workspaceId = workspaceIdForRole(role, routes.value, simulations.value, scope)
-        if (workspaceId === undefined) return
+        if (workspaceId === undefined) {
+          await refresh()
+          return
+        }
         await workspace.openWorkspace(workspaceId, (sessionId) => {
           store.update((draft) => {
             draft.conversation.role = role
@@ -214,6 +253,21 @@ export function createHostImGuiFace(
             else draft.conversation.testedSessionId = sessionId
           })
         })
+        await refresh()
+      })()
+    },
+    createSimulation: () => {
+      if (simulation === undefined) return
+      void (async () => {
+        const listed = await remote.listSimulationConfigs()
+        if (!listed.ok) return
+        const workspaceId = listed.value[0]?.workspaceId
+        if (workspaceId === undefined) return
+        const result = await simulation.createInstance({ workspaceId })
+        if (result.ok) {
+          store.update((draft) => { draft.conversation.role = 'simuser' })
+          await refresh()
+        }
       })()
     },
   }

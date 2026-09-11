@@ -117,6 +117,20 @@ describe('IM simulation transport and workspace tool gating', () => {
     dispose()
   })
 
+  it('creates a GUI simulation instance from the workspace target without a conversation id', async () => {
+    await configService.setSimulationConfig({
+      workspaceId: simUserWorkspaceId,
+      targetAccountId: accountId,
+      conversationKind: 'direct',
+    })
+    const instance = await simulationService.remoteExportCreateInstance({
+      workspaceId: simUserWorkspaceId,
+    })
+    expect(instance.target.conversationId).toBe('gui-all')
+    expect(instance.workspaceId).toBe(simUserWorkspaceId)
+    expect(await simulationService.remoteExportListInstances()).toEqual([instance])
+  })
+
   it('mounts simulation tools on Agents whose workspace has a simulation target', async () => {
     ctx.provide('workspaceRegistry', {
       list: () => [

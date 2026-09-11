@@ -261,6 +261,37 @@ const _deepseek_ai_dsh_im_core_imDelivery_registerManualOutbound_result$schema =
   'status': z.union([z.literal("pending"), z.literal("sent"), z.literal("pre_send_failed"), z.literal("result_unknown"), z.literal("confirmed_failed")]).readonly(),
   'createdAt': z.string().readonly(),
 })
+const _deepseek_ai_dsh_im_core_imSimulation_createInstance_parameter_0$schema = z.object({
+  'workspaceId': z.intersection(z.string(), z.unknown()).readonly(),
+})
+const _deepseek_ai_dsh_im_core_imSimulation_createInstance_result$schema = z.object({
+  'instanceId': z.intersection(z.string(), z.unknown()).readonly(),
+  'workspaceId': z.intersection(z.string(), z.unknown()).readonly(),
+  'testedWorkspaceId': z.intersection(z.string(), z.unknown()).readonly(),
+  'target': z.object({
+  'accountId': z.intersection(z.string(), z.unknown()).readonly(),
+  'conversationKind': z.union([z.literal("direct"), z.literal("group")]).readonly(),
+  'conversationId': z.string().readonly(),
+}).readonly(),
+  'speakingMembers': z.array(z.string()).readonly().optional(),
+  'status': z.union([z.literal("running"), z.literal("stopped")]).readonly(),
+  'createdAt': z.string().readonly(),
+  'stoppedAt': z.string().readonly().optional(),
+})
+const _deepseek_ai_dsh_im_core_imSimulation_listInstances_result$schema = z.array(z.object({
+  'instanceId': z.intersection(z.string(), z.unknown()).readonly(),
+  'workspaceId': z.intersection(z.string(), z.unknown()).readonly(),
+  'testedWorkspaceId': z.intersection(z.string(), z.unknown()).readonly(),
+  'target': z.object({
+  'accountId': z.intersection(z.string(), z.unknown()).readonly(),
+  'conversationKind': z.union([z.literal("direct"), z.literal("group")]).readonly(),
+  'conversationId': z.string().readonly(),
+}).readonly(),
+  'speakingMembers': z.array(z.string()).readonly().optional(),
+  'status': z.union([z.literal("running"), z.literal("stopped")]).readonly(),
+  'createdAt': z.string().readonly(),
+  'stoppedAt': z.string().readonly().optional(),
+}))
 
 export const TYPERT_REMOTE = {
   package: '@deepseek-ai/dsh-im-core',
@@ -363,7 +394,7 @@ export const TYPERT_REMOTE = {
         typeSymbol: '@deepseek-ai/dsh-im-core#imConfig/deleteSimulationConfig:result',
         schema: _deepseek_ai_dsh_im_core_imConfig_deleteSimulationConfig_result$schema,
       },
-      sourceLocation: {"file":"packages/im/im-core/src/service.ts","line":490,"column":9},
+      sourceLocation: {"file":"packages/im/im-core/src/service.ts","line":491,"column":9},
     },
     {
       id: '@deepseek-ai/dsh-im-core#imConfig/getSimulationConfig',
@@ -659,6 +690,48 @@ export const TYPERT_REMOTE = {
         schema: _deepseek_ai_dsh_im_core_imDelivery_registerManualOutbound_result$schema,
       },
       sourceLocation: {"file":"packages/im/im-core/src/delivery/service.ts","line":451,"column":9},
+    },
+    {
+      id: '@deepseek-ai/dsh-im-core#imSimulation/createInstance',
+      service: 'imSimulation',
+      namespace: 'imSimulation',
+      method: 'createInstance',
+      implementation: 'remoteExportCreateInstance',
+      invocation: { kind: 'direct' },
+      parameters: [
+        {
+          name: 'options',
+          wire: 'options',
+          source: 'json',
+          codec: {
+            mode: 'strict',
+            typeSymbol: '@deepseek-ai/dsh-im-core/client#ImGuiCreateSimulationInstanceOptions',
+            schema: _deepseek_ai_dsh_im_core_imSimulation_createInstance_parameter_0$schema,
+          },
+        },
+      ],
+      result: {
+        mode: 'strict',
+        typeSymbol: '@deepseek-ai/dsh-im-core/client#ImSimulationInstance',
+        schema: _deepseek_ai_dsh_im_core_imSimulation_createInstance_result$schema,
+      },
+      sourceLocation: {"file":"packages/im/im-core/src/simulation/service.ts","line":135,"column":9},
+    },
+    {
+      id: '@deepseek-ai/dsh-im-core#imSimulation/listInstances',
+      service: 'imSimulation',
+      namespace: 'imSimulation',
+      method: 'listInstances',
+      implementation: 'remoteExportListInstances',
+      invocation: { kind: 'direct' },
+      parameters: [
+      ],
+      result: {
+        mode: 'strict',
+        typeSymbol: '@deepseek-ai/dsh-im-core#imSimulation/listInstances:result',
+        schema: _deepseek_ai_dsh_im_core_imSimulation_listInstances_result$schema,
+      },
+      sourceLocation: {"file":"packages/im/im-core/src/simulation/service.ts","line":125,"column":9},
     },
   ],
 }

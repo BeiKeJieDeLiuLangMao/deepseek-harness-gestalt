@@ -71,6 +71,7 @@ export function createImGuiFace(store: SnapshotStore<ImGuiSnapshot>): ImGuiFace 
     setRole: (role) => {
       store.update((draft) => { draft.conversation.role = role })
     },
+    createSimulation: () => {},
   }
 }
 

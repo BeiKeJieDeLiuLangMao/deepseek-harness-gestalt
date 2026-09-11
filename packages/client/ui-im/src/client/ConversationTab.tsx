@@ -99,6 +99,11 @@ export function ConversationTab(props: ConversationTabProps) {
           >
             {props.t('openTested')}
           </Button>
+          {conversation.role === 'simuser' && conversation.simulationInstanceId === undefined && (
+            <Button variant="outline" size="sm" onClick={() => { props.createSimulation() }}>
+              {props.t('createSimulation')}
+            </Button>
+          )}
         </div>
       </div>
       <div className={`${css.strip} ${stripClass ?? ''}`} data-im-strip={conversation.panel}>

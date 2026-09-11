@@ -18,6 +18,7 @@ export interface ImSimulationTargetSnapshot {
   readonly conversationId: string
 }
 
+/** Frozen simulation instance the GUI lists and the Sidebar stream binds. */
 export interface ImSimulationInstance {
   readonly instanceId: ImSimulationInstanceId
   readonly workspaceId: WorkspaceId
@@ -29,12 +30,18 @@ export interface ImSimulationInstance {
   readonly stoppedAt?: string
 }
 
+/** Create one simulation instance against a configured workspace target. */
 export interface CreateSimulationInstanceOptions {
   readonly workspaceId: WorkspaceId
   readonly conversationId: string
   readonly conversationKind?: ImConversationKind
   readonly instanceId?: ImSimulationInstanceId
   readonly speakingMembers?: readonly string[]
+}
+
+/** GUI Remote create. Host fills conversation id from the workspace target. */
+export interface ImGuiCreateSimulationInstanceOptions {
+  readonly workspaceId: WorkspaceId
 }
 
 export interface InjectMemberMessageOptions {

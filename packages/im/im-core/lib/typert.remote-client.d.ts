@@ -3,7 +3,7 @@ import type {
   RemoteResult,
   TypertRemoteContribution,
 } from '@deepseek-ai/dsh-typert-protocol'
-import type { CreateImAccountOptions, CreateImRouteRuleOptions, ImAccountId, ImAccountMetadata, ImGuiCancelPendingAiOutboundOptions, ImGuiHistoryQueryOptions, ImGuiInboundView, ImGuiListOutboundOptions, ImGuiOutboundView, ImGuiRegisterManualOutboundOptions, ImRouteRule, ImRouteRuleId, ImWorkspaceSimulationConfig, SetWorkspaceSimulationTargetOptions, UpdateImRouteRuleOptions } from '@deepseek-ai/dsh-im-core/client'
+import type { CreateImAccountOptions, CreateImRouteRuleOptions, ImAccountId, ImAccountMetadata, ImGuiCancelPendingAiOutboundOptions, ImGuiCreateSimulationInstanceOptions, ImGuiHistoryQueryOptions, ImGuiInboundView, ImGuiListOutboundOptions, ImGuiOutboundView, ImGuiRegisterManualOutboundOptions, ImRouteRule, ImRouteRuleId, ImSimulationInstance, ImWorkspaceSimulationConfig, SetWorkspaceSimulationTargetOptions, UpdateImRouteRuleOptions } from '@deepseek-ai/dsh-im-core/client'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 
 declare module '@deepseek-ai/dsh-typert-protocol' {
@@ -27,6 +27,10 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     queryHistory: (options: ImGuiHistoryQueryOptions) => Promise<RemoteResult<ImGuiInboundView[]>>
     registerManualOutbound: (options: ImGuiRegisterManualOutboundOptions) => Promise<RemoteResult<ImGuiOutboundView>>
   }
+  interface TypertRemoteNamespace$696d53696d756c6174696f6e {
+    createInstance: (options: ImGuiCreateSimulationInstanceOptions) => Promise<RemoteResult<ImSimulationInstance>>
+    listInstances: () => Promise<RemoteResult<ImSimulationInstance[]>>
+  }
   interface TypertRemoteMap {
     'imConfig/createRouteRule': (options: CreateImRouteRuleOptions) => Promise<RemoteResult<ImRouteRule>>
     'imConfig/deleteAccount': (id: ImAccountId) => Promise<RemoteResult<boolean>>
@@ -44,10 +48,13 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'imDelivery/listOutbound': (options: ImGuiListOutboundOptions) => Promise<RemoteResult<ImGuiOutboundView[]>>
     'imDelivery/queryHistory': (options: ImGuiHistoryQueryOptions) => Promise<RemoteResult<ImGuiInboundView[]>>
     'imDelivery/registerManualOutbound': (options: ImGuiRegisterManualOutboundOptions) => Promise<RemoteResult<ImGuiOutboundView>>
+    'imSimulation/createInstance': (options: ImGuiCreateSimulationInstanceOptions) => Promise<RemoteResult<ImSimulationInstance>>
+    'imSimulation/listInstances': () => Promise<RemoteResult<ImSimulationInstance[]>>
   }
   interface TypertRemoteNamespaceMap {
     'imConfig': TypertRemoteNamespace$696d436f6e666967
     'imDelivery': TypertRemoteNamespace$696d44656c6976657279
+    'imSimulation': TypertRemoteNamespace$696d53696d756c6174696f6e
   }
 }
 

@@ -605,6 +605,19 @@ getInstance(instanceId: ImSimulationInstanceId): ImSimulationInstance | undefine
 listInstances(): ImSimulationInstance[]
 
 /**
+ * GUI Remote instance list. Workspace filtering stays local.
+ * @returns simulation instances in creation order.
+ */
+@Remote('listInstances') async remoteExportListInstances(): Promise<ImSimulationInstance[]>
+
+/**
+ * GUI Remote create. Host fills conversation id from the workspace target.
+ * @param options - simulated-user workspace.
+ * @returns created simulation instance.
+ */
+@Remote('createInstance') async remoteExportCreateInstance( options: ImGuiCreateSimulationInstanceOptions, ): Promise<ImSimulationInstance>
+
+/**
  * Create a new simulation instance against the workspace's configured simulation target.
  *
  * Invariants:
@@ -755,4 +768,27 @@ async sendMessage(request: WangwangSendMessageRequest): Promise<WangwangSendMess
 ```
 
 Source: [`packages/im/im-wangwang/src/service.ts`](../../packages/im/im-wangwang/src/service.ts)
+
+<a id="imconfig-events"></a>
+
+### `imConfig/*` events
+
+<a id="imconfigsimulation-target--emit"></a>
+
+#### `imConfig/simulation-target` — emit
+
+Workspace simulation target binding was set or cleared.
+
+```ts cordis-catalog
+/**
+ * Workspace simulation target binding was set or cleared.
+ * @param workspaceId - workspace whose simulation target changed.
+ * @mode emit
+ */
+'imConfig/simulation-target'(workspaceId: WorkspaceId): void
+```
+
+Types: [WorkspaceId](workspace.md)
+
+Source: [`packages/im/im-core/src/index.ts`](../../packages/im/im-core/src/index.ts)
 <!-- END GENERATED cordis-surface -->

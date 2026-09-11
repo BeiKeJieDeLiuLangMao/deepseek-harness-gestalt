@@ -105,6 +105,7 @@ export interface ImConversationView {
   role: 'simuser' | 'tested' | 'real'
   simUserSessionId?: string
   testedSessionId?: string
+  simulationInstanceId?: string
   unconfigured: boolean
   messages: ImConversationMessageView[]
 }

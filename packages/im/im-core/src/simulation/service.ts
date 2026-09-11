@@ -8,6 +8,7 @@
 import { Context, Service } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { brandString } from '@deepseek-ai/dsh-brand'
+import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type {} from '@deepseek-ai/dsh-workspace'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 import {
@@ -19,6 +20,7 @@ import {
 import { registerSimulationTools } from './tools.ts'
 import type {
   CreateSimulationInstanceOptions,
+  ImGuiCreateSimulationInstanceOptions,
   ImportJsonlHistoryOptions,
   ImSimulationInstance,
   ImSimulationInstanceId,
@@ -30,7 +32,7 @@ import type {
  * Service managing IM simulation instances, local bidirectional delivery,
  * and test message injections.
  */
-export class ImSimulationService extends Service {
+export class ImSimulationService extends TypertRemoteService {
   static inject = ['imConfig', 'imDelivery']
 
   private instances = new Map<ImSimulationInstanceId, ImSimulationInstance>()
@@ -113,6 +115,36 @@ export class ImSimulationService extends Service {
    */
   listInstances(): ImSimulationInstance[] {
     return Array.from(this.instances.values())
+  }
+
+  /**
+   * GUI Remote instance list. Workspace filtering stays local.
+   * @returns simulation instances in creation order.
+   */
+  @Remote('listInstances')
+  async remoteExportListInstances(): Promise<ImSimulationInstance[]> {
+    return this.listInstances()
+  }
+
+  /**
+   * GUI Remote create. Host fills conversation id from the workspace target.
+   * @param options - simulated-user workspace.
+   * @returns created simulation instance.
+   */
+  @Remote('createInstance')
+  async remoteExportCreateInstance(
+    options: ImGuiCreateSimulationInstanceOptions,
+  ): Promise<ImSimulationInstance> {
+    const simConfig = await this.ctx.imConfig.getSimulationConfig(options.workspaceId)
+    if (!simConfig) {
+      throw new Error(
+        `Simulation target is not configured for workspace "${options.workspaceId}". Simulation tools are unavailable.`,
+      )
+    }
+    return this.createInstance({
+      workspaceId: options.workspaceId,
+      conversationId: simConfig.targetConversationId ?? 'gui-all',
+    })
   }
 
   /**

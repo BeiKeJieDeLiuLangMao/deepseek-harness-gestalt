@@ -19,6 +19,7 @@ import {
   conversationFromHost,
   conversationRecordsFromDelivery,
   snapshotFromHost,
+  selectedStreamScope,
   simulationKeyFromConfig,
   workspaceIdForRole,
 } from '../src/client/host-snapshot.ts'
@@ -199,5 +200,34 @@ describe('IM Host snapshot mapping', () => {
     expect(workspaceIdForRole('tested', [rule], [simulation], scope)).toBe('ws-tested')
     expect(workspaceIdForRole('real', [rule], [simulation], scope)).toBeUndefined()
     expect(workspaceIdForRole('simuser', [rule], [], scope)).toBeUndefined()
+    const instance = {
+      instanceId: 'sim-1' as never,
+      workspaceId: simulation.workspaceId,
+      testedWorkspaceId: rule.workspaceId,
+      target: {
+        accountId: account.id,
+        conversationKind: 'group' as const,
+        conversationId: 'gui-all',
+      },
+      status: 'running' as const,
+      createdAt: '2026-01-01T00:00:00.000Z',
+    }
+    expect(selectedStreamScope([account], [rule], [simulation], [instance], 'simuser')).toMatchObject({
+      kind: 'sim',
+      instanceId: 'sim-1',
+      conversationId: 'gui-all',
+    })
+    expect(selectedStreamScope([account], [rule], [simulation], [instance], 'tested')?.kind).toBe('real')
+    const simConversation = conversationFromHost(
+      [account],
+      [rule],
+      [simulation],
+      [],
+      [],
+      { ...emptyGuiSnapshot().conversation, role: 'simuser' },
+      [instance],
+    )
+    expect(simConversation.title).toBe('模拟：gui-all')
+    expect(simConversation.simulationInstanceId).toBe('sim-1')
   })
 })

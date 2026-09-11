@@ -13,6 +13,7 @@ import type {
   ImRouteRuleId,
   ImGuiInboundView,
   ImGuiOutboundView,
+  ImSimulationInstance,
   ImWorkspaceSimulationConfig,
   SetWorkspaceSimulationTargetOptions,
 } from '@deepseek-ai/dsh-im-core/client'
@@ -234,6 +235,38 @@ export function selectedConversationScope(
 }
 
 /**
+ * Pick the delivery scope the Sidebar stream reads.
+ * Simulated-user role uses a running instance; otherwise the real GUI scope.
+ * @param accounts - durable IM accounts.
+ * @param routes - durable takeover rules.
+ * @param simulations - workspace simulation bindings.
+ * @param instances - Host simulation instances.
+ * @param role - conversation-tab role.
+ * @returns a real or simulation delivery scope, or undefined.
+ */
+export function selectedStreamScope(
+  accounts: readonly ImAccountMetadata[],
+  routes: readonly ImRouteRule[],
+  simulations: readonly ImWorkspaceSimulationConfig[],
+  instances: readonly ImSimulationInstance[],
+  role: ImConversationView['role'],
+): ImDeliveryScope | undefined {
+  if (role === 'simuser') {
+    const workspaceId = simulations[0]?.workspaceId
+    const instance = instances.find(row => row.workspaceId === workspaceId && row.status === 'running')
+    if (instance !== undefined) {
+      return {
+        kind: 'sim',
+        instanceId: instance.instanceId,
+        conversationId: instance.target.conversationId,
+        conversationKind: instance.target.conversationKind,
+      }
+    }
+  }
+  return selectedConversationScope(accounts, routes, simulations)
+}
+
+/**
  * Find the takeover rule that covers a real GUI conversation scope.
  * @param routes - durable takeover rules.
  * @param scope - selected real conversation.
@@ -314,6 +347,7 @@ export function conversationRecordsFromDelivery(
  * @param inbound - history for the selected scope.
  * @param outbound - outbound records for the selected scope.
  * @param previous - prior conversation chrome such as role.
+ * @param instances - Host simulation instances used when role is simuser.
  * @returns Sidebar conversation view.
  */
 export function conversationFromHost(
@@ -323,25 +357,33 @@ export function conversationFromHost(
   inbound: readonly ImGuiInboundView[],
   outbound: readonly ImGuiOutboundView[],
   previous: ImConversationView,
+  instances: readonly ImSimulationInstance[] = [],
 ): ImConversationView {
-  const scope = selectedConversationScope(accounts, routes, simulations)
-  if (scope === undefined || scope.kind !== 'real') {
+  const realScope = selectedConversationScope(accounts, routes, simulations)
+  const scope = selectedStreamScope(accounts, routes, simulations, instances, previous.role)
+  if (realScope === undefined && scope === undefined) {
     return {
       ...emptyConversation(),
       role: previous.role,
       unconfigured: true,
     }
   }
-  const account = accounts.find(row => row.id === scope.accountId)
-  const route = matchingRouteForScope(routes, scope)
+  const chromeScope = realScope ?? (scope?.kind === 'real' ? scope : undefined)
+  const account = chromeScope === undefined
+    ? undefined
+    : accounts.find(row => row.id === chromeScope.accountId)
+  const route = chromeScope === undefined ? undefined : matchingRouteForScope(routes, chromeScope)
   const panel: ImPanelMode = account?.status !== 'connected'
     ? 'offline'
     : route === undefined
       ? 'unknown'
       : route.enabled ? 'live' : 'disabled'
-  const kindLabel = scope.conversationKind === 'direct' ? '私聊' : '群聊'
+  const streamId = scope?.conversationId ?? chromeScope?.conversationId ?? ''
+  const kind = scope?.conversationKind ?? chromeScope?.conversationKind
+  const kindLabel = kind === 'direct' ? '私聊' : '群聊'
+  const prefix = scope?.kind === 'sim' ? '模拟' : kindLabel
   return {
-    title: `${kindLabel}：${scope.conversationId}`,
+    title: `${prefix}：${streamId}`,
     accountName: account?.displayName ?? '',
     panel,
     role: previous.role,
@@ -349,6 +391,7 @@ export function conversationFromHost(
     messages: conversationMessagesFromRecords(conversationRecordsFromDelivery(inbound, outbound)),
     ...(previous.simUserSessionId === undefined ? {} : { simUserSessionId: previous.simUserSessionId }),
     ...(previous.testedSessionId === undefined ? {} : { testedSessionId: previous.testedSessionId }),
+    ...(scope?.kind === 'sim' ? { simulationInstanceId: scope.instanceId } : {}),
   }
 }
 

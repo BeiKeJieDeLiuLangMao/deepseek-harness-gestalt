@@ -1579,6 +1579,18 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'Array of simulation instance records.',
       },
       {
+        signature: '@Remote(\'listInstances\') async remoteExportListInstances(): Promise<ImSimulationInstance[]>',
+        description: 'GUI Remote instance list. Workspace filtering stays local.',
+        parameters: [],
+        returns: 'simulation instances in creation order.',
+      },
+      {
+        signature: '@Remote(\'createInstance\') async remoteExportCreateInstance( options: ImGuiCreateSimulationInstanceOptions, ): Promise<ImSimulationInstance>',
+        description: 'GUI Remote create. Host fills conversation id from the workspace target.',
+        parameters: [{ name: 'options', description: 'simulated-user workspace.' }],
+        returns: 'created simulation instance.',
+      },
+      {
         signature: 'async createInstance(options: CreateSimulationInstanceOptions): Promise<ImSimulationInstance>',
         description: 'Create a new simulation instance against the workspace\'s configured simulation target.\n\nInvariants: 1. Workspace must have configured simulation target in imConfig; throws if unconfigured. 2. Instance target snapshot (accountId, conversationKind, conversationId) is frozen at creation. Subsequent changes to workspace simulation config will not alter this instance.',
         parameters: [{ name: 'options', description: 'Workspace ID, conversation ID, optional conversation kind, instance ID, and speaking members.' }],
@@ -4747,6 +4759,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     parameters: [{ name: 'payload', description: '.change - fresh current projection or clear tombstone.' }],
   },
   {
+    name: 'imConfig/simulation-target',
+    mode: 'emit',
+    signature: '\'imConfig/simulation-target\'(workspaceId: WorkspaceId): void',
+    summary: 'Workspace simulation target binding was set or cleared.',
+    description: 'Workspace simulation target binding was set or cleared.',
+    parameters: [{ name: 'workspaceId', description: 'workspace whose simulation target changed.' }],
+  },
+  {
     name: 'llm/adapters-updated',
     mode: 'emit',
     signature: '\'llm/adapters-updated\'(): void',
@@ -6241,6 +6261,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ImGuiCancelPendingAiOutboundOptions',
     declaration: 'export interface ImGuiCancelPendingAiOutboundOptions {\n    readonly scope: ImDeliveryScope;\n    readonly reason: string;\n}',
+  },
+  {
+    name: 'ImGuiCreateSimulationInstanceOptions',
+    declaration: 'export interface ImGuiCreateSimulationInstanceOptions {\n    readonly workspaceId: WorkspaceId;\n}',
   },
   {
     name: 'ImGuiHistoryQueryOptions',
