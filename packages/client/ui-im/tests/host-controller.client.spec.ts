@@ -455,6 +455,18 @@ describe('IM Host GUI controller', () => {
       sender: 'external',
       who: '成员',
     }])
+    face.setRole('tested')
+    await drain()
+    expect(store.getSnapshot().conversation).toMatchObject({
+      role: 'tested',
+      title: '模拟：gui-all',
+      simulationInstanceId: 'sim-gui',
+    })
+    expect(store.getSnapshot().conversation.messages).toMatchObject([{
+      text: '周末谁值班',
+      sender: 'external',
+      who: '成员',
+    }])
   })
 
   it('stops a running Host simulation instance and returns to the real GUI scope', async () => {

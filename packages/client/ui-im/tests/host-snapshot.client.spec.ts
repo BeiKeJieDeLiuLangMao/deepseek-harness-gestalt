@@ -217,7 +217,12 @@ describe('IM Host snapshot mapping', () => {
       instanceId: 'sim-1',
       conversationId: 'gui-all',
     })
-    expect(selectedStreamScope([account], [rule], [simulation], [instance], 'tested')?.kind).toBe('real')
+    expect(selectedStreamScope([account], [rule], [simulation], [instance], 'tested')).toMatchObject({
+      kind: 'sim',
+      instanceId: 'sim-1',
+      conversationId: 'gui-all',
+    })
+    expect(selectedStreamScope([account], [rule], [simulation], [instance], 'real')?.kind).toBe('real')
     const simConversation = conversationFromHost(
       [account],
       [rule],
@@ -229,5 +234,16 @@ describe('IM Host snapshot mapping', () => {
     )
     expect(simConversation.title).toBe('模拟：gui-all')
     expect(simConversation.simulationInstanceId).toBe('sim-1')
+    const testedConversation = conversationFromHost(
+      [account],
+      [rule],
+      [simulation],
+      [],
+      [],
+      { ...emptyGuiSnapshot().conversation, role: 'tested' },
+      [instance],
+    )
+    expect(testedConversation.title).toBe('模拟：gui-all')
+    expect(testedConversation.simulationInstanceId).toBe('sim-1')
   })
 })

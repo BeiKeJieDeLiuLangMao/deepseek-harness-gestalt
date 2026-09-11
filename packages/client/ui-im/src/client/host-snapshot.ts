@@ -237,7 +237,7 @@ export function selectedConversationScope(
 
 /**
  * Pick the delivery scope the Sidebar stream reads.
- * Simulated-user role uses a running instance; otherwise the real GUI scope.
+ * Simulated-user and tested-agent roles use a running instance; otherwise the real GUI scope.
  * @param accounts - durable IM accounts.
  * @param routes - durable takeover rules.
  * @param simulations - workspace simulation bindings.
@@ -252,19 +252,44 @@ export function selectedStreamScope(
   instances: readonly ImSimulationInstance[],
   role: ImConversationView['role'],
 ): ImDeliveryScope | undefined {
-  if (role === 'simuser') {
-    const workspaceId = simulations[0]?.workspaceId
-    const instance = instances.find(row => row.workspaceId === workspaceId && row.status === 'running')
-    if (instance !== undefined) {
-      return {
-        kind: 'sim',
-        instanceId: instance.instanceId,
-        conversationId: instance.target.conversationId,
-        conversationKind: instance.target.conversationKind,
-      }
+  const instance = runningInstanceForRole(simulations, instances, routes, accounts, role)
+  if (instance !== undefined) {
+    return {
+      kind: 'sim',
+      instanceId: instance.instanceId,
+      conversationId: instance.target.conversationId,
+      conversationKind: instance.target.conversationKind,
     }
   }
   return selectedConversationScope(accounts, routes, simulations)
+}
+
+/**
+ * Running instance owned by the simulated-user workspace or bound to the tested workspace.
+ * @param simulations - workspace simulation bindings.
+ * @param instances - Host simulation instances.
+ * @param routes - durable takeover rules.
+ * @param accounts - durable IM accounts.
+ * @param role - conversation-tab role.
+ * @returns the matching running instance, or undefined.
+ */
+function runningInstanceForRole(
+  simulations: readonly ImWorkspaceSimulationConfig[],
+  instances: readonly ImSimulationInstance[],
+  routes: readonly ImRouteRule[],
+  accounts: readonly ImAccountMetadata[],
+  role: ImConversationView['role'],
+): ImSimulationInstance | undefined {
+  if (role === 'simuser') {
+    const workspaceId = simulations[0]?.workspaceId
+    return instances.find(row => row.workspaceId === workspaceId && row.status === 'running')
+  }
+  if (role === 'tested') {
+    const real = selectedConversationScope(accounts, routes, simulations)
+    const testedWorkspaceId = real === undefined ? undefined : matchingRouteForScope(routes, real)?.workspaceId
+    return instances.find(row => row.testedWorkspaceId === testedWorkspaceId && row.status === 'running')
+  }
+  return undefined
 }
 
 /**
@@ -348,7 +373,7 @@ export function conversationRecordsFromDelivery(
  * @param inbound - history for the selected scope.
  * @param outbound - outbound records for the selected scope.
  * @param previous - prior conversation chrome such as role.
- * @param instances - Host simulation instances used when role is simuser.
+ * @param instances - Host simulation instances used when role is simuser or tested.
  * @returns Sidebar conversation view.
  */
 export function conversationFromHost(
