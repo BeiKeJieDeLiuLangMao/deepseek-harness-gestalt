@@ -8,6 +8,7 @@ import type {
   ImAccountId,
   ImAccountMetadata,
   ImDeliveryScope,
+  ImRealDeliveryScope,
   ImGroupTriggerConfig,
   ImRouteRule,
   ImRouteRuleId,
@@ -210,7 +211,7 @@ export function selectedConversationScope(
   accounts: readonly ImAccountMetadata[],
   routes: readonly ImRouteRule[],
   simulations: readonly ImWorkspaceSimulationConfig[],
-): ImDeliveryScope | undefined {
+): ImRealDeliveryScope | undefined {
   const simulation = simulations[0]
   if (simulation !== undefined) {
     const account = accounts.find(row => row.id === simulation.targetAccountId)
@@ -368,7 +369,7 @@ export function conversationFromHost(
       unconfigured: true,
     }
   }
-  const chromeScope = realScope ?? (scope?.kind === 'real' ? scope : undefined)
+  const chromeScope = realScope
   const account = chromeScope === undefined
     ? undefined
     : accounts.find(row => row.id === chromeScope.accountId)

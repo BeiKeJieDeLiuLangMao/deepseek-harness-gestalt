@@ -13,6 +13,7 @@ export type {
 } from './simulation/types.ts'
 export type {
   ImDeliveryScope,
+  ImRealDeliveryScope,
   ImGuiCancelPendingAiOutboundOptions,
   ImGuiHistoryQueryOptions,
   ImGuiInboundView,
