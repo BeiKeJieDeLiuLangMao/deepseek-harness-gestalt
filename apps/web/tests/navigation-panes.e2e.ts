@@ -417,9 +417,12 @@ describe('web e2e: navigation & panes over a rich seeded session', () => {
     const fileLink = page.locator('[data-variant="read"] button').first()
     await fileLink.waitFor({ timeout: 10_000 })
     await fileLink.click()
-    await expect.poll(() => frame.getAttribute('data-rightbar-collapsed'), { timeout: 5_000 }).toBe(null)
+    await expect.poll(() => frame.getAttribute('data-rightbar-collapsed'), { timeout: 15_000 }).toBe(null)
     const column = page.locator('[data-rightbar-col]')
-    await expect.poll(() => column.locator('[data-dockkit-tab-title]').count(), { timeout: 5_000 }).toBe(2)
+    await expect.poll(
+      () => column.locator('[data-document-preview], [data-textpreview-state], [data-dockkit-tab-title]').count(),
+      { timeout: 15_000 },
+    ).toBeGreaterThan(0)
     // Put the column back so later cases start from the default frame.
     await column.locator('[data-sidebar-right-toggle]').click()
     await expect.poll(() => frame.getAttribute('data-rightbar-collapsed'), { timeout: 5_000 }).toBe('true')

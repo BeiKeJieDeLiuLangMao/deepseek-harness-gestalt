@@ -33,7 +33,7 @@ describe('gen-tool-catalog collectToolCatalog', () => {
       'cordis_undefine', 'create_goal', 'device_act', 'device_close', 'device_list', 'device_observe',
       'device_open', 'device_screenshot', 'edit', 'exit_plan_mode', 'get_goal', 'glob', 'grep',
       'interrupt_agent', 'interrupt_agent', 'job_kill', 'job_list', 'job_output',
-      'list_agents', 'list_agents', 'list_subagent_models', 'lsp', 'present', 'project_members',
+      'list_agents', 'list_agents', 'lsp', 'present', 'project_members',
       'pwsh', 'pwsh', 'ralph',
       'read', 'read_image', 'run_code', 'schedule_create', 'schedule_delete',
       'schedule_list', 'send_message', 'send_message', 'session_event_read', 'session_event_search',
@@ -92,7 +92,7 @@ describe('gen-tool-catalog collectToolCatalog', () => {
     // agents surface this one package as both `subagent` and `subagent_fork`.
     const catalog = await collectToolCatalog()
     const subagent = catalog.find(entry => entry.pkg === '@deepseek-ai/dsh-tool-subagent')
-    expect(subagent?.schemas.map(s => s.name)).toEqual(['list_subagent_models', 'subagent'])
+    expect(subagent?.schemas.map(s => s.name)).toEqual(['subagent'])
     expect(subagent?.note).toMatch(/subagent_fork/)
   })
 

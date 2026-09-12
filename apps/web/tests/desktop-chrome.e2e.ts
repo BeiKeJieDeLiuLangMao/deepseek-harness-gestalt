@@ -10,7 +10,7 @@ import type {} from '@deepseek-ai/dsh-agent-presets'
 import type {} from '@deepseek-ai/dsh-tools'
 import {
   assertFixtureInventory, captureStableAria, compareOrRefreshGolden,
-  fixtureUserPrompts, launchWebScaffold, webSnapshotMode, type WebScaffold,
+  fixtureUserPrompts, launchWebScaffold, selectedSessionFixture, webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
 import { connectFreshWorkspace, writeComposerDraft } from './support.ts'
 
@@ -50,9 +50,12 @@ async function openDesktopPage(
   const target = new URL('/', authenticatedUrl)
   if (overlay) target.searchParams.set('dsh-desktop-overlay', '1')
   await page.goto(target.href, { waitUntil: 'load' })
-  await page.waitForSelector(`[data-desktop-chrome="${platform === 'darwin' ? 'mac' : 'win'}"]`, {
-    timeout: 30_000,
-  })
+  await page.waitForSelector(
+    overlay
+      ? '[data-dsh-desktop-overlay-root], html[data-dsh-desktop-overlay]'
+      : `[data-desktop-chrome="${platform === 'darwin' ? 'mac' : 'win'}"]`,
+    { timeout: 30_000 },
+  )
   return page
 }
 
@@ -81,7 +84,7 @@ describe('web e2e: Desktop Session Surface overlay', () => {
   let winPage: Page
 
   beforeAll(async () => {
-    const fixture = await readFile(FIXTURE, 'utf8')
+    const fixture = await readFile(await selectedSessionFixture(FIXTURE), 'utf8')
     expect(fixtureUserPrompts(fixture)).toEqual([PROMPT])
     scaffold = await launchWebScaffold({
       extraOverlayPath: OVERLAY,

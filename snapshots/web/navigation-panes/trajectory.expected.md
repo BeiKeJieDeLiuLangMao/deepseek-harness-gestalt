@@ -4,6 +4,9 @@
   - button "Collapse calls": Calls
   - img
   - searchbox "Search trajectory"
+  - button "Session log":
+    - text: Session log
+    - img
 - region "Trajectory timeline"
 - table:
   - rowgroup:
