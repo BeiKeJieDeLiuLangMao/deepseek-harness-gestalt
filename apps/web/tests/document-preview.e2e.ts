@@ -1,5 +1,5 @@
 /** Keyless document-preview smoke through a real Session, Files tab, and shipped renderers. */
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -229,6 +229,58 @@ describe.skipIf(MODE === 'record')('web e2e: document preview through Files', ()
       markdownViewers.push(await viewer.innerText())
     }
     expect(sourceFonts[1]).toEqual(sourceFonts[0])
+
+    await viewer.click()
+    await page.getByRole('menuitem', { name: 'Markdown', exact: true }).click()
+    await expect.poll(() => viewer.innerText()).toBe('Markdown')
+    const editorToggle = preview.locator('[data-document-editor-toggle]')
+    await expect.poll(() => editorToggle.isEnabled()).toBe(true)
+    await editorToggle.click()
+    await expect.poll(() => editorToggle.getAttribute('aria-label')).toBe('Preview')
+    await preview.getByRole('button', { name: 'Edit', exact: true }).click()
+    const editor = preview.locator('.cm-content')
+    await editor.waitFor({ state: 'visible', timeout: 15_000 })
+    await editor.click()
+    await page.keyboard.press('ControlOrMeta+End')
+    await page.keyboard.insertText('\nUnsaved editor draft.')
+    await expect.poll(async () => (await editor.textContent())?.includes('Unsaved editor draft.')).toBe(true)
+
+    await filesTab.click()
+    await column.locator('[data-files-state="tree"]').waitFor({ state: 'visible' })
+    await markdownTab.click()
+    await editor.waitFor({ state: 'visible', timeout: 15_000 })
+    await expect.poll(async () => (await editor.textContent())?.includes('Unsaved editor draft.')).toBe(true)
+
+    await viewer.click()
+    await page.getByRole('menuitem', { name: 'Code', exact: true }).click()
+    await expect.poll(() => viewer.innerText()).toBe('Code')
+    await expect.poll(() => preview.locator('.shiki').count()).toBe(1)
+    await viewer.click()
+    await page.getByRole('menuitem', { name: 'Markdown', exact: true }).click()
+    await expect.poll(() => viewer.innerText()).toBe('Markdown')
+    await editorToggle.click()
+    await preview.getByRole('button', { name: 'Edit', exact: true }).click()
+    await editor.waitFor({ state: 'visible', timeout: 15_000 })
+    await editor.click()
+    await page.keyboard.press('ControlOrMeta+End')
+    await page.keyboard.insertText('\nSaved editor text.')
+    const writeRequest = page.waitForRequest(request => request.url().endsWith('/sidebar/api/fs.write'))
+    const writeResponse = page.waitForResponse(response => response.url().endsWith('/sidebar/api/fs.write'))
+    await preview.getByRole('button', { name: 'Save', exact: true }).click()
+    const request = await writeRequest
+    const response = await writeResponse
+    const requestBody = request.postDataJSON() as { sessionId?: unknown; path?: unknown; content?: unknown }
+    expect(request.method()).toBe('POST')
+    expect(requestBody.sessionId).toBe(sessionId)
+    expect(requestBody.path).toBe(join(cwd, 'smoke.md'))
+    expect(requestBody.content).toBe(`${markdownText}\nUnsaved editor draft.\nSaved editor text.`)
+    const responseBody = await response.json()
+    expect({ status: response.status(), body: responseBody }).toEqual({ status: 200, body: { ok: true, value: { ok: true } } })
+    await expect.poll(async () => await readFile(join(cwd, 'smoke.md'), 'utf8')).toContain('Saved editor text.')
+    await expect.poll(async () => (await readFile(join(cwd, 'smoke.md'), 'utf8')).includes('Unsaved editor draft.')).toBe(true)
+    expect((await readFile(join(cwd, 'smoke.md'), 'utf8')).endsWith('Unsaved editor draft.\nSaved editor text.')).toBe(true)
+    await preview.getByRole('heading', { name: 'Markdown smoke', exact: true }).waitFor({ timeout: 15_000 })
+
     sections.push([
       '## Markdown', '',
       `- Heading: ${heading}`,
