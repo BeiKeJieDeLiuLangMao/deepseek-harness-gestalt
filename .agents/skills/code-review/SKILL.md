@@ -61,9 +61,9 @@ Each smell reads *what it is* → *how to fix*; match it against the diff:
 - **Middle Man**: a class or function that mostly just delegates onward. → cut it, call the real target direct.
 - **Refused Bequest**: a subclass or implementer that ignores or overrides most of what it inherits. → drop the inheritance, use composition.
 
-### 4. Spawn both sub-agents in parallel
+### 4. Run both review axes in parallel
 
-Apply [delegation routing and context reuse](../../../docs/agents/delegation-routing.md). An independent review uses fresh children and explicit available routes; continuing the author is not independent review.
+Apply [delegation routing and context reuse](../../../docs/agents/delegation-routing.md). When an orchestrated delivery already has an independent code-review owner, reuse that stable reviewer session and require separate **Standards** and **Spec** reports; it need not create two fresh children. Other independent reviews use fresh children and explicit available routes. The original author is never the reviewer.
 
 **Standards sub-agent prompt** should include:
 
