@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/testing/2026-09-12-desktop-companion-coverage-artifact-prereqs.md
-2026-09-12-desktop-companion-coverage-artifact-prereqs.md: 91c2ebb0132a39ff974871d0ad773621d5197719
-2026-09-12-desktop-companion-coverage-artifact-prereqs.zh.md: 9083b111fc0408e7a8caba69d4cc380f5f7fcb6d
+2026-09-12-desktop-companion-coverage-artifact-prereqs.md: 00d0f7317a61f93e359564ed04e51455db598b9b
+2026-09-12-desktop-companion-coverage-artifact-prereqs.zh.md: aa5480835a8776cc5203afd9120f42ce2adde5fc

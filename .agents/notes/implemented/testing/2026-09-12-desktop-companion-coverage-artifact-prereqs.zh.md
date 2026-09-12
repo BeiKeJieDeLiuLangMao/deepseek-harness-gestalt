@@ -19,7 +19,7 @@ Status: implemented
 2. 在 `tsconfig.base.json` 中添加显式子路径别名：
    `"@deepseek-ai/dsh-client-ui-desktop/protocol": ["./packages/client/ui-desktop/src/protocol.ts"]`
 3. 在 `apps/desktop/scripts/build-main.mjs` 的每次 esbuild 调用中显式传入根 `tsconfig.base.json`，使 workspace 导入不受 importer 位置影响，统一通过仓库源码解析门面解析。
-4. 在 `apps/desktop/tests/packaged-main-bundle.spec.ts` 中，通过 `beforeAll` 显式声明 `generateDesktopHostTypertArtifacts()` 局部前置生成，并在临时移除且可靠恢复 Cordis、Schemastery、deque、timeout 与 Typert protocol 的 `lib/` 目录时证明源码解析。
+4. 在 `apps/desktop/tests/packaged-main-bundle.spec.ts` 中，通过 `beforeAll` 显式声明 `generateDesktopHostTypertArtifacts()` 局部前置生成。在没有预建 Cordis、Schemastery、deque、timeout 或 Typert protocol `lib/` 目录的专属检出树中验证源码解析；常规并行测试不修改仓库级构建产物。
 5. 在 `apps/desktop/tests/host-rpc-assembled.spec.ts` 中，将 `companion-product.ts` 的加载推迟到 `beforeAll` 中 `generateDesktopHostTypertArtifacts()` 执行之后动态导入，匹配 `companion-host-business-error.assembled.spec.ts` 中的安全模式。
 
 ## 备选方案

@@ -1,7 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import {
-  existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync,
-} from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -10,14 +8,6 @@ import { generateDesktopHostTypertArtifacts } from './shipped-web-host.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const desktop = join(here, '..')
-const repoRoot = join(desktop, '..', '..')
-const foundationLibs = [
-  'vendor/cordis/lib',
-  'vendor/schemastery/lib',
-  'packages/util/deque/lib',
-  'packages/util/timeout/lib',
-  'packages/typert/protocol/lib',
-] as const
 
 describe('packaged Desktop main bundle', () => {
   beforeAll(() => {
@@ -92,14 +82,12 @@ describe('packaged Desktop main bundle', () => {
   })
 
   it('inlines workspace packages from source and externalizes native runtime dependencies', () => {
-    withoutFoundationLibs(() => {
-      execFileSync(process.execPath, [
-        join(desktop, 'scripts', 'build-main.mjs'),
-        join(desktop, 'tests', 'fixtures', 'operated-platform.json'),
-      ], {
-        cwd: desktop,
-        stdio: 'pipe',
-      })
+    execFileSync(process.execPath, [
+      join(desktop, 'scripts', 'build-main.mjs'),
+      join(desktop, 'tests', 'fixtures', 'operated-platform.json'),
+    ], {
+      cwd: desktop,
+      stdio: 'pipe',
     })
     const source = readFileSync(join(desktop, 'out', 'main.mjs'), 'utf8')
     const relayHelper = readFileSync(join(desktop, 'out', 'relay-node-helper.cjs'), 'utf8')
@@ -181,28 +169,3 @@ describe('packaged Desktop main bundle', () => {
     expect(existsSync(artifact)).toBe(false)
   })
 })
-
-function withoutFoundationLibs(run: () => void): void {
-  const backup = mkdtempSync(join(tmpdir(), 'dsh-desktop-foundation-libs-'))
-  const moved: Array<{ source: string; backup: string }> = []
-  try {
-    for (const relative of foundationLibs) {
-      const source = join(repoRoot, relative)
-      if (!existsSync(source)) continue
-      if (lstatSync(source).isSymbolicLink() || !realpathSync(source).startsWith(`${realpathSync(repoRoot)}/`)) {
-        throw new Error(`foundation lib must be local to the test worktree: ${relative}`)
-      }
-      const target = join(backup, relative)
-      mkdirSync(dirname(target), { recursive: true })
-      renameSync(source, target)
-      moved.push({ source, backup: target })
-    }
-    run()
-  } finally {
-    for (const artifact of moved.reverse()) {
-      mkdirSync(dirname(artifact.source), { recursive: true })
-      renameSync(artifact.backup, artifact.source)
-    }
-    rmSync(backup, { recursive: true, force: true })
-  }
-}
