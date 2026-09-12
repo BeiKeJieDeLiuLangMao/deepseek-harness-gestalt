@@ -22,7 +22,7 @@ subagent 文本记录也不适合作为持久协调记录。Worker 可以重启�
 
 项目 Codex 角色编码两个常用职责：`ticket_worker` 负责一个 ticket 直至形成经过验证的 PR，但不执行合并；`dsh_reviewer` 以只读方式执行规范与规格双轴评审。无法创建任务或 worktree 时，根任务通过 Agent 工具顺序派发 writer，或报告隔离失败；它不自己写。
 
-[推送前工作流](../../../skills/dsh-pre-push-checks/SKILL.md)选择对外提交所需证据。GUI smoke 和浏览器工作遵循 [Desktop 测试实例与运行时备忘决策](2026-09-02-desktop-test-instance-and-runtime-memo.zh.md)。Writer 不开 pull request。组装验证与 [retro 闸门](2026-09-02-spec-pr-delivery-and-retro.zh.md)通过后，规格 pull request 才进入 `master` 并关闭 tickets。只有在根任务证明终态 ticket 任务干净、已推送、已合并且可由 GitHub 重建后，才归档任务并删除对应 worktree 和分支。创建 tag、GitHub Release、发布、签名、公证和部署始终需要针对该次发布的明确授权。
+[推送前工作流](../../../skills/dsh-pre-push-checks/SKILL.md)选择对外提交所需证据。GUI smoke 和浏览器工作遵循 [Desktop 测试实例与运行时备忘决策](2026-09-02-desktop-test-instance-and-runtime-memo.zh.md)。Writer 不开 pull request。组装验证与 [retro 闸门](2026-09-02-spec-pr-delivery-and-retro.zh.md)通过后，规格 pull request 才进入 `master` 并关闭 tickets。交付完成还要求根任务随后退役该工作：删除已合并的 ticket 与规格分支，移除仍在的精确专用 worktree，并运行 `git worktree prune`。该 `Closes` pull request 显示 MERGED 后，缺失的专用 worktree 已经退役。仍在的 worktree 若还有未合并的唯一工作，则保留并报告。创建 tag、GitHub Release、发布、签名、公证和部署始终需要针对该次发布的明确授权。
 
 ## Alternatives considered
 
@@ -42,4 +42,4 @@ subagent 文本记录也不适合作为持久协调记录。Worker 可以重启�
 
 用户只需提供 ticket 编号或规格引用即可请求实现，并期待工作自动推进到经过验证的合并，无需重复常规 Git 和 GitHub 权限。根任务可以根据 GitHub 状态替换或恢复 Worker，相互独立的 ticket 也可以并行推进，而不共享可写 checkout。实现任务会收到已经提交的规划权威内容，无关需求在各自最终基线 PR 进入 `master` 前彼此隔离。
 
-规格分支是集成点，也是进入 `master` 的唯一 pull request。Ticket 会保持开启直到该次合并。上游变化只通过 merger 拥有的同步点进入，清理则等待不存在唯一工作丢失风险的证据。自动合并仍会提高 ticket 范围、仓库检查和实时评审状态检查的准确性要求。用户的明确限制始终有效；无法提供隔离时停止交付，而不是在根会话里写；发布工作始终在授权前暂停。
+规格分支是集成点，也是进入 `master` 的唯一 pull request。Ticket 会保持开启直到该次合并。上游变化只通过 merger 拥有的同步点进入，清理则等待不存在唯一工作丢失风险的证据；该 `Closes` pull request 显示 MERGED 后，缺失的专用 worktree 已经完成。自动合并仍会提高 ticket 范围、仓库检查和实时评审状态检查的准确性要求。用户的明确限制始终有效；无法提供隔离时停止交付，而不是在根会话里写；发布工作始终在授权前暂停。

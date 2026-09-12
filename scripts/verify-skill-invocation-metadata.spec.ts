@@ -50,6 +50,18 @@ describe('cross-product skill invocation metadata gate', () => {
     expect(metadata.description).toEqual(expect.stringContaining('implement #123'))
   })
 
+  it('makes post-merge retire a delivery completion criterion', () => {
+    const source = readFileSync(join(import.meta.dirname, '../.agents/skills/orchestrate-dsh-delivery/SKILL.md'), 'utf8')
+    expect(source).toContain('Complete delivery only after this retire step')
+    expect(source).toContain('git worktree prune')
+    expect(source).toContain('delete merged local and remote ticket branches and the specification branch')
+    expect(source).toContain('A missing dedicated worktree after that MERGED `Closes` pull request is already retired')
+    expect(source).toContain('named test/script pair')
+    expect(source).toContain('write RED before any skill or documentation tour')
+    expect(source).toContain('the replacement brief names that merged SHA')
+    expect(source).toContain('it does not implement')
+  })
+
   it('keeps work-in-progress review layers explicit', () => {
     const source = readFileSync(join(import.meta.dirname, '../.agents/skills/code-review/SKILL.md'), 'utf8')
     expect(source).toContain('git diff --cached')

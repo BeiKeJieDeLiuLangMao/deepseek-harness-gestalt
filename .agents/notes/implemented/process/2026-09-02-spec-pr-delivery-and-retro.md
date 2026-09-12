@@ -14,13 +14,13 @@ Per-ticket pull requests, a root session that merges, and exploration notes comm
 
 The root task still owns authority, dispatch, monitoring, human blockers, and the release stop. It does not implement, and it does not merge worker branches. [Root-session orchestration](2026-09-03-root-session-orchestrates-only.md) owns that split. A merger subagent fast-forwards or merge-commits each completed ticket branch into the specification branch and reports the new head.
 
-Each ready ticket still has one writer, one `codex/<issue>-<slug>` branch, and one isolated worktree. Writers follow [`implement`](../../../skills/implement/SKILL.md) and [pre-push checks](../../../skills/dsh-pre-push-checks/SKILL.md). They do not open pull requests.
+Each ready ticket still has one writer, one `codex/<issue>-<slug>` branch, and one isolated worktree. Isolated ticket writers start at the named test/script pair and write RED before any skill or documentation tour. Writers follow [`implement`](../../../skills/implement/SKILL.md) and [pre-push checks](../../../skills/dsh-pre-push-checks/SKILL.md). They do not open pull requests.
 
 Exploration notes stay outside version control in a scratch directory whose absolute path is recorded in the gitignored [runtime memo](2026-09-02-desktop-test-instance-and-runtime-memo.md). Planning authority that later workers must read (specification, Agent Notes, tickets) remains committed on the specification branch before dispatch.
 
 After the specification branch has every ticket, required checks, and a clean standards-and-spec review, the root asks each writer session to run [`retro`](../../../skills/retro/SKILL.md). The root synthesizes those candidates, presents them to the user, and dispatches a writer to land only the accepted environment changes on the same specification pull request. Merge to `master` waits for that user decision.
 
-The [earlier default-orchestration note](2026-08-16-default-ticket-delivery-orchestration.md) still owns request authority, isolated writers, GitHub as durable state, GUI evidence, cleanup proofs, and the release stop. This note owns pull-request cardinality, who merges, where exploration notes live, and the retro gate.
+The [earlier default-orchestration note](2026-08-16-default-ticket-delivery-orchestration.md) still owns request authority, isolated writers, GitHub as durable state, GUI evidence, cleanup proofs, and the release stop. Delivery is complete only after that retire step runs on the MERGED `Closes` pull request. This note owns pull-request cardinality, who merges, where exploration notes live, and the retro gate.
 
 ## Alternatives considered
 
