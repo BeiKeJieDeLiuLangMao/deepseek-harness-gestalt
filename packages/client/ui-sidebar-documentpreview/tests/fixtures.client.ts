@@ -41,8 +41,10 @@ export function page(offset: number, lines: readonly string[], eof: boolean, ver
   return { ok: true, value: { absolutePath: ABSOLUTE_PATH, version, offset, text: lines.join('\n'), lines: lines.length, eof, bytes: 100 } }
 }
 
-/** One failed page read. */
-export function failure(code: string, details: Record<string, unknown> = {}): RemoteResult<WorkspaceFileText> {
+/** One failed workspace-file read, usable for paged or complete readers. */
+export function failure(
+  code: string, details: Record<string, unknown> = {},
+): Extract<RemoteResult<WorkspaceFileText>, { readonly ok: false }> {
   return { ok: false, error: { code, message: 'boom', details } as unknown as RemoteFailure }
 }
 
