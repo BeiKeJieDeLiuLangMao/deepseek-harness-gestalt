@@ -38,7 +38,7 @@ Own one isolated Desktop Electron per user goal. Automated lanes such as `pnpm -
 
    Complete when every retained artifact and instruction is still readable, carries truthful provenance, and matches the frozen build. Then give the user the report, route, exact application path, and starting state. After review, record the observed UI-route result separately from teardown results so a passing interaction cannot hide a failed shutdown.
 
-9. **Clear the memo on teardown.** After the user finishes, the HEAD changes, the run fails, or a replacement is required, stop the recorded processes, delete the scratch root, and remove or empty the `desktop` record. Complete when the next read of the memo cannot name a live instance.
+9. **Clear the memo on teardown.** After the user finishes, the run fails, or the tested build becomes invalid and the environment owner must explicitly replace the acceptance version, stop the recorded processes, delete the scratch root, and remove or empty the `desktop` record. Changes in another checkout or progress on the pull request do not stop a frozen human-acceptance instance. The environment owner changes versions only when the tested build is affected or the accepted route requires replacement. Complete when the next read of the memo cannot name a live instance.
 
 ## Display
 
