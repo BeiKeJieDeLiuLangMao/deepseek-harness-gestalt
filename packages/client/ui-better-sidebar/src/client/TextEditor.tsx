@@ -112,6 +112,11 @@ export function TextEditor(props: FileViewerProps) {
 }
 
 /** CodeMirror-backed code, Markdown, and HTML viewer. */
+/** Serialize CodeMirror's normalized document using the source file's line-ending convention. */
+export function serializeEditorText(source: string, text: string): string {
+  return source.includes('\r\n') ? text.replaceAll('\r\n', '\n').replaceAll('\n', '\r\n') : text
+}
+
 export function TextEditorCore(props: TextEditorCoreProps) {
   const { scope, path, viewerId, content, truncated } = props
   const [mode, setMode] = useState<ViewMode>(() => props.retained?.mode ?? 'preview')
@@ -384,12 +389,15 @@ export function TextEditorCore(props: TextEditorCoreProps) {
     setDraft(view === null ? null : view.state.doc.toString())
   }, [mode, content])
 
+  // CodeMirror stores line separators as `\n`; serialize with the source file's
+  // established CRLF convention so an unrelated edit changes no other lines.
+  const serialize = (text: string): string => serializeEditorText(content ?? '', text)
   const save = (): void => {
     const view = viewRef.current
     if (view === null || savingRef.current) return
     savingRef.current = true
     setSaveState('saving')
-    props.writeFile(view.state.doc.toString()).then(() => {
+    props.writeFile(serialize(view.state.doc.toString())).then(() => {
       savingRef.current = false
       setDraft(null)
       dirtyRef.current = false

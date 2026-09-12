@@ -358,6 +358,36 @@ describe('TextPreview — editor supplement', () => {
     expect(view.container.querySelector('[data-test-editor]')).toBeNull()
     expect(lines(view.container)).toEqual(['saved whole file\n'])
   })
+
+  it('shows a complete-read rejection in preview and retries without writing', async () => {
+    const h = harness({ 1: page(1, ['whole preview'], true) })
+    const base = h.props()
+    h.bytes
+      .mockResolvedValueOnce(failure('workspace-file/too-large', { path: PATH, limit: 4 }))
+      .mockResolvedValueOnce({
+        ok: true,
+        value: { absolutePath: ABSOLUTE_PATH, version: 'v1', offset: 0, data: btoa('whole preview\n'), eof: true, bytes: 14 },
+      })
+    const props: TextPreviewProps = {
+      ...base,
+      useDocumentEditors: selector => selector([{ id: 'better/editor', documentIds: [PLAIN_BODY_ID] }]),
+      renderSlot: ((key: string, owner: unknown, options: { hookContext: TextPreviewProps['useTabInfo'] }) => key === 'sidebar.right.tab.document.editor'
+        ? <div data-test-editor />
+        : <TextBody {...base} {...owner as OwnerOf<'sidebar.right.tab.document'>} useTabInfo={options.hookContext} />) as TextPreviewProps['renderSlot'],
+    }
+    const view = render(<TextPreview {...props} />)
+    await settle()
+    click(view.container, '[data-document-editor-toggle]')
+    await settle()
+    expect(view.container.querySelector('[data-document-editor-failed]')?.textContent).toContain('boom')
+    expect(view.container.querySelector('[data-test-editor]')).toBeNull()
+    expect(h.instance.getSnapshot().byTab[TAB_ID]?.editorMode).toBe('preview')
+    click(view.container, '[data-document-editor-retry]')
+    await settle()
+    expect(view.container.querySelector('[data-document-editor-failed]')).toBeNull()
+    expect(view.container.querySelector('[data-test-editor]')).not.toBeNull()
+    expect(h.bytes).toHaveBeenCalledTimes(2)
+  })
 })
 
 describe('TextPreview — the file\'s metadata', () => {

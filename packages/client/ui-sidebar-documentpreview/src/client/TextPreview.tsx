@@ -111,7 +111,9 @@ export function TextPreview({
   const pathRef = useRef<HTMLDivElement | null>(null)
   const pathTextRef = useRef<HTMLSpanElement | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
-  const [editorSource, setEditorHolderSource] = useState<{ text: string; version: string }>()
+  const retained = editorState(tab.sessionId, tab.id)
+  const [editorSource, setEditorHolderSource] = useState<{ text: string; version: string }>(() =>
+    retained?.source === undefined ? undefined : { text: retained.source, version: current?.version ?? '' })
   const [editorFailure, setEditorFailure] = useState<string>()
   const [editorLoading, setEditorLoading] = useState(false)
   const displayPath = meta.value?.absolutePath ?? current?.complete?.absolutePath ?? file.path
@@ -209,6 +211,40 @@ export function TextPreview({
     if (!canRead || current?.loading || current?.eof) return
     loadPage(tab.id, file, next, signal, meta.value?.version)
   }
+  const openEditor = (): void => {
+    if (editorLoading) return
+    setEditorLoading(true)
+    setEditorFailure(undefined)
+    void readEditorSource(file, signal).then((result) => {
+      if (signal.aborted) return
+      if (!result.ok) {
+        setEditorFailure(result.error.message)
+        return
+      }
+      const bytes = documentFileBytes(result.value)
+      if (bytes.data.includes(0)) {
+        setEditorFailure(t('editNotText'))
+        return
+      }
+      if (current?.version !== undefined && bytes.version !== current.version) {
+        setEditorFailure(t('editChanged'))
+        return
+      }
+      let text: string
+      try {
+        text = new TextDecoder('utf-8', { fatal: true }).decode(bytes.data)
+      } catch {
+        setEditorFailure(t('editNotText'))
+        return
+      }
+      setEditorHolderSource({ text, version: bytes.version })
+      actions.editorMode(tab.id, 'edit')
+    }).catch((error: unknown) => {
+      if (!signal.aborted) setEditorFailure(error instanceof Error ? error.message : String(error))
+    }).finally(() => {
+      if (!signal.aborted) setEditorLoading(false)
+    })
+  }
   const reload = (): void => {
     if (!canRead) return
     if (mode === 'text-pages') reloadPages(tab.id, file, signal, meta.value?.version)
@@ -299,38 +335,7 @@ export function TextPreview({
                   actions.editorMode(tab.id, 'preview')
                   return
                 }
-                if (editorLoading) return
-                setEditorLoading(true)
-                setEditorFailure(undefined)
-                void readEditorSource(file, signal).then((result) => {
-                  if (signal.aborted) return
-                  if (!result.ok) {
-                    setEditorFailure(result.error.message)
-                    return
-                  }
-                  const bytes = documentFileBytes(result.value)
-                  if (bytes.data.includes(0)) {
-                    setEditorFailure(t('editNotText'))
-                    return
-                  }
-                  if (current?.version !== undefined && bytes.version !== current.version) {
-                    setEditorFailure(t('editChanged'))
-                    return
-                  }
-                  let text: string
-                  try {
-                    text = new TextDecoder('utf-8', { fatal: true }).decode(bytes.data)
-                  } catch {
-                    setEditorFailure(t('editNotText'))
-                    return
-                  }
-                  setEditorHolderSource({ text, version: bytes.version })
-                  actions.editorMode(tab.id, 'edit')
-                }).catch((error: unknown) => {
-                  if (!signal.aborted) setEditorFailure(error instanceof Error ? error.message : String(error))
-                }).finally(() => {
-                  if (!signal.aborted) setEditorLoading(false)
-                })
+                openEditor()
               }}
             >
               {t(state.editorMode === 'edit' ? 'preview' : 'edit')}
@@ -364,26 +369,30 @@ export function TextPreview({
         {!hasContent && current?.failure === undefined && (
           <LoadingIndicator className={css.statusLine} label={t('loading')} />
         )}
+        {editorFailure !== undefined && state.editorMode === 'preview' && (
+          <p className={css.statusLine} data-document-editor-failed>
+            <span>{editorFailure}</span>
+            <button type="button" className={css.action} data-document-editor-retry onClick={openEditor}>{t('retry')}</button>
+          </p>
+        )}
         {content !== undefined && (state.editorMode === 'edit' && content.kind === 'text' && editor !== undefined
-          ? editorSource === undefined
-            ? <p className={css.statusLine}>{editorFailure ?? t('loading')}</p>
-            : renderSlot('sidebar.right.tab.document.editor', {
-              documentId: selected.id,
-              resourceAddress: tab.contentId,
-              content: editorSource,
-              wrap: state.wrap,
-              retained: editorState(tab.sessionId, tab.id),
-              retain: (retained) => { retainEditor(tab.sessionId, tab.id, retained) },
-              setDirty: (dirty) => { setEditorDirty(tab.sessionId, tab.id, dirty) },
-              saved: () => {
-                if (signal.aborted) return
-                actions.editorMode(tab.id, 'preview')
-                reloadPages(tab.id, file, signal, meta.value?.version)
-              },
-            }, {
-              entryKey: selected.id, hookContext: useTabInfo,
-              fallback: <p className={css.statusLine}>{t('rendererUnavailable', { name: selected.title() })}</p>,
-            })
+          ? renderSlot('sidebar.right.tab.document.editor', {
+            documentId: selected.id,
+            resourceAddress: tab.contentId,
+            content: editorSource,
+            wrap: state.wrap,
+            retained,
+            retain: (next) => { retainEditor(tab.sessionId, tab.id, { ...next, source: editorSource.text }) },
+            setDirty: (dirty) => { setEditorDirty(tab.sessionId, tab.id, dirty) },
+            saved: () => {
+              if (signal.aborted) return
+              actions.editorMode(tab.id, 'preview')
+              reloadPages(tab.id, file, signal, meta.value?.version)
+            },
+          }, {
+            entryKey: selected.id, hookContext: useTabInfo,
+            fallback: <p className={css.statusLine}>{t('rendererUnavailable', { name: selected.title() })}</p>,
+          })
           : renderSlot('sidebar.right.tab.document', {
             resourceAddress: tab.contentId, content, wrap: state.wrap,
           }, {
