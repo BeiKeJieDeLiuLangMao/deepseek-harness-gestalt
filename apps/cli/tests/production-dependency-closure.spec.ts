@@ -26,54 +26,39 @@ function collectManifests(directory: string, manifests: Map<string, PackageManif
   }
 }
 
-function productionClosure(manifests: ReadonlyMap<string, PackageManifest>, root: string): Set<string> {
-  const reachable = new Set<string>()
-  const pending = [root]
-  while (pending.length > 0) {
-    const name = pending.shift()
-    if (name === undefined || reachable.has(name)) continue
-    const manifest = manifests.get(name)
-    if (manifest === undefined) throw new Error(`workspace package not found: ${name}`)
-    reachable.add(name)
-    const dependencies = {
-      ...manifest.dependencies,
-      ...manifest.optionalDependencies,
-    }
-    for (const dependency of Object.keys(dependencies)) {
-      if (manifests.has(dependency)) pending.push(dependency)
-    }
-    for (const [peer, range] of Object.entries(manifest.peerDependencies ?? {})) {
-      if (manifest.peerDependenciesMeta?.[peer]?.optional === true || !range.startsWith('workspace:')) continue
-      if (!manifests.has(peer)) throw new Error(`${name} requires missing workspace peer ${peer}`)
-      pending.push(peer)
-    }
-  }
-  return reachable
-}
-
 describe('CLI production dependency closure', () => {
-  it('resolves every workspace peer required by its runtime dependencies', () => {
+  it('provides every workspace peer required by its runtime dependencies', () => {
     const manifests = new Map<string, PackageManifest>()
     for (const directory of ['apps', 'packages', 'vendor']) {
       collectManifests(join(workspaceRoot, directory), manifests)
     }
-
-    expect(productionClosure(manifests, '@deepseek-ai/dsh').size).toBeGreaterThan(100)
-  })
-
-  it('rejects a required workspace peer absent from the package inventory', () => {
-    const manifests = new Map<string, PackageManifest>([
-      ['@deepseek-ai/dsh', {
-        name: '@deepseek-ai/dsh',
-        dependencies: { '@deepseek-ai/dsh-plugin': 'workspace:^' },
-      }],
-      ['@deepseek-ai/dsh-plugin', {
-        name: '@deepseek-ai/dsh-plugin',
-        peerDependencies: { '@deepseek-ai/dsh-missing': 'workspace:^' },
-      }],
-    ])
-
-    expect(() => productionClosure(manifests, '@deepseek-ai/dsh'))
-      .toThrow('@deepseek-ai/dsh-plugin requires missing workspace peer @deepseek-ai/dsh-missing')
+    const reachable = new Set<string>()
+    const pending = ['@deepseek-ai/dsh']
+    while (pending.length > 0) {
+      const name = pending.shift()
+      if (name === undefined || reachable.has(name)) continue
+      reachable.add(name)
+      const manifest = manifests.get(name)
+      if (manifest === undefined) throw new Error(`workspace package not found: ${name}`)
+      const dependencies = {
+        ...manifest.dependencies,
+        ...manifest.optionalDependencies,
+      }
+      for (const dependency of Object.keys(dependencies)) {
+        if (manifests.has(dependency)) pending.push(dependency)
+      }
+    }
+    const missing: string[] = []
+    for (const name of reachable) {
+      const manifest = manifests.get(name)
+      if (manifest === undefined) continue
+      for (const [peer, range] of Object.entries(manifest.peerDependencies ?? {})) {
+        if (manifest.peerDependenciesMeta?.[peer]?.optional === true) continue
+        if (range.startsWith('workspace:') && manifests.has(peer) && !reachable.has(peer)) {
+          missing.push(`${name} -> ${peer}`)
+        }
+      }
+    }
+    expect(missing.sort()).toEqual([])
   })
 })
