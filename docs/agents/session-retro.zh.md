@@ -2,7 +2,7 @@
 
 [English](session-retro.md) | 中文
 
-本参考承载会话复盘的共享规则：一个 writer 会话复盘什么、允许读哪些来源、候选改进如何到达用户决策。[`retro`](../../.agents/skills/retro/SKILL.md) skill 是用户启动的入口；[交付工作流](../../.agents/skills/orchestrate-dsh-delivery/SKILL.md)链接本页，使协调者可以让每个 writer 会话运行自己的复盘，而不必通过自动调用要求那个 user-only skill。
+本参考承载会话复盘的共享规则：一个 writer 会话复盘什么、允许读哪些来源、候选改进如何到达用户决策。[`retro`](../../.agents/skills/retro/SKILL.md) skill 是入口；writer 与协调者按名称调用。[交付工作流](../../.agents/skills/orchestrate-dsh-delivery/SKILL.md)链接本页，使协调者可以让每个 writer 会话运行自己的复盘。
 
 ## 范围
 

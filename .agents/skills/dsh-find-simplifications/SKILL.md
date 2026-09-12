@@ -9,7 +9,7 @@ This skill helps turn a broad "find things to simplify" request into evidence-ba
 
 ## Start With Repo Context
 
-- Read `AGENTS.md`, especially the pre-release stance and the conventions (including the tests-are-not-golden-truth and Agent Notes-are-not-golden-truth doctrines), plus [docs/defensive-patterns.md](../../../docs/defensive-patterns.md) and [docs/testing.md](../../../docs/testing.md).
+- Read `AGENTS.md`, especially the pre-release stance and the conventions (including the tests-are-not-golden-truth and Agent Notes-are-not-golden-truth doctrines), plus [docs/defensive-patterns.md](../../../docs/defensive-patterns.md) and [docs/testing.md](../../../docs/testing.md). If the session already loaded the repository-root `AGENTS.md`, do not re-read a byte-identical worktree copy.
 - Skim [docs/architecture.md](../../../docs/architecture.md) before judging anything under `packages/`; simplifications that fight the service map or event taxonomy need extra evidence.
 - Use the Agent Note tree and its [rules](../../notes/README.md) to understand intentional architecture. The most relevant implemented examples are [drop mutable session summary](../../notes/implemented/simplification/2026-06-19-drop-mutable-session-summary.md), [shared persistence write coordinator](../../notes/implemented/architecture/2026-06-18-shared-persistence-write-coordinator.md), [capability seams](../../notes/implemented/architecture/2026-06-13-capability-seams.md), and the twin adapter / dual persistence backend Agent Notes.
 - Treat dual LLM adapters and dual persistence backends as intentional by default. Do not propose deleting either twin/backend as "low effort" unless the user explicitly overrides that constraint. Removing an unused method or hook inside a protected seam can still be valid if it does not collapse the protected design.
@@ -69,7 +69,7 @@ For every symbol or behavior, classify consumers before writing:
 - Non-production corpus: tests, README/docs, Agent Notes, snapshots, generated expected outputs, and comments.
 - Ambiguous corpus: examples and scripts that may be product smoke paths. Inspect usage before classifying.
 
-Use `rg` first. Good searches include the exact symbol, event name, package name, config key, method name with both `.name(` and `name(`, and any wire strings. Then read the call sites. `knip` can help, but it is not a substitute for understanding public interfaces, dynamic event names, tests, docs, and Cordis loader paths.
+Use `rg` first. Good searches include the exact symbol, event name, package name, config key, method name with both `.name(` and `name(`, and any wire strings. Then read the call sites. Default `rg` and glob searches exclude `catalog/**` and `vendor/**`; those trees are pinned foreign source, not simplification corpus. `knip` can help, but it is not a substitute for understanding public interfaces, dynamic event names, tests, docs, and Cordis loader paths.
 
 Reject or downgrade a candidate when:
 
