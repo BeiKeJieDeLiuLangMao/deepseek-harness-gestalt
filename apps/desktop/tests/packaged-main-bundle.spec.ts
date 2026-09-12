@@ -3,12 +3,16 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
+import { generateDesktopHostTypertArtifacts } from './shipped-web-host.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const desktop = join(here, '..')
 
 describe('packaged Desktop main bundle', () => {
+  beforeAll(() => {
+    generateDesktopHostTypertArtifacts()
+  }, 120_000)
   it('writes the public Relay configuration consumed by an ambient-env-free package', () => {
     const temporary = mkdtempSync(join(tmpdir(), 'dsh-desktop-release-config-'))
     const output = join(temporary, 'operated-platform.json')

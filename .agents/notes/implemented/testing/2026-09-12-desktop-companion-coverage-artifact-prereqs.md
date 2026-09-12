@@ -18,7 +18,8 @@ In pull request #659 coverage runs, tests in `apps/desktop` failed on a clean so
 1. In `apps/desktop/tests/shipped-web-host.ts`, add `@deepseek-ai/dsh-api-workspace-files`, `@deepseek-ai/dsh-client-file-upload`, and `@deepseek-ai/dsh-command-feedback` to `TYPERT_PACKAGES`.
 2. In `tsconfig.base.json`, add the explicit subpath alias:
    `"@deepseek-ai/dsh-client-ui-desktop/protocol": ["./packages/client/ui-desktop/src/protocol.ts"]`
-3. In `apps/desktop/tests/host-rpc-assembled.spec.ts`, defer loading `companion-product.ts` until `beforeAll` after `generateDesktopHostTypertArtifacts()`, matching the dynamic import pattern established in `companion-host-business-error.assembled.spec.ts`.
+3. In `apps/desktop/tests/packaged-main-bundle.spec.ts`, declare local Typert artifact prerequisite generation via `generateDesktopHostTypertArtifacts()` in `beforeAll` so the suite builds `main.mjs` independently on clean trees without relying on other suites having run first.
+4. In `apps/desktop/tests/host-rpc-assembled.spec.ts`, defer loading `companion-product.ts` until `beforeAll` after `generateDesktopHostTypertArtifacts()`, matching the dynamic import pattern established in `companion-host-business-error.assembled.spec.ts`.
 
 ## Alternatives considered
 
@@ -26,7 +27,7 @@ In pull request #659 coverage runs, tests in `apps/desktop` failed on a clean so
 
 ## Consequences
 
-- On clean checkouts without prebuilt `lib/` artifacts, `packaged-main-bundle.spec.ts` resolves `@deepseek-ai/dsh-client-ui-desktop/protocol` to source.
+- On clean checkouts without prebuilt `lib/` artifacts, `packaged-main-bundle.spec.ts` generates necessary Typert remotes and resolves `@deepseek-ai/dsh-client-ui-desktop/protocol` to source, passing standalone.
 - `dsh web` started by `apps/desktop/tests/shipped-web-host.ts` no longer crashes on missing typert contributor exports for the 3 packages.
-- `host-rpc-assembled.spec.ts` generates host artifacts before importing `companion-product.ts`.
+- `host-rpc-assembled.spec.ts` generates host artifacts before importing `companion-product.ts`, resolving its import-time prerequisite failure (while runtime assertions remain tracked separately).
 - Other non-artifact failures in full coverage partitions (such as missing optional platform packages in third-party notice tests) remain separate and unaddressed.
