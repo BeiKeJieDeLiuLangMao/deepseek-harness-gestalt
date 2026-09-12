@@ -1,9 +1,9 @@
 - banner:
   - navigation "Session hierarchy":
     - button "Use the read tool twice" [disabled]
-  - button "More actions":
+  - button "Open sidebar":
     - img
-  - button "Open right sidebar":
+  - button "Open the bottom panel":
     - img
   - tablist:
     - tab "Chat" [selected]
@@ -35,10 +35,6 @@
   - text: Ran for {{duration}}
 - text: {{clock}}
 - button "compact Compacted 5 history items (~{{tokens}} tokens)"
-- button "Context injection AGENTS.md":
-  - img
-  - img
-  - text: Context injection AGENTS.md
 - textbox "Message or run a task, / commands, @ files or sessions"
 - button "Commands":
   - img

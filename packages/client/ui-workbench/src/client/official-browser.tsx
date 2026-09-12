@@ -311,19 +311,27 @@ export function OfficialWorkbenchBrowserBody({ useTabInfo, ctx, runtime }: Brows
       ...(page.title.trim() === '' ? {} : { title: page.title }),
     })
   }, [tab.actions])
+  const onMissingTarget = useCallback(
+    (missing: BrowserTarget) => runtime.recover(tab.sessionId, tab.id, missing),
+    [runtime, tab.id, tab.sessionId],
+  )
+  const onRetry = useCallback(() => {
+    runtime.retry(tab.sessionId, tab.id)
+  }, [runtime, tab.id, tab.sessionId])
+  const t = useMemo(() => (key: string) => ctx.locale.bind('browser')(key as never), [ctx.locale])
   return ctx.browserUi.renderPageChrome({
     target,
     ...(listedRevision === undefined ? {} : { listedRevision }),
     refresh: actions.refresh,
     observe: actions.observe,
     screenshot: actions.screenshot,
-    t: key => ctx.locale.bind('browser')(key as never),
+    t,
     visible: tab.visible,
     onCommittedPage,
-    onMissingTarget: missing => runtime.recover(tab.sessionId, tab.id, missing),
+    onMissingTarget,
     ...(payload.createError === undefined ? {} : {
       createError: payload.createError,
-      onRetry: () => { runtime.retry(tab.sessionId, tab.id) },
+      onRetry,
     }),
   })
 }

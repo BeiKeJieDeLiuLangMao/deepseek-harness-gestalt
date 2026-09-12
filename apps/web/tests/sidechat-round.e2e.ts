@@ -137,7 +137,7 @@ describe.skipIf(MODE === 'record')('web e2e: Side Chat through the shipped workb
     const parentId = await parentSettled
     const liveIdsBeforeSideChat = scaffold.ctx.agents.list().map(agent => agent.id)
 
-    await page.getByRole('button', { name: 'Expand sidebar', exact: true }).click()
+    await page.getByRole('button', { name: 'Open sidebar', exact: true }).click()
     const panel = page.locator('[data-dsh-panel]:not([data-dsh-bottom-panel]):visible')
     await panel.getByRole('button', { name: 'Side Chat', exact: true }).waitFor({ timeout: 15_000 })
     await compareOrRefreshGolden(
@@ -308,7 +308,7 @@ describe.skipIf(MODE === 'record')('web e2e: Side Chat through the shipped workb
     await page.reload({ waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
     acknowledgeReloadConnectionLoss(tripwire, warningStart)
-    const expandSidebar = page.getByRole('button', { name: 'Expand sidebar', exact: true })
+    const expandSidebar = page.getByRole('button', { name: 'Open sidebar', exact: true })
     if (!await panel.isVisible()) {
       await expandSidebar.waitFor({ timeout: 15_000 })
       await expandSidebar.click()
@@ -503,7 +503,7 @@ describe.skipIf(MODE === 'record')('web e2e: Side Chat provisional model authori
     await parentComposer.press('Enter')
     const parentId = await parentSettled
 
-    await page.getByRole('button', { name: 'Expand sidebar', exact: true }).click()
+    await page.getByRole('button', { name: 'Open sidebar', exact: true }).click()
     const panel = page.locator('[data-dsh-panel]:not([data-dsh-bottom-panel]):visible')
     await panel.getByRole('button', { name: 'Side Chat', exact: true }).click()
     const sideComposer = panel.locator('[data-composer-input][contenteditable="true"]')
@@ -586,7 +586,7 @@ describe.skipIf(MODE === 'record')('web e2e: Side Chat provisional model authori
     await parentRow.click({ timeout: 15_000 })
     const restoredPanel = page.locator('[data-dsh-panel]:not([data-dsh-bottom-panel]):visible')
     if (!await restoredPanel.isVisible()) {
-      await page.getByRole('button', { name: 'Expand sidebar', exact: true }).click()
+      await page.getByRole('button', { name: 'Open sidebar', exact: true }).click()
     }
     const restoredTab = restoredPanel.getByTitle(childTabTitle, { exact: true })
       .filter({ has: page.getByRole('button', { name: 'Close', exact: true }) })

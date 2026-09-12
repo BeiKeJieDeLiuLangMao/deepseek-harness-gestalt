@@ -131,6 +131,41 @@ describe('useBrowserPage', () => {
     expect(observe).toHaveBeenCalledTimes(2)
   })
 
+  it('keeps an in-flight screenshot when the same tab is passed as a new target object', async () => {
+    let resolveShot: ((value: BrowserScreenshot) => void) | undefined
+    const observe = vi.fn(async () => page())
+    const screenshot = vi.fn(() => new Promise<BrowserScreenshot>((resolve) => { resolveShot = resolve }))
+    const view = render(<Probe target={TARGET} observe={observe} screenshot={screenshot} />)
+    await waitFor(() => { expect(screenshot).toHaveBeenCalledTimes(1) })
+    view.rerender(<Probe target={{ ...TARGET }} observe={observe} screenshot={screenshot} />)
+    resolveShot?.({
+      target: TARGET, revision: 1, url: 'https://alpha.test/', title: 'Alpha',
+      mediaType: 'image/png', data: 'abc',
+    })
+    await waitFor(() => { expect(view.getByTestId('shot').textContent).toBe('yes') })
+    expect(screenshot).toHaveBeenCalledTimes(1)
+    expect(observe).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps an in-flight screenshot when observe and screenshot identities change', async () => {
+    let resolveShot: ((value: BrowserScreenshot) => void) | undefined
+    const observe = vi.fn(async () => page())
+    const firstShot = vi.fn(() => new Promise<BrowserScreenshot>((resolve) => { resolveShot = resolve }))
+    const laterShot = vi.fn(async () => {
+      throw new Error('replacement screenshot must not run')
+    })
+    const view = render(<Probe target={TARGET} observe={observe} screenshot={firstShot} />)
+    await waitFor(() => { expect(firstShot).toHaveBeenCalled() })
+    view.rerender(<Probe target={TARGET} observe={vi.fn(async () => page())} screenshot={laterShot} />)
+    resolveShot?.({
+      target: TARGET, revision: 1, url: 'https://alpha.test/', title: 'Alpha',
+      mediaType: 'image/png', data: 'abc',
+    })
+    await waitFor(() => { expect(view.getByTestId('shot').textContent).toBe('yes') })
+    expect(laterShot).not.toHaveBeenCalled()
+    expect(observe).toHaveBeenCalledTimes(1)
+  })
+
   it('discards a screenshot rejection after the tab unmounted', async () => {
     const observe = vi.fn(async () => page())
     const viewRef: { current?: ReturnType<typeof render> } = {}

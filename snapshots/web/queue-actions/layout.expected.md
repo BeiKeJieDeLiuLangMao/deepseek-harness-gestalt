@@ -3,7 +3,9 @@
     - button "workspace" [disabled]
   - img
   - text: Standard mode
-  - button "Open the sidebar":
+  - button "Open sidebar":
+    - img
+  - button "Open the bottom panel":
     - img
   - tablist:
     - tab "Chat" [selected]

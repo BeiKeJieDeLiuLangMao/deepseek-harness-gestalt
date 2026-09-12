@@ -1,9 +1,9 @@
 - banner:
   - navigation "Session hierarchy":
     - button "Inline code links" [disabled]
-  - button "More actions":
+  - button "Open sidebar":
     - img
-  - button "Open right sidebar":
+  - button "Open the bottom panel":
     - img
   - tablist:
     - tab "Chat" [selected]

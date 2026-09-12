@@ -1,9 +1,9 @@
 - banner:
   - navigation "Session hierarchy":
     - button "Use the read tool twice" [disabled]
-  - button "More actions":
+  - button "Open sidebar":
     - img
-  - button "Open right sidebar":
+  - button "Open the bottom panel":
     - img
   - tablist:
     - tab "Chat" [selected]

@@ -51,7 +51,7 @@ Program-only SDK bindings:
 type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue }
 
 interface ToolArgsMap {
-  /** Ask the user a concise question when you need confirmation, a choice, or missing information before proceeding. Send one or more questions, each with a stable id that will be echoed in the answer. */
+  /** Ask the user a concise question when you need confirmation, a choice, or missing information before proceeding. Send one or more questions, each with a stable id that will be echoed in the answer. Pass to_project_member to route the question to one project member instead of the local user; copy that value from project_members.displayName of a row whose self is false, never accountId and never the asking account. routed asks require background (1 to 600 characters). references attaches workspace files that support the decision, locally or routed. */
   ask_user_question: {
     /** Questions to ask the user before continuing. */
     questions: ({
@@ -71,6 +71,17 @@ interface ToolArgsMap {
       /** Whether the user may select more than one option. Defaults to false. */
       multi_select?: boolean;
     } & Record<string, JsonValue>)[];
+    /** Public GitHub login of one current member other than the asking account. Copy project_members.displayName from a row whose self is false (case-insensitive match). Do not pass project_members.accountId or a row whose self is true. When present, the question is routed to that member instead of the local user and background is required. */
+    to_project_member?: string;
+    /** Agent-authored Decision Brief background. Required with to_project_member; 1 to 600 characters, enforced at construction. */
+    background?: string;
+    /** Workspace files that support the decision. Available for local and routed asks; each path must exist inside the asking session workspace. */
+    references?: {
+      /** Path resolved inside the asking session workspace; the file must exist. */
+      path: string;
+      /** Optional one-liner (at most 100 characters) explaining why this file matters. */
+      reason?: string;
+    }[];
   } & Record<string, JsonValue>;
   /** Execute a bash command (`bash -c`) and return its stdout/stderr. Each call runs in a fresh shell: no state (cwd, variables, functions) persists between calls — pass `workdir` instead of using `cd`. Non-zero exits are reported as `[exit code: N]`. Current harness environment facts are exposed through managed `$DSH_*` variables; inspect them when needed. Commands may run under a file sandbox; a blocked file operation is reported as `[sandbox: file access denied under <mode> mode]` — a policy denial, not a bug in the command; do not retry another way. Long output is truncated to its tail; the full output is saved to a file whose path is reported when available. Set `run_in_background: true` for long-running commands: the call returns a job id immediately; read its output with `job_output` and stop it with `job_kill`. Attempting a command the sandbox may deny is safe and expected: run it and read the marker rather than assuming the denial. When a command is denied and a wider mode would let it succeed, escalate immediately in the same turn — the one sanctioned exception to a denial: retry the exact same command once with `sandbox_permissions` (the narrowest wider mode that suffices) plus a one-sentence `justification`. Do not detour through chat to ask permission first — the approval prompt raised by that retry is how the user consents. If the session states approval prompts are disabled, there is no exception: a denial is final — do not set `sandbox_permissions`. Never escalate speculatively: ground the request in a real denial — normally the one this command just hit; escalating up front is fine only when this session already denied the same access. A rejected escalation is final for that command — stop and explain, never work around it — but it does not forbid attempting or escalating other commands later. */
   bash: {
@@ -210,6 +221,8 @@ interface ToolArgsMap {
     description: string;
     /** The complete, self-contained task for the subagent. It does not share this conversation's context, so include everything it needs. */
     prompt: string;
+    /** Optional workspace image file paths attached to the child prompt. */
+    images?: string[];
     /** Whether to run in the background and return a durable subagent id immediately. Defaults to true. Set false to wait for the result when your next action depends on it. */
     run_in_background?: boolean;
   } & Record<string, JsonValue>;
@@ -219,6 +232,8 @@ interface ToolArgsMap {
     description: string;
     /** The task for the subagent. It already sees this conversation's completed turns, so build on them freely and state only what is new. */
     prompt: string;
+    /** Optional workspace image file paths attached to the child prompt. */
+    images?: string[];
     /** Whether to run in the background and return a durable subagent id immediately. Defaults to true. Set false to wait for the result when your next action depends on it. */
     run_in_background?: boolean;
   } & Record<string, JsonValue>;
@@ -232,6 +247,8 @@ interface ToolArgsMap {
       status: "pending" | "in_progress" | "completed";
     })[];
   } & Record<string, JsonValue>;
+  /** Search deferred tools by name and description. Returns matching callable schemas for subsequent requests. */
+  tool_search: unknown;
   /** Update the exact current goal revision. edit, pause, and resume require a direct top-level human request. During an automatic continuation of the current goal, complete and blocked are also allowed. blocked is rejected before the configured minimum round count; the model remains responsible for judging that the same condition persisted across those rounds and must explain it in blocked_reason. */
   update_goal: {
     /** Exact id returned by get_goal. */
@@ -495,6 +512,7 @@ interface ToolOutputMap {
       completed: number;
     };
   };
+  tool_search: JsonValue[];
   update_goal: {
     goal: null;
   } | {

@@ -151,7 +151,7 @@ describe('web e2e: phone H264 fallback', () => {
   })
 
   it('keeps H264 first for real devices and skips known-failing AVC on iOS Simulator', async () => {
-    const expand = page.getByRole('button', { name: /展开侧边栏|Expand sidebar/ })
+    const expand = page.getByRole('button', { name: /打开侧边栏|Open sidebar/ })
     await expand.waitFor({ timeout: 10_000 })
     await expand.click()
     const newTab = page.getByRole('button', { name: /新.*标签|New tab/ }).last()

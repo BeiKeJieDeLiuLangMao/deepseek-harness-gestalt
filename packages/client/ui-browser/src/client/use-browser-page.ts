@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type {
   BrowserPageState,
   BrowserRuntimeState,
@@ -15,6 +15,9 @@ export interface BrowserPageFacts {
 
 /**
  * Observe and capture one tab whenever its identity or listed revision changes.
+ * Observe, screenshot, and missing-target remotes are read from refs so a new
+ * function identity or a new target object with the same tab key does not
+ * cancel an in-flight capture.
  * @param target - Complete tab identity, or undefined while none is selected.
  * @param observe - Session-bound observe remote.
  * @param screenshot - Session-bound screenshot remote.
@@ -35,9 +38,18 @@ export function useBrowserPage(
   const tabKey = target === undefined
     ? ''
     : `${target.profileId}/${target.workspaceId}/${target.browserId}/${target.tabId}`
+  const observeRef = useRef(observe)
+  const screenshotRef = useRef(screenshot)
+  const onMissingTargetRef = useRef(onMissingTarget)
+  const targetRef = useRef(target)
+  observeRef.current = observe
+  screenshotRef.current = screenshot
+  onMissingTargetRef.current = onMissingTarget
+  targetRef.current = target
 
   useEffect(() => {
-    if (target === undefined) {
+    const current = targetRef.current
+    if (current === undefined) {
       setPage(undefined)
       setShot(undefined)
       return
@@ -46,7 +58,7 @@ export function useBrowserPage(
     const wasCancelled = (): boolean => cancelled
     const load = async (): Promise<void> => {
       try {
-        const state = await observe(target)
+        const state = await observeRef.current(current)
         if (wasCancelled()) return
         const nextPage = openPageOf(state)
         setPage(nextPage)
@@ -55,7 +67,7 @@ export function useBrowserPage(
           return
         }
         try {
-          const nextShot = await screenshot(target)
+          const nextShot = await screenshotRef.current(current)
           if (wasCancelled()) return
           setShot(nextShot)
         } catch {
@@ -68,11 +80,11 @@ export function useBrowserPage(
         // Only a missing Runtime target invokes replacement. Other failures
         // leave the chrome empty until the target or listing revision changes.
         if (wasCancelled() || !isBrowserTargetMissing(error)) return
-        const recovered = await onMissingTarget?.(target)
+        const recovered = await onMissingTargetRef.current?.(current)
         if (wasCancelled() || recovered === undefined) return
         setPage(recovered)
         try {
-          const nextShot = await screenshot(recovered.target)
+          const nextShot = await screenshotRef.current(recovered.target)
           if (!wasCancelled()) setShot(nextShot)
         } catch {
           if (!wasCancelled()) setShot(undefined)
@@ -81,7 +93,7 @@ export function useBrowserPage(
     }
     void load()
     return () => { cancelled = true }
-  }, [observe, screenshot, tabKey, listedRevision, onMissingTarget])
+  }, [tabKey, listedRevision])
 
   return { page, screenshot: shot }
 }

@@ -3,9 +3,9 @@
     - 'button "Using ONE run_code program: run" [disabled]'
   - img
   - text: PTC mode
-  - button "More actions":
+  - button "Open sidebar":
     - img
-  - button "Open right sidebar":
+  - button "Open the bottom panel":
     - img
   - tablist:
     - tab "Chat" [selected]
