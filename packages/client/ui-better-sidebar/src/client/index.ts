@@ -33,7 +33,7 @@ const officialInject = [...new Set([
 
 /** Services required by the official workbench contributions and lazy bodies. */
 export const inject = [
-  'connection', 'remote', 'locale', 'modules', ...officialInject,
+  'connection', 'remote', 'locale', 'modules', 'documentEditors', ...officialInject,
 ]
 
 function isDesktopOverlayDocument(): boolean {
