@@ -44,6 +44,6 @@
           - text: Subagent 控制 Agent 为 Subagent 选择模型的权限。
           - img
       - listitem:
-        - 'button "展开设置: 网页搜索"':
-          - text: 网页搜索 DeepSeek 搜索提供方。
+        - 'button "展开设置: Web Search"':
+          - text: Web Search 选择搜索提供方及其 Messages 接口。
           - img

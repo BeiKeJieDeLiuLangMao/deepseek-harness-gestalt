@@ -55,8 +55,6 @@ describe.skipIf(MODE === 'record')('web e2e: another usable provider ends first-
     // Dismissing the onboarding step leaves Settings closed, so enter the
     // Models section explicitly before exercising its normal cards.
     await settings.getByRole('button', { name: '模型' }).click()
-    const setupKey = settings.getByRole('textbox', { name: 'API 密钥', exact: true })
-    await setupKey.waitFor({ timeout: 10_000 })
 
     const add = settings.getByRole('button', { name: '添加提供方' })
     await expect.poll(async () => add.isEnabled(), { timeout: 10_000 }).toBe(true)
@@ -67,17 +65,8 @@ describe.skipIf(MODE === 'record')('web e2e: another usable provider ends first-
     await expect.poll(
       async () => settings.getByRole('textbox', { name: 'API 密钥', exact: true }).count(),
       { timeout: 10_000 },
-    ).toBe(2)
-
-    // Cancelling the setup card must not close the independent add-provider
-    // draft beside it.
-    await settings.getByRole('button', { name: '取消', exact: true }).first().click()
-    expect(await settings.getByLabel('提供方').count()).toBe(1)
-    await expect.poll(
-      async () => settings.getByRole('textbox', { name: 'API 密钥', exact: true }).count(),
-      { timeout: 10_000 },
     ).toBe(1)
-    await settings.getByRole('button', { name: '编辑 DeepSeek (deepseek-official)' }).waitFor({ timeout: 10_000 })
+
     const dismissed = await captureStableAria(page, '[role="dialog"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(DISMISSED_EXPECTED, dismissed, MODE)
 
@@ -111,12 +100,12 @@ describe.skipIf(MODE === 'record')('web e2e: another usable provider ends first-
     ).toBe(0)
     expect(await page.locator('#root').evaluate(root => (root as HTMLElement).inert)).toBe(false)
 
-    // The Models page agrees: DeepSeek stays a row rather than reopening its
-    // setup card over a user who already has somewhere to send a request.
+    // The Models page agrees: minimax-cn is configured and usable, while
+    // unoccupied official DeepSeek without credentials does not appear.
     await page.getByRole('button', { name: '设置', exact: true }).click()
     await settings.waitFor({ timeout: 10_000 })
     await settings.getByRole('button', { name: '模型' }).click()
-    await settings.getByRole('button', { name: '编辑 DeepSeek (deepseek-official)' }).waitFor({ timeout: 10_000 })
+    await settings.getByRole('button', { name: '编辑 minimax-cn' }).waitFor({ timeout: 10_000 })
     expect(await settings.getByRole('textbox', { name: 'API 密钥', exact: true }).count()).toBe(0)
 
     expect((await page.content()).includes('sk-e2e-minimax')).toBe(false)
