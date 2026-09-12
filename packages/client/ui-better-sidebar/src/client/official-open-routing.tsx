@@ -151,6 +151,33 @@ function reportOpenFailure(subject: string, error: unknown): void {
   console.error(`[dsh-better-sidebar] ${subject} failed:`, error)
 }
 
+/**
+ * Check whether the closing turn declared explicit deliverables.
+ *
+ * When presented files exist, the official Deliverables component must own the
+ * turn tail so it renders both the presented cards and produced files.
+ */
+export function hasPresentedDeliverables(owner: unknown): boolean {
+  const record = owner as {
+    turn?: { data?: { get?: (key: string) => unknown } }
+    seq?: unknown
+  } | null
+  if (record === null || typeof record !== 'object') return false
+  const seq = typeof record.seq === 'number' ? record.seq : Number.POSITIVE_INFINITY
+  const data = record.turn?.data?.get?.('deliverables') as
+    | { presented?: unknown }
+    | null
+    | undefined
+  if (data !== null && typeof data === 'object' && Array.isArray(data.presented)) {
+    return data.presented.some((item) => {
+      if (item === null || typeof item !== 'object') return false
+      const file = item as { seq?: unknown }
+      return typeof file.seq !== 'number' || file.seq < seq
+    })
+  }
+  return false
+}
+
 /** Register the official produced-file row through the conversation chain. */
 export function registerOfficialTurnTail(ctx: OfficialOpenRoutingContext): () => void {
   return ctx.slots.inject('conversation.chat.turnTail', () => ctx.slots.register({
@@ -158,6 +185,7 @@ export function registerOfficialTurnTail(ctx: OfficialOpenRoutingContext): () =>
     select: (owner) => {
       const preferences = ctx.sidebarRightPreferences.getSnapshot().preferences
       if (!preferences.interceptOpenPath || !ctx.sidebarRightTabs.isTabEnabled(OFFICIAL_FILE_ID)) return null
+      if (hasPresentedDeliverables(owner)) return null
       return selectProducedFiles(owner)
     },
     priority: -1,

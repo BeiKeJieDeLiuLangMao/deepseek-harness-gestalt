@@ -491,11 +491,21 @@ async function bootEmptyPreview(origin: string, browser: Browser): Promise<void>
     })
     expect(sessionCount).toBe(0)
     expect(pageErrors.map(error => error.message)).toEqual([])
-    // Two accepted static-host 404s, sorted (the boot fetches race): the HMR
-    // event stream has no server here, and the open-in-app availability read
-    // has no host routes — the controller publishes an empty list and the
-    // header renders no button, which is that surface's designed degradation.
-    expect([...failedResponses].sort()).toEqual(['/open-in-app/apps', '/plugins/events'])
+    // Accepted static-host 404s, sorted (the boot fetches race):
+    // - '/plugins/events': the HMR event stream has no server here.
+    // - '/open-in-app/apps': open-in-app availability read has no host routes;
+    //   the controller publishes an empty list (designed degradation).
+    // - '/phone/environment': mobilecli environment probe has no phone host;
+    //   the runtime source falls back to unavailable (designed degradation).
+    // - '/sidebar/api/shell.get': terminal shell probe has no host JSON API;
+    //   the tab definition falls back to default title (designed degradation).
+    expect([...failedResponses].sort()).toEqual([
+      '/open-in-app/apps',
+      '/phone/environment',
+      '/phone/environment',
+      '/plugins/events',
+      '/sidebar/api/shell.get',
+    ])
     expect(consoleErrors.filter(line => !line.includes('Failed to load resource: the server responded with a status of 404')))
       .toEqual([])
   } catch (error) {

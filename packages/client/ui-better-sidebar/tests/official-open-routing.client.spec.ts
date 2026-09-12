@@ -222,6 +222,20 @@ describe('official open routing', () => {
     expect(definition!.select(owner)).toBeNull()
     enabled = true
     expect(definition!.select(owner)).toEqual(['src/a.ts'])
+    // When the turn includes explicitly presented deliverables, the takeover declines
+    // so the official Deliverables component can render both presented cards and produced files.
+    const ownerWithPresented = {
+      seq: 2,
+      turn: {
+        data: {
+          get: () => ({
+            produced: [{ seq: 1, path: 'src/a.ts' }],
+            presented: [{ seq: 1, path: 'src/a.ts', description: 'desc' }],
+          }),
+        },
+      },
+    }
+    expect(definition!.select(ownerWithPresented)).toBeNull()
     expect(definition!.select({})).toBeNull()
 
     const injected = definition!.inject(SESSION)

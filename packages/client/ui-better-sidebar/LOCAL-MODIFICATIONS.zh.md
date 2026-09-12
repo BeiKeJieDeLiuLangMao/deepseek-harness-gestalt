@@ -28,6 +28,7 @@
 22. **`src/client/sidebar.module.css`** — 右侧与底部工作台面板只使用 `contain: style`。`contain: layout` 会把 Desktop 上绝对定位的面板顶出视口，标签条落到屏外，官方页面因而盖住侧栏标签列表。
 23. **`src/client/service.ts`** — 带 path 或 URL 的 `openTab` seed 若活动 pane 在底部树，会在 mint 之前落到右侧工作台。纯类型的 `+` 点击仍跟随菜单所在 pane。
 24. **`src/client/state.ts`** — snapshot store 仍会收起丢掉最后一个停靠标签的那棵树。官方 `ui-sidebar-right` 持有生产关闭路径；未使用的 snapshot 壳不再挂载。
+26. **`src/client/official-files/*` / `src/client/official-open-routing.tsx`** — 官方文件地址始终保留持有资源及其文件系统权限的 Session。嵌入式子会话可选择其父级可见的官方工作台作为显示宿主，而读取、写入、查看器加载、树操作、引用、产出文件动作及对话插入仍继续使用子 Session。`registerOfficialTurnTail` 中的 turn-tail 接管在当前轮次包含显式交付物（`hasPresentedDeliverables`）时让渡给官方 `ui-deliverables` 组件，在默认设置下同时保留交付物卡片与产出文件行。
 
 ## 0.18.0 刷新处置（`f9153dfc` → `f59ffd07`）
 
