@@ -7,17 +7,14 @@ English | [中文](2026-09-12-desktop-companion-coverage-artifact-prereqs.zh.md)
 ## Problem
 
 In pull request #659 coverage runs, tests in `apps/desktop` failed on a clean source tree when attempting to run under the coverage gate:
-1. Assembled Companion Host tests (`apps/desktop/tests/companion-host-*.assembled.spec.ts`) failed during `dsh web` startup with:
-   `Error: dsh: plugin tree failed to load: failed to apply loader entry typert-loader: 3 typert contributor(s) failed to register:`
-   The 3 packages `@deepseek-ai/dsh-api-workspace-files`, `@deepseek-ai/dsh-client-file-upload`, and `@deepseek-ai/dsh-command-feedback` export `./typert` pointing to `lib/typert.host.js`, but were missing from `TYPERT_PACKAGES` in `apps/desktop/tests/shipped-web-host.ts`.
+1. Assembled Companion Host tests (`apps/desktop/tests/companion-host-*.assembled.spec.ts`) failed during `dsh web` startup with `Error: dsh: plugin tree failed to load: failed to apply loader entry typert-loader: 3 typert contributor(s) failed to register:` The 3 packages `@deepseek-ai/dsh-api-workspace-files`, `@deepseek-ai/dsh-client-file-upload`, and `@deepseek-ai/dsh-command-feedback` export `./typert` pointing to `lib/typert.host.js`, but were missing from `TYPERT_PACKAGES` in `apps/desktop/tests/shipped-web-host.ts`.
 2. `apps/desktop/tests/packaged-main-bundle.spec.ts` failed because `build-main.mjs` let esbuild discover `apps/desktop/tsconfig.json`. Imports reached through workspace sources then resolved against package exports, requiring prebuilt `lib/` artifacts instead of the repository source-resolution paths. The explicit `@deepseek-ai/dsh-client-ui-desktop/protocol` source alias was also absent.
 3. `apps/desktop/tests/host-rpc-assembled.spec.ts` statically imported `companion-product.ts`, which statically imports `@deepseek-ai/dsh-api-workspace-controller/remote` and `@deepseek-ai/dsh-api-session-controller/remote` before `beforeAll` runs `generateDesktopHostTypertArtifacts()`.
 
 ## Decision
 
 1. In `apps/desktop/tests/shipped-web-host.ts`, add `@deepseek-ai/dsh-api-workspace-files`, `@deepseek-ai/dsh-client-file-upload`, and `@deepseek-ai/dsh-command-feedback` to `TYPERT_PACKAGES`.
-2. In `tsconfig.base.json`, add the explicit subpath alias:
-   `"@deepseek-ai/dsh-client-ui-desktop/protocol": ["./packages/client/ui-desktop/src/protocol.ts"]`
+2. In `tsconfig.base.json`, add the explicit subpath alias `"@deepseek-ai/dsh-client-ui-desktop/protocol": ["./packages/client/ui-desktop/src/protocol.ts"]`.
 3. In `apps/desktop/scripts/build-main.mjs`, pass root `tsconfig.base.json` to every esbuild invocation so workspace imports resolve through the repository source facade regardless of importer location.
 4. In `apps/desktop/tests/packaged-main-bundle.spec.ts`, declare local Typert artifact prerequisite generation via `generateDesktopHostTypertArtifacts()` in `beforeAll`. Verify source resolution in a dedicated checkout without prebuilt Cordis, Schemastery, deque, timeout, or Typert protocol `lib/` directories; the regular parallel suite does not mutate repository-wide build artifacts.
 5. In `apps/desktop/tests/host-rpc-assembled.spec.ts`, defer loading `companion-product.ts` until `beforeAll` after `generateDesktopHostTypertArtifacts()`, matching the dynamic import pattern established in `companion-host-business-error.assembled.spec.ts`.
