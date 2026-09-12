@@ -115,9 +115,9 @@ export function TextPreview({
   const retainedSource = retained?.source?.address === tab.contentId
     && retained.source.documentId === selected?.id
     && retained.source.version === current?.version
-    ? { text: retained.source.text, version: retained.source.version }
+    ? retained.source
     : undefined
-  const [editorSource, setEditorHolderSource] = useState<{ text: string; version: string } | undefined>(retainedSource)
+  const [editorSource, setEditorHolderSource] = useState(retainedSource)
   const [editorFailure, setEditorFailure] = useState<string>()
   const [editorLoading, setEditorLoading] = useState(false)
   const displayPath = meta.value?.absolutePath ?? current?.complete?.absolutePath ?? file.path
@@ -138,7 +138,7 @@ export function TextPreview({
     const identity = identityRef.current
     if (identity.address === tab.contentId && identity.documentId === selected?.id) return
     identityRef.current = { address: tab.contentId, documentId: selected?.id }
-    setEditorHolderSource(undefined)
+    setEditorHolderSource(retainedSource)
     setEditorFailure(undefined)
     setEditorLoading(false)
   }, [tab.contentId, selected?.id])
@@ -245,7 +245,7 @@ export function TextPreview({
         setEditorFailure(t('editNotText'))
         return
       }
-      setEditorHolderSource({ text, version: bytes.version })
+      setEditorHolderSource({ address: tab.contentId, documentId: selected.id, version: bytes.version, text })
       actions.editorMode(tab.id, 'edit')
     }).catch((error: unknown) => {
       if (!signal.aborted) setEditorFailure(error instanceof Error ? error.message : String(error))
@@ -268,7 +268,7 @@ export function TextPreview({
       retain: (next) => {
         retainEditor(tab.sessionId, tab.id, {
           ...next,
-          source: { address: tab.contentId, documentId: selected.id, version: editorSource.version, text: editorSource.text },
+          source: editorSource,
         })
       },
       setDirty: (dirty) => { setEditorDirty(tab.sessionId, tab.id, dirty) },

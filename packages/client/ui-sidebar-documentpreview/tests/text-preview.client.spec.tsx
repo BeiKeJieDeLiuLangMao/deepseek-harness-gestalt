@@ -399,6 +399,48 @@ describe('TextPreview — editor supplement', () => {
     h.controller.abort()
   })
 
+  it('restores the retained source after a renderer round trip without rereading', async () => {
+    const h = harness({ 1: page(1, ['whole preview'], true) })
+    const base = h.props()
+    const retained = {
+      source: { address: ADDRESS, documentId: 'markdown', version: 'v1', text: 'whole source\n' },
+      content: 'dirty marker', dirty: true, mode: 'edit' as const, localUnlock: false, previewScroll: 0, editorScroll: 0,
+    }
+    h.instance.actions.loading(TAB_ID, 'text-pages', 'v1')
+    h.instance.actions.page(TAB_ID, {
+      absolutePath: ABSOLUTE_PATH, version: 'v1', offset: 1, text: 'whole preview', lines: 1, eof: true, bytes: 13,
+    })
+    h.instance.actions.selected(TAB_ID, 'markdown')
+    h.instance.actions.editorMode(TAB_ID, 'edit')
+    let owner: OwnerOf<'sidebar.right.tab.document.editor'> | undefined
+    const definitions = [
+      { id: 'markdown', extensions: ['md'], title: () => 'Markdown', loading: 'text-pages' as const, editable: true },
+      { id: 'code', extensions: ['md'], title: () => 'Code', loading: 'text-pages' as const, editable: true },
+      { id: PLAIN_BODY_ID, extensions: [], title: () => 'Plain', loading: 'text-pages' as const, editable: true },
+    ]
+    const props = {
+      ...base,
+      useDocumentPreviews: (selector: (value: typeof definitions) => unknown) => selector(definitions),
+      useDocumentEditors: (selector: (value: readonly { id: string; documentIds: readonly string[] }[]) => unknown) => selector([{ id: 'editor', documentIds: definitions.map(value => value.id) }]),
+      editorState: () => retained,
+      renderSlot: ((key: string, value: unknown, options: { hookContext: TextPreviewProps['useTabInfo'] }) => {
+        if (key === 'sidebar.right.tab.document.editor') { owner = value as OwnerOf<'sidebar.right.tab.document.editor'>; return <div data-test-editor /> }
+        return <TextBody {...base} {...value as OwnerOf<'sidebar.right.tab.document'>} useTabInfo={options.hookContext} />
+      }) as TextPreviewProps['renderSlot'],
+    } as unknown as TextPreviewProps
+    const view = render(<TextPreview {...props} />)
+    await settle()
+    expect(owner?.content.text).toBe('whole source\n')
+    h.instance.actions.selected(TAB_ID, 'code')
+    await settle()
+    h.instance.actions.selected(TAB_ID, 'markdown')
+    await settle()
+    expect(owner?.content.text).toBe('whole source\n')
+    expect(owner?.retained?.content).toBe('dirty marker')
+    expect(h.bytes).not.toHaveBeenCalled()
+    view.unmount()
+  })
+
   it('shows a complete-read rejection in preview and retries without writing', async () => {
     const h = harness({ 1: page(1, ['whole preview'], true) })
     const base = h.props()
