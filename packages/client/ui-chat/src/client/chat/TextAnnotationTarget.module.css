@@ -10,7 +10,7 @@
 .toolbar {
   display: flex;
   overflow: hidden;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0;
   border-radius: 9px;
   background: var(--dsw-alias-bg-base);
   box-shadow: var(--dsw-shadow-lv2);
@@ -20,7 +20,7 @@
   height: 34px;
   padding: 0 12px;
   border: 0;
-  border-right: 1px solid var(--dsw-alias-border-l1);
+  border-right: 0.5px solid var(--dsw-alias-border-l1);
   background: transparent;
   color: var(--dsw-alias-label-primary);
   cursor: pointer;

@@ -4,7 +4,7 @@
   position: relative;
   overflow: hidden;
   border-radius: 16px;
-  border: 1px solid var(--dsw-alias-border-l1);
+  border: 0;
   background: var(--dsw-alias-bg-layer-1);
   box-shadow: var(--dsw-shadow-lv1);
 }
@@ -68,6 +68,7 @@
   border-radius: 999px;
   background: var(--dsw-alias-label-dimmed);
   transition: background var(--ds-transition-duration-fast) var(--ds-ease-in-out);
+  corner-shape: round;
 }
 
 .knob {
@@ -80,6 +81,7 @@
   background: var(--dsw-alias-bg-layer-1);
   box-shadow: var(--dsw-shadow-lv1);
   transition: transform var(--ds-transition-duration-fast) var(--ds-ease-in-out);
+  corner-shape: round;
 }
 
 .switch input:checked ~ .track {
@@ -102,7 +104,7 @@
 .foot {
   margin: 0;
   padding: 10px 20px 12px;
-  border-top: 1px solid var(--dsw-alias-border-l1);
+  border-top: 0.5px solid var(--dsw-alias-border-l1);
   color: var(--dsw-alias-label-caption);
   font: var(--dsw-font-xxs-12);
 }
@@ -117,7 +119,7 @@
 }
 
 .checklist {
-  border-top: 1px solid var(--dsw-alias-border-l1);
+  border-top: 0.5px solid var(--dsw-alias-border-l1);
 }
 
 .checkRow {
@@ -126,7 +128,7 @@
   gap: 10px;
   min-height: 42px;
   padding: 5px 2px;
-  border-bottom: 1px solid var(--dsw-alias-border-l1);
+  border-bottom: 0.5px solid var(--dsw-alias-border-l1);
   font: var(--dsw-font-s-14);
 }
 
@@ -159,6 +161,7 @@
   display: grid;
   place-items: center;
   font: var(--dsw-font-xxxs-11);
+  corner-shape: round;
 }
 
 .ok {
@@ -186,9 +189,10 @@
   height: 14px;
   border-radius: 999px;
   flex: none;
-  border: 2px solid var(--dsw-alias-border-l3);
+  border: 0.5px solid var(--dsw-alias-border-l3);
   border-top-color: var(--dsw-alias-button-info-fill);
   animation: phone-spin 0.8s linear infinite;
+  corner-shape: round;
 }
 
 @keyframes phone-spin {
@@ -205,7 +209,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  border: 1px solid var(--dsw-alias-border-l1);
+  border: 0.5px solid var(--dsw-alias-border-l1);
   border-radius: 10px;
   background: var(--dsw-alias-bg-layer-2);
   padding: 8px 8px 8px 14px;
@@ -240,7 +244,7 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 8px;
   background: var(--dsw-alias-bg-layer-1);
   color: var(--dsw-alias-label-secondary);
@@ -297,9 +301,10 @@
   gap: 6px;
   padding: 3px 10px;
   border-radius: 999px;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   color: var(--dsw-alias-label-tertiary);
   font: var(--dsw-font-xxs-12);
+  corner-shape: round;
 }
 
 .stepchip i {
@@ -311,6 +316,7 @@
   place-items: center;
   background: var(--dsw-alias-bg-layer-2);
   font: var(--dsw-font-xxxs-11);
+  corner-shape: round;
 }
 
 .stepDone {
@@ -324,7 +330,7 @@
   align-items: center;
   gap: 12px;
   border-radius: 10px;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   padding: 10px 14px;
   margin-bottom: 10px;
   font: var(--dsw-font-s-14);
@@ -385,7 +391,7 @@
 .gname::after {
   content: '';
   flex: 1;
-  height: 1px;
+  height: 0.5px;
   background: var(--dsw-alias-border-l1);
 }
 
@@ -408,6 +414,7 @@
   height: 9px;
   border-radius: 999px;
   margin: 0 4px;
+  corner-shape: round;
 }
 
 .dotOn {
@@ -437,6 +444,7 @@
   background: var(--dsw-alias-state-success-tertiary);
   color: var(--dsw-alias-state-success-primary);
   font: var(--dsw-font-xxs-strong-12);
+  corner-shape: round;
 }
 
 .summary .dot {

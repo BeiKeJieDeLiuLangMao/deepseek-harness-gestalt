@@ -32,7 +32,7 @@
   display: grid;
   gap: 16px;
   padding-top: 18px;
-  border-top: 1px solid var(--dsw-alias-border-l2);
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
 }
 
 .sectionHeading {
@@ -58,7 +58,7 @@
   align-items: center;
   gap: 14px 20px;
   padding: 16px;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 14px;
   background: var(--dsw-alias-bg-module-platform);
 }
@@ -93,10 +93,11 @@
   width: 44px;
   height: 24px;
   padding: 1px;
-  border: 1px solid var(--dsw-alias-border-l3, rgba(127, 130, 135, 0.72));
+  border: 0.5px solid var(--dsw-alias-border-l3, rgba(127, 130, 135, 0.72));
   border-radius: 999px;
   background: var(--dsw-alias-button-primary-dimmed, rgba(127, 130, 135, 0.42));
   cursor: pointer;
+  corner-shape: round;
 }
 
 .toggle span {
@@ -106,6 +107,7 @@
   border-radius: 50%;
   background: var(--dsw-static-neutral-bluish-00, rgb(255, 255, 255));
   transition: transform .16s ease;
+  corner-shape: round;
 }
 
 .toggle:focus-visible {
@@ -147,7 +149,7 @@
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 14px 20px;
   padding: 16px;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 14px;
   background: var(--dsw-alias-bg-module-platform);
   --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
@@ -180,6 +182,7 @@
   background: var(--dsw-alias-bg-base);
   font-size: 11px;
   line-height: 1.3;
+  corner-shape: round;
 }
 
 .connection::before {
@@ -191,6 +194,7 @@
   border-radius: 50%;
   background: currentColor;
   vertical-align: 1px;
+  corner-shape: round;
 }
 
 .connection[data-online='true'] {
@@ -216,7 +220,7 @@
   gap: 12px;
   margin: 0;
   padding-top: 12px;
-  border-top: 1px solid var(--dsw-alias-border-l2);
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
 }
 
 .deviceMetadata div { min-width: 0; }
@@ -274,6 +278,7 @@
   font-weight: 700;
   letter-spacing: .04em;
   text-transform: uppercase;
+  corner-shape: round;
 }
 
 .consent {
@@ -303,10 +308,11 @@
 .spinner {
   width: 28px;
   height: 28px;
-  border: 3px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-top-color: var(--dsw-alias-button-info-fill);
   border-radius: 50%;
   animation: spin .8s linear infinite;
+  corner-shape: round;
 }
 
 .signedIn {

@@ -5,7 +5,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { Context } from '@deepseek-ai/cordis'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
-import { TestRemote, usePinnedBrowserLanguages } from '@deepseek-ai/dsh-client-test-runtime'
+import { bindSnapshotSelector, TestRemote, usePinnedBrowserLanguages } from '@deepseek-ai/dsh-client-test-runtime'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
 import {
   apply as applySettingsBase,
@@ -56,6 +56,9 @@ describe('Desktop Settings shell Mobile Access placement', () => {
     render(
       <Shell
         wide
+        chromeMode="web"
+        openChromeSettings={injected.openChromeSettings}
+        closeChromeSettings={injected.closeChromeSettings}
         reconnect={injected.reconnect}
         t={assembled.locale.bind('settings')}
         useSessions={(select: (state: unknown) => unknown) => select({
@@ -64,6 +67,7 @@ describe('Desktop Settings shell Mobile Access placement', () => {
           byId: { 'active-session': { blank: false } },
         })}
         useWorkspaces={unused}
+        useChromeState={bindSnapshotSelector(injected.hooks.chromeState)}
         useConnectionState={(select: (state: unknown) => unknown) =>
           select(injected.hooks.connectionState.getSnapshot())}
         useOnboardingSteps={(select: (rows: unknown) => unknown) => select(injected.hooks.onboardingSteps.getSnapshot())}

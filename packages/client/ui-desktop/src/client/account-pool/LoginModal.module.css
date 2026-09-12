@@ -14,7 +14,7 @@
   width: min(640px, 100%);
   border-radius: 16px;
   background: var(--dsw-alias-bg-layer-2, #ffffff);
-  border: 1px solid var(--dsw-alias-border-inverted, rgba(0, 0, 0, 0.1));
+  border: 0.5px solid var(--dsw-alias-border-inverted, rgba(0, 0, 0, 0.1));
   box-shadow: 0 20px 48px rgba(0, 0, 0, 0.28);
   display: flex;
   flex-direction: column;
@@ -26,7 +26,7 @@
   align-items: flex-start;
   justify-content: space-between;
   padding: 20px 24px 16px;
-  border-bottom: 1px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.08));
+  border-bottom: 0.5px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.08));
 }
 
 .headerTitle h3 {
@@ -78,7 +78,7 @@
   align-items: flex-start;
   padding: 14px;
   border-radius: 10px;
-  border: 1px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.1));
+  border: 0.5px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.1));
   background: var(--dsw-alias-bg-layer-1, #f8fafc);
   cursor: pointer;
   text-align: left;
@@ -134,6 +134,7 @@
   border-top-color: #10b981;
   border-radius: 999px;
   animation: spin 0.8s linear infinite;
+  corner-shape: round;
 }
 
 @keyframes spin {
@@ -177,6 +178,7 @@
   justify-content: center;
   font-size: 20px;
   font-weight: bold;
+  corner-shape: round;
 }
 
 /* GLM API Key & Endpoint Form Step */
@@ -227,7 +229,7 @@
   width: 100%;
   padding: 8px 12px;
   border-radius: 8px;
-  border: 1px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.15));
+  border: 0.5px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.15));
   background: var(--dsw-alias-bg-layer-1, #f8fafc);
   font-size: 13px;
   color: var(--dsw-alias-label-primary, #0f172a);
@@ -251,6 +253,6 @@
   justify-content: flex-end;
   gap: 12px;
   padding: 16px 24px;
-  border-top: 1px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.08));
+  border-top: 0.5px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.08));
   background: var(--dsw-alias-bg-layer-1, #f8fafc);
 }

@@ -10,6 +10,10 @@ exports[`sidebar shell snapshots > renders the collapsed rail after the crossfad
     style=""
   >
     <div
+      data-slot="sidebar.chrome.drag"
+      style="display: contents;"
+    />
+    <div
       class="logoRow"
     >
       <button
@@ -101,6 +105,10 @@ exports[`sidebar shell snapshots > renders the expanded column (wordmark, capsul
     class="root quietBars"
     style="width: 300px;"
   >
+    <div
+      data-slot="sidebar.chrome.drag"
+      style="display: contents;"
+    />
     <div
       class="logoRow"
     >
@@ -231,6 +239,10 @@ exports[`sidebar shell snapshots > renders the expanded column in the default lo
     class="root quietBars"
     style="width: 300px;"
   >
+    <div
+      data-slot="sidebar.chrome.drag"
+      style="display: contents;"
+    />
     <div
       class="logoRow"
     >
