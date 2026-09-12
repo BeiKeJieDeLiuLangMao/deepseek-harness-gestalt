@@ -39,6 +39,7 @@ describe('buildAntigravityWindows', () => {
       remainingFraction: 0.73,
       periodHours: 5,
       resetAtMs: RESET_MS,
+      group: 'Gemini Pro',
     })
     expect(windows[1]).toMatchObject({ remainingFraction: 0.4, periodHours: 168 })
   })

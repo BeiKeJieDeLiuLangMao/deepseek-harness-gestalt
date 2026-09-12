@@ -8,6 +8,8 @@
   "references": [
     { "path": "../../../vendor/cordis" },
     { "path": "../../runtime-diagnostics/invariants" },
+    { "path": "../../credentials/credentials" },
+    { "path": "../../settings/settings" },
     { "path": "../llm" },
     { "path": "../llm-deepseek" }
   ]

@@ -3,7 +3,6 @@ import { cp, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { build } from 'esbuild'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { writePackagedSub2ApiSources } from './write-sub2api-sources.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const root = join(here, '..')
@@ -12,8 +11,6 @@ const operatedPlatformConfig = positional(args)[0] ?? process.env.DSH_DESKTOP_OP
 if (operatedPlatformConfig === undefined || operatedPlatformConfig.trim() === '') {
   throw new TypeError('Desktop build requires an operated Platform configuration path')
 }
-const packPlatform = flag('--platform', args) ?? process.env.DSH_DESKTOP_SUB2API_PLATFORM ?? process.platform
-const packArch = flag('--arch', args) ?? process.env.DSH_DESKTOP_SUB2API_ARCH ?? process.arch
 const operatedPlatformSource = JSON.parse(await readFile(operatedPlatformConfig, 'utf8'))
 const publicOperatedPlatformConfig = parseOperatedPlatformConfig(operatedPlatformSource)
 await build({
@@ -55,24 +52,14 @@ await writeFile(
 )
 await cp(join(root, 'src', 'boot.html'), join(root, 'out', 'boot.html'))
 await cp(join(root, 'cliproxyapi-source.json'), join(root, 'out', 'cliproxyapi-source.json'))
-await writePackagedSub2ApiSources({ root, platform: packPlatform, arch: packArch })
 await mkdir(join(root, 'out', 'build'), { recursive: true })
 await cp(join(root, 'build', 'icon.png'), join(root, 'out', 'build', 'icon.png'))
 
-function flag(name, argv) {
-  const index = argv.indexOf(name)
-  return index >= 0 ? argv[index + 1] : undefined
-}
-
 function positional(argv) {
   const values = []
-  for (let index = 0; index < argv.length; index += 1) {
-    if (argv[index] === '--') continue
-    if (argv[index] === '--platform' || argv[index] === '--arch') {
-      index += 1
-      continue
-    }
-    values.push(argv[index])
+  for (const argument of argv) {
+    if (argument === '--') continue
+    values.push(argument)
   }
   return values
 }

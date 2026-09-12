@@ -1,16 +1,16 @@
 # Agent Note: 围绕内置 CLIProxyAPI 核心构建 Desktop 账号池
 
-Status: proposed
+Status: implemented
 
 [English](2026-09-09-built-in-cliproxyapi-account-pool.md) | 中文
 
 ## Problem
 
-DeepSeek Gestalt 当前提供仅限 Desktop 的 Sub2API 组件，用户需要在安装应用后另行下载并启用。Desktop Host 会安装一个树外 Harness 插件和运行时包、重启 Web Host，并在 Settings 中渲染 sidecar 的管理工作区。用户添加账号前，这一设计已经引入独立插件发布、PostgreSQL 与 Redis、安装状态机和外部 UI 嵌入。
+DeepSeek Gestalt 此前提供仅限 Desktop 的 Sub2API 组件，用户需要在安装应用后另行下载并启用。Desktop Host 会安装一个树外 Harness 插件和运行时包、重启 Web Host，并在 Settings 中渲染 sidecar 的管理工作区。用户添加账号前，这一设计已经引入独立插件发布、PostgreSQL 与 Redis、安装状态机和外部 UI 嵌入。
 
-替代方案需要让账号池成为 Desktop Bundle 的组成部分。它必须监督一个本机 CLIProxyAPI 核心，提供 Gestalt 自有的账号与额度体验，并发布一个可用的模型提供方，同时不向 renderer 暴露管理凭据。产品还需要与上游核心保持可追溯的源码关系，并通过 Gestalt fork 中单独评审的洁净实现承载必需的 GLM Coding Plan 能力。
+替代方案让账号池成为 Desktop Bundle 的组成部分。它监督一个本机 CLIProxyAPI 核心，提供 Gestalt 自有的账号与额度体验，并发布一个可用的模型提供方，同时不向 renderer 暴露管理凭据。产品与上游核心保持可追溯的源码关系，并通过 Gestalt fork 中单独评审的洁净实现承载 GLM Coding Plan 能力。
 
-## Proposal
+## Decision
 
 远程协调记录是 [gestaltrun/deepseek-harness-gestalt#649](https://github.com/gestaltrun/deepseek-harness-gestalt/issues/649)，用于跟踪本提案及其交付图。[议题 #652 的评论 5609234949](https://github.com/gestaltrun/deepseek-harness-gestalt/issues/652#issuecomment-5609234949) 冻结了下述 GUI 规划输入，但不表示 runtime 或 provider 实现证据已经完成。
 
@@ -30,7 +30,7 @@ Gestalt 自有 TypeScript 代码将留在 Harness 仓库中，包括 Desktop 进
 
 fork 更新将使用 `gestaltrun/CLIProxyAPI` 中可评审的分支与 PR。更新会标明上游基线，保留或明确修订 Gestalt GLM delta，并在 Harness gitlink 移动前通过 fork 门禁。移动 Harness 钉住点将是独立评审变更，并附带 Desktop 打包与运行时证据。两个仓库都不会浮动跟随上游 `main` 或 latest Release tag。
 
-现有树外插件目录提案对独立发布的 Harness 插件仍有价值，但本提案会取代其中针对该账号池的 Sub2API 拓扑。替代方案会退役 `sub2api-sources`、其 writer 与 catalog、installer、profile 修改和 Offer 生命周期；当 packaged resource 缺失时，不会保留通过网络下载核心的补偿路径。已实现的 [Sub2API Offer 卡决策](../../implemented/architecture/2026-08-28-sub2api-offer-card-installer.zh.md)在替代方案交付前仍描述当前产品；实现阶段将更新或合并该记录，而不是提前把它改写成未交付事实。
+独立发布的 Harness 插件目录仍然有用，但其中针对该账号池的 Sub2API 拓扑已被取代。已交付产品退役 `sub2api-sources`、其 writer 与 catalog、installer、profile 修改和 Offer 生命周期；当 packaged resource 缺失时，不会保留通过网络下载核心的补偿路径。历史 [Sub2API Offer 卡决策](../../archived/architecture/2026-08-28-sub2api-offer-card-installer.md) 已归档；不要恢复 Offer iframe、一键 sidecar 安装器，也不要物理删除 `$DSH_HOME/sub2api` 用户数据。
 
 ## Runtime ownership and lifecycle
 
@@ -62,7 +62,7 @@ Anthropic、Codex 与 Antigravity 默认启动 PKCE redirect 流程。Kimi 与 x
 
 集成将为 CLIProxyAPI 发布一个稳定的 DSH provider route，而不是按账号来源创建多个 route 或保留替代性的 Composite 概念。Kimi、Codex、Anthropic、Antigravity、xAI 与拟议 GLM 订阅都是该 route 背后的账号池来源。CLIProxyAPI 负责为模型请求选择符合条件的账号。
 
-适配器将从本机核心的 `/v1/models` 响应取得模型目录，并通过 `ctx.llm` 原子注册、替换或撤回这一条 route。提供方拓扑通知将让 Models 与 Composer 消费方重新读取现有提供方和模型目录。空账号池、核心不可用，或无法证明存在可用模型的目录，都不会发布虚假的可用 route。产品自有 route id 固定为 `gestalt-account-pool`；它与用户常用的自配置 `cliproxyapi` id 分离，若同一产品 id 已存在则明确失败，而不是替换已有 route。
+适配器将从本机核心的 `/v1/models` 响应取得模型目录，包括显示名、context window、输出上限与 think level 范围。普通 OpenAI listing 会去掉这些字段，因此目录请求在 harness User-Agent 之外还标识为 Grok Shell。Desktop 存在 settings 与 credentials 时，把该目录写入模型页 `llm-pi-ai` provider `gestalt-account-pool`。Host 已把 inference key 注入进程环境 `DSH_GESTALT_ACCOUNT_POOL_API_KEY`；插件不会把只读环境值再写入 credentials 文件，凭据写入失败也不会跳过目录同步。不再为同一 route 额外注册 `ctx.llm` adapter。没有这些 seam 时，通过 `ctx.llm` 原子注册、替换或撤回这一条 route。空账号池、核心不可用，或无法证明存在可用模型的目录，都不会发布虚假的可用 route。产品自有 route id 固定为 `gestalt-account-pool`；它与用户常用的自配置 `cliproxyapi` id 分离，若同一产品 id 已存在则明确失败，而不是替换已有 route。Auth 文件放在 generation 私有 TLS/config 旁边的稳定 `auth/` 目录，后续 generation 会沿用同一批账号。
 
 Management 与 inference 即使指向同一个本机进程，也保持独立 authority。适配器取得有效端点和 key 后，普通 inference 不应依赖 UI 账号变更操作；inference 消费方也不能因拥有请求配置而获得管理操作。
 
@@ -110,19 +110,9 @@ Manager 实现已经确定完整 provider 矩阵和解析依据；真实服务�
 
 **为每个 provider 合成一个统一额度百分比。** 未采用，因为上游证据并不一致。统一数字会抹掉缺失字段，并误报未知容量或时间窗口。
 
-## Acceptance criteria
+## Consequences
 
-- 全新递归 checkout 会把 Harness gitlink 解析为 `gestaltrun/CLIProxyAPI` 中存在的提交，且该 fork 的 GitHub parent 与 source 是 `router-for-me/CLIProxyAPI`；普通 TypeScript workspace 发现不会包含 Go 子项。
-- 每个受支持 Desktop 包含由原生 runner 构建、并通过 manifest 绑定记录钉住点、目标 OS/架构、resource path 与 SHA-256 的二进制；它能从全新隔离 home 启动且不需要 Go 工具链、数据库服务、核心下载、用户 `PATH` 或默认核心配置，并拒绝缺失、不匹配、动态依赖不完整或无法识别的二进制。
-- 一个 Desktop 实例拥有一个 loopback CLIProxyAPI 进程和动态端口；ready 状态、有界崩溃恢复、关闭与清理均可观察，且一个实例绝不终止另一实例的进程。
-- Renderer 不会收到 management secret、inference API key、auth-file secret 或原始管理逃生口；凭据类值不会进入日志、Session 数据、截图与保留产物。
-- 第一方 Settings UI 会渲染已接受的全局管理/额度切换与单卡翻面；Anthropic、Codex 与 Antigravity 的 PKCE 登录；Kimi 与 xAI 的设备授权；以及带明确中国/国际和个人/团队选择的独立 GLM Coding Plan key 入口。它会渲染真实授权状态与额度 unknown、partial、stale 和 failure 状态，且不使用 iframe 或运行时 UI 下载。
-- LLM 集成只会根据实时本机模型目录发布 `gestalt-account-pool`，在核心无法服务模型时撤回或标为不可用，保持用户自有 `cliproxyapi` route 不变，并能完成一项单独授权的真实模型请求。
-- 替代路径不会读取或转换 Sub2API 数据。若之后授权删除旧文件，该行为会作为独立操作验证。
-- fork 同步会保留可审计的上游基线与已接受 Gestalt delta；Harness 钉住点仅在 fork、打包、确定性 UI 和必需原生证据通过后移动。
-- 冻结 UI 稿与体验路线覆盖空状态、登录取消/成功/失败、全局切换、单卡翻面、额度新鲜度差异、provider 目录变化、核心故障与重启恢复。
-
-## Risks
+已交付的 Desktop Settings 渲染内置账号池，而不是 Offer 卡。遗留 Sub2API 安装器、sources writer、catalog、sidecar gitlink 与 e2e 车道已退役。既有 `$DSH_HOME/sub2api` 用户数据既不读取也不物理删除。
 
 内置二进制会增大 Desktop Bundle，并让每个受支持平台成为核心构建矩阵的一部分。原生 runner 必须确认 CGO 与动态库闭包，不能假定 cross-compile。打包准备可以构建和检查未签名产物，但 codesign、公证、stapler 验证、tag、Release 发布与部署不在本次授权范围。
 

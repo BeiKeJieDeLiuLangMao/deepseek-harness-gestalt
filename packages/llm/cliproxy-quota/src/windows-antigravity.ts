@@ -81,8 +81,10 @@ export function buildAntigravityWindows(payload: unknown): QuotaWindowObservatio
     const groupLabel =
       normalizeStringValue(group['displayName'] ?? group['display_name']) ??
       `Quota Group ${String(groupIndex + 1)}`
+    const groupDescription = normalizeStringValue(group['description']) ?? undefined
     const groupKey = toStableKey(groupLabel, `quota-group-${String(groupIndex + 1)}`)
     const buckets = Array.isArray(group['buckets']) ? group['buckets'] : []
+    const groupWindows: QuotaWindowObservation[] = []
 
     for (const [bucketIndex, bucketValue] of buckets.entries()) {
       const bucket = asRecord(bucketValue)
@@ -99,18 +101,22 @@ export function buildAntigravityWindows(payload: unknown): QuotaWindowObservatio
       const label = normalizeStringValue(bucket['displayName'] ?? bucket['display_name']) ?? key
       const periodHours = antigravityPeriodHours(windowName)
 
-      windows.push({
+      groupWindows.push({
         key,
         label,
         remainingFraction,
         resetAtMs: resolveResetMs([bucket['resetTime'] ?? bucket['reset_time']]),
         periodHours,
+        group: groupLabel,
+        ...groupDescription === undefined ? {} : { groupDescription },
       })
     }
+    groupWindows.sort((a, b) => {
+      const orderDiff = windowOrder(a.periodHours ?? null) - windowOrder(b.periodHours ?? null)
+      return orderDiff === 0 ? a.key.localeCompare(b.key) : orderDiff
+    })
+    windows.push(...groupWindows)
   }
 
-  return windows.sort((a, b) => {
-    const orderDiff = windowOrder(a.periodHours ?? null) - windowOrder(b.periodHours ?? null)
-    return orderDiff === 0 ? a.key.localeCompare(b.key) : orderDiff
-  })
+  return windows
 }

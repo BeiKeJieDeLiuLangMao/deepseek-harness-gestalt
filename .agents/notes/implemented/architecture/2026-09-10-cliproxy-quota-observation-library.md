@@ -6,7 +6,7 @@ English | [中文](2026-09-10-cliproxy-quota-observation-library.zh.md)
 
 ## Problem
 
-The [built-in account pool proposal](../../proposed/architecture/2026-09-09-built-in-cliproxyapi-account-pool.md) requires normalized quota observations for five account vendors without exposing the CLIProxyAPI management secret or the generic management request facility to the renderer. Issue #651 delivers the data plane of that requirement: probe construction, payload parsing, window normalization, and sanitization, ahead of the runtime owner (#650) that will inject the outbound channel.
+The [built-in account pool](2026-09-09-built-in-cliproxyapi-account-pool.md) requires normalized quota observations for five account vendors without exposing the CLIProxyAPI management secret or the generic management request facility to the renderer. Issue #651 delivers the data plane of that requirement: probe construction, payload parsing, window normalization, and sanitization, ahead of the runtime owner (#650) that will inject the outbound channel.
 
 ## Decision
 

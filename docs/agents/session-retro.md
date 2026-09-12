@@ -2,7 +2,7 @@
 
 English | [中文](session-retro.zh.md)
 
-This reference carries the shared rules for a session retrospective: what a writer session reviews, which sources it may read, and how its candidates reach a user decision. The [`retro`](../../.agents/skills/retro/SKILL.md) skill is the user-invoked entry; [the delivery workflow](../../.agents/skills/orchestrate-dsh-delivery/SKILL.md) links this page so a coordinator can ask each writer session to run its own retrospective without requiring that user-only skill through an automatic call.
+This reference carries the shared rules for a session retrospective: what a writer session reviews, which sources it may read, and how its candidates reach a user decision. The [`retro`](../../.agents/skills/retro/SKILL.md) skill is the entry; writers and coordinators invoke it by name. [The delivery workflow](../../.agents/skills/orchestrate-dsh-delivery/SKILL.md) links this page so a coordinator can ask each writer session to run its own retrospective.
 
 ## Scope
 

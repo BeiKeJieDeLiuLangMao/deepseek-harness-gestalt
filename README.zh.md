@@ -98,8 +98,8 @@
     <tr>
       <td rowspan="3" valign="top"><strong>扩展与协作域</strong></td>
       <td>社区插件</td>
-      <td><code>DONE</code> Better Sidebar<br><code>TODO</code> Sub2API</td>
-      <td><a href="plugins/README.zh.md">外部插件目录</a>固定经过审阅的精确修订。Better Sidebar 已集成；可选 Sub2API 提供方、安装器和内嵌管理台进入<a href="https://github.com/gestaltrun/deepseek-harness-gestalt/issues/346">后续计划</a></td>
+      <td><code>DONE</code> Better Sidebar<br><code>DONE</code> 账号池</td>
+      <td><a href="plugins/README.zh.md">外部插件目录</a>固定经过审阅的精确修订。Better Sidebar 已集成。Desktop 在 Settings 内置 CLIProxyAPI 账号池，提供方为 <code>gestalt-account-pool</code>；不下载 sidecar，也不覆盖用户自有的 <code>cliproxyapi</code> 路由</td>
       <td><a href="plugins/README.zh.md">插件目录</a></td>
     </tr>
     <tr>

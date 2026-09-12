@@ -100,6 +100,22 @@ export const ACCOUNT_POOL_CANCEL_LOGIN = 'accountPool:cancelLogin'
 export const ACCOUNT_POOL_SUBMIT_GLM_KEY = 'accountPool:submitGlmKey'
 /** IPC / preload channel refreshing one account quota observation. */
 export const ACCOUNT_POOL_REFRESH_QUOTA = 'accountPool:refreshQuota'
+/** IPC / preload channel refreshing quota observations for every account. */
+export const ACCOUNT_POOL_REFRESH_ALL_QUOTA = 'accountPool:refreshAllQuota'
+/** IPC / preload channel opening one https authorization URL in the system browser. */
+export const ACCOUNT_POOL_OPEN_EXTERNAL = 'accountPool:openExternal'
+/** IPC / preload channel submitting a PKCE callback URL. */
+export const ACCOUNT_POOL_SUBMIT_CALLBACK = 'accountPool:submitCallback'
+/** IPC / preload channel listing models for one auth file. */
+export const ACCOUNT_POOL_LIST_MODELS = 'accountPool:listModels'
+/** IPC / preload channel downloading one auth file through a Host save dialog. */
+export const ACCOUNT_POOL_DOWNLOAD = 'accountPool:download'
+/** IPC / preload channel reading redacted editable auth-file fields. */
+export const ACCOUNT_POOL_READ_FIELDS = 'accountPool:readFields'
+/** IPC / preload channel writing editable auth-file fields. */
+export const ACCOUNT_POOL_PATCH_FIELDS = 'accountPool:patchFields'
+/** IPC / preload channel dismissing an in-flight or failed login overlay. */
+export const ACCOUNT_POOL_DISMISS_LOGIN = 'accountPool:dismissLogin'
 /** IPC event pushed for every account-pool snapshot. */
 export const ACCOUNT_POOL_SNAPSHOT_CHANGED = 'accountPool:snapshot-changed'
 /** IPC / preload channel: place one official page over the sidebar viewport. */
@@ -289,7 +305,18 @@ export interface DesktopAccountPoolQuotaWindow {
   readonly label: string
   readonly remainingPercent?: number
   readonly timeRemainingPercent?: number
+  readonly periodHours?: number
+  readonly resetAtMs?: number
+  readonly group?: string
+  readonly groupDescription?: string
   readonly status: 'known' | 'partial' | 'unsupported' | 'failure'
+}
+
+/** One model an auth file currently serves. */
+export interface DesktopAccountPoolModel {
+  readonly id: string
+  readonly name?: string
+  readonly ownedBy?: string
 }
 
 /** One redacted account-pool card. */
@@ -305,8 +332,48 @@ export interface DesktopAccountPoolAccount {
   readonly successCount: number
   readonly failCount: number
   readonly createdAt?: string
+  readonly modifiedAt?: string
+  readonly sizeBytes?: number
+  readonly note?: string
+  readonly prefix?: string
+  readonly proxyUrl?: string
+  readonly priority?: number
+  readonly weight?: number
+  readonly disableCooling?: boolean
+  readonly websockets?: boolean
+  readonly excludedModels?: readonly string[]
+  readonly headers?: Readonly<Record<string, string>>
+  readonly recentRequests?: readonly DesktopAccountPoolRecentRequest[]
   readonly projectId?: string
+  readonly planType?: string
+  readonly resetCreditsAvailable?: number
   readonly quota: readonly DesktopAccountPoolQuotaWindow[]
+}
+
+/** One redacted recent-request health bucket. */
+export interface DesktopAccountPoolRecentRequest {
+  readonly success: number
+  readonly failed: number
+}
+
+/** Editable auth-file fields written through PATCH /auth-files/fields. */
+export interface DesktopAccountPoolFieldPatch {
+  readonly note?: string
+  readonly prefix?: string
+  readonly proxyUrl?: string
+  readonly priority?: number
+  readonly weight?: number
+  readonly disableCooling?: boolean
+  readonly websockets?: boolean
+  readonly excludedModels?: readonly string[]
+  readonly headers?: Readonly<Record<string, string>>
+}
+
+/** Redacted editable fields plus INFO preview for the settings dialog. */
+export interface DesktopAccountPoolEditableFields {
+  readonly name: string
+  readonly info: Readonly<Record<string, string | number | boolean>>
+  readonly fields: DesktopAccountPoolFieldPatch
 }
 
 /** Immutable account-pool snapshot pushed to the page. */
@@ -392,12 +459,33 @@ export interface DesktopBridge {
   readonly accountPoolLoginStatus: (state: string) => Promise<DesktopAccountPoolSnapshot>
   /** Cancel an in-flight OAuth session. */
   readonly accountPoolCancelLogin: (state: string) => Promise<DesktopAccountPoolSnapshot>
+  /** Dismiss a failed or in-flight login overlay. */
+  readonly accountPoolDismissLogin: () => Promise<DesktopAccountPoolSnapshot>
+  /** Open one https authorization URL in the operating-system browser. */
+  readonly accountPoolOpenExternal: (url: string) => Promise<void>
+  /** Submit a PKCE callback URL copied from the operating-system browser. */
+  readonly accountPoolSubmitCallback: (
+    input: { provider: AccountPoolLoginKind; redirectUrl: string },
+  ) => Promise<DesktopAccountPoolSnapshot>
   /** Submit a GLM Coding Plan key; the key never returns in the snapshot. */
   readonly accountPoolSubmitGlmKey: (
     input: { apiKey: string; site?: string; organization?: string; project?: string },
   ) => Promise<DesktopAccountPoolSnapshot>
   /** Refresh one account quota observation. */
   readonly accountPoolRefreshQuota: (authIndex: string) => Promise<DesktopAccountPoolSnapshot>
+  /** Refresh quota observations for every account. */
+  readonly accountPoolRefreshAllQuota: () => Promise<DesktopAccountPoolSnapshot>
+  /** List models one auth file currently serves. */
+  readonly accountPoolListModels: (name: string) => Promise<readonly DesktopAccountPoolModel[]>
+  /** Save one auth file through a Host-owned save dialog. */
+  readonly accountPoolDownload: (name: string) => Promise<{ ok: boolean; error?: string }>
+  /** Read redacted editable fields for the settings dialog. */
+  readonly accountPoolReadFields: (name: string) => Promise<DesktopAccountPoolEditableFields>
+  /** Write editable auth-file fields. */
+  readonly accountPoolPatchFields: (
+    name: string,
+    fields: DesktopAccountPoolFieldPatch,
+  ) => Promise<DesktopAccountPoolSnapshot>
   /** Subscribe to account-pool snapshots. */
   readonly onAccountPoolSnapshot: (listener: (snapshot: DesktopAccountPoolSnapshot) => void) => () => void
   /** Place one official Runtime page over the sidebar viewport. */

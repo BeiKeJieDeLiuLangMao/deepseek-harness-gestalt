@@ -2,66 +2,38 @@
 
 English | [中文](delegation-routing.zh.md)
 
-Use this reference before dispatching or continuing a subagent. It governs task-to-model selection and child-context reuse without requiring any particular provider.
+Use this provider-neutral reference before dispatching or continuing a subagent. Delivery-specific roles and installation model priorities belong to [the delivery workflow](../../.agents/skills/orchestrate-dsh-delivery/SKILL.md) and its references.
 
 ## Decide whether to delegate
 
-Use deterministic tools directly for file discovery, status, exact transformations, and small local checks. Delegate when a bounded independent task benefits from separate context, parallel work, a different model, or an isolated review. Keep one mutable writer per worktree; read-only investigation and review may run in parallel.
+Use deterministic tools directly for file discovery, status, exact transformations, and small local checks. Delegate when a bounded independent task benefits from separate context, parallel work, a different model, or independent review. Keep one mutable writer per worktree; read-only investigation and review may run in parallel.
 
 Define the deliverable, read/write scope, risk, acceptance evidence, required context, and independence before choosing a route. Follow the root task-language rule for subagent descriptions and todo content; it does not constrain internal child prompts. Source code and observable checks—not a model's confidence—decide acceptance.
 
-## Select a model explicitly
+## Select a route explicitly
 
-Choose an available provider and model for the task, current user restrictions, verified input capabilities, and measured performance on comparable repository work. Pass both route fields when the runtime supports them instead of inheriting the parent route by omission. Distinguish three evidence levels:
+Choose an available provider and model for the task, current user restrictions, verified input capabilities, and measured performance on comparable repository work. Pass route fields when the runtime supports them instead of assuming inheritance. Distinguish configured adapter capability, official product claims, and repository task evidence. A model name does not establish image input, tools, quota, billing, cache behavior, or benchmark rank.
 
-1. **Configured capability** says what the current adapter exposes.
-2. **Official source claim** supports product tier or input capability, not a universal ranking.
-3. **Task evidence** records whether the route produced accurate, checkable work in this repository.
+Respect excluded routes and do not silently fall back. Read installation-specific priorities from their owning reference and verify the live catalog rather than static account counts. Diagnose quota exhaustion, rate limiting, authentication, network transport, and code failure separately.
 
-Use this default mapping only when the named tier or a measured equivalent is available:
+## Reuse or replace an owner
 
-| Task | Default tier |
-| --- | --- |
-| Deterministic lookup or conversion | Direct tools |
-| Simple bulk extraction or classification | Luna-class high-throughput model |
-| Bounded routine edits and test additions | Terra-class or GLM Flash-class model |
-| General backend and terminal implementation | GLM-class engineering model |
-| Long autonomous implementation | Grok- or Kimi-class long-horizon model |
-| Broad evidence integration across many sources | Kimi-class long-context model |
-| Frontend implementation or visual verification | Gemini-class or visual GLM Flash-class model |
-| Architecture, cross-package lifecycle or security work, difficult root cause, or independent high-risk review | Sol-class or a proven equivalent |
+Before creating a child, inspect relevant direct continuable children when the runtime provides that catalog. Ownership is delivery-scoped: reuse a suitable owner through implementation, checks, review findings, integration failures, and acceptance fixes. Batch coherent findings instead of creating one session or turn per ticket, error, or comment.
 
-A model name does not establish input support. Route screenshots only through a model and adapter verified to accept images; text-only models stay on text tasks. Media-generation models are not text coding agents. Respect excluded models and providers; do not silently fall back to them. Published list prices describe vendor tiers, not an intermediary account's bill. Do not invent unsupported effort arguments, cache guarantees, or benchmark rankings.
+Continue a direct child when its evidence, scope, permissions, and model remain suitable and independence is unnecessary. Send a delta brief with the new objective, current base, invalidated facts, retained constraints, and completion evidence. `send_message` schedules a later FIFO turn; it cannot redirect the current turn, change provider/model, or change cwd.
 
-An installation-specific mapping may supplement this reference. [The optional CLIProxyAPI profile](delegation-routing-cliproxyapi.md) records one such mapping and is not required for other installations.
+Prefer a safe turn-boundary same-session model change only when the host explicitly supports it and its scope is understood. Otherwise report the limitation and let the coordinator decide whether a missing capability or required independence justifies replacement. Do not create automatic fresh-session churn. A host switch may persist as a global default.
 
-## Reuse or start fresh
+Start a fresh child for independent review, unrelated work, an unavailable or systematically stale owner, or a capability the current owner cannot gain safely. Record the reason, current base, retained evidence, open findings, and next check. A repeated failure alone is not a routing reason; keep the owner and run a discriminating experiment.
 
-Before creating a child, inspect relevant direct continuable children when the runtime provides that catalog.
+Fork the parent only when the task genuinely requires decisions spread across completed parent turns and a concise brief would lose necessary context. Fork inherits completed conversation history, not the current in-flight turn, and is not independent review. In-process spawn/fork children inherit the parent session cwd and do not imply worktree, process, disk, credential, or authority isolation.
 
-Treat ownership as delivery-scoped. A child that owns one delivery unit remains its owner through implementation, local tests, review findings, integration failures, and acceptance fixes. An independent reviewer remains responsible for delta review of its findings, and an environment owner remains responsible through rebuilds, diagnosis, re-walks, and cleanup. The coordinator decides any additional write-capable owner; a child may propose a split but does not recursively create one.
+Only direct continuable children are follow-up targets. Do not inspect private session storage or other session logs to manufacture continuity. Persist durable decisions in specifications, Context documents, and Agent Notes.
 
-**Continue a direct child** for a related follow-up when its evidence remains current, its fixed model still fits, its scope and permissions still fit, and independence is unnecessary. Send a delta brief: the new objective, current base, changed files or invalidated facts, retained constraints, and completion evidence. A follow-up message schedules the child's next turn; it does not change the route or redirect work already running. Batch coherent findings instead of creating one child or turn per small fix.
+## Supervise and accept
 
-**Start a fresh child** for independent review, a model capability the current child lacks, stale or systematically incorrect assumptions, unrelated work, an unavailable owner, or a standalone request after the earlier delivery closed. A merely preferred model does not replace a suitable owner. Record the reason and hand off the current base, retained evidence, open findings, and next check. Mark the old owner complete or replaced before the new child writes. A repeated command failure by itself is not a routing reason; keep the current owner and replace the retry with a discriminating experiment.
+Merge feedback to a running writer into one versioned fix list delivered at a natural checkpoint. Scattered messages queue behind the running turn; an immediate safety stop may interrupt, but `interrupt_agent` stops only the current turn, preserves descendants, and parks queued turns until a later waking send.
 
-**Fork the parent** only when the task genuinely requires decisions spread across completed parent turns and a concise brief would lose necessary context. A fork is not an independent review and does not imply provider-side cache reuse.
+While a normally running writer produces no new commit, failure, or completion event, rely on runtime completion notifications or one bounded managed wait. Re-verify git, CI, or child state after a change notification or reported result rather than polling for progress.
 
-The child catalog is not all workspace history. Only direct continuable children are follow-up targets; do not adopt children across parents or inspect private session storage to manufacture continuity. Persist durable decisions in repository owners such as specifications, Context documents, and Agent Notes.
-
-## Supervise running writers
-
-1. Merge feedback to a running writer into one versioned fix list delivered at its natural checkpoint (a check result, a reported phase completion, or the next turn it already requested). Scattered follow-up messages queue behind the running turn, and repeated acknowledgement turns burn the child's context; a numbered list lets both sides reference items unambiguously across fixes. An immediate safety stop still interrupts the writer without waiting.
-2. While a normally running writer produces no new commit, failure, or completion event, do not re-poll `list_agents`, git, or CI, and do not re-wait to watch progress. Rely on the runtime's completion notification, or one bounded managed wait when nothing else remains; re-verify state only after a change notification or a reported result.
-
-## Dispatch brief and acceptance
-
-Use a minimal task packet:
-
-- deliverable and observable completion evidence;
-- necessary issue, specification, files, and current commit or worktree delta;
-- read/write scope and explicit exclusions;
-- required distinctions between confirmed facts, hypotheses, and unknowns;
-- expected findings, checks actually run, and unresolved limitations.
-
-Reuse saves reconstruction only when the retained evidence outweighs stale context, correction cost, queue delay, and bias. Do not use arbitrary token thresholds or claim persistent KV cache. If a route repeatedly violates evidence or tool requirements, narrow once with explicit correction, then record the replacement and start fresh on a better-fitting route.
+A dispatch brief names the deliverable, observable completion evidence, current commit or worktree delta, read/write scope, exclusions, relevant sources, required fact distinctions, checks actually run, and unresolved limitations. Reuse is valuable only while retained evidence outweighs stale context, correction cost, queue delay, and bias; do not claim persistent KV cache.

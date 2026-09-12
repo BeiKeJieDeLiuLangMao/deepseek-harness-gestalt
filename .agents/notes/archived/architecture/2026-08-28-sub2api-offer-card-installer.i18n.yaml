@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write
+2026-08-28-sub2api-offer-card-installer.md: 8868ad5056e069a6c3cd6f97dde949df74bd419f
+2026-08-28-sub2api-offer-card-installer.zh.md: 9d77de44e4c5150ac552325b6dd2efec9131893c

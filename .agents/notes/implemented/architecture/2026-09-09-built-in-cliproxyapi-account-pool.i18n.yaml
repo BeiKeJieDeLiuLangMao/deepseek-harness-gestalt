@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-09-built-in-cliproxyapi-account-pool.md
+2026-09-09-built-in-cliproxyapi-account-pool.md: e8ad1dd5d7743ffcf35ae8400a6d205d792c1531
+2026-09-09-built-in-cliproxyapi-account-pool.zh.md: cfe99a3f34a16ea66b40c2cd36c3f2bbb7d14d9e

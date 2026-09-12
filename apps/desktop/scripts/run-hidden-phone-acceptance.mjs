@@ -36,7 +36,7 @@ if (!existsSync(electron)) throw new Error('install-free prerequisite missing: D
 const directInputs = [
   join(desktop, 'out/main.mjs'), join(desktop, 'out/preload.cjs'), operatedPlatformOutput,
   join(desktop, 'out/boot.html'), join(desktop, 'out/relay-node-helper.cjs'),
-  join(desktop, 'out/system-node-fetch-helper.cjs'), join(desktop, 'out/sub2api-sources.json'),
+  join(desktop, 'out/system-node-fetch-helper.cjs'),
   join(desktop, 'out/build/icon.png'), join(desktop, 'scripts/build-main.mjs'),
   join(desktop, 'cordis.patch.yml'), hostEntry, clientEntry, webEntry,
   join(root, 'node_modules/tsx/dist/esm/index.mjs'), operatedPlatformSource,

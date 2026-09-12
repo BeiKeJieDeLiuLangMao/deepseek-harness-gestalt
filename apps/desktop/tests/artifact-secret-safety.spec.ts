@@ -6,7 +6,7 @@ import {
   assertArtifactSecretsAbsent, credentialSafeEnvironment, credentialValues,
 } from '../scripts/artifact-secret-safety.mjs'
 
-describe('Sub2API artifact secret safety', () => {
+describe('Desktop artifact secret safety', () => {
   it('removes every inherited credential environment spelling', () => {
     expect(credentialSafeEnvironment({
       PATH: '/bin',

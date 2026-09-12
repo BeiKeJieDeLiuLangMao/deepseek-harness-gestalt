@@ -334,7 +334,6 @@ describe('translation scope discovery', () => {
     'website/reference.md',
     'packages/example/README.txt',
     'vendor/example/README.md',
-    'plugins/dsh-sub2api-sidecar/README.md',
     'packages/example/node_modules/dependency/README.md',
     'packages/example/lib/README.md',
     'coverage/report/README.md',

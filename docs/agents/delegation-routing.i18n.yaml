@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/agents/delegation-routing.md
-delegation-routing.md: 06e31e0d8bbc54895ef2b6769190bce62e7926a4
-delegation-routing.zh.md: 0901d5130574de4e6100a015670e3eb92d9c0ec7
+delegation-routing.md: 691bcbf460dace67ac394902bb4c360345e5d06f
+delegation-routing.zh.md: f2f5321de911c9d96243c5fa353c9b5e03e06538

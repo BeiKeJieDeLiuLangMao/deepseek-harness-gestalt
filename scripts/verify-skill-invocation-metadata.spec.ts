@@ -60,6 +60,9 @@ describe('cross-product skill invocation metadata gate', () => {
     expect(source).toContain('write RED before any skill or documentation tour')
     expect(source).toContain('the replacement brief names that merged SHA')
     expect(source).toContain('it does not implement')
+    expect(source).toContain('The root never routes or changes itself')
+    expect(source).toContain('Quality completes E2E before human acceptance')
+    expect(source).toContain('fixes return to their original module owners')
   })
 
   it('keeps work-in-progress review layers explicit', () => {
@@ -68,6 +71,18 @@ describe('cross-product skill invocation metadata gate', () => {
     expect(source).toContain('git diff`')
     expect(source).toContain('git ls-files --others --exclude-standard')
     expect(source).toContain('does not end a work-in-progress review')
+  })
+
+  it('preserves stable review ownership and post-acceptance GIF timing', () => {
+    const review = readFileSync(join(import.meta.dirname, '../.agents/skills/code-review/SKILL.md'), 'utf8')
+    const delivery = readFileSync(join(import.meta.dirname, '../.agents/skills/orchestrate-dsh-delivery/SKILL.md'), 'utf8')
+    const roles = readFileSync(join(import.meta.dirname, '../.agents/skills/orchestrate-dsh-delivery/references/session-roles.md'), 'utf8')
+    expect(review).toContain('reuses its existing independent reviewer')
+    expect(review).toContain('When no independent owner exists, start fresh children')
+    expect(delivery.indexOf('Give the user the initial handoff')).toBeLessThan(delivery.indexOf('After human acceptance'))
+    expect(delivery.indexOf('After human acceptance')).toBeLessThan(delivery.indexOf('record and publish the required GIF'))
+    expect(roles).toContain('leaves root model selection to the user')
+    expect(roles).not.toContain('asks the user to choose the root model')
   })
 
   it('accepts aligned default and manual-only policies', () => {

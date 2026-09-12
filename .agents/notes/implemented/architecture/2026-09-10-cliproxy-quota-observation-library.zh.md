@@ -6,7 +6,7 @@ Status: implemented
 
 ## Problem
 
-[内置账号池提案](../../proposed/architecture/2026-09-09-built-in-cliproxyapi-account-pool.zh.md)要求对五家账号厂商做归一化额度观测，同时不向渲染端暴露 CLIProxyAPI 管理密钥或通用管理请求设施。Issue #651 交付该需求的数据面：探测构造、payload 解析、窗口归一与脱敏，先于将来注入出站通道的运行时拥有方（#650）。
+[内置账号池](2026-09-09-built-in-cliproxyapi-account-pool.zh.md)要求对五家账号厂商做归一化额度观测，同时不向渲染端暴露 CLIProxyAPI 管理密钥或通用管理请求设施。Issue #651 交付该需求的数据面：探测构造、payload 解析、窗口归一与脱敏，先于将来注入出站通道的运行时拥有方（#650）。
 
 ## Decision
 
