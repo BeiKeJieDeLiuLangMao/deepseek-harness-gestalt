@@ -304,6 +304,11 @@ describe('web e2e: clickable links gallery', () => {
 
   beforeAll(async () => {
     scaffold = await launchWebScaffold({ extraOverlayPath: OVERLAY })
+    // Pin the official deliverables produced-files row; disable the Better
+    // Sidebar takeover so ui-deliverables renders its row and chip copy.
+    await scaffold.ctx.settings.mutate('dsh-better-sidebar', [
+      { op: 'set', path: ['interceptOpenPath'], value: false },
+    ])
     imageUrl = new URL('/favicon.svg', scaffold.baseUrl).toString()
     await seedSession(scaffold, galleryFixture(imageUrl), SEED_ID)
     browser = await chromium.launch()

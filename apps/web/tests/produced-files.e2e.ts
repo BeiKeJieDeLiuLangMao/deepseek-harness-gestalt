@@ -114,6 +114,12 @@ describe('web e2e: a finished turn ends with the files it produced', () => {
 
   beforeAll(async () => {
     scaffold = await launchWebScaffold({ extraOverlayPath: OVERLAY })
+    // This scenario pins the official deliverables row layout; disable the
+    // Better Sidebar's chat file-open interception so ui-deliverables renders
+    // its produced-files row instead of the visual-twin takeover.
+    await scaffold.ctx.settings.mutate('dsh-better-sidebar', [
+      { op: 'set', path: ['interceptOpenPath'], value: false },
+    ])
     await seedSession(scaffold, producedFixture(), SEED_ID)
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
