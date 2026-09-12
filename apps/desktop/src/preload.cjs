@@ -59,8 +59,16 @@ contextBridge.exposeInMainWorld('dshDesktop', {
   accountPoolStartLogin: (kind) => ipcRenderer.invoke('accountPool:startLogin', kind),
   accountPoolLoginStatus: (state) => ipcRenderer.invoke('accountPool:loginStatus', state),
   accountPoolCancelLogin: (state) => ipcRenderer.invoke('accountPool:cancelLogin', state),
+  accountPoolDismissLogin: () => ipcRenderer.invoke('accountPool:dismissLogin'),
+  accountPoolOpenExternal: (url) => ipcRenderer.invoke('accountPool:openExternal', url),
+  accountPoolSubmitCallback: (input) => ipcRenderer.invoke('accountPool:submitCallback', input),
   accountPoolSubmitGlmKey: (input) => ipcRenderer.invoke('accountPool:submitGlmKey', input),
   accountPoolRefreshQuota: (authIndex) => ipcRenderer.invoke('accountPool:refreshQuota', authIndex),
+  accountPoolRefreshAllQuota: () => ipcRenderer.invoke('accountPool:refreshAllQuota'),
+  accountPoolListModels: (name) => ipcRenderer.invoke('accountPool:listModels', name),
+  accountPoolDownload: (name) => ipcRenderer.invoke('accountPool:download', name),
+  accountPoolReadFields: (name) => ipcRenderer.invoke('accountPool:readFields', name),
+  accountPoolPatchFields: (name, fields) => ipcRenderer.invoke('accountPool:patchFields', { name, fields }),
   onAccountPoolSnapshot: (listener) => {
     const wrapped = (_event, snapshot) => { listener(snapshot) }
     ipcRenderer.on('accountPool:snapshot-changed', wrapped)

@@ -4,7 +4,7 @@
 
 Desktop 仅为其拥有的 CLIProxyAPI 进程组合此插件。Host 通过子进程环境提供 IPv4-loopback HTTPS `/v1` 端点、仅用于 inference 的 key，以及作为 `NODE_EXTRA_CA_CERTS` 的运行代证书；这些值既不存入 settings，也不暴露给 renderer 代码。
 
-插件认证访问 `/v1/models`，仅在返回目录至少包含一个模型时发布 `gestalt-account-pool`，目录变化后重新发布拓扑，并在核心不可用时撤回 route。Registry 冲突会在注册时失败，而不会替换用户 provider。
+插件以 Grok Shell 身份认证访问 `/v1/models`，以便 listing 保留当前已加载账号的名称、context window 与 think level 范围。Desktop 存在 settings 与 credentials 时，写入模型页 `llm-pi-ai` provider `gestalt-account-pool`，带上这些字段。Host 注入的 inference key 已占用进程环境中的 `DSH_GESTALT_ACCOUNT_POOL_API_KEY`，插件不会再写入 credentials 文件；凭据写入失败也不会跳过目录同步。没有这些 seam 时，仅在目录至少包含一个模型时于 `ctx.llm` 发布同一 route。Registry 冲突会在注册时失败，而不会替换用户 provider。
 
 ## Model Experience
 
@@ -24,5 +24,5 @@ Desktop 仅为其拥有的 CLIProxyAPI 进程组合此插件。Host 通过子进
 
 ## Known Limitations and Deferred Work
 
-- 账号登录、renderer 投影、额度观测与 provider 专用模型元数据属于后续账号池 slice。
-- 在核心提供经验证的能力元数据前，目录项按支持文本的模型 id 处理。
+- 账号登录、renderer 投影与额度观测属于 Desktop Host 账号池表面。
+- think level 范围来自核心 listing（`supported_reasoning_levels` 或 `reasoning_efforts`）；未知 effort 名会被省略。

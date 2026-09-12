@@ -87,6 +87,7 @@ function toWindowObservation(
   window: CodexUsageWindow | null,
   limitReached: boolean,
   now: number,
+  label?: string,
 ): QuotaWindowObservation | null {
   if (window === null) return null
   const usedPercentRaw = normalizeNumberValue(window.used_percent ?? window.usedPercent)
@@ -98,6 +99,7 @@ function toWindowObservation(
   const usedPercent = usedPercentRaw ?? (limitReached && resetAtMs !== null ? 100 : null)
   return {
     key,
+    ...label === undefined ? {} : { label },
     ...(usedPercent === null ? {} : { usedPercent }),
     resetAtMs,
     periodHours: periodHoursFromSeconds(window.limit_window_seconds ?? window.limitWindowSeconds),
@@ -134,6 +136,7 @@ export function buildCodexWindows(
   const pushPair = (
     info: CodexRateLimitInfo | null | undefined,
     keys: { fiveHour: string; weekly: string; monthly: string; primary: string; secondary: string },
+    label?: string,
   ): void => {
     const { fiveHour, span } = classifyWindows(info)
     const { limitReached } = rateLimitFlags(info)
@@ -141,7 +144,7 @@ export function buildCodexWindows(
     // fallback names positions only — `primary`/`secondary` — and never claims
     // a 5-hour or weekly period the payload did not state.
     const firstKey = windowSeconds(fiveHour) === FIVE_HOUR_SECONDS ? keys.fiveHour : keys.primary
-    const first = toWindowObservation(firstKey, fiveHour, limitReached, now)
+    const first = toWindowObservation(firstKey, fiveHour, limitReached, now, label)
     if (first !== null) windows.push(first)
     const secondKey =
       windowSeconds(span) === WEEK_SECONDS
@@ -149,7 +152,7 @@ export function buildCodexWindows(
         : isMonthlyWindow(span)
           ? keys.monthly
           : keys.secondary
-    const second = toWindowObservation(secondKey, span, limitReached, now)
+    const second = toWindowObservation(secondKey, span, limitReached, now, label)
     if (second !== null) windows.push(second)
   }
 
@@ -176,7 +179,7 @@ export function buildCodexWindows(
       monthly: `additional-${name}-monthly`,
       primary: `additional-${name}-primary`,
       secondary: `additional-${name}-secondary`,
-    })
+    }, name)
   }
 
   const planType = normalizePlanType(payload.plan_type ?? payload.planType) ?? undefined

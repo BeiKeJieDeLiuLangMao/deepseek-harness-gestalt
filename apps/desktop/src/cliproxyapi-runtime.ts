@@ -2,7 +2,7 @@
 import { createHash, randomBytes } from 'node:crypto'
 import { type ChildProcess, execFile, spawn } from 'node:child_process'
 import { request as httpsRequest } from 'node:https'
-import { chmod, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { basename, join, resolve } from 'node:path'
 import { connect as tlsConnect, type TLSSocket } from 'node:tls'
@@ -17,6 +17,10 @@ const MANAGEMENT_MAX_BODY_BYTES = 1_048_576
 const ALLOWED_CORE_PATHS = new Set([
   '/v0/management/auth-files',
   '/v0/management/auth-files/status',
+  '/v0/management/auth-files/models',
+  '/v0/management/auth-files/download',
+  '/v0/management/auth-files/fields',
+  '/v0/management/oauth-callback',
   '/v0/management/anthropic-auth-url',
   '/v0/management/codex-auth-url',
   '/v0/management/antigravity-auth-url',
@@ -186,7 +190,7 @@ export class CLIProxyAPISupervisor {
       ])
       const admitted = await pending?.catch(() => undefined)
       await Promise.all([running, admitted].flatMap(value => value === undefined ? [] : [value.stop()]))
-      await rm(this.options.stateRoot, { recursive: true, force: true })
+      await removeGeneratedState(this.options.stateRoot)
     })
     return this.shutdownTask
   }
@@ -213,7 +217,7 @@ export class CLIProxyAPISupervisor {
     await this.options.afterPortReservation?.(port)
     const generation = randomBytes(12).toString('hex')
     const root = join(this.options.stateRoot, generation)
-    const authDir = join(root, 'auth')
+    const authDir = join(this.options.stateRoot, 'auth')
     const logDir = join(root, 'logs')
     const configPath = join(root, 'config.yaml')
     await mkdir(authDir, { recursive: true, mode: 0o700 })
@@ -311,6 +315,19 @@ function parseManifest(value: unknown): CLIProxyAPIResourceManifest {
     throw new Error('CLIProxyAPI resource manifest is invalid')
   }
   return record as unknown as CLIProxyAPIResourceManifest
+}
+
+async function removeGeneratedState(stateRoot: string): Promise<void> {
+  let entries: string[]
+  try {
+    entries = await readdir(stateRoot)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
+    throw error
+  }
+  await Promise.all(entries.flatMap((entry) => {
+    return entry === 'auth' ? [] : [rm(join(stateRoot, entry), { recursive: true, force: true })]
+  }))
 }
 
 function coreConfig(

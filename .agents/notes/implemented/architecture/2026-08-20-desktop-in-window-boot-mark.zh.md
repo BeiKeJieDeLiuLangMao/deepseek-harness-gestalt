@@ -10,7 +10,7 @@ Desktop Host 会在 Web Host 打印环回 URL 之前就显示 BrowserWindow。Ac
 
 ## Decision
 
-Desktop Host 拥有可见的冷启动标记。`createWindow()` 在同一窗口上用本地 `boot.html` 覆盖层（`WebContentsView`）绘制，并带 `-webkit-app-region: drag` 以及 `prefers-color-scheme` / `prefers-reduced-motion`。`loadURL` 之后，`revealHost` 轮询 `globalThis.__DSH_SHELL_READY__ === true`，并以 `[data-desktop-chrome]` 与 fail-loud 插件页为回退，避免过期前端把覆盖层钉住。`AppWebEntry` 在已 settle 的 Session Surface 挂载或 fail-loud 插件页绘制后设置该标志，然后撤下覆盖层。浏览器 `dsh web` 仍使用外壳加载页。没有第二扇 splash 窗口。`joinHostAfter` 仍是可测试的重叠 helper；冷启动目前先恢复 Account、Personal Pairing 与 sub2api，再启动 Host，因为 Host 启动超时取自 sub2api 快照。
+Desktop Host 拥有可见的冷启动标记。`createWindow()` 在同一窗口上用本地 `boot.html` 覆盖层（`WebContentsView`）绘制，并带 `-webkit-app-region: drag` 以及 `prefers-color-scheme` / `prefers-reduced-motion`。`loadURL` 之后，`revealHost` 轮询 `globalThis.__DSH_SHELL_READY__ === true`，并以 `[data-desktop-chrome]` 与 fail-loud 插件页为回退，避免过期前端把覆盖层钉住。`AppWebEntry` 在已 settle 的 Session Surface 挂载或 fail-loud 插件页绘制后设置该标志，然后撤下覆盖层。浏览器 `dsh web` 仍使用外壳加载页。没有第二扇 splash 窗口。`joinHostAfter` 仍是可测试的重叠 helper；冷启动目前先恢复 Account、Personal Pairing 与内置账号池监督器，再启动 Host，普通 Host ready 仍使用 spawn adapter 的 30 秒期限。
 
 ## Alternatives considered
 

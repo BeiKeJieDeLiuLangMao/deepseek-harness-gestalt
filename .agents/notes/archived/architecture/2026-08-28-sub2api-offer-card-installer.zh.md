@@ -1,8 +1,9 @@
-# Agent Note：Sub2API Offer 卡与一键安装器归于 Desktop Host
+# Agent Note: Sub2API Offer 卡与一键安装器归于 Desktop Host
 
 Status: implemented
+Archived: 2026-09-11
 
-English | [中文](2026-08-28-sub2api-offer-card-installer.md)
+[English](2026-08-28-sub2api-offer-card-installer.md) | 中文
 
 ## Problem
 

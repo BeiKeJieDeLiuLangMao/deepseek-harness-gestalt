@@ -14,6 +14,7 @@ describe('gestalt account pool dynamic registration', () => {
     const key = 'internal-inference-key-650'
     const server = createServer((request, response) => {
       expect(request.headers.authorization).toBe(`Bearer ${key}`)
+      expect(request.headers['user-agent']).toMatch(/grok-shell/)
       response.setHeader('content-type', 'application/json')
       response.end(JSON.stringify({ data: [...models.map(id => ({ id })), { id: '' }, null, 3] }))
     })
@@ -56,6 +57,16 @@ describe('gestalt account pool dynamic registration', () => {
   })
 
   it('fails loud instead of replacing a conflicting provider', async () => {
+    const server = createServer((_request, response) => {
+      response.setHeader('content-type', 'application/json')
+      response.end(JSON.stringify({ data: [{ id: 'live' }] }))
+    })
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+    const address = server.address()
+    if (address === null || typeof address === 'string') throw new Error('missing address')
+    disposals.push(async () => {
+      await new Promise<void>((resolve) => { server.close(() => { resolve() }) })
+    })
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
     disposals.push(async () => { await ctx.fiber.dispose() })
@@ -64,8 +75,12 @@ describe('gestalt account pool dynamic registration', () => {
       async * stream(): AsyncIterable<never> { throw new Error('not exercised') }
     }
     ctx.llm.registerAdapter([PROVIDER], new UserAdapter())
-    await expect(ctx.plugin({ apply, inject: ['llm'] }, { baseURL: 'http://127.0.0.1:1/v1', apiKey: 'internal-inference-key-650' }))
-      .rejects.toThrow(/already registered/)
+    await ctx.plugin({ apply, inject: ['llm'] }, {
+      baseURL: `http://127.0.0.1:${String(address.port)}/v1`, apiKey: 'internal-inference-key-650', refreshIntervalMs: 20,
+    })
+    await new Promise(resolve => setTimeout(resolve, 50))
+    expect(ctx.llm.listProviders().filter(provider => provider.id === PROVIDER)).toHaveLength(1)
+    expect(ctx.llm.listProviders().find(provider => provider.id === PROVIDER)?.name).toBe('user route')
   })
 
   it('rejects a short key, a non-loopback origin, and a non-positive refresh interval', async () => {
@@ -175,8 +190,16 @@ describe('gestalt account pool dynamic registration', () => {
     await expect(adapter.listModels()).resolves.toEqual([{ provider: PROVIDER, id: 'live-model', name: 'live-model' }])
     await expect(adapter.resolveModel(PROVIDER, 'live-model')).resolves.toMatchObject({ id: 'live-model', name: 'live-model' })
     await expect(adapter.resolveModel(PROVIDER, 'missing')).resolves.toMatchObject({ id: 'missing', name: 'missing' })
-    adapter.setModels([{ id: 'named', name: 'Named' }])
-    await expect(adapter.listModels()).resolves.toEqual([{ provider: PROVIDER, id: 'named', name: 'Named' }])
+    adapter.setModels([{ id: 'named', name: 'Named', contextWindow: 256000, maxTokens: 64000, inputModalities: ['text', 'image'] }])
+    await expect(adapter.listModels()).resolves.toEqual([{
+      provider: PROVIDER, id: 'named', name: 'Named', inputModalities: ['text', 'image'],
+    }])
+    await expect(adapter.resolveModel(PROVIDER, 'named')).resolves.toMatchObject({
+      id: 'named',
+      name: 'Named',
+      context: { contextWindow: 256000 },
+      defaultMaxTokens: 64000,
+    })
     expect(adapter.providerInfo()).toEqual({ id: PROVIDER, name: 'Gestalt Account Pool' })
     const received: unknown[] = []
     for await (const chunk of adapter.stream({

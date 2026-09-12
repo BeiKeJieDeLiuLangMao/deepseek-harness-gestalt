@@ -163,6 +163,7 @@ describe('CLIProxyAPI supervisor', () => {
     expect(running.capability.caPath).toContain(stateRoot)
     const config = await findConfig(stateRoot)
     const text = await readFile(config, 'utf8')
+    expect(text).toContain(`auth-dir: ${JSON.stringify(join(stateRoot, 'auth'))}`)
     expect(text).toContain('enable: true')
     expect(text).toContain(`- "${running.capability.apiKey}"`)
     const secretKey = text.match(/secret-key: "([^"]+)"/)?.[1]
@@ -188,6 +189,7 @@ describe('CLIProxyAPI supervisor', () => {
     })).resolves.toMatchObject({ statusCode: 0, error: 'empty account reference' })
     expect(text).not.toContain(process.env.DEEPSEEK_API_KEY ?? '__absent__')
     if (process.platform !== 'win32') expect((await stat(config)).mode & 0o777).toBe(0o600)
+    await writeFile(join(stateRoot, 'auth', 'kept.json'), '{"kept":true}\n', { mode: 0o600 })
     await supervisor.shutdown()
     await expect(running.management.request({
       authIndex: 'glm-0' as never,
@@ -195,7 +197,8 @@ describe('CLIProxyAPI supervisor', () => {
       url: 'https://quota.example.test/usage',
       headers: { Authorization: 'Bearer $TOKEN$' },
     })).resolves.toMatchObject({ statusCode: 0, error: /not current|aborted/ })
-    await expect(stat(stateRoot)).rejects.toThrow()
+    expect(await readFile(join(stateRoot, 'auth', 'kept.json'), 'utf8')).toBe('{"kept":true}\n')
+    await expect(stat(join(stateRoot, 'auth'))).resolves.toMatchObject({})
     await expect(fetch(new URL('/models', running.capability.baseURL))).rejects.toThrow()
   })
 })
@@ -226,7 +229,7 @@ async function writeFixture(root: string, name: string, source: string): Promise
 
 async function findConfig(stateRoot: string): Promise<string> {
   const { readdir } = await import('node:fs/promises')
-  const [generation] = await readdir(stateRoot)
+  const generation = (await readdir(stateRoot)).find(entry => entry !== 'auth')
   if (generation === undefined) throw new Error('missing generation')
   return join(stateRoot, generation, 'config.yaml')
 }

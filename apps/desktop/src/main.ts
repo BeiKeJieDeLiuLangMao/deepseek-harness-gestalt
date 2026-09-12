@@ -3,12 +3,12 @@
  * @module @deepseek-ai/dsh-desktop/main
  */
 import { appendFileSync } from 'node:fs'
-import { readFile } from 'node:fs/promises'
+import { readFile, writeFile } from 'node:fs/promises'
 import { hostname } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
-  app, autoUpdater as electronAutoUpdater, BrowserWindow, Menu, WebContentsView, ipcMain, nativeTheme, powerMonitor, safeStorage,
+  app, autoUpdater as electronAutoUpdater, BrowserWindow, dialog, Menu, WebContentsView, ipcMain, nativeTheme, powerMonitor, safeStorage,
   session, shell,
   type IpcMainEvent, type IpcMainInvokeEvent,
 } from 'electron'
@@ -24,10 +24,12 @@ import {
   CHROME_OVERLAY_GET_STATE, CHROME_OVERLAY_HIDE, CHROME_OVERLAY_RESULT,
   CHROME_OVERLAY_SHOW, CHROME_OVERLAY_STATE,
   PAIRING_GET_SNAPSHOT, PAIRING_REJECT, PAIRING_REVOKE, PAIRING_SET_ENABLED, PAIRING_SNAPSHOT_CHANGED,
-  ACCOUNT_POOL_CANCEL_LOGIN, ACCOUNT_POOL_DELETE, ACCOUNT_POOL_GET_SNAPSHOT,
-  ACCOUNT_POOL_LOGIN_STATUS, ACCOUNT_POOL_REFRESH, ACCOUNT_POOL_REFRESH_QUOTA,
+  ACCOUNT_POOL_CANCEL_LOGIN, ACCOUNT_POOL_DELETE, ACCOUNT_POOL_DISMISS_LOGIN, ACCOUNT_POOL_DOWNLOAD, ACCOUNT_POOL_GET_SNAPSHOT,
+  ACCOUNT_POOL_LIST_MODELS, ACCOUNT_POOL_LOGIN_STATUS, ACCOUNT_POOL_OPEN_EXTERNAL,
+  ACCOUNT_POOL_PATCH_FIELDS, ACCOUNT_POOL_READ_FIELDS, ACCOUNT_POOL_REFRESH,
+  ACCOUNT_POOL_REFRESH_ALL_QUOTA, ACCOUNT_POOL_REFRESH_QUOTA,
   ACCOUNT_POOL_SET_ENABLED, ACCOUNT_POOL_SNAPSHOT_CHANGED, ACCOUNT_POOL_START_LOGIN,
-  ACCOUNT_POOL_SUBMIT_GLM_KEY,
+  ACCOUNT_POOL_SUBMIT_CALLBACK, ACCOUNT_POOL_SUBMIT_GLM_KEY,
   UPDATER_CHECK_NOW, UPDATER_DOWNLOAD_NOW, UPDATER_GET_STATUS,
   UPDATER_QUIT_AND_INSTALL, UPDATER_STATUS_CHANGED,
   WINDOW_CLOSE, WINDOW_MAXIMIZE, WINDOW_MINIMIZE,
@@ -545,7 +547,7 @@ function createWindow(): BrowserWindow {
   return target
 }
 
-function guardNavigation(target: BrowserWindow): void {
+function guardNavigation(target: BrowserWindow | WebContentsView): void {
   target.webContents.setWindowOpenHandler(({ url }) => {
     openExternalIfAllowed(url)
     return { action: 'deny' }
@@ -1017,6 +1019,11 @@ function installIpc(): void {
     const allowed = ['kimi', 'xai', 'codex', 'anthropic', 'antigravity', 'glm'] as const
     if (!allowed.includes(kind as AccountPoolLoginKind)) throw new Error('unsupported account-pool login')
     return accountPool?.startLogin(kind as AccountPoolLoginKind)
+      ?? Promise.resolve({
+        kind: kind as AccountPoolLoginKind,
+        flow: kind === 'glm' ? 'glm-key' as const : kind === 'kimi' || kind === 'xai' ? 'device' as const : 'pkce' as const,
+        error: 'CLIProxyAPI account pool is unavailable',
+      })
   })
   ipcMain.handle(ACCOUNT_POOL_LOGIN_STATUS, (_event, state: unknown) => {
     if (typeof state !== 'string') return Promise.resolve(accountPool?.getSnapshot() ?? { state: 'error', accounts: [] })
@@ -1027,6 +1034,62 @@ function installIpc(): void {
     if (typeof state !== 'string') return Promise.resolve(accountPool?.getSnapshot() ?? { state: 'error', accounts: [] })
     return accountPool?.cancelLogin(state)
       ?? Promise.resolve({ state: 'error', accounts: [], error: 'CLIProxyAPI account pool is unavailable' })
+  })
+  ipcMain.handle(ACCOUNT_POOL_DISMISS_LOGIN, () => {
+    return accountPool?.dismissLogin()
+      ?? Promise.resolve({ state: 'error', accounts: [], error: 'CLIProxyAPI account pool is unavailable' })
+  })
+  ipcMain.handle(ACCOUNT_POOL_OPEN_EXTERNAL, (_event, url: unknown) => {
+    if (typeof url !== 'string') return Promise.resolve()
+    openExternalIfAllowed(url)
+    return Promise.resolve()
+  })
+  ipcMain.handle(ACCOUNT_POOL_SUBMIT_CALLBACK, (_event, raw: unknown) => {
+    const input = raw as { provider?: unknown; redirectUrl?: unknown }
+    const allowed = ['kimi', 'xai', 'codex', 'anthropic', 'antigravity', 'glm'] as const
+    if (!allowed.includes(input.provider as AccountPoolLoginKind) || typeof input.redirectUrl !== 'string') {
+      return Promise.resolve(accountPool?.getSnapshot() ?? { state: 'error', accounts: [] })
+    }
+    return accountPool?.submitCallback({
+      provider: input.provider as AccountPoolLoginKind,
+      redirectUrl: input.redirectUrl,
+    }) ?? Promise.resolve({ state: 'error', accounts: [], error: 'CLIProxyAPI account pool is unavailable' })
+  })
+  ipcMain.handle(ACCOUNT_POOL_LIST_MODELS, (_event, name: unknown) => {
+    if (typeof name !== 'string') return Promise.resolve([])
+    return accountPool?.listModels(name) ?? Promise.resolve([])
+  })
+  ipcMain.handle(ACCOUNT_POOL_DOWNLOAD, async (_event, name: unknown) => {
+    if (typeof name !== 'string' || accountPool === undefined) return { ok: false, error: 'CLIProxyAPI account pool is unavailable' }
+    try {
+      const file = await accountPool.downloadAuthFile(name)
+      const chosen = await dialog.showSaveDialog({ defaultPath: file.name })
+      if (chosen.canceled || chosen.filePath === undefined) return { ok: false }
+      await writeFile(chosen.filePath, file.body, { mode: 0o600 })
+      return { ok: true }
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : 'Download did not succeed' }
+    }
+  })
+  ipcMain.handle(ACCOUNT_POOL_PATCH_FIELDS, (_event, raw: unknown) => {
+    const input = raw as { name?: unknown; fields?: unknown }
+    if (typeof input.name !== 'string' || input.fields === null || typeof input.fields !== 'object') {
+      return Promise.resolve(accountPool?.getSnapshot() ?? { state: 'error', accounts: [] })
+    }
+    const fields = input.fields as Record<string, unknown>
+    return accountPool?.patchFields(input.name, {
+      ...typeof fields.note === 'string' ? { note: fields.note } : {},
+      ...typeof fields.prefix === 'string' ? { prefix: fields.prefix } : {},
+      ...typeof fields.proxyUrl === 'string' ? { proxyUrl: fields.proxyUrl } : {},
+      ...typeof fields.priority === 'number' ? { priority: fields.priority } : {},
+      ...typeof fields.weight === 'number' ? { weight: fields.weight } : {},
+      ...typeof fields.disableCooling === 'boolean' ? { disableCooling: fields.disableCooling } : {},
+      ...typeof fields.websockets === 'boolean' ? { websockets: fields.websockets } : {},
+      ...Array.isArray(fields.excludedModels) ? { excludedModels: fields.excludedModels.filter((item): item is string => typeof item === 'string') } : {},
+      ...fields.headers !== null && typeof fields.headers === 'object' && !Array.isArray(fields.headers)
+        ? { headers: Object.fromEntries(Object.entries(fields.headers as Record<string, unknown>).flatMap(([key, value]) => typeof value === 'string' ? [[key, value]] : [])) }
+        : {},
+    }) ?? Promise.resolve({ state: 'error', accounts: [], error: 'CLIProxyAPI account pool is unavailable' })
   })
   ipcMain.handle(ACCOUNT_POOL_SUBMIT_GLM_KEY, (_event, raw: unknown) => {
     const input = raw as { apiKey?: unknown; site?: unknown; organization?: unknown; project?: unknown }
@@ -1042,6 +1105,14 @@ function installIpc(): void {
     if (typeof authIndex !== 'string') return Promise.resolve(accountPool?.getSnapshot() ?? { state: 'error', accounts: [] })
     return accountPool?.refreshQuota(authIndex)
       ?? Promise.resolve({ state: 'error', accounts: [], error: 'CLIProxyAPI account pool is unavailable' })
+  })
+  ipcMain.handle(ACCOUNT_POOL_REFRESH_ALL_QUOTA, () => {
+    return accountPool?.refreshAllQuota()
+      ?? Promise.resolve({ state: 'error', accounts: [], error: 'CLIProxyAPI account pool is unavailable' })
+  })
+  ipcMain.handle(ACCOUNT_POOL_READ_FIELDS, (_event, name: unknown) => {
+    if (typeof name !== 'string') return Promise.reject(new Error('Auth file name is required'))
+    return accountPool?.readFields(name) ?? Promise.reject(new Error('CLIProxyAPI account pool is unavailable'))
   })
   ipcMain.handle(BROWSER_PRESENT, (_event, raw: unknown) => {
     const request = parseBrowserPresentRequest(raw)
@@ -1112,6 +1183,7 @@ async function ensureChromeOverlay(target: BrowserWindow, hostUrl: string): Prom
       webPreferences: { preload: PRELOAD, contextIsolation: true, nodeIntegration: false, sandbox: true },
     })
     prepareChromeOverlayView(view)
+    guardNavigation(view)
     target.contentView.addChildView(view)
     syncChromeOverlayBounds(target, view)
     return await bind(view)

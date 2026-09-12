@@ -126,8 +126,16 @@ export function installDesktopBridgeFixture(platform: 'darwin' | 'win32'): Deskt
     accountPoolStartLogin: async kind => ({ kind, flow: kind === 'glm' ? 'glm-key' : kind === 'kimi' || kind === 'xai' ? 'device' : 'pkce' }),
     accountPoolLoginStatus: async () => accountPool,
     accountPoolCancelLogin: async () => accountPool,
+    accountPoolDismissLogin: async () => accountPool,
+    accountPoolOpenExternal: async () => {},
+    accountPoolSubmitCallback: async () => accountPool,
     accountPoolSubmitGlmKey: async () => accountPool,
     accountPoolRefreshQuota: async () => accountPool,
+    accountPoolRefreshAllQuota: async () => accountPool,
+    accountPoolListModels: async () => [],
+    accountPoolDownload: async () => ({ ok: true }),
+    accountPoolReadFields: async name => ({ name, info: { id: name }, fields: {} }),
+    accountPoolPatchFields: async () => accountPool,
     onAccountPoolSnapshot: (listener) => {
       accountPoolListeners.add(listener)
       listener(accountPool)

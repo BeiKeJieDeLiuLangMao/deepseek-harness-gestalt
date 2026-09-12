@@ -103,7 +103,8 @@ describe('Desktop release workflow', () => {
     }
     expect(workflow).not.toContain('PLATFORM_GITHUB_CLIENT_SECRET')
     expect(record(record(desktopPackage).build).files).toContain('out/operated-platform.json')
-    expect(record(record(desktopPackage).build).files).toContain('out/sub2api-sources.json')
+    expect(record(record(desktopPackage).build).files).toContain('out/cliproxyapi-source.json')
+    expect(record(record(desktopPackage).build).files).not.toContain('out/sub2api-sources.json')
 
     for (const name of ['pack-mac', 'pack-win']) {
       expect(record(job(name).env)).not.toHaveProperty('DSH_DESKTOP_OPERATED_PLATFORM_CONFIG')

@@ -765,7 +765,6 @@
         "tests/member-question-e2e/electron.e2e.ts",
         "tests/member-question-e2e/host-plugin.ts",
         "tests/member-question-e2e/*.snapshot.ts",
-        "tests/e2e-sub2api/**/*.ts",
         "tests/e2e-electron/**/*.ts"
       ],
       "project": [

@@ -98,8 +98,8 @@ Gestalt does not create another agent runtime. Official DSH supplies the plugin 
     <tr>
       <td rowspan="3" valign="top"><strong>Extensions and collaboration</strong></td>
       <td>Community plugins</td>
-      <td><code>DONE</code> Better Sidebar<br><code>TODO</code> Sub2API</td>
-      <td>The <a href="plugins/README.md">external plugin catalog</a> pins reviewed revisions. Better Sidebar is integrated; the optional Sub2API provider, installer, and embedded console are on the <a href="https://github.com/gestaltrun/deepseek-harness-gestalt/issues/346">product plan</a></td>
+      <td><code>DONE</code> Better Sidebar<br><code>DONE</code> Account pool</td>
+      <td>The <a href="plugins/README.md">external plugin catalog</a> pins reviewed revisions. Better Sidebar is integrated. Desktop ships a built-in CLIProxyAPI account pool in Settings as <code>gestalt-account-pool</code>; it does not download a sidecar or overwrite a user <code>cliproxyapi</code> route</td>
       <td><a href="plugins/README.md">Plugin catalog</a></td>
     </tr>
     <tr>

@@ -97,6 +97,7 @@ describe('buildCodexWindows', () => {
     expect(keys).toContain('code-review-five-hour')
     expect(keys).toContain('code-review-weekly')
     expect(keys).toContain('additional-codex-other-five-hour')
+    expect(windows.find(window => window.key === 'additional-codex-other-five-hour')?.label).toBe('codex-other')
     expect(keys).toContain('additional-additional-2-weekly')
     expect(keys).toContain('additional-camel-five-hour')
   })

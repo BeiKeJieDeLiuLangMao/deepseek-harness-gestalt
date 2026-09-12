@@ -25,13 +25,11 @@ Desktop 将 `build/icon.icns`、`build/icon.ico` 和 `build/icon.png` 作为自�
 Dock / 开始菜单的 cwd 是 Launch Directory（Application Support / `%APPDATA%` 下的 `defaultWorkspace`）。用户数据仍在 `~/.dsh`。
 
 Project Membership 使用同一套实际运行的 Platform environment，并在每次请求时于 Electron main 内获取新的 current-Installation proof。Preload 只暴露不含 credential 的项目操作。Desktop client plugin 把该 bridge 提供给 Workspace surface；bearer token、proof 字段与 installation signing key 永远不会进入 renderer state。对于 agent preset，Electron 还会发布受属主 token 保护的 loopback 只读投影，内容仅为当前公开 Account 身份、工作区绑定的 Project，以及带公开展示字段的完整名册。Web Host 通过 `ctx.desktopProjectMembership` 读取该投影；token 文件位于 Electron userData，权限仅属主可读，并在 Host 关闭时删除。纯浏览器 `dsh web` 没有该投影，也不会注册 `project_members` 工具。绑定 Desktop 会话同时暴露 `project_members` 与 `ask_user_question.to_project_member`；模型按公开 GitHub 登录名匹配实时名册，再路由提问。未绑定会话隐藏该路由参数。任意非名册收件人以 `INELIGIBLE_ADDRESSEE` 失败关闭。
-## 可选组件
+## 账号池
 
-Sub2API 账号池是 Settings 里 Desktop-only 的 offer 卡（`账号池` 分区，排在手机配对之后）。卡片只负责渲染：Host 把 `missing → downloading → verifying → installed → starting → running / error` 相位机经与 updater、pairing 快照相同的 preload 桥推送过来，卡片渲染当前快照，因此没有 `window.dshDesktop` 时它什么都不画。未启用时卡片说明启用做什么、代价是什么：首次启用会下载组件 bundle 与对应平台的 runtime pack（sub2api 加便携 PostgreSQL/Redis，数百 MB——安装包体积不变），账号数据落在 `~/.dsh/sub2api/data`，卸载时询问是否删除，运行时文件可随时重新下载。Release 下载与环回健康探针使用 Electron session-aware 的流式 `net.fetch`，可跟随公开资产跳转，又不放宽 Platform HTTPS helper 的禁跳转与有界响应约束。启用会先发布 `starting` 再等待 Web Host 完成替换；每次由控制器发起的组件替换，以及已安装且启用组件的普通启动，均有 180 秒启动预算；其余普通启动与崩溃恢复保持 30 秒预算。原生 Settings overlay 会先重载到每一个替换后的 Host origin，再恢复提供方请求。运行中卡片默认展示同源原生账号工作区（`/plugins/dsh-sub2api/ui/admin/accounts?embed=desktop`），把状态、停用和卸载放在右上标题区，跟随 Desktop 主题与语言，并且不导航 Session Surface；错误态携带 Host 给出的可操作信息，并提供重试与卸载出口。
+账号池是 Settings 里 Desktop-only 分区（`账号池`，slot id `sub2api`，排在手机配对之后）。Host 监督从 `catalog/cliproxyapi` 钉住点打包的 CLIProxyAPI 核心，将其绑定到实例私有环回端口，并经与 updater、pairing 快照相同的 preload 桥投影脱敏名册。没有 `window.dshDesktop` 时该分区不渲染。Gestalt UI 拥有管理/额度双面卡片、PKCE 与设备授权，以及需显式选择中国/国际站点和个人/团队范围的 GLM Coding Plan 密钥表单。额度观测只用于展示；renderer 收不到管理密钥或推理密钥。
 
-Desktop Host 主进程就是安装器，且绝不调用用户 PATH 上的 pnpm 或 `dsh` CLI。Desktop 在初始 Web Host 之前创建控制器，以便已安装组件选择延长后的启动期限；若内置 `web` profile 尚未初始化，factory 会保留处于 `missing` 状态的真实控制器，直到 `dsh web` 创建该 profile。已存在但无法读取的 manifest 仍进入带可操作错误的 unavailable 状态。安装器把两个归档下载到私有 staging 目录，各自对照自身 SHA256SUMS 校验（runtime pack 解压后再验内部 sums），把 bundle 包放到 `web` profile 的 `node_modules` 下，并恰好追加一行 `dsh.profile.bundles`——即 `dsh plugin add` 的语义，manifest 其余条目原样保留。runtime pack 解压到 `$DSH_HOME/sub2api/runtime`（supervisor 的 `binaryDir` 默认值）。profile patch 之后的任何失败都会回滚该行与本次解压产物；全新安装后首次重启失败同样回滚，并以回滚前缀上报。启用经 Web Host 子进程的常规生命周期重启——窗口保持不动、会话在磁盘保活——随后轮询 sidecar 的 quota-snapshot 路由，直到 2xx 将卡片推至 running。停用把精确的 patch 行 `{ id: 'dsh-sub2api-sidecar', disabled: true }` 写入 profile 自己的 `cordis.patch.yml`，并拒绝触碰该 id 上用户自有的行。
-
-下载源来自 `DSH_DESKTOP_SUB2API_SOURCES`（绝对 JSON 文件路径）或打包主入口旁的 `sub2api-sources.json`；文件内写明 bundle 压缩包、runtime pack 压缩包及各自 SHA256SUMS 的 URL。`build:main` 按被打包的 os/arch 从仓库内已批准清单（`sub2api-sources.catalog.json`）写出该文件（`--platform`/`--arch` 或 `DSH_DESKTOP_SUB2API_PLATFORM`/`DSH_DESKTOP_SUB2API_ARCH`，否则用当前进程），electron-builder 只在文件存在时打进包。清单没有对应条目时不写该文件，因此该架构继续走占位启用错误。文件存在但非法会作为该分区的可操作错误显示，而不是砸掉 Desktop 启动。
+认证文件位于实例 `runtime/auth/`。从账号池移除卡片不会物理删除该文件。`$DSH_HOME/sub2api` 下的既有 Sub2API 用户数据既不读取也不迁移。产品提供方 id 是 `gestalt-account-pool`；用户自配的 `cliproxyapi` 路由保持不动。启动不会从网络下载 sidecar、PostgreSQL、Redis 或 CLIProxyAPI 二进制。
 
 ## Schedule 与能力默认值
 
@@ -58,10 +56,9 @@ Suite-local Host fixture 由 `driver.ts` 通过 `fork(..., { execArgv: ['--impor
 ```sh
 pnpm install
 DSH_DESKTOP_OPERATED_PLATFORM_CONFIG=/absolute/path/to/operated-platform.json pnpm gestalt:dev
-DSH_SUB2API_E2E_SOURCES=/absolute/path/to/public-sub2api-sources.json DSH_SUB2API_E2E_SIDECAR_SHA=<release-commit> DSH_SUB2API_E2E_CREDENTIALS_SOURCE=/absolute/path/to/read-only-credentials.yaml pnpm --dir apps/desktop test:e2e-sub2api
 ```
 
-配置文件包含 `production` 标记、上文所述六个公开身份字段、附件 Host deadline，以及公开的 Relay WSS endpoint 与 limit；它不包含 OAuth secret。进程还需要 `DSH_NODE` 或 `npm_node_execpath` 上的真正 Node（pnpm 会设置后者）。不要让 Electron 用自己的 execPath 去跑 `dsh`。Sub2API Electron lane 在 macOS 或具有 GUI display 的 Linux 上运行，并要求一个绝对路径的公开四 URL source manifest、精确的 40 位 sidecar Release commit，以及包含 `ZAI_CODING_CN_API_KEY` 的只读 credentials YAML。它强制重建 Host、Client、Web 与 main 产物；只将该 credentials 文件盲拷贝到全新的 `0700` DSH home 并设为 `0600`；安装公开产物；经 Host 注入面创建临时 Z.AI 账号与 composite route；打开嵌入控制台；在 Desktop 输入区选择 Sub2API 模型；并要求真实模型回答。artifact 记录两个仓库身份、source manifest、公开 checksum 文档、已安装 package/runtime 证据、主窗口结果与 sidecar 日志，但绝不记录 credentials 文件。若 Electron、Web Host、PostgreSQL、临时目录或 CDP 端口在 teardown 后仍存活，测试即失败。
+配置文件包含 `production` 标记、上文所述六个公开身份字段、附件 Host deadline，以及公开的 Relay WSS endpoint 与 limit；它不包含 OAuth secret。进程还需要 `DSH_NODE` 或 `npm_node_execpath` 上的真正 Node（pnpm 会设置后者）。不要让 Electron 用自己的 execPath 去跑 `dsh`。
 
 `DSH_PHONE_SERVER_PORT` 用于选择 Desktop 手机运行时连接的 mobilecli 回环服务端口。该值必须是 1 到 65535 之间的安全整数；未设置时默认为 `12000`。
 

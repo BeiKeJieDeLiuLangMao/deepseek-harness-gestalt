@@ -75,6 +75,10 @@ export interface QuotaWindowObservation {
   readonly key: string
   /** Source-supplied display name when one exists. */
   readonly label?: string
+  /** Antigravity quota-group title when the window belongs to one. */
+  readonly group?: string
+  /** Antigravity quota-group description when the source supplied one. */
+  readonly groupDescription?: string
   /** Used percentage 0–100 when the source supplied it or both `used` and `limit`. */
   readonly usedPercent?: number
   /** Remaining fraction 0–1 when the source supplied it (Antigravity buckets). */
@@ -214,6 +218,7 @@ export interface AntigravityQuotaBucketPayload {
 export interface AntigravityQuotaGroupPayload {
   readonly displayName?: unknown
   readonly display_name?: unknown
+  readonly description?: unknown
   readonly buckets?: unknown
 }
 

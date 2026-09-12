@@ -1,46 +1,47 @@
-/** Quota remaining fill with an optional time-window needle. */
+/** Quota remaining fill with a time-window needle. */
 import css from './QuotaBarWithTimeline.module.css'
 
 export interface QuotaBarWithTimelineProps {
   percentRemaining?: number
   timeRemainingPercent?: number
   name: string
-  windowLabel: string
   resetText: string
+  unknownLabel: string
+  timeRemainingLabel?: string
   isReliable: boolean
+  refreshing?: boolean
 }
 
 export function QuotaBarWithTimeline({
   percentRemaining,
   timeRemainingPercent,
   name,
-  windowLabel,
   resetText,
+  unknownLabel,
+  timeRemainingLabel,
   isReliable,
+  refreshing = false,
 }: QuotaBarWithTimelineProps) {
   const boundedQuota = percentRemaining === undefined ? undefined : Math.max(0, Math.min(100, percentRemaining))
   const boundedTime = timeRemainingPercent === undefined ? undefined : Math.max(0, Math.min(100, timeRemainingPercent))
   const quotaColor = boundedQuota === undefined || boundedQuota === 0
-    ? 'var(--dsw-alias-state-error-primary, #ef4444)'
+    ? 'var(--dsw-alias-state-error-primary)'
     : boundedQuota < 30
-      ? 'var(--dsw-alias-state-error-primary, #ef4444)'
+      ? 'var(--dsw-alias-state-error-primary)'
       : boundedQuota < 70
-        ? 'var(--dsw-alias-state-warning-primary, #f59e0b)'
-        : 'var(--dsw-alias-state-success-primary, #10b981)'
+        ? 'var(--dsw-alias-state-warn-primary)'
+        : 'var(--dsw-alias-state-success-primary)'
   const quotaFill = isReliable ? boundedQuota : undefined
   const timeFill = isReliable ? boundedTime : undefined
   return (
-    <div className={css.container}>
+    <div className={`${css.container} ${refreshing ? css.refreshing : ''}`}>
       <div className={css.labelRow}>
-        <div className={css.nameGroup}>
-          <span className={css.metricName} title={name}>{name}</span>
-          <span className={css.windowBadge}>{windowLabel}</span>
-        </div>
+        <span className={css.metricName} title={name}>{name}</span>
         <div className={css.metaGroup}>
-          <span className={css.percentText} style={{ color: quotaFill === undefined ? 'var(--dsw-alias-label-tertiary, #94a3b8)' : quotaColor }}>
-            {quotaFill === undefined ? '未知' : `${String(Math.round(quotaFill))}%`}
+          <span className={css.percentText} style={{ color: quotaFill === undefined ? 'var(--dsw-alias-label-tertiary)' : quotaColor }}>
+            {quotaFill === undefined ? unknownLabel : `${String(Math.round(quotaFill))}%`}
           </span>
-          <span className={css.resetTime}>{resetText}</span>
+          {resetText.length > 0 && <span className={css.resetTime}>{resetText}</span>}
         </div>
       </div>
       <div className={css.track}>
@@ -48,24 +49,12 @@ export function QuotaBarWithTimeline({
           <div className={css.quotaFill} style={{ width: `${String(quotaFill)}%`, backgroundColor: quotaColor }} />
         )}
         {timeFill !== undefined && (
-          <div className={css.timelineMarker} style={{ left: `${String(timeFill)}%` }} title={`时间窗口剩余: ${String(Math.round(timeFill))}%`}>
+          <div className={css.timelineMarker} style={{ left: `${String(timeFill)}%` }} title={timeRemainingLabel ?? `${String(Math.round(timeFill))}%`}>
             <div className={css.needleArrow} style={{ borderTopColor: quotaColor }} />
             <div className={css.needleLine} style={{ background: quotaColor }} />
           </div>
         )}
       </div>
-      {timeFill !== undefined && (
-        <div className={css.legendRow}>
-          <span className={css.legendItem}>
-            <span className={css.quotaDot} style={{ backgroundColor: quotaColor }} />
-            额度剩余 {String(Math.round(quotaFill ?? 0))}%
-          </span>
-          <span className={css.legendItem}>
-            <span className={css.timeDot} style={{ background: quotaColor }} />
-            时间窗口剩余 {String(Math.round(timeFill))}%
-          </span>
-        </div>
-      )}
     </div>
   )
 }

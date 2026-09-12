@@ -1,6 +1,7 @@
 # Agent Note: the Sub2API offer card and its one-click installer live in the Desktop Host
 
 Status: implemented
+Archived: 2026-09-11
 
 English | [中文](2026-08-28-sub2api-offer-card-installer.zh.md)
 

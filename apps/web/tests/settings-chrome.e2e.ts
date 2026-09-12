@@ -716,12 +716,15 @@ describe('web e2e: the Desktop composition settings overlay document', () => {
     const pool = dialog.locator('[data-desktop-account-pool-state]')
     await expect.poll(() => pool.count(), { timeout: 10_000 }).toBe(1)
     await expect.poll(() => pool.getByText('内置账号池').count()).toBe(1)
-    const add = pool.getByRole('button', { name: '+ 添加账号 ▾' })
+    const add = pool.getByRole('button', { name: '+ 添加账号' })
     await expect.poll(() => add.count()).toBe(1)
     await add.click()
+    await expect.poll(() => page.getByText('选择平台认证类型：').count()).toBe(1)
     for (const kind of ['KIMI', 'XAI', 'CODEX', 'ANTHROPIC', 'ANTIGRAVITY', 'GLM'] as const) {
-      await expect.poll(() => pool.getByRole('button', { name: kind, exact: true }).count()).toBe(1)
+      await expect.poll(() => page.getByRole('button', { name: new RegExp(`^${kind}`) }).count()).toBe(1)
     }
+    await page.getByRole('button', { name: '取消' }).click()
+    await expect.poll(() => page.getByText('选择平台认证类型：').count()).toBe(0)
     // Closing reports through the overlay result channel with the Host's
     // request id — the page has no local close state in this mode. The Host
     // then hides the view and pushes the null state; the page unmounts.
@@ -809,6 +812,10 @@ describe('web e2e: Desktop account-pool experience route', () => {
         setPool(withoutLogin(pool))
         return pool
       }
+      bridge.accountPoolDismissLogin = async () => {
+        setPool(withoutLogin(pool))
+        return pool
+      }
       bridge.accountPoolSubmitGlmKey = async (input: { apiKey: string }) => {
         if (typeof input.apiKey !== 'string' || input.apiKey.length === 0) return pool
         const accounts = Array.isArray(pool.accounts) ? pool.accounts as Array<Record<string, unknown>> : []
@@ -890,12 +897,13 @@ describe('web e2e: Desktop account-pool experience route', () => {
     expect(await pool.innerText()).not.toMatch(/127\.0\.0\.1:8317|Composite|PROTOTYPE DRAFT/)
     await expect.poll(() => pool.getByText('共 0 个凭证').count()).toBe(1)
     await shot('00-empty-ready')
-    await pool.getByRole('button', { name: '+ 添加账号 ▾' }).click()
+    await pool.getByRole('button', { name: '+ 添加账号' }).click()
+    await expect.poll(() => page.getByText('选择平台认证类型：').count()).toBe(1)
     for (const kind of ['KIMI', 'XAI', 'CODEX', 'ANTHROPIC', 'ANTIGRAVITY', 'GLM'] as const) {
-      await expect.poll(() => pool.getByRole('button', { name: kind, exact: true }).count()).toBe(1)
+      await expect.poll(() => page.getByRole('button', { name: new RegExp(`^${kind}`) }).count()).toBe(1)
     }
     await shot('01-add-menu')
-    await pool.getByRole('button', { name: 'GLM', exact: true }).click()
+    await page.getByRole('button', { name: /^GLM/ }).click()
     const key = page.locator('input[type="password"]')
     await expect.poll(() => key.count()).toBe(1)
     expect(await key.getAttribute('type')).toBe('password')
@@ -903,14 +911,16 @@ describe('web e2e: Desktop account-pool experience route', () => {
     await shot('02-glm-masked')
     await page.getByRole('button', { name: '取消' }).click()
     await expect.poll(() => page.locator('input[type="password"]').count()).toBe(0)
-    await pool.getByRole('button', { name: '+ 添加账号 ▾' }).click()
-    await pool.getByRole('button', { name: 'KIMI', exact: true }).click()
+    await pool.getByRole('button', { name: '+ 添加账号' }).click()
+    await page.getByRole('button', { name: /^KIMI/ }).click()
+    await page.getByRole('button', { name: '开始 KIMI 登录' }).click()
     await expect.poll(() => page.getByText('KIMI-1234', { exact: true }).count()).toBe(1)
     await expect.poll(() => page.getByText('https://auth.kimi.example.test/device/verify?user_code=KIMI-1234').count()).toBe(1)
     await shot('03-kimi-device')
     await page.getByRole('button', { name: '取消' }).click()
-    await pool.getByRole('button', { name: '+ 添加账号 ▾' }).click()
-    await pool.getByRole('button', { name: 'CODEX', exact: true }).click()
+    await pool.getByRole('button', { name: '+ 添加账号' }).click()
+    await page.getByRole('button', { name: /^CODEX/ }).click()
+    await page.getByRole('button', { name: '开始 CODEX 登录' }).click()
     await expect.poll(() => page.getByText('正在等待 CODEX 浏览器授权…').count()).toBe(1)
     await page.getByRole('button', { name: '取消' }).click()
     await page.evaluate(() => {
