@@ -1,12 +1,15 @@
-- img
-- text: New thread
-- button "Close":
-  - img
-- text: Into the Unknown Preview
-- textbox "Describe what you want to build... / commands, @ files or sessions"
+- banner:
+  - text: New thread
+  - button "Send back to the sidebar":
+    - img
+  - button "Close":
+    - img
+- textbox "Message or run a task, / commands, @ files or sessions"
 - button "Commands":
   - img
+- button "Add attachment":
+  - img
 - button "Select model, current DeepSeek-V4-Flash":
-  - text: DeepSeek-V4-Flash
+  - img
   - img
 - button "Send message" [disabled]

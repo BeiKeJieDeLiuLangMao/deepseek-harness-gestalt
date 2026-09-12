@@ -286,7 +286,7 @@ describe('web e2e: seeded history renders through cold resume', () => {
     const answerTop = await page.getByText('DONE', { exact: true }).evaluate(element =>
       element.getBoundingClientRect().top)
     // Collapsed control row keeps its own 8px margin plus the 8px flow gap.
-    expect(answerTop).toBe(processBottom + 16)
+    expect(answerTop).toBe(processBottom + 19)
     expect(await page.getByText('Context compacted', { exact: true }).count()).toBe(0)
     // Tool cards render from logged tool/call + tool/result alone (views are
     // host-recomputed per page; the generic card is the documented default).
@@ -324,8 +324,10 @@ describe('web e2e: seeded history renders through cold resume', () => {
         }],
       },
     }), { surfaceOp: 'append' })
-    // The header names the producer the durable source records, so the
-    // reconciled instruction file is readable without expanding the row.
+    // The completed Turn folds injected context under its process control;
+    // expand that owner before asserting the durable producer label.
+    const contextSource = page.locator('[data-context-source]', { hasText: 'AGENTS.md' })
+    await expandOwningTurnProcess(page, contextSource)
     await page.getByRole('button', { name: 'Context injection AGENTS.md', exact: true })
       .waitFor({ timeout: 10_000 })
   }, 60_000)

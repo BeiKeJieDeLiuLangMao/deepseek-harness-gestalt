@@ -65,7 +65,8 @@ const WEB_PATCH = fileURLToPath(new URL('../../../packages/bundle/web-app/cordis
 const CATALOG_NOW = Date.parse('2099-08-25T12:00:00.000Z')
 const CATALOG_SESSION_ID = SessionId('schedule-catalog-web-e2e')
 const CATALOG_TITLE = 'Active schedule catalog'
-const REMINDER_TRIGGER_NAME = /^\d+ reminders?$/
+const SCHEDULE_TRIGGER_NAME = /^\d+ scheduled tasks? waiting$/
+const SCHEDULE_LIST_NAME = 'Scheduled tasks'
 const ACTIVE_SCHEDULE_LABEL = 'Has active scheduled task'
 const CATALOG_IDS = {
   after: ScheduleId('catalog-after'),
@@ -449,7 +450,7 @@ describe.skipIf(MODE === 'record')('web e2e: conversational reminders', () => {
       await captureStableAria(page, selector, scaffold.workspaceCwd),
       MODE,
     )
-    expect(await page.getByRole('button', { name: REMINDER_TRIGGER_NAME }).count()).toBe(0)
+    expect(await page.getByRole('button', { name: SCHEDULE_TRIGGER_NAME }).count()).toBe(0)
   }, 60_000)
 
   it('batches one latest occurrence per overdue Every record into an ordinary follow-up', async () => {
@@ -510,8 +511,8 @@ describe.skipIf(MODE === 'record')('web e2e: conversational reminders', () => {
       await captureStableAria(page, selector, scaffold.workspaceCwd),
       MODE,
     )
-    await page.getByRole('button', { name: '2 reminders', exact: true }).waitFor({ timeout: 15_000 })
-    expect(await page.getByRole('list', { name: 'Active reminders' }).count()).toBe(0)
+    await page.getByRole('button', { name: '2 scheduled tasks waiting', exact: true }).waitFor({ timeout: 15_000 })
+    expect(await page.getByRole('list', { name: SCHEDULE_LIST_NAME }).count()).toBe(0)
   }, 60_000)
 
   it('uses request-local browser context to create an explicit local At reminder', async () => {
@@ -583,7 +584,7 @@ describe.skipIf(MODE === 'record')('web e2e: conversational reminders', () => {
       await captureStableAria(page, selector, scaffold.workspaceCwd),
       MODE,
     )
-    expect(await page.getByRole('button', { name: REMINDER_TRIGGER_NAME }).count()).toBe(0)
+    expect(await page.getByRole('button', { name: SCHEDULE_TRIGGER_NAME }).count()).toBe(0)
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
   }, 60_000)
@@ -706,15 +707,15 @@ describe.skipIf(MODE === 'record')('web e2e: active Schedule catalog', () => {
     await openSession(page, CATALOG_TITLE)
     const parentAgent = await liveAgent(scaffold, CATALOG_SESSION_ID)
 
-    const trigger = page.getByRole('button', { name: '3 reminders' })
+    const trigger = page.getByRole('button', { name: '3 scheduled tasks waiting' })
     await trigger.waitFor({ timeout: 15_000 })
     await trigger.click()
-    const catalog = page.getByRole('list', { name: 'Active reminders' })
+    const catalog = page.getByRole('list', { name: SCHEDULE_LIST_NAME })
     await catalog.waitFor({ timeout: 10_000 })
     expect(await catalog.getByRole('listitem').count()).toBe(3)
     const lightLayout = await page.evaluate(() => {
-      const triggerElement = document.querySelector('button[aria-label="3 reminders"]')
-      const catalogElement = document.querySelector('[aria-label="Active reminders"]')
+      const triggerElement = document.querySelector('button[aria-label="3 scheduled tasks waiting"]')
+      const catalogElement = document.querySelector('[aria-label="Scheduled tasks"]')
       if (!(triggerElement instanceof HTMLElement) || !(catalogElement instanceof HTMLElement)) {
         throw new Error('active reminder trigger or catalog is not mounted')
       }
@@ -797,7 +798,7 @@ describe.skipIf(MODE === 'record')('web e2e: active Schedule catalog', () => {
     expect(darkBackground).not.toBe(lightLayout.background)
     await compareOrRefreshGolden(
       CATALOG_EXPECTED,
-      await captureStableAria(page, '[aria-label="Active reminders"]', scaffold.workspaceCwd),
+      await captureStableAria(page, '[aria-label="Scheduled tasks"]', scaffold.workspaceCwd),
       MODE,
     )
 
@@ -807,10 +808,10 @@ describe.skipIf(MODE === 'record')('web e2e: active Schedule catalog', () => {
       parentAgent.session.append('schedule/change', { version: 1, operation: 'delete', id })
     }
     await expect(scaffold.ctx.sessions.flush(parentAgent.session)).resolves.toBe(true)
-    await expect.poll(() => page.getByRole('button', { name: REMINDER_TRIGGER_NAME }).count(), {
+    await expect.poll(() => page.getByRole('button', { name: SCHEDULE_TRIGGER_NAME }).count(), {
       timeout: 15_000,
     }).toBe(0)
-    expect(await page.getByRole('list', { name: 'Active reminders' }).count()).toBe(0)
+    expect(await page.getByRole('list', { name: SCHEDULE_LIST_NAME }).count()).toBe(0)
     await expect.poll(() => sessionRow.getByRole('img', { name: ACTIVE_SCHEDULE_LABEL }).count(), {
       timeout: 15_000,
     }).toBe(0)

@@ -1,4 +1,22 @@
-- list "Active reminders":
-  - listitem: Overdue Review overdue deployment Once Aug 25, 2099, 7:59 PM 1 minute overdue
-  - listitem: Scheduled Join release review with the release owners, verify the rollout checklist, capture each unresolved dependency, confirm the customer-facing message, compare the staged configuration with the approved release notes, inspect the deployment dashboard for every region, confirm that database migrations completed without warnings, review the rollback steps with the incident commander, verify that support has the final customer timeline, record every owner and deadline, check the public status wording against the internal decision, review the accessibility and localization sign-offs, confirm the monitoring thresholds and alert routes, read back the final launch sequence, document every unresolved question in plain language, keep all technical qualifiers and exception cases visible, include the exact handoff conditions for each downstream team, retain the complete audit context for the final decision, and preserve every final word without truncation. Once Aug 25, 2099, 8:05 PM in 6 minutes
-  - listitem: Scheduled Check exact cadence Every 301 seconds Aug 25, 2099, 8:05 PM in 6 minutes
+- list "Scheduled tasks":
+  - listitem:
+    - text: Overdue
+    - button "Pause Review overdue deployment":
+      - img
+    - button "Delete Review overdue deployment":
+      - img
+    - text: Review overdue deployment Once Aug 25, 2099, 7:59 PM 1 minute overdue
+  - listitem:
+    - text: Scheduled
+    - button:
+      - img
+    - button:
+      - img
+    - text: Join release review with the release owners, verify the rollout checklist, capture each unresolved dependency, confirm the customer-facing message, compare the staged configuration with the approved release notes, inspect the deployment dashboard for every region, confirm that database migrations completed without warnings, review the rollback steps with the incident commander, verify that support has the final customer timeline, record every owner and deadline, check the public status wording against the internal decision, review the accessibility and localization sign-offs, confirm the monitoring thresholds and alert routes, read back the final launch sequence, document every unresolved question in plain language, keep all technical qualifiers and exception cases visible, include the exact handoff conditions for each downstream team, retain the complete audit context for the final decision, and preserve every final word without truncation. Once Aug 25, 2099, 8:05 PM in 6 minutes
+  - listitem:
+    - text: Scheduled
+    - button "Pause Check exact cadence":
+      - img
+    - button "Delete Check exact cadence":
+      - img
+    - text: Check exact cadence Every 301 seconds Aug 25, 2099, 8:05 PM in 6 minutes

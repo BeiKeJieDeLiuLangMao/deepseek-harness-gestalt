@@ -35,6 +35,10 @@
   - text: Ran for {{duration}}
 - text: {{clock}}
 - button "compact Compacted 5 history items (~{{tokens}} tokens)"
+- button "Context injection AGENTS.md":
+  - img
+  - img
+  - text: Context injection AGENTS.md
 - textbox "Message or run a task, / commands, @ files or sessions"
 - button "Commands":
   - img

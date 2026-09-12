@@ -42,6 +42,15 @@ const ALTERNATE_PROVIDER = 'sidechat-keyless-alternate'
 const ALTERNATE_MODEL = 'model-b'
 const ALTERNATE_MODEL_NAME = 'SideChat Test B'
 const ALTERNATE_RESPONSE = 'The first Side Chat request used its selected alternate model.'
+const SIDEBAR_PANEL = '[data-sidebar-right-panel][data-sidebar-right-open]'
+const SIDEBAR_FLOAT = '[data-sidebar-right-float-host] [data-dockkit-float]'
+
+async function openSideChat(page: Page) {
+  await page.getByRole('button', { name: 'Open sidebar', exact: true }).click()
+  const panel = page.locator(SIDEBAR_PANEL)
+  await panel.locator('[data-sidebar-right-guide-entry="sidechat"]').click()
+  return panel
+}
 
 function latestPermissionPreset(events: readonly SessionEvent[]): string | undefined {
   return events.findLast(event => event.type === 'permission/preset')?.data.preset
@@ -138,38 +147,33 @@ describe.skipIf(MODE === 'record')('web e2e: Side Chat through the shipped workb
     const liveIdsBeforeSideChat = scaffold.ctx.agents.list().map(agent => agent.id)
 
     await page.getByRole('button', { name: 'Open sidebar', exact: true }).click()
-    const panel = page.locator('[data-dsh-panel]:not([data-dsh-bottom-panel]):visible')
-    await panel.getByRole('button', { name: 'Side Chat', exact: true }).waitFor({ timeout: 15_000 })
+    const panel = page.locator(SIDEBAR_PANEL)
+    await panel.locator('[data-sidebar-right-guide-entry="sidechat"]').waitFor({ timeout: 15_000 })
     await compareOrRefreshGolden(
       PICKER_EXPECTED,
-      await captureStableAria(page, '[data-dsh-panel]', scaffold.workspaceCwd),
+      await captureStableAria(page, SIDEBAR_PANEL, scaffold.workspaceCwd),
       MODE,
     )
-    await page.getByRole('button', { name: 'New tab', exact: true }).click()
-    const menuLabels = await page.getByRole('menuitem').allTextContents()
-    expect(menuLabels).toContain('Side Chat')
-    const menuItem = page.getByRole('menuitem', { name: 'Side Chat', exact: true })
-    expect(await menuItem.locator('svg').count()).toBe(1)
-    await page.keyboard.press('Escape')
-    await panel.getByRole('button', { name: 'Side Chat', exact: true }).click()
+    const sideChatGuide = panel.locator('[data-sidebar-right-guide-entry="sidechat"]')
+    expect(await sideChatGuide.locator('svg').count()).toBe(1)
+    await sideChatGuide.click()
     const sideComposer = panel.locator('[data-composer-input][contenteditable="true"]')
     await sideComposer.waitFor({ timeout: 15_000 })
     expect(await panel.getByRole('button', { name: 'Choose workspace', exact: true }).count()).toBe(0)
     expect(await panel.getByRole('button', { name: 'Standard mode', exact: true }).count()).toBe(0)
     expect(scaffold.ctx.agents.list().map(agent => agent.id)).toEqual(liveIdsBeforeSideChat)
 
-    const sideChatTab = panel.locator('[draggable="true"]').first()
+    const sideChatTab = panel.locator('[data-dockkit-tab]').first()
     await sideChatTab.click({ button: 'right' })
     await page.getByRole('menuitem', { name: 'Move to Free Window', exact: true }).click()
-    const float = page.locator('[data-dsh-float-window]')
+    const float = page.locator(SIDEBAR_FLOAT)
     await float.waitFor({ timeout: 15_000 })
     await compareOrRefreshGolden(
       FLOAT_EXPECTED,
-      await captureStableAria(page, '[data-dsh-float-window]', scaffold.workspaceCwd),
+      await captureStableAria(page, SIDEBAR_FLOAT, scaffold.workspaceCwd),
       MODE,
     )
-    await float.getByText('New thread', { exact: true }).click({ button: 'right' })
-    await page.getByRole('menuitem', { name: 'Dock Back to Sidebar', exact: true }).click()
+    await float.locator('[data-dockkit-float-dock]').click()
     await expect.poll(() => float.count()).toBe(0)
     await sideComposer.waitFor({ timeout: 15_000 })
 
@@ -189,7 +193,7 @@ describe.skipIf(MODE === 'record')('web e2e: Side Chat through the shipped workb
       const trigger = panel.getByRole('button', { name: /^Select model, current DeepSeek-V4-Flash$/u })
       await trigger.waitFor({ timeout: 15_000 })
       await trigger.click()
-      await panel.getByRole('menuitem', { name: /^Model/u }).click()
+      await page.getByRole('menuitem', { name: /^Model/u }).click()
       const option = page.getByRole('menuitemradio', { name: 'DeepSeek-V4-Flash', exact: true })
       await option.waitFor({ timeout: 15_000 })
       await option.click()
@@ -250,7 +254,7 @@ describe.skipIf(MODE === 'record')('web e2e: Side Chat through the shipped workb
 
     await compareOrRefreshGolden(
       EXPECTED,
-      await captureStableAria(page, '[data-dsh-panel]', scaffold.workspaceCwd),
+      await captureStableAria(page, SIDEBAR_PANEL, scaffold.workspaceCwd),
       MODE,
     )
 
@@ -316,7 +320,7 @@ describe.skipIf(MODE === 'record')('web e2e: Side Chat through the shipped workb
     await panel.getByText(PROMPT, { exact: true }).waitFor({ timeout: 15_000 })
     await compareOrRefreshGolden(
       RESTORED_EXPECTED,
-      await captureStableAria(page, '[data-dsh-panel]', scaffold.workspaceCwd),
+      await captureStableAria(page, SIDEBAR_PANEL, scaffold.workspaceCwd),
       MODE,
     )
     await panel.getByRole('button', {
@@ -382,15 +386,14 @@ describe.skipIf(MODE === 'record')('web e2e: Side Chat through the shipped workb
       turn: stepStart.data.turn,
       step: stepStart.data.step,
       precedingEvent: {
-        type: 'user/message',
-        seq: settledMessage.seq,
-        data: {
-          source: {
-            kind: 'subagent-settled',
-            senderSessionId: descendant.childId,
-          },
-        },
+        type: 'step/start',
+        seq: stepStart.seq,
+        data: { turn: stepStart.data.turn, step: stepStart.data.step },
       },
+    })
+    expect(settledMessage.data.source).toMatchObject({
+      kind: 'subagent-settled',
+      senderSessionId: descendant.childId,
     })
     expect(assistant.data).toMatchObject({
       turn: stepStart.data.turn,
@@ -425,10 +428,10 @@ describe.skipIf(MODE === 'record')('web e2e: Side Chat through the shipped workb
     await panel.getByText(SIDE_CHAT_RESPONSE, { exact: true }).waitFor({ timeout: 30_000 })
     await compareOrRefreshGolden(
       DESCENDANT_EXPECTED,
-      await captureStableAria(page, '[data-dsh-panel]', scaffold.workspaceCwd),
+      await captureStableAria(page, SIDEBAR_PANEL, scaffold.workspaceCwd),
       MODE,
     )
-    await panel.getByRole('button', { name: 'Close', exact: true }).click()
+    await panel.locator('[data-dockkit-tab][aria-selected="true"] [data-dockkit-tab-close]').click()
     await expect.poll(() => scaffold.ctx.agents.get(childId)).toBeUndefined()
     await expect.poll(() => [...scaffold.ctx.workspaceRegistry.archivedSessionIds])
       .toContain(childId)
@@ -503,9 +506,7 @@ describe.skipIf(MODE === 'record')('web e2e: Side Chat provisional model authori
     await parentComposer.press('Enter')
     const parentId = await parentSettled
 
-    await page.getByRole('button', { name: 'Open sidebar', exact: true }).click()
-    const panel = page.locator('[data-dsh-panel]:not([data-dsh-bottom-panel]):visible')
-    await panel.getByRole('button', { name: 'Side Chat', exact: true }).click()
+    const panel = await openSideChat(page)
     const sideComposer = panel.locator('[data-composer-input][contenteditable="true"]')
     await sideComposer.waitFor({ timeout: 15_000 })
 
@@ -514,7 +515,7 @@ describe.skipIf(MODE === 'record')('web e2e: Side Chat provisional model authori
       exact: true,
     })
     await initialModel.click({ timeout: 15_000 })
-    await panel.getByRole('menuitem', { name: /^Model/u }).click()
+    await page.getByRole('menuitem', { name: /^Model/u }).click()
     await page.getByRole('menuitemradio', { name: ALTERNATE_MODEL_NAME, exact: true }).click()
     await panel.getByRole('button', {
       name: `Select model, current ${ALTERNATE_MODEL_NAME}`,
@@ -555,10 +556,10 @@ describe.skipIf(MODE === 'record')('web e2e: Side Chat provisional model authori
     await page.getByRole('menuitem', { name: 'Read Only', exact: true }).click()
     await panel.getByRole('button', { name: 'Access mode, current: Read Only', exact: true }).waitFor()
     await expect.poll(() => latestPermissionPreset(child?.session.ownEvents() ?? [])).toBe('read-only')
-    const childTab = panel.locator('[draggable="true"][title]')
+    const childTab = panel.locator('[data-dockkit-tab]')
       .filter({ has: page.getByRole('button', { name: 'Close', exact: true }) })
     expect(await childTab.count()).toBe(1)
-    const childTabTitle = await childTab.getAttribute('title')
+    const childTabTitle = await childTab.locator('[data-dockkit-tab-title]').textContent()
     if (childTabTitle === null) throw new Error('the published Side Chat tab has no title')
     const persistenceRoot = join(harnessHome, 'session-backup')
     const storageRoot = join(harnessHome, 'storage-backup')
@@ -584,19 +585,24 @@ describe.skipIf(MODE === 'record')('web e2e: Side Chat provisional model authori
     await workspaceRow.waitFor({ timeout: 15_000 })
     if (await workspaceRow.getAttribute('aria-expanded') === 'false') await workspaceRow.click()
     await parentRow.click({ timeout: 15_000 })
-    const restoredPanel = page.locator('[data-dsh-panel]:not([data-dsh-bottom-panel]):visible')
+    const restoredPanel = page.locator(SIDEBAR_PANEL)
     if (!await restoredPanel.isVisible()) {
       await page.getByRole('button', { name: 'Open sidebar', exact: true }).click()
     }
-    const restoredTab = restoredPanel.getByTitle(childTabTitle, { exact: true })
-      .filter({ has: page.getByRole('button', { name: 'Close', exact: true }) })
-    await restoredTab.click({ timeout: 15_000 })
+    const restoredTab = restoredPanel.locator('[data-dockkit-tab]').filter({ hasText: childTabTitle })
+    if (await restoredTab.count() > 0) await restoredTab.click()
+    else {
+      const descendants = page.getByRole('button', { name: '1 subagent', exact: true })
+      await descendants.hover()
+      await page.getByRole('tree', { name: 'Subagent sessions' })
+        .getByRole('treeitem', { name: new RegExp(childTabTitle, 'u') }).click()
+    }
     await restoredPanel.getByRole('button', { name: `Select model, current ${ALTERNATE_MODEL_NAME}`, exact: true })
       .waitFor({ timeout: 15_000 })
     await restoredPanel.getByRole('button', { name: 'Access mode, current: Read Only', exact: true }).waitFor()
     await compareOrRefreshGolden(
       COLD_RESTORED_EXPECTED,
-      await captureStableAria(page, '[data-dsh-panel]', scaffold.workspaceCwd),
+      await captureStableAria(page, SIDEBAR_PANEL, scaffold.workspaceCwd),
       MODE,
     )
     const resumed = scaffold.whenTurnSettled()

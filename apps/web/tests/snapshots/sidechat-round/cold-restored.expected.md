@@ -1,23 +1,22 @@
-- img
-- text: Use the selected alternate route for this…
-- button "Close":
-  - img
-- button "New tab":
-  - img
-- banner:
-  - tablist:
-    - tab "Chat" [selected]
-    - tab "Trajectory"
+- tablist:
+  - tab "Use the selected alternate route for this… Close" [selected]:
+    - text: Use the selected alternate route for this…
+    - button "Close":
+      - img
+  - button "New tab":
+    - img
+  - button "Split"
+  - button "Fullscreen"
+  - button "Collapse sidebar"
+- tablist:
+  - tab "Chat" [selected]
+  - tab "Trajectory"
 - text: Use the selected alternate route for this first Side Chat prompt. {{clock}}
 - button "Copy":
   - img
 - button "Thought for a while":
   - text: Thought for a while
   - img
-- button "System prompt":
-  - img
-  - img
-  - text: System prompt
 - paragraph: The first Side Chat request used its selected alternate model.
 - button "Copy":
   - img
@@ -31,12 +30,19 @@
   - img
   - text: Ran for {{duration}}
 - text: {{clock}}
-- textbox "Message or run a task... / commands, @ files or sessions"
+- textbox "Message or run a task, / commands, @ files or sessions"
 - button "Commands":
+  - img
+- button "Add attachment" [disabled]:
   - img
 - 'button "Access mode, current: Read Only"': Read Only
 - button "Select model, current SideChat Test B":
   - text: SideChat Test B
   - img
 - button "Send message" [disabled]
-- text: 2 turns · 2 steps LLM {{duration}} TTFT avg {{duration}} · {{throughput}} tok/s Cache hit 99% Input 7.8K tok · Output 79 tok
+- button "2 turns 2 steps · {{throughput}} tok/s":
+  - img
+  - text: 2 turns 2 steps{{throughput}} tok/s
+- button "7.9K tok · Cache hit 99%":
+  - img
+  - text: 7.9K tokCache hit 99%
