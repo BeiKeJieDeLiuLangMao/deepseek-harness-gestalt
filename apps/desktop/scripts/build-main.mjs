@@ -7,6 +7,8 @@ import { writePackagedSub2ApiSources } from './write-sub2api-sources.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const root = join(here, '..')
+const repoRoot = join(root, '..', '..')
+const sourceTsconfig = join(repoRoot, 'tsconfig.base.json')
 const args = process.argv.slice(2)
 const operatedPlatformConfig = positional(args)[0] ?? process.env.DSH_DESKTOP_OPERATED_PLATFORM_CONFIG
 if (operatedPlatformConfig === undefined || operatedPlatformConfig.trim() === '') {
@@ -24,6 +26,7 @@ await build({
   platform: 'node',
   format: 'esm',
   target: 'node22',
+  tsconfig: sourceTsconfig,
   // CommonJS runtime dependencies remain loadable by Electron's ESM main process.
   external: ['electron', 'electron-updater', 'https-proxy-agent', 'ws'],
   logLevel: 'info',
@@ -36,6 +39,7 @@ await build({
   platform: 'node',
   format: 'cjs',
   target: 'node22',
+  tsconfig: sourceTsconfig,
   logLevel: 'info',
 })
 await build({
@@ -46,6 +50,7 @@ await build({
   platform: 'node',
   format: 'cjs',
   target: 'node22',
+  tsconfig: sourceTsconfig,
   logLevel: 'info',
 })
 await cp(join(root, 'src', 'preload.cjs'), join(root, 'out', 'preload.cjs'))
