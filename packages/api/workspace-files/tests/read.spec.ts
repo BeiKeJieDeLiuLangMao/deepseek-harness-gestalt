@@ -203,12 +203,28 @@ describe('workspaceFiles.read — gate 3: the page byte cap', () => {
     expect(failure.code).toBe('workspace-file/too-large')
   })
 
-  it('caps the page, not the file: a small window of a file far above the cap reads', async () => {
-    await writeFile(join(workspace, 'huge.txt'), Array.from({ length: 2000 }, (_, i) => `row ${i} ${'z'.repeat(100)}`).join('\n'), 'utf8')
-    const result = await endpoint({ maxBytes: 1024 }).read(harness.scope, 'huge.txt', { offset: 1990, limit: 3 }, signal())
-    expect(result.text.split('\n')).toHaveLength(3)
-    expect(result.eof).toBe(false)
-    expect(result.bytes).toBeGreaterThan(200_000)
+  it('caps the page, not the file: sequential pages pass 512 KiB and reach EOF', async () => {
+    const rows = Array.from({ length: 7000 }, (_, i) => `row ${i} 世界 ${'z'.repeat(100)}`)
+    await writeFile(join(workspace, 'huge.txt'), rows.join('\n'), 'utf8')
+    const files = endpoint({ maxBytes: 64 * 1024, maxLines: 257 })
+    let offset = 1
+    let pages = 0
+    let lastVersion: string | undefined
+    let final = ''
+    for (;;) {
+      const result = await files.read(harness.scope, 'huge.txt', { offset }, signal())
+      expect(result.offset).toBe(offset)
+      if (lastVersion !== undefined) expect(result.version).toBe(lastVersion)
+      lastVersion = result.version
+      pages += 1
+      final = result.text
+      offset += result.lines
+      if (result.eof) break
+    }
+    expect(pages).toBeGreaterThan(20)
+    expect(offset - 1).toBe(rows.length)
+    expect(final).toContain('row 6999 世界')
+    expect((await files.stat(harness.scope, 'huge.txt', signal())).bytes).toBeGreaterThan(512 * 1024)
   })
 })
 

@@ -179,6 +179,7 @@ export const SERVICE_WALK_EXEMPTIONS: Record<string, string> = {
   conversation: 'client-side interface-typed browser service — packages/client/ui-conversation/README.md owns the API',
   browserUi: 'client-side interface-typed browser service — packages/client/ui-browser/README.md owns the API',
   documentPreviews: 'client-side document-preview registry — packages/client/ui-sidebar-documentpreview/README.md owns the API',
+  documentEditors: 'client-side optional document-editor registry — packages/client/ui-sidebar-documentpreview/README.md owns the API',
   fileUpload: 'client-side file-upload face — packages/client/file-upload/README.md owns the API',
   receivingQuestions: 'client-side receiving-questions accessor — packages/api/session-controller/README.md owns the API',
   resources: 'client-side resource registry — packages/client/resources/README.md owns the API',

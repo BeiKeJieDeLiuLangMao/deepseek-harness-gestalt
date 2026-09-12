@@ -132,7 +132,7 @@ export function OfficialEditorHost(props: OfficialFileBodyProps): ReactNode {
     const address = addressFor(absolute)
     if (address === undefined) return
     if (inPlace) {
-      tab.actions.openResource(address, { replaceTab: true, payload: { ...payload, dir: false } })
+      tab.actions.openResource(address)
     } else {
       tab.actions.openResource(address, { payload: { treeOpen: false, treeWidth: TREE_WIDTH_DEFAULT, dir: false } })
     }

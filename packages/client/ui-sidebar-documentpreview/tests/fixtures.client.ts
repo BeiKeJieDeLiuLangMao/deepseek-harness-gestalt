@@ -145,6 +145,11 @@ export function harness(script: Record<number, RemoteResult<WorkspaceFileText>> 
     loadAll: face.loadAll,
     reloadAll: face.reloadAll,
     useDocumentPreviews: () => definitions,
+    useDocumentEditors: () => [],
+    editorState: () => undefined,
+    retainEditor: vi.fn(),
+    setEditorDirty: vi.fn(),
+    armEditor: vi.fn(),
     renderSlot,
     t,
   }) as unknown as TextPreviewProps

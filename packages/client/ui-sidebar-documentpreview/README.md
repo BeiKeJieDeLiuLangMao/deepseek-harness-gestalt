@@ -72,7 +72,7 @@ No direct effect; what the user reads here never enters a model request.
 ## Known Limitations and Deferred Work
 
 <a id="known-limitations-and-deferred-work"></a>
-- **Preview, not editing.** The viewers provide no file editing or shared search interface; a directory address fails with `not-regular-file`. Unknown extensions use the plain-text reader and remain subject to its UTF-8/NUL checks.
+- **Editing is an optional official child.** The official tab remains the only file loader and renderer selector. A contributed keyed editor can open plain text, Markdown, or code only after paged reads reach EOF, so a prefix can never be saved as the complete file. After a successful write the owner returns to Preview and rereads from line 1 through `workspaceFiles.read`; oversized or incomplete source remains preview-only with a visible explanation. Directory addresses still fail with `not-regular-file`.
 - **Sequential text and bounded complete files.** Deep source lines require the preceding pages; PDF, HTML, and images require a complete result within the Host's `maxFileBytes` cap.
 - **Byte-view scroll state is not restored.** PDF, HTML, and images can return to the top when their renderer remounts or reloads; image horizontal position is never restored, and HTML iframe scrolling belongs to its opaque browsing context.
 - **Finite local HTML dependencies.** Only direct classic `.js` and stylesheet `.css` references are packed. Browser-resolved resources retain browser origin and network restrictions; no runtime file-read bridge is exposed to the iframe.

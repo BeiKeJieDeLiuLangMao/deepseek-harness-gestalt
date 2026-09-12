@@ -35,6 +35,8 @@ export interface TextTabState {
   rendererId?: string
   /** Current display-loading mode; absent before the first read. */
   mode?: DocumentLoadMode
+  /** Preview remains primary; edit is entered only for a complete editable text renderer. */
+  editorMode: 'preview' | 'edit'
   /** Full byte result used by complete-file renderers. */
   complete?: DocumentFileBytes
   /** The file version the loaded pages belong to; absent before the first page. */
@@ -74,6 +76,7 @@ export function fresh(): TextTabState {
     eof: false,
     loading: false,
     failure: undefined,
+    editorMode: 'preview',
     scrollTop: 0,
     wrap: true,
     revision: undefined,
@@ -95,6 +98,7 @@ type TextActions = {
   reset: (draft: TextState, tabId: TabId) => void
   scrolled: (draft: TextState, tabId: TabId, scrollTop: number) => void
   toggledWrap: (draft: TextState, tabId: TabId) => void
+  editorMode: (draft: TextState, tabId: TabId, mode: 'preview' | 'edit') => void
   navigated: (draft: TextState, tabId: TabId, revision: number) => void
   forget: (draft: TextState, tabId: TabId) => void
 }
@@ -177,6 +181,7 @@ export function createTextStore(): EngineStoreHandle<TextState, TextActions> {
         state.eof = false
         state.version = undefined
         state.observedVersion = undefined
+        state.editorMode = 'preview'
         state.loading = false
         state.failure = undefined
       },
@@ -197,6 +202,10 @@ export function createTextStore(): EngineStoreHandle<TextState, TextActions> {
       toggledWrap: (d, tabId: TabId) => {
         const state = bucket(d, tabId)
         state.wrap = !state.wrap
+      },
+      /** @param d - draft. @param tabId - owning tab. @param mode - primary preview or optional editor. */
+      editorMode: (d, tabId: TabId, mode: 'preview' | 'edit') => {
+        bucket(d, tabId).editorMode = mode
       },
       /**
        * Record that the body answered one navigation, so a remount restores the

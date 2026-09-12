@@ -18,6 +18,8 @@ export interface DocumentPreviewDefinition {
   readonly loading: DocumentLoadMode
   /** Whether the implementation consumes the document's wrap preference. */
   readonly wrap?: boolean
+  /** Whether an editor supplement may replace this renderer after the complete text reaches EOF. */
+  readonly editable?: boolean
 }
 
 /**

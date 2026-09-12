@@ -29,7 +29,8 @@ import { createReadPage } from './rpc.ts'
 import { createTextStore } from './store.ts'
 import { en, zh } from './locales.ts'
 import { DocumentPreviewRegistry } from './document/registry.ts'
-import { documentTabInfoFactory } from './document/contract.ts'
+import { DocumentEditorRegistry } from './document/editor.ts'
+import { documentEditorTabInfoFactory, documentTabInfoFactory } from './document/contract.ts'
 import { apply as registerText } from './text/index.ts'
 import { apply as registerMarkdown } from './markdown/index.ts'
 import { apply as registerHtml } from './html/index.ts'
@@ -46,12 +47,15 @@ export type { TextInjected } from './face.ts'
 export type { ReadWorkspaceFilePage, SessionFile, WorkspaceFilesReadRemote } from './rpc.ts'
 export type { TextPage, TextState, TextStore, TextTabState } from './store.ts'
 export type { DocumentContent, DocumentPreviewProps, DocumentTextPage } from './document/contract.ts'
+export type { DocumentEditorDefinition, DocumentEditorState } from './document/editor.ts'
 export type { DocumentLoadMode, DocumentPreviewDefinition } from './document/registry.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
     /** File-extension renderer registrations, independent from their keyed document bodies. */
     documentPreviews: DocumentPreviewRegistry
+    /** Optional renderer-specific editors hosted by the official document tab. */
+    documentEditors: DocumentEditorRegistry
   }
 }
 
@@ -84,10 +88,14 @@ export const inject = ['slots', 'locale', 'sidebarRightTabs', 'remote', 'remote.
  */
 export function apply(ctx: ClientContext): void {
   const previews = new DocumentPreviewRegistry()
+  const editors = new DocumentEditorRegistry()
   const disposePreviews = ctx.reflect.provide('documentPreviews', previews)
+  const disposeEditors = ctx.reflect.provide('documentEditors', editors)
   ctx.effect(() => disposePreviews)
-  ctx.effect(() => ctx.sidebarRightTabs.register(textDefinition()), 'ui-sidebar-documentpreview: text type')
+  ctx.effect(() => disposeEditors)
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-sidebar-documentpreview: dictionaries')
+  const t = ctx.locale.bind(NS)
+  ctx.effect(() => ctx.sidebarRightTabs.register(textDefinition(editors, t('discardUnsaved'))), 'ui-sidebar-documentpreview: text type')
 
   const store = createTextStore()
   const face = textFace(
@@ -95,13 +103,22 @@ export function apply(ctx: ClientContext): void {
     (file, signal) => ctx.remote.workspaceFiles.readAll(file.sessionId, file.path, signal),
   )
   const source = { getSnapshot: previews.getSnapshot, subscribe: previews.subscribe }
+  const editorSource = { getSnapshot: editors.getSnapshot, subscribe: editors.subscribe }
   ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register(
     {
       name: 'sidebar.right.pane.tab', key: TEXTPREVIEW_ID, locale: NS, store,
       children: {
         'sidebar.right.tab.document': { kind: 'keyed', scope: 'session', inject: { hooks: { tabInfo: documentTabInfoFactory } } },
+        'sidebar.right.tab.document.editor': { kind: 'keyed', scope: 'session', inject: { hooks: { tabInfo: documentEditorTabInfoFactory } } },
       },
-      inject: (sessionId, actions): TextPreviewInjected => ({ ...face(sessionId, actions), hooks: { documentPreviews: source } }),
+      inject: (sessionId, actions): TextPreviewInjected => ({
+        ...face(sessionId, actions),
+        hooks: { documentPreviews: source, documentEditors: editorSource },
+        editorState: editors.state.bind(editors),
+        retainEditor: editors.retain.bind(editors),
+        setEditorDirty: editors.setDirty.bind(editors),
+        armEditor: editors.arm.bind(editors),
+      }),
     },
     TextPreview,
   )), 'ui-sidebar-documentpreview: text body')

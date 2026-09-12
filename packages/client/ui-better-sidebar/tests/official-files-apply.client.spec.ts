@@ -1,70 +1,42 @@
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
-import type {
-  SidebarRightTabDefinition,
-  SidebarRightViewerDefinition,
-} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
+import { DocumentSourceEditor } from '../src/client/official-files/DocumentSourceEditor.tsx'
 import { OfficialEditorHost } from '../src/client/official-files/OfficialEditorHost.tsx'
-import { OFFICIAL_FILE_ID } from '../src/client/official-files/definitions.ts'
+import { OFFICIAL_EDITOR_DOCUMENT_IDS, OFFICIAL_EDITOR_ID, OFFICIAL_FILE_ID } from '../src/client/official-files/definitions.ts'
 import { registerOfficialFiles } from '../src/client/official-files/index.ts'
 import { OfficialOpenWithSettings } from '../src/client/official-files/OpenWithSettings.tsx'
 
-describe('official file registration', () => {
-  it('owns the type, six viewers, keyed bodies, and settings for one effect lifetime', () => {
+describe('official file supplements', () => {
+  it('keeps an explicit folder tree while file previews stay with documentpreview', () => {
     const effects: Array<() => void> = []
-    const definitions: SidebarRightTabDefinition[] = []
-    const viewers: SidebarRightViewerDefinition[] = []
+    const definitions: unknown[] = []
+    const editors: unknown[] = []
     const entries: Array<{ options: Record<string, unknown>; component: unknown }> = []
-    const remove = <T,>(items: T[], item: T): void => { items.splice(items.indexOf(item), 1) }
     const ctx = {
-      effect: (factory: () => (() => void), _label: string) => {
-        const dispose = factory()
-        effects.push(dispose)
-        return dispose
-      },
-      sidebarRightTabs: {
-        register: (definition: SidebarRightTabDefinition) => {
-          definitions.push(definition)
-          return () => { remove(definitions, definition) }
-        },
-        registerViewer: (viewer: SidebarRightViewerDefinition) => {
-          viewers.push(viewer)
-          return () => { remove(viewers, viewer) }
-        },
-      },
+      effect: (factory: () => (() => void), _label: string) => { const dispose = factory(); effects.push(dispose); return dispose },
+      sidebarRightTabs: { register: (definition: unknown) => { definitions.push(definition); return () => { definitions.splice(definitions.indexOf(definition), 1) } } },
+      documentEditors: { register: (definition: unknown) => { editors.push(definition); return () => { editors.splice(editors.indexOf(definition), 1) } } },
       sidebarRightPreferences: {},
       slots: {
         inject: vi.fn((_name: string, factory: () => () => void) => factory()),
-        register: (options: Record<string, unknown>, component: unknown) => {
-          const entry = { options, component }
-          entries.push(entry)
-          return () => { remove(entries, entry) }
-        },
+        register: (options: Record<string, unknown>, component: unknown) => { const entry = { options, component }; entries.push(entry); return () => { entries.splice(entries.indexOf(entry), 1) } },
       },
     }
 
     registerOfficialFiles(ctx as unknown as ClientContext)
 
-    expect(definitions.map(definition => definition.id)).toEqual([OFFICIAL_FILE_ID])
-    expect(viewers.map(viewer => viewer.id)).toEqual([
-      'image', 'pdf', 'markdown', 'html', 'code', 'binary-download',
+    expect(definitions).toMatchObject([{ id: OFFICIAL_FILE_ID, kind: 'file', hidden: true }])
+    expect(definitions[0]).not.toHaveProperty('patterns')
+    expect(editors).toEqual([{ id: OFFICIAL_EDITOR_ID, documentIds: OFFICIAL_EDITOR_DOCUMENT_IDS }])
+    expect(entries.map(entry => [entry.options.name, entry.options.key, entry.component])).toEqual([
+      ['sidebar.right.pane.tab', OFFICIAL_FILE_ID, OfficialEditorHost],
+      ...OFFICIAL_EDITOR_DOCUMENT_IDS.map(key => ['sidebar.right.tab.document.editor', key, DocumentSourceEditor]),
+      ['sidebar.right.tab.settings', OFFICIAL_FILE_ID, OfficialOpenWithSettings],
     ])
-    expect(entries.map(entry => [entry.options.name, entry.options.key])).toEqual([
-      ['sidebar.right.pane.tab', OFFICIAL_FILE_ID],
-      ['sidebar.right.file.viewer', 'image'],
-      ['sidebar.right.file.viewer', 'pdf'],
-      ['sidebar.right.file.viewer', 'markdown'],
-      ['sidebar.right.file.viewer', 'html'],
-      ['sidebar.right.file.viewer', 'code'],
-      ['sidebar.right.file.viewer', 'binary-download'],
-      ['sidebar.right.tab.settings', OFFICIAL_FILE_ID],
-    ])
-    expect(entries[0]?.component).toBe(OfficialEditorHost)
-    expect(entries.at(-1)?.component).toBe(OfficialOpenWithSettings)
 
     for (const dispose of effects.reverse()) dispose()
     expect(definitions).toEqual([])
-    expect(viewers).toEqual([])
+    expect(editors).toEqual([])
     expect(entries).toEqual([])
   })
 })

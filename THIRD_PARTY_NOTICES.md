@@ -39,6 +39,26 @@ External packages installed for runtime use or distributed inside the prebuilt b
 | [`@capacitor/browser`](https://github.com/ionic-team/capacitor-plugins) | MIT |
 | [`@capacitor/core`](https://github.com/ionic-team/capacitor) | MIT |
 | [`@capacitor/device`](https://github.com/ionic-team/capacitor-plugins) | MIT |
+| [`@codemirror/commands`](https://code.haverbeke.berlin/codemirror/commands) | MIT |
+| [`@codemirror/lang-cpp`](https://github.com/codemirror/lang-cpp) | MIT |
+| [`@codemirror/lang-css`](https://github.com/codemirror/lang-css) | MIT |
+| [`@codemirror/lang-go`](https://github.com/codemirror/lang-go) | MIT |
+| [`@codemirror/lang-html`](https://code.haverbeke.berlin/codemirror/lang-html) | MIT |
+| [`@codemirror/lang-java`](https://github.com/codemirror/lang-java) | MIT |
+| [`@codemirror/lang-javascript`](https://github.com/codemirror/lang-javascript) | MIT |
+| [`@codemirror/lang-json`](https://github.com/codemirror/lang-json) | MIT |
+| [`@codemirror/lang-markdown`](https://code.haverbeke.berlin/codemirror/lang-markdown) | MIT |
+| [`@codemirror/lang-php`](https://github.com/codemirror/lang-php) | MIT |
+| [`@codemirror/lang-python`](https://github.com/codemirror/lang-python) | MIT |
+| [`@codemirror/lang-rust`](https://github.com/codemirror/lang-rust) | MIT |
+| [`@codemirror/lang-sql`](https://github.com/codemirror/lang-sql) | MIT |
+| [`@codemirror/lang-vue`](https://github.com/codemirror/lang-vue) | MIT |
+| [`@codemirror/lang-xml`](https://github.com/codemirror/lang-xml) | MIT |
+| [`@codemirror/lang-yaml`](https://github.com/codemirror/lang-yaml) | MIT |
+| [`@codemirror/language`](https://code.haverbeke.berlin/codemirror/language) | MIT |
+| [`@codemirror/legacy-modes`](https://code.haverbeke.berlin/codemirror/legacy-modes) | MIT |
+| [`@codemirror/state`](https://code.haverbeke.berlin/codemirror/state) | MIT |
+| [`@codemirror/view`](https://code.haverbeke.berlin/codemirror/view) | MIT |
 | [`@earendil-works/pi-ai`](https://github.com/earendil-works/pi) | MIT |
 | [`@joplin/turndown-plugin-gfm`](https://github.com/laurent22/joplin-turndown-plugin-gfm) | MIT |
 | [`@jridgewell/gen-mapping`](https://github.com/jridgewell/sourcemaps) | MIT |
@@ -46,6 +66,7 @@ External packages installed for runtime use or distributed inside the prebuilt b
 | [`@lexical/plain-text`](https://github.com/facebook/lexical) | MIT |
 | [`@lexical/text`](https://github.com/facebook/lexical) | MIT |
 | [`@lexical/utils`](https://github.com/facebook/lexical) | MIT |
+| [`@lezer/highlight`](https://github.com/lezer-parser/highlight) | MIT |
 | [`@modelcontextprotocol/sdk`](https://github.com/modelcontextprotocol/typescript-sdk) | MIT |
 | [`@noble/hashes`](https://github.com/paulmillr/noble-hashes) | MIT |
 | [`@octokit/webhooks`](https://github.com/octokit/webhooks.js) | MIT |
@@ -74,6 +95,7 @@ External packages installed for runtime use or distributed inside the prebuilt b
 | [`compression`](https://github.com/expressjs/compression) | MIT |
 | [`core-js`](https://github.com/zloirock/core-js) | MIT |
 | [`diff`](https://github.com/kpdecker/jsdiff) | BSD-3-Clause |
+| [`dompurify`](https://github.com/cure53/DOMPurify) | (MPL-2.0 OR Apache-2.0) |
 | [`e2b`](https://github.com/e2b-dev/e2b) | MIT |
 | [`electron-updater`](https://github.com/electron-userland/electron-builder) | MIT |
 | [`eventsource-parser`](https://github.com/rexxars/eventsource-parser) | MIT |
@@ -161,30 +183,9 @@ External packages **directly declared** for development, tests, types, or toolin
 | [`@capacitor/android`](https://github.com/ionic-team/capacitor) | MIT |
 | [`@capacitor/cli`](https://github.com/ionic-team/capacitor) | MIT |
 | [`@capacitor/ios`](https://github.com/ionic-team/capacitor) | MIT |
-| [`@codemirror/commands`](https://code.haverbeke.berlin/codemirror/commands) | MIT |
-| [`@codemirror/lang-cpp`](https://github.com/codemirror/lang-cpp) | MIT |
-| [`@codemirror/lang-css`](https://github.com/codemirror/lang-css) | MIT |
-| [`@codemirror/lang-go`](https://github.com/codemirror/lang-go) | MIT |
-| [`@codemirror/lang-html`](https://code.haverbeke.berlin/codemirror/lang-html) | MIT |
-| [`@codemirror/lang-java`](https://github.com/codemirror/lang-java) | MIT |
-| [`@codemirror/lang-javascript`](https://github.com/codemirror/lang-javascript) | MIT |
-| [`@codemirror/lang-json`](https://github.com/codemirror/lang-json) | MIT |
-| [`@codemirror/lang-markdown`](https://code.haverbeke.berlin/codemirror/lang-markdown) | MIT |
-| [`@codemirror/lang-php`](https://github.com/codemirror/lang-php) | MIT |
-| [`@codemirror/lang-python`](https://github.com/codemirror/lang-python) | MIT |
-| [`@codemirror/lang-rust`](https://github.com/codemirror/lang-rust) | MIT |
-| [`@codemirror/lang-sql`](https://github.com/codemirror/lang-sql) | MIT |
-| [`@codemirror/lang-vue`](https://github.com/codemirror/lang-vue) | MIT |
-| [`@codemirror/lang-xml`](https://github.com/codemirror/lang-xml) | MIT |
-| [`@codemirror/lang-yaml`](https://github.com/codemirror/lang-yaml) | MIT |
-| [`@codemirror/language`](https://code.haverbeke.berlin/codemirror/language) | MIT |
-| [`@codemirror/legacy-modes`](https://code.haverbeke.berlin/codemirror/legacy-modes) | MIT |
 | [`@codemirror/search`](https://code.haverbeke.berlin/codemirror/search) | MIT |
-| [`@codemirror/state`](https://code.haverbeke.berlin/codemirror/state) | MIT |
-| [`@codemirror/view`](https://code.haverbeke.berlin/codemirror/view) | MIT |
 | [`@electron/notarize`](https://github.com/electron/notarize) | MIT |
 | [`@lexical/headless`](https://github.com/facebook/lexical) | MIT |
-| [`@lezer/highlight`](https://github.com/lezer-parser/highlight) | MIT |
 | [`@modelcontextprotocol/server-everything`](https://github.com/modelcontextprotocol/servers) | MIT / Apache-2.0 |
 | [`@modelcontextprotocol/server-filesystem`](https://github.com/modelcontextprotocol/servers) | MIT / Apache-2.0 |
 | [`@stylistic/eslint-plugin`](https://github.com/eslint-stylistic/eslint-stylistic) | MIT |
@@ -228,7 +229,6 @@ External packages **directly declared** for development, tests, types, or toolin
 | [`cytoscape-cose-bilkent`](https://github.com/cytoscape/cytoscape.js-cose-bilkent) | MIT |
 | [`dayjs`](https://github.com/iamkun/dayjs) | MIT |
 | [`debug`](https://github.com/debug-js/debug) | MIT |
-| [`dompurify`](https://github.com/cure53/DOMPurify) | (MPL-2.0 OR Apache-2.0) |
 | [`electron`](https://github.com/electron/electron) | MIT |
 | [`electron-builder`](https://github.com/electron-userland/electron-builder) | MIT |
 | [`esbuild`](https://github.com/evanw/esbuild) | MIT |

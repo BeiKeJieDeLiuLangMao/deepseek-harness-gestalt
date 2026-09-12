@@ -24,6 +24,7 @@ import { LoadingIndicator } from './LoadingIndicator.tsx'
 import { hostFileOf } from './rpc.ts'
 import type { TextStore } from './store.ts'
 import type { DocumentContent } from './document/contract.ts'
+import type { DocumentEditorDefinition, DocumentEditorRegistry } from './document/editor.ts'
 import { matchingDocumentPreviews } from './document/registry.ts'
 import type { DocumentPreviewDefinition } from './document/registry.ts'
 import { PLAIN_BODY_ID } from './text/index.ts'
@@ -58,13 +59,20 @@ function usePathClipped(
 
 /** Private registration inputs; the framework binds the registry source to useDocumentPreviews. */
 export interface TextPreviewInjected extends TextInjected {
-  readonly hooks: { readonly documentPreviews: ObservableSnapshot<readonly DocumentPreviewDefinition[]> }
+  readonly hooks: {
+    readonly documentPreviews: ObservableSnapshot<readonly DocumentPreviewDefinition[]>
+    readonly documentEditors: ObservableSnapshot<readonly DocumentEditorDefinition[]>
+  }
+  readonly editorState: DocumentEditorRegistry['state']
+  readonly retainEditor: DocumentEditorRegistry['retain']
+  readonly setEditorDirty: DocumentEditorRegistry['setDirty']
+  readonly armEditor: DocumentEditorRegistry['arm']
 }
 
 /** The body's composed props: the tab, its navigation, the shared store and face, and copy. */
 export type TextPreviewProps =
   & PropsRuntime<'sidebar.right.pane.tab'>
-  & PropsRenderSlots<'sidebar.right.tab.document'>
+  & PropsRenderSlots<'sidebar.right.tab.document' | 'sidebar.right.tab.document.editor'>
   & PropsStore<TextStore>
   & InjectFace<TextPreviewInjected>
   & PropsLocale<'sidebarDocumentPreview'>
@@ -76,7 +84,8 @@ export type TextPreviewProps =
  */
 export function TextPreview({
   useTabInfo, useResource, useStore, actions, loadPage, reloadPages,
-  loadAll, reloadAll, useDocumentPreviews, renderSlot, t,
+  loadAll, reloadAll, useDocumentPreviews, useDocumentEditors, editorState,
+  retainEditor, setEditorDirty, armEditor, renderSlot, t,
 }: TextPreviewProps): ReactNode {
   const { tab } = useTabInfo()
   const { navigation, signal } = tab
@@ -85,12 +94,16 @@ export function TextPreview({
   const file = useMemo(() => hostFileOf(tab.contentId), [tab.contentId])
   const state = useStore(s => s.byTab[tab.id])
   const definitions = useDocumentPreviews(value => value)
+  const editorDefinitions = useDocumentEditors(value => value)
   const candidates = useMemo(() => {
     const matched = matchingDocumentPreviews(definitions, file.path)
     const fallback = definitions.find(definition => definition.id === PLAIN_BODY_ID)
     return fallback === undefined ? matched : [...matched, fallback]
   }, [definitions, file.path])
   const selected = candidates.find(candidate => candidate.id === state?.rendererId) ?? candidates[0]
+  const editor = selected === undefined
+    ? undefined
+    : editorDefinitions.find(definition => definition.documentIds.includes(selected.id))
   const mode = selected?.loading
   const current = (state?.mode ?? 'text-pages') === mode ? state : undefined
   const bodyRef = useRef<HTMLDivElement | null>(null)
@@ -106,6 +119,15 @@ export function TextPreview({
   const loaded = useMemo(() => loadedPages(pages ?? {}), [pages])
   const loadedThrough = lastLineLoaded(loaded)
   const hasContent = loaded.length > 0 || current?.complete !== undefined
+
+  useEffect(() => {
+    armEditor(tab.sessionId, tab.id, signal)
+  }, [armEditor, tab.sessionId, tab.id, signal])
+  useEffect(() => {
+    if (state?.editorMode === 'edit' && (editor === undefined || selected?.editable !== true || mode !== 'text-pages')) {
+      actions.editorMode(tab.id, 'preview')
+    }
+  }, [state?.editorMode, editor?.id, selected?.id, selected?.editable, mode, tab.id])
 
   // First mount reads the first page; a body coming back to a tab with content
   // reads nothing, because the store outlives the body.
@@ -254,6 +276,21 @@ export function TextPreview({
             </button>
           </Tooltip>
         )}
+        {editor !== undefined && selected.editable === true && mode === 'text-pages' && (
+          <Tooltip label={current?.eof === true ? t(state.editorMode === 'edit' ? 'preview' : 'edit') : t('editIncomplete')} side="bottom" delayMs={500}>
+            <button
+              type="button"
+              className={css.tool}
+              disabled={current?.eof !== true}
+              aria-pressed={state.editorMode === 'edit'}
+              aria-label={t(state.editorMode === 'edit' ? 'preview' : 'edit')}
+              data-document-editor-toggle
+              onClick={() => { actions.editorMode(tab.id, state.editorMode === 'edit' ? 'preview' : 'edit') }}
+            >
+              {t(state.editorMode === 'edit' ? 'preview' : 'edit')}
+            </button>
+          </Tooltip>
+        )}
         <Tooltip label={t('reload')} side="bottom" delayMs={500}>
           <button
             type="button"
@@ -281,12 +318,30 @@ export function TextPreview({
         {!hasContent && current?.failure === undefined && (
           <LoadingIndicator className={css.statusLine} label={t('loading')} />
         )}
-        {content !== undefined && renderSlot('sidebar.right.tab.document', {
-          resourceAddress: tab.contentId, content, wrap: state.wrap,
-        }, {
-          entryKey: selected.id, hookContext: useTabInfo,
-          fallback: <p className={css.statusLine}>{t('rendererUnavailable', { name: selected.title() })}</p>,
-        })}
+        {content !== undefined && (state.editorMode === 'edit' && content.kind === 'text' && editor !== undefined
+          ? renderSlot('sidebar.right.tab.document.editor', {
+            documentId: selected.id,
+            resourceAddress: tab.contentId,
+            content,
+            wrap: state.wrap,
+            retained: editorState(tab.sessionId, tab.id),
+            retain: (retained) => { retainEditor(tab.sessionId, tab.id, retained) },
+            setDirty: (dirty) => { setEditorDirty(tab.sessionId, tab.id, dirty) },
+            saved: () => {
+              if (signal.aborted) return
+              actions.editorMode(tab.id, 'preview')
+              reloadPages(tab.id, file, signal, meta.value?.version)
+            },
+          }, {
+            entryKey: selected.id, hookContext: useTabInfo,
+            fallback: <p className={css.statusLine}>{t('rendererUnavailable', { name: selected.title() })}</p>,
+          })
+          : renderSlot('sidebar.right.tab.document', {
+            resourceAddress: tab.contentId, content, wrap: state.wrap,
+          }, {
+            entryKey: selected.id, hookContext: useTabInfo,
+            fallback: <p className={css.statusLine}>{t('rendererUnavailable', { name: selected.title() })}</p>,
+          }))}
         {current?.failure !== undefined && (hasContent
           ? (
             <p className={css.statusLine} data-textpreview-failed={current.failure.code}>

@@ -10,6 +10,7 @@
  */
 import type { SidebarRightTabDefinition } from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import { parseFileAddress } from '@deepseek-ai/dsh-util-workspace-path'
+import type { DocumentEditorRegistry } from './document/editor.ts'
 
 /** The tab kind this package owns. */
 export const TEXTPREVIEW_KIND = 'text'
@@ -40,9 +41,11 @@ export function basenameOf(address: string): string {
 
 /**
  * The text type's registry definition.
+ * @param editors - official occurrence editor-state owner.
+ * @param discardUnsaved - localized close-admission question.
  * @returns the definition to register.
  */
-export function textDefinition(): SidebarRightTabDefinition {
+export function textDefinition(editors?: DocumentEditorRegistry, discardUnsaved = ''): SidebarRightTabDefinition {
   return {
     id: TEXTPREVIEW_ID,
     kind: TEXTPREVIEW_KIND,
@@ -50,5 +53,9 @@ export function textDefinition(): SidebarRightTabDefinition {
     priority: 'fallback',
     canOpen: address => parseFileAddress(address)?.scope === 'session',
     title: basenameOf,
+    ...editors === undefined ? {} : {
+      beforeClose: context => editors.beforeClose(context, discardUnsaved),
+      close: (context) => { editors.release(context) },
+    },
   }
 }

@@ -311,6 +311,46 @@ describe('TextPreview — pages', () => {
   })
 })
 
+describe('TextPreview — editor supplement', () => {
+  it('keeps preview primary until EOF, then returns to official paging after save', async () => {
+    const h = harness({ 1: page(1, ['head'], false), 2: page(2, ['tail'], true) })
+    const base = h.props()
+    let editorOwner: OwnerOf<'sidebar.right.tab.document.editor'> | undefined
+    const props: TextPreviewProps = {
+      ...base,
+      useDocumentEditors: selector => selector([{
+        id: 'better/editor', documentIds: [PLAIN_BODY_ID],
+      }]),
+      renderSlot: ((key: string, owner: unknown, options: { hookContext: TextPreviewProps['useTabInfo'] }) => {
+        if (key === 'sidebar.right.tab.document.editor') {
+          editorOwner = owner as OwnerOf<'sidebar.right.tab.document.editor'>
+          return <div data-test-editor />
+        }
+        return <TextBody {...base} {...owner as OwnerOf<'sidebar.right.tab.document'>} useTabInfo={options.hookContext} />
+      }) as TextPreviewProps['renderSlot'],
+    }
+    const view = render(<TextPreview {...props} />)
+    await settle()
+    const toggle = view.container.querySelector<HTMLButtonElement>('[data-document-editor-toggle]')
+    expect(toggle?.disabled).toBe(true)
+    expect(view.container.querySelector('[data-test-editor]')).toBeNull()
+
+    click(view.container, '[data-textpreview-more]')
+    await settle()
+    expect(toggle?.disabled).toBe(false)
+    fireEvent.click(toggle!)
+    expect(view.container.querySelector('[data-test-editor]')).not.toBeNull()
+    expect(editorOwner?.content.text).toBe('head\ntail')
+
+    h.script(1, page(1, ['saved whole file'], true, 'v2'))
+    editorOwner?.saved()
+    await settle()
+    expect(h.read).toHaveBeenLastCalledWith(SESSION, PATH, 1, h.controller.signal)
+    expect(view.container.querySelector('[data-test-editor]')).toBeNull()
+    expect(lines(view.container)).toEqual(['saved whole file\n'])
+  })
+})
+
 describe('TextPreview — the file\'s metadata', () => {
   it('does not treat the observation present at read start as a later file change', async () => {
     const h = harness({ 1: page(1, ['newer read'], true, 'v2') })
