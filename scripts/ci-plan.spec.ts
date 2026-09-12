@@ -257,6 +257,27 @@ describe('CI plan', () => {
     expect(plan.escalationReasons).toContain('invalid-risk-catalog')
   })
 
+  it('keeps an unknown future package group fail-closed', () => {
+    const plan = planCi({
+      ...completeInput,
+      changedPaths: ['packages/future-group/example/README.md'],
+      dependencyGraph: [{
+        short: 'future-example',
+        name: '@deepseek-ai/dsh-future-example',
+        group: 'future-group',
+        rel: 'packages/future-group/example',
+        deps: [],
+      }],
+      riskCatalog: {
+        formatVersion: 1,
+        rules: [{ pattern: 'packages/webhook/**', area: 'area/session' }],
+      },
+    })
+
+    expect(plan.level).toBe('exhaustive')
+    expect(plan.escalationReasons).toContain('unknown-path')
+  })
+
   it('classifies every current package group without an unknown-path escalation', () => {
     const root = resolve(import.meta.dirname, '..')
     const graph = collectPackageGraph(root, [], 'ci-plan-spec')

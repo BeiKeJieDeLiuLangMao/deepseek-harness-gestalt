@@ -7,7 +7,7 @@ export default defineConfig({
   plugins: [tsconfigPaths({ projects: ['./tsconfig.base.json'] }), standardDecoratorPlugin()],
   test: {
     execArgv: vitestExecArgv,
-    setupFiles: ['./scripts/test-invariants.ts'],
+    setupFiles: ['./scripts/test-proxy-environment.ts', './scripts/test-invariants.ts'],
     include: ['apps/web/tests/web-acceptance.acceptance.ts'],
     testTimeout: 120_000,
     hookTimeout: 30_000,

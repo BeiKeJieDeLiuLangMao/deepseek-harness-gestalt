@@ -116,6 +116,24 @@ function dictionariesIn(file: string): Dictionary[] {
       }
     }
   }
+  for (const statement of source.statements) {
+    if (!ts.isImportDeclaration(statement)) continue
+    const specifier = statement.moduleSpecifier
+    const bindings = statement.importClause?.namedBindings
+    if (!ts.isStringLiteral(specifier) || !specifier.text.startsWith('.') || !ts.isNamedImports(bindings)) continue
+    const importedFile = resolve(dirname(file), specifier.text)
+    const importedSource = ts.createSourceFile(
+      importedFile,
+      readFileSync(importedFile, 'utf8'),
+      ts.ScriptTarget.ESNext,
+      true,
+    )
+    for (const binding of bindings.elements) {
+      const importedName = binding.propertyName?.text ?? binding.name.text
+      const literal = exportedObjectLiteral(importedSource, importedName)
+      if (literal !== undefined) moduleConsts.set(binding.name.text, literal)
+    }
+  }
 
   for (const statement of source.statements) {
     if (!ts.isVariableStatement(statement)) continue
@@ -192,6 +210,23 @@ function dictionariesIn(file: string): Dictionary[] {
   return found
 }
 
+/** Resolve one named exported object literal from a parsed module. */
+function exportedObjectLiteral(
+  source: ts.SourceFile,
+  name: string,
+): ts.ObjectLiteralExpression | undefined {
+  for (const statement of source.statements) {
+    if (!ts.isVariableStatement(statement)) continue
+    if (statement.modifiers?.some(modifier => modifier.kind === ts.SyntaxKind.ExportKeyword) !== true) continue
+    for (const declaration of statement.declarationList.declarations) {
+      if (!ts.isIdentifier(declaration.name) || declaration.name.text !== name) continue
+      const literal = unwrap(declaration.initializer)
+      return literal !== undefined && ts.isObjectLiteralExpression(literal) ? literal : undefined
+    }
+  }
+  return undefined
+}
+
 /** Declared property names of an object literal, sorted. */
 function keysOf(literal: ts.ObjectLiteralExpression): string[] {
   const keys: string[] = []
@@ -200,6 +235,16 @@ function keysOf(literal: ts.ObjectLiteralExpression): string[] {
     if (ts.isIdentifier(prop.name) || ts.isStringLiteral(prop.name)) keys.push(prop.name.text)
   }
   return keys.sort()
+}
+
+/** Report keys declared on only one side of a locale pair. */
+function parityProblems(zh: Dictionary, en: Dictionary): string[] {
+  const problems: string[] = []
+  const zhOnly = zh.keys.filter(key => !en.keys.includes(key))
+  const enOnly = en.keys.filter(key => !zh.keys.includes(key))
+  if (zhOnly.length > 0) problems.push(`${zh.file} ${zh.name} has keys absent from ${en.name}: ${zhOnly.join(', ')}`)
+  if (enOnly.length > 0) problems.push(`${en.file} ${en.name} has keys absent from ${zh.name}: ${enOnly.join(', ')}`)
+  return problems
 }
 
 /** Look through `satisfies`/`as`/parenthesized wrappers to the literal. */
@@ -240,6 +285,13 @@ function localeOf(name: string): { locale: 'zh' | 'en'; pair: string } | undefin
 }
 
 describe('shipped locale dictionaries', () => {
+  it('rejects a key declared on only one side of a locale pair', () => {
+    expect(parityProblems(
+      { file: 'locales.ts', name: 'zh', keys: ['shared', 'zhOnly'] },
+      { file: 'locales.ts', name: 'en', keys: ['shared'] },
+    )).toEqual(['locales.ts zh has keys absent from en: zhOnly'])
+  })
+
   it('declares the same keys in zh and en, so the single fallback locale always resolves', () => {
     const files = sourceFiles()
     // Guard the discovery itself: an empty or narrowed sweep would pass every
@@ -294,10 +346,7 @@ describe('shipped locale dictionaries', () => {
         continue
       }
       comparedPairs++
-      const zhOnly = zh.keys.filter(k => !en.keys.includes(k))
-      const enOnly = en.keys.filter(k => !zh.keys.includes(k))
-      if (zhOnly.length > 0) problems.push(`${zh.file} ${zh.name} has keys absent from ${en.name}: ${zhOnly.join(', ')}`)
-      if (enOnly.length > 0) problems.push(`${en.file} ${en.name} has keys absent from ${zh.name}: ${enOnly.join(', ')}`)
+      problems.push(...parityProblems(zh, en))
     }
 
     // The shipped dictionary count only grows; a collapse means discovery or

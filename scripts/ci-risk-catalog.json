@@ -44,6 +44,7 @@
     { "pattern": "packages/session-query/**", "area": "area/session" },
     { "pattern": "packages/todo/**", "area": "area/session" },
     { "pattern": "packages/workspace/**", "area": "area/session" },
+    { "pattern": "packages/webhook/**", "area": "area/session" },
     { "pattern": "packages/subagent/**", "area": "area/subagent" },
     { "pattern": "packages/credentials/**", "area": "area/platform" },
     { "pattern": "packages/identity/**", "area": "area/platform" },
