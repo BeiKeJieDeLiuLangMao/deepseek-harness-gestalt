@@ -11,7 +11,7 @@ Two-axis review of the diff between `HEAD` and a fixed point the user supplies:
 - **Standards**: does the code conform to this repo's documented coding standards?
 - **Spec**: does the code faithfully implement the originating issue / spec?
 
-Both axes run independently and are reported separately. Ordinary reviews use parallel fresh sub-agents; an orchestrated delivery may reuse its stable independent reviewer for both reports.
+Both axes run independently and are reported separately. An orchestrated delivery reuses its existing independent reviewer for both reports; when no independent review owner exists, use parallel fresh sub-agents.
 
 Use the repository's issue-tracker instructions when present. If no tracker owner exists, ask where the originating specification lives; do not require an inaccessible setup skill.
 
@@ -63,7 +63,7 @@ Each smell reads *what it is* → *how to fix*; match it against the diff:
 
 ### 4. Run both review axes in parallel
 
-Apply [delegation routing and context reuse](../../../docs/agents/delegation-routing.md). When an orchestrated delivery already has an independent code-review owner, reuse that stable reviewer session and require separate **Standards** and **Spec** reports; it need not create two fresh children. Other independent reviews use fresh children and explicit available routes. The original author is never the reviewer.
+Apply [delegation routing and context reuse](../../../docs/agents/delegation-routing.md). Reuse an orchestrated delivery's existing independent code-review owner and require separate **Standards** and **Spec** reports; it need not create two fresh children. When no independent owner exists, start fresh children on explicit available routes. The original author is never the reviewer.
 
 **Standards sub-agent prompt** should include:
 

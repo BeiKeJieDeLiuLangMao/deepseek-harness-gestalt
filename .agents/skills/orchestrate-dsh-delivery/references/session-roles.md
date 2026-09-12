@@ -4,7 +4,7 @@ Use the fewest sessions that preserve ownership and independent judgment. Reuse 
 
 | Role | Responsibility |
 | --- | --- |
-| Root | Keeps the demand boundary, asks the user to choose the root model, investigates whether work belongs in a new or existing module and whether UI is involved, grills the demand with the user, accepts the reviewed scheme and design, builds the dependency DAG, dispatches roles, and synthesizes retrospectives. It never routes or changes its own model and does not implement. |
+| Root | Keeps the demand boundary, leaves root model selection to the user, investigates whether work belongs in a new or existing module and whether UI is involved, grills the demand with the user, accepts the reviewed scheme and design, builds the dependency DAG, dispatches roles, and synthesizes retrospectives. It never routes or changes its own model and does not implement. |
 | Scheme and simplification | Produces the reviewed technical scheme before implementation, then returns after human acceptance to identify evidence-backed simplifications. Reuse one session when its context remains current. |
 | UI | Produces and validates the interaction design when user-visible GUI behavior is relevant. Omit this role otherwise. |
 | Module implementer | Owns one stable module boundary and may deliver several related tickets. The same owner receives implementation, review, CI, E2E, and acceptance fixes for that module. Use N implementers only when the DAG has genuinely independent module boundaries. |
