@@ -282,11 +282,20 @@ describe('web e2e: seeded history renders through cold resume', () => {
     const process = page.locator('[data-turn-process="1"]')
     await process.waitFor({ state: 'visible', timeout: 10_000 })
     expect(await process.getAttribute('aria-expanded')).toBe('false')
-    const processBottom = await process.evaluate(element => element.getBoundingClientRect().bottom)
-    const answerTop = await page.getByText('DONE', { exact: true }).evaluate(element =>
-      element.getBoundingClientRect().top)
-    // Collapsed control row keeps its own 8px margin plus the 8px flow gap.
-    expect(answerTop).toBe(processBottom + 19)
+    const answer = page.locator('[data-turn-process-answer]')
+    await answer.waitFor({ state: 'visible' })
+    const spacing = await answer.evaluate(element => ({
+      answerTop: element.getBoundingClientRect().top,
+      flowGap: getComputedStyle(element).marginTop,
+    }))
+    const processSpacing = await process.evaluate(element => ({
+      processBottom: element.getBoundingClientRect().bottom,
+      processMarginBottom: getComputedStyle(element).marginBottom,
+    }))
+    // Measure the process control and answer block boundaries, not the DONE text's font ink box.
+    expect(spacing.answerTop - processSpacing.processBottom).toBe(16)
+    expect(processSpacing.processMarginBottom).toBe('8px')
+    expect(spacing.flowGap).toBe('8px')
     expect(await page.getByText('Context compacted', { exact: true }).count()).toBe(0)
     // Tool cards render from logged tool/call + tool/result alone (views are
     // host-recomputed per page; the generic card is the documented default).

@@ -312,10 +312,8 @@ describe.skipIf(MODE === 'record')('web e2e: Side Chat through the shipped workb
     await page.reload({ waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
     acknowledgeReloadConnectionLoss(tripwire, warningStart)
-    const expandSidebar = page.getByRole('button', { name: 'Open sidebar', exact: true })
     if (!await panel.isVisible()) {
-      await expandSidebar.waitFor({ timeout: 15_000 })
-      await expandSidebar.click()
+      await page.getByRole('button', { name: '1 subagent', exact: true }).click()
     }
     await panel.getByText(PROMPT, { exact: true }).waitFor({ timeout: 15_000 })
     await compareOrRefreshGolden(
@@ -589,14 +587,13 @@ describe.skipIf(MODE === 'record')('web e2e: Side Chat provisional model authori
     if (!await restoredPanel.isVisible()) {
       await page.getByRole('button', { name: 'Open sidebar', exact: true }).click()
     }
-    const restoredTab = restoredPanel.locator('[data-dockkit-tab]').filter({ hasText: childTabTitle })
-    if (await restoredTab.count() > 0) await restoredTab.click()
-    else {
-      const descendants = page.getByRole('button', { name: '1 subagent', exact: true })
-      await descendants.hover()
-      await page.getByRole('tree', { name: 'Subagent sessions' })
-        .getByRole('treeitem', { name: new RegExp(childTabTitle, 'u') }).click()
-    }
+    expect(await restoredPanel.locator('[data-dockkit-tab]', { hasText: childTabTitle }).count()).toBe(0)
+    const liveChildrenBeforeNavigation = scaffold.ctx.agents.list().map(agent => agent.id)
+    const descendants = page.getByRole('button', { name: '1 subagent', exact: true })
+    await descendants.hover()
+    await page.getByRole('tree', { name: 'Subagent sessions' })
+      .getByRole('treeitem', { name: new RegExp(childTabTitle, 'u') }).click()
+    expect(scaffold.ctx.agents.list().map(agent => agent.id)).toEqual(liveChildrenBeforeNavigation)
     await restoredPanel.getByRole('button', { name: `Select model, current ${ALTERNATE_MODEL_NAME}`, exact: true })
       .waitFor({ timeout: 15_000 })
     await restoredPanel.getByRole('button', { name: 'Access mode, current: Read Only', exact: true }).waitFor()
