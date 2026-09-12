@@ -250,7 +250,7 @@ function makeHarness(
   const useChatNodeProcess = bindKeyedSnapshotSelector(
     key => chatSource.source.getSnapshot().nodes.processSource(key),
   )
-  const openFile = vi.fn<(path: string) => Promise<void>>().mockResolvedValue(undefined)
+  const openFile = vi.fn<ChatViewSlotProps['openFile']>().mockResolvedValue(undefined)
   const loadOlder = vi.fn()
   const loadThrough = vi.fn<(seq: number) => Promise<void>>().mockResolvedValue(undefined)
   // Mutable outline holder: tests swap the value and drive a re-render via set().
@@ -2218,7 +2218,7 @@ describe('ChatView', () => {
   })
 
   it('shows a Host open refusal with the reason and retries the same path', async () => {
-    const openFile = vi.fn<(path: string) => Promise<void>>()
+    const openFile = vi.fn<ChatViewSlotProps['openFile']>()
       .mockRejectedValueOnce(new Error('xdg-open is not available'))
       .mockResolvedValueOnce(undefined)
     const h = makeHarness({ nodes: [toolResult(3, 'a')] })
@@ -2239,7 +2239,7 @@ describe('ChatView', () => {
   })
 
   it('keeps a non-Error Host refusal visible and dismisses it on cancel', async () => {
-    const openFile = vi.fn<(path: string) => Promise<void>>()
+    const openFile = vi.fn<ChatViewSlotProps['openFile']>()
       .mockRejectedValueOnce('permission denied')
     const h = makeHarness({ nodes: [toolResult(3, 'a')] })
     h.props.openFile = openFile
@@ -2254,7 +2254,7 @@ describe('ChatView', () => {
   })
 
   it('substitutes the unknown-open copy when the Host refusal has no text', async () => {
-    const openFile = vi.fn<(path: string) => Promise<void>>()
+    const openFile = vi.fn<ChatViewSlotProps['openFile']>()
       .mockRejectedValueOnce(new Error(''))
     const h = makeHarness({ nodes: [toolResult(3, 'a')] })
     h.props.openFile = openFile
@@ -2267,7 +2267,7 @@ describe('ChatView', () => {
 
   it('ignores a Host refusal that settles after the dialog is dismissed', async () => {
     let rejectRetry!: (error: unknown) => void
-    const openFile = vi.fn<(path: string) => Promise<void>>()
+    const openFile = vi.fn<ChatViewSlotProps['openFile']>()
       .mockRejectedValueOnce(new Error('first refusal'))
       .mockImplementationOnce(() => new Promise<void>((_resolve, reject) => {
         rejectRetry = reject
@@ -2288,7 +2288,7 @@ describe('ChatView', () => {
 
   it('ignores a Host open that succeeds after the dialog is dismissed', async () => {
     let resolveRetry!: () => void
-    const openFile = vi.fn<(path: string) => Promise<void>>()
+    const openFile = vi.fn<ChatViewSlotProps['openFile']>()
       .mockRejectedValueOnce(new Error('first refusal'))
       .mockImplementationOnce(() => new Promise<void>((resolve) => {
         resolveRetry = () => { resolve() }
