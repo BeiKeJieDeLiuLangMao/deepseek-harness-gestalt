@@ -11,7 +11,7 @@
  * all funnel through here: one session at a time, shown in a full-window
  * progress overlay with cancel, followed by a tree refresh and a one-line
  * hint under the search row (success fades, failures and cancels stay).
- * OS file drags are shielded at the panel host (see Sidebar.tsx), so a
+ * OS file drags are shielded at the official Sidebar panel host, so a
  * drop over the file window uploads here and never reaches DSH's chat
  * intake.
  */
@@ -44,6 +44,8 @@ interface UploadSession {
 export function TreePanel(props: {
   sessionId: string
   cwd: string | undefined
+  /** Disable the workspace fence before retrying an outside-workspace listing. */
+  disableWorkspaceFence: () => Promise<void>
   expanded: string[]
   revealed: string[]
   onToggle: (path: string) => void
@@ -59,16 +61,35 @@ export function TreePanel(props: {
   openWithSsh?: boolean
   onOpenWith?: (targetId: string, path: string) => void
   onToggleOpenWithPin?: (targetId: string) => void
-  onReferenceFile: (path: string) => void
+  onReferenceFile: (path: string, isDir: boolean) => void
+  /** A tree rename landed (passed through to FileTree for tab retargeting). */
+  onPathRenamed?: (oldPath: string, newPath: string) => void
+  /** A tree delete landed (passed through to FileTree for tab closing). */
+  onPathDeleted?: (path: string, isDir: boolean) => void
   /** Full-window presentation: the panel fills its host instead of docking
    *  at a fixed width. */
   full?: boolean
 }) {
-  const { sessionId, cwd, expanded, revealed, onToggle, onOpenFile, onOpenFileNewTab, onOpenFileSide, openWithTargets, openWithPinned, openWithSsh, onOpenWith, onToggleOpenWithPin, onReferenceFile, full } = props
+  const { sessionId, cwd, disableWorkspaceFence, expanded, revealed, onToggle, onOpenFile, onOpenFileNewTab, onOpenFileSide, openWithTargets, openWithPinned, openWithSsh, onOpenWith, onToggleOpenWithPin, onReferenceFile, onPathRenamed, onPathDeleted, full } = props
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<{ matches: string[]; truncated: boolean } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [refreshTick, setRefreshTick] = useState(0)
+
+  // The tree caches loaded directories per refresh tick, so content changed
+  // outside DSH (another editor, a sync tool) stays stale until the manual
+  // refresh click. Re-focusing the window bumps the tick automatically, and
+  // integrations can force a refresh by dispatching a bubbling
+  // `dsh-sidebar:refresh-files` event on `window`.
+  useEffect(() => {
+    const bump = (): void => { setRefreshTick(tick => tick + 1) }
+    window.addEventListener('focus', bump)
+    window.addEventListener('dsh-sidebar:refresh-files', bump)
+    return () => {
+      window.removeEventListener('focus', bump)
+      window.removeEventListener('dsh-sidebar:refresh-files', bump)
+    }
+  }, [])
   /** One-line upload status under the search row ('' hides the hint). */
   const [uploadStatus, setUploadStatus] = useState('')
   /** Whether the status line is a failure/cancel (error color, stays visible). */
@@ -221,6 +242,7 @@ export function TreePanel(props: {
         <FileTree
           sessionId={sessionId}
           cwd={cwd}
+          disableWorkspaceFence={disableWorkspaceFence}
           expanded={expanded}
           revealed={revealed}
           onToggle={onToggle}
@@ -233,6 +255,8 @@ export function TreePanel(props: {
           onOpenWith={onOpenWith}
           onToggleOpenWithPin={onToggleOpenWithPin}
           onReferenceFile={onReferenceFile}
+          onPathRenamed={onPathRenamed}
+          onPathDeleted={onPathDeleted}
           refreshTick={refreshTick}
           onUploadRequest={startUpload}
           busy={busy}

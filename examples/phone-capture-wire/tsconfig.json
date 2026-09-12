@@ -1,0 +1,27 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "composite": false,
+    "incremental": false,
+    "rewriteRelativeImportExtensions": false
+  },
+  "files": [
+    "start.ts"
+  ],
+  "include": [],
+  "references": [
+    {
+      "path": "../../packages/host/webserver"
+    },
+    {
+      "path": "../../packages/phone/phone-runtime"
+    },
+    {
+      "path": "../../packages/phone/phone-stream"
+    },
+    {
+      "path": "../../vendor/cordis"
+    }
+  ]
+}

@@ -1,0 +1,218 @@
+/*
+ * The Sidebar's own chrome only: the panel box, its two strip-end controls, and
+ * the placeholder tab bodies. Everything inside the split tree is styled by the
+ * docking kit; the expand button in the conversation header has its own sheet.
+ * Tokens only.
+ */
+
+/*
+ * One content tree uses the frame's width normally and fills the viewport in
+ * fullscreen. The frame retains a shown wide panel's track in both modes.
+ *
+ * Hidden, the panel is translated off the frame's right edge rather than
+ * unmounted, so showing and hiding are one slide in both presentations. The
+ * transform rides the same variables as the frame's track transition (ui-theme
+ * base.css); while squeezing, the panel's left edge and the conversation's right
+ * edge therefore travel together. Visibility flips after the slide so the box
+ * is out of reach once off-edge, and flips back before the slide starts.
+ *
+ * The normal panel is below frame overlays (20); fullscreen (40) covers the
+ * frame and remains below independently floating panels (60).
+ */
+.panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  /* The same ground as the conversation: this is a column of the page, not a
+     raised surface. The edge is the weight of the kit's split dividers inside
+     (ui-dockkit `.divider`), so the panel's outline and its inner rules match. */
+  background: var(--dsw-alias-bg-base);
+  border-left: 0.5px solid var(--dsw-alias-border-l4);
+  transform: translateX(100%);
+  visibility: hidden;
+  transition:
+    transform var(--ds-transition-duration-slow) var(--ds-ease-in-out),
+    visibility 0s linear var(--ds-transition-duration-slow);
+}
+
+.panel[data-sidebar-right-open] {
+  transform: none;
+  visibility: visible;
+  transition: transform var(--ds-transition-duration-slow) var(--ds-ease-in-out);
+}
+
+.panel[data-sidebar-right-panel='fullscreen'] {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  border: none;
+}
+
+/* A desktop shell may reserve caption controls over the page. The official
+   frame preference owner writes the resolved standard/user inset. */
+:global(body[data-dsh-title-bar-compat]) .panel {
+  padding-top: var(--dsh-title-bar-strip, 0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .panel,
+  .panel[data-sidebar-right-open],
+  .bottomPanel,
+  .bottomPanel[data-sidebar-bottom-open] {
+    transition: none;
+  }
+}
+
+/* The geometry of a message's action row button (ui-chat MessageIconActions),
+   shared with the kit's split control beside it: a 28px circle around a 15px glyph. */
+.iconButton {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 6px;
+  color: var(--dsw-alias-label-secondary);
+  line-height: 1;
+  background: transparent;
+  border: none;
+  border-radius: 28px;
+  cursor: pointer;
+}
+
+.iconButton svg {
+  width: 15px;
+  height: 15px;
+}
+
+.iconButton:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+/* Product actions share the DockKit menu's row geometry inside its portalled body. */
+.menuItem {
+  padding: 5px 8px;
+  color: var(--dsw-alias-label-primary);
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.menuItem:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.menuItem:disabled {
+  color: var(--dsw-alias-label-tertiary);
+  cursor: default;
+  opacity: 0.5;
+}
+
+/* The expand button's glyph, so collapse and expand share one affordance. */
+.collapseGlyph {
+  transform: scaleX(-1);
+}
+
+.panelBody {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* The top Workbench shares Desktop Window Chrome. Only the unoccupied strip
+   may drag the window; tabs and every strip control remain pointer targets. */
+.panel :global([data-dockkit-strip]) {
+  -webkit-app-region: drag;
+}
+
+.panel :global([data-dockkit-strip-tabs]),
+.panel :global([data-dockkit-add-tab]),
+.panel :global([data-dockkit-split-button]),
+.panel :global([data-dockkit-strip-chrome]) {
+  -webkit-app-region: no-drag;
+}
+
+.bottomPanel {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 10;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  background: var(--dsw-alias-bg-base);
+  border-top: 0.5px solid var(--dsw-alias-border-l1);
+  transform: translateY(100%);
+  visibility: hidden;
+  transition:
+    transform var(--ds-transition-duration-slow) var(--ds-ease-in-out),
+    visibility 0s linear var(--ds-transition-duration-slow);
+}
+
+.bottomPanel[data-sidebar-bottom-open] {
+  transform: none;
+  visibility: visible;
+  transition: transform var(--ds-transition-duration-slow) var(--ds-ease-in-out);
+}
+
+.bottomPanel[data-sidebar-bottom-panel='fullscreen'] {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  width: 100%;
+  height: 100%;
+  border: none;
+}
+
+.bottomHandle {
+  position: absolute;
+  top: -4px;
+  right: 0;
+  left: 0;
+  z-index: 11;
+  height: 8px;
+  cursor: row-resize;
+  touch-action: none;
+}
+
+.cornerHandle {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  z-index: 12;
+  width: 12px;
+  height: 12px;
+  cursor: nesw-resize;
+  touch-action: none;
+}
+
+.unavailable {
+  margin: 0;
+  padding: 12px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+}
+
+/*
+ * Host for the portalled floating panels. Panels leave the column so they can
+ * cross it and the conversation, which puts them beside the app root rather than
+ * inside it — and a sibling of the root does not inherit its stacking, so the
+ * level is stated here. The value sits above the frame's own overlay layer;
+ * there is no z-index token layer to draw from yet.
+ */
+.floatHost {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  pointer-events: none;
+}

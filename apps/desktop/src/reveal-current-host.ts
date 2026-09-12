@@ -5,7 +5,10 @@
  * @param ports Ownership, presentation and valid-window error handling operations.
  * @returns Resolves after presentation or current-owner error handling; the awaited error-handler rejection propagates to the caller.
  */
-export async function revealCurrentHost<Window, Host extends { readonly url: string }>(
+export async function revealCurrentHost<Window, Host extends {
+  readonly url: string
+  readonly launchUrl: string
+}>(
   target: Window,
   running: Host,
   ports: {
@@ -18,11 +21,10 @@ export async function revealCurrentHost<Window, Host extends { readonly url: str
     showError(target: Window, error: unknown): Promise<void>
   },
 ): Promise<void> {
-  const url = running.url
   try {
-    await ports.reveal(target, url)
+    await ports.reveal(target, running.launchUrl)
     if (!ports.validWindow(target) || ports.shuttingDown() || ports.closed() || ports.current() !== running) return
-    await ports.installOverlay(target, url)
+    await ports.installOverlay(target, running.url)
   } catch (error) {
     if (ports.validWindow(target) && ports.current() === running && !ports.shuttingDown() && !ports.closed()) {
       await ports.showError(target, error)

@@ -8,7 +8,7 @@ English | [中文](2026-07-31-code-runtime-python-fd3-protocol.zh.md)
 
 The CPython code-runtime backend (`@deepseek-ai/dsh-code-runtime-python`, arriving across a PR stack) runs each model program in a fresh `python3 -I` subprocess and bridges binding calls and completion values over the child's fd 3. That channel needs a wire protocol both sides agree on, and the host cannot trust it: model code has full access to fd 3 and can forge any frame, so every inbound frame is hostile input the host must validate and rebuild before reading. The protocol also has to carry lossless JSON without the depth limit `JSON.stringify`/`json.dumps` impose, because the seam's `CodeJsonValue` is depth-unbounded.
 
-This layer of the stack delivers only that protocol, so the large `PythonCodeRuntime` implementation and its real-subprocess integration suite land on a reviewed wire contract instead of arriving fused with it. The parent stack splits [#436](https://github.com/deepseek-harness/deepseek-harness/pull/436) — a 9000-line single PR — into reviewable layers; this is the protocol layer, based on the [seam extension](2026-07-31-code-runtime-portable-identifier-seam.md).
+The private experimental package contains both the protocol and runtime implementation: `PythonCodeRuntime` (the plugin's default export), the `python3 -I` subprocess path, and the Python-side JSON codec all live in `@deepseek-ai/dsh-experimental-code-runtime-python`. The protocol builds on the [portable identifier seam](../../archived/architecture/2026-07-31-code-runtime-portable-identifier-seam.md).
 
 ## Decision
 
@@ -20,7 +20,7 @@ This layer of the stack delivers only that protocol, so the large `PythonCodeRun
 
 `py/protocol.py` mirrors the message shapes as `TypedDict`s and re-declares the two surfaces both sides EXECUTE against — `PROTOCOL_FD = 3` and `log_truncation_marker` — with byte-identical text.
 
-The package skeleton (`package.json`, `tsconfig.json`, `tsdown.config.ts`, `src/index.ts`, `src/invariant.ts`, README triplet) ships here rather than in a later stack layer: `check-workspace-constraints` reads every `packages/<group>/<pkg>` package.json unconditionally, and the coverage and invariant-topology gates require the package to exist and build the moment its directory does. The later backend-core PR extends `src/index.ts` with `PythonCodeRuntime` and grows `package.json`'s dependencies; because it bases on this branch, those are edits, not conflicts.
+The package skeleton (`package.json`, `tsconfig.json`, `tsdown.config.ts`, `src/index.ts`, README triplet) ships here rather than in a later stack layer: `check-workspace-constraints` reads every `packages/<group>/<pkg>` package.json unconditionally, and the coverage and package-invariant gates require the package to exist and build the moment its directory does. The later backend-core PR extends `src/index.ts` with `PythonCodeRuntime` and grows `package.json`'s dependencies; because it bases on this branch, those are edits, not conflicts.
 
 ## Wire contract
 
@@ -34,7 +34,7 @@ Round-12 review of #436 found `py/protocol.py` stale against `src/protocol.ts` i
 
 **Move the Python JSON codec (`_encode_json_plain` / `_decode_json_plain`) into `py/protocol.py` for cross-side symmetry with `protocol.ts`.** Rejected. The repository's "prefer symmetry for parallel values" rule points at genuinely parallel values; these are not. The host-side codec in `protocol.ts` validates HOSTILE input and is self-contained. The Python codec produces output on the TRUSTED side and is coupled to bootstrap-internal helpers (`_Emit`, `_dump_scalar`/`_dump_string`/`_dump_float`, `LogBuffer`'s cost accounting, `_check_done_value`, `_lossless_json_violation`); lifting only the two entry points would drag that web into `protocol.py` or create a `bootstrap.py` ↔ `protocol.py` import cycle. The real cross-side parallel is "host validates inbound (`protocol.ts`) ↔ child trusts host and emits (`bootstrap.py`)", and that symmetry is preserved: `protocol.py` stays the pure wire-vocabulary mirror it is on the TS side. The Python codec stays in `bootstrap.py`, delivered by the backend-core PR.
 
-**Defer the package skeleton to the backend-core PR that "owns" package.json.** Rejected: the workspace-constraint, coverage, and invariant-topology gates fail the instant the `code-runtime-python` directory exists without a buildable package. A stacked split cannot create source files in a package that does not yet compile.
+**Defer the package skeleton to the backend-core PR that "owns" package.json.** Rejected: the workspace-constraint, coverage, and package-invariant gates fail the instant the `code-runtime-python` directory exists without a buildable package. A stacked split cannot create source files in a package that does not yet compile.
 
 ## Consequences
 

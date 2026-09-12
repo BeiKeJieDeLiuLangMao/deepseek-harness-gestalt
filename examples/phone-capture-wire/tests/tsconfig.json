@@ -1,0 +1,28 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "composite": false,
+    "incremental": false,
+    "rewriteRelativeImportExtensions": false
+  },
+  "files": [
+    "phone-capture-wire.snapshot.ts",
+    "fixtures/phone-runtime-staged.ts"
+  ],
+  "include": [],
+  "references": [
+    {
+      "path": "../../../packages/boot/app-boot"
+    },
+    {
+      "path": "../../../packages/phone/phone-runtime"
+    },
+    {
+      "path": "../../../packages/test-support/loader-smoke"
+    },
+    {
+      "path": "../../../vendor/cordis"
+    }
+  ]
+}

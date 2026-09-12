@@ -1,15 +1,42 @@
 /** Experimental-package publication and dependency constraints. */
 
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
+  checkDshFamilyVersion,
   checkExperimentalDependencyIsolation,
   checkExperimentalManifest,
+  checkPnpmBuildPolicy,
+  checkWorkspaceManifest,
+  expectedDshPackageFiles,
+  type PackageManifest,
   type WorkspaceManifest,
 } from './check-workspace-constraints.ts'
+
+const webserverManifest = JSON.parse(readFileSync(
+  new URL('../packages/host/webserver/package.json', import.meta.url),
+  'utf8',
+)) as PackageManifest
+
+function publicationFileErrors(manifest: PackageManifest): string[] {
+  return checkWorkspaceManifest({ dir: 'packages/host/webserver', manifest })
+    .filter(error => error.includes('package.json files must be'))
+}
+
+const webserverFilesError = 'packages/host/webserver/package.json: '
+  + '@deepseek-ai/dsh-host-webserver: package.json files must be ["lib/index.js","lib/http.js","lib/types/**/*.d.ts"]'
 
 const experimental: WorkspaceManifest = {
   dir: 'packages/experimental/prototype',
   manifest: { name: '@deepseek-ai/dsh-experimental-prototype', private: true },
+}
+
+const publicExperimental: WorkspaceManifest = {
+  dir: 'packages/experimental/agent-team',
+  manifest: {
+    name: '@deepseek-ai/dsh-experimental-agent-team',
+    publishConfig: { access: 'public' },
+  },
 }
 
 describe('experimental workspace constraints', () => {
@@ -30,6 +57,20 @@ describe('experimental workspace constraints', () => {
     })).toEqual([
       '@deepseek-ai/dsh-experimental-prototype: experimental package must set "private": true',
       '@deepseek-ai/dsh-experimental-prototype: experimental package must omit publishConfig',
+    ])
+  })
+
+  it('requires public metadata only for the Agent Teams exceptions', () => {
+    expect(checkExperimentalManifest(publicExperimental)).toEqual([])
+    expect(checkExperimentalManifest({
+      ...publicExperimental,
+      manifest: {
+        name: '@deepseek-ai/dsh-experimental-agent-team',
+        private: true,
+      },
+    })).toEqual([
+      '@deepseek-ai/dsh-experimental-agent-team: public experimental package must not set "private": true',
+      '@deepseek-ai/dsh-experimental-agent-team: public experimental package must set publishConfig.access to "public"',
     ])
   })
 
@@ -72,5 +113,122 @@ describe('experimental workspace constraints', () => {
     expect(checkExperimentalDependencyIsolation(manifests)).toEqual([
       '@deepseek-ai/dsh-python-runtime: dependencies.@deepseek-ai/dsh-experimental-prototype must not reference an experimental package',
     ])
+  })
+})
+
+describe('pnpm build-script policy', () => {
+  it('requires explicit boolean decisions', () => {
+    expect(checkPnpmBuildPolicy({ allowBuilds: { electron: true, coreJs: false } })).toEqual([])
+    expect(checkPnpmBuildPolicy({ allowBuilds: { electron: 'set this to true or false' } })).toEqual([
+      'pnpm-workspace.yaml: allowBuilds.electron must be true or false, got "set this to true or false"',
+    ])
+  })
+})
+
+describe('dsh family version coherence', () => {
+  it('rejects a package carrying a stale shared version', () => {
+    expect(checkDshFamilyVersion(
+      { name: '@deepseek-ai/dsh-http-proxy', version: '0.1.2-alpha.5' },
+      '0.1.2-rc.1',
+    )).toBe('@deepseek-ai/dsh-http-proxy: package.json version must match root version 0.1.2-rc.1')
+  })
+
+  it('rejects the root-named CLI app on a stale shared version', () => {
+    expect(checkDshFamilyVersion(
+      { name: '@deepseek-ai/dsh', version: '0.1.2-alpha.5' },
+      '0.1.2-rc.1',
+    )).toBe('@deepseek-ai/dsh: package.json version must match root version 0.1.2-rc.1')
+  })
+
+  it('accepts a manifest carrying the shared version', () => {
+    expect(checkDshFamilyVersion(
+      { name: '@deepseek-ai/dsh-http-proxy', version: '0.1.2-rc.1' },
+      '0.1.2-rc.1',
+    )).toBeUndefined()
+  })
+
+  it('leaves other sequences to their own version lines', () => {
+    expect(checkDshFamilyVersion({ name: '@deepseek-ai/cordis', version: '4.0.1' }, '0.1.2-rc.1')).toBeUndefined()
+    expect(checkDshFamilyVersion(
+      { name: '@deepseek-ai/node-addon-system', version: '0.1.1' },
+      '0.1.2-rc.1',
+    )).toBeUndefined()
+    expect(checkDshFamilyVersion({ version: '0.1.2-alpha.5' }, '0.1.2-rc.1')).toBeUndefined()
+  })
+
+  it.each([
+    ['apps/desktop', '@deepseek-ai/dsh-desktop'],
+    ['apps/mobile', '@deepseek-ai/dsh-mobile'],
+    ['apps/platform', '@deepseek-ai/dsh-platform'],
+  ])('leaves the separately released product at %s on its own version', (dir, name) => {
+    expect(checkWorkspaceManifest({
+      dir,
+      manifest: { name, version: '9.8.7', private: true },
+    })).toEqual([])
+  })
+})
+
+describe('package payload constraints', () => {
+  it('includes a declared profile patch without a package-name allowlist', () => {
+    expect(expectedDshPackageFiles({
+      name: '@deepseek-ai/dsh-private-profile',
+      dsh: { bundle: { patch: './cordis.patch.yml' } },
+    })).toEqual([
+      'lib/index.js',
+      'cordis.patch.yml',
+      'lib/types/**/*.d.ts',
+    ])
+  })
+
+  it('publishes the locale chunk beside the other better-sidebar lazy chunks', () => {
+    expect(expectedDshPackageFiles({
+      name: '@deepseek-ai/dsh-client-ui-better-sidebar',
+      exports: {
+        './invariant': { types: './lib/types/invariant.d.ts', default: './lib/invariant.js' },
+        './client': { default: './lib/client.js' },
+      },
+    })).toEqual([
+      'lib/index.js',
+      'lib/invariant.js',
+      'lib/client.js',
+      'lib/client-terminal.js',
+      'lib/client-editor.js',
+      'lib/client-mermaid.js',
+      'lib/client-locale.js',
+      'lib/types/**/*.d.ts',
+    ])
+  })
+
+  it('derives the webserver public HTTP runtime from its export', () => {
+    expect(expectedDshPackageFiles(webserverManifest)).toEqual([
+      'lib/index.js',
+      'lib/http.js',
+      'lib/types/**/*.d.ts',
+    ])
+    expect(publicationFileErrors(webserverManifest)).toEqual([])
+  })
+
+  it('derives supported string export entries', () => {
+    expect(expectedDshPackageFiles({
+      exports: { './http': './lib/http.js' },
+    })).toEqual([
+      'lib/index.js',
+      'lib/http.js',
+      'lib/types/**/*.d.ts',
+    ])
+  })
+
+  it('rejects a missing public runtime', () => {
+    expect(publicationFileErrors({
+      ...webserverManifest,
+      files: ['lib/index.js', 'lib/types/**/*.d.ts'],
+    })).toEqual([webserverFilesError])
+  })
+
+  it('rejects an extra publication file', () => {
+    expect(publicationFileErrors({
+      ...webserverManifest,
+      files: [...(webserverManifest.files ?? []), 'lib/unused.js'],
+    })).toEqual([webserverFilesError])
   })
 })

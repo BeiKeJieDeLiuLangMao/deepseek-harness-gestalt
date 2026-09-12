@@ -64,7 +64,11 @@ export async function runWithTransientRetry(
 async function executeAttempt(command: string, args: string[], attempt: 1 | 2): Promise<AttemptEvidence> {
   let diagnostics = ''
   const outcome = await new Promise<{ exitCode: number | null; signalCode: NodeJS.Signals | null }>((resolveExit) => {
-    const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'] })
+    const child = spawn(command, args, {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      // Windows PATHEXT shims (`pnpm.cmd`) are not visible to spawn without a shell.
+      shell: process.platform === 'win32',
+    })
     child.stdout.setEncoding('utf8')
     child.stderr.setEncoding('utf8')
     child.stdout.on('data', (chunk: string) => {

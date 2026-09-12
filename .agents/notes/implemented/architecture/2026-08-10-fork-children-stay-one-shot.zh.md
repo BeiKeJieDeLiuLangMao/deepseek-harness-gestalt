@@ -1,4 +1,4 @@
-# Agent Note: fork 出的 child 保持 one-shot
+# Agent Note: Fork child 保留 parent 请求前缀
 
 Status: implemented
 
@@ -6,44 +6,43 @@ Status: implemented
 
 ## 问题
 
-fork 与 spawn 的唯一区别是 child 的 Session 会以 parent 已完成轮次的前缀作为初始内容（见 [subagent-fork-in-process](../../../../packages/subagent/subagent-fork-in-process/README.zh.md)）。这份初始内容有实打实的 token 成本——继承的历史会在 child 的每次请求中重新发送——而它唯一确定的回报是提供方侧的前缀复用：在提供方与模型相同的前提下，起始字节与 parent 逐字节相同的 child 请求，无需为这段共享区间重新预填充。任何由 child 作用域添加在继承历史*之前*的内容都会消耗掉这份回报，因为复用在第一个不同字节处即告停止。
+fork 与 spawn 的唯一区别是 child Session 以 parent 已完成轮次的前缀作为 seed（见 [subagent-fork-in-process](../../../../packages/subagent/subagent-fork-in-process/README.zh.md)）。这份 seed 会产生真实 token 成本，因为每次 child 请求都会重新发送继承历史。它的具体收益是提供方侧的前缀复用：使用相同提供方与模型时，child 请求的前导字节若与 parent 相同，就不必再次预填共享区段。child scope 在继承历史之前加入的任何内容都会消耗这项收益，因为复用会在第一个不同字节处停止。
 
-作用域局部的 `report` 返回通道现在是此类添加中最大的一项，而自[report 义务](../feature/2026-08-06-continuable-child-report-obligation.zh.md)起它是两项而非一项增量：`report` 工具 schema，以及 `tool:report` 系统提示词 section。两者都位于请求头部——系统块与工具块先于所有消息——因此一个可继续的 fork child 会在第一条继承轮次之前就使复用失效，并重新预填充它当初 fork 就是为了复用的整份 transcript（文本记录）。这种组合付出了 fork 的复制成本却收不到它的收益，而 parent 手上仍握着一份 child 本可共享的可复用前缀。
+按方向划分的 child 消息机制曾在继承轮次之前加入 child 专属工具 schema 与系统提示词 section。[相邻 Agent 消息决策](2026-08-27-adjacent-agent-steer-messaging.zh.md)移除了这些请求头差异：parent 与可继续 child 现在继承定义与顺序相同的 `send_message`，child 的 parent id 与返回指导则位于 fork 前缀之后的初始 user 任务中。因此，前缀复用与生命周期选择是两项互不依赖的组合决策。
 
 ## 决策
 
-所有随附组合都把 fork 委派工具绑定为 `backgroundMode: one-shot`：[base 组合包](../../../../packages/bundle/base/cordis.patch.yml)、[ACP 示例](../../../../examples/acp-agent/cordis.yml)与[headless 示例](../../../../examples/headless-agent/cordis.yml)。base 组合包保留 `run_in_background`，因为它挂载了 task 服务；两个示例设置 `enableRunInBackground: false`，因为它们都不挂载 task 服务，否则一次 one-shot 后台启动会在调用时因缺少 `tasks` 服务而失败。
+[base bundle](../../../../packages/bundle/base/cordis.patch.yml)把 fork 委派工具绑定为 `backgroundMode: one-shot`。standard、PTC 与 Cordis agent preset 会把该配置项覆盖为 `continuable`。两种模式都会保留继承的请求前缀，因为它们的请求头工具定义与顺序都和 parent 相同。
 
-one-shot child——前台与后台皆然——经由 `SubagentRuntime.start()` 创建，该路径从不进入可继续的 activation setup 注册表，因此 `report` 与它的提示词 section 都不会被安装。于是一个 fork 出的 one-shot child 的系统提示词与工具 schema 与其 parent 相同，只差部署逐个委派工具主动选择的 `persona` 与 `toolFilter` 增量。
+前台与后台的一次性 child 都通过 `SubagentRuntime.start()` 创建，在 dispose 前返回一个结果。可继续 child 通过 `SubagentRuntime.startContinuable()` 创建；`ForkInProcessProvider.prepareContinuable` 只捕获一次前缀，因为它会成为 child 的持久 transcript，调用方则会收到一个稳定的 child id，用于后续相邻 Agent 消息与中断。
 
-`spawn` 保持 `backgroundMode: continuable`。对于 child 起步时本就没有继承前缀需要保护的那个提供方，可继续 child 与 report 义务随附行为不变，因此本决策没有让 report 通道付出任何代价。
+base 组合中的 spawn 仍为 `continuable`。spawn child 没有可供复用的继承 transcript，因此其生命周期选择不带前缀复用条件。
 
-### 该限制在于组合，不在于代码
+### 选择由组合而非提供方代码决定
 
-`ForkInProcessProvider.prepareContinuable` 仍然实现完好，`ctx.subagents.startContinuable()` 也仍接受 `fork`；改动的只有随附的 `cordis.yml` 行。`tool-subagent` 在挂载时同时知道提供方的 `inheritsParentContext` 与自身的 `backgroundMode`，因此一个加载期拒绝该组合的检查是可行的，而这里刻意不加：该组合并非普遍错误。它只在某个 child 作用域增量位于继承历史之前时才是错的，而产生该增量的包——[`dsh-tool-subagent-report`](../../../../packages/subagent/tool-subagent-report/README.zh.md)——是独立安装的，并且按其自身设计对 `tool-subagent` 不可见。一个不安装 report 包的部署可以在前缀完好的前提下运行可继续的 fork child。把某一份插件清单的后果写成委派工具的不变量，会让该工具断言它无法观察到的事实。
+`ForkInProcessProvider` 同时实现 `start` 与 `prepareContinuable`，`tool-subagent` 通过 `backgroundMode` 选择其一。只有所选提供方没有暴露 `prepareContinuable` 时，可继续选择才会显式失败；fork 提供方暴露了该能力。因此，由 bundle 与 preset 配置项决定一次调用返回结果还是持久 id。
 
-重新开放的条件记录为 `prepareContinuable` 方法上的 `TODO(fork-continuable-prefix-reuse)` 标记——随附组合不调用这个方法——并由 issue #2124 跟踪：当 child 的系统提示词与工具 schema 能与其 parent 逐字节一致时，可继续 fork 即可重新开放。
+部署可以通过 bundle 或 profile patch 覆盖任一种选择。提供方显式保留 persona、tool filter、输出、深度与模型路由能力，因此调用方选择的差异仍会作为可能的前缀差异公开。
 
-## 备选方案
+## 考虑过的替代方案
 
-**在挂载时拒绝 `inheritsParentContext` 与 `continuable` 的组合。** 一次响亮的加载期失败可以阻止悄然的重新引入，而配置改动做不到这一点。否决的原因是委派工具看不到 report 包，且在没有它时该组合是合法的；对于从不安装任何 child 作用域增量的部署，这个不变量是假的，而 `tool-subagent` 会去断言一件由插件清单拥有的事实。
+**挂载时拒绝 `inheritsParentContext` + `continuable`。** 不采用，因为统一的消息定义与位于前缀之后的返回指导让这种组合有效。提供方若拒绝它，就会拒绝一种既能执行又不会损失继承请求前缀的组合。
 
-**干脆不挂载 fork 提供方。** 这是该限制更彻底的形式。否决的原因是前台 fork *正是*复用前缀的那种情形，且不受 report 通道影响，因此全面禁用会在不换来任何 one-shot 绑定尚未换来的东西的同时放弃该能力——并且随附组合将没有任何一个演练 session 初始内容。
+**停止挂载 fork 提供方。** 不采用，因为两种生命周期模式都保留 seed context 能力，前台的一次性 fork 仍会返回直接结果。
 
-**照常随附可继续的 fork child 并接受这份损失。** 否决的原因是这份损失是全额而非边际的：复用在继承历史之前就已中断，于是 child 为一份自己复制过来、目的恰恰是不必付费的 transcript 付了全额预填充。想要一个没有继承上下文的长期 child 的部署，本来就有 `spawn`。
+**强制所有随附 fork 使用 one-shot。** 不采用，因为 standard、PTC 与 Cordis preset 有意公开持久化的相邻 Agent 协作。它们的可继续 fork 与 parent 保持相同前缀。
 
-**让 `report` 对每个 Agent 可见。** 全局注册会通过让 parent 与 child 拥有相同的 schema 与 section 来恢复逐字节相同的前缀。否决的原因是根 agent、one-shot child、远端 child 与无 agent 调用方都会宣告一件推导不出收件方的工具，而执行期拒绝会让 schema 可见性与权限彼此矛盾——这正是[report 工具 Agent Note](../feature/2026-07-30-continuable-subagent-report-tool.zh.md)已经定下的作用域局部决策。
+**恢复 child 专属 report 工具。** [相邻 Agent 消息](2026-08-27-adjacent-agent-steer-messaging.zh.md)已否决该方案：独立 schema 与提示词会重复同一个操作，并使 parent 与 child 的请求头不同。
 
-**把 child 作用域增量安装到继承历史之后。** 否决的原因是它无法表达：在每个提供方的协议格式中，系统提示词与工具 schema 都是请求头部结构，因此它们内部的任何排序都无法把仅属于 child 的添加放到消息列表之后。
+**把动态 parent 指导放进请求头。** 不采用，因为 parent id 随 Activation 变化。初始 user 任务可以在继承历史之后携带该信息，而不改变可复用前缀。
 
 ## 后果
 
-- 没有任何随附组合会创建可继续的 fork child；`subagent_fork` 把结果返回给调用方的轮次，而 `send_message` 只寻址 spawn 出的 child。
-- 除非部署在 fork 委派工具上配置了 `persona` 或 `toolFilter`，fork child 的请求前缀与其 parent 逐字节相同，因此初始内容的 token 成本重新换来了提供方侧的复用。
-- fork 提供方的可继续路径没有生产调用方，也没有整体组装层面的覆盖。它保留自己的包内测试，seam 也仍然接受它，因此某个组合包或 `--patch` 覆盖层可以无需改动代码、也不会有任何警告地把它重新引入。
-- `subagent_fork` 面向模型的 schema 发生变化：base 组合包中可继续的后台措辞被 one-shot 的 task 措辞取代，在两个示例中则完全消失。受影响的无密钥快照工具 schema 伴随文件在同一次改动中重新记录。
-- 在随附部署中，report 义务的覆盖范围收窄到 spawn 出的 child。它的 `next-step` 默认调度、权限模型与覆盖仍独立于 fork 组合。
+- 直接由 base bundle 创建的 fork 是 one-shot；standard、PTC 与 Cordis preset 创建可继续 fork。
+- 除非部署选择不同的 persona、tool filter 或模型路由，否则 fork child 可复用的请求前缀与 parent 相同。
+- 一次性 fork 把结果返回给调用方轮次。可继续 fork 返回持久 id，并接受相邻 `send_message` 与 interrupt 操作。
+- 由 manager 负责的结算通知与模型编写的 child 消息保持分离，并覆盖 child 无法配合时的终态结果。
 
-### 已接受的风险
+### 已接受风险
 
-该限制存在于三个配置文件与一处代码注释中，而不在门禁里。未来某个组合包行或 profile 补丁可以在 fork 工具上设置 `backgroundMode: continuable`，从而悄然重新引入前缀损失；没有任何东西会失败得很响亮。这就是不把某一份插件清单的后果写入 `tool-subagent` 所接受的代价。
+生命周期是一项配置选择。自定义层可以在 one-shot 与 continuable 之间切换 fork 工具，也可以加入降低前缀复用率的 child 专属请求头贡献。提供方报告所选生命周期并应用请求的差异，部署则负责其 token 成本取舍。

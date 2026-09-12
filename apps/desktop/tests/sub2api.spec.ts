@@ -121,11 +121,12 @@ async function harness(overrides?: {
   let currentOrigin: string | undefined = overrides && 'origin' in overrides
     ? overrides.origin
     : 'http://127.0.0.1:9/'
+  const restart = vi.fn<Sub2ApiHostControl['restart']>(overrides?.restart ?? (async () => {
+    currentOrigin = 'http://127.0.0.1:10/'
+    return currentOrigin
+  }))
   const host = {
-    restart: vi.fn<Sub2ApiHostControl['restart']>(overrides?.restart ?? (async () => {
-      currentOrigin = 'http://127.0.0.1:10/'
-      return currentOrigin
-    })),
+    restart,
     origin: () => currentOrigin,
   }
   const probeImpl: (origin: string) => Promise<boolean> = overrides?.probe ?? (async () => true)

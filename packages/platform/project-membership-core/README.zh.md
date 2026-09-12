@@ -1,13 +1,36 @@
+---
+description: "使用环境命名空间 JSON 持久化、串行原子变更与角色门控操作的 Project Membership Provider。"
+kind: "package-reference"
+---
+
 # `@deepseek-ai/dsh-project-membership-core`
 
 [English](README.md) | 中文
 
-Project Membership 提供方在独占文档事务上运行。每次变更在操作内部检查角色，并在完整文档提交后才发布 roster 失效事件。每次操作重载已提交状态，写入失败不会留下幽灵记录，也不会影响后续读取或重试。暂存文档包含即将发布的 roster 版本。
+## 概述
 
-默认文件适配器通过原子重命名保存 `<storagePath>/<environment>/project-membership.json`，文件权限为 `0600`，目录为 `0700`。它仅接受格式版本 1，拒绝悬空和重复索引记录，保留损坏错误；文件缺失表示首次启动为空。它只有一个写入者。生产多实例使用 [Platform](../../../apps/platform/README.zh.md) 的 `PostgresProjectMembershipPersistence`，在读取、变更和提交全过程持有命名空间事务锁。账号删除在同一事务中转移明确选择的接任所有者并移除个人引用。
+使用串行、角色受控的变更和仅所有者可读写的原子 JSON 写入来持久化 Project Membership。写入失败会回滚对应的内存变更批次，并发调用方只能观察到全有或全无的提交。环境命名空间隔离状态；精确格式校验、邀请唯一性、角色规则和稳定错误码避免歧义恢复。
+
+## 目录
+
+- [包约定](#package-contract)
+- [Extension Points](#extension-points)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+-----
+
+<a id="package-contract"></a>
+## 包约定
+
+项目成员 Provider。每次变更——创建、邀请、撤回、原子接受并链接、拒绝、升降级、改标签、移除——都在本进程的单一串行写链下运行,在操作内部执行角色门,对输入响亮校验(`INVALID_PROJECT_NAME`、`INVALID_REMOTE_URL`、`INVALID_TAGS`、`INVALID_LINK`),以 `0600` 权限(`0700` 目录)经原子临时文件重命名整体发布环境文档,然后才发出 `project-membership/roster-invalidated`。被拒绝的持久写入在拒绝返回前,把该操作的确切变更批次对称回滚出内存,后续提交因此永远不会把文档拒绝过的行发布上盘。并发调用者因此观察到全有或全无的提交:向同一账户并发发出八次邀请,只会落定一条待决邀请与七次 `DUPLICATE_INVITEE` 拒绝。
+
+状态按环境命名空间存放于所配置根目录之下——`<storagePath>/<environment>/project-membership.json`——即便共享同一存储根,开发身份也永不与生产冲突。文档只有完全符合记录形态才能解析(`formatVersion 1`,含每条邀请的 `grantedRole`;陌生版本直接失败而非降级,成员或邀请行指向文档未定义的项目同样直接失败),文件缺失即为空的首启。装载还会拒绝重复 Project 名称或规范化 remote,与写入时的 `PROJECT_NAME_TAKEN` 和 `PROJECT_REMOTE_TAKEN` invariant 保持一致。装载未通过该校验时会记录损坏错误,此后的每个操作都携带该错误拒绝,损坏文档因此永远不会退化成空语料。读取派生自刚持久化的内存权威状态。
 
 消费方基于失效事件流与 `rosterVersion(projectId)` 重建缓存 roster 视图;包内的不变量伴侣约束这条已发布流严格单调——每次提交使所属项目的投影版本恰好前进一,移除也不例外,移除永远不会跟随过时的记账。
 
+<a id="extension-points"></a>
 ## Extension Points
 
 配置字段:`storagePath`(持久语料目录)与 `environment`(`'development' | 'production'`,否则加载即报错)。Loader 直接挂载包默认导出:
@@ -19,18 +42,30 @@ Project Membership 提供方在独占文档事务上运行。每次变更在操�
     environment: 'development'
 ```
 
-其他持久化实现提供 `ProjectMembershipPersistence.transact`，回调必须持有独占权威，直到暂存写入提交。围绕同一路径增加文件提供方并不能提供多实例安全。测试只受外部不确定性(uuid、墙钟)影响;组装场景基于真实本地存储 keyless 运行。
+横向扩展需要按同一 Service Definition 接口换入具备等价比较并交换语义的后端;围绕一个文件多开此类的实例并不能提供。测试只受外部不确定性(uuid、墙钟)影响;组装场景基于真实本地存储 keyless 运行。
 
+<a id="model-experience"></a>
 ## Model Experience
 
-无:项目成员权威数据从不进入智能体会话与模型请求。
+通过 `project_members` 与成员提问 Consumer 渲染的权威 roster、角色和职能标签间接影响模型。
 
 #### KV Cache effect
 
-无。
+该 Provider 不增加稳定请求前缀；roster 变更会改变后续工具结果与成员路由内容。
 
 ## Known Limitations and Deferred Work
+<a id="known-limitations-and-deferred-work"></a>
 
 - **单进程写者** —— 一条写链串行化进程内全部变更;指向同一存储根的两个进程没有跨进程锁,可能互相丢更新。扩展靠更换后端,而不是多开实例。
 - **评审门下的生产姿态** —— 开发环境经本地存储 keyless 组装;成员提问路由保持 fail-closed,仍受[放置决策 Agent Note](../../../.agents/notes/implemented/feature/2026-08-27-project-membership-core.zh.md) 记录的常设独立加密评审约束。本包不含任何传输、凭据或明文。
 - **暂无管理界面** —— 清理已拒绝/已撤回邀请与审计导出推迟到出现消费方之后再做。
+
+<a id="dev-note"></a>
+### 开发备注
+
+<details>
+<summary>维护者工作上下文——点击展开</summary>
+
+暂无。
+
+</details>

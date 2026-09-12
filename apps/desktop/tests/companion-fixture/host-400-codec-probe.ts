@@ -1,5 +1,4 @@
 import { createServer } from 'node:http'
-import { parsePersonalPairingId } from '@deepseek-ai/dsh-remote-access'
 import {
   createCompanionNegotiationChannel,
   createCompanionVersionOffer,
@@ -10,7 +9,7 @@ import {
 } from '@deepseek-ai/dsh-remote-protocol'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { DesktopCompanionProductOwner } from '#testing/desktop/companion-product'
+import { DesktopCompanionProductOwner } from '../../src/companion-product.ts'
 
 /**
  * Produce the encoded Companion result emitted from one real HTTP 400 Host response.
@@ -32,17 +31,6 @@ export async function runHost400CodecProbe(): Promise<Uint8Array> {
     const operationId = parseCompanionOperationId('visible-host-400')
     const result = await owner.handle({
       type: 'search-sessions', operationId, query: 'Host 400 visible alert',
-    }, {
-      pairingId: parsePersonalPairingId('visible-host-400-pairing'),
-      attachmentKey: new Uint8Array(32),
-      now: Date.now,
-      generation: 1,
-      desktopRevision: 1,
-      desktopName: 'Assembled Desktop',
-      resolveInteraction: () => undefined,
-      pendingInteractions: () => [],
-      downloadAttachment: () => Promise.reject(new Error('search must not download an attachment')),
-      submitAttachment: () => Promise.reject(new Error('search must not submit an attachment')),
     })
     if (!('type' in result) || result.type !== 'operation-failed') {
       throw new Error('Host HTTP 400 probe expected one operation-failed result')

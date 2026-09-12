@@ -16,6 +16,9 @@ afterEach(() => {
 })
 
 const t = (key: string) => (en as Record<string, string>)[key] ?? key
+const useResource = (() => ({
+  status: 'none' as const, value: undefined, failure: undefined, reload: () => {},
+})) as import('@deepseek-ai/dsh-client-ui-slots').GlobalStandardProps['useResource']
 
 describe('AccountControl', () => {
   it('shows both privacy notices and blocks authorization until consent', () => {
@@ -316,7 +319,10 @@ function renderControl(
   return render(
     <AccountControl
       t={t as never}
+      useResource={useResource}
+      usePanelInfo={selector => selector({ activePanelId: null })}
       useSessions={(() => { throw new Error('unused') })}
+      useSessionPendingInteraction={(() => { throw new Error('unused') })}
       useWorkspaces={(() => { throw new Error('unused') })}
       useAccount={selector => selector(snapshot)}
       usePairing={selector => selector(pairing)}

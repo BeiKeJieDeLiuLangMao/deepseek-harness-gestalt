@@ -1,28 +1,22 @@
-- region "Scheduled tasks":
-  - strong: Scheduled tasks
-  - text: Runs only in this Session 3
-  - list "Scheduled tasks":
-    - listitem:
-      - text: Once
-      - strong: Audit CI
-      - text: Jan 1, {{clock}} PM · Waiting Waiting
-      - button "Pause Audit CI":
-        - img
-      - button "Delete Audit CI":
-        - img
-    - listitem:
-      - text: Once
-      - strong: Send release notes
-      - text: Jan 1, {{clock}} PM · Overdue Overdue
-      - button "Pause Send release notes":
-        - img
-      - button "Delete Send release notes":
-        - img
-    - listitem:
-      - text: Every 7 d
-      - strong: Paused review
-      - text: Jan 1, {{clock}} PM · Paused Paused
-      - button "Resume Paused review":
-        - img
-      - button "Delete Paused review":
-        - img
+- list "Scheduled tasks":
+  - listitem:
+    - text: Overdue
+    - button "Pause Send release notes":
+      - img
+    - button "Delete Send release notes":
+      - img
+    - text: Send release notes Once Jan 1, 2099, 5:00 PM 365 days overdue
+  - listitem:
+    - text: Scheduled
+    - button "Pause Audit CI":
+      - img
+    - button "Delete Audit CI":
+      - img
+    - text: Audit CI Once Jan 1, 2101, 6:00 PM in 365 days
+  - listitem:
+    - text: Paused
+    - button "Resume Paused review":
+      - img
+    - button "Delete Paused review":
+      - img
+    - text: Paused review Every 7 days Jan 1, 2102, 4:00 PM in 730 days

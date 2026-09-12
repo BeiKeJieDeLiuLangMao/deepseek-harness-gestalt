@@ -1,9 +1,30 @@
+---
+description: "Zero-dependency Host, Origin, and Fetch-Metadata trust judgments for local browser-reachable HTTP routes."
+kind: "package-reference"
+---
+
 # dsh-request-trust
 
 English | [中文](README.zh.md)
 
-The zero-dependency browser-trust fence shared by every local HTTP route a browser can reach: the `/api` carrier (`@deepseek-ai/dsh-client-connection`) and the phone-stream routes (`@deepseek-ai/dsh-phone-stream`). One judgment for the Host, Origin, and Fetch-Metadata rules, read from either HTTP representation — Node `IncomingMessage` headers and Fetch `Headers` — so per-route copies cannot drift.
+## Summary
 
+Protect local HTTP routes that a browser can reach with one zero-dependency request-trust fence. It applies one Host, Origin, and Fetch-Metadata judgment to Node `IncomingMessage` headers and Fetch `Headers`. Consumers can add the loopback-only check required for signed capture URLs.
+
+## Table of Contents
+
+- [Package contract](#package-contract)
+- [What the fence decides](#what-the-fence-decides)
+- [Dev Note](#dev-note)
+
+-----
+
+<a id="package-contract"></a>
+## Package contract
+
+The zero-dependency browser-trust fence shared by every local HTTP route a browser can reach: the `/api` carrier (`@deepseek-ai/dsh-client-connection`) and the phone-stream routes (`@deepseek-ai/dsh-phone-stream`). One judgment for the Host, Origin, and Fetch-Metadata rules, read from either HTTP representation — Node `IncomingMessage` headers and Fetch `Headers` — so per-route copies cannot drift. No runtime invariant companion is published because this pure judgment module owns no event stream or mutable runtime data; its trust rules are enforced by unit tests at the shared module and both consuming routes.
+
+<a id="what-the-fence-decides"></a>
 ## What the fence decides
 
 `isTrustedApiRequest(request, trustedHosts)` grants a request only when the `Host` authority is ours and any attached browser markers are same-origin:
@@ -17,3 +38,8 @@ The zero-dependency browser-trust fence shared by every local HTTP route a brows
 `isBareAuthority(entry)` is the `trustedHosts` config predicate: an entry must be a bare canonical `host[:port]` authority that survives WHATWG parsing unchanged (case aside). Loaders assert it at plugin load, because parsing would otherwise quietly authorize the hostname inside `harness.internal/path` or broaden a dangling-colon or zero-padded port to an any-port grant.
 
 The fence is a confused-deputy defense, not an authentication layer; reachability stays with the webserver binding and authentication for genuinely remote deployments stays deferred work of the consuming carrier. Decision record: [the api browser-trust boundary Agent Note](../../../.agents/notes/implemented/architecture/2026-07-28-api-browser-trust-boundary.md).
+
+<a id="dev-note"></a>
+## Dev Note
+
+None.

@@ -17,12 +17,18 @@
  * snapshot inside the boundary prompt.
  */
 import type { SessionId } from '@deepseek-ai/dsh-session'
-/** The durable thread-label prefix used to identify Side Chat Sessions. */
+/**
+ * The durable thread-label prefix used to identify Side Chat Sessions.
+ * @uiI18n protocol
+ */
 export const SIDE_LABEL_PREFIX = 'Side: '
 
-/** The historical placeholder label of a persisted empty thread created by
- *  builds that published the child before its first prompt. The client renders
- *  it localized; the prefix keeps the row filter honest. */
+/**
+ * The historical placeholder label of a persisted empty thread created by
+ * builds that published the child before its first prompt. The client renders
+ * it localized; the prefix keeps the row filter honest.
+ * @uiI18n protocol
+ */
 export const SIDE_NEW_THREAD_TITLE = 'Side: New thread'
 
 /** Maximum code points kept in a durable thread label (matches subagent labels). */
@@ -91,7 +97,9 @@ export interface SidechatInheritance {
 
 /** The data record of one event (narrowed from the loose face). */
 function dataOf(event: SidechatLogEvent): Record<string, unknown> {
-  return event.data as Record<string, unknown>
+  return event.data !== null && typeof event.data === 'object'
+    ? event.data as Record<string, unknown>
+    : {}
 }
 
 /** Copy parent events verbatim (their live seq === array index contract).
@@ -255,7 +263,6 @@ export function buildOpenTurnSnapshot(events: readonly SidechatLogEvent[]): stri
   let reasoning = ''
   const tools: string[] = []
   const pendingCalls = new Map<string, { name: string; args: string }>()
-  let total = 0
   for (let index = boundary + 1; index < events.length; index++) {
     const event = events[index]
     if (event === undefined) continue
@@ -295,13 +302,11 @@ export function buildOpenTurnSnapshot(events: readonly SidechatLogEvent[]): stri
         ...(result === '' ? [] : [`  Result: ${result}`]),
       ].join('\n')
       tools.push(line)
-      total += line.length
     }
   }
   for (const [, call] of pendingCalls) {
     const line = `- \`${call.name}\` (executing) — arguments: \`${call.args}\``
     tools.push(line)
-    total += line.length
   }
   const sections: string[] = []
   if (text.trim() !== '') sections.push(`Assistant output so far:\n\n${text}`)

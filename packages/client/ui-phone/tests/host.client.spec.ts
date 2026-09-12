@@ -4,7 +4,7 @@
  */
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
-import { SettingsProvider, settingsNamespace, type SettingsNamespace } from '@deepseek-ai/dsh-settings'
+import { SettingsProvider, type SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import { apply } from '../src/index.ts'
 import {
   DEFAULT_PHONE_SETTINGS, PHONE_SETTINGS_NAMESPACE, PhoneSettingsSchema,
@@ -27,7 +27,7 @@ describe('ui-phone host settings', () => {
     await ctx.plugin(MemorySettings).await()
     const fiber = ctx.plugin({ apply })
     await fiber.await()
-    const ns = settingsNamespace(PHONE_SETTINGS_NAMESPACE)
+    const ns = PHONE_SETTINGS_NAMESPACE
     expect(ctx.settings.get(ns)).toEqual(DEFAULT_PHONE_SETTINGS)
     await ctx.settings.update(ns, { enabled: true })
     expect(ctx.settings.get(ns)).toEqual({ enabled: true })
@@ -51,7 +51,7 @@ describe('ui-phone host settings', () => {
     const fiber = ctx.plugin({ apply })
     await fiber.await()
     await vi.waitFor(() => { expect(enabled).toEqual([false]) })
-    await ctx.settings.update(settingsNamespace(PHONE_SETTINGS_NAMESPACE), { enabled: true })
+    await ctx.settings.update(PHONE_SETTINGS_NAMESPACE, { enabled: true })
     await vi.waitFor(() => { expect(enabled).toEqual([false, true]) })
     await fiber.dispose()
   })

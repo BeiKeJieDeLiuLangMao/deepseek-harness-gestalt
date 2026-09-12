@@ -4,7 +4,8 @@ import {
   parseRelayCredential,
   parseRelayRouteId,
 } from '@deepseek-ai/dsh-remote-protocol'
-import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { randomUuid } from '../../src/random-uuid.ts'
 import { CompanionForegroundRuntime } from '../../src/companion-lifecycle.ts'
 import { fixedMobilePresentationClock } from '../../src/mobile-clock.ts'
 import { mountMobileEntry } from '../../src/mobile-entry.tsx'
@@ -118,7 +119,7 @@ function signedInInstallation(): PlatformAccountInstallation {
 }
 
 function connectionChannel(): MobileCompanionConnectionChannel {
-  const tracked = () => ({ operationId: crypto.randomUUID() as never, completion: Promise.resolve() })
+  const tracked = () => ({ operationId: randomUuid() as never, completion: Promise.resolve() })
   return {
     mutations: {
       refreshSurface: tracked,
@@ -210,7 +211,7 @@ function conversation(mode: EvidenceMode): ValidatedDesktopSurfaceResync['conver
       }),
       toolNode('future_tool', 'call-future', 4, null),
       { kind: 'turn-error', seq: 5, time: 5, turn: 1, step: 1, message: 'Host refused', code: 'HOST_400' },
-      { kind: 'future-card', seq: 6, time: 6, payload: { label: 'Future conversation node' } } as never,
+      { kind: 'future-card', seq: 6, time: 6, payload: { label: 'Future conversation node' } },
     ],
     turnTimings: [],
     turnEnds: [],
@@ -227,8 +228,8 @@ function conversation(mode: EvidenceMode): ValidatedDesktopSurfaceResync['conver
       ? [{
         kind: 'approval', interactionId: 'approval-product-entry', sessionId: SESSION_ID,
         payload: {
-          approvalId: 'approval-product-entry' as never,
-          toolName: 'bash', callId: 'approval-call' as never, reason: LONG_TEXT,
+          approvalId: 'approval-product-entry',
+          toolName: 'bash', callId: 'approval-call', reason: LONG_TEXT,
         },
       }]
       : mode === 'question'

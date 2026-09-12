@@ -15,6 +15,14 @@
 - Git 2.26 或更高版本；钩子设置会启用 Git 的 worktree 专属配置扩展。
 - 可选：一个 DeepSeek API key，用于 Web、headless 和 ACP（Agent Client Protocol）自动化 agent（智能体）演示以及真实 API 的 e2e 测试。
 
+### Windows 与 WSL 2
+
+在 Windows 上，可以使用原生工具开发，也可以通过 WSL 2 使用 Linux 环境。WSL 2 既可用于验证 Linux 行为，也可在原生依赖编译或文件系统权限阻碍 Windows 开发时提供使用 Linux 工具链的途径。每种环境都需要准备相应的运行时、编译工具和权限；WSL 是可选项。
+
+将检出目录、已安装的依赖和工具链放在同一操作系统环境中。使用 WSL 2 时，将检出目录放在 Linux 文件系统中；使用 Windows 原生工具时，则使用 Windows 文件系统。跨两种文件系统访问会给 Git、依赖安装和构建等 I/O 密集型操作增加开销。参见微软的[文件存储与性能指南](https://learn.microsoft.com/en-us/windows/wsl/filesystems#file-storage-and-performance-across-file-systems)。
+
+在每种环境中分别安装依赖，因为不同操作系统使用的原生二进制和链接可能不同。测试结果适用于执行测试的环境；Windows 特有行为仍需在原生 Windows 上验证。
+
 ### 首次搭建
 
 在仓库根目录安装依赖：
@@ -63,17 +71,20 @@ pnpm install --frozen-lockfile
 
 | 文件 | 角色 | 是否构成 program？ |
 |---|---|---|
-| `tsconfig.json` | solution 根：`extends` base、`files: []`、引用两个 aggregate。它是 tsserver 发现入口，也是显式执行整张 Project Reference 图时的入口；经继承的 `paths` 充当 tsx 运行 `examples/` 与 `scripts/` 时的解析配置。 | 否 |
+| `tsconfig.json` | solution 根：`extends` base、`files: []`、引用两个 aggregate。它是 tsserver 发现入口，也是显式执行 aggregate Project Reference 图时的入口；经继承的 `paths` 充当 tsx 运行 `examples/` 与 `scripts/` 时的解析配置。 | 否 |
 | `tsconfig.host.json` | Host aggregate：Host 包、示例、测试、脚本和 website，以及 `api/remotes` 的 Host 特例 project。 | 是 |
 | `tsconfig.client.json` | Client aggregate：`packages/client/*` 包及其测试、`apps/web`，以及 `api/remotes` 的 Client 特例 project。 | 是 |
+| `apps/desktop/tsconfig.json` | 完整 Desktop 应用检查，覆盖 `src`、`tests` 和 `scripts`，在 Client aggregate 使用生成的 Remote 声明后运行。它同时引用 Host 与 Client project，且不发射产物。 | 是 |
 | `tsconfig.base.json` | 共享 compilerOptions 与源码 `paths` 映射。同时是各 vitest 配置让 vite-tsconfig-paths 指向的解析门面：它没有 `include`，因此其 `paths` 适用于任何 importer。 | 否 |
 | `tsconfig.base.client.json` | 浏览器编译设置（`jsx`、DOM lib、`types: []`），由 Client aggregate 和每个 `packages/client/*` 包 extends。 | 否 |
 
 Host 与 Client 保持两个 aggregate program，是因为两侧在相同键下以不同服务对 cordis `Context` 接口做声明合并；单一 program 同时看到两份合并会报冲突。这种冲突只存在于 `ts.Program` 内部——模块解析永远不会触发它——所以 solution 可以同时引用两个 aggregate，一个 paths 门面也可以横跨两侧。由此推出三条纪律：
 
 - `tsconfig.base.json` 永不添加 `include` 或 `files`：它们会泄漏进每个 extends 它的包项目，并收窄门面的全匹配范围。
-- 构造全仓 `ts.Program` 的脚本显式以 `tsconfig.host.json` 或 `tsconfig.client.json` 为种子——根 solution 永不作为种子，因为把两个 aggregate 展平进一个 program 会撞上 `Context` 合并冲突。
+- 仓库 `ts.Program` 要么以 `tsconfig.host.json` 或 `tsconfig.client.json` 为种子，要么使用精确选中的 root 和从所属配置复用的直接 Project Reference。它永不以根 solution 为种子，也不展平两个 aggregate 的文件，否则会撞上 `Context` 合并冲突。
 - 新包只登记进一个 aggregate。包同时具有 Node loader 入口和 browser 入口并不构成拆分理由；普通 Client 插件的两份运行时产物都在 Client 构建阶段生成。
+
+Desktop 是应用组合，不是 package compiler face。workspace constraints 门禁保证它不进入任一根 aggregate，并要求在 Client tsc 之后执行完整的不发射检查。同时导入两侧的精确 Platform 集成测试仍由各自 package 拥有，并列入 `POST_GENERATION_CROSS_FACE_TESTS`；第二个不发射检查只以这些测试为 root，复用现有 Project Reference，且不展平任何 aggregate。
 
 `api/remotes` 是唯一拆分 Host/Client tsconfig 的仓库特例。它的 Host 入口必须进入 Host Typert 图，而 Client 入口导入 Host tsdown 才会生成的 `/remote` 声明，因此本包根 `tsconfig.json` 只作为 solution，两个 aggregate 和直接消费方分别引用 `tsconfig.host.json` 或 `tsconfig.client.json`。workspace `constraints` 门禁遍历可达的 Project Reference 图，并按各引用 project 自身的 compiler face 检查：只有单一配置的目标可由任一 face 引用，拆分配置的目标则必须引用匹配的 leaf，不得引用 solution 根或另一侧 leaf；该门禁按「两个 leaf 配置同时存在」自动发现拆分包，所以新拆分的包会自动纳入管辖。不要把该结构推广到其他包；[`api-remotes` README](../packages/api/remotes/README.zh.md) 说明 Host/Client 拆分与构建顺序。
 
@@ -82,18 +93,25 @@ Host 与 Client 保持两个 aggregate program，是因为两侧在相同键下�
 ```sh
 tsc -b tsconfig.host.json
 tsdown --env.DSH_BUILD_FACE host
+pnpm run typecheck:host-contracts-ready
 tsc -b tsconfig.client.json
+pnpm run typecheck:desktop-contracts-ready
+pnpm run typecheck:cross-face-contracts-ready
 tsdown --env.DSH_BUILD_FACE client
 pnpm run build:web
 ```
 
 两次 tsdown 都使用同一组完整 workspace 匹配，不扫描构建产物来发现 Client 包，也不维护 Host/Client 包过滤表。包内 tsdown 配置根据 `DSH_BUILD_FACE` 决定当前阶段的入口：普通 Client 插件在 Client 阶段同时生成 Node loader 与 browser bundle；`api-remotes` 通过 `hostPhase: true` 提前生成 Host 入口，再在 Client 阶段只生成 browser bundle。tsdown 只消费 `lib/types` 中由前置 tsc 发射的 JavaScript。
 
-Typert 只在 Host tsdown 中以 `tsconfig.host.json` 为种子运行。它分析 Host 类型并生成 Host 反射产物及 Host-for-Client Remote 投影；Client tsdown 不启动 Typert。`pnpm run typecheck` 因此先执行完整 Host lib 阶段，再运行 Client tsc；`pnpm run build` 继续执行 Client tsdown 和 Web 构建。该顺序的决策记录见 [API Remotes 生成约定构建 Note](../.agents/notes/implemented/process/2026-08-08-api-remotes-generated-contract-build.zh.md)。
+Typert 只在 Host tsdown 中以 `tsconfig.host.json` 为种子运行。它分析 Host 类型并生成 Host 反射产物及 Host-for-Client Remote 投影；Client tsdown 不启动 Typert。`pnpm run typecheck` 因此先执行完整 Host lib 阶段，再运行 Client tsc；`pnpm run build` 继续执行 Client tsdown 和 Web 构建。
+
+Typert 只在 Host tsdown 中以 `tsconfig.host.json` 为种子运行。它分析 Host 类型并生成 Host 反射产物及 Host-for-Client Remote 投影；Client tsdown 不启动 Typert。`pnpm run typecheck` 因此先执行完整 Host lib 阶段，再运行 Client tsc、Desktop 应用检查与精确跨 face 集成检查；`pnpm run build` 继续执行 Client tsdown 和 Web 构建。该顺序的决策记录见 [API Remotes 生成约定构建 Note](../.agents/notes/archived/process/2026-08-08-api-remotes-generated-contract-build.md)。
 
 `pnpm run build` 会内联调用方精确的 `DSH_CLIENT_*` 环境；未设置时不使用任何公开 client 值。`pnpm run build:official` 是与 CI 和 release 产物构建等价的跨平台本地命令。每次完整构建成功后都会写入一份被 gitignore 的记录，把这些值与 Vite 输出及动态 client bundle 绑定；release 打包和 built Web 测试会拒绝缺少记录或被后续局部构建改动的产物。
 
-静态分析和测试通过 base 的 `paths` 映射把工作区 import 解析到 `src`，且必须在干净树上通过；消费构建产物 `lib/` 的门禁显式声明该依赖。生成的 Host-for-Client Remote 声明是有意设置的例外：公共 `typecheck`、`lint` 和 `doc-typecheck` 命令会先生成这些声明，而内部 `*:contracts-ready` 脚本假定调用它的公共命令或调度器门禁已经依赖 Typert 约定生成阶段或完整构建。两个 aggregate 的设置见 [solution-root Note](../.agents/notes/implemented/process/2026-07-22-tsconfig-solution-root-two-aggregates.zh.md)，tsc-first 发射职责见 [ts-build-config Note](../.agents/notes/implemented/process/2026-06-17-ts-build-config.zh.md)，门禁准备约定见 [Typert Remote Agent Note](../.agents/notes/implemented/architecture/2026-08-02-typert-remote-method-calls.zh.md)。
+静态分析和测试通过 base 的 `paths` 映射把工作区 import 解析到 `src`，且必须在干净树上通过；消费构建产物 `lib/` 的门禁显式声明该依赖。生成的 Host-for-Client Remote 声明是有意设置的例外：公共 `typecheck`、`lint` 和 `doc-typecheck` 命令会先生成这些声明，而内部 `*:contracts-ready` 脚本假定调用它的公共命令或调度器门禁已经依赖 Typert 约定生成阶段或完整构建。tsc-first 发射职责见 [ts-build-config Note](../.agents/notes/implemented/process/2026-06-17-ts-build-config.zh.md)，门禁准备约定见 [Typert Remote Agent Note](../.agents/notes/implemented/architecture/2026-08-02-typert-remote-method-calls.zh.md)。
+
+类型感知的 `lint` 和 `lint:fix` 按顺序构建 Host 与 Client 库，再调用内部 `*:contracts-ready` 命令。跨 face 测试的 import 需要两侧构建的声明。不在 aggregate 根文件中的可运行示例声明自己的 TypeScript 项目，让 Oxlint 能发现有类型的 import；[Remote Protocol 示例](../examples/remote-protocol/tsconfig.json) 只选择入口和现有包引用，其[快照测试](../examples/remote-protocol/tests/tsconfig.json) 拥有独立项目。相关 Account、Pairing、Relay 和 Project Members 示例同样声明入口或提供方根文件与导入包引用。它们的测试与 Loader driver 拥有独立的近端项目。生成 Remote 的消费者测试保留生成后 Host 检查，并拥有近端 Host lint 项目；引用涵盖可达类型增强的提供方和目标。见 [lint 前置条件 Note](../.agents/notes/implemented/bug-fix/2026-09-08-lint-type-prerequisites.zh.md)。
 
 业务服务在 Host 使用 `@Remote` 或 `@RemoteScope` 声明可调用方法；Host 构建生成 Host-for-Client 类型与运行时贡献，Client 的 `api-remotes` 组合加载这些贡献并挂到 `ctx.remote` 与作用域 `agentCtx.remote` namespace。两侧的生成产物、装配关系、SRC 开发回退和 Web 构建顺序见 [API Gateway](api-gateway.zh.md)。
 
@@ -144,7 +162,9 @@ vendor manifest 守卫检查 `vendor/*/src` 下的改动是否连同对应的 `v
 
 ### CI 门禁
 
-keyless [CI 工作流](../.github/workflows/ci.yml) 将独立门禁分组到若干宽粒度 lane，并在受支持的 Node 版本上运行一组较小的兼容性检查。产物消费方在各自 lane 内等待一次 build。单独的真实 API 工作流按其配置的 worker 上限运行 `pnpm run test:e2e`。当前门禁和 job 清单以 [scripts/run-gates.ts](../scripts/run-gates.ts) 和工作流文件为准。
+keyless [CI 工作流](../.github/workflows/ci.yml) 将独立门禁分组到若干宽粒度 lane，并在受支持的 Node 版本上运行一组较小的兼容性检查。产物消费方在各自 lane 内等待一次 build。必需 benchmark 在标准 GitHub 托管 Linux 上独立运行；[benchmark 运行器决策](../.agents/notes/implemented/testing/2026-09-06-standard-hosted-benchmark-runner.zh.md)拥有路由及 job 超时。单独的真实 API 工作流按其配置的 worker 上限运行 `pnpm run test:e2e`。当前门禁和 job 清单以 [scripts/run-gates.ts](../scripts/run-gates.ts) 和工作流文件为准。
+
+不带凭据的 dsh 依赖布局检查与 dsh/vendor 打包演练仅在 `DSH_CI_FAILOVER_LINUX=selfhosted`，且事件为受信任的 master 推送或同仓库、非 fork、非 Dependabot 拉取请求时使用现有 Linux 自托管池。其余情况（包括手动触发）均使用 `ubuntu-24.04`；手动发布仍使用托管运行器。持久化存储隔离与回退限制见[发布演练运行器决策](../.agents/notes/implemented/process/2026-09-06-release-rehearsal-selfhosted.zh.md)。
 
 每次主 CI 运行都会上传 Planner JSON 和带版本的 gate 报告。Preflight 独立计算路由，同时并行运行四个生成状态分区；只有五个 worker 全部成功，公开的 `preflight` verdict 才会准入证据。报告按实际完成顺序标识首个阻塞失败，对失败 gate 分类，保留每个阶段的耗时，并列出相关 artifact。只有精确诊断被分类为瞬时基础设施故障的命令才允许自动重试一次，其 artifact 会保留两次尝试。运行 `pnpm ci:metrics --repo <owner/name>` 可计算成功率，以及排队、执行和首个结论耗时的 p50、p95 与最大值，并排除记账任务、cancelled、skipped、stale 和观察性样本。
 

@@ -3,16 +3,15 @@
  * `useAnchoredPosition` wiring: a floating panel is placed from its anchor and
  * keeps tracking it while open.
  *
- * The geometry itself needs real layout, which jsdom does not provide — the
- * browser layout scenario in `apps/web/tests/message-feedback-layout.e2e.ts`
- * owns that. What is asserted here is the wiring the clamp depends on: the
+ * The geometry itself needs real layout, which jsdom does not provide. What
+ * is asserted here is the wiring the clamp depends on: the
  * listeners and the panel-size observer are attached while open and released on
  * close, a size change replays the placement, and the hook still works where
  * `ResizeObserver` does not exist.
  */
 import { useRef } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, render } from '@testing-library/react'
+import { cleanup, render } from '@testing-library/react'
 import { useAnchoredPosition } from '../src/useAnchoredPosition.ts'
 
 afterEach(() => {
@@ -52,22 +51,10 @@ function stubResizeObserver(): Recorded[] {
  * @param props - whether the panel is open.
  * @returns the anchor and, while open, the panel carrying the position.
  */
-function Host({ open, align, width }: {
-  open: boolean
-  align?: 'start' | 'end'
-  width?: number
-}) {
+function Host({ open }: { open: boolean }) {
   const anchorRef = useRef<HTMLButtonElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
-  const position = useAnchoredPosition({
-    open,
-    anchorRef,
-    panelRef,
-    gap: 4,
-    margin: 12,
-    ...(align === undefined ? {} : { align }),
-    ...(width === undefined ? {} : { width }),
-  })
+  const position = useAnchoredPosition({ open, anchorRef, panelRef, gap: 4, margin: 12 })
   return (
     <>
       <button ref={anchorRef} type="button">anchor</button>
@@ -100,18 +87,6 @@ describe('useAnchoredPosition', () => {
     // the height without a scroll or resize event; the observer is the only
     // thing that notices, so driving its callback must not throw.
     expect(() => { before?.([], {} as ResizeObserver) }).not.toThrow()
-  })
-
-  it('aligns an unmounted portal width to the anchor end', () => {
-    const ui = render(<Host open align="end" width={336} />)
-    vi.spyOn(ui.getByRole('button'), 'getBoundingClientRect').mockReturnValue({
-      x: 960, y: 20, width: 24, height: 24, top: 20, right: 984, bottom: 44, left: 960,
-      toJSON: () => ({}),
-    })
-
-    act(() => { window.dispatchEvent(new Event('resize')) })
-
-    expect(ui.getByTestId('panel').style.left).toBe('648px')
   })
 
   it('still places the panel where ResizeObserver does not exist', () => {

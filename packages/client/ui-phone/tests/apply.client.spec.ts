@@ -6,18 +6,16 @@
  */
 import { Context } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
+import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
-import { apply, Config, inject } from '../src/client/index.tsx'
+import { apply, Config, inject, OfficialPhoneBody } from '../src/client/index.tsx'
 import { en, NS, zh } from '../src/client/locales.ts'
-import { RecordingSidebar } from '../src/invariant.ts'
 import type { PhoneSettings } from '../src/phone-settings.ts'
 import {
-  buildPhoneTabDescriptor, installPhoneTab, PHONE_TAB_TITLE, phoneTabTitleOf,
-  type PhoneListingSource, type PhoneTabView,
+  buildOfficialPhoneDefinition, PHONE_DEFINITION_ID, PHONE_TAB_TITLE, phoneTabTitleOf,
+  type PhoneListingSource,
 } from '../src/client/registry.ts'
-import { createHttpPhoneListingSource } from '../src/client/phone-listing.ts'
 import { PhoneStreamHttpError } from '../src/client/phone-stream-client.ts'
 
 /** A registered tab descriptor as this suite observes it. */
@@ -34,15 +32,54 @@ interface RegisteredTab {
 }
 
 /** The suite's view of the shared fake: one registered descriptor by id. */
-class SidebarUnderTest extends RecordingSidebar {
+class SidebarUnderTest {
+  private descriptor: RegisteredTab | undefined
+  bodyInjected: Record<string, unknown> | undefined
   readonly updates: Array<{ tabId: string; patch: { readonly title?: string; readonly meta?: unknown } }> = []
   readonly opens: string[] = []
   phoneTab: { readonly id: string; readonly type: string; readonly title?: string; readonly meta?: unknown } | undefined
   activeTabId: string | null = null
   panelOpen = false
 
-  override getTab(id: string): RegisteredTab | undefined {
-    return super.getTab(id) as RegisteredTab | undefined
+  register(definition: Record<string, unknown>): () => void {
+    const descriptor = definition as unknown as RegisteredTab
+    this.descriptor = descriptor
+    return () => { if (this.descriptor === descriptor) this.descriptor = undefined }
+  }
+
+  getTab(id: string): RegisteredTab | undefined {
+    if (id !== 'phone' || this.descriptor === undefined) return undefined
+    return {
+      ...this.descriptor,
+      available: () => true,
+      icon: () => ({ type: 'phone-icon' }),
+      component: (input: unknown) => {
+        const props = input as { tab: { id: string; meta?: unknown }; visible: boolean }
+        const injected = this.bodyInjected as {
+          gate: unknown
+          source: unknown
+          runtime: unknown
+          createController: unknown
+          title: unknown
+          occupiedTitle: unknown
+        }
+        return OfficialPhoneBody({
+          t: (key: string) => key,
+          useTabInfo: () => ({
+            tab: {
+              id: props.tab.id,
+              sessionId: 's1',
+              visible: props.visible,
+              payload: props.tab.meta,
+              actions: { update: (patch: { title?: string; payload?: unknown }) => {
+                this.update('phone', patch)
+              } },
+            },
+          }),
+          ...injected,
+        } as never)
+      },
+    }
   }
 
   updateTab(tabId: string, patch: { readonly title?: string; readonly meta?: unknown }): void {
@@ -52,34 +89,41 @@ class SidebarUnderTest extends RecordingSidebar {
     }
   }
 
-  openTab(seed: { readonly type: string }): void {
-    this.opens.push(seed.type)
+  update(tabId: string, patch: { readonly title?: string; readonly payload?: unknown }): void {
+    this.updateTab(tabId, {
+      ...(patch.title === undefined ? {} : { title: patch.title }),
+      ...(patch.payload === undefined ? {} : { meta: patch.payload }),
+    })
   }
 
-  getSnapshot(): {
-    readonly state: {
-      readonly splits: { readonly kind: 'leaf'; readonly tabs: readonly NonNullable<SidebarUnderTest['phoneTab']>[]; readonly active: string | null }
-      readonly bottomSplits: { readonly kind: 'leaf'; readonly tabs: readonly []; readonly active: null }
-      readonly floats: readonly []
-    }
-  } {
+  async openTab(kind: string): Promise<string> {
+    this.opens.push(kind)
+    this.panelOpen = true
+    if (this.phoneTab === undefined) this.phoneTab = { id: 'phone', type: 'phone', title: '手机' }
+    return 'phone'
+  }
+
+  getSnapshot(): unknown {
     const tab = this.phoneTab
     return {
-      state: {
-        splits: { kind: 'leaf', tabs: tab === undefined ? [] : [tab], active: this.activeTabId },
-        bottomSplits: { kind: 'leaf', tabs: [], active: null },
-        floats: [],
-      },
+      mountedSessionId: 's1', pinned: [], sessions: [{ sessionId: 's1', tabs: tab === undefined ? [] : [{
+        sessionId: 's1', visible: this.activeTabId === tab.id, surface: 'right', paneId: 'pane', floating: false,
+        active: this.activeTabId === tab.id,
+        record: { id: tab.id, kind: 'phone', contentId: 'sidebar://phone', title: tab.title ?? '手机' },
+        state: { payload: tab.meta },
+      }] }],
     }
   }
+
+  forSession(): { update: SidebarUnderTest['update']; openTab: SidebarUnderTest['openTab'] } {
+    return { update: this.update.bind(this), openTab: this.openTab.bind(this) }
+  }
+
+  subscribe(): () => void { return () => {} }
 
   setPanelOpen(open: boolean): void {
     this.panelOpen = open
   }
-}
-
-function stubView(): PhoneTabView {
-  return { icon: () => null, component: () => null }
 }
 
 function resolvedTitle(title: string | (() => string)): string {
@@ -101,11 +145,15 @@ async function mount(
   config: { readonly enabled?: boolean } = Config({}),
 ) {
   const ctx = new Context()
-  ctx.provide('betterSidebar', sidebar)
+  ctx.provide('sidebarRight', sidebar)
+  ctx.provide('sidebarRightTabs', { register: (definition: Record<string, unknown>) => sidebar.register(definition) })
   await ctx.plugin(SlotRegistry).await()
   ctx.slots.register({
     name: 'root',
-    children: { 'settings.section': { kind: 'list', scope: 'root' } },
+    children: {
+      'settings.section': { kind: 'list', scope: 'root' },
+      'sidebar.right.pane.tab': { kind: 'keyed', scope: 'session' },
+    },
   } as never, () => null)
   const locale = new LocaleRuntime(ctx)
   locale.setLocale('zh')
@@ -118,6 +166,9 @@ async function mount(
     apply: (pluginCtx: Context) => { apply(pluginCtx, config) },
   })
   await fiber.await()
+  const body = ctx.slots.entries('sidebar.right.pane.tab')
+    .find(entry => entry.options.key === PHONE_DEFINITION_ID)
+  sidebar.bodyInjected = body?.inject?.()
   return { ctx, fiber, host }
 }
 
@@ -125,7 +176,9 @@ describe('ui-phone client apply', () => {
   afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals() })
 
   it('declares the Side card, locale, and settings-section service edges', () => {
-    expect([...inject]).toEqual(['betterSidebar', 'slots', 'locale', 'settingsScope'])
+    expect([...inject]).toEqual([
+      'slots', 'locale', 'settingsScope', 'sidebarRight', 'sidebarRightTabs',
+    ])
   })
 
   it('contributes a top-level 手机设备 settings section and leaves Plugins empty', async () => {
@@ -141,21 +194,9 @@ describe('ui-phone client apply', () => {
     expect(ctx.slots.entries('settings.section')).toHaveLength(0)
   })
 
-  it('fails loud when betterSidebar has not been published', () => {
+  it('fails loud when the official Sidebar has not been published', () => {
     const ctx = new Context()
-    expect(() => {
-      installPhoneTab(ctx, {
-        source: createHttpPhoneListingSource(),
-        view: stubView(),
-        isEnabled: () => false,
-        gate: { snapshot: () => false, subscribe: () => () => undefined },
-        title: () => PHONE_TAB_TITLE,
-        occupiedTitle: phoneTabTitleOf,
-        createController: () => {
-          throw new Error('not expected in this spec')
-        },
-      })
-    }).toThrow(/betterSidebar is not published/)
+    expect(() => { apply(ctx, Config({})) }).toThrow()
   })
 
   it('registers the locked 「手机」descriptor shape', async () => {
@@ -166,7 +207,7 @@ describe('ui-phone client apply', () => {
     expect(descriptor.order).toBe(55)
     // U1: the strip keeps exactly one 「手机」 tab; devices switch in place.
     expect(descriptor.single).toBe(true)
-    expect(descriptor.dedupeKey).toBeUndefined()
+    expect(descriptor.dedupeKey?.({} as never)).toBe('phone')
     // 恒可达 decision: zero devices never disables the + menu row.
     expect(descriptor.available(undefined, undefined, undefined)).toBe(true)
     // The monochrome inline SVG resolves the icon(size) contract.
@@ -618,23 +659,15 @@ describe('ui-phone client apply', () => {
 
   it('drives both badge arms from the injected snapshot values', async () => {
     const badgeOf = (source: PhoneListingSource) =>
-      buildPhoneTabDescriptor({
+      buildOfficialPhoneDefinition({
         source,
-        view: stubView(),
-        isEnabled: () => false,
-        gate: { snapshot: () => false, subscribe: () => () => undefined },
-        switchDevice: () => {},
-        showPicker: () => {},
         title: () => PHONE_TAB_TITLE,
         occupiedTitle: phoneTabTitleOf,
-        createController: () => {
-          throw new Error('not expected in this spec')
-        },
       }).badge!
     // Quiet arm: no online devices hides the strip pill.
-    expect(badgeOf(sourceWith(0))(undefined, undefined, undefined)).toBeNull()
+    expect(badgeOf(sourceWith(0))({} as never, {} as never)).toBeNull()
     // Live arm: the pill shows the online count.
-    expect(badgeOf(sourceWith(2))(undefined, undefined, undefined)).toBe(2)
+    expect(badgeOf(sourceWith(2))({} as never, {} as never)).toBe(2)
 
     // The shipped apply wires the default no-device source into its badge.
     const sidebar = new SidebarUnderTest()

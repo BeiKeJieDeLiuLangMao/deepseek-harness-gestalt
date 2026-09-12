@@ -1,6 +1,26 @@
+---
+description: "phone 包组：Host 工具链准备、mobilecli 设备运行时、采集代理和面向模型的工具。"
+kind: "package-group"
+---
+
 # phone/ — 手机设备群能力族
 
 [English](README.md) | 中文
+
+## 概述
+
+通过 mobilecli 将 DeepSeek Harness 连接到 Android 和 iOS 设备。使用这些包可准备 Host 工具链、发现设备、代理屏幕与控制流量，并提供延迟模型工具。一个 Host 服务持有 mobilecli 进程与设备清单；GUI 和模型消费方分别演进。
+
+## 目录
+
+- [包](#packages)
+- [相关文档](#related-documentation)
+- [开发备注](#dev-note)
+
+-----
+
+<a id="packages"></a>
+## 包
 
 以外部 mobilecli 为后端的手机设备群：一个 Host 半区服务负责回环服务子进程、健康轮询与统一设备清单；面向模型或 GUI 的消费方另包演进。
 
@@ -13,4 +33,12 @@
 | [`phone-stream/`](phone-stream/README.zh.md) | 同源 IO WebSocket 与签名 MJPEG/H264 反代 | `ctx.phoneStream` |
 | [`tool-phone/`](tool-phone/README.zh.md) | 面向模型的延迟消费方 | 注册到 `ctx.tools` |
 
+<a id="related-documentation"></a>
+## 相关文档
+
 子系统参考：[docs/subsystems/phone-runtime.zh.md](../../docs/subsystems/phone-runtime.zh.md)。
+
+<a id="dev-note"></a>
+## 开发备注
+
+无。

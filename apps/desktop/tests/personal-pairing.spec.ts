@@ -258,7 +258,7 @@ describe('DesktopPairingController', () => {
         device: { name: 'Alice phone', platform: 'ios' }, pairedAt: 1, lastAccessAt: 1, online: false,
       },
       routeId: parseRelayRouteId('route-endpoint-owner'), relayRevision: 3,
-    }
+    } satisfies Awaited<ReturnType<RemoteAccessTransport['confirmEndpointPairing']>>
     const confirmationDigests: Uint8Array[] = []
     transport.confirmEndpointPairing.mockImplementation(async (input) => {
       confirmationDigests.push(input.mobileCredentialDigest.slice())
@@ -293,8 +293,8 @@ describe('DesktopPairingController', () => {
   it('installs the Settings Relay grant before starting the endpoint lifecycle', async () => {
     const transport = transportFixture()
     const grant: RelayCredentialGrant = {
-      endpoint: 'desktop',
       routeId: parseRelayRouteId('route-settings'),
+      endpoint: 'desktop',
       credential: parseRelayCredential('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'),
       revision: 1,
     }
@@ -819,8 +819,8 @@ describe('DesktopPairingController', () => {
     await controller.start()
 
     const grant: RelayCredentialGrant = {
-      endpoint: 'desktop',
       routeId: parseRelayRouteId('route-settings'),
+      endpoint: 'desktop',
       credential: parseRelayCredential('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'),
       revision: 1,
     }
@@ -978,7 +978,9 @@ describe('DesktopPairingController', () => {
 function transportFixture() {
   return {
     getMobileAccessState: vi.fn().mockResolvedValueOnce({ enabled: false }).mockResolvedValue({ enabled: true }),
-    setMobileAccess: vi.fn<RemoteAccessTransport['setMobileAccess']>(async input => ({ enabled: input.enabled })),
+    setMobileAccess: vi.fn<RemoteAccessTransport['setMobileAccess']>(
+      async input => ({ enabled: input.enabled }),
+    ),
     reissueDesktopRelayAuthority: vi.fn(async () => ({
       enabled: true,
       relay: {

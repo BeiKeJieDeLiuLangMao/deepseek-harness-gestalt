@@ -477,7 +477,9 @@ function manualCode(value: string): value is 'disk-space' | 'windows-hypervisor'
 
 function errorMessage(value: unknown, status: number): string {
   if (record(value) && record(value.error) && string(value.error.message)) return value.error.message
-  return `phone environment request failed with HTTP ${String(status)}`
+  /** @uiI18n diagnostic */
+  const fallback = `phone environment request failed with HTTP ${String(status)}`
+  return fallback
 }
 
 function record(value: unknown): value is Record<string, unknown> {

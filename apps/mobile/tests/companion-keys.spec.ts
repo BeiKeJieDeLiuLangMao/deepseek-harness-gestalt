@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { describe, expect, it, vi } from 'vitest'
 import 'fake-indexeddb/auto'
 import { parsePersonalPairingId } from '@deepseek-ai/dsh-remote-access'
@@ -77,7 +78,7 @@ describe('PairingCompanionKeyVault', () => {
   })
 
   it('restores account-scoped Snow reconnect state and Mobile-only Relay authority', async () => {
-    const store = new IndexedDbMobilePairingStateStore(`mobile-pairing-${crypto.randomUUID()}`)
+    const store = new IndexedDbMobilePairingStateStore(`mobile-pairing-${randomUUID()}`)
     const accountId = parsePlatformAccountId('account-one')
     const pairingId = parsePersonalPairingId('pairing-persisted')
     const state = new Uint8Array(96).fill(6)
@@ -103,7 +104,7 @@ describe('PairingCompanionKeyVault', () => {
   })
 
   it('migrates an unversioned IndexedDB singleton grant and restores its derived selection after restart', async () => {
-    const databaseName = `mobile-pairing-legacy-${crypto.randomUUID()}`
+    const databaseName = `mobile-pairing-legacy-${randomUUID()}`
     const accountId = parsePlatformAccountId('account-indexeddb-legacy')
     const pairingId = parsePersonalPairingId('pairing-indexeddb-legacy')
     const reconnectState = new Uint8Array(96).fill(61)
@@ -143,7 +144,7 @@ describe('PairingCompanionKeyVault', () => {
   })
 
   it('migrates every unversioned IndexedDB pairing and selects the last complete authority after restart', async () => {
-    const databaseName = `mobile-pairing-legacy-multiple-${crypto.randomUUID()}`
+    const databaseName = `mobile-pairing-legacy-multiple-${randomUUID()}`
     const accountId = parsePlatformAccountId('account-indexeddb-legacy-multiple')
     const home = parsePersonalPairingId('pairing-indexeddb-a')
     const work = parsePersonalPairingId('pairing-indexeddb-b')
@@ -200,7 +201,7 @@ describe('PairingCompanionKeyVault', () => {
   })
 
   it('does not treat an explicit undefined IndexedDB version as the unversioned predecessor', async () => {
-    const databaseName = `mobile-pairing-legacy-disguised-${crypto.randomUUID()}`
+    const databaseName = `mobile-pairing-legacy-disguised-${randomUUID()}`
     const accountId = parsePlatformAccountId('account-indexeddb-legacy-disguised')
     const disguised = { version: undefined, active: [] }
     await writeIndexedDbPairingDocument(databaseName, accountId, disguised)
@@ -211,7 +212,7 @@ describe('PairingCompanionKeyVault', () => {
   })
 
   it('persists every Paired Desktop and restores only the explicit selection', async () => {
-    const store = new IndexedDbMobilePairingStateStore(`mobile-pairing-selection-${crypto.randomUUID()}`)
+    const store = new IndexedDbMobilePairingStateStore(`mobile-pairing-selection-${randomUUID()}`)
     const accountId = parsePlatformAccountId('account-selection')
     const personal = parsePersonalPairingId('pairing-personal')
     const work = parsePersonalPairingId('pairing-work')
@@ -265,7 +266,7 @@ describe('PairingCompanionKeyVault', () => {
   })
 
   it('rejects duplicate Personal Pairing ids in an IndexedDB version-2 document', async () => {
-    const store = new IndexedDbMobilePairingStateStore(`mobile-pairing-duplicate-${crypto.randomUUID()}`)
+    const store = new IndexedDbMobilePairingStateStore(`mobile-pairing-duplicate-${randomUUID()}`)
     const accountId = parsePlatformAccountId('account-duplicate')
     const pairingId = parsePersonalPairingId('pairing-duplicate')
     await store.save(accountId, {

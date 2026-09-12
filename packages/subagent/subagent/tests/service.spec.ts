@@ -1,8 +1,8 @@
-import { describe, expect, expectTypeOf, it, vi } from 'vitest'
+import { describe, expect, expectTypeOf, it, onTestFinished, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { type Agent } from '@deepseek-ai/dsh-agent'
 
-import { HarnessError } from '@deepseek-ai/dsh-llm'
+import { HarnessError, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import { carrierKeyOf } from '@deepseek-ai/dsh-scope'
 import SubagentRuntime, {
   foldSubagentDescriptor,
@@ -18,17 +18,18 @@ import SubagentRuntime, {
   type SubagentRunEndInfo,
   type SubagentStartRequest,
 } from '@deepseek-ai/dsh-subagent'
-import { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
+import { Session, SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 
 function fakeParent(id = 'parent-1'): Agent {
   return { id: SessionId(id) } as unknown as Agent
 }
 
 const ALL_CAPS: SubagentCapabilities = {
-  outputSchema: true, depthLimit: true, toolFilter: true, persona: true, agentOptions: true, images: true,
+  agentOptions: true, images: true, outputSchema: true, depthLimit: true, toolFilter: true, persona: true,
 }
 const NO_CAPS: SubagentCapabilities = {
-  outputSchema: false, depthLimit: false, toolFilter: false, persona: false, agentOptions: false, images: false,
+  agentOptions: false, images: false, outputSchema: false, depthLimit: false, toolFilter: false, persona: false,
 }
 
 function baseRequest(overrides: Partial<SubagentStartRequest> = {}): SubagentStartRequest {
@@ -68,11 +69,32 @@ class StubProvider implements SubagentProvider {
 
 async function service(): Promise<{ ctx: Context; subagents: SubagentRuntime }> {
   const ctx = new Context()
+  // The registry is a required injection of SubagentRuntime (its projection
+  // units register in the constructor).
+  await ctx.plugin(SessionProjectionRegistry)
   await ctx.plugin(SubagentRuntime)
   return { ctx, subagents: ctx.subagents }
 }
 
 describe('SubagentRuntime', () => {
+  it('releases its catalog projection binding with the service fiber', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionProjectionRegistry)
+    const fiber = await ctx.plugin(SubagentRuntime)
+    const parent = Session.create(SessionId('catalog-parent'))
+    parent.append('subagent/catalog', {
+      version: 0,
+      childId: SessionId('catalog-child'),
+      childCreatedAt: 1,
+      mode: 'one-shot',
+    })
+    expect(ctx.sessionProjections.snapshot(parent).values.subagentCatalog).toHaveLength(1)
+
+    await fiber.dispose()
+
+    expect(ctx.sessionProjections.stateOf(parent, 'subagentCatalog')).toBeUndefined()
+  })
+
   it('registers, lists, looks up, starts, and removes providers', async () => {
     const { ctx, subagents } = await service()
     const added: string[] = []
@@ -157,21 +179,21 @@ describe('SubagentRuntime', () => {
       request: baseRequest(),
       signal: new AbortController().signal,
     })).rejects.toMatchObject({ code: 'CONTINUATION_UNAVAILABLE' })
-    await expect(subagents.followup(
+    await expect(subagents.sendMessage(
       fakeParent(),
       SessionId('child'),
       [{ type: 'text', text: 'hello' }],
-      { source: { kind: 'user' }, signal: new AbortController().signal },
+      { signal: new AbortController().signal },
     )).rejects.toMatchObject({ code: 'CONTINUATION_UNAVAILABLE' })
   })
 
   it.each([
+    ['agentOptions', { agentOptions: { model: 'child-model' } }],
+    ['images', { prompt: [{ type: 'image', attachment: { id: 'image' } }] } as never],
     ['outputSchema', { outputSchema: { type: 'object', properties: {} } }],
     ['depthLimit', { maxDepth: 1 }],
     ['toolFilter', { toolFilter: { deny: ['bash'] } }],
     ['persona', { persona: 'reviewer' }],
-    ['agentOptions', { agentOptions: { provider: 'deepseek-official', model: 'deepseek-v4-pro' } }],
-    ['images', { prompt: [{ type: 'image', attachment: {} as never }] as SubagentStartRequest['prompt'] }],
   ] as const)('rejects unsupported %s before provider startup', async (_capability, override) => {
     const { subagents } = await service()
     const provider = new StubProvider('weak', NO_CAPS)
@@ -251,6 +273,45 @@ describe('SubagentRuntime', () => {
     ctx.on('subagent/end', lifecycle)
     await expect(subagents.start('failed', baseRequest())).rejects.toThrow('setup rolled back')
     expect(lifecycle).not.toHaveBeenCalled()
+  })
+
+  it.each([false, true])('handles a rejected local result after catalog failure (disposal fails: %s)', async (failsDisposal) => {
+    const { ctx, subagents } = await service()
+    onTestFinished(() => ctx.fiber.dispose())
+    const parentSession = Session.create(SessionId('catalog-parent'))
+    const childSession = Session.create(SessionId('catalog-child'))
+    const parent = { id: parentSession.id, session: parentSession } as Agent
+    const localAgent = { id: childSession.id, session: childSession } as Agent
+    const result = Promise.withResolvers<SubagentResult>()
+    const cleanupFailure = new Error('dispose also failed')
+    const warnings = vi.spyOn(ctx.logger, 'warn')
+    const dispose = vi.fn(async () => {
+      result.reject(new Error('run infrastructure failed'))
+      // Cross Node's unhandled-rejection checkpoint while disposal is pending.
+      await new Promise<void>(resolve => setImmediate(resolve))
+      if (failsDisposal) throw cleanupFailure
+    })
+    subagents.registerProvider({
+      name: 'catalog-failure',
+      capabilities: NO_CAPS,
+      inheritsParentContext: false,
+      start: () => Promise.resolve({
+        id: childSession.id,
+        localAgent,
+        result: result.promise,
+        dispose,
+      }),
+    })
+    const catalogFailure = new Error('catalog unavailable')
+    const append = vi.spyOn(parentSession, 'append').mockImplementation(() => {
+      throw catalogFailure
+    })
+
+    await expect(subagents.start('catalog-failure', baseRequest({ parent })))
+      .rejects.toBe(catalogFailure)
+    expect(append).toHaveBeenCalledOnce()
+    expect(dispose).toHaveBeenCalledOnce()
+    expect(warnings).toHaveBeenCalledTimes(failsDisposal ? 1 : 0)
   })
 
   it('emits an enriched end event and maps result rejection to error telemetry', async () => {
@@ -354,6 +415,7 @@ describe('subagent descriptors', () => {
       label: 'complete child',
       agentProvider: 'deepseek',
       agentModel: 'chat',
+      agentReasoningEffort: ReasoningEffortId('high'),
       persona: 'reviewer',
       toolFilter: { allow: ['read'], deny: ['bash'] },
     }
@@ -363,6 +425,7 @@ describe('subagent descriptors', () => {
       label: complete.label,
       agentProvider: complete.agentProvider,
       agentModel: complete.agentModel,
+      agentReasoningEffort: complete.agentReasoningEffort,
       persona: complete.persona,
       toolFilter: complete.toolFilter,
     })).toEqual(complete)
@@ -454,6 +517,13 @@ describe('subagent descriptors', () => {
       label: 'l',
       agentModel: [],
     }, 'agentModel must be a string'],
+    ['invalid agent reasoning effort', {
+      version: SUBAGENT_DESCRIPTOR_VERSION,
+      mode: 'continuable',
+      provider: 'spawn',
+      label: 'l',
+      agentReasoningEffort: 7,
+    }, 'agentReasoningEffort must be a string'],
     ['invalid persona', {
       version: SUBAGENT_DESCRIPTOR_VERSION,
       mode: 'continuable',

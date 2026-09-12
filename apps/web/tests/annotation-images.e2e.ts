@@ -62,11 +62,11 @@ async function attachNamedFile(page: Page, name: string, mimeType: string, bytes
     transfer.items.add(file)
     document.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: transfer }))
   }, { fileName: name, type: mimeType, payload: bytes.toString('base64') })
-  await page.getByRole('group', { name: 'Pending images' }).getByAltText(name).waitFor({ timeout: 10_000 })
+  await page.getByRole('group', { name: 'Pending attachments' }).getByAltText(name).waitFor({ timeout: 10_000 })
 }
 
 async function openPreview(page: Page, name: string): Promise<Locator> {
-  const rail = page.getByRole('group', { name: 'Pending images' })
+  const rail = page.getByRole('group', { name: 'Pending attachments' })
   await rail.getByAltText(name).click()
   const dialog = page.getByRole('dialog', { name: 'Original image preview' })
   await dialog.waitFor({ timeout: 10_000 })
@@ -135,7 +135,7 @@ describe('web e2e: composer and history image annotation pins', () => {
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
     tripwire = watchConsole(page)
-    await page.goto(scaffold.baseUrl, { waitUntil: 'domcontentloaded', timeout: 60_000 })
+    await page.goto(scaffold.authenticatedUrl, { waitUntil: 'domcontentloaded', timeout: 60_000 })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
     await connectFreshWorkspace(page, scaffold.workspaceCwd)
   }, 120_000)
@@ -147,7 +147,7 @@ describe('web e2e: composer and history image annotation pins', () => {
 
   it('pins a Composer PNG, refuses an animated GIF, reattaches history, and mixes order', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-annotation-images'))
-    const composer = page.locator('[data-composer-card] textarea').last()
+    const composer = page.locator('[data-composer-input][contenteditable="true"]').last()
     await composer.waitFor({ timeout: 10_000 })
 
     await attachNamedFile(page, PNG_NAME, 'image/png', PNG_BYTES)
@@ -167,7 +167,7 @@ describe('web e2e: composer and history image annotation pins', () => {
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
     acknowledgeReloadConnectionLoss(tripwire, warningStart)
     await expect.poll(
-      () => page.getByRole('group', { name: 'Pending images' }).getByAltText(PNG_NAME).count(),
+      () => page.getByRole('group', { name: 'Pending attachments' }).getByAltText(PNG_NAME).count(),
       { timeout: 15_000 },
     ).toBe(1)
     await expect(page.getByRole('button', { name: '1 annotation' }).isVisible()).resolves.toBe(true)

@@ -15,25 +15,34 @@
       "path": "../../api/remotes/tsconfig.client.json"
     },
     {
-      "path": "../../browser/browser-workspace"
+      "path": "../../api/session-controller/tsconfig.client.json"
     },
     {
-      "path": "../runtime"
+      "path": "../../core/session"
+    },
+    {
+      "path": "../../browser/browser-workspace"
     },
     {
       "path": "../ui-browser"
     },
     {
-      "path": "../ui-settings"
-    },
-    {
       "path": "../../settings/settings"
     },
     {
-      "path": "../../runtime-diagnostics/invariants"
+      "path": "../../typert/protocol"
     },
     {
-      "path": "../../typert/protocol"
+      "path": "../ui-sidebar-right"
+    },
+    {
+      "path": "../ui-slots"
+    },
+    {
+      "path": "../locale"
+    },
+    {
+      "path": "../ui-renderer"
     }
   ]
 }

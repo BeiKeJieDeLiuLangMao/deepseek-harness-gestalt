@@ -21,7 +21,10 @@
       "path": "../../llm/llm"
     },
     {
-      "path": "../../runtime-diagnostics/invariants"
+      "path": "../../platform/platform-account"
+    },
+    {
+      "path": "../../platform/remote-protocol"
     }
   ]
 }

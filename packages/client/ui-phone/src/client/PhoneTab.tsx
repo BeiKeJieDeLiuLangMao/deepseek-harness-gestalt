@@ -12,6 +12,7 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import type { DeviceId } from '@deepseek-ai/dsh-phone-runtime'
 import type { ReactNode } from 'react'
+import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import { startPhoneListingPoll } from './phone-listing-poll.ts'
 import {
   PHONE_PLATFORMS, type PhoneDeviceSummary, type PhoneGateSource, type PhoneListingSource, type PhonePlatform,
@@ -22,6 +23,7 @@ import shared from './PhoneShared.module.css'
 
 /** Props of the phone tab body, threaded from the descriptor closure. */
 export interface PhoneTabProps {
+  readonly t: PropsLocale<'settings.phone-devices'>['t']
   /** Reactive enable gate; the strip follows invalidations live. */
   readonly gate: PhoneGateSource
   /** Listing source backing the rows (starts empty until a pull commits). */
@@ -30,52 +32,41 @@ export interface PhoneTabProps {
   readonly onOpenDevice: (serial: DeviceId, name: string) => void
 }
 
-/** Copy under each platform segment (the mockup fixes the Android→iOS one). */
-const PLATFORM_HINTS: Record<PhonePlatform, string> = {
-  android: '切换到 iOS 将列出 Xcode 模拟器与设备控制代理真机',
-  ios: '切换到 Android 将列出 ADB 模拟器与 USB 真机',
-}
-
 /** List order of the mockup's group headers. */
 const GROUPS: readonly { readonly channel: PhoneDeviceSummary['channel'] }[] = [
   { channel: 'emulator' },
   { channel: 'usb' },
 ]
 
-const GROUP_TITLES: Record<PhoneDeviceSummary['channel'], string> = {
-  emulator: '模拟器',
-  usb: 'USB 真机',
-}
-
 /**
  * Row meta caption for a listed online device. Offline rows are omitted
  * (U2); unauthorized handsets render the warn arm instead of this caption.
  */
-function runningStateOf(device: PhoneDeviceSummary): string {
-  return device.channel === 'emulator' ? '运行中' : '在线'
+function runningStateOf(device: PhoneDeviceSummary, t: PhoneTabProps['t']): string {
+  return device.channel === 'emulator' ? t('tab.running') : t('tab.online')
 }
 
 /**
  * The meta line. The upstream wire carries no OS version field, so the
  * caption degrades to the running state alone (P5 leftover note).
  */
-function rowMetaOf(device: PhoneDeviceSummary): string {
-  return runningStateOf(device)
+function rowMetaOf(device: PhoneDeviceSummary, t: PhoneTabProps['t']): string {
+  return runningStateOf(device, t)
 }
 
 /** Copy the picker error arm shows for one listing-pull failure. */
-function listingErrorCopy(error: unknown): { title: string; detail: string } {
+function listingErrorCopy(error: unknown, t: PhoneTabProps['t']): { title: string; detail: string } {
   if (error instanceof PhoneStreamHttpError && error.code === 'PHONE_UNRESOLVED') {
     return {
-      title: '未找到 mobilecli',
-      detail: '前往「设置 → 手机设备」使用一键准备 mobilecli，完成后重新检测。',
+      title: t('tab.listing.unresolved.title'),
+      detail: t('tab.listing.unresolved.detail'),
     }
   }
   return {
-    title: '无法读取设备清单',
+    title: t('tab.listing.failed.title'),
     detail: error instanceof Error && error.message.length > 0
       ? error.message
-      : '设备清单请求失败；请重新检测。',
+      : t('tab.listing.failed.detail'),
   }
 }
 
@@ -84,7 +75,7 @@ function listingErrorCopy(error: unknown): { title: string; detail: string } {
  * @param props - enable-gate value, the injected listing source, and the opener.
  * @returns the not-connected empty state.
  */
-export function PhoneTab({ gate, source, onOpenDevice }: PhoneTabProps): ReactNode {
+export function PhoneTab({ t, gate, source, onOpenDevice }: PhoneTabProps): ReactNode {
   const [platform, setPlatform] = useState<PhonePlatform>('android')
   // The gate and the listing source are the owning observables; uSES is the
   // render-side adapter (better-sidebar tab hosts have no slot hook channel).
@@ -114,16 +105,16 @@ export function PhoneTab({ gate, source, onOpenDevice }: PhoneTabProps): ReactNo
     return startPhoneListingPoll(source)
   }, [enabled, source])
   const devices = listing[platform]
-  const listingFailure = listingError === undefined ? undefined : listingErrorCopy(listingError)
+  const listingFailure = listingError === undefined ? undefined : listingErrorCopy(listingError, t)
   return (
     <div className={css.phone}>
       {!enabled && (
-        <div className={css.gateBanner} role="note" aria-label="手机连接未启用">
-          <p className={css.gateTitle}>手机连接未启用</p>
-          <p className={css.gateDesc}>该部署未开启设备检测；入口保持可用，启用后即可发现并连接设备。</p>
+        <div className={css.gateBanner} role="note" aria-label={t('tab.gate.title')}>
+          <p className={css.gateTitle}>{t('tab.gate.title')}</p>
+          <p className={css.gateDesc}>{t('tab.gate.detail')}</p>
         </div>
       )}
-      <div className={css.platformSeg} role="group" aria-label="平台选择">
+      <div className={css.platformSeg} role="group" aria-label={t('tab.platform.label')}>
         {PHONE_PLATFORMS.map(candidate => (
           <button
             key={candidate}
@@ -134,11 +125,11 @@ export function PhoneTab({ gate, source, onOpenDevice }: PhoneTabProps): ReactNo
             aria-pressed={candidate === platform}
             onClick={() => { setPlatform(candidate) }}
           >
-            {candidate === 'android' ? 'Android' : 'iOS'}
+            {candidate === 'android' ? t('common.android') : t('common.ios')}
           </button>
         ))}
       </div>
-      <p className={css.platformHint}>{PLATFORM_HINTS[platform]}</p>
+      <p className={css.platformHint}>{t(platform === 'android' ? 'tab.platformHint.android' : 'tab.platformHint.ios')}</p>
       {listingFailure !== undefined && (
         <div role="alert" className={css.listingFailedArm}>
           <p className={css.unauthorizedTitle}>{listingFailure.title}</p>
@@ -150,7 +141,7 @@ export function PhoneTab({ gate, source, onOpenDevice }: PhoneTabProps): ReactNo
               disabled={refreshing}
               onClick={refresh}
             >
-              重新检测
+              {t('common.redetect')}
             </button>
           </div>
         </div>
@@ -159,16 +150,14 @@ export function PhoneTab({ gate, source, onOpenDevice }: PhoneTabProps): ReactNo
         const group = devices.filter(device => device.channel === channel)
         const visible = group.filter(device => device.online || device.state === 'unauthorized')
         return (
-          <section key={channel} aria-label={GROUP_TITLES[channel]}>
-            <div className={css.groupName}>{GROUP_TITLES[channel]}</div>
+          <section key={channel} aria-label={channel === 'emulator' ? t('tab.group.emulator') : t('tab.group.usb')}>
+            <div className={css.groupName}>{channel === 'emulator' ? t('tab.group.emulator') : t('tab.group.usb')}</div>
             {visible.map(device => (
               device.state === 'unauthorized' ? (
                 <div key={device.id} role="alert" className={css.unauthorizedArm}>
-                  <p className={css.unauthorizedTitle}>真机未授权调试</p>
+                  <p className={css.unauthorizedTitle}>{t('tab.unauthorized.title')}</p>
                   <p className={css.unauthorizedDetail}>
-                    {platform === 'ios'
-                      ? `${device.name} 已通过 USB 连接；请解锁设备，确认信任此 Mac 并启用 Developer Mode，设备控制代理就绪后重新检测。`
-                      : `${device.name} 已通过 USB 连接；请在手机上允许「USB 调试」后重新检测。`}
+                    {(platform === 'ios' ? t('tab.unauthorized.ios') : t('tab.unauthorized.android')).replace('{name}', device.name)}
                   </p>
                   <div className={css.alertActions}>
                     <button
@@ -177,7 +166,7 @@ export function PhoneTab({ gate, source, onOpenDevice }: PhoneTabProps): ReactNo
                       disabled={refreshing}
                       onClick={refresh}
                     >
-                      重新检测
+                      {t('common.redetect')}
                     </button>
                   </div>
                 </div>
@@ -188,21 +177,19 @@ export function PhoneTab({ gate, source, onOpenDevice }: PhoneTabProps): ReactNo
                     className={css.deviceDot}
                   />
                   <span className={css.deviceName}>{device.name}</span>
-                  <span className={css.deviceMeta}>{rowMetaOf(device)}</span>
+                  <span className={css.deviceMeta}>{rowMetaOf(device, t)}</span>
                   <button
                     type="button"
                     className={shared.minibtnPrimary}
                     onClick={() => { onOpenDevice(device.id, device.name) }}
                   >
-                    打开
+                    {t('common.open')}
                   </button>
                 </div>
               )
             ))}
             {channel === 'usb' && visible.length === 0 && (
-              <div className={css.emptyRow}>{platform === 'ios'
-                ? '用数据线连接 iPhone，解锁并确认信任此 Mac、启用 Developer Mode；设备控制代理就绪后会出现在这里。'
-                : '用数据线连接手机并在设备上允许 USB 调试后，会出现在这里。'}</div>
+              <div className={css.emptyRow}>{platform === 'ios' ? t('tab.usb.empty.ios') : t('tab.usb.empty.android')}</div>
             )}
           </section>
         )
@@ -214,7 +201,7 @@ export function PhoneTab({ gate, source, onOpenDevice }: PhoneTabProps): ReactNo
           disabled={!enabled || refreshing}
           onClick={refresh}
         >
-          重新检测环境
+          {t('tab.redetectEnvironment')}
         </button>
       </div>
     </div>

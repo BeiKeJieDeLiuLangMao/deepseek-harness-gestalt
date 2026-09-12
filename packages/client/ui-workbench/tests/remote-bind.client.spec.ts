@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { BrowserTarget } from '@deepseek-ai/dsh-browser-workspace/client'
 import { bindBrowserWorkspace, type BrowserWorkspaceRemoteFace } from '../src/client/remote-bind.ts'
 

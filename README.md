@@ -110,9 +110,9 @@ Gestalt does not create another agent runtime. Official DSH supplies the plugin 
     </tr>
     <tr>
       <td>Device operation</td>
-      <td><code>TODO</code></td>
-      <td>Planned sidebar phone tabs launch Android/iOS, show a live view, allow human takeover, and run approved agent tools</td>
-      <td><a href="https://github.com/gestaltrun/deepseek-harness-gestalt/issues/355">Product plan</a></td>
+      <td><code>DONE</code></td>
+      <td>Sidebar Phone tabs discover and launch Android/iOS devices, show the live screen, allow human takeover, and expose approved device tools to the agent</td>
+      <td><a href="packages/client/ui-phone/README.md">Phone workspace</a></td>
     </tr>
   </tbody>
 </table>
@@ -135,7 +135,7 @@ Install [Node.js](https://nodejs.org/), then run:
 npx @deepseek-ai/dsh web
 ```
 
-The command starts the Web UI at `http://127.0.0.1:3080` and opens it for a local launch. Open **Settings → Models**, add a provider, choose a workspace, and start a Session. The [Web guide](docs/user/guide/index.md) covers the first run and SSH launches.
+The command starts the Web UI at `http://127.0.0.1:3080` by default and opens it for a local launch. An SSH launch only prints the host URL because the SSH client or editor owns the local forwarded address. Pass `--no-open` to run the server without opening a browser. Open **Settings → Models**, add a provider, choose a Workspace, and start a Session. The [Web guide](docs/user/guide/index.md) covers the first run and SSH launches.
 
 <a id="run-from-source"></a>
 
@@ -149,7 +149,7 @@ pnpm run build
 pnpm dsh web
 ```
 
-Use the [development guide](docs/development.md) for repository workflows and [AGENTS.md](AGENTS.md) for agent instructions.
+`pnpm run build` prepares the repository artifacts; `pnpm dsh web` uses those built artifacts without rebuilding. Use the [development guide](docs/development.md) for repository workflows and [AGENTS.md](AGENTS.md) for agent instructions.
 
 ## Community and support
 

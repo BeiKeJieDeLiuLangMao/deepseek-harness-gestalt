@@ -14,6 +14,32 @@ describe('DesktopBridge Web E2E fixture', () => {
     expectTypeOf(installDesktopBridgeFixture).returns.toEqualTypeOf<DesktopBridge>()
   })
 
+  it('publishes overlay requests and replies until unsubscribe', async () => {
+    const bridge = installDesktopBridgeFixture('darwin')
+    const state = vi.fn()
+    const reply = vi.fn()
+    const stopState = bridge.onChromeOverlayState(state)
+    const stopReply = bridge.onChromeOverlayResult(reply)
+    const request = { kind: 'settings', requestId: 'settings' } as const
+    await bridge.chromeOverlayShow(request)
+    await expect(bridge.chromeOverlayGetState()).resolves.toEqual(request)
+    expect(state).toHaveBeenLastCalledWith(request)
+    const closed = { type: 'close', requestId: 'settings' } as const
+    bridge.chromeOverlayResult(closed)
+    await expect(bridge.chromeOverlayGetState()).resolves.toBeNull()
+    expect(state).toHaveBeenLastCalledWith(null)
+    expect(reply).toHaveBeenCalledExactlyOnceWith(closed)
+    stopState()
+    stopReply()
+    state.mockClear()
+    reply.mockClear()
+    await bridge.chromeOverlayShow(request)
+    await bridge.chromeOverlayHide()
+    bridge.chromeOverlayResult(closed)
+    expect(state).not.toHaveBeenCalled()
+    expect(reply).not.toHaveBeenCalled()
+  })
+
   it('delivers inert Account, Pairing, and account-pool snapshots and honors unsubscribe', async () => {
     const bridge = installDesktopBridgeFixture('darwin')
     expect(bridge.platform).toBe('darwin')

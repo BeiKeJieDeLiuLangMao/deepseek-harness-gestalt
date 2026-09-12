@@ -1,7 +1,7 @@
 {
   "extends": "../../../../tsconfig.base.json",
   "compilerOptions": {
-    "rootDir": ".",
+    "rootDir": "..",
     "outDir": "../../lib/member-question-e2e-types",
     "noEmit": true,
     "composite": false,
@@ -12,5 +12,5 @@
     "lib": ["ES2023", "DOM"],
     "types": ["node", "@wdio/globals/types", "@wdio/mocha-framework", "@wdio/native-types"]
   },
-  "include": ["./**/*.ts"]
+  "include": ["./**/*.ts", "../electron-runner-infrastructure.ts"]
 }

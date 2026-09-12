@@ -13,6 +13,9 @@ afterEach(() => {
 })
 
 const t = (key: string) => (en as Record<string, string>)[key] ?? key
+const useResource = (() => ({
+  status: 'none' as const, value: undefined, failure: undefined, reload: () => {},
+})) as import('@deepseek-ai/dsh-client-ui-slots').GlobalStandardProps['useResource']
 
 function bridge(platform: NodeJS.Platform): DesktopBridge {
   return {
@@ -62,6 +65,7 @@ describe('DragStrip', () => {
     const sidebarCss = readFileSync(join(root, 'packages/client/ui-sidebar/src/client/SidebarRoot.module.css'), 'utf8')
     const layoutCss = readFileSync(join(root, 'packages/client/ui-layout/src/client/AppFrame.module.css'), 'utf8')
     const workbenchCss = readFileSync(join(root, 'packages/client/ui-better-sidebar/src/client/sidebar.module.css'), 'utf8')
+    const officialWorkbenchCss = readFileSync(join(root, 'packages/client/ui-sidebar-right/src/client/shell/SidebarRight.module.css'), 'utf8')
     expect(chromeCss).toContain('--dsh-window-chrome-height: 36px')
     const rule = /\.macChrome\s*\{(?<body>[^}]+)\}/.exec(chromeCss)?.groups?.body ?? ''
     expect(rule).toContain('position: fixed')
@@ -75,15 +79,24 @@ describe('DragStrip', () => {
       .map(match => match.groups?.body ?? '')
       .find(body => body.includes('height: 34px')) ?? ''
     expect(tabBar).toContain('box-sizing: border-box')
+    expect(officialWorkbenchCss).toMatch(/\.panel :global\(\[data-dockkit-strip\]\)\s*\{[^}]*-webkit-app-region: drag/u)
+    const interactive = /\.panel :global\(\[data-dockkit-strip-tabs\]\),(?<body>[^}]+)\}/u
+      .exec(officialWorkbenchCss)?.groups?.body ?? ''
+    expect(interactive).toContain('[data-dockkit-add-tab]')
+    expect(interactive).toContain('[data-dockkit-split-button]')
+    expect(interactive).toContain('[data-dockkit-strip-chrome]')
+    expect(interactive).toContain('-webkit-app-region: no-drag')
   })
 
   it('paints no caption buttons on macOS', () => {
     window.dshDesktop = bridge('darwin')
     render(
       <DragStrip
-        wide
-        t={t as never}
+        t={t}
+        useResource={useResource}
+        usePanelInfo={selector => selector({ activePanelId: null })}
         useSessions={(() => { throw new Error('unused') })}
+        useSessionPendingInteraction={(() => { throw new Error('unused') })}
         useWorkspaces={(() => { throw new Error('unused') })}
       />,
     )
@@ -96,9 +109,11 @@ describe('DragStrip', () => {
     window.dshDesktop = desktop
     render(
       <DragStrip
-        wide
-        t={t as never}
+        t={t}
+        useResource={useResource}
+        usePanelInfo={selector => selector({ activePanelId: null })}
         useSessions={(() => { throw new Error('unused') })}
+        useSessionPendingInteraction={(() => { throw new Error('unused') })}
         useWorkspaces={(() => { throw new Error('unused') })}
       />,
     )
@@ -114,9 +129,11 @@ describe('DragStrip', () => {
     window.dshDesktop = bridge('linux')
     const { container } = render(
       <DragStrip
-        wide
-        t={t as never}
+        t={t}
+        useResource={useResource}
+        usePanelInfo={selector => selector({ activePanelId: null })}
         useSessions={(() => { throw new Error('unused') })}
+        useSessionPendingInteraction={(() => { throw new Error('unused') })}
         useWorkspaces={(() => { throw new Error('unused') })}
       />,
     )

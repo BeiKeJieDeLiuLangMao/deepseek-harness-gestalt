@@ -1,24 +1,29 @@
 /**
- * Member-question plugin, browser half: the MemberQuestionCard registered as a
- * selector-routed entry of the conversation-declared composer chain, ahead of
- * the shared question composer, plus the `member-question` dictionaries. The
- * selector claims only requests whose whole batch declares the
- * `member-question` intent; `plan-review` and generic requests keep electing
- * the shared composer unchanged. The presentation and answer protocol stay
- * owned by dsh-client-ui-user-questions — this package mounts the sanctioned
- * presentation seam under its Decision Brief banner and binds the `question`
- * dictionary through the standard locale seat for it.
+ * Member-question plugin, browser half: the MemberQuestionDock registered on
+ * conversation.input.dock. It reads Host pending views from ReceivingQuestionBook
+ * and declares question.presentation for the shared Ask User occupant. This
+ * package does not import PendingQuestion.
  */
-import type { ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
-import { resolveWorkspacePath } from '@deepseek-ai/dsh-client-runtime/client'
-import type { DetailsDocumentFocus } from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type { Context as ClientContext } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-api-remotes/client'
+import type { ReceivingQuestionBook } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type {} from '@deepseek-ai/dsh-client-locale/client'
+import type { ISidebarRight } from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
+import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
+import { fileAddressFor, parseFileAddress, resolveWorkspacePath } from '@deepseek-ai/dsh-util-workspace-path'
+import type { MemberQuestionDockInjected, MemberQuestionReferenceView } from './contract/slots.ts'
 import { MemberQuestionDock } from './MemberQuestionCard.tsx'
 import { en, zh, type MemberQuestionKey } from './locales.ts'
 
-export { selectMemberQuestion, selectMemberQuestionRecords, isMemberQuestionBatch, memberBriefOf, clampBackground, BACKGROUND_CLAMP } from './contract/slots.ts'
+export {
+  selectMemberQuestion, selectMemberQuestionRecords,
+  memberBriefOf, presentationQuestionsOf, clampBackground, BACKGROUND_CLAMP,
+} from './contract/slots.ts'
 export type {
   MemberQuestionBrief, MemberQuestionComposerProps, MemberQuestionOrigin,
-  MemberQuestionReferenceChip, MemberQuestionRole, MemberQuestionWait,
+  MemberQuestionReferenceChip, MemberQuestionReferenceView, MemberQuestionRole, MemberQuestionWait,
 } from './contract/slots.ts'
 export type { MemberQuestionKey } from './locales.ts'
 
@@ -29,11 +34,98 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   }
 }
 
+declare module '@deepseek-ai/cordis' {
+  interface Context {
+    /** Host-owned member-question receiving projection. */
+    receivingQuestions: ReceivingQuestionBook
+  }
+}
+
 /** Dictionary namespace owned by this plugin. */
 const NS = 'member-question'
 
-/** Required services: the slot registry, dictionaries, and Files-open path. */
-export const inject = ['slots', 'locale', 'workspaces', 'sessions']
+/** Required services: slots, dictionaries, Sessions, Host Remote, and receiving projection. */
+export const inject = ['slots', 'locale', 'sessions', 'receivingQuestions', 'remote', 'remote.session']
+
+type SidebarSnapshot = ReturnType<ISidebarRight['getSnapshot']>
+type SidebarRegistry = ClientContext['sidebarRightTabs']
+
+/** Visible registered file occurrences in the mounted workbench Session. */
+function projectReferenceView(
+  snapshot: SidebarSnapshot | undefined,
+  registry: SidebarRegistry | undefined,
+  cwd: string | undefined,
+): MemberQuestionReferenceView {
+  const sessionId = snapshot?.mountedSessionId
+  const session = snapshot?.sessions.find(entry => entry.sessionId === sessionId)
+  if (sessionId === undefined || session === undefined || registry === undefined) return { paths: [] }
+  const paths: string[] = []
+  for (const tab of session.tabs) {
+    if (!tab.visible || registry.get(tab.record.kind) === undefined) continue
+    const file = parseFileAddress(tab.record.contentId)
+    if (file === undefined || (file.scope === 'session' && file.sessionId !== sessionId)) continue
+    const path = file.scope === 'absolute' ? file.path : resolveWorkspacePath(cwd, file.path)
+    if (registry.matchViewer({ address: tab.record.contentId, path }) === undefined) continue
+    paths.push(path)
+  }
+  return { sessionId, paths }
+}
+
+/** Official workbench projection with late service and viewer registration changes. */
+function referenceViewSource(ctx: ClientContext): HostObservable<MemberQuestionReferenceView> {
+  let previousService: ISidebarRight | undefined
+  let previousSnapshot: SidebarSnapshot | undefined
+  let previousRegistry: SidebarRegistry | undefined
+  let previousEntries: ReturnType<SidebarRegistry['entries']> | undefined
+  let previousViewers: ReturnType<SidebarRegistry['viewers']> | undefined
+  let previousCwd: string | undefined
+  let previousView: MemberQuestionReferenceView = { paths: [] }
+  return {
+    getSnapshot: () => {
+      const service = ctx.get('sidebarRight')
+      const snapshot = service?.getSnapshot()
+      const registry = ctx.get('sidebarRightTabs')
+      const entries = registry?.entries()
+      const viewers = registry?.viewers()
+      const sessionId = snapshot?.mountedSessionId
+      const cwd = sessionId === undefined ? undefined : ctx.sessions.list.getSnapshot().byId[sessionId]?.cwd
+      if (service === previousService && snapshot === previousSnapshot
+        && registry === previousRegistry && entries === previousEntries
+        && viewers === previousViewers && cwd === previousCwd) return previousView
+      previousService = service
+      previousSnapshot = snapshot
+      previousRegistry = registry
+      previousEntries = entries
+      previousViewers = viewers
+      previousCwd = cwd
+      previousView = projectReferenceView(snapshot, registry, cwd)
+      return previousView
+    },
+    subscribe: (listener) => {
+      let releaseState: (() => void) | undefined
+      let releaseRegistry: (() => void) | undefined
+      const bind = (): void => {
+        releaseState?.()
+        releaseRegistry?.()
+        releaseState = ctx.get('sidebarRight')?.subscribe(listener)
+        releaseRegistry = ctx.get('sidebarRightTabs')?.subscribe(listener)
+      }
+      bind()
+      const releaseSessions = ctx.sessions.list.subscribe(listener)
+      const releaseService = ctx.on('internal/service', (name: string) => {
+        if (name !== 'sidebarRight' && name !== 'sidebarRightTabs') return
+        bind()
+        listener()
+      })
+      return () => {
+        releaseService()
+        releaseSessions()
+        releaseState?.()
+        releaseRegistry?.()
+      }
+    },
+  }
+}
 
 /**
  * Client plugin body: register the `member-question` dictionaries and the
@@ -45,30 +137,25 @@ export const inject = ['slots', 'locale', 'workspaces', 'sessions']
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-member-questions: dictionaries')
 
-  // The mounted presentation reads the `question` namespace (owned by
-  // dsh-client-ui-user-questions); bind is stable per namespace, so the
-  // injected translator never churns memo identity.
-  const questionT = ctx.locale.bind('question')
-
-  // Resolve the optional provider at gesture time: dynamic client rows may
-  // supply or release ui-conversation after this fiber has registered.
-  const focusDocument = (sessionId: SessionId, document: DetailsDocumentFocus): void => {
-    ctx.get('detailsFocus')?.focus(sessionId, document)
-  }
-
-  const openReference = (sessionId: SessionId, path: string, title?: string): void => {
+  const referencePath = (sessionId: SessionId, path: string): string => {
     const cwd = ctx.sessions.list.getSnapshot().byId[sessionId]?.cwd
-    const absolute = resolveWorkspacePath(cwd, path)
-    const sidebar = ctx.get('betterSidebar') as {
-      getTab(id: string): unknown
-      openFile(scope: { sessionId: string; cwd?: string }, path: string, title?: string): void
-    } | undefined
-    if (sidebar?.getTab('editor') !== undefined) {
-      sidebar.openFile(cwd === undefined ? { sessionId } : { sessionId, cwd }, absolute, title)
+    return resolveWorkspacePath(cwd, path)
+  }
+  const openReference = async (sessionId: SessionId, path: string, title?: string): Promise<void> => {
+    const cwd = ctx.sessions.list.getSnapshot().byId[sessionId]?.cwd
+    const absolute = referencePath(sessionId, path)
+    const sidebar = ctx.get('sidebarRight')
+    const address = fileAddressFor(sessionId, cwd, absolute)
+    if (sidebar !== undefined && (ctx.get('sidebarRightTabs')?.candidates(address).length ?? 0) > 0) {
+      const navigator = sidebar.forSession(sessionId)
+      const tabId = await navigator.openResource(address)
+      if (title !== undefined) navigator.update(tabId, { title })
       return
     }
-    void ctx.workspaces.openPath(absolute)
+    const result = await ctx.remote.session.openWorkspacePath({ path: absolute })
+    if (!result.ok) throw new Error(result.error.message)
   }
+  const referenceView = referenceViewSource(ctx)
 
   ctx.slots.inject('conversation.input.dock', () => ctx.slots.register(
     {
@@ -76,7 +163,16 @@ export function apply(ctx: ClientContext): void {
       id: 'member-question',
       order: -20,
       locale: NS,
-      inject: () => ({ questionT, focusDocument, openReference }),
+      children: {
+        'question.presentation': { kind: 'single', scope: 'session' },
+      },
+      inject: (): MemberQuestionDockInjected => ({
+        openReference,
+        referencePath,
+        settle: (sessionId, answers) => ctx.receivingQuestions.settle(sessionId, answers),
+        decline: sessionId => ctx.receivingQuestions.decline(sessionId),
+        hooks: { receivingQuestions: ctx.receivingQuestions, referenceView },
+      }),
     },
     MemberQuestionDock,
   ))

@@ -10,7 +10,6 @@ export type FixtureCommand =
   | { type: 'create-session'; id: SessionId; createdAt: number; cwd: string }
   | { type: 'append'; id: SessionId; event: 'turn/start'; data: SessionEventMap['turn/start'] }
   | { type: 'append'; id: SessionId; event: 'step/start'; data: SessionEventMap['step/start'] }
-  | { type: 'append'; id: SessionId; event: 'assistant/chunk'; data: SessionEventMap['assistant/chunk'] }
   | { type: 'message'; id: SessionId; text: string }
   | { type: 'finish-cancelled-response'; id: SessionId; turn: number; step: number; text: string }
   | { type: 'events'; id: SessionId }
@@ -72,10 +71,8 @@ export function isFixtureRequest(value: unknown): value is FixtureRequest {
       && typeof c.createdAt === 'number' && Number.isFinite(c.createdAt)
     case 'append': return typeof c.id === 'string' && record(c.data)
       && typeof c.data.turn === 'number' && Number.isSafeInteger(c.data.turn)
-      && (c.event === 'turn/start' || (typeof c.data.step === 'number' && Number.isSafeInteger(c.data.step)
-        && (c.event === 'step/start' || (c.event === 'assistant/chunk' && record(c.data.chunk)
-          && c.data.chunk.index === 0 && ((c.data.chunk.type === 'block-start' && c.data.chunk.blockType === 'text')
-            || (c.data.chunk.type === 'text-delta' && typeof c.data.chunk.text === 'string'))))))
+      && (c.event === 'turn/start' || (c.event === 'step/start'
+        && typeof c.data.step === 'number' && Number.isSafeInteger(c.data.step)))
     case 'finish-cancelled-response': return typeof c.id === 'string'
       && typeof c.turn === 'number' && Number.isSafeInteger(c.turn) && c.turn > 0
       && typeof c.step === 'number' && Number.isSafeInteger(c.step) && c.step > 0

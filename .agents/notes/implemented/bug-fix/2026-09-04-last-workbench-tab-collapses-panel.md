@@ -10,7 +10,7 @@ Closing the last docked tab in the right or bottom workbench left an empty panel
 
 ## Decision
 
-`closeTab` collapses only the tree that lost its last docked tab: `panelOpen: false` when the right workbench has no docked tabs, `bottomOpen: false` when the bottom workbench has none. Emptiness ignores floating windows, so a remaining float does not keep an empty docked tree open. Undocking the last docked tab into a float does not collapse the panel. A later path or URL `openTab` still expands the landing panel through the existing content-open expander.
+Official `ui-sidebar-right` `closeTab` collapses only the surface that lost its last docked tab. Emptiness ignores floating windows, so a remaining float does not keep an empty docked tree open. Undocking the last docked tab into a float does not collapse the panel. A later content open still expands the landing panel. The unused Better snapshot store no longer owns this path.
 
 ## Alternatives considered
 
@@ -24,4 +24,4 @@ An empty workbench after the last close is collapsed. Opening another file or UR
 
 ## Testing
 
-`packages/client/ui-better-sidebar/tests/open-tab-landing.client.spec.ts` closes the last right tab, the last bottom tab, and a remaining sibling tab.
+`packages/client/ui-sidebar-right/tests/stores.client.spec.ts` closes the last non-guide docked tab, a remaining sibling tab, and a floating tab that must not collapse the column.

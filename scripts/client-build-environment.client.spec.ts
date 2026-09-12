@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
@@ -7,9 +8,12 @@ import {
   assertClientBuildEnvironment,
   clientBuildEnvironmentDefines,
   clientBuildProcessEnvironment,
-  collectDynamicClientSourceMapViolations,
+  officialClientBuildEnvironment,
   readClientBuildRecord,
+  repositoryClientBuildEnvironment,
   repositoryCommitHash,
+  repositoryGitDirty,
+  repositoryVersion,
   resolveClientBuildEnvironment,
   writeClientBuildRecord,
 } from './client-build-environment.ts'
@@ -47,19 +51,30 @@ function buildFixture(environment: Record<string, string>): string {
   const fixtureRoot = mkdtempSync(join(tmpdir(), 'dsh-client-build-'))
   roots.push(fixtureRoot)
   write(join(fixtureRoot, 'apps/web/dist/index.html'), '<main></main>')
-  write(join(fixtureRoot, 'packages/client/example/package.json'), JSON.stringify({
-    name: '@deepseek-ai/dsh-client-example',
-    dsh: { client: { platform: 'web' } },
-  }))
-  write(join(fixtureRoot, 'packages/client/example/lib/client.cjs'), 'module.exports = {}\n')
-  write(join(fixtureRoot, 'packages/client/example/lib/client.cjs.map'), JSON.stringify({
-    version: 3,
-    sources: ['../../../packages/client/example/src/client/index.ts'],
-    sourcesContent: ['export {}\n'],
-    names: [],
-    mappings: '',
-  }))
+  write(join(fixtureRoot, 'packages/client/example/lib/client.js'), 'module.exports = {}\n')
   writeClientBuildRecord(fixtureRoot, environment)
+  return fixtureRoot
+}
+
+function git(root: string, args: readonly string[]): string {
+  return execFileSync('git', [...args], {
+    cwd: root,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  }).trim()
+}
+
+function repositoryFixture(version = '1.2.3-rc.4'): string {
+  const fixtureRoot = mkdtempSync(join(tmpdir(), 'dsh-client-build-repository-'))
+  roots.push(fixtureRoot)
+  write(join(fixtureRoot, 'package.json'), `${JSON.stringify({ version })}\n`)
+  write(join(fixtureRoot, 'tracked.txt'), 'committed\n')
+  git(fixtureRoot, ['init'])
+  git(fixtureRoot, ['config', 'user.name', 'DSH test'])
+  git(fixtureRoot, ['config', 'user.email', 'dsh-test@example.invalid'])
+  git(fixtureRoot, ['config', 'commit.gpgsign', 'false'])
+  git(fixtureRoot, ['add', 'package.json', 'tracked.txt'])
+  git(fixtureRoot, ['commit', '-m', 'fixture'])
   return fixtureRoot
 }
 
@@ -69,6 +84,7 @@ describe('client build environment', () => {
       DSH_CLIENT_BUILD_PROFILE: 'official',
       DSH_CLIENT_COMMIT_HASH: COMMIT_HASH.slice(0, 7),
       DSH_CLIENT_TITLE: 'DeepSeek Harness',
+      DSH_CLIENT_VERSION: '1.2.3',
     } as const
 
     expect(() => { assertClientBuildEnvironment({ PATH: '/bin', ...expected }, expected) }).not.toThrow()
@@ -85,7 +101,9 @@ describe('client build environment', () => {
       DSH_BUILD_CLIENT_PROFILE: 'official',
       DSH_CLIENT_BUILD_PROFILE: 'local',
       DSH_CLIENT_COMMIT_HASH: COMMIT_HASH.slice(0, 7),
+      DSH_CLIENT_GIT_DIRTY: 'true',
       DSH_CLIENT_TITLE: 'Local title',
+      DSH_CLIENT_VERSION: '1.2.3',
       DSH_CLIENT_EXTRA: 'local-extra',
     }
 
@@ -96,22 +114,106 @@ describe('client build environment', () => {
       DSH_CLIENT_BUILD_PROFILE: 'official',
       DSH_CLIENT_COMMIT_HASH: COMMIT_HASH.slice(0, 7),
       DSH_CLIENT_TITLE: 'DeepSeek Harness',
+      DSH_CLIENT_VERSION: '1.2.3',
     })
     expect(() => {
       resolveClientBuildEnvironment({ DSH_BUILD_CLIENT_PROFILE: 'official' })
     }).toThrow(/DSH_CLIENT_COMMIT_HASH/)
+    expect(() => {
+      resolveClientBuildEnvironment({
+        DSH_BUILD_CLIENT_PROFILE: 'official',
+        DSH_CLIENT_COMMIT_HASH: COMMIT_HASH.slice(0, 7),
+      })
+    }).toThrow(/DSH_CLIENT_VERSION/)
     expect(() => { resolveClientBuildEnvironment({}, 'unknown') }).toThrow(/unknown client build profile/)
     expect(clientBuildProcessEnvironment(parent, {
       DSH_CLIENT_BUILD_PROFILE: 'official',
       DSH_CLIENT_COMMIT_HASH: COMMIT_HASH.slice(0, 7),
       DSH_CLIENT_TITLE: 'DeepSeek Harness',
+      DSH_CLIENT_VERSION: '1.2.3',
     })).toEqual({
       PATH: '/bin',
       DSH_CLIENT_BUILD_PROFILE: 'official',
       DSH_CLIENT_COMMIT_HASH: COMMIT_HASH.slice(0, 7),
       DSH_CLIENT_TITLE: 'DeepSeek Harness',
+      DSH_CLIENT_VERSION: '1.2.3',
     })
     expect(repositoryCommitHash('/unused', { DSH_CLIENT_COMMIT_HASH: COMMIT_HASH })).toBe(COMMIT_HASH.slice(0, 7))
+  })
+
+  it('owns repository version, commit, and dirty metadata for complete builds', () => {
+    const fixtureRoot = repositoryFixture()
+    const commit = git(fixtureRoot, ['rev-parse', '--short=7', 'HEAD'])
+
+    expect(repositoryVersion(fixtureRoot)).toBe('1.2.3-rc.4')
+    expect(repositoryGitDirty(fixtureRoot)).toBe(false)
+    expect(repositoryClientBuildEnvironment(fixtureRoot, {
+      DSH_CLIENT_COMMIT_HASH: COMMIT_HASH,
+      DSH_CLIENT_EXTRA: 'preserved',
+      DSH_CLIENT_GIT_DIRTY: 'true',
+      DSH_CLIENT_VERSION: 'spoofed',
+    })).toEqual({
+      DSH_CLIENT_COMMIT_HASH: COMMIT_HASH.slice(0, 7),
+      DSH_CLIENT_EXTRA: 'preserved',
+      DSH_CLIENT_VERSION: '1.2.3-rc.4',
+    })
+    expect(officialClientBuildEnvironment(fixtureRoot)).toEqual({
+      DSH_CLIENT_BUILD_PROFILE: 'official',
+      DSH_CLIENT_COMMIT_HASH: commit,
+      DSH_CLIENT_TITLE: 'DeepSeek Harness',
+      DSH_CLIENT_VERSION: '1.2.3-rc.4',
+    })
+
+    write(join(fixtureRoot, '.gitignore'), 'ignored.txt\n')
+    git(fixtureRoot, ['add', '.gitignore'])
+    git(fixtureRoot, ['commit', '-m', 'ignore fixture'])
+    write(join(fixtureRoot, 'ignored.txt'), 'ignored\n')
+    expect(repositoryGitDirty(fixtureRoot)).toBe(false)
+    rmSync(join(fixtureRoot, 'ignored.txt'))
+
+    write(join(fixtureRoot, 'tracked.txt'), 'unstaged\n')
+    expect(repositoryGitDirty(fixtureRoot)).toBe(true)
+    write(join(fixtureRoot, 'tracked.txt'), 'committed\n')
+    expect(repositoryGitDirty(fixtureRoot)).toBe(false)
+
+    write(join(fixtureRoot, 'tracked.txt'), 'staged\n')
+    git(fixtureRoot, ['add', 'tracked.txt'])
+    expect(repositoryGitDirty(fixtureRoot)).toBe(true)
+    git(fixtureRoot, ['commit', '-m', 'staged fixture'])
+    expect(repositoryGitDirty(fixtureRoot)).toBe(false)
+
+    write(join(fixtureRoot, 'untracked.txt'), 'untracked\n')
+    expect(repositoryGitDirty(fixtureRoot)).toBe(true)
+    expect(repositoryClientBuildEnvironment(fixtureRoot, {
+      DSH_CLIENT_COMMIT_HASH: COMMIT_HASH,
+    })).toEqual({
+      DSH_CLIENT_COMMIT_HASH: COMMIT_HASH.slice(0, 7),
+      DSH_CLIENT_GIT_DIRTY: 'true',
+      DSH_CLIENT_VERSION: '1.2.3-rc.4',
+    })
+
+    rmSync(join(fixtureRoot, 'untracked.txt'))
+    const submoduleSource = repositoryFixture('9.8.7')
+    git(fixtureRoot, ['-c', 'protocol.file.allow=always', 'submodule', 'add', submoduleSource, 'submodule'])
+    git(fixtureRoot, ['commit', '-am', 'submodule fixture'])
+    expect(repositoryGitDirty(fixtureRoot)).toBe(false)
+    write(join(fixtureRoot, 'submodule/tracked.txt'), 'modified submodule\n')
+    expect(repositoryGitDirty(fixtureRoot)).toBe(true)
+  })
+
+  it('omits dirty metadata when repository metadata is unavailable', () => {
+    const fixtureRoot = mkdtempSync(join(tmpdir(), 'dsh-client-build-no-git-'))
+    roots.push(fixtureRoot)
+    write(join(fixtureRoot, 'package.json'), '{"version":"2.0.0"}\n')
+
+    expect(repositoryGitDirty(fixtureRoot)).toBeUndefined()
+    expect(repositoryClientBuildEnvironment(fixtureRoot, {
+      DSH_CLIENT_COMMIT_HASH: COMMIT_HASH,
+      DSH_CLIENT_GIT_DIRTY: 'true',
+    })).toEqual({
+      DSH_CLIENT_COMMIT_HASH: COMMIT_HASH.slice(0, 7),
+      DSH_CLIENT_VERSION: '2.0.0',
+    })
   })
 
   it('defines only public client values over a non-enumerable fallback', () => {
@@ -163,6 +265,7 @@ describe('client build environment', () => {
       DSH_CLIENT_BUILD_PROFILE: 'official',
       DSH_CLIENT_COMMIT_HASH: COMMIT_HASH.slice(0, 7),
       DSH_CLIENT_TITLE: 'DeepSeek Harness',
+      DSH_CLIENT_VERSION: '1.2.3',
     }
     const official = buildFixture(officialEnvironment)
     const defaultBuild = buildFixture({})
@@ -173,72 +276,6 @@ describe('client build environment', () => {
 
     write(join(official, 'apps/web/dist/index.html'), '<main>changed</main>')
     expect(() => { readClientBuildRecord(official) }).toThrow(/artifacts differ/)
-  })
-
-  it('rejects dynamic client maps that expose emitted tsc JavaScript as browser sources', () => {
-    const fixtureRoot = buildFixture({})
-    const mapPath = join(fixtureRoot, 'packages/client/example/lib/client.cjs.map')
-    write(mapPath, JSON.stringify({
-      version: 3,
-      sources: ['types/client/index.js'],
-      sourcesContent: ['export {}\n'],
-    }))
-
-    expect(collectDynamicClientSourceMapViolations(fixtureRoot)).toEqual([
-      'packages/client/example/lib/client.cjs.map: types/client/index.js',
-    ])
-    expect(() => { writeClientBuildRecord(fixtureRoot, {}) }).toThrow(/dynamic client source maps are invalid/)
-  })
-
-  it('rejects repository TypeScript sources outside the public packages or vendor trees', () => {
-    const fixtureRoot = buildFixture({})
-    const mapPath = join(fixtureRoot, 'packages/client/example/lib/client.cjs.map')
-    write(mapPath, JSON.stringify({
-      version: 3,
-      sources: ['../../../src/client/index.ts'],
-      sourcesContent: ['export {}\n'],
-    }))
-
-    expect(collectDynamicClientSourceMapViolations(fixtureRoot)).toEqual([
-      'packages/client/example/lib/client.cjs.map: ../../../src/client/index.ts',
-    ])
-  })
-
-  it('rejects ordinary workspace library JavaScript and permits generated Remote contributions', () => {
-    const fixtureRoot = buildFixture({})
-    const mapPath = join(fixtureRoot, 'packages/client/example/lib/client.cjs.map')
-    write(mapPath, JSON.stringify({
-      version: 3,
-      sources: [
-        '../../../packages/util/request-trust/lib/index.js',
-        '../../../packages/goal/goal/lib/typert.remote-client.js',
-      ],
-      sourcesContent: ['export {}\n', 'export {}\n'],
-    }))
-
-    expect(collectDynamicClientSourceMapViolations(fixtureRoot)).toEqual([
-      'packages/client/example/lib/client.cjs.map: ../../../packages/util/request-trust/lib/index.js',
-    ])
-  })
-
-  it('requires every declared dynamic client pair and aligned embedded sources', () => {
-    const fixtureRoot = buildFixture({})
-    const packageRoot = join(fixtureRoot, 'packages/client/example')
-    write(join(packageRoot, 'lib/client.cjs.map'), JSON.stringify({
-      version: 3,
-      sources: ['../../../packages/client/example/src/client/index.ts'],
-      sourcesContent: [],
-    }))
-    expect(collectDynamicClientSourceMapViolations(fixtureRoot)).toEqual([
-      'packages/client/example/lib/client.cjs.map: sourcesContent must contain one string per source',
-    ])
-
-    rmSync(join(packageRoot, 'lib/client.cjs'))
-    rmSync(join(packageRoot, 'lib/client.cjs.map'))
-    expect(collectDynamicClientSourceMapViolations(fixtureRoot)).toEqual([
-      'packages/client/example/lib/client.cjs.map: missing',
-      'packages/client/example/lib/client.cjs: missing',
-    ])
   })
 
   it('keeps public client values out of workflow-wide environments', () => {

@@ -1,6 +1,6 @@
 /**
  * Phone plugin, browser half: registers the 「手机」 tab type through the
- * `ctx.betterSidebar` service and the top-level 「手机设备」 settings
+ * official right-Sidebar registry and the top-level 「手机设备」 settings
  * section. The tab type hosts one always-reachable 「手机」 instance whose
  * body splits on `meta`: the locked not-connected empty state, or the
  * connected view of the device occupying the tab. Device opens switch that
@@ -8,14 +8,15 @@
  * same-origin channel. With `enabled: false` (the default) device switches
  * are refused and no stream session is ever minted.
  */
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type { DeviceId } from '@deepseek-ai/dsh-phone-runtime'
 import z from '@deepseek-ai/schemastery'
 import type { ReactNode } from 'react'
+import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import { PhoneConnectedView } from './PhoneConnectedView.tsx'
-import { PhoneTabIcon } from './phone-icon.tsx'
 import { PhoneTab } from './PhoneTab.tsx'
 import { PhoneSettingsSection } from './PhoneSettingsSection.tsx'
 import { PhoneSettingsCardController } from './phone-settings-controller.ts'
@@ -29,8 +30,9 @@ import {
   selectPhoneDeviceFromOverlay, waitForPhoneGate,
 } from './desktop-device-open.ts'
 import {
-  installPhoneTab, openPhoneDevicePanel, phoneDeviceTabMetaOf, relabelOpenPhoneTab,
-  type PhoneTabBodyProps, type PhoneTabEnvironment, type PhoneTabOpenFace, type PhoneTabView,
+  buildOfficialPhoneDefinition, openPhoneDevicePanel, PHONE_DEFINITION_ID, PHONE_TAB_ID,
+  PhoneOccurrenceRuntime, phoneDeviceTabMetaOf,
+  type PhoneGateSource, type PhoneListingSource,
 } from './registry.ts'
 import { en, NS, zh, type PhoneSettingsKey } from './locales.ts'
 import { PHONE_SETTINGS_NAMESPACE } from '../phone-settings.ts'
@@ -44,7 +46,9 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 }
 
 /** Services required before activation. */
-export const inject = ['betterSidebar', 'slots', 'locale', 'settingsScope'] as const
+export const inject = [
+  'slots', 'locale', 'settingsScope', 'sidebarRight', 'sidebarRightTabs',
+] as const
 
 function enabledValue(settings: PhoneSettings | undefined): boolean | undefined {
   return settings?.enabled
@@ -79,30 +83,50 @@ export const Config: z<Config> = z.object({
  * @param env - the registration environment the descriptor assembled.
  * @returns the body of this tab instance.
  */
-function renderPhoneTabBody(props: PhoneTabBodyProps, env: PhoneTabEnvironment): ReactNode {
-  const device = phoneDeviceTabMetaOf(props.tab.meta)
+interface OfficialPhoneBodyInjected {
+  readonly gate: PhoneGateSource
+  readonly source: PhoneListingSource
+  readonly runtime: PhoneOccurrenceRuntime
+  readonly createController: (serial: DeviceId) => PhoneConnectionController
+  readonly title: () => string
+  readonly occupiedTitle: (name: string) => string
+}
+
+type OfficialPhoneBodyProps = PropsRuntime<'sidebar.right.pane.tab'>
+  & PropsLocale<'settings.phone-devices'>
+  & OfficialPhoneBodyInjected
+
+export function OfficialPhoneBody({
+  t, useTabInfo, gate, source, runtime, createController, title, occupiedTitle,
+}: OfficialPhoneBodyProps): ReactNode {
+  const { tab } = useTabInfo()
+  const device = phoneDeviceTabMetaOf(tab.payload)
   const onOpenDevice = (serial: DeviceId, name: string): void => {
-    env.switchDevice(props.tab.id, serial, name)
+    tab.actions.update({ title: occupiedTitle(name), payload: { kind: 'device', serial, name } })
   }
   if (device === undefined) {
-    return <PhoneTab gate={env.gate} source={env.source} onOpenDevice={onOpenDevice} />
+    return <PhoneTab t={t} gate={gate} source={source} onOpenDevice={onOpenDevice} />
   }
+  const controller = runtime.controllerFor(tab.sessionId, tab.id)
   return (
     <PhoneConnectedView
+      t={t}
       serial={device.serial}
       name={device.name}
-      visible={props.visible}
-      source={env.source}
+      visible={tab.visible}
+      source={source}
       onOpenDevice={onOpenDevice}
-      onShowPicker={() => { env.showPicker(props.tab.id) }}
-      createController={env.createController}
+      onShowPicker={() => { tab.actions.update({ title: title(), payload: {} }) }}
+      createController={createController}
+      {...controller === undefined ? {} : { controller }}
+      manageController={false}
     />
   )
 }
 
 /**
  * Client plugin body.
- * @param ctx - client context carrying the betterSidebar and settings services.
+ * @param ctx - client context carrying the official Sidebar and settings services.
  * @param config - validated {@link Config} (schema defaults applied).
  */
 export function apply(ctx: ClientContext, config: Config): void {
@@ -118,8 +142,17 @@ export function apply(ctx: ClientContext, config: Config): void {
     if (snapshot.status === 'ready') return enabledValue(snapshot.value) ?? compositionEnabled
     return compositionEnabled
   }
-  const sidebar = ctx.get('betterSidebar') as PhoneTabOpenFace
-  ctx.on('locale/change', () => { relabelOpenPhoneTab(sidebar, title, occupiedTitle) })
+  ctx.on('locale/change', () => {
+    for (const session of ctx.sidebarRight.getSnapshot().sessions) {
+      for (const tab of session.tabs) {
+        if (tab.record.kind !== PHONE_TAB_ID) continue
+        const device = phoneDeviceTabMetaOf(tab.state.payload)
+        ctx.sidebarRight.forSession(session.sessionId).update(tab.record.id, {
+          title: device === undefined ? title() : occupiedTitle(device.name),
+        })
+      }
+    }
+  })
   let selectionEpoch = 0
   let activeSelection: AbortController | undefined
   ctx.effect(() => () => {
@@ -140,7 +173,7 @@ export function apply(ctx: ClientContext, config: Config): void {
       const devices = [...fresh.android, ...fresh.ios]
       const device = devices.find(candidate => candidate.id === deviceId && candidate.online)
       if (device === undefined) return
-      openPhoneDevicePanel(sidebar, () => true, device.id, device.name, occupiedTitle)
+      await openPhoneDevicePanel(ctx.sidebarRight, () => true, device.id, device.name, occupiedTitle)
     } catch (error) {
       if (!selection.signal.aborted) throw error
     } finally {
@@ -161,36 +194,50 @@ export function apply(ctx: ClientContext, config: Config): void {
       if (deviceId !== undefined) runSettingsDeviceOpen(openListedDevice(deviceId))
     }), 'ui-phone: Desktop settings device open')
   }
-  const runtime = createHttpPhoneRuntimeSource()
+  const environmentRuntime = createHttpPhoneRuntimeSource()
   const card = new PhoneSettingsCardController(
     scope,
     createListingPhoneEnvironmentSource(listing, {
-      runtimeReady: () => runtime.getSnapshot().runtime.kind === 'ready',
+      runtimeReady: () => environmentRuntime.getSnapshot().runtime.kind === 'ready',
     }),
     globalThis.navigator.clipboard,
-    runtime,
+    environmentRuntime,
     openFromSettings,
   )
   ctx.effect(() => () => { card.dispose() }, 'ui-phone: settings section')
   // The body reads the gate reactively: scope invalidation (the enable
   // switch toggling) re-renders the gate strip on the same tick.
   const gate = { snapshot: tabEnabled, subscribe: (listener: () => void) => scope.subscribe(listener) }
-  const view: PhoneTabView = {
-    icon: size => <PhoneTabIcon size={size} />,
-    component: renderPhoneTabBody,
-  }
-  installPhoneTab(ctx, {
-    source: listing,
-    view,
-    isEnabled: tabEnabled,
-    gate,
-    title,
-    occupiedTitle,
-    createController: serial => new PhoneConnectionController({
-      gateway: createHttpPhoneGateway(),
-      deviceId: serial,
-    }),
+  const createController = (serial: DeviceId): PhoneConnectionController => new PhoneConnectionController({
+    gateway: createHttpPhoneGateway(),
+    deviceId: serial,
   })
+  const occurrenceRuntime = new PhoneOccurrenceRuntime(ctx, createController)
+  ctx.effect(() => {
+    const sync = (): void => { occurrenceRuntime.sync() }
+    const disposers = [
+      ctx.sidebarRightTabs.register(buildOfficialPhoneDefinition({
+        source: listing,
+        title,
+        occupiedTitle,
+        guideDescription: () => t('guide'),
+      })),
+      ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
+        name: 'sidebar.right.pane.tab',
+        key: PHONE_DEFINITION_ID,
+        locale: NS,
+        inject: () => ({
+          gate, source: listing, runtime: occurrenceRuntime, createController, title, occupiedTitle,
+        }),
+      }, OfficialPhoneBody)),
+      ctx.sidebarRight.subscribe(sync),
+    ]
+    sync()
+    return () => {
+      occurrenceRuntime.dispose()
+      for (let index = disposers.length - 1; index >= 0; index -= 1) disposers[index]?.()
+    }
+  }, 'ui-phone: official Phone occurrence')
 
   ctx.slots.inject('settings.section', () => ctx.slots.register({
     name: 'settings.section',

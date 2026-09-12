@@ -1,422 +1,118 @@
-/** Host apply writes the snapshot prefs patch; the client half binds official pages. */
-import { Context, FiberState, Service } from '@deepseek-ai/cordis'
-import { describe, expect, it, vi } from 'vitest'
-import InvariantRegistry from '@deepseek-ai/dsh-invariants'
-import { settingsNamespace } from '@deepseek-ai/dsh-settings'
-import { apply, inject, name } from '../src/index.ts'
-import { apply as applyClient, inject as clientInject } from '../src/client/index.ts'
-import * as WorkbenchInvariant from '../src/invariant.ts'
-import { SNAPSHOT_PREFS_NS } from '../src/snapshot-browser.ts'
+import { Context } from '@deepseek-ai/cordis'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
+import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
+import type { SidebarRightTabDefinition } from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
+import { apply, inject } from '../src/client/index.ts'
 
-const NS = settingsNamespace(SNAPSHOT_PREFS_NS)
-const TARGET = { profileId: 'p', workspaceId: 'w', browserId: 'b', tabId: 't' }
+const contexts: Context[] = []
 
-class SettingsService extends Service {
-  readonly values = new Map<string, Record<string, unknown>>()
-  readonly updates: object[] = []
-
-  constructor(ctx: Context) {
-    super(ctx, 'settings')
-  }
-
-  get(ns: string): unknown {
-    return this.values.get(ns)
-  }
-
-  async update(ns: string, patch: object): Promise<void> {
-    this.updates.push(patch)
-    const current = this.values.get(ns) ?? {}
-    this.values.set(ns, { ...current, ...patch })
-  }
-}
-
-class SnapshotDependency extends Service {
-  constructor(ctx: Context) {
-    super(ctx, 'snapshotDependency')
-  }
-}
-
-describe('ui-workbench host apply', () => {
-  it('declares settings and the workbench plugin name', () => {
-    expect(name).toBe('ui-workbench')
-    expect(inject).toEqual(['settings'])
-  })
-
-  it('writes the official-browser enable patch onto the snapshot namespace', async () => {
-    const ctx = new Context()
-    const settings = new SettingsService(ctx)
-    settings.values.set(NS, { tabsEnabled: { editor: true, browser: false }, browserInterceptLinks: false })
-    await apply(ctx)
-    expect(settings.updates).toEqual([{
-      tabsEnabled: { editor: true, browser: true },
-      browserInterceptLinks: true,
-      browserInterceptHttps: true,
-    }])
-  })
-
-  it('does not write when the snapshot already has the product state', async () => {
-    const ctx = new Context()
-    const settings = new SettingsService(ctx)
-    settings.values.set(NS, { tabsEnabled: { git: true }, browserInterceptLinks: true, browserInterceptHttps: true })
-    await apply(ctx)
-    expect(settings.updates).toEqual([])
-  })
-
-  it('fails loud when the snapshot namespace is missing', async () => {
-    const ctx = new Context()
-    new SettingsService(ctx)
-    await expect(apply(ctx)).rejects.toThrow(/dsh-better-sidebar settings namespace is not registered/)
-  })
-
-  it('fails loud when the loader has no snapshot row', async () => {
-    const ctx = new Context()
-    new SettingsService(ctx)
-    ctx.provide('loader', { entries: () => [{ options: { id: 'ui-browser' } }] })
-    await expect(apply(ctx)).rejects.toThrow(/dsh-better-sidebar settings namespace is not registered/)
-  })
-
-  it('fails loud when the snapshot row disappears before it registers', async () => {
-    const ctx = new Context()
-    new SettingsService(ctx)
-    const entries: { options: { id: string } }[] = [{ options: { id: 'ui-better-sidebar' } }]
-    ctx.provide('loader', { entries: () => entries })
-    queueMicrotask(() => {
-      entries.splice(0, entries.length)
-      ctx.emit('loader/partial-dispose', {} as never, {} as never, false)
-    })
-    await expect(apply(ctx)).rejects.toThrow(/dsh-better-sidebar settings namespace is not registered/)
-  })
-
-  it('joins the snapshot fiber before writing the product patch', async () => {
-    const ctx = new Context()
-    const settings = new SettingsService(ctx)
-    ctx.provide('loader', {
-      entries: () => [{
-        options: { id: 'ui-better-sidebar', name: '@deepseek-ai/dsh-client-ui-better-sidebar' },
-        fiber: {
-          async await() {
-            settings.values.set(NS, { tabsEnabled: { editor: true } })
-          },
-        },
-      }],
-    })
-    await apply(ctx)
-    expect(settings.updates).toEqual([{
-      tabsEnabled: { editor: true, browser: true },
-      browserInterceptLinks: true,
-      browserInterceptHttps: true,
-    }])
-  })
-
-  it('recognizes the snapshot by package name when the entry id differs', async () => {
-    const ctx = new Context()
-    const settings = new SettingsService(ctx)
-    ctx.provide('loader', {
-      entries: () => [{
-        options: { id: 'web-ui-better-sidebar', name: '@deepseek-ai/dsh-client-ui-better-sidebar' },
-        fiber: {
-          async await() {
-            settings.values.set(NS, {})
-          },
-        },
-      }],
-    })
-    await apply(ctx)
-    expect(settings.updates).toEqual([{
-      tabsEnabled: { browser: true },
-      browserInterceptLinks: true,
-      browserInterceptHttps: true,
-    }])
-  })
-
-  it('waits for a pending snapshot fiber to register its namespace', async () => {
-    const ctx = new Context()
-    const settings = new SettingsService(ctx)
-    const entry: {
-      options: { id: string }
-      fiber?: { await(): Promise<unknown> }
-    } = {
-      options: { id: 'ui-better-sidebar' },
-    }
-    ctx.provide('loader', { entries: () => [entry] })
-    entry.fiber = ctx.plugin({
-      inject: ['snapshotDependency'],
-      apply() {
-        settings.values.set(NS, { tabsEnabled: { git: true } })
-      },
-    })
-    const workbench = ctx.plugin({ inject, apply })
-    setImmediate(() => {
-      new SnapshotDependency(ctx)
-    })
-    await workbench.await()
-    expect(settings.updates).toEqual([{
-      tabsEnabled: { git: true, browser: true },
-      browserInterceptLinks: true,
-      browserInterceptHttps: true,
-    }])
-  })
-
-  it('does not patch after disposal while the snapshot is pending', async () => {
-    const ctx = new Context()
-    const settings = new SettingsService(ctx)
-    const inspected = Promise.withResolvers<undefined>()
-    const entry: {
-      options: { id: string }
-      fiber?: { await(): Promise<unknown> }
-    } = {
-      options: { id: 'ui-better-sidebar' },
-    }
-    ctx.provide('loader', {
-      entries: () => {
-        inspected.resolve(undefined)
-        return [entry]
-      },
-    })
-    entry.fiber = ctx.plugin({
-      inject: ['snapshotDependency'],
-      apply() {
-        settings.values.set(NS, { tabsEnabled: { git: true } })
-      },
-    })
-    const workbench = ctx.plugin({ inject, apply })
-    await inspected.promise
-    await workbench.dispose()
-    new SnapshotDependency(ctx)
-    await entry.fiber.await()
-    expect(settings.updates).toEqual([])
-  })
-
-  it('does not patch or reject when a lifecycle event races disposal', async () => {
-    const ctx = new Context()
-    const settings = new SettingsService(ctx)
-    const entry = { options: { id: 'ui-better-sidebar' } }
-    let reads = 0
-    let disposal!: Promise<void>
-    ctx.provide('loader', {
-      entries: () => {
-        reads += 1
-        if (reads === 3) {
-          ctx.emit('internal/status', ctx.fiber, FiberState.ACTIVE)
-          disposal = workbench.dispose()
-        }
-        return [entry]
-      },
-    })
-    const workbench = ctx.plugin({ inject, apply })
-    await expect(workbench.await()).resolves.toBeDefined()
-    await expect(disposal).resolves.toBeUndefined()
-    expect(settings.updates).toEqual([])
-  })
-
-  it('propagates a failed snapshot row', async () => {
-    const ctx = new Context()
-    new SettingsService(ctx)
-    const entries: Array<{
-      options: { id: string }
-      fiber?: { state?: FiberState; await(): Promise<unknown> }
-    }> = [{
-      options: { id: 'ui-better-sidebar' },
-      fiber: {
-        state: FiberState.FAILED,
-        async await() {
-          throw new Error('snapshot row failed')
-        },
-      },
-    }]
-    ctx.provide('loader', { entries: () => entries })
-    await expect(ctx.plugin({ inject, apply }).await()).rejects.toThrow(/snapshot row failed/)
-  })
-
-  it('ignores an unrelated failed loader row while the snapshot registers', async () => {
-    const ctx = new Context()
-    const settings = new SettingsService(ctx)
-    const unrelated = {
-      state: FiberState.FAILED,
-      async await() {
-        throw new Error('unrelated loader row failed')
-      },
-    }
-    const entries = [
-      { options: { id: 'ui-better-sidebar' } },
-      { options: { id: 'unrelated-plugin' }, fiber: unrelated },
-    ]
-    ctx.provide('loader', { entries: () => entries })
-    const workbench = ctx.plugin({ inject, apply })
-    setImmediate(() => {
-      settings.values.set(NS, { tabsEnabled: { git: true } })
-      ctx.emit('internal/status', unrelated as never, FiberState.LOADING)
-    })
-    await workbench.await()
-    expect(settings.updates).toEqual([{
-      tabsEnabled: { git: true, browser: true },
-      browserInterceptLinks: true,
-      browserInterceptHttps: true,
-    }])
-  })
-
-  it('waits for the snapshot fiber to be created without polling', async () => {
-    const ctx = new Context()
-    const settings = new SettingsService(ctx)
-    const entry: {
-      options: { id: string }
-      fiber?: { await(): Promise<unknown> }
-    } = {
-      options: { id: 'ui-better-sidebar' },
-    }
-    ctx.provide('loader', { entries: () => [entry] })
-    const workbench = ctx.plugin({ inject, apply })
-    queueMicrotask(() => {
-      settings.values.set(NS, { tabsEnabled: { git: true } })
-      entry.fiber = ctx.plugin({ apply() {} })
-    })
-    await workbench.await()
-    expect(settings.updates).toEqual([{
-      tabsEnabled: { git: true, browser: true },
-      browserInterceptLinks: true,
-      browserInterceptHttps: true,
-    }])
-  })
-
-  it('patches a namespace that registers before the lifecycle observer settles', async () => {
-    const ctx = new Context()
-    const settings = new SettingsService(ctx)
-    const entry = { options: { id: 'ui-better-sidebar' } }
-    let reads = 0
-    ctx.provide('loader', {
-      entries: () => {
-        reads += 1
-        if (reads === 3) settings.values.set(NS, { tabsEnabled: { git: true } })
-        return [entry]
-      },
-    })
-    await ctx.plugin({ inject, apply }).await()
-    expect(settings.updates).toEqual([{
-      tabsEnabled: { git: true, browser: true },
-      browserInterceptLinks: true,
-      browserInterceptHttps: true,
-    }])
-  })
+afterEach(async () => {
+  await Promise.all(contexts.splice(0).map(ctx => ctx.fiber.dispose()))
 })
+
+const PAGE = {
+  status: 'open' as const,
+  target: { profileId: 'p', workspaceId: 'w', browserId: 'b', tabId: 't' },
+  revision: 1,
+  title: 'Created',
+  url: 'https://example.test/',
+  text: '', focused: true,
+  chrome: { kind: 'shared' as const, partition: 'persist:shared' },
+  storage: { cookies: '', localStorage: '', indexedDb: '', cache: '', serviceWorker: '' },
+}
+
+async function base() {
+  const ctx = new Context()
+  contexts.push(ctx)
+  await ctx.plugin(SlotRegistry).await()
+  ctx.provide('locale', new LocaleRuntime(ctx))
+  const tab = {
+    sessionId: 's1', surface: 'right', paneId: 'pane', floating: false, active: true, visible: true,
+    record: { id: 'browser:1', kind: 'browser', contentId: 'sidebar://browser/browser:1', title: 'Browser' },
+    state: { payload: {} },
+  }
+  const sidebarListeners = new Set<() => void>()
+  const sessionListeners = new Set<() => void>()
+  const update = vi.fn((_tabId: string, patch: { payload?: unknown; title?: string }) => {
+    if (Object.hasOwn(patch, 'payload')) tab.state.payload = patch.payload ?? {}
+    if (patch.title !== undefined) tab.record.title = patch.title
+    for (const listener of [...sidebarListeners]) listener()
+  })
+  const openTab = vi.fn(async () => 'browser:1')
+  ctx.provide('sidebarRight', {
+    getSnapshot: () => ({ mountedSessionId: 's1', pinned: [], sessions: [{ sessionId: 's1', tabs: [tab] }] }),
+    subscribe: (listener: () => void) => {
+      sidebarListeners.add(listener)
+      return () => { sidebarListeners.delete(listener) }
+    },
+    forSession: () => ({ update, openTab }),
+  })
+  const register = vi.fn((_definition: SidebarRightTabDefinition) => () => {})
+  ctx.provide('sidebarRightTabs', { register })
+  ctx.provide('sidebarRightPreferences', { getSnapshot: () => ({ preferences: {} }), subscribe: () => () => {} })
+  ctx.provide('sessions', {
+    list: {
+      getSnapshot: () => ({ current: 's1', byId: { s1: { projectionValues: {} } } }),
+      subscribe: (listener: () => void) => {
+        sessionListeners.add(listener)
+        return () => { sessionListeners.delete(listener) }
+      },
+    },
+  })
+  const browserWorkspace = { create: vi.fn(async () => ({ ok: true, value: PAGE })) }
+  ctx.provide('remote', { browserWorkspace })
+  ctx.provide('remote.browserWorkspace', browserWorkspace)
+  ctx.provide('browserUi', {
+    createRequest: () => ({ profile: 'shared' }), renderPageChrome: vi.fn(), recoverListedMutation: vi.fn(),
+  })
+  return { ctx, update, register, openTab, sidebarListeners, sessionListeners }
+}
 
 describe('ui-workbench client apply', () => {
-  it('fails loud when the snapshot client has not published betterSidebar', () => {
-    expect([...clientInject]).toEqual([
-      'betterSidebar', 'sessions', 'remote', 'remote.browserWorkspace', 'settingsScope',
+  it('declares only official Browser dependencies', () => {
+    expect([...inject]).toEqual([
+      'slots', 'sessions', 'remote', 'remote.browserWorkspace', 'browserUi', 'locale',
+      'sidebarRight', 'sidebarRightTabs', 'sidebarRightPreferences',
     ])
-    const ctx = new Context()
-    expect(() => { applyClient(ctx) }).toThrow(/betterSidebar is not published/)
   })
 
-  it('publishes workbenchBrowser and ticks the official-page bridge', async () => {
-    const ctx = new Context()
-    class RemoteService extends Service {
-      constructor() { super(ctx, 'remote') }
-    }
-    new RemoteService()
-    const sidebar = {
-      openTab: vi.fn(),
-      updateTab: vi.fn(),
-      closeTab: vi.fn(),
-      activateTab: vi.fn(),
-      setPanelOpen: vi.fn(),
-      getSnapshot: () => ({
-        sessionId: 's1',
-        state: {
-          panelOpen: false,
-          splits: { kind: 'leaf' as const, tabs: [{ id: 'browser:1', type: 'browser' }] },
-        },
-      }),
-      subscribeState: (listener: () => void) => {
-        listener()
-        return () => {}
-      },
-    }
-    ctx.provide('betterSidebar', sidebar)
-    ctx.provide('remote.browserWorkspace', {
-      create: async () => ({
-        ok: true as const,
-        value: {
-          status: 'open',
-          target: { profileId: 'p', workspaceId: 'w', browserId: 'b', tabId: 't' },
-          title: 'Created',
-        },
-      }),
-    })
-    ctx.provide('sessions', {
-      list: {
-        getSnapshot: () => ({ byId: { s1: { projectionValues: {} } } }),
-        subscribe: (listener: () => void) => {
-          listener()
-          return () => {}
-        },
-      },
-    })
-    ctx.provide('settingsScope', {
-      bind: () => ({
-        getSnapshot: () => ({ value: { defaultKind: 'shared', defaultPersistentName: '', namedProfiles: [] } }),
-      }),
-    })
-    await ctx.plugin({ inject: [...clientInject], apply: applyClient }).await()
-    await Promise.resolve()
-    expect(sidebar.updateTab).toHaveBeenCalled()
-    const face = ctx.get('workbenchBrowser') as {
-      reveal: (id: string) => void
-      renderTab: (props: { ctx: Context; tab: { id: string }; scope: { sessionId: string } }) => unknown
-      createRequest: () => { profile: string }
-      ensureOfficial: (tabId: string) => void
-      recoverOfficial: (tabId: string, target: typeof TARGET) => Promise<unknown>
-    }
-    expect(typeof face.reveal).toBe('function')
-    expect(typeof face.renderTab).toBe('function')
-    expect(typeof face.createRequest).toBe('function')
-    expect(typeof face.ensureOfficial).toBe('function')
-    expect(typeof face.recoverOfficial).toBe('function')
-    face.reveal('s1')
-    expect(sidebar.setPanelOpen).toHaveBeenCalledWith(true)
-    expect(face.renderTab({ ctx, tab: { id: 'browser:1' }, scope: { sessionId: 's1' } })).toBeTruthy()
-    expect(face.createRequest()).toEqual({ profile: 'shared' })
-    face.ensureOfficial('browser:1')
-    await expect(face.recoverOfficial('browser:1', TARGET)).resolves.toBeUndefined()
+  it('registers the official implementation and binds an empty occurrence', async () => {
+    const { ctx, update, register } = await base()
+    await ctx.plugin({ inject: [...inject], apply }).await()
+    await vi.waitFor(() => { expect(update).toHaveBeenCalled() })
+    const definition = register.mock.calls[0]?.[0]
+    expect(definition).toMatchObject({ kind: 'browser', priority: 'extension', order: 50, icon: 'browser' })
+    expect(typeof definition?.guide?.[0]?.description).toBe('function')
+    expect(typeof ctx.get('workbenchBrowser')?.reveal).toBe('function')
+    expect(update).toHaveBeenCalledTimes(1)
   })
 
-  it('subscribes only to the session list when subscribeState is absent', async () => {
-    const ctx = new Context()
-    class RemoteService extends Service {
-      constructor() { super(ctx, 'remote') }
-    }
-    new RemoteService()
-    ctx.provide('betterSidebar', {
-      openTab: vi.fn(),
-      updateTab: vi.fn(),
-      closeTab: vi.fn(),
-      activateTab: vi.fn(),
-      setPanelOpen: vi.fn(),
-      getSnapshot: () => ({}),
-    })
-    ctx.provide('remote.browserWorkspace', {})
-    ctx.provide('sessions', {
-      list: {
-        getSnapshot: () => ({ byId: {} }),
-        subscribe: () => () => {},
-      },
-    })
-    ctx.provide('settingsScope', {
-      bind: () => ({ getSnapshot: () => ({ value: undefined }) }),
-    })
-    await expect(ctx.plugin({ inject: [...clientInject], apply: applyClient }).await()).resolves.toBeDefined()
-  })
-})
-
-describe('ui-workbench invariant', () => {
-  it('reserves package ownership under its declared companion name', async () => {
-    const ctx = new Context()
-    await ctx.plugin(InvariantRegistry, { enabled: true })
-    const fiber = ctx.plugin(WorkbenchInvariant)
+  it('disposes both runtime subscriptions after apply', async () => {
+    const { ctx, sidebarListeners, sessionListeners } = await base()
+    const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
-    expect(WorkbenchInvariant.name).toBe('client-ui-workbench-invariant')
-    expect(WorkbenchInvariant.inject).toEqual(['invariants'])
-    expect(() => { (ctx.emit as (event: string) => void)('slots/changed') }).not.toThrow()
+    expect(sidebarListeners.size).toBe(1)
+    expect(sessionListeners.size).toBe(1)
     await fiber.dispose()
+    expect(sidebarListeners.size).toBe(0)
+    expect(sessionListeners.size).toBe(0)
+    expect(ctx.sidebarRight.getSnapshot().sessions).toHaveLength(1)
+  })
+
+  it('reveals the projected page through its Session navigator', async () => {
+    const { ctx, openTab } = await base()
+    const sessions = ctx.sessions.list as { getSnapshot: () => unknown }
+    sessions.getSnapshot = () => ({
+      current: 's1',
+      byId: { s1: { projectionValues: { browserWorkspace: {
+        activeWorkspaceId: 'w', workspaces: [{ workspaceId: 'w', profileId: 'p', activeBrowserId: 'b',
+          browsers: [{ browserId: 'b', activeTabId: 't', tabs: [{ tabId: 't', revision: 1, url: PAGE.url }] }],
+        }],
+      } } } },
+    })
+    await ctx.plugin({ inject: [...inject], apply }).await()
+    ctx.workbenchBrowser.reveal('s1')
+    await vi.waitFor(() => { expect(openTab).toHaveBeenCalled() })
   })
 })

@@ -2,13 +2,13 @@
 import { createElement } from 'react'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { sessionSnapshot } from '@deepseek-ai/dsh-client-test-runtime'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { AttachmentId } from '@deepseek-ai/dsh-attachment'
+import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
+import type { RenderMessageImages } from '../src/client/contract/slots.ts'
 import {
-  EMPTY_CHAT_SNAPSHOT,
-  EMPTY_CONVERSATION_VIEWS,
-  type ConversationSnapshot,
-  type SessionId,
-} from '@deepseek-ai/dsh-client-runtime/client'
-import {
+  ConversationApproval,
   ConversationComposer,
   ConversationNodePresentation,
   conversationPresentationTranslate,
@@ -16,34 +16,137 @@ import {
 
 afterEach(cleanup)
 
-function snapshot(overrides: Partial<ConversationSnapshot> = {}): ConversationSnapshot {
-  return {
-    sessionId: 'presentation-session' as SessionId,
-    views: EMPTY_CONVERSATION_VIEWS,
-    chat: EMPTY_CHAT_SNAPSHOT,
-    nodes: [],
-    turnTimings: new Map(),
-    turnEnds: new Map(),
-    partial: null,
-    runningCalls: [],
-    pending: [],
-    queue: [],
-    running: false,
-    subagent: null,
-    composerPhase: 'active',
-    removed: false,
-    openState: 'open',
-    openError: null,
-    hasMore: false,
-    loadingOlder: false,
-    promptError: null,
-    blank: false,
-    lastAgentError: null,
-    ...overrides,
-  }
-}
+const photo = (id: string, name: string) => ({
+  attachmentId: AttachmentId(id),
+  mediaType: 'image/png' as const,
+  bytes: 12,
+  width: 8,
+  height: 8,
+  name,
+})
 
 describe('public conversation presentation seam', () => {
+  it('settles approval allow-once and reject once, then retries after a visible failure', async () => {
+    const answer = vi.fn<(outcome: 'allowed-once' | 'rejected') => Promise<void>>()
+      .mockRejectedValueOnce(new Error('transport refused'))
+      .mockResolvedValue(undefined)
+    render(createElement(ConversationApproval, {
+      wait: { kind: 'approval', toolName: 'bash', reason: 'run privileged command', answer },
+      snapshot: sessionSnapshot('presentation-session' as SessionId),
+      t: conversationPresentationTranslate('en'),
+    }))
+    expect(screen.getByText('run privileged command')).toBeTruthy()
+    expect(screen.getByText('Waiting for approval')).toBeTruthy()
+    const allow = screen.getByRole('button', { name: 'Allow once' })
+    const reject = screen.getByRole('button', { name: 'Reject' })
+    fireEvent.click(allow)
+    fireEvent.click(allow)
+    fireEvent.click(reject)
+    expect(answer).toHaveBeenCalledTimes(1)
+    expect(answer).toHaveBeenCalledWith('allowed-once')
+    expect((await screen.findByRole('alert')).textContent).toContain('transport refused')
+    fireEvent.click(reject)
+    await waitFor(() => { expect(answer).toHaveBeenCalledTimes(2) })
+    expect(answer).toHaveBeenLastCalledWith('rejected')
+    fireEvent.click(screen.getByRole('button', { name: 'Allow once' }))
+    expect(answer).toHaveBeenCalledTimes(2)
+  })
+
+  it('resets a replaced wait and ignores a late failure from the previous request', async () => {
+    let rejectFirst!: (reason: unknown) => void
+    const first = new Promise<void>((_, reject) => { rejectFirst = reject })
+    const firstAnswer = vi.fn(() => first)
+    const secondAnswer = vi.fn(async () => undefined)
+    const t = conversationPresentationTranslate('en')
+    const view = render(createElement(ConversationApproval, {
+      wait: { kind: 'approval', reason: 'first request', answer: firstAnswer },
+      t,
+    }))
+    const allow = screen.getByRole('button', { name: 'Allow once' })
+    allow.click()
+    allow.click()
+    expect(firstAnswer).toHaveBeenCalledOnce()
+    view.rerender(createElement(ConversationApproval, {
+      wait: { kind: 'approval', reason: 'second request', answer: secondAnswer },
+      t,
+    }))
+    expect(screen.getByText('second request')).toBeTruthy()
+    expect(screen.queryByRole('alert')).toBeNull()
+    rejectFirst(new Error('stale transport'))
+    await Promise.resolve()
+    expect(screen.queryByRole('alert')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Allow once' }))
+    expect(secondAnswer).toHaveBeenCalledOnce()
+  })
+
+  it('ignores settlement after unmount and retries a synchronous answer throw', async () => {
+    let rejectFirst!: (reason: unknown) => void
+    const first = new Promise<void>((_, reject) => { rejectFirst = reject })
+    const firstAnswer = vi.fn(() => first)
+    const t = conversationPresentationTranslate('en')
+    const view = render(createElement(ConversationApproval, {
+      wait: { kind: 'approval', reason: 'unmounted request', answer: firstAnswer },
+      t,
+    }))
+    fireEvent.click(screen.getByRole('button', { name: 'Allow once' }))
+    view.unmount()
+    rejectFirst(new Error('gone'))
+    await Promise.resolve()
+
+    const answer = vi.fn<(outcome: 'allowed-once' | 'rejected') => Promise<void>>()
+      .mockImplementationOnce(() => { throw new Error('sync refused') })
+      .mockResolvedValue(undefined)
+    render(createElement(ConversationApproval, {
+      wait: { kind: 'approval', reason: 'retry request', answer },
+      t,
+    }))
+    fireEvent.click(screen.getByRole('button', { name: 'Allow once' }))
+    expect((await screen.findByRole('alert')).textContent).toContain('sync refused')
+    fireEvent.click(screen.getByRole('button', { name: 'Allow once' }))
+    await waitFor(() => { expect(answer).toHaveBeenCalledTimes(2) })
+  })
+
+  it('does not settle approval while mutation authority is disabled', () => {
+    const answer = vi.fn()
+    render(createElement(ConversationApproval, {
+      wait: { kind: 'approval', toolName: 'bash', answer },
+      t: conversationPresentationTranslate('zh'),
+      disabled: true,
+    }))
+    expect(screen.getByText('工具 bash 请求越权执行')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '允许一次' }))
+    fireEvent.click(screen.getByRole('button', { name: '拒绝' }))
+    expect(answer).not.toHaveBeenCalled()
+  })
+
+  it('hands user image blocks to the authorized renderer in source order', () => {
+    const first = photo('att-first', 'first.png')
+    const second = photo('att-second', 'second.png')
+    const content: ContentBlock[] = [
+      { type: 'image', attachment: first },
+      { type: 'text', text: 'caption' },
+      { type: 'image', attachment: second },
+      { type: 'reasoning', text: 'hidden' },
+    ]
+    const renderMessageImages = vi.fn<RenderMessageImages>(() => null)
+    render(createElement(ConversationNodePresentation, {
+      node: { kind: 'user', seq: 1, time: 1, content, source: content },
+      renderMessageImages,
+      renderTool: vi.fn(),
+      t: conversationPresentationTranslate('en'),
+    }))
+
+    expect(renderMessageImages).toHaveBeenCalledWith({
+      images: [{ attachment: first }, { attachment: second }],
+      align: 'end',
+    })
+    expect(screen.getByText('caption')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: /Unknown surface event: block/ }))
+    expect(screen.getByText(/"type": "reasoning"/)).toBeTruthy()
+    expect(renderMessageImages.mock.calls[0]![0].images[0]).toEqual({ attachment: first })
+    expect(renderMessageImages.mock.calls[0]![0].images[0]).not.toHaveProperty('preview')
+  })
+
   it('renders unknown keyed nodes through the shared localized JSON fallback', () => {
     render(createElement(ConversationNodePresentation, {
       node: {
@@ -61,7 +164,7 @@ describe('public conversation presentation seam', () => {
   it('submits and retains rejected text through the narrow shared InputBar contract', async () => {
     const onSubmit = vi.fn(async () => { throw new Error('Desktop refused') })
     render(createElement(ConversationComposer, {
-      snapshot: snapshot(),
+      snapshot: sessionSnapshot('presentation-session' as SessionId),
       onSubmit,
       t: conversationPresentationTranslate('en'),
     }))
@@ -70,14 +173,13 @@ describe('public conversation presentation seam', () => {
     fireEvent.keyDown(input, { key: 'Enter' })
     await waitFor(() => { expect(onSubmit).toHaveBeenCalledWith('submit me') })
     expect((input as HTMLTextAreaElement).value).toBe('submit me')
-    expect(document.querySelector('[data-input-backdrop]')?.textContent).toContain('submit me')
     expect((await screen.findByRole('alert')).textContent).toContain('Desktop refused')
   })
 
   it('settles a synchronous transport refusal and re-enables the retained draft', async () => {
     const onSubmit = vi.fn(() => { throw new Error('mutation channel unavailable') })
     render(createElement(ConversationComposer, {
-      snapshot: snapshot(),
+      snapshot: sessionSnapshot('presentation-session' as SessionId),
       onSubmit,
       t: conversationPresentationTranslate('en'),
     }))
@@ -92,7 +194,7 @@ describe('public conversation presentation seam', () => {
   it('uses the same primary action for Desktop-authoritative running state', () => {
     const onCancel = vi.fn()
     render(createElement(ConversationComposer, {
-      snapshot: snapshot({ running: true }),
+      snapshot: { ...sessionSnapshot('presentation-session' as SessionId), running: true },
       onSubmit: vi.fn(),
       onCancel,
       t: conversationPresentationTranslate('zh'),
@@ -103,7 +205,7 @@ describe('public conversation presentation seam', () => {
 
   it('places owner-supplied controls in the narrow InputBar tool row', () => {
     render(createElement(ConversationComposer, {
-      snapshot: snapshot(),
+      snapshot: sessionSnapshot('presentation-session' as SessionId),
       onSubmit: vi.fn(),
       tools: createElement('button', { type: 'button' }, 'Attach'),
       t: conversationPresentationTranslate('en'),
@@ -113,11 +215,62 @@ describe('public conversation presentation seam', () => {
     expect(tool.closest('[data-composer-card]')).not.toBeNull()
   })
 
+  it('undoes typing and paste, and cannot resurrect a successfully sent draft', async () => {
+    const onSubmit = vi.fn(async () => undefined)
+    render(createElement(ConversationComposer, {
+      snapshot: sessionSnapshot('presentation-session' as SessionId),
+      onSubmit,
+      t: conversationPresentationTranslate('en'),
+    }))
+    const input = screen.getByRole('textbox') as HTMLTextAreaElement
+    fireEvent.change(input, { target: { value: 'ab' } })
+    input.setSelectionRange(2, 2)
+    fireEvent.paste(input, { clipboardData: { getData: () => 'cd' } })
+    expect(input.value).toBe('abcd')
+    fireEvent.keyDown(input, { key: 'z', ctrlKey: true })
+    expect(input.value).toBe('ab')
+    fireEvent.keyDown(input, { key: 'y', ctrlKey: true })
+    expect(input.value).toBe('abcd')
+    fireEvent.keyDown(input, { key: 'Z', metaKey: true, shiftKey: true })
+    expect(input.value).toBe('abcd')
+    fireEvent.keyDown(input, { key: 'Enter' })
+    await waitFor(() => { expect(onSubmit).toHaveBeenCalledWith('abcd') })
+    expect(input.value).toBe('')
+    fireEvent.keyDown(input, { key: 'z', metaKey: true })
+    expect(input.value).toBe('')
+  })
+
+  it('keeps IME composition as one undo unit and swallows undo while busy', async () => {
+    let resolveSubmit: (() => void) | undefined
+    const onSubmit = vi.fn(() => new Promise<void>((resolve) => { resolveSubmit = resolve }))
+    render(createElement(ConversationComposer, {
+      snapshot: sessionSnapshot('presentation-session' as SessionId),
+      onSubmit,
+      t: conversationPresentationTranslate('en'),
+    }))
+    const input = screen.getByRole('textbox') as HTMLTextAreaElement
+    fireEvent.change(input, { target: { value: 'keep' } })
+    fireEvent.compositionStart(input)
+    fireEvent.change(input, { target: { value: 'keep你' } })
+    fireEvent.change(input, { target: { value: 'keep你好' } })
+    fireEvent.compositionEnd(input)
+    expect(input.value).toBe('keep你好')
+    fireEvent.keyDown(input, { key: 'z', ctrlKey: true })
+    expect(input.value).toBe('keep')
+    fireEvent.change(input, { target: { value: 'keep going' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    await waitFor(() => { expect(onSubmit).toHaveBeenCalledOnce() })
+    fireEvent.keyDown(input, { key: 'z', ctrlKey: true })
+    expect(input.value).toBe('keep going')
+    resolveSubmit?.()
+    await waitFor(() => { expect(input.value).toBe('') })
+  })
+
   it('preserves draft rules across keyboard, composition, paste, and unavailable states', async () => {
     let resolveSubmit: (() => void) | undefined
     const onSubmit = vi.fn(() => new Promise<void>((resolve) => { resolveSubmit = resolve }))
     const view = render(createElement(ConversationComposer, {
-      snapshot: snapshot(),
+      snapshot: sessionSnapshot('presentation-session' as SessionId),
       onSubmit,
       t: conversationPresentationTranslate('en'),
     }))
@@ -145,7 +298,7 @@ describe('public conversation presentation seam', () => {
     resolveSubmit?.()
     await waitFor(() => { expect((input as HTMLTextAreaElement).value).toBe('') })
     view.rerender(createElement(ConversationComposer, {
-      snapshot: snapshot({ removed: true }),
+      snapshot: { ...sessionSnapshot('presentation-session' as SessionId), removed: true },
       onSubmit,
       t: conversationPresentationTranslate('en'),
     }))

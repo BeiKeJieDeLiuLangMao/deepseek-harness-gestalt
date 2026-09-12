@@ -363,16 +363,14 @@ describe.skipIf(!durableProgramsAvailable)('operated Platform resource entry wit
       }),
     ])
 
-    const bridgeOrigin = await startAttachmentHttp(bridge, {
-      authenticate: async () => ({
-        pairingId,
-        admit: async () => ({
-          id: parseAttachmentBlobReservationId('fixed-base-unused'),
-          expiresAt: Number.MAX_SAFE_INTEGER,
-          release: async () => {},
-        }),
+    const bridgeOrigin = await startAttachmentHttp(bridge, async () => ({
+      pairingId,
+      admit: async () => ({
+        id: parseAttachmentBlobReservationId('fixed-base-unused'),
+        expiresAt: Number.MAX_SAFE_INTEGER,
+        release: async () => {},
       }),
-    })
+    }))
     const bridgeResponse = await fetch(`${bridgeOrigin}/v1/remote-attachments/consume`, {
       method: 'POST', body: JSON.stringify({ capability: grant.capability }),
     })
@@ -395,26 +393,22 @@ describe.skipIf(!durableProgramsAvailable)('operated Platform resource entry wit
       CUTOVER_OPTIONS,
     )
     const atomicGrant = await bridge.publish({ pairingId, ciphertext, now: Date.now() })
-    const firstOrigin = await startAttachmentHttp(bridge, {
-      authenticate: async () => ({
-        pairingId,
-        admit: async () => ({
-          id: parseAttachmentBlobReservationId('fixed-base-first'),
-          expiresAt: Number.MAX_SAFE_INTEGER,
-          release: async () => {},
-        }),
+    const firstOrigin = await startAttachmentHttp(bridge, async () => ({
+      pairingId,
+      admit: async () => ({
+        id: parseAttachmentBlobReservationId('fixed-base-first'),
+        expiresAt: Number.MAX_SAFE_INTEGER,
+        release: async () => {},
       }),
-    })
-    const secondOrigin = await startAttachmentHttp(bridge, {
-      authenticate: async () => ({
-        pairingId,
-        admit: async () => ({
-          id: parseAttachmentBlobReservationId('fixed-base-second'),
-          expiresAt: Number.MAX_SAFE_INTEGER,
-          release: async () => {},
-        }),
+    }))
+    const secondOrigin = await startAttachmentHttp(bridge, async () => ({
+      pairingId,
+      admit: async () => ({
+        id: parseAttachmentBlobReservationId('fixed-base-second'),
+        expiresAt: Number.MAX_SAFE_INTEGER,
+        release: async () => {},
       }),
-    })
+    }))
     const atomicResponses = await Promise.all([firstOrigin, secondOrigin].map(async origin => await fetch(
       `${origin}/v1/remote-attachments/consume`,
       { method: 'POST', body: JSON.stringify({ capability: atomicGrant.capability }) },
@@ -2004,7 +1998,7 @@ async function postgresClientCount(pool: pg.Pool): Promise<number> {
   return result.rows[0]?.count ?? 0
 }
 
-async function redisClientCount(client: ReturnType<typeof createClient>): Promise<number> {
+async function redisClientCount(client: Pick<ReturnType<typeof createClient>, 'sendCommand'>): Promise<number> {
   const list: unknown = await client.sendCommand(['CLIENT', 'LIST'])
   if (typeof list !== 'string') throw new TypeError('Redis CLIENT LIST fixture response must be text')
   return list.trim().split('\n').filter(Boolean).length

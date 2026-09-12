@@ -110,9 +110,9 @@
     </tr>
     <tr>
       <td>设备操作</td>
-      <td><code>TODO</code></td>
-      <td>计划提供侧栏手机 tab，用于启动 Android/iOS、显示实时画面、由人接手和运行经过审批的 agent 工具</td>
-      <td><a href="https://github.com/gestaltrun/deepseek-harness-gestalt/issues/355">产品计划</a></td>
+      <td><code>DONE</code></td>
+      <td>侧栏 Phone tab 可以发现并启动 Android/iOS 设备、显示实时画面、让人接手，并向 agent 提供经过审批的设备工具</td>
+      <td><a href="packages/client/ui-phone/README.zh.md">Phone 工作区</a></td>
     </tr>
   </tbody>
 </table>
@@ -135,7 +135,7 @@
 npx @deepseek-ai/dsh web
 ```
 
-该命令会在 `http://127.0.0.1:3080` 启动 Web UI，本机启动时还会自动打开页面。进入 **Settings → Models** 添加模型提供方，选择工作空间，然后开始一个会话。[Web 指南](docs/user/guide/index.zh.md)介绍首次使用与 SSH 启动方式。
+该命令默认在 `http://127.0.0.1:3080` 启动 Web UI，本机启动时还会自动打开页面。通过 SSH 启动时只打印宿主机 URL，因为本地转发地址由 SSH 客户端或编辑器持有；传入 `--no-open` 可只运行服务器。进入 **Settings → Models** 添加模型提供方，选择 Workspace，然后开始一个 Session。[Web 指南](docs/user/guide/index.zh.md)介绍首次使用与 SSH 启动方式。
 
 <a id="run-from-source"></a>
 
@@ -149,7 +149,7 @@ pnpm run build
 pnpm dsh web
 ```
 
-仓库开发流程见[开发指南](docs/development.zh.md)，面向 agent 的说明见 [AGENTS.md](AGENTS.md)。
+`pnpm run build` 会准备仓库产物；`pnpm dsh web` 会直接使用已构建产物，不会重新构建。仓库开发流程见[开发指南](docs/development.zh.md)，面向 agent 的说明见 [AGENTS.md](AGENTS.md)。
 
 ## 社区与支持
 

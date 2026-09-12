@@ -5,7 +5,8 @@ import {
   parseRelayCredential,
   parseRelayRouteId,
 } from '@deepseek-ai/dsh-remote-protocol'
-import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import { SessionId } from '@deepseek-ai/dsh-session/types'
+import { MobilePendingSettlementRejectedError } from '../src/companion-projection.ts'
 import { CompanionAttachmentDeliveryUncertainError } from '../src/companion-attachment.ts'
 import { CompanionForegroundRuntime } from '../src/companion-lifecycle.ts'
 import {
@@ -23,7 +24,7 @@ const grant = {
   revision: 1,
 }
 
-const sid = (value: string): SessionId => value as SessionId
+const sid = (value: string): SessionId => SessionId(value)
 
 describe('MobileCompanionSurface', () => {
   it('round-trips an explicit JSON projection without Maps, classes, or callbacks', () => {
@@ -328,17 +329,23 @@ describe('MobileCompanionSurface', () => {
     const conversation = surface.getSnapshot().conversations['session-one' as SessionId]
     const approval = conversation?.pending[0]
     const question = conversation?.pending[1]
-    if (approval === undefined || question === undefined) throw new Error('expected adapted pending interactions')
-    const approvalResult = { ok: true as const, value: { outcome: 'allowed-once' } }
-    const questionResult = { ok: true as const, value: { answers: [{ id: 'q1', selected: ['Yes'] }] } }
+    if (approval === undefined || question === undefined || approval.kind !== 'approval'
+      || question.kind === 'approval') {
+      throw new Error('expected adapted pending interactions')
+    }
 
-    await expect(approval.respond(approvalResult)).resolves.toEqual({ accepted: true })
-    await expect(question.respond(questionResult)).resolves.toEqual({ accepted: false, reason: 'not-pending' })
+    await expect(approval.answer('allowed-once')).resolves.toBeUndefined()
+    await expect(question.answer({ answers: [{ id: 'q1', selected: ['Yes'] }] }))
+      .rejects.toBeInstanceOf(MobilePendingSettlementRejectedError)
+    expect(question.draft).toEqual({ answers: [{ id: 'q1', selected: ['Yes'] }] })
+    expect(conversation?.pending).toHaveLength(2)
     expect(channel.mutations.settle).toHaveBeenNthCalledWith(1, {
-      kind: 'approval', sessionId: 'session-one', interactionId: 'approval-rpc', result: approvalResult,
+      kind: 'approval', sessionId: 'session-one', interactionId: 'approval-rpc',
+      result: { ok: true, value: { outcome: 'allowed-once' } },
     })
     expect(channel.mutations.settle).toHaveBeenNthCalledWith(2, {
-      kind: 'question', sessionId: 'session-one', interactionId: 'question-rpc', result: questionResult,
+      kind: 'question', sessionId: 'session-one', interactionId: 'question-rpc',
+      result: { ok: true, value: { answer: { answers: [{ id: 'q1', selected: ['Yes'] }] } } },
     })
   })
 
@@ -359,9 +366,18 @@ describe('MobileCompanionSurface', () => {
     if (replacement === undefined) throw new Error('expected replacement resync receiver')
     replacement.acceptValidatedDesktopResync(projection('session-two', 'Two'))
 
-    await expect(oldWait.respond({ ok: true, value: { outcome: 'allowed-once' } }))
-      .rejects.toThrow('stale connection generation')
+    if (oldWait.kind !== 'approval') throw new Error('expected old pending Approval')
+    await expect(oldWait.answer('allowed-once'))
+      .rejects.toMatchObject({ name: 'MobilePendingDraftStoreRevokedError' })
     expect(firstChannel.mutations.settle).not.toHaveBeenCalled()
+    expect(replacementChannel.mutations.settle).not.toHaveBeenCalled()
+    replacement.acceptValidatedDesktopResync(projection('session-one', 'One', true))
+    const nextWait = surface.getSnapshot().conversations[sid('session-one')]?.pending[0]
+    if (nextWait?.kind !== 'approval') throw new Error('expected replacement pending Approval')
+    expect(nextWait.draft).toEqual({})
+    await expect(oldWait.answer('rejected'))
+      .rejects.toMatchObject({ name: 'MobilePendingDraftStoreRevokedError' })
+    expect(nextWait.draft).toEqual({})
     expect(replacementChannel.mutations.settle).not.toHaveBeenCalled()
   })
 
@@ -380,7 +396,8 @@ describe('MobileCompanionSurface', () => {
     const oldWait = surface.getSnapshot().conversations['session-one' as SessionId]?.pending[0]
     if (oldWait === undefined) throw new Error('expected old pending interaction')
 
-    const pendingReceipt = oldWait.respond({ ok: true, value: { outcome: 'allowed-once' } })
+    if (oldWait.kind !== 'approval') throw new Error('expected old pending Approval')
+    const pendingReceipt = oldWait.answer('allowed-once')
     await vi.waitFor(() => { expect(firstChannel.mutations.settle).toHaveBeenCalledOnce() })
     runtime.forgetConnection()
     runtime.markConnectionOpen()
@@ -787,7 +804,8 @@ describe('MobileCompanionSurface', () => {
     expect(surface.mayMutate()).toBe(false)
     const pending = surface.getSnapshot().conversations[sid('session-cached')]?.pending[0]
     if (pending === undefined) throw new Error('expected cached pending interaction')
-    await expect(pending.respond({ ok: true, value: { outcome: 'allowed-once' } }))
+    if (pending.kind !== 'approval') throw new Error('expected cached pending Approval')
+    await expect(pending.answer('allowed-once'))
       .rejects.toThrow('requires foreground synchronization')
     expect(cache.save).not.toHaveBeenCalled()
   })
@@ -971,7 +989,7 @@ function projection(id: string, title: string, pending = false): ValidatedDeskto
       pending: pending
         ? [{
           kind: 'approval', interactionId: 'approval-rpc', sessionId: id,
-          payload: { approvalId: 'approval-id' as never, toolName: 'write', reason: 'Allow write' },
+          payload: { approvalId: 'approval-id', toolName: 'write', reason: 'Allow write' },
         }, {
           kind: 'question', interactionId: 'question-rpc', sessionId: id,
           payload: { questions: [{ id: 'q1', question: 'Continue?', options: [{ label: 'Yes' }] }] },

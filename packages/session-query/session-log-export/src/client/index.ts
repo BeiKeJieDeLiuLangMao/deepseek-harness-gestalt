@@ -1,13 +1,16 @@
 /** Browser plugin owning Session export download state and its shared modal. */
 
-import type { ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context as ClientContext } from '@deepseek-ai/cordis'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-commands/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
+import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-client-ui-trajectory/client'
 import { SessionLogDownloadController } from './controller.ts'
 import type { SessionLogDownloadDialogInjected } from './Dialog.tsx'
-import { SessionLogDownloadHeaderAction } from './HeaderAction.tsx'
+import { SessionLogDownloadDialog } from './Dialog.tsx'
 import { SessionLogDownloadToolbarAction } from './ToolbarAction.tsx'
 import { en, NS, zh, type SessionLogDownloadKey } from './locales.ts'
 
@@ -36,8 +39,8 @@ function downloadInject(controller: SessionLogDownloadController): SessionLogDow
 }
 
 /**
- * Provide the download controller, keep the modal in the Session Header, and
- * mount the visible download capsule into the Trajectory toolbar.
+ * Provide the download controller, mount the shared modal in the Session Header,
+ * and wait for Trajectory's toolbar hole for the visible Session-log button.
  * @param ctx - browser context carrying slots and locale services.
  */
 export function apply(ctx: ClientContext): void {
@@ -53,7 +56,7 @@ export function apply(ctx: ClientContext): void {
     id: 'session-log-download-dialog',
     locale: NS,
     inject: () => downloadInject(controller),
-  }, SessionLogDownloadHeaderAction))
+  }, SessionLogDownloadDialog))
   ctx.slots.inject('conversation.trajectory.toolbar.utilities', () => ctx.slots.register({
     name: 'conversation.trajectory.toolbar.utilities',
     id: 'session-log-download',
@@ -63,4 +66,3 @@ export function apply(ctx: ClientContext): void {
 }
 
 export type { SessionLogDownloadDialogInjected, SessionLogDownloadDialogProps } from './Dialog.tsx'
-export type { SessionLogDownloadToolbarActionProps } from './ToolbarAction.tsx'

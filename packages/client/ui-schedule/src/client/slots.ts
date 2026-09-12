@@ -1,6 +1,6 @@
-/** Injected mutation face for the Session Schedule task board. */
+/** Injected mutation face for the Session Schedule catalog. */
 
-import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
+import type { RemoteResult } from '@deepseek-ai/dsh-api-remotes/client'
 import type { ScheduleId } from '@deepseek-ai/dsh-schedule/client'
 
 /** Settled Host mutation result; durable state arrives through the projection. */

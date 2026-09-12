@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
-import { Context, Service } from '@deepseek-ai/cordis'
+import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { Branded } from '@deepseek-ai/dsh-brand'
 import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
@@ -9,8 +9,11 @@ import type { PlatformAccountId } from '@deepseek-ai/dsh-platform-account'
 import type { ProjectId } from '@deepseek-ai/dsh-project-membership'
 import type {
   CompanionMemberQuestionSettledResult,
+  InstallationId,
   MemberQuestionId,
 } from '@deepseek-ai/dsh-remote-protocol'
+import { AttachmentError, admitPromptContent } from '@deepseek-ai/dsh-attachment'
+import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import {
   EMPTY_PERSISTED_RECEIVER_STATE,
   humanTurnDigest,
@@ -34,7 +37,12 @@ import type {
   MemberQuestionWorkspaceBinding,
   MemberQuestionReceiverListener,
   MemberQuestionReceiverSnapshot,
+  MemberQuestionHumanTurnContent,
   MemberQuestionReceiverSettlement,
+  MemberQuestionRemoteAdmitHumanTurnRequest,
+  MemberQuestionRemoteAdmitHumanTurnResponse,
+  MemberQuestionRemoteSettleRequest,
+  MemberQuestionRemoteSettleResponse,
   MemberQuestionTerminalAuthority,
   MemberQuestionReceiverStateWriter,
   MemberQuestionReceiverTimer,
@@ -42,6 +50,10 @@ import type {
   ReceivingSessionId,
   TerminalMemberQuestionView,
 } from './types.ts'
+import {
+  memberQuestionRemoteAdmitHumanTurnRequestSchema,
+  memberQuestionRemoteSettleRequestSchema,
+} from './remote-schemas.ts'
 
 export {
   MEMBER_QUESTION_DOCUMENT_CACHE_ROOT,
@@ -52,6 +64,13 @@ export type {
   MemberQuestionTransferredDocument,
 } from './document-cache.ts'
 export { MemberQuestionDocumentAssembler } from './document-transfer.ts'
+export {
+  memberQuestionRemoteAdmitHumanTurnRequestSchema,
+  memberQuestionRemoteAdmitHumanTurnResponseSchema,
+  memberQuestionRemoteSettleRequestSchema,
+  memberQuestionRemoteSettleResponseSchema,
+  memberQuestionRemoteSnapshotSchema,
+} from './remote-schemas.ts'
 
 export type {
   AdmitMemberQuestionHumanTurnInput,
@@ -70,6 +89,10 @@ export type {
   MemberQuestionReceiverAuthority,
   MemberQuestionReceiverSnapshot,
   MemberQuestionReceiverSettlement,
+  MemberQuestionRemoteAdmitHumanTurnRequest,
+  MemberQuestionRemoteAdmitHumanTurnResponse,
+  MemberQuestionRemoteSettleRequest,
+  MemberQuestionRemoteSettleResponse,
   MemberQuestionReceiverRpcId,
   MemberQuestionTerminalAuthority,
   MemberQuestionTerminalClaim,
@@ -111,6 +134,18 @@ export interface MemberQuestionReceiverConfig {
   readonly timer?: MemberQuestionReceiverTimer
   /** Atomic state writer override for storage-boundary verification. */
   readonly stateWriter?: MemberQuestionReceiverStateWriter
+  /**
+   * Host Installation id used for human settlement. Optional and development-only
+   * with `memberQuestionDeviceName`; production leaves both absent until
+   * authenticated cross-machine publication is composed. Wire payloads never
+   * supply this identity.
+   */
+  readonly memberQuestionInstallationId?: string
+  /**
+   * Host device name used for human settlement. Must be configured together
+   * with `memberQuestionInstallationId`.
+   */
+  readonly memberQuestionDeviceName?: string
 }
 
 /** Loader-facing receiver Provider configuration. */
@@ -128,15 +163,17 @@ export const Config: z<Config> = z.object({
   admitter: z.any(),
   timer: z.any(),
   stateWriter: z.any(),
+  memberQuestionInstallationId: z.string(),
+  memberQuestionDeviceName: z.string(),
 })
 
 /**
  * Host authority for member-question arrival, Host Session materialization,
  * projection, settlement, expiry, and one-step explicit human admission.
  */
-export abstract class MemberQuestionReceiverService extends Service implements MemberQuestionWorkspaceBinding {
+export abstract class MemberQuestionReceiverService extends TypertRemoteService implements MemberQuestionWorkspaceBinding {
   constructor(ctx: Context) {
-    super(ctx, 'memberQuestionReceiver')
+    super(ctx, 'memberQuestionReceiver', { namespace: 'memberQuestion' })
   }
 
   /**
@@ -169,6 +206,154 @@ export abstract class MemberQuestionReceiverService extends Service implements M
     questionId: MemberQuestionId,
     settlement: MemberQuestionReceiverSettlement,
   ): Promise<CompanionMemberQuestionSettledResult>
+
+  /**
+   * Read the complete committed receiver projection for the Remote namespace.
+   * @returns the same authoritative snapshot as {@link snapshot}.
+   */
+  @Remote('snapshot')
+  async remoteSnapshot(): Promise<MemberQuestionReceiverSnapshot> {
+    return this.snapshot()
+  }
+
+  /**
+   * Settle one pending question using Host Installation identity and time.
+   * Wire payloads supply only receiving-session, question, revision, and the
+   * human answer or decline. Installation id, device name, and settledAt come
+   * from this Host; a stale tuple or missing Host identity fails loud.
+   * @param request - observed receiving identity, revision, question, and response.
+   * @returns the canonical persisted terminal.
+   */
+  @Remote('settle')
+  async remoteSettle(request: MemberQuestionRemoteSettleRequest): Promise<MemberQuestionRemoteSettleResponse> {
+    const parsed = memberQuestionRemoteSettleRequestSchema.safeParse(request)
+    if (!parsed.success) {
+      throw new RemoteError(
+        'gateway/bad-request',
+        'member-question settle request is not an exact Host settlement payload',
+        { issues: parsed.error.issues },
+      )
+    }
+    const settlement = parsed.data
+    const installation = this.hostSettlementInstallation()
+    if (installation === undefined) {
+      throw new RemoteError(
+        'member-question/settlement-identity-unavailable',
+        'member-question settlement identity is unavailable',
+        {},
+      )
+    }
+    const snapshot = await this.snapshot()
+    const pending = snapshot.pending.find(row => row.questionId === settlement.questionId)
+    if (pending === undefined
+      || pending.receivingSessionId !== settlement.receivingSessionId
+      || pending.revision !== settlement.revision) {
+      throw new RemoteError(
+        'member-question/revision-stale',
+        'member-question receiver revision is stale',
+        {
+          receivingSessionId: settlement.receivingSessionId,
+          questionId: settlement.questionId,
+          revision: settlement.revision,
+        },
+      )
+    }
+    const settledAt = this.settlementClock()
+    return this.settle(
+      settlement.questionId,
+      settlement.response.kind === 'answered'
+        ? {
+          kind: 'answered',
+          answers: settlement.response.answers,
+          settledByInstallationId: installation.id,
+          settledByDeviceName: installation.deviceName,
+          settledAt,
+        }
+        : {
+          kind: 'declined',
+          settledByInstallationId: installation.id,
+          settledByDeviceName: installation.deviceName,
+          settledAt,
+        },
+    )
+  }
+
+  /**
+   * Admit one explicit human turn after promoting encoded image uploads.
+   * Wire payloads supply receiving-session, revision, requestId, content, and
+   * mode. Host attachment admission replaces image bytes with durable refs
+   * before reservation; callers cannot cite an attachment they did not upload.
+   * @param request - observed receiving identity, revision, requestId, content, and mode.
+   * @returns the durable idempotent admission result.
+   */
+  @Remote('admitHumanTurn')
+  async remoteAdmitHumanTurn(
+    request: MemberQuestionRemoteAdmitHumanTurnRequest,
+  ): Promise<MemberQuestionRemoteAdmitHumanTurnResponse> {
+    const parsed = memberQuestionRemoteAdmitHumanTurnRequestSchema.safeParse(request)
+    if (!parsed.success) {
+      throw new RemoteError(
+        'gateway/bad-request',
+        'member-question admitHumanTurn request is not an exact Host admission payload',
+        { issues: parsed.error.issues },
+      )
+    }
+    const hasImage = parsed.data.content.some(part => part.type === 'image')
+    let durable: readonly MemberQuestionHumanTurnContent[]
+    if (hasImage) {
+      const attachments = this.ctx.get('attachments')
+      if (attachments === undefined) {
+        throw new RemoteError(
+          'member-question/attachment-unavailable',
+          'member-question human admission requires the Host attachment store',
+          {},
+        )
+      }
+      try {
+        durable = await admitPromptContent(attachments, parsed.data.content)
+      } catch (error: unknown) {
+        if (error instanceof AttachmentError) {
+          throw new RemoteError('member-question/attachment-invalid', error.message, { reason: error.code })
+        }
+        throw error
+      }
+    } else {
+      durable = parsed.data.content.flatMap((part) => {
+        if (part.type !== 'text') return []
+        return [{ type: 'text' as const, text: part.text }]
+      })
+    }
+    try {
+      return await this.admitHumanTurn({
+        receivingSessionId: parsed.data.receivingSessionId,
+        revision: parsed.data.revision,
+        rpcId: parsed.data.requestId,
+        content: durable,
+        mode: parsed.data.mode,
+      })
+    } catch (error: unknown) {
+      if (error instanceof RemoteError) throw error
+      throw new RemoteError(
+        'member-question/human-turn-failed',
+        error instanceof Error ? error.message : String(error),
+        {},
+      )
+    }
+  }
+
+  /**
+   * Host Installation used for human settlement. Wire payloads never supply it.
+   * @returns typed Installation id and device name, or undefined when uncomposed.
+   */
+  protected abstract hostSettlementInstallation():
+    | { readonly id: InstallationId; readonly deviceName: string }
+    | undefined
+
+  /**
+   * Host clock used for human settlement timestamps.
+   * @returns Unix epoch milliseconds owned by this Host.
+   */
+  protected abstract settlementClock(): number
 
   /**
    * Reserve and admit one explicit human turn under one rpc id.
@@ -288,6 +473,9 @@ export default class FileMemberQuestionReceiver extends MemberQuestionReceiverSe
   private readonly timer: MemberQuestionReceiverTimer
   private readonly terminalRetryMs: number
   private readonly stateWriter: MemberQuestionReceiverStateWriter
+  private readonly settlementInstallation:
+    | { readonly id: InstallationId; readonly deviceName: string }
+    | undefined
   private readonly listeners = new Set<MemberQuestionReceiverListener>()
   private state: PersistedReceiverState = EMPTY_PERSISTED_RECEIVER_STATE
   private chain: Promise<unknown> = Promise.resolve()
@@ -298,7 +486,13 @@ export default class FileMemberQuestionReceiver extends MemberQuestionReceiverSe
 
   constructor(ctx: Context, config: Config) {
     super(ctx)
-    ctx.provide('memberQuestionWorkspaceBinding', this)
+    ctx.provide('memberQuestionWorkspaceBinding', {
+      bind: (accountId, projectId, workspaceId) => this.bind(accountId, projectId, workspaceId),
+      lookup: (accountId, projectId) => this.lookup(accountId, projectId),
+      bindIfCurrent: (accountId, projectId, expectedWorkspaceId, workspaceId) =>
+        this.bindIfCurrent(accountId, projectId, expectedWorkspaceId, workspaceId),
+      resolve: (accountId, projectId) => this.resolve(accountId, projectId),
+    })
     const resolved = resolveConfig(config)
     this.storageFile = join(resolve(resolved.storagePath), resolved.environment, 'member-question-receiver.json')
     this.maxRecords = resolved.maxRecords
@@ -311,6 +505,7 @@ export default class FileMemberQuestionReceiver extends MemberQuestionReceiverSe
     this.terminalRetryMs = resolved.terminalRetryMs
     this.stateWriter = resolved.stateWriter ?? ((path, content) =>
       writeFileAtomic(path, content, { mode: 0o600, dirMode: 0o700 }))
+    this.settlementInstallation = resolvedSettlementInstallation(resolved)
     ctx.effect(async () => {
       await this.enqueue(() => this.load())
       this.scheduleExpiry()
@@ -494,6 +689,16 @@ export default class FileMemberQuestionReceiver extends MemberQuestionReceiverSe
   override changes(listener: MemberQuestionReceiverListener): () => void {
     this.listeners.add(listener)
     return () => { this.listeners.delete(listener) }
+  }
+
+  protected override hostSettlementInstallation():
+    | { readonly id: InstallationId; readonly deviceName: string }
+    | undefined {
+    return this.settlementInstallation
+  }
+
+  protected override settlementClock(): number {
+    return this.clock()
   }
 
   override settle(
@@ -937,7 +1142,26 @@ function resolveConfig(config: Config): Config {
   if (config.stateWriter !== undefined && typeof config.stateWriter !== 'function') {
     throw new TypeError('member-question-receiver: config.stateWriter must be a function')
   }
+  resolvedSettlementInstallation(config)
   return config
+}
+
+function resolvedSettlementInstallation(config: Config):
+  | { readonly id: InstallationId; readonly deviceName: string }
+  | undefined {
+  const installationId = config.memberQuestionInstallationId
+  const deviceName = config.memberQuestionDeviceName
+  if ((installationId === undefined) !== (deviceName === undefined)) {
+    throw new TypeError('member-question-receiver: member-question Installation id and device name must be configured together')
+  }
+  if (installationId !== undefined && installationId.trim().length === 0) {
+    throw new TypeError('member-question-receiver: member-question Installation id must be non-empty')
+  }
+  if (deviceName !== undefined && deviceName.trim().length === 0) {
+    throw new TypeError('member-question-receiver: member-question device name must be non-empty')
+  }
+  if (installationId === undefined || deviceName === undefined) return undefined
+  return { id: installationId as InstallationId, deviceName }
 }
 
 const SYSTEM_TIMER: MemberQuestionReceiverTimer = {

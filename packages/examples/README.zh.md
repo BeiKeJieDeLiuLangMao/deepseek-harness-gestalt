@@ -1,18 +1,39 @@
-# examples/：开箱可运行的演示组合包
+---
+description: "可运行示例包，供读者选择组装进程路径，以便在包内测试之外演练 DeepSeek Harness 能力。"
+kind: "package-group"
+---
+
+# examples/ — 可运行的组装应用示例
 
 [English](README.md) | 中文
 
-预先组合的插件组合包，供轻量叶节点 `cordis.yml` 加载，无需手工组装主干和运行入口。这些是 **演示／参考** 包；npm 名称的 `-demo` 后缀表明每个包都不属于产品对外接口，直接查看包名即可辨认。仓库根目录 [`examples/`](../../examples/AGENTS.md) 下的可运行叶节点与 [Python SDK 运行时](../../python/sdk-runtime/README.zh.md) 是消费方；每个消费方都只包含可替换后端和一个组合包入口。
+## 概述
 
-| 包 | npm 名称 | 角色 |
-|---|---|---|
-| [`agent-spine-demo/`](agent-spine-demo/README.zh.md) | `@deepseek-ai/dsh-agent-spine-demo` | 可复用的 agent-spine（智能体主干）组合包 |
-| [`acp-demo/`](acp-demo/README.zh.md) | `@deepseek-ai/dsh-acp-demo` | ACP（Agent Client Protocol）自动化应用组合包 |
-| [`jsonrpc-demo/`](jsonrpc-demo/README.zh.md) | `@deepseek-ai/dsh-sdk-jsonrpc-demo` | 外部配置 JSON-RPC 运行时 |
-| [`phone-capture-wire-demo/`](phone-capture-wire-demo/README.zh.md) | `@deepseek-ai/dsh-phone-capture-wire-demo` | 外部配置的手机采集链路运行时 |
+这些包为组装后的 DeepSeek Harness 示例提供可运行入口。使用这些入口可以通过已发布产物执行具体的 Cordis 组合并检查其进程输出。每个包各自负责一条可执行路径；能力包负责该路径所组装的运行时行为。仓库 `examples/` 下的叶配置选择具体组合。
 
-`agent-spine-demo` 是共享组合包；`acp-demo` 添加自动化入口，`jsonrpc-demo` 和 `phone-capture-wire-demo` 则启动外部插件树。产品单次执行由 `dsh --profile headless` 提供；本目录没有任何包提供该功能。
+## 目录
 
-这些包不是产品 API。产品 seam 与产品入口仍位于各自的归属组；演示组合包选择具体组合。
+- [包](#packages)
+- [相关文档](#related-documentation)
+- [开发备注](#dev-note)
 
-不要将此组与仓库根目录的 [`examples/`](../../examples/AGENTS.md) 混淆：该目录存放可运行的 `cordis.yml` **叶节点**；此组存放这些叶节点加载的 **组合包**。
+-----
+
+<a id="packages"></a>
+## 包
+
+该组提供一条手机画面采集链路的进程入口。
+
+| 包 | 角色 |
+|---|---|
+| [`phone-capture-wire-demo/`](phone-capture-wire-demo/README.zh.md) | 通过已发布的 bin 启动外部 Cordis 配置，并输出无密钥 Android capture-source Host transcript（文本记录） |
+
+<a id="related-documentation"></a>
+## 相关文档
+
+- [手机运行时子系统](../../docs/subsystems/phone-runtime.zh.md) — 定义该示例使用的设备群运行时、画面采集流与所有权。
+
+<a id="dev-note"></a>
+## 开发备注
+
+无。

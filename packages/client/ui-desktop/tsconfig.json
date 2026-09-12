@@ -15,7 +15,7 @@
       "path": "../locale"
     },
     {
-      "path": "../runtime"
+      "path": "../ui-renderer"
     },
     {
       "path": "../ui-primitives"
@@ -43,9 +43,6 @@
     },
     {
       "path": "../../platform/remote-protocol"
-    },
-    {
-      "path": "../../runtime-diagnostics/invariants"
     }
   ]
 }

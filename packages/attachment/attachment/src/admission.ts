@@ -3,15 +3,30 @@
 import { Buffer } from 'node:buffer'
 import { AttachmentError } from './error.ts'
 import type { AttachmentStore } from './index.ts'
-import type { EncodedImageAttachment, ImageAttachmentRef, SaveImageAttachment } from './types.ts'
+import type {
+  AdmittedPromptContentPart,
+  EncodedFileAttachment,
+  EncodedImageAttachment,
+  FileAttachmentRef,
+  ImageAttachmentRef,
+  PromptContentPart,
+  SaveImageAttachment,
+} from './types.ts'
 
 /** Decode one upload payload while rejecting non-canonical base64 forms. */
-function decodeBase64(data: string): Uint8Array {
+function decodeCanonicalBase64(data: string, empty: 'reject' | 'accept', code: 'INVALID_IMAGE_BASE64' | 'INVALID_FILE_BASE64'): Uint8Array {
   const decoded = Buffer.from(data, 'base64')
-  if (data.length === 0 || decoded.toString('base64') !== data) {
-    throw new AttachmentError('Image upload is not canonical base64.', 'INVALID_IMAGE_BASE64')
+  if ((data.length === 0 && empty === 'reject') || decoded.toString('base64') !== data) {
+    throw new AttachmentError(
+      code === 'INVALID_IMAGE_BASE64' ? 'Image upload is not canonical base64.' : 'File upload is not canonical base64.',
+      code,
+    )
   }
   return new Uint8Array(decoded)
+}
+
+function decodeBase64(data: string): Uint8Array {
+  return decodeCanonicalBase64(data, 'reject', 'INVALID_IMAGE_BASE64')
 }
 
 /** Store input for one decoded upload. */
@@ -38,4 +53,44 @@ export async function admitEncodedImages(
   images: readonly EncodedImageAttachment[],
 ): Promise<readonly ImageAttachmentRef[]> {
   return attachments.saveImages(images.map(saveInput))
+}
+
+/**
+ * Admit one prompt and replace each uploaded image with its durable reference.
+ * @param attachments - deployment attachment store owning image admission.
+ * @param content - prompt parts in message order.
+ * @returns admitted text and image parts in the same order as `content`.
+ */
+export async function admitPromptContent(
+  attachments: AttachmentStore,
+  content: readonly PromptContentPart[],
+): Promise<Exclude<AdmittedPromptContentPart, { readonly type: 'file' }>[]> {
+  if (content.every(part => part.type === 'text')) {
+    return content.map(part => ({ type: 'text', text: part.text }))
+  }
+  const refs = await admitEncodedImages(attachments, content.filter(part => part.type === 'image'))
+  let next = 0
+  return content.map(part => part.type === 'text'
+    ? { type: 'text', text: part.text }
+    : { type: 'image', attachment: refs[next++] as ImageAttachmentRef })
+}
+
+/**
+ * Admit one wire file upload: enforce canonical base64 (an empty file is a
+ * valid zero-byte payload), then delegate verbatim commit to
+ * {@link AttachmentStore.saveFile}. The shared entry for every RPC endpoint
+ * accepting browser file uploads.
+ * @param attachments - the deployment attachment store.
+ * @param file - base64-encoded upload and optional display name.
+ * @returns the durable content-addressed file reference.
+ * @throws AttachmentError on a non-canonical payload or a storage failure.
+ */
+export async function admitEncodedFile(
+  attachments: AttachmentStore,
+  file: EncodedFileAttachment,
+): Promise<FileAttachmentRef> {
+  return attachments.saveFile({
+    data: decodeCanonicalBase64(file.data, 'accept', 'INVALID_FILE_BASE64'),
+    ...file.name === undefined ? {} : { name: file.name },
+  })
 }

@@ -6,8 +6,7 @@
 
 import { useEffect, useState, type ReactNode } from 'react'
 import {
-  IconBranchOutline16, IconCodeOutline16, IconFolderOpen16, IconGlobeOutline14,
-  IconNewChatOutline16, IconPhoneOutline16, IconThinkOutline16, Menu,
+  Menu, sidebarTabIcon,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChromeOverlayShowRequest, DesktopBridge } from '../protocol.ts'
 
@@ -19,19 +18,13 @@ export type OverlayDesktopBridge = Pick<
 
 /**
  * Map a tab-descriptor id onto the same glyph the in-page + menu uses.
- * Known ids: editor, git, subagent, sidechat, browser, terminal, phone.
+ * Known ids follow the official descriptor tokens; retained editor, git, and
+ * subagent aliases keep older contributions visible.
  * @param id - serialized `icon` from the Host chrome request.
  * @returns the glyph, or undefined when the id is unknown.
  */
 export function overlayMenuIcon(id: string | undefined): ReactNode {
-  if (id === 'editor') return <IconFolderOpen16 size={16} />
-  if (id === 'git') return <IconBranchOutline16 size={16} />
-  if (id === 'subagent') return <IconThinkOutline16 size={16} />
-  if (id === 'sidechat') return <IconNewChatOutline16 size={16} />
-  if (id === 'browser') return <IconGlobeOutline14 size={16} />
-  if (id === 'terminal') return <IconCodeOutline16 size={16} />
-  if (id === 'phone') return <IconPhoneOutline16 size={16} />
-  return undefined
+  return sidebarTabIcon(id)
 }
 
 /**

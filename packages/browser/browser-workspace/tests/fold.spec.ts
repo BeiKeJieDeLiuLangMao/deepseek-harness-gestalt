@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { Session, SessionId } from '@deepseek-ai/dsh-session'
+import { Session, SessionId, SessionSeq } from '@deepseek-ai/dsh-session'
 import { BrowserInstanceId, BrowserProfileId, BrowserTabId, BrowserWorkspaceId } from '@deepseek-ai/dsh-browser-runtime'
 import { applyBrowserWorkspaceProjection, EMPTY_BROWSER_WORKSPACE, foldBrowserWorkspace } from '../src/fold.ts'
 import type { BrowserWorkspaceProjection } from '../src/client.ts'
@@ -21,19 +21,19 @@ const SNAPSHOT: BrowserWorkspaceProjection = {
 describe('Browser Workspace fold', () => {
   it('returns the empty Workspace before any snapshot and last-wins after', () => {
     const session = Session.create(SessionId('fold-session'))
-    expect(foldBrowserWorkspace(session.events)).toBe(EMPTY_BROWSER_WORKSPACE)
-    session.append('browser/workspace', SNAPSHOT)
-    expect(foldBrowserWorkspace(session.events)).toEqual(SNAPSHOT)
+    expect(foldBrowserWorkspace(session.snapshotEvents())).toBe(EMPTY_BROWSER_WORKSPACE)
+    session.append('browser/workspace', SNAPSHOT, { ignorable: true })
+    expect(foldBrowserWorkspace(session.snapshotEvents())).toEqual(SNAPSHOT)
     const later = { ...SNAPSHOT, activeWorkspaceId: null }
-    session.append('browser/workspace', later)
-    expect(foldBrowserWorkspace(session.events)).toEqual(later)
-    expect(foldBrowserWorkspace(session.events, 0)).toBe(EMPTY_BROWSER_WORKSPACE)
+    session.append('browser/workspace', later, { ignorable: true })
+    expect(foldBrowserWorkspace(session.snapshotEvents())).toEqual(later)
+    expect(foldBrowserWorkspace(session.snapshotEvents(), 0)).toBe(EMPTY_BROWSER_WORKSPACE)
   })
 
   it('keeps the same projection reference for unrelated events', () => {
     const next = applyBrowserWorkspaceProjection(EMPTY_BROWSER_WORKSPACE, {
       type: 'turn/start',
-      seq: 0,
+      seq: SessionSeq(0),
       time: 0,
       data: { turn: 1 },
     })

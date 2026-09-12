@@ -1,11 +1,34 @@
+---
+description: "In-process Electron Browser Runtime Provider for temporary and named persistent Profiles."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-browser-runtime-electron
 
 English | [中文](README.zh.md)
+
+## Summary
+
+Run temporary, named persistent, or shared Electron browser Profiles inside the application process. It uses Electron partitions and `WebContentsView` pages, retries only Chromium's initial `UnknownVizError` once within the operation deadline, and reads page text in the renderer. Temporary Profiles leave no reusable partition on disk; named and shared Profiles restore persistent partitions.
+
+## Table of Contents
+
+- [Package contract](#package-contract)
+- [Configuration](#configuration)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
+
+-----
+
+<a id="package-contract"></a>
+## Package contract
 
 In-process Electron Browser Runtime Provider for temporary, named persistent, and shared Profiles. It implements `ctx.browserRuntime` with this process's `session.fromPartition` and page `WebContentsView`s. Screenshots use `webContents.capturePage`; an initial Chromium `UnknownVizError` waits for one animation frame and retries once within the same operation deadline, while every other capture failure and a failed retry reject. Page text uses `executeJavaScript`. Named and shared Profiles restore `persist:session-*` partitions; temporary Profiles use ephemeral `session-*` partitions without the `persist:` prefix, so Chromium keeps their identity in memory and leaves nothing reusable on disk. Chromium persist partitions live at Electron `userData/Partitions/<name>` and never write `~/Library/Application Support/Tandem Browser`.
 
 The plugin loads only when `process.versions.electron` is set or a Node test installs a host through `@deepseek-ai/dsh-browser-runtime-electron/testing`. Composing it on plain Node fails at load. Desktop Host presents the same `webContents` as a `WebContentsView` on the Host `contentView`. A child `BrowserWindow` is not used: `setParentWindow` on one SIGSEGV on macOS Electron 41.
 
+<a id="configuration"></a>
 ## Configuration
 
 | Field | Meaning | Default |
@@ -14,13 +37,15 @@ The plugin loads only when `process.versions.electron` is set or a Node test ins
 | `viewportWidth` | Hidden window width used for capture while the page is not presented | `1280` |
 | `viewportHeight` | Hidden window height used for capture while the page is not presented | `800` |
 | `requestTimeoutMs` | Bound on each Chromium navigation or content read | `30000` |
+| `cancelTimeoutMs` | Grace for a stopped Chromium operation to settle before its page window is destroyed | `1000` |
 
 Durations and viewport sizes must be positive safe integers. Operations enter one serialized queue. Mutations require the caller's last observed `expectedRevision`. Synthetic Agent `input` uses one path: an insert script when an input, textarea, or contentEditable is focused; otherwise `char` input events. A newline is U+000A in a focused editable control; without one, each newline is a `char` event whose keyCode is `\\n`. The HTTP adapter rejects input without a non-empty URL or text. A second open writer of the same named Profile rejects with `BROWSER_PROFILE_BUSY`. Shared creates reuse the shared partition and do not take `BROWSER_PROFILE_BUSY`. After disposal starts, operations reject with `BROWSER_DISPOSED`. Disposal drains the queue and destroys remaining hidden windows.
 
-A renderer-process crash commits `BrowserUnavailableState` with reason `crashed` and recreates the hidden window for the same target. Exhausted recovery commits `reason: 'reconnect-failed'`. Malformed Chromium results reject with `BROWSER_PROTOCOL`.
+A renderer-process crash commits `BrowserUnavailableState` with reason `crashed` and recreates the hidden window for the same target. A navigation or page observation that loses the Electron runtime commits reason `unhealthy`, releases the serialized operation queue, and recreates the hidden window at its last committed URL. An interrupted Chromium operation calls `webContents.stop()` and waits up to `cancelTimeoutMs`; if the operation remains pending, the Provider destroys its page window before advancing the queue. Caller cancellation still rejects with `BROWSER_ABORTED`, while the destroyed target enters recovery. A recovered presented page returns to the same Host parent and bounds unless `conceal` withdraws the presentation during recovery. Exhausted recovery commits `reason: 'reconnect-failed'`. Malformed Chromium results reject with `BROWSER_PROTOCOL`.
 
-`listenElectronBrowserHttp` binds a loopback HTTP server that copies Tandem's session, tab, navigate, input, page-content, screenshot, focus, and destroy operations so the Web Host can drive this engine without embedding a second Electron application. Navigate, input, and focus compare the client's `expectedRevision` to the engine revision, reject a mismatch with 409 `BROWSER_REVISION_CONFLICT`, and return the engine's committed revision.
+`listenElectronBrowserHttp` binds a loopback HTTP server that copies Tandem's session, tab, navigate, input, page-content, screenshot, focus, and destroy operations so the Web Host can drive this engine without embedding a second Electron application. Navigate, input, and focus compare the client's `expectedRevision` to the engine revision, reject a mismatch with 409 `BROWSER_REVISION_CONFLICT`, and return the engine's committed revision. Its unauthenticated `/status` route reports service readiness from committed tab receipts synchronized through `browser/runtime-state`; it never observes Chromium, so a stalled page cannot block startup health. `/tabs/list` and `/page-content` remain live page observations, and page-content reports an unavailable target as 503 `BROWSER_RUNTIME_UNAVAILABLE` so the HTTP client can retain its lifecycle meaning.
 
+<a id="model-experience"></a>
 ## Model Experience
 
 Indirectly, through dsh-tool-browser, which renders every page, screenshot, lifecycle, and availability fact.
@@ -30,7 +55,18 @@ Indirectly, through dsh-tool-browser, which renders every page, screenshot, life
 The Provider itself contributes no request text; Consumer schemas and logged results determine cache changes.
 
 ## Known Limitations and Deferred Work
+<a id="known-limitations-and-deferred-work"></a>
 
 - `present` places one open page over the Desktop Host window; `conceal` hides only that page without removing it from the Host `contentView`. `raisePresented` puts that page above Host chrome after the native overlay view hides. A `loadURL` that rejects `ERR_ABORTED` after a redirect, or a Chromium net error after Chromium painted its error document, is a committed navigation. Browser `dsh web` has no Host window and cannot present.
 - Real Chromium e2e runs through `pnpm run test:electron-runtime-e2e`. Node `test:e2e` records the named skip; unit tests install a fake host via `@deepseek-ai/dsh-browser-runtime-electron/testing` and never spawn Tandem.app.
 - Desktop Host ships this Provider on macOS and Windows. Linux is out of scope.
+
+<a id="dev-note"></a>
+### Dev Note
+
+<details>
+<summary>Working context for maintainers — click to expand</summary>
+
+None.
+
+</details>

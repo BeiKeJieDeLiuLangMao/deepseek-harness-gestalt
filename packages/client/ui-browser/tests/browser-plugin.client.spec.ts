@@ -1,17 +1,21 @@
 /** Browser registration and Remote transport adapter for preview and settings. */
 import { Context, Service } from '@deepseek-ai/cordis'
 import { describe, expect, it } from 'vitest'
-import { SlotRegistry, type SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import type { BrowserTarget } from '@deepseek-ai/dsh-browser-workspace/client'
 import type { BrowserPreviewActions } from '../src/client/slots.ts'
 import { stubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
+import { BrowserPageChrome } from '../src/client/BrowserPageChrome.tsx'
+import { recoverListedMutation } from '../src/client/listed-mutation.ts'
 import { apply, inject } from '../src/client/index.ts'
 import { unwrapRemote } from '../src/client/slots.ts'
 import { en, NS, zh } from '../src/client/locales.ts'
 import { apply as nodeApply } from '../src/index.ts'
 import { BROWSER_SETTINGS_NAMESPACE, DEFAULT_BROWSER_SETTINGS } from '../src/browser-settings.ts'
-import { SettingsProvider, settingsNamespace, type SettingsNamespace } from '@deepseek-ai/dsh-settings'
+import { SettingsProvider, type SettingsNamespace } from '@deepseek-ai/dsh-settings'
+import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 
 class MemorySettings extends SettingsProvider {
   readonly writable = true
@@ -54,8 +58,15 @@ async function bench() {
   ctx.slots.register({
     name: 'root',
     children: {
-      'conversation.browser.preview': { kind: 'single', scope: 'session' },
+      'conversation.view': { kind: 'list', scope: 'session' },
       'settings.section': { kind: 'list', scope: 'root' },
+    },
+  } as never, () => null)
+  ctx.slots.register({
+    name: 'conversation.view',
+    id: 'chat',
+    children: {
+      'conversation.browser.preview': { kind: 'single', scope: 'session' },
     },
   } as never, () => null)
   ctx.provide('sessions', {})
@@ -75,18 +86,21 @@ async function bench() {
 }
 
 describe('ui-browser browser plugin', () => {
-  it('declares and registers the collapsed preview without a details occupant', async () => {
+  it('registers the collapsed preview and browser settings', async () => {
     const b = await bench()
     expect(inject).toEqual([
       'slots', 'sessions', 'remote', 'remote.browserWorkspace', 'locale', 'settingsScope',
     ])
-    expect(b.ctx.slots.entries('details')).toEqual([])
+    expect(b.ctx.browserUi.createRequest()).toEqual({ profile: 'shared' })
+    expect(b.ctx.browserUi.recoverListedMutation).toBe(recoverListedMutation)
+    expect(b.ctx.browserUi.renderPageChrome({} as never).type).toBe(BrowserPageChrome)
     expect(b.preview()?.locale).toBe(NS)
     const section = b.ctx.slots.entries('settings.section')[0]
     expect(section?.options).toMatchObject({ id: 'browser', order: 35 })
     const label = section?.options.label
     expect(typeof label === 'function' ? label() : label).toBe(en['settings.nav'])
     await b.fiber.dispose()
+    expect(b.ctx.get('browserUi')).toBeUndefined()
     expect(b.preview()).toBeUndefined()
     expect(b.ctx.slots.entries('settings.section')).toHaveLength(0)
   })
@@ -103,8 +117,15 @@ describe('ui-browser browser plugin', () => {
     ctx.slots.register({
       name: 'root',
       children: {
-        'conversation.browser.preview': { kind: 'single', scope: 'session' },
+        'conversation.view': { kind: 'list', scope: 'session' },
         'settings.section': { kind: 'list', scope: 'root' },
+      },
+    } as never, () => null)
+    ctx.slots.register({
+      name: 'conversation.view',
+      id: 'chat',
+      children: {
+        'conversation.browser.preview': { kind: 'single', scope: 'session' },
       },
     } as never, () => null)
     ctx.provide('sessions', {})
@@ -182,8 +203,15 @@ describe('ui-browser browser plugin', () => {
     ctx.slots.register({
       name: 'root',
       children: {
-        'conversation.browser.preview': { kind: 'single', scope: 'session' },
+        'conversation.view': { kind: 'list', scope: 'session' },
         'settings.section': { kind: 'list', scope: 'root' },
+      },
+    } as never, () => null)
+    ctx.slots.register({
+      name: 'conversation.view',
+      id: 'chat',
+      children: {
+        'conversation.browser.preview': { kind: 'single', scope: 'session' },
       },
     } as never, () => null)
     ctx.provide('sessions', {})
@@ -213,8 +241,8 @@ describe('unwrapRemote', () => {
     await expect(unwrapRemote(Promise.resolve({ ok: true as const, value: 7 }))).resolves.toBe(7)
     await expect(unwrapRemote(Promise.resolve({
       ok: false as const,
-      error: { code: 'internal', message: 'stale revision', details: {} },
-    }))).rejects.toMatchObject({ message: 'stale revision', code: 'internal' })
+      error: new RemoteError('gateway/internal', 'stale revision', {}),
+    }))).rejects.toMatchObject({ message: 'stale revision', code: 'gateway/internal' })
   })
 })
 
@@ -224,7 +252,7 @@ describe('ui-browser node half', () => {
     await ctx.plugin(MemorySettings).await()
     const fiber = ctx.plugin({ apply: nodeApply })
     await fiber.await()
-    const ns = settingsNamespace(BROWSER_SETTINGS_NAMESPACE)
+    const ns = BROWSER_SETTINGS_NAMESPACE as SettingsNamespace
     expect(ctx.settings.get(ns)).toEqual(DEFAULT_BROWSER_SETTINGS)
     await fiber.dispose()
     expect(ctx.settings.describe().map(row => row.ns)).not.toContain(ns)

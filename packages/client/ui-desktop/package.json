@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-client-ui-desktop",
   "description": "Desktop-only chrome plus Platform Account state in the Mobile Pairing Settings section",
-  "version": "0.1.1-rc.2",
+  "version": "0.1.5-alpha.2",
   "publishConfig": {
     "access": "public"
   },
@@ -18,24 +18,20 @@
       "types": "./lib/types/index.d.ts",
       "default": "./lib/index.js"
     },
-    "./invariant": {
-      "types": "./lib/types/invariant.d.ts",
-      "default": "./lib/invariant.js"
-    },
     "./client": {
       "types": "./lib/types/client/index.d.ts",
-      "default": "./lib/client.cjs"
-    },
-    "./pairing-source": {
-      "types": "./lib/types/pairing-source.d.ts",
-      "default": "./lib/pairing-source.js"
+      "default": "./lib/client.js"
     },
     "./protocol": {
       "types": "./lib/types/protocol.d.ts",
       "default": "./lib/protocol.js"
     },
     "./src/*": "./src/*",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./pairing-source": {
+      "types": "./lib/types/pairing-source.d.ts",
+      "default": "./lib/pairing-source.js"
+    }
   },
   "dsh": {
     "client": {
@@ -53,45 +49,31 @@
     "watch": "tsdown --watch"
   },
   "license": "MIT",
-  "dependencies": {
-    "uqr": "^0.1.3"
-  },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "workspace:^",
-    "@deepseek-ai/dsh-client-locale": "workspace:^",
-    "@deepseek-ai/dsh-client-runtime": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-layout": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-sidebar": "workspace:^",
-    "@deepseek-ai/dsh-client-ui-settings": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
-    "@deepseek-ai/dsh-platform-account": "workspace:^",
-    "@deepseek-ai/dsh-project-membership-client": "workspace:^",
-    "@deepseek-ai/dsh-remote-access": "workspace:^",
-    "@deepseek-ai/dsh-remote-protocol": "workspace:^"
+    "@deepseek-ai/cordis": "workspace:^"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/dsh-client-locale": "workspace:^",
-    "@deepseek-ai/dsh-client-runtime": "workspace:^",
     "@deepseek-ai/dsh-client-ui-layout": "workspace:^",
+    "@deepseek-ai/dsh-client-ui-renderer": "workspace:^",
     "@deepseek-ai/dsh-client-ui-primitives": "workspace:^",
     "@deepseek-ai/dsh-client-ui-settings": "workspace:^",
     "@deepseek-ai/dsh-client-ui-settings-general": "workspace:^",
     "@deepseek-ai/dsh-client-ui-sidebar": "workspace:^",
     "@deepseek-ai/dsh-client-ui-slots": "workspace:^",
     "@deepseek-ai/dsh-client-test-runtime": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^",
     "@deepseek-ai/dsh-platform-account": "workspace:^",
     "@deepseek-ai/dsh-project-membership-client": "workspace:^",
     "@deepseek-ai/dsh-remote-access": "workspace:^",
     "@deepseek-ai/dsh-remote-protocol": "workspace:^",
     "@types/react": "~18.3.1",
-    "react": "^18.2.0"
+    "react": "^18.2.0",
+    "uqr": "^0.1.3"
   },
   "files": [
     "lib/index.js",
-    "lib/invariant.js",
-    "lib/client.cjs",
+    "lib/client.js",
     "lib/protocol.js",
     "lib/pairing-source.js",
     "lib/types/**/*.d.ts"

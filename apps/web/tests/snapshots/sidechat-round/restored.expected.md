@@ -1,0 +1,52 @@
+- tablist:
+  - tab "Start Close":
+    - text: Start
+    - button "Close":
+      - img
+  - tab "Reply with a one-sentence description of … Close" [selected]:
+    - text: Reply with a one-sentence description of …
+    - button "Close":
+      - img
+  - button "Split"
+  - button "Fullscreen"
+  - button "Collapse sidebar"
+- tablist:
+  - tab "Chat" [selected]
+  - tab "Trajectory"
+- text: Reply with a one-sentence description of event sourcing, then stop. {{clock}}
+- button "Copy":
+  - img
+- button "Thought for a while":
+  - text: Thought for a while
+  - img
+- paragraph: Event sourcing is a pattern where all changes to an application's state are stored as an immutable, append-only sequence of events, rather than persisting only the current state, enabling full auditability, temporal queries, and event-driven architectures.
+- button "Copy":
+  - img
+- button "Good response":
+  - img
+- button "Bad response":
+  - img
+- button "Branch into a new conversation":
+  - img
+- button "Ran for {{duration}}":
+  - img
+  - text: Ran for {{duration}}
+- text: {{clock}}
+- textbox "Message or run a task, / commands, @ files or sessions":
+  - paragraph: Keep this draft after the Side Chat admission refusal.
+- button "Commands":
+  - img
+- button "Add attachment" [disabled]:
+  - img
+- 'button "Access mode, current: Read Only"': Read Only
+- button "Select model, current DeepSeek-V4-Flash":
+  - text: DeepSeek-V4-Flash
+  - img
+- button "6% of context used"
+- button "Send message"
+- button "2 turns 2 steps · {{throughput}} tok/s":
+  - img
+  - text: 2 turns 2 steps{{throughput}} tok/s
+- button "15.7K tok · Cache hit 99%":
+  - img
+  - text: 15.7K tokCache hit 99%

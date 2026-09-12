@@ -12,6 +12,8 @@ Status: implemented
 
 DeepSeek Gestalt 是 Desktop Host：Electron 拥有窗口、应用菜单、进程寿命和更新检查。启动时拉起捆绑的官方 Node 加上锁死的 `dsh web` Web Host（`--host 127.0.0.1 --port 0 --no-open`），并打开该环回 URL。Desktop Host 已经拥有窗口，因此 spawn 与叠加层都让操作系统默认浏览器保持关闭（[Desktop Web Host `--no-open`](../bug-fix/2026-08-22-desktop-web-host-no-open.zh.md)）。Web Host 保留全部 Host 能力，包括原生选目录。
 
+`apps/desktop` 只承载 Gestalt 这一套产品装配。Core 与 SDK 包跟随仓库发布版本，Desktop bundle 则保留独立版本、产品身份、更新器、Companion、配对、手机、Sub2API 与原生 overlay owner。本包不再提供另一套安装 pnpm 托管 runtime 的 Electron shell 构建入口。采用该 shell 前必须先迁移这些 owner，并通过既有的源码、打包、升级和设备验收路径。
+
 Electron 在退出阶段继续监管 Web Host。窗口退出、终止信号和 smoke 结束都会取消尚未完成的启动、停止子进程，并等待进程退出后才终止 Desktop Host；主动关闭不会触发一次性崩溃重启。可信主窗口停留在当前环回 origin，普通网页链接交给系统浏览器，并拒绝其他导航和所有新 Electron 窗口。
 
 第一个 Desktop Bundle 是 `0.1.0`，与 npm `dsh` 版本线独立。app id 为 `com.gestalt.deepseek`。显示名为 DeepSeek Gestalt。更新源是 `BeiKeJieDeLiuLangMao/deepseek-harness-gestalt` 上的 GitHub Releases（`gestalt-v*` 标签，非 prerelease）。每个 macOS 目标都先在匹配架构的 runner 上安装与部署，再使用千机团队身份公证；Windows 发未签名 NSIS 仍更新。普通退出不会安装已下载更新。Update Control 仍显示「下载」时，同一 15 分钟 GitHub feed 检查仍会运行，后续 `update-available` 会替换展示的版本；复检错误会保留该提供。Update Control 显示截断后的整数下载百分比。在 macOS 上，zip 落地后控件保持 `preparing`，直到原生 Squirrel 完成 stage，然后才提供「安装并重启」。updater 处于 installing 时，`before-quit` 不取消 Electron 退出，以便 `quitAndInstall` 能替换应用。在 macOS 上，`autoInstallOnAppQuit` 只在下载后把 zip 预取进 Squirrel。
@@ -33,6 +35,8 @@ Window Chrome 在 Desktop 侧栏、中间 Session 内容与顶部 Workbench 上�
 ## Alternatives considered
 
 **用 Electron 当 Web Host（`ELECTRON_RUN_AS_NODE`）。** 所有原生插件都要按 Electron ABI 重编，引擎行为和 CLI `dsh web` 会分叉。
+
+**用隔离的 pnpm 托管 Electron shell 替换 Gestalt。** 该 shell 不持有 Gestalt 的更新 feed、Companion 与配对协议、手机 runtime、Sub2API 安装器或原生 overlay。在迁移这些 owner 之前替换入口会删除已交付的产品行为。
 
 **像千机·Gestalt 那样一工作区一窗口。** 现有 Session Surface 已经在一个侧栏里列出全部 Workspace。
 

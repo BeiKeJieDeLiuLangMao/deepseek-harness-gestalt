@@ -4,14 +4,20 @@
  * only mutation verbs and page observation.
  */
 
-import type {
-  BrowserPageState,
-  BrowserRuntimeState,
-  BrowserScreenshot,
-  BrowserTarget,
+import {
+  unwrapBrowserWorkspaceRemote,
+  type BrowserPageState,
+  type BrowserRuntimeState,
+  type BrowserScreenshot,
+  type BrowserTarget,
 } from '@deepseek-ai/dsh-browser-workspace/client'
 
-export { unwrapBrowserWorkspaceRemote as unwrapRemote } from '@deepseek-ai/dsh-browser-workspace/client'
+/**
+ * Unwrap one Browser Workspace Remote result or throw its reported failure.
+ * @param result - settling result from a generated Browser Workspace method.
+ * @returns the successful payload.
+ */
+export const unwrapRemote = unwrapBrowserWorkspaceRemote
 
 /** Official page chrome verbs closed over the current Session. */
 export interface BrowserPageChromeActions {

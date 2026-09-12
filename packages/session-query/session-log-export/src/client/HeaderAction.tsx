@@ -2,11 +2,10 @@ import type { ReactNode } from 'react'
 import { SessionLogDownloadDialog, type SessionLogDownloadDialogProps } from './Dialog.tsx'
 
 /**
- * Keep the Session-scoped download modal mounted in the Session Header so
- * `/export` can open it from any conversation view. The visible download
- * control lives in the Trajectory toolbar.
+ * Host the shared Session-log download dialog in the Session Header utilities
+ * hole. The visible Trajectory toolbar capsule is a separate contribution.
  * @param props - Session runtime, download controller, and localized dialog copy.
- * @returns the Session-scoped dialog host.
+ * @returns the Session-scoped dialog.
  */
 export function SessionLogDownloadHeaderAction(props: SessionLogDownloadDialogProps): ReactNode {
   return <SessionLogDownloadDialog {...props} />

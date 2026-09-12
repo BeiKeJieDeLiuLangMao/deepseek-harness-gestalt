@@ -88,6 +88,7 @@ export class ScheduleRuntime {
    * Construct an inactive runtime; {@link start} begins the first preflight.
    * @param ctx - Global service context.
    * @param agent - Exact live root agent.
+   * @param transactions - Plugin-owned FIFO shared with tool management.
    */
   constructor(
     private readonly ctx: Context,
@@ -206,10 +207,7 @@ export class ScheduleRuntime {
   /** Fold the current exact runtime suffix and contain a corrupt durable stream. */
   private readFolded(): FoldedSchedules | undefined {
     try {
-      return foldScheduleEvents(
-        this.agent.session.events,
-        this.agent.session.header.seedLength ?? 0,
-      )
+      return foldScheduleEvents(this.agent.session.ownEvents())
     } catch (error: unknown) {
       this.faulted = true
       const detail = error instanceof ScheduleLogError ? error.message : renderThrown(error)

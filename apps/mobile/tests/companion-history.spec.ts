@@ -2,13 +2,14 @@
 import { createElement } from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import {
-  EMPTY_CHAT_SNAPSHOT, EMPTY_CONVERSATION_VIEWS,
-  type ConversationSnapshot, type SessionId, type SessionListState, type WorkspaceId, type WorkspaceView,
-} from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { WorkspaceView } from '@deepseek-ai/dsh-api-workspace-controller/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 import {
   COMPANION_HISTORY_PAGE_SIZE, pageCompanionHistory,
 } from '../src/companion-history.ts'
+import type { MobileConversationView } from '../src/companion-projection.ts'
 import { MobileBrowse } from '../src/MobileBrowse.tsx'
 import type { MobilePresentationClock } from '../src/mobile-clock.ts'
 
@@ -30,11 +31,9 @@ const browsePresentation = {
   search: { query: '', status: 'idle', items: [], hasMore: false } as const,
 }
 
-function conversation(): ConversationSnapshot {
+function conversation(): MobileConversationView {
   return {
     sessionId: alphaId,
-    views: EMPTY_CONVERSATION_VIEWS,
-    chat: EMPTY_CHAT_SNAPSHOT,
     nodes: [{ kind: 'user', seq: 1, time: 1, content: [{ type: 'text', text: 'hello' }], source: {} }],
     turnTimings: new Map(), turnEnds: new Map(), partial: null, runningCalls: [], pending: [], queue: [],
     running: false, subagent: null, composerPhase: 'active', removed: false, openState: 'open', openError: null,

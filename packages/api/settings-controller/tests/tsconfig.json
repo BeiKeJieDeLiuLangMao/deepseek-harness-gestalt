@@ -1,0 +1,48 @@
+{
+  "extends": "../../../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "composite": false,
+    "incremental": false,
+    "rewriteRelativeImportExtensions": false
+  },
+  "files": [
+    "settings-web-search.generated.host.spec.ts"
+  ],
+  "include": [],
+  "references": [
+    {
+      "path": "../../../../vendor/cordis"
+    },
+    {
+      "path": "../../gateway/tsconfig.host.json"
+    },
+    {
+      "path": "../../gateway/tsconfig.client.json"
+    },
+    {
+      "path": ".."
+    },
+    {
+      "path": "../../../settings/settings"
+    },
+    {
+      "path": "../../../typert/generator"
+    },
+    {
+      "path": "../../../typert/protocol"
+    },
+    {
+      "path": "../../../typert/registry"
+    },
+    {
+      "path": "../../../web/web"
+    },
+    {
+      "path": "../../../session/session-projection"
+    },
+    {
+      "path": "../../../todo/tool-todo"
+    }
+  ]
+}

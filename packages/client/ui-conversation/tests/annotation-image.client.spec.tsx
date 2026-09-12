@@ -1,11 +1,17 @@
 import { describe, expect, it } from 'vitest'
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context } from '@deepseek-ai/cordis'
 import { SessionInputShell } from '../src/client/input/facade.ts'
 import type { DraftAttachmentId } from '../src/client/input/contract.ts'
 import {
   assembledRequestOverflows, compileAnnotationSubmission, createTextAnchor, isAnimatedGif,
   pinPercentFromClientPoint, TextAnnotationId,
 } from '../src/client/annotation/model.ts'
+
+const commandAttachments = {
+  serialize: () => Promise.resolve([]),
+  release: () => {},
+  unsupportedNotice: (token: string) => `${token.trim()} attachments-unsupported`,
+}
 
 const LABELS = {
   heading: (index: number) => `Annotation ${index}`,
@@ -53,13 +59,13 @@ describe('composer image pin annotations', () => {
   })
 
   it('keeps text and image pins in one order and drops pins when their image is removed', () => {
-    const shell = new SessionInputShell({
-      actx: {} as ClientContext,
+    const shell = new SessionInputShell({ commandAttachments,
+      actx: {} as Context,
       defaultSink: () => Promise.resolve({ kind: 'success' }),
       annotationLabels: LABELS,
     })
     const imageId = 'draft-1' as DraftAttachmentId
-    shell.addImages([imageId])
+    shell.addAttachments([imageId])
     const textId = shell.actions.addTextAnnotation(
       createTextAnchor('message-1', 'The exact passage.', 'exact passage', 4),
       '',
@@ -69,13 +75,13 @@ describe('composer image pin annotations', () => {
     shell.actions.updateImagePin(pinId, { x: 33, note: 'moved' })
     const pin = shell.snapshot.annotations[1]
     expect(pin?.kind === 'image-pin' && pin.x === 33 && pin.note === 'moved').toBe(true)
-    shell.removeImage(imageId)
+    shell.removeAttachment(imageId)
     expect(shell.snapshot.annotations.map(item => item.id)).toEqual([textId])
   })
 
   it('forwards a history pin source through the public action face', () => {
-    const shell = new SessionInputShell({
-      actx: {} as ClientContext,
+    const shell = new SessionInputShell({ commandAttachments,
+      actx: {} as Context,
       defaultSink: () => Promise.resolve({ kind: 'success' }),
       annotationLabels: LABELS,
     })

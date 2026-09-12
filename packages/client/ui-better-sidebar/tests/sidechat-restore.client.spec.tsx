@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SessionId } from '@deepseek-ai/dsh-session'
-import type { Context, SidebarSessionSummary } from '../src/context-types.ts'
+import type {
+  SidebarContext as Context, SidebarSessionList, SidebarSessionSummary,
+} from '../src/context-types.ts'
 import {
   allLeaves, closeFloatByTab, closeTab, makeDefaultState, reconcileSideThreads, sanitizeState,
   SidebarStore, tombstoneSideThread, type SidebarState, type SidebarTab,
@@ -20,7 +22,14 @@ function summary(id: string, overrides: Partial<SidebarSessionSummary> = {}): Si
 }
 
 function sideThread(id: string, parentId = 'parent', title = `Side: ${id}`): SidebarSessionSummary {
-  return summary(id, { origin: 'subagent', parentId: SessionId(parentId), displayTitle: title })
+  return summary(id, { origin: 'subagent', parentId: SessionId(parentId), title, displayTitle: title })
+}
+
+function sessionList(
+  byId: SidebarSessionList['byId'],
+  subagentsByParent: SidebarSessionList['subagentsByParent'] = {},
+): Pick<SidebarSessionList, 'byId' | 'subagentsByParent'> {
+  return { byId, subagentsByParent }
 }
 
 const threadRef = (threadId: string, title = '问题一') => ({ threadId: SessionId(threadId), title })
@@ -45,7 +54,10 @@ function dockedTabs(state: SidebarState): SidebarTab[] {
 describe('restorableSideThreads', () => {
   it('collects a published direct side child with the label prefix stripped', () => {
     const threads = restorableSideThreads(
-      { parent: summary('parent'), child: sideThread('child', 'parent', 'Side: 要不要拆分支？') },
+      sessionList({
+        parent: summary('parent'),
+        child: sideThread('child', 'parent', 'Side: 要不要拆分支？'),
+      }),
       SessionId('parent'),
       { phase: 'ready', archivedSessionIds: [] },
     )
@@ -64,7 +76,56 @@ describe('restorableSideThreads', () => {
     }
     byId.blank.blank = true
 
-    expect(restorableSideThreads(byId, SessionId('parent'), {
+    expect(restorableSideThreads(sessionList(byId), SessionId('parent'), {
+      phase: 'ready', archivedSessionIds: [],
+    })).toEqual([])
+  })
+
+  it('uses the loaded parent catalog label when a cold child has no title projection', () => {
+    const child = summary('child', {
+      origin: 'subagent', parentId: SessionId('parent'), displayTitle: 'workspace',
+    })
+
+    expect(restorableSideThreads(sessionList({ child }, {
+      parent: {
+        parentAvailable: true,
+        state: 'ready',
+        error: null,
+        entries: [{
+          kind: 'child',
+          id: 'child',
+          mode: 'continuable',
+          activity: 'inactive',
+          hasChildren: false,
+          label: 'Side: 从目录恢复',
+        }],
+      },
+    }), SessionId('parent'), {
+      phase: 'ready', archivedSessionIds: [],
+    })).toEqual([threadRef('child', '从目录恢复')])
+  })
+
+  it('does not restore an untitled ordinary child from a Side-prefixed Workspace basename', () => {
+    const child = summary('child', {
+      origin: 'subagent', parentId: SessionId('parent'),
+      cwd: '/workspace/Side: Project', displayTitle: 'Side: Project',
+    })
+
+    expect(restorableSideThreads(sessionList({ child }, {
+      parent: {
+        parentAvailable: true,
+        state: 'ready',
+        error: null,
+        entries: [{
+          kind: 'child',
+          id: 'child',
+          mode: 'continuable',
+          activity: 'inactive',
+          hasChildren: false,
+          label: 'worker',
+        }],
+      },
+    }), SessionId('parent'), {
       phase: 'ready', archivedSessionIds: [],
     })).toEqual([])
   })
@@ -72,7 +133,7 @@ describe('restorableSideThreads', () => {
   it('excludes archived side threads after browser-local state is lost', () => {
     const byId = { child: sideThread('child') }
 
-    expect(restorableSideThreads(byId, SessionId('parent'), {
+    expect(restorableSideThreads(sessionList(byId), SessionId('parent'), {
       phase: 'ready', archivedSessionIds: [SessionId('child')],
     })).toEqual([])
   })
@@ -80,7 +141,7 @@ describe('restorableSideThreads', () => {
   it('waits for the durable archive baseline before restoring any thread', () => {
     const byId = { child: sideThread('child') }
 
-    expect(restorableSideThreads(byId, SessionId('parent'), {
+    expect(restorableSideThreads(sessionList(byId), SessionId('parent'), {
       phase: 'pending', archivedSessionIds: [],
     })).toEqual([])
   })
@@ -267,7 +328,10 @@ describe('subscribeSideThreadRestoration', () => {
       current: SessionId('session-a'),
       byId: { child: sideThread('child', 'session-a') },
     }
-    let workspaces = { phase: 'pending' as const, archivedSessionIds: [] }
+    let workspaces: {
+      phase: 'pending' | 'ready'
+      archivedSessionIds: readonly SessionId[]
+    } = { phase: 'pending', archivedSessionIds: [] }
     const ctx = {
       sessions: { list: {
         getSnapshot: () => sessions,

@@ -1,0 +1,66 @@
+{
+  "extends": "../../../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "composite": false,
+    "incremental": false,
+    "rewriteRelativeImportExtensions": false
+  },
+  "files": [
+    "remote.generated.host.spec.ts"
+  ],
+  "include": [],
+  "references": [
+    {
+      "path": "../../../../vendor/cordis"
+    },
+    {
+      "path": "../../../../vendor/include"
+    },
+    {
+      "path": "../../../../vendor/loader"
+    },
+    {
+      "path": "../../../api/gateway/tsconfig.host.json"
+    },
+    {
+      "path": "../../../api/gateway/tsconfig.client.json"
+    },
+    {
+      "path": "../../../util/atomic-write"
+    },
+    {
+      "path": "../../../util/brand"
+    },
+    {
+      "path": "../../../client/connection/tsconfig.host.json"
+    },
+    {
+      "path": "../../../runtime-diagnostics/invariants"
+    },
+    {
+      "path": ".."
+    },
+    {
+      "path": "../../../platform/platform-account"
+    },
+    {
+      "path": "../../../platform/remote-protocol"
+    },
+    {
+      "path": "../../../typert/generator"
+    },
+    {
+      "path": "../../../typert/protocol"
+    },
+    {
+      "path": "../../../typert/registry"
+    },
+    {
+      "path": "../../../session/session-projection"
+    },
+    {
+      "path": "../../../todo/tool-todo"
+    }
+  ]
+}

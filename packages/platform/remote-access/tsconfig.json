@@ -5,7 +5,7 @@
   "references": [
     { "path": "../../../vendor/cordis" },
     { "path": "../../util/brand" },
-    { "path": "../../runtime-diagnostics/invariants" },
+    { "path": "../../util/crypto" },
     { "path": "../platform-account" },
     { "path": "../remote-protocol" }
   ]

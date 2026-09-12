@@ -180,7 +180,9 @@ describe('Desktop Companion attachment receive', () => {
       fetch: async (_input, init) => {
         const headers = new Headers(init?.headers)
         expect(headers.get('x-gestalt-pairing-selector')).toBe(pairingId)
-        return new Response(prepared.ciphertext, { status: 200 })
+        const body = new ArrayBuffer(prepared.ciphertext.byteLength)
+        new Uint8Array(body).set(prepared.ciphertext)
+        return new Response(body, { status: 200 })
       },
     })).resolves.toEqual(prepared.ciphertext)
   })

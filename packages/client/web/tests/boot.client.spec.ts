@@ -5,18 +5,27 @@ import type {
   ClientBundleRegistration, ClientModuleCreateOptions, ClientModuleLoaderTarget, DshWindow,
   WebBootEntry,
 } from '@deepseek-ai/dsh-client-modules/client'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import * as desktopClient from '@deepseek-ai/dsh-client-ui-desktop/client'
+import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
+import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
+import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
+import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { AppWebEntry } from '../src/boot.ts'
 
 const MODULES_ID = '@deepseek-ai/dsh-client-modules'
+const PROVIDER_CLIENT_ID = 'provider/client'
+const RUNTIME_CLIENT_ID = 'runtime/client'
 const win = globalThis as DshWindow
+const transportGlobal = globalThis as {
+  __DSH_TRANSPORT__?: { loadBundle(url: string): Promise<void> }
+}
 const moduleFace = modulesClient as unknown as Record<string, unknown>
 
 afterEach(() => {
   vi.restoreAllMocks()
   delete win.__DSH_BOOT__
   delete win.__ModuleLoader__
-  delete (globalThis as Record<string, unknown>).__DSH_SHELL_READY__
+  delete transportGlobal.__DSH_TRANSPORT__
   document.body.innerHTML = ''
 })
 
@@ -47,7 +56,6 @@ async function expectBootFailure(setup: () => void, message: string): Promise<vo
   await entry.run()
   expect(container.textContent).toContain(message)
   expect(error).toHaveBeenCalledOnce()
-  expect((globalThis as Record<string, unknown>).__DSH_SHELL_READY__).toBe(true)
   await entry.dispose()
 }
 
@@ -76,12 +84,151 @@ describe('bootstrap failure rendering', () => {
     await expectBootFailure(() => {
       installFacade()
       const duplicate = { id: 'duplicate', url: '/duplicate/client.js', rev: '1' }
-      win.__DSH_BOOT__ = { rev: 'graph', entries: [duplicate, duplicate] }
+      win.__DSH_BOOT__ = {
+        rev: 'graph',
+        entries: [duplicate, duplicate],
+        batches: [{ phase: 'application', url: '/batch.js', rev: 'batch', entries: ['duplicate'] }],
+      }
     }, 'duplicate graph entry "duplicate"')
   })
 })
 
 describe('plugin activation', () => {
+  it.each([
+    ['?dsh-desktop-overlay=1', true],
+    ['', false],
+    ['?dsh-desktop-overlay=0', false],
+  ])('initializes the document before plugin loading for %s', async (search, overlay) => {
+    const originalUrl = location.href
+    const originalMarker = document.documentElement.getAttribute('data-dsh-desktop-overlay')
+    onTestFinished(() => {
+      history.replaceState(null, '', originalUrl)
+      if (originalMarker === null) document.documentElement.removeAttribute('data-dsh-desktop-overlay')
+      else document.documentElement.setAttribute('data-dsh-desktop-overlay', originalMarker)
+    })
+    history.replaceState(null, '', `/${search}`)
+    const container = document.createElement('div')
+    document.body.append(container)
+    const target = installFacade()
+    win.__DSH_BOOT__ = {
+      rev: 'graph',
+      entries: [
+        { id: 'renderer', url: '/renderer.js', rev: '1', immediately: true },
+        { id: 'desktop', url: '/desktop.js', rev: '1' },
+      ],
+      batches: [{ phase: 'application', url: '/application.js', rev: 'batch', entries: ['renderer', 'desktop'] }],
+    }
+    const observed: { phase: string; overlay: boolean }[] = []
+    const overlaySeats: string[] = []
+    const observe = (phase: string) => {
+      observed.push({ phase, overlay: document.documentElement.hasAttribute('data-dsh-desktop-overlay') })
+    }
+    const entry = new AppWebEntry(container, {
+      loadBundle: async () => {
+        observe('load')
+        target.load({
+          id: 'renderer',
+          factory: () => {
+            observe('factory')
+            return {
+              apply: (ctx: Context) => {
+                observe('apply')
+                const slots = new SlotRegistry(ctx)
+                ctx.provide('locale', new LocaleRuntime(ctx))
+                ctx.effect(() => slots.register({
+                  name: 'root',
+                  children: { 'shell.overlay': { kind: 'list', scope: 'root' } },
+                }, (props: PropsRenderSlots<'shell.overlay'>) => props.renderSlot('shell.overlay', {})))
+                ctx.reflect.provide('uiRenderer', {
+                  mount: () => {
+                    observe('mount')
+                    overlaySeats.push(...slots.entries('shell.overlay').map(seat => String(seat.options.id)))
+                    return () => {}
+                  },
+                })
+              },
+            }
+          },
+        })
+        target.load({ id: 'desktop', factory: () => desktopClient })
+      },
+    })
+    try {
+      await entry.run()
+      expect(overlaySeats).toEqual(overlay ? ['desktop-chrome-overlay'] : [])
+      expect(observed).toEqual(['load', 'factory', 'apply', 'mount'].map(phase => ({ phase, overlay })))
+    } finally {
+      await entry.dispose()
+    }
+  })
+
+  it('prefetches a parser-loaded immediate row through the injected bundle transport', async () => {
+    const container = document.createElement('div')
+    document.body.append(container)
+    const target = installFacade()
+    const entries: WebBootEntry[] = [
+      { id: 'consumer', url: '/consumer.js', rev: '1' },
+      {
+        id: 'runtime',
+        url: '/runtime.js',
+        rev: '1',
+        external: [PROVIDER_CLIENT_ID],
+        immediately: true,
+      },
+      { id: 'provider', url: '/provider.js', rev: '1' },
+      { id: 'renderer', url: '/renderer.js', rev: '1' },
+    ]
+    const applicationUrl = '/application.js'
+    win.__DSH_BOOT__ = {
+      rev: 'graph',
+      entries,
+      batches: [{ phase: 'application', url: applicationUrl, rev: 'batch', entries: entries.map(row => row.id) }],
+    }
+    const loaded: string[] = []
+    const registrations: ClientBundleRegistration[] = [
+      {
+        id: 'consumer',
+        factory: require => ({
+          apply: () => {
+            expect((require(RUNTIME_CLIENT_ID) as { marker: string }).marker).toBe('provider')
+          },
+        }),
+      },
+      {
+        id: 'provider',
+        factory: () => ({ apply: () => {}, marker: 'provider' }),
+      },
+      {
+        id: 'runtime',
+        factory: require => ({
+          apply: () => {},
+          marker: (require(PROVIDER_CLIENT_ID) as { marker: string }).marker,
+        }),
+      },
+      {
+        id: 'renderer',
+        factory: () => ({
+          apply: (ctx: Context) => {
+            ctx.reflect.provide('uiRenderer', { mount: () => () => {} })
+          },
+        }),
+      },
+    ]
+    transportGlobal.__DSH_TRANSPORT__ = {
+      loadBundle: async (url) => {
+        loaded.push(url)
+        if (url !== applicationUrl) throw new Error(`missing fixture batch ${url}`)
+        for (const registration of registrations) target.load(registration)
+      },
+    }
+
+    const entry = new AppWebEntry(container)
+    await entry.run()
+
+    expect(loaded).toEqual([applicationUrl])
+    await entry.dispose()
+  })
+
   it('allows a modules-dependent row to be created before the modules row', async () => {
     const events: string[] = []
     const container = document.createElement('div')
@@ -92,7 +239,16 @@ describe('plugin activation', () => {
       { id: MODULES_ID, url: '/modules.js', rev: '1' },
       { id: 'renderer', url: '/renderer.js', rev: '1' },
     ]
-    win.__DSH_BOOT__ = { rev: 'graph', entries }
+    win.__DSH_BOOT__ = {
+      rev: 'graph',
+      entries,
+      batches: [{
+        phase: 'application',
+        url: '/application.js',
+        rev: 'batch',
+        entries: entries.map(row => row.id),
+      }],
+    }
     const registrations = new Map<string, ClientBundleRegistration>([
       ['/consumer.js', {
         id: 'consumer',
@@ -121,9 +277,8 @@ describe('plugin activation', () => {
     ])
     const entry = new AppWebEntry(container, {
       loadBundle: async (url) => {
-        const registration = registrations.get(url)
-        if (registration === undefined) throw new Error(`missing fixture registration ${url}`)
-        target.load(registration)
+        if (url !== '/application.js') throw new Error(`missing fixture batch ${url}`)
+        for (const registration of registrations.values()) target.load(registration)
       },
     })
 
@@ -132,7 +287,6 @@ describe('plugin activation', () => {
     expect(target.mode).toBe('live')
     expect(events).toEqual(['consumer', 'mount'])
     expect(container.textContent).toBe('mounted')
-    expect((globalThis as Record<string, unknown>).__DSH_SHELL_READY__).toBe(true)
     await entry.dispose()
   })
 })

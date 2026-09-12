@@ -1,13 +1,13 @@
 /**
- * Pins shared client-bundle preset rules: the module-edge purity gate and
- * the physical watch dependencies hidden behind virtual CSS Modules.
+ * Pins shared client-bundle preset rules: module-edge purity, source-map
+ * chaining, and physical watch dependencies hidden behind virtual CSS Modules.
  */
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it, vi } from 'vitest'
-import { browserSubpath, clientBundle, requestedExternals } from '../packages/client/tsdown.client.ts'
+import { clientBundle, requestedExternals } from '../packages/client/tsdown.client.ts'
 
 type ResolveId = (source: string) => null | { id: string; external: boolean }
 
@@ -17,13 +17,9 @@ interface CssModulePlugin {
   load?: (this: { addWatchFile: (id: string) => void }, id: string) => Promise<unknown>
 }
 
-interface CssAssetPlugin {
+interface SourceMapPlugin {
   name: string
-  resolveId?: (
-    this: { emitFile: (file: { fileName: string; source: Uint8Array; originalFileName: string }) => string },
-    source: string,
-    importer: string | undefined,
-  ) => Promise<unknown>
+  load?: (id: string) => Promise<unknown>
 }
 
 /** A representative dynamic bundle using the shared client baseline. */
@@ -45,31 +41,10 @@ describe('client bundle build faces', () => {
     expect(development?.entry).toEqual({ client: 'src/client/index.ts' })
     expect(artifact?.entry).toEqual({ client: 'lib/types/client/index.js' })
   })
-
-  it('uses a package-declared TSX entry in development', () => {
-    const bundle = clientBundle(
-      '@deepseek-ai/dsh-client-test',
-      ['lib/types/index.js'],
-      { clientSourceEntry: 'src/client/index.tsx' },
-    )
-    const development = bundle({ env: {} }).find(config => config.platform === 'browser')
-    const artifact = bundle({ env: { DSH_BUILD_FACE: 'client' } })
-      .find(config => config.platform === 'browser')
-
-    expect(development?.entry).toEqual({ client: 'src/client/index.tsx' })
-    expect(artifact?.entry).toEqual({ client: 'lib/types/client/index.js' })
-  })
-
-  it('publishes the loader factory as CommonJS with an explicit CommonJS extension', () => {
-    const artifact = clientConfigs()[0]
-
-    expect(artifact?.format).toBe('cjs')
-    expect(artifact?.outputOptions).toMatchObject({ entryFileNames: 'client.cjs' })
-  })
 })
 
 function clientSourceMapPath(packagePath: string): string {
-  return fileURLToPath(new URL(`../packages/${packagePath}/lib/client.cjs.map`, import.meta.url))
+  return fileURLToPath(new URL(`../packages/${packagePath}/lib/client.js.map`, import.meta.url))
 }
 
 function purityResolveId(id = REQUESTING_PACKAGE): ResolveId {
@@ -92,13 +67,21 @@ function cssModulePlugin(): CssModulePlugin {
   return plugin
 }
 
+function sourceMapPlugin(): SourceMapPlugin {
+  const configs = clientConfigs()
+  const plugins = (configs[0] as { plugins: SourceMapPlugin[] }).plugins
+  const plugin = plugins.find(candidate => candidate.name === 'dsh-tsc-sourcemap')
+  if (plugin?.load === undefined) throw new Error('tsc sourcemap plugin missing from client config')
+  return plugin
+}
+
 describe('client bundle purity gate', () => {
   const resolveId = purityResolveId()
 
   it('leaves default externals and non-scoped specifiers alone', () => {
+    expect(resolveId('@deepseek-ai/dsh-client-store')).toBeNull()
     expect(resolveId('@deepseek-ai/dsh-client-ui-slots')).toBeNull()
     expect(resolveId('@deepseek-ai/dsh-client-ui-primitives')).toBeNull()
-    expect(resolveId('@deepseek-ai/dsh-client-runtime/client')).toBeNull()
     expect(resolveId('react')).toBeNull()
     expect(resolveId('zod')).toBeNull()
   })
@@ -108,15 +91,32 @@ describe('client bundle purity gate', () => {
     expect(() => resolveId('@deepseek-ai/dsh-client-web-react/store')).toThrow(/purity/)
   })
 
-  it('lets inline-safe wire layers inline', () => {
-    expect(resolveId('@deepseek-ai/dsh-host-apiproxy/api')).toBeNull()
-    expect(resolveId('@deepseek-ai/dsh-browser-workspace/client')).toBeNull()
+  it('lets inline-safe libraries inline', () => {
     expect(resolveId('@deepseek-ai/dsh-session/surface')).toBeNull()
     expect(resolveId('@deepseek-ai/dsh-brand')).toBeNull()
-    expect(resolveId('@deepseek-ai/dsh-project-membership/remote-url')).toBeNull()
+    expect(resolveId('@deepseek-ai/dsh-deque')).toBeNull()
+    expect(resolveId('@deepseek-ai/dsh-util-values')).toBeNull()
+    expect(resolveId('@deepseek-ai/dsh-browser-workspace/client')).toBeNull()
+    expect(resolveId('@deepseek-ai/dsh-platform-account/privacy')).toBeNull()
     expect(resolveId('@deepseek-ai/dsh-project-membership/invite-role')).toBeNull()
-    expect(() => resolveId('@deepseek-ai/dsh-project-membership')).toThrow(/purity/)
+    expect(resolveId('@deepseek-ai/dsh-token-meter/client')).toBeNull()
     expect(() => resolveId('@deepseek-ai/dsh-browser-workspace')).toThrow(/purity/)
+    expect(() => resolveId('@deepseek-ai/dsh-browser-workspace/client/internal')).toThrow(/purity/)
+    expect(() => resolveId('@deepseek-ai/dsh-platform-account')).toThrow(/purity/)
+    expect(() => resolveId('@deepseek-ai/dsh-platform-account/privacy/internal')).toThrow(/purity/)
+    expect(() => resolveId('@deepseek-ai/dsh-project-membership')).toThrow(/purity/)
+    expect(() => resolveId('@deepseek-ai/dsh-project-membership/invite-role/internal')).toThrow(/purity/)
+    expect(() => resolveId('@deepseek-ai/dsh-token-meter')).toThrow(/purity/)
+    expect(() => resolveId('@deepseek-ai/dsh-token-meter/client/internal')).toThrow(/purity/)
+    expect(resolveId('@deepseek-ai/dsh-host-open-in-app/shared')).toBeNull()
+    expect(() => resolveId('@deepseek-ai/dsh-host-open-in-app')).toThrow(/purity/)
+  })
+
+  it('admits only the pure spill notice entry, not its Host policy', () => {
+    expect(resolveId('@deepseek-ai/dsh-spill-policy/notice')).toBeNull()
+    expect(resolveId('@deepseek-ai/dsh-output-retention')).toBeNull()
+    expect(() => resolveId('@deepseek-ai/dsh-spill-policy')).toThrow(/purity/)
+    expect(() => resolveId('@deepseek-ai/dsh-spill-policy/notice/internal')).toThrow(/purity/)
   })
 
   it('lets exact generated Remote contributions inline without admitting their package implementation', () => {
@@ -133,14 +133,14 @@ describe('client bundle purity gate', () => {
 
   it('throws on cross-plugin value imports — bare plugin names and /client subpaths alike', () => {
     expect(() => resolveId('@deepseek-ai/dsh-client-connection')).toThrow(/purity/)
-    expect(() => resolveId('@deepseek-ai/dsh-client-runtime')).toThrow(/purity/)
+    expect(() => resolveId('@deepseek-ai/dsh-client-ui-session')).toThrow(/purity/)
     expect(() => resolveId('@deepseek-ai/dsh-client-ui-layout/client')).toThrow(/purity/)
   })
 
-  it('admits the parser-preloaded runtime for every dynamic bundle', () => {
-    expect(resolveId('@deepseek-ai/dsh-client-runtime/client')).toBeNull()
-    const withoutRequest = purityResolveId('@deepseek-ai/dsh-client-ui-goal')
-    expect(withoutRequest('@deepseek-ai/dsh-client-runtime/client')).toBeNull()
+  it('admits package-specific requests only for the declaring bundle', () => {
+    const requesting = purityResolveId('@deepseek-ai/dsh-api-session-controller')
+    expect(requesting('@deepseek-ai/dsh-api-gateway/client')).toBeNull()
+    expect(() => resolveId('@deepseek-ai/dsh-api-gateway/client')).toThrow(/purity/)
   })
 
   it('externalizes the baseline independently of each package manifest', () => {
@@ -152,7 +152,7 @@ describe('client bundle purity gate', () => {
     expect(requesting.neverBundle('react')).toBe(true)
     expect(requesting.neverBundle('zod')).toBe(false)
     expect(plain.neverBundle('react')).toBe(true)
-    expect(plain.neverBundle('@deepseek-ai/dsh-client-runtime/client')).toBe(true)
+    expect(plain.neverBundle('@deepseek-ai/dsh-client-store')).toBe(true)
   })
 })
 
@@ -181,13 +181,28 @@ describe('client bundle debug artifacts', () => {
   it('emits source maps for plugin TS and TSX outside the Vite module graph', () => {
     const configs = clientConfigs()
     expect(configs[0]?.sourcemap).toBe(true)
+    expect(configs[0]?.outputOptions).toMatchObject({ sourcemapExcludeSources: false })
   })
 
-  it('composes tsc maps into every dynamic browser bundle', () => {
-    const configs = clientConfigs()
-    const plugins = (configs[0] as { plugins: { name: string }[] }).plugins
+  it('chains emitted tsc maps when the production Client build consumes lib/types', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-client-sourcemap-'))
+    try {
+      const entry = join(root, 'lib', 'types', 'client', 'index.js')
+      const source = join(root, 'src', 'client', 'index.ts')
+      const map = { version: 3, names: [], mappings: 'AAAA', sources: ['../../../src/client/index.ts'] }
+      mkdirSync(join(root, 'lib', 'types', 'client'), { recursive: true })
+      mkdirSync(join(root, 'src', 'client'), { recursive: true })
+      writeFileSync(entry, 'export const marker = true\n//# sourceMappingURL=index.js.map\n')
+      writeFileSync(`${entry}.map`, JSON.stringify(map))
+      writeFileSync(source, 'export const marker: true = true\n')
 
-    expect(plugins.some(plugin => plugin.name === 'dsh-tsc-sourcemap')).toBe(true)
+      await expect(sourceMapPlugin().load!(entry)).resolves.toEqual({
+        code: 'export const marker = true',
+        map: { ...map, sourcesContent: ['export const marker: true = true\n'] },
+      })
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 
   it('maps first-party sources to their repository package paths', () => {
@@ -222,83 +237,14 @@ describe('client bundle debug artifacts', () => {
     if (transform === undefined) throw new Error('client sourcemap path transform missing')
 
     const sourceMapPath = clientSourceMapPath('client/connection')
-    const workspaceSource = transform('../../../host/apiproxy/src/api/rpc.ts', sourceMapPath)
-    expect(workspaceSource).toBe('../../../packages/host/apiproxy/src/api/rpc.ts')
+    const workspaceSource = transform('../src/rpc.ts', sourceMapPath)
+    expect(workspaceSource).toBe('../../../packages/client/connection/src/rpc.ts')
     const resolved = new URL(workspaceSource, 'https://dsh.test/plugins/@deepseek-ai/dsh-client-connection/client.js.map')
-    expect(resolved.pathname).toBe('/packages/host/apiproxy/src/api/rpc.ts')
+    expect(resolved.pathname).toBe('/packages/client/connection/src/rpc.ts')
 
     const dependencySource = '../../../../node_modules/.pnpm/zod@4.4.3/node_modules/zod/index.js'
     expect(transform(dependencySource, sourceMapPath)).toBe(dependencySource)
   })
-})
-
-describe('browser subpath stylesheet assets', () => {
-  it.each<{
-    sourceRoot: '.' | undefined
-    emittedSuffix: string
-    sourceSuffix: string
-    fileName: string
-  }>([
-    {
-      sourceRoot: undefined, emittedSuffix: 'client/Foo.module.css', sourceSuffix: 'src/client/Foo.module.css',
-      fileName: 'client/Foo.module.css',
-    },
-    {
-      sourceRoot: '.', emittedSuffix: 'src/Foo.module.css', sourceSuffix: 'src/Foo.module.css',
-      fileName: 'Foo.module.css',
-    },
-  ])('maps emitted $emittedSuffix through asset source root $sourceRoot', async ({
-    sourceRoot, emittedSuffix, sourceSuffix, fileName,
-  }) => {
-    const root = await mkdtemp(join(tmpdir(), 'dsh-browser-subpath-css-'))
-    const importer = join(root, 'lib', 'types', emittedSuffix.replace(/\.css$/u, '.js'))
-    const stylesheet = join(root, sourceSuffix)
-    await mkdir(join(importer, '..'), { recursive: true })
-    await mkdir(join(stylesheet, '..'), { recursive: true })
-    await writeFile(stylesheet, '.page { display: flex; }\n')
-    const build = browserSubpath('@deepseek-ai/dsh-client-fixture', [importer],
-      sourceRoot === undefined ? {} : { assetSourceRoot: sourceRoot })
-    const config = build({ env: { DSH_BUILD_FACE: 'client' } })[0]
-    const plugins = (config as { plugins: CssAssetPlugin[] }).plugins
-    const plugin = plugins.find(candidate => candidate.name === 'dsh-css-asset')
-    if (plugin?.resolveId === undefined) throw new Error('CSS asset plugin missing from browser subpath config')
-    const emitted: { fileName: string; source: Uint8Array; originalFileName: string }[] = []
-
-    const resolved = await plugin.resolveId.call({ emitFile(file) { emitted.push(file); return file.fileName } },
-      './Foo.module.css', importer)
-
-    expect(resolved).toEqual({ id: `./${fileName}`, external: true })
-    expect(emitted).toHaveLength(1)
-    expect(emitted[0]?.fileName).toBe(fileName)
-    expect(emitted[0]?.originalFileName).toBe(stylesheet)
-    expect((await readFile(emitted[0]?.originalFileName ?? '', 'utf8'))).toContain('display: flex')
-    await rm(root, { recursive: true, force: true })
-  })
-
-  it.each(['src', '.'] as const)('rejects a stylesheet escaping the %s owner root through another src path', async (sourceRoot) => {
-    const parent = await mkdtemp(join(tmpdir(), 'dsh-browser-subpath-css-outside-'))
-    const root = join(parent, 'owner')
-    const importer = join(root, 'lib', 'types', 'src', 'Foo.js')
-    const stylesheet = join(parent, 'other', 'src', 'Foo.module.css')
-    await mkdir(join(importer, '..'), { recursive: true })
-    await mkdir(join(stylesheet, '..'), { recursive: true })
-    await writeFile(stylesheet, '.page { display: flex; }\n')
-    const config = browserSubpath('@deepseek-ai/dsh-client-fixture', [importer], {
-      assetSourceRoot: sourceRoot,
-    })({ env: { DSH_BUILD_FACE: 'client' } })[0]
-    const plugins = (config as { plugins: CssAssetPlugin[] }).plugins
-    const plugin = plugins.find(candidate => candidate.name === 'dsh-css-asset')
-    if (plugin?.resolveId === undefined) throw new Error('CSS asset plugin missing from browser subpath config')
-
-    await expect(plugin.resolveId.call({ emitFile: () => '' }, '../../../../other/src/Foo.module.css', importer))
-      .rejects.toThrow(/outside the package sources/)
-    await rm(parent, { recursive: true, force: true })
-  })
-
-  if (false) {
-    // @ts-expect-error Browser subpath asset roots are the two supported compiler layouts.
-    browserSubpath('@deepseek-ai/dsh-client-fixture', ['lib/types/Foo.js'], { assetSourceRoot: '../other/src' })
-  }
 })
 
 describe('client bundle CSS Modules watch graph', () => {

@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-05-workspace-controller-git-remote.md
+2026-09-05-workspace-controller-git-remote.md: c039eb4fd4f4249ac8883de90bbcf57ec8ea423f
+2026-09-05-workspace-controller-git-remote.zh.md: 2aa63aac0520014eb39dbaff23f17eb2b2055f3c

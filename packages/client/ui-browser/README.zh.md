@@ -1,25 +1,60 @@
+---
+description: "dsh Web GUI 中由 Session 持有的官方 Browser chrome 与折叠标签页预览。"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-client-ui-browser
 
 [English](README.md) | 中文
 
-Session 持有的官方 Browser chrome 与收起后的标签页预览。[`dsh-client-ui-workbench`](../ui-workbench/README.zh.md) 直接导入页面 chrome，并把它挂在快照 `browser` 标签里。本插件占用 `conversation.browser.preview`，并注册设置分区 `id: 'browser'`。实时 Workspace 事实通过 `useProjection('browserWorkspace')` 到达；变更走生成的 `remote.browserWorkspace` 命名空间，并从 module table 请求共享的 `api-remotes/client` helper。页面 chrome 带窗格本地已提交 URL 轨迹上的后退/前进，以及在默认浏览器打开的控件；建页被拒会显示重试。
+## 概述
+
+使用官方浏览器 UI 创建并导航会话所属页面、在默认浏览器中重新打开页面，并重试失败的创建操作。该插件把页面 chrome 装入工作台的浏览器标签页，并在会话边栏足够宽时显示折叠预览。Workspace 投影提供实时事实；生成的 Browser RPC 负责变更。
+
+## 目录
+
+- [包约定](#package-contract)
+- [模型体验](#model-experience)
+- [已知限制与延后工作](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+-----
+
+<a id="package-contract"></a>
+## 包约定
+
+Session 持有的官方 Browser chrome 与收起后的标签页预览。[`dsh-client-ui-workbench`](../ui-workbench/README.zh.md) 通过必需的注入 face `browserUi` 读取当前设置派生的创建身份、渲染官方页面 chrome，并执行一次 observe 的变更恢复；页面仍挂在快照 `browser` 标签里。本插件占用 Chat 声明的 `conversation.browser.preview`，并注册设置分区 `id: 'browser'`。实时 Workspace 事实通过 Session 标准席 `useProjection('browserWorkspace')` 到达；变更走生成的 `remote.browserWorkspace` 命名空间。页面 chrome 带窗格本地已提交 URL 轨迹上的后退/前进，以及在默认浏览器打开的控件；建页被拒会显示重试。
 
 收起预览是同一批官方页面的分层摘要。ChatView 把它画在对话滚动区右侧留白，并在该留白窄于 240px 时隐藏。点击后层会带着该标签页在列表中的修订号聚焦它；点击当前层会展开工作台标签。后台标签页上的列表修订号 `BROWSER_REVISION_CONFLICT` 会对该标签页 observe 一次并重试，或展示失败。普通 MCP 工具行仍留在对话历史中。
 
-命名空间 `ui-browser` 下的设置分区 `id: 'browser'` 持有持久 Profile 名册，以及模型或用户省略 `profile` 时 `browser_create` 与侧栏 `+ → 浏览器` 使用的默认创建身份（`shared` / `temporary` / `persistent`）。名册名称是分区键：重命名会更新名册，并在该名称仍是默认持久身份时一并改写默认项。该页不会创建 Browser Workspace，也不会迁移 Chromium partition 数据。
+命名空间 `ui-browser` 下的设置分区 `id: 'browser'` 持有持久 Profile 名册，以及模型或用户省略 `profile` 时 `browser_create` 与侧栏 `+ → 浏览器` 使用的默认创建身份（`shared` / `temporary` / `persistent`）。创建身份放在一个紧凑选择卡片中；命名 Profile 在显式重命名前保持为展示行；Profile 创建使用弹层，关闭后焦点回到触发按钮。名册名称是分区键：重命名会更新名册，并在该名称仍是默认持久身份时一并改写默认项。该页不会创建 Browser Workspace，也不会迁移 Chromium partition 数据。
 
 行为由 [工作台官方浏览器 Agent Note](../../../.agents/notes/implemented/feature/2026-08-21-workbench-official-browser.zh.md) 与 [Browser Dock Agent Note](../../../.agents/notes/implemented/feature/2026-08-19-browser-dock.zh.md) 规定。
 
+<a id="model-experience"></a>
 ## 模型体验
 
-无，因为这个面向人的 chrome 不增加工具、消息、提示词或 provider 请求；页面操作仍由 `dsh-tool-browser` 负责。
+通过 Browser Workspace 变更间接影响模型：focus、navigation、input 和页面创建会改变 `dsh-tool-browser` 随后渲染的状态。
 
 #### KV Cache 影响
 
-无；本包从不组装或发送 provider 请求。
+本包不增加稳定请求前缀；后续 browser 工具结果会反映通过 chrome 执行的页面操作。
 
 ## 已知限制与延后工作
+<a id="known-limitations-and-deferred-work"></a>
 
-- **Desktop 展示 Runtime 窗口；`dsh web` 仍是截图加文本**——`window.dshDesktop.browserPresent` 把同一份官方 `webContents` 贴到 chrome 视口上。设置页和侧栏 `+` 菜单挂在该页之上的原生 overlay 视图里；该 overlay 文档不 present 或 conceal 页面。observe 或 navigate 进行中时刷新控件旋转。已提交的 Chromium 网络错误把错误文档留在该实况视口里。浏览器 `dsh web` 没有 Host 窗口，仍画 observe/screenshot 事实。
+- **Desktop 展示 Runtime 窗口；`dsh web` 仍是截图加文本**——`window.dshDesktop.browserPresent` 把同一份官方 `webContents` 贴到 chrome 视口上。设置页和侧栏 `+` 菜单挂在该页之上的原生 overlay 视图里；该 overlay 文档不 present 或 conceal 页面。renderer 菜单与 listbox 会暂时 conceal 实况页面，并在关闭时恢复其边界，因此 React Slot action 始终可操作。observe 或 navigate 进行中时刷新控件旋转。已提交的 Chromium 网络错误把错误文档留在该实况视口里。浏览器 `dsh web` 没有 Host 窗口，仍画 observe/screenshot 事实。
 - **无密钥 web 与 headless Runtime 仍是确定性的**——浏览器 `dsh web` 与 headless 继续使用 `dsh-browser-runtime-deterministic`。Desktop Host 持有进程内 Electron `webContents`，并把叠加层 HTTP 客户端指向该 loopback origin。
 - **Profile 设置页不会创建标签页**——该分区只写名册与默认身份。
+
+本包不发布运行时不变式配套插件，因为此 adapter 消费的可变关系分别由 Settings、slots 与 Browser Workspace 拥有。
+
+<a id="dev-note"></a>
+### 开发备注
+
+<details>
+<summary>维护者工作上下文——点击展开</summary>
+
+暂无。
+
+</details>

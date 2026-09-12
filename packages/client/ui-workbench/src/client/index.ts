@@ -1,45 +1,33 @@
-/**
- * Workbench adapter, browser half: official page chrome in the snapshot
- * browser tab, 1:1 with Session-owned Workspace pages.
- */
-import { createElement, type ReactElement } from 'react'
-import type { ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
-import type {
-  BrowserPageState, BrowserTarget, BrowserWorkspaceCreateRemoteRequest, BrowserWorkspaceProjection,
-} from '@deepseek-ai/dsh-browser-workspace/client'
+/** Register Browser Workspace as the official Browser tab implementation. */
+import type { Context } from '@deepseek-ai/cordis'
+import type { BrowserWorkspaceProjection } from '@deepseek-ai/dsh-browser-workspace/client'
+import { listBrowserWorkspacePages } from '@deepseek-ai/dsh-browser-workspace/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
-import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
+import type {} from '@deepseek-ai/dsh-api-session-controller/client'
+import type {} from '@deepseek-ai/dsh-client-ui-browser/client'
+import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import {
-  BROWSER_SETTINGS_NAMESPACE,
-  DEFAULT_BROWSER_SETTINGS,
-  browserCreateRequestFromSettings,
-  type BrowserSettings,
-} from '@deepseek-ai/dsh-client-ui-browser/client'
+  OfficialBrowserRuntime, OfficialWorkbenchBrowserBody, OFFICIAL_BROWSER_KIND,
+  OFFICIAL_WORKBENCH_BROWSER_ID, officialBrowserTargetKey, officialBrowserTargetOf,
+  officialBrowserPayloadOf, workbenchBrowserDefinition,
+} from './official-browser.tsx'
 import { isDesktopOverlayDocument } from '../desktop-overlay-document.ts'
-import { OfficialBrowserTab, type OfficialBrowserTabProps } from './OfficialBrowserTab.tsx'
-import { OfficialBrowserBridge, type WorkbenchSidebarFace } from './bridge.ts'
-import { bindBrowserWorkspace, type BrowserWorkspaceRemoteFace } from './remote-bind.ts'
 
+/** Exact services required before the official Workbench Browser registers. */
 export const inject = [
-  'betterSidebar', 'sessions', 'remote', 'remote.browserWorkspace', 'settingsScope',
+  'slots', 'sessions', 'remote', 'remote.browserWorkspace', 'browserUi', 'locale',
+  'sidebarRight', 'sidebarRightTabs', 'sidebarRightPreferences',
 ] as const
 
-interface SessionListRow {
-  projectionValues?: { browserWorkspace?: BrowserWorkspaceProjection }
-}
-
-/** Face published for preview reveal and snapshot BrowserView. */
+/** Preview navigation face published by this adapter. */
 export interface WorkbenchBrowserFace {
-  /** Render official chrome for one snapshot browser tab. */
-  renderTab: (props: OfficialBrowserTabProps) => ReactElement
-  /** Expand the workbench and focus the active official page. */
-  reveal: (sessionId: string) => void
-  /** Settings-derived create identity for an empty `+ → Browser` tab. */
-  createRequest: () => BrowserWorkspaceCreateRemoteRequest
-  /** Bind an empty snapshot tab to a new official page. */
-  ensureOfficial: (tabId: string) => void
-  /** Replace one projected page that the current Runtime no longer owns. */
-  recoverOfficial: (tabId: string, target: BrowserTarget) => Promise<BrowserPageState | undefined>
+  /**
+   * Expand and focus the occurrence bound to the active Browser page.
+   * @param sessionId - Session whose active Browser page should be revealed.
+   */
+  reveal(sessionId: string): void
 }
 
 declare module '@deepseek-ai/cordis' {
@@ -48,51 +36,54 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
-/**
- * Client plugin body: publish official tab chrome and keep pages paired.
- * @param ctx - client root context.
- */
-export function apply(ctx: ClientContext): void {
-  const sidebar = ctx.get('betterSidebar') as WorkbenchSidebarFace | undefined
-  if (sidebar === undefined) {
-    throw new Error('ui-workbench: betterSidebar is not published; mount the snapshot client first')
-  }
-  const remote = ctx.remote.browserWorkspace as BrowserWorkspaceRemoteFace
-  const settings = ctx.settingsScope.bind<BrowserSettings>({ namespace: BROWSER_SETTINGS_NAMESPACE })
-  const createRequest = (): BrowserWorkspaceCreateRemoteRequest => browserCreateRequestFromSettings({
-    ...DEFAULT_BROWSER_SETTINGS,
-    ...settings.getSnapshot().value,
-  })
-  const bridge = new OfficialBrowserBridge({
-    sidebar,
-    bindRemote: sessionId => bindBrowserWorkspace(remote, sessionId),
-    projectionOf: (sessionId) => {
-      const row = ctx.sessions.list.getSnapshot().byId[sessionId as SessionId] as SessionListRow | undefined
-      return row?.projectionValues?.browserWorkspace
-    },
-    createRequest,
-  })
-  const face: WorkbenchBrowserFace = {
-    renderTab: props => createElement(OfficialBrowserTab, props),
-    reveal: (sessionId) => { bridge.reveal(sessionId) },
-    createRequest,
-    ensureOfficial: (tabId) => {
-      if (isDesktopOverlayDocument()) return
-      bridge.ensureOfficial(tabId)
-    },
-    recoverOfficial: async (tabId, target) => {
-      if (isDesktopOverlayDocument()) return undefined
-      return await bridge.recoverOfficial(tabId, target)
-    },
-  }
-  ctx.provide('workbenchBrowser', face)
+interface SessionListRow {
+  projectionValues?: { browserWorkspace?: BrowserWorkspaceProjection }
+}
 
+/**
+ * Register the official Browser definition, body, and occurrence owner.
+ * @param ctx - Browser Workspace and official Sidebar client services.
+ */
+export function apply(ctx: Context): void {
+  const officialCtx = ctx
+  const runtime = new OfficialBrowserRuntime(officialCtx)
+  ctx.provide('workbenchBrowser', {
+    reveal: (rawSessionId) => {
+      if (isDesktopOverlayDocument()) return
+      const sessionId = rawSessionId as SessionId
+      const row = ctx.sessions.list.getSnapshot().byId[sessionId] as SessionListRow | undefined
+      const page = listBrowserWorkspacePages(row?.projectionValues?.browserWorkspace).at(-1)
+      if (page === undefined) return
+      const key = officialBrowserTargetKey(page.target)
+      const existing = ctx.sidebarRight.getSnapshot().sessions
+        .find(session => session.sessionId === sessionId)?.tabs
+        .find(tab => tab.record.kind === OFFICIAL_BROWSER_KIND
+          && officialBrowserTargetKey(officialBrowserTargetOf(tab.state.payload) ?? page.target) === key)
+      void ctx.sidebarRight.forSession(sessionId).openTab(OFFICIAL_BROWSER_KIND, {
+        instanceId: key,
+        title: existing?.record.title ?? page.url ?? 'Browser',
+        payload: officialBrowserPayloadOf(existing?.state.payload) ?? {
+          target: { ...page.target },
+          ...(page.url === undefined ? {} : { url: page.url }),
+        },
+      }).catch((error: unknown) => {
+        console.error('[ui-workbench] revealing Browser occurrence failed:', error)
+      })
+    },
+  })
   if (isDesktopOverlayDocument()) return
-  const tick = (): void => { bridge.tick() }
-  const subscribeState = sidebar.subscribeState
-  if (subscribeState !== undefined) {
-    ctx.effect(() => subscribeState(tick), 'ui-workbench: sidebar reconcile')
-  }
-  ctx.effect(() => ctx.sessions.list.subscribe(tick), 'ui-workbench: projection reconcile')
-  tick()
+  ctx.effect(() => {
+    const disposers = [
+      ctx.sidebarRightTabs.register(workbenchBrowserDefinition(officialCtx, runtime)),
+      ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({
+        name: 'sidebar.right.pane.tab',
+        key: OFFICIAL_WORKBENCH_BROWSER_ID,
+        inject: () => ({ ctx: officialCtx, runtime }),
+      }, OfficialWorkbenchBrowserBody)),
+      runtime.subscribe(),
+    ]
+    return () => {
+      for (let index = disposers.length - 1; index >= 0; index -= 1) disposers[index]?.()
+    }
+  }, 'ui-workbench: official Browser')
 }

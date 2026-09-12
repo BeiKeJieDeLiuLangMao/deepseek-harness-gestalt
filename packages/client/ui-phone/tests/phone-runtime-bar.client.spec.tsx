@@ -2,6 +2,9 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { PhoneRuntimeBar } from '../src/client/PhoneRuntimeBar.tsx'
+import { zh } from '../src/client/locales.ts'
+
+const t = ((key: keyof typeof zh) => zh[key]) as never
 
 afterEach(cleanup)
 
@@ -9,6 +12,7 @@ describe('PhoneRuntimeBar', () => {
   it('renders the pinned missing asset and starts preparation', () => {
     const onPrepare = vi.fn()
     render(<PhoneRuntimeBar
+      t={t}
       runtime={{ kind: 'missing', targetVersion: '1.0.5', assetBytes: 5_458_848 }}
       onPrepare={onPrepare}
       onCancel={() => {}}
@@ -25,6 +29,7 @@ describe('PhoneRuntimeBar', () => {
   it('renders progress/cancel and ready/refresh operations', () => {
     const onCancel = vi.fn()
     const { rerender } = render(<PhoneRuntimeBar
+      t={t}
       runtime={{ kind: 'downloading', targetVersion: '1.0.5', receivedBytes: 50, totalBytes: 100 }}
       onPrepare={() => {}}
       onCancel={onCancel}
@@ -38,6 +43,7 @@ describe('PhoneRuntimeBar', () => {
 
     const onRefresh = vi.fn()
     rerender(<PhoneRuntimeBar
+      t={t}
       runtime={{ kind: 'ready', version: '1.0.5', source: 'managed' }}
       onPrepare={() => {}}
       onCancel={() => {}}
@@ -50,6 +56,7 @@ describe('PhoneRuntimeBar', () => {
 
   it('keeps failed state retryable', () => {
     render(<PhoneRuntimeBar
+      t={t}
       runtime={{ kind: 'failed', targetVersion: '1.0.5', code: 'PHONE_ENVIRONMENT_DIGEST', message: '摘要不匹配' }}
       onPrepare={() => {}}
       onCancel={() => {}}
@@ -62,6 +69,7 @@ describe('PhoneRuntimeBar', () => {
   it('renders every cancellable verification phase and a missing asset without a byte estimate', () => {
     const onCancel = vi.fn()
     const { rerender } = render(<PhoneRuntimeBar
+      t={t}
       runtime={{ kind: 'missing', targetVersion: '1.0.5' }}
       onPrepare={() => {}}
       onCancel={onCancel}
@@ -70,6 +78,7 @@ describe('PhoneRuntimeBar', () => {
     expect(screen.getByText('未准备 · v1.0.5')).toBeTruthy()
 
     rerender(<PhoneRuntimeBar
+      t={t}
       runtime={{ kind: 'verifying', targetVersion: '1.0.5' }}
       onPrepare={() => {}}
       onCancel={onCancel}
@@ -79,6 +88,7 @@ describe('PhoneRuntimeBar', () => {
     fireEvent.click(screen.getByRole('button', { name: '取消' }))
 
     rerender(<PhoneRuntimeBar
+      t={t}
       runtime={{ kind: 'activating', targetVersion: '1.0.5', source: 'system' }}
       onPrepare={() => {}}
       onCancel={onCancel}

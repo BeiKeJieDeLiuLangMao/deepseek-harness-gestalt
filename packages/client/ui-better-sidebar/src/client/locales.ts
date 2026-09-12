@@ -24,9 +24,32 @@
 /** The zh dictionary (also registered into the DSH locale registry under {@link LOCALE_NS}). */
 export const zh = {
   files: '文件',
+  changesSessionEmpty: '本会话还没有文件操作',
+  changesRead: '读取',
+  changesMdReading: '阅读',
+  changesMdRaw: '原文',
+  changesHtmlRender: '渲染',
+  changesHtmlRaw: '原文',
+  changesPdfRender: '渲染',
+  changesPdfRaw: '原文',
+  changesWrite: '写入',
+  changesEdit: '编辑',
+  changesRunning: '执行中',
+  changesError: '出错',
+  changesRedactOn: '已开启脱敏：敏感内容以 [REDACTED] 显示；点击关闭（自担风险）',
+  changesRedactOff: '脱敏已关闭：将原样显示文件内容；点击开启',
+  changesRedactOnLabel: '脱敏中',
+  changesRedactOffLabel: '脱敏关',
+  changesRedactBanner: '已脱敏',
+  changesFold: '{count} 行…点击展开',
+  changesFoldLoading: '展开中…',
+  changesFoldUnavailable: '上下文未加载',
+  changesContext: '上下文',
+  changesPriorUnknown: '变更前的内容不在窗口内，显示为全新增',
   explorer: '资源管理器',
-  git: '源代码管理',
   terminal: '终端',
+  terminalGuide: '在当前工作区中打开交互式终端。',
+  terminalUnavailable: '最多可打开 3 个用户终端。',
   editor: '编辑器',
   editorExplorer: '文件打开方式',
   editorExplorerDesc: '控制文件打开方式',
@@ -75,6 +98,18 @@ export const zh = {
   moveToFreeWindow: '移动到自由窗口',
   floatDropHint: '松开以在自由窗口中打开',
   dockToSidebar: '回到侧边栏',
+  pinTerminal: '固定终端',
+  pinAgentTerminal: '固定 Agent 终端',
+  pinToWorkspace: '固定到工作区',
+  pinToGlobal: '固定到全局',
+  unpinTerminal: '取消固定',
+  pinnedTerminalTooltip: '{kind} · {scope} · {cwd}',
+  pinnedTerminalKindUi: 'UI 终端',
+  pinnedTerminalKindAgent: 'Agent 终端',
+  pinnedTerminalScopeWorkspace: '固定到工作区',
+  pinnedTerminalScopeGlobal: '固定到全局',
+  pinnedRailLabel: '固定终端',
+  closePinnedTerminal: '关闭终端',
   collapse: '折叠侧边栏',
   expand: '展开侧边栏',
   collapseBottomPanel: '折叠底部面板',
@@ -82,9 +117,12 @@ export const zh = {
   terminalError: '终端连接失败',
   terminalConnectFailed: '终端多次连接失败',
   terminalRetry: '重试',
+  renderError: 'dsh-better-sidebar：{message}',
+  chunkMissing: '[dsh-better-sidebar] 分块“{chunk}”缺少组件',
   terminalDepsFailed: '终端依赖 node-pty 加载失败',
   terminalDepsHint: '在 DSH 所在环境的终端或 cmd 中执行以下命令修复，然后点重试（node-pty 与 DSH 核心保持同一版本）：',
   terminalDepsProfile: '（检测到 profile：{profile}）',
+  terminalShellNotFound: '未找到配置的 Shell：{name}，请到 设置 → 侧边卡片 → 终端 检查 Shell 路径',
   preview: '预览',
   toc: '目录',
   edit: '编辑',
@@ -95,6 +133,7 @@ export const zh = {
   mermaidZoomHint: '滚轮缩放 · 拖拽平移 · Esc 关闭',
   refresh: '刷新',
   refreshUnsavedConfirm: '文件已在磁盘更新，刷新将丢弃未保存编辑。继续吗？',
+  discardUnsavedConfirm: '此文件有未保存编辑。仍要关闭或替换吗？',
   save: '保存',
   saved: '已保存',
   unsaved: '未保存',
@@ -122,7 +161,22 @@ export const zh = {
   worktree: '工作树',
   checkoutError: '切换分支失败',
   history: '历史',
-  changes: '变更',
+  changes: '文件变动',
+  changesGuide: '查看并管理本会话与 Git 工作树中的文件变动。',
+  changesGitLens: 'Git',
+  changesSessionLens: '本轮文件',
+  changesFilterAll: '全部',
+  changesFilterEmpty: '没有此类操作',
+  changesOpenDiffTab: '在独立页签中打开',
+  changesClosePreview: '关闭预览',
+  changesResizePreview: '调整预览高度',
+  changesDiffOpenTitle: '差异展开方式',
+  changesDiffOpenDesc: '「展开为独立页签」把 diff 放到哪里',
+  changesDiffOpenFloat: '浮窗',
+  changesDiffOpenFloatDesc: '作为自由窗口居中打开，可拖拽、缩放、置顶',
+  changesDiffOpenPane: '面板',
+  changesDiffOpenPaneDesc: '停靠在源面板下方（VSCode 式 diff 分栏）',
+  changesLoadError: '会话文件记录暂不可用',
   staged: '已暂存',
   unstaged: '未暂存',
   cancel: '取消',
@@ -171,6 +225,13 @@ export const zh = {
   addToConversation: '添加到对话',
   copyRelative: '复制相对地址',
   copyAbsolute: '复制绝对地址',
+  rename: '重命名',
+  renameInvalid: '名称不能为空，且不能包含路径分隔符。',
+  delete: '删除',
+  deleteTitle: '删除「{name}」？',
+  deleteDescFile: '将永久删除该文件，此操作不可撤销。',
+  deleteDescDir: '将永久删除该目录及其全部内容，此操作不可撤销。',
+  dismiss: '关闭',
   download: '下载',
   uploadFiles: '上传文件',
   uploadFolder: '上传文件夹',
@@ -216,12 +277,16 @@ export const zh = {
   settingsConflict: '设置已被其他窗口修改，请重试',
   binaryNoPreview: '此文件类型不支持预览',
   downloadToView: '下载查看',
-  settingsSubagentTitle: '检测到子代理时自动展开任务管理页',
-  settingsSubagentDesc: '当前会话产生新的子代理时，自动展开侧边栏并打开任务管理页；关闭后需手动打开',
-  settingsJobsTitle: '有新后台任务时自动展开后台任务页',
-  settingsJobsDesc: '当前会话出现新的后台任务时，自动展开侧边栏并打开后台任务页（每个新任务都会触发）；关闭后需手动打开',
+  settingsSubagentTitle: '检测到子代理时自动激活任务管理页',
+  settingsSubagentDesc: '当前会话产生新的子代理时，自动激活任务管理页；宽屏同时展开侧边栏，窄屏不强制展开全屏抽屉；关闭后需手动打开',
+  settingsJobsTitle: '有新后台任务时自动激活任务管理页',
+  settingsJobsDesc: '当前会话出现新的后台任务时，自动激活任务管理页（每个新任务都会触发）；宽屏同时展开侧边栏，窄屏不强制展开全屏抽屉；关闭后需手动打开',
   settingsToolsTitle: '为模型注入终端工具',
   settingsToolsDesc: '开启后，模型可通过 terminal_create 等 8 个工具创建并操作侧边栏终端（默认关闭）',
+  settingsFenceTitle: '工作区路径检测',
+  settingsFenceDesc: '开启后，侧栏的文件功能仅能访问会话工作区内的路径（默认）；关闭后可访问主机上任意文件——关闭期间页面内脚本也将获得同等访问能力',
+  fenceErrorReason: '此路径在会话工作区之外，已被工作区检测拦截',
+  fenceDisableAction: '关闭工作区检测',
   settingsBottomTerminalTitle: '底部面板首次展开自动开终端',
   settingsBottomTerminalDesc: '每次会话中第一次展开底部面板时，尝试在底部面板自动打开一个新终端标签（终端数量上限仍会限制；默认开启）',
   settingsFontFamilyTitle: '终端字体',
@@ -248,6 +313,7 @@ export const zh = {
   viewerBinary: '二进制下载',
   viewerHtml: 'HTML',
   browser: '浏览器',
+  browserGuide: '在侧栏中打开浏览器页面。',
   browserPlaceholder: '输入网址，例如 example.com',
   browserGo: '前往',
   browserBack: '后退',
@@ -281,6 +347,7 @@ export const zh = {
   browserEmbedBlockedDesc: '该站点通过 X-Frame-Options / frame-ancestors 禁止在其它页面中显示，无法在侧边栏内加载。可在浏览器中直接打开',
   browserEmbedAnyway: '仍然加载',
   subagent: '任务管理',
+  subagentGuide: '查看当前会话派生的子 agent 与后台任务。',
   openSubagent: '任务管理',
   subagentMainAgent: '主代理',
   subagentEmpty: '暂无子代理',
@@ -296,7 +363,28 @@ export const zh = {
   subagentDiagUnavailable: '不可用',
   subagentThinking: '思考中…',
   sideChat: '侧边对话',
+  sideChatGuide: '在侧栏中开启一个独立对话。',
   sideChatUntitled: '新对话',
+  sideChatError: '侧边对话出错：{message}',
+  sideChatTurnUsage: '输入 {input} tok · 输出 {output} tok',
+  sideChatBlockCollapse: '收起',
+  sideChatBlockCollapseAria: '收起',
+  sideChatBlockExpand: '展开 {hidden} 行',
+  sideChatBlockExpandAria: '展开其余 {hidden} 行',
+  sideChatBlockSignal: '信号终止：{signal}',
+  sideChatBlockExitCode: '退出码 {code}',
+  sideChatBlockRunning: '运行中',
+  sideChatBlockFailed: '失败',
+  sideChatBlockDone: '完成',
+  sideChatBlockNoOutput: '（无输出）',
+  sideChatBlockFiles: '{count} 个文件',
+  sideChatBlockWindow: '共 {total} 行 · 显示 {shown} 行',
+  sideChatConnDisconnected: '连接已断开',
+  sideChatConnReconnect: '重新连接',
+  sideChatConnConnecting: '正在重连…',
+  sideChatConnRecovered: '连接已恢复',
+  sideChatConnReconnectAction: '立即重连',
+  sideChatConnRestartAction: '重新发起连接',
   jobs: '后台任务',
   jobsCount: '{count} 个后台任务',
   jobsCountRunning: '{count} 个后台任务 · {running} 运行中',
@@ -321,8 +409,8 @@ export const zh = {
   addPluginsTabCardDesc: '注册新的侧边栏页面',
   addPluginsViewerCard: '添加预览插件',
   addPluginsViewerCardDesc: '注册新的文件类型预览',
-  addPluginsTabDesc: '侧边栏页面（Tab）可以由插件扩展。插件通过 ctx.betterSidebar 服务注册；点击「安装」复制安装命令，粘贴到 DSH 所在环境的终端执行。',
-  addPluginsViewerDesc: '文件预览器可以由插件扩展。插件通过 ctx.betterSidebar 服务注册；点击「安装」复制安装命令，粘贴到 DSH 所在环境的终端执行。',
+  addPluginsTabDesc: '侧边栏页面（Tab）可以由插件扩展。插件通过 ctx.sidebarRightTabs 服务注册；点击「安装」复制安装命令，粘贴到 DSH 所在环境的终端执行。',
+  addPluginsViewerDesc: '文件预览器可以由插件扩展。插件通过 ctx.sidebarRightTabs 服务注册；点击「安装」复制安装命令，粘贴到 DSH 所在环境的终端执行。',
   addPluginsBrowseMore: '在 GitHub 上浏览更多插件（topic: dsh-better-sidebar）',
   addPluginsSearch: '搜索插件名称 / 描述…',
   addPluginsNoMatch: '没有匹配的插件',
@@ -330,25 +418,76 @@ export const zh = {
   addPluginsEmpty: '暂未收录插件，欢迎在 GitHub topic 下发布你的插件',
   openPlugin: '跳转',
   copyInstall: '复制安装命令',
+  pluginMdExportDesc: '在 better-sidebar 的 Markdown 工具栏上新增「导出」按钮：一键把当前 .md 渲染为独立 HTML（表格/代码块/Mermaid 图表内联，布局跟随预览主题）直接保存到同目录，或通过打印对话框导出为 PDF',
   pluginOfficeDesc: '为 better-sidebar 编辑器提供 Office 三件套预览（.docx / .xlsx / .pptx），把重型 Office 渲染库拆出主包、按需安装',
   pluginFlowglassDesc: '实时会话流程图：三列泳道展示用户、助手与工具调用，支持并行分组、子代理支线、逐层钻取和实时状态；安装 better-sidebar 后注册原生「流镜」Tab，未安装时保留独立抽屉',
   pluginGitForgeDesc: 'better-sidebar「Git 凭据」Tab：GitHub/Gitea 等 Forge 账号库 + 按项目授权 + push 策略硬拦；token 仅存本地 secrets，不进模型上下文；提供只读 GitForge 工具与 agent HTTPS credential helper',
+  pluginGithubWorkbenchDesc: 'better-sidebar「GitHub 工作台」Tab：远端仓库目录树 + Issues / Pull requests / Actions 页签，读之外支持新建 Issue/PR、评论、编辑、关闭重开、squash·merge·rebase 合并（强确认）与重跑/取消 CI；仓库弹层自动拉取有权限列表并支持公开仓搜索；未装 better-sidebar 时自动降级为独立右侧面板',
+  pluginSuhuangScrollDesc: '把本地苏黄共阅 Runtime 接入 DSH 设置与 better-sidebar，支持模型配置、连接测试和连续阅卷控制；使用前需安装 Suhuang Scroll Runtime 与 dsh-better-sidebar',
+  pluginBetterOverleafDesc: 'better-sidebar 的 Overleaf 标签页：直连 CDP 浏览器登录（支持第三方 Chromium），项目列表/切换，<workspace>/overleaf/ 本地 git 镜像，git 双向同步（API 只读兜底），文件预览走侧边栏工作台',
   pluginGitRemotesDesc: 'better-sidebar Git 远程 Tab：看分支/上游/ahead-behind，fetch（可 prune）、ff-only pull、确认后才 push。不替换内置 Git 的暂存/提交，也不提供 force-push 或模型自动执行 Git push',
   pluginSentinelDesc: '条件驱动的 agent 唤醒系统：文件/进程/端口/HTTP/命令/webhook 传感器，条件达成自动唤醒休眠会话；注册「哨兵」Tab 展示服务器全局监控表',
+  pluginServerDeckDesc: '服务器卡片仪表盘：每台服务器一张卡片，展示在线状态、OS、运行时长、CPU/内存/磁盘用量与延迟；点卡片进入 xterm.js 交互终端，支持 ~/.ssh/config 一键导入（自动跳过 Git 托管别名）；安装 better-sidebar 后注册原生「服务器」Tab，未安装时保留独立抽屉',
   pluginSidebarQaDesc: '基于 better-sidebar 的划选提问tab分页: 对话划选 → 右侧面板提问 → 同工作区独立追问会话（❓追问·主题）：快速无思考模型压缩主对话上下文后与引文一起注入，不打断主对话；追问可嵌套、可继续、可归档',
+  pluginSidenoteDesc: 'Codex 风格侧边聊天与划选注释：从当前会话 fork 出独立侧边会话（归档隐藏、多实例并存、/side 命令、刷新/重启后恢复、模型跟随主会话）；assistant 消息划选 → 编号角标 + 注解编辑器 →「N 条注释」chip 随消息发出，也可直接进入侧边聊天提问',
   pluginSshTunnelDesc: 'better-sidebar「SSH 隧道」Tab：多机主机清单 + 按项目授权 + 密钥本地保管；模型工具 SSHManager（exec/SFTP/会话策略）；中央交互终端与双栏 SFTP',
   pluginTurnReviewDesc: '对「刚刚这一回合」的 diff 做 Approve / Request changes 的人闸门：只审上一回合，不 fork 会话；文件按主会话/子代理/未归因分组，按文件勾选打回 + 可选评语，点文件先看回合开始快照 vs 现在的 diff。不是 /rewind',
   pluginVideoPreviewDesc: '在 better-sidebar 编辑器内联预览视频文件（.mp4/.webm/.mov/.mkv/.avi 等），自带支持 HTTP Range（206）的 /video 宿主路由，可拖动进度条、不受 20MB mediaLimit 限制',
+  pluginCodeNavDesc: '代码预览导航：按文件类型自动识别语言并高亮语法，符号大纲（类/方法/变量筛选 + 一键跳转），文件内查找（全部匹配高亮、上/下一处、区分大小写），接管 better-sidebar 的代码文件预览',
   pluginDocsPanelDesc: 'DSH 侧边栏里的「全局文档」：全局 Markdown 笔记，任何工作区随时可读——列表点选阅读、悬浮大纲跳转、Chrome / VS Code 外部打开、代码复制，目录可配置（默认 ~/.dsh/docs）',
   pluginEgoBrowserDesc: '把 CitroLabs/ego-lite 接进 DeepSeek Harness 的 agent 浏览器：32 个 ego_* 工具驱动真实 Chromium，侧边栏原生「ego 浏览器」Tab 实时观察 agent 逛的每个页面，可直接点击/拖拽/输入接管；装 better-sidebar 时自动注册 Tab，没装则退回浮动浮窗',
+  pluginBilingualReaderDesc: '在 DSH 侧边栏读论文 PDF：原生 PDF 显示，选中一段文字即用大模型划词翻译，结合上下文、完全隔离主对话，只作阅读辅助',
+  pluginSentinelName: 'dsh-sentinel 唤醒系统',
+  pluginEgoBrowserName: 'ego-browser Agent 浏览器',
+  pluginBetterOverleafName: 'dsh-better-overleaf Overleaf 标签页',
+  pluginDocsPanelName: 'dsh-docs-panel 全局文档',
+  pluginFlowglassName: 'dsh-flowglass 流镜',
+  pluginGitForgeName: 'dsh-git-forge Git 凭据',
+  pluginGitRemotesName: 'dsh-git-remotes Git 远程',
+  pluginGithubWorkbenchName: 'dsh-github-workbench GitHub 工作台',
+  pluginSidebarQaName: 'dsh-sidebar-qa 划选追问',
+  pluginSidenoteName: 'dsh-sidenote 侧边聊天',
+  pluginServerDeckName: 'dsh-server-deck 服务器甲板',
+  pluginSuhuangScrollName: 'dsh-suhuang-scroll 苏黄共阅',
+  pluginSshTunnelName: 'dsh-ssh-tunnel SSH 隧道',
+  pluginTurnReviewName: 'dsh-turn-review 本轮审查',
+  pluginBilingualReaderName: 'dsh-bilingual-reader 双语阅读',
+  pluginOfficeName: 'Office 预览插件',
+  pluginMdExportName: 'Markdown 导出插件',
+  pluginCodeNavName: '代码预览导航',
+  pluginVideoPreviewName: '视频预览插件',
+  presetDshDesktopDesc: 'Electron 高级模式（无边框）：macOS 顶栏 20px、Windows 无 WCO 时 32px 标题栏让位',
 }
 
 /** The en dictionary (key-set-equal to zh, enforced by the type annotation). */
 export const en: Record<keyof typeof zh, string> = {
   files: 'Files',
+  changesSessionEmpty: 'No file operations in this session yet',
+  changesRead: 'Read',
+  changesMdReading: 'Reading',
+  changesMdRaw: 'Raw',
+  changesHtmlRender: 'Render',
+  changesHtmlRaw: 'Raw',
+  changesPdfRender: 'Render',
+  changesPdfRaw: 'Raw',
+  changesWrite: 'Write',
+  changesEdit: 'Edit',
+  changesRunning: 'running',
+  changesError: 'error',
+  changesRedactOn: 'Redaction on: secrets render as [REDACTED]; click to disable (at your own risk)',
+  changesRedactOff: 'Redaction off: file content renders verbatim; click to enable',
+  changesRedactOnLabel: 'Redacting',
+  changesRedactOffLabel: 'Redaction off',
+  changesRedactBanner: 'Redacted',
+  changesFold: '{count} lines…click to expand',
+  changesFoldLoading: 'Expanding…',
+  changesFoldUnavailable: 'Context unavailable',
+  changesContext: 'context',
+  changesPriorUnknown: 'Prior content is outside the loaded window; shown as all-added',
   explorer: 'Explorer',
-  git: 'Source Control',
   terminal: 'Terminal',
+  terminalGuide: 'Open an interactive terminal in the current workspace.',
+  terminalUnavailable: 'At most three user terminals can be open.',
   editor: 'Editor',
   editorExplorer: 'File open behavior',
   editorExplorerDesc: 'Controls how files open',
@@ -397,6 +536,18 @@ export const en: Record<keyof typeof zh, string> = {
   moveToFreeWindow: 'Move to Free Window',
   floatDropHint: 'Release to open in a free window',
   dockToSidebar: 'Dock Back to Sidebar',
+  pinTerminal: 'Pin Terminal',
+  pinAgentTerminal: 'Pin Agent Terminal',
+  pinToWorkspace: 'Pin to Workspace',
+  pinToGlobal: 'Pin Globally',
+  unpinTerminal: 'Unpin',
+  pinnedTerminalTooltip: '{kind} · {scope} · {cwd}',
+  pinnedTerminalKindUi: 'UI Terminal',
+  pinnedTerminalKindAgent: 'Agent Terminal',
+  pinnedTerminalScopeWorkspace: 'Pinned to workspace',
+  pinnedTerminalScopeGlobal: 'Pinned globally',
+  pinnedRailLabel: 'Pinned Terminals',
+  closePinnedTerminal: 'Close Terminal',
   collapse: 'Collapse sidebar',
   expand: 'Expand sidebar',
   collapseBottomPanel: 'Collapse bottom panel',
@@ -404,9 +555,12 @@ export const en: Record<keyof typeof zh, string> = {
   terminalError: 'Terminal connection failed',
   terminalConnectFailed: 'Terminal failed to connect repeatedly',
   terminalRetry: 'Retry',
+  renderError: 'dsh-better-sidebar: {message}',
+  chunkMissing: '[dsh-better-sidebar] chunk "{chunk}" is missing its component',
   terminalDepsFailed: 'Terminal dependency node-pty failed to load',
   terminalDepsHint: 'Run the command below in a terminal or cmd on the DSH machine to repair it, then retry (node-pty stays in sync with the DSH core version):',
   terminalDepsProfile: ' (detected profile: {profile})',
+  terminalShellNotFound: 'Configured shell not found: {name} — check the shell path under Settings → Side card → Terminal',
   preview: 'Preview',
   toc: 'Table of contents',
   edit: 'Edit',
@@ -417,6 +571,7 @@ export const en: Record<keyof typeof zh, string> = {
   mermaidZoomHint: 'Scroll to zoom · drag to pan · Esc to close',
   refresh: 'Refresh',
   refreshUnsavedConfirm: 'The file changed on disk. Refreshing will discard unsaved edits. Continue?',
+  discardUnsavedConfirm: 'This file has unsaved edits. Close or replace it anyway?',
   save: 'Save',
   saved: 'Saved',
   unsaved: 'Unsaved',
@@ -445,6 +600,21 @@ export const en: Record<keyof typeof zh, string> = {
   checkoutError: 'Branch switch failed',
   history: 'History',
   changes: 'Changes',
+  changesGuide: 'Review and manage file changes from this session and Git worktree.',
+  changesGitLens: 'Git',
+  changesSessionLens: 'Session',
+  changesFilterAll: 'All',
+  changesFilterEmpty: 'No operations of this kind',
+  changesOpenDiffTab: 'Open in a diff tab',
+  changesClosePreview: 'Close preview',
+  changesResizePreview: 'Resize preview',
+  changesDiffOpenTitle: 'Diff opens as',
+  changesDiffOpenDesc: 'Where the "expand to a diff tab" action lands the diff',
+  changesDiffOpenFloat: 'Free window',
+  changesDiffOpenFloatDesc: 'A floating window centered on the viewport — drag, resize, keep on top',
+  changesDiffOpenPane: 'Pane',
+  changesDiffOpenPaneDesc: 'Docked below the source panel (VSCode-style diff split)',
+  changesLoadError: 'Session file records are unavailable right now',
   staged: 'Staged',
   unstaged: 'Unstaged',
   cancel: 'Cancel',
@@ -493,6 +663,13 @@ export const en: Record<keyof typeof zh, string> = {
   addToConversation: 'Add to conversation',
   copyRelative: 'Copy relative path',
   copyAbsolute: 'Copy absolute path',
+  rename: 'Rename',
+  renameInvalid: 'The name cannot be empty or contain path separators.',
+  delete: 'Delete',
+  deleteTitle: 'Delete "{name}"?',
+  deleteDescFile: 'This permanently deletes the file. This cannot be undone.',
+  deleteDescDir: 'This permanently deletes the directory and everything inside it. This cannot be undone.',
+  dismiss: 'Dismiss',
   download: 'Download',
   uploadFiles: 'Upload files',
   uploadFolder: 'Upload folder',
@@ -538,12 +715,16 @@ export const en: Record<keyof typeof zh, string> = {
   settingsConflict: 'The setting changed in another window — please retry',
   binaryNoPreview: 'This file type cannot be previewed',
   downloadToView: 'Download to view',
-  settingsSubagentTitle: 'Auto-open the Tasks page when a subagent appears',
-  settingsSubagentDesc: 'Expand the side card and open the Tasks page when the current conversation spawns a new subagent; turn off to open it manually',
-  settingsJobsTitle: 'Auto-open the Jobs page on a new background job',
-  settingsJobsDesc: 'Expand the side card and open the Jobs page whenever a new background job appears for the current conversation (every new job triggers); turn off to open it manually',
+  settingsSubagentTitle: 'Auto-activate the Tasks page when a subagent appears',
+  settingsSubagentDesc: 'Activate the Tasks page when the current conversation spawns a new subagent; wide viewports also expand the side card, while narrow full-screen drawers are not forced open; turn off to open it manually',
+  settingsJobsTitle: 'Auto-activate the Tasks page on a new background job',
+  settingsJobsDesc: 'Activate the Tasks page whenever a new background job appears for the current conversation (every new job triggers); wide viewports also expand the side card, while narrow full-screen drawers are not forced open; turn off to open it manually',
   settingsToolsTitle: 'Inject terminal tools for the model',
   settingsToolsDesc: 'When enabled, the model can create and drive sidebar terminals through the 8 terminal_* tools (off by default)',
+  settingsFenceTitle: 'Workspace path fence',
+  settingsFenceDesc: 'On, the sidebar\'s file features only reach paths inside the session workspace (default); off, any file on the host is reachable — page scripts gain the same reach while it is off',
+  fenceErrorReason: 'This path is outside the session workspace and was blocked by the workspace fence',
+  fenceDisableAction: 'Turn off the workspace fence',
   settingsBottomTerminalTitle: 'Auto-open a terminal on the bottom panel\'s first expansion',
   settingsBottomTerminalDesc: 'When the bottom panel is expanded for the first time in a session, try to open a fresh terminal tab there (the terminal quota still applies; on by default)',
   settingsFontFamilyTitle: 'Terminal font family',
@@ -570,6 +751,7 @@ export const en: Record<keyof typeof zh, string> = {
   viewerBinary: 'Binary download',
   viewerHtml: 'HTML',
   browser: 'Browser',
+  browserGuide: 'Open a browser page in the sidebar.',
   browserPlaceholder: 'Enter a URL, e.g. example.com',
   browserGo: 'Go',
   browserBack: 'Back',
@@ -603,6 +785,7 @@ export const en: Record<keyof typeof zh, string> = {
   browserEmbedBlockedDesc: 'The site forbids being displayed inside other pages (X-Frame-Options / frame-ancestors), so it cannot load in the sidebar. Open it directly in your browser instead.',
   browserEmbedAnyway: 'Load anyway',
   subagent: 'Tasks',
+  subagentGuide: 'Track subagents and background tasks started from this session.',
   openSubagent: 'Tasks',
   subagentMainAgent: 'Main agent',
   subagentEmpty: 'No subagents',
@@ -618,7 +801,28 @@ export const en: Record<keyof typeof zh, string> = {
   subagentDiagUnavailable: 'Unavailable',
   subagentThinking: 'Thinking…',
   sideChat: 'Side Chat',
+  sideChatGuide: 'Start a separate conversation in the sidebar.',
   sideChatUntitled: 'New thread',
+  sideChatError: 'Side Chat error: {message}',
+  sideChatTurnUsage: 'Input {input} tok · Output {output} tok',
+  sideChatBlockCollapse: 'Collapse',
+  sideChatBlockCollapseAria: 'Collapse',
+  sideChatBlockExpand: 'Expand {hidden} lines',
+  sideChatBlockExpandAria: 'Expand {hidden} more lines',
+  sideChatBlockSignal: 'Killed by signal: {signal}',
+  sideChatBlockExitCode: 'Exit code {code}',
+  sideChatBlockRunning: 'Running',
+  sideChatBlockFailed: 'Failed',
+  sideChatBlockDone: 'Done',
+  sideChatBlockNoOutput: '(no output)',
+  sideChatBlockFiles: '{count} files',
+  sideChatBlockWindow: '{shown} of {total} lines',
+  sideChatConnDisconnected: 'Connection lost',
+  sideChatConnReconnect: 'Reconnect',
+  sideChatConnConnecting: 'Reconnecting…',
+  sideChatConnRecovered: 'Connection restored',
+  sideChatConnReconnectAction: 'Reconnect now',
+  sideChatConnRestartAction: 'Restart connection',
   jobs: 'Background jobs',
   jobsCount: '{count} background jobs',
   jobsCountRunning: '{count} background jobs · {running} running',
@@ -643,8 +847,8 @@ export const en: Record<keyof typeof zh, string> = {
   addPluginsTabCardDesc: 'Register a new sidebar page',
   addPluginsViewerCard: 'Add preview plugins',
   addPluginsViewerCardDesc: 'Register a file-type preview',
-  addPluginsTabDesc: 'Sidebar pages (tabs) can be extended by plugins. Plugins register through the ctx.betterSidebar service; clicking Install copies the install command — paste it into a terminal where your DSH profile lives and run it.',
-  addPluginsViewerDesc: 'File previewers can be extended by plugins. Plugins register through the ctx.betterSidebar service; clicking Install copies the install command — paste it into a terminal where your DSH profile lives and run it.',
+  addPluginsTabDesc: 'Sidebar pages (tabs) can be extended by plugins. Plugins register through the ctx.sidebarRightTabs service; clicking Install copies the install command — paste it into a terminal where your DSH profile lives and run it.',
+  addPluginsViewerDesc: 'File previewers can be extended by plugins. Plugins register through the ctx.sidebarRightTabs service; clicking Install copies the install command — paste it into a terminal where your DSH profile lives and run it.',
   addPluginsBrowseMore: 'Browse more plugins on GitHub (topic: dsh-better-sidebar)',
   addPluginsSearch: 'Search by plugin name or description…',
   addPluginsNoMatch: 'No plugins match',
@@ -652,17 +856,45 @@ export const en: Record<keyof typeof zh, string> = {
   addPluginsEmpty: 'No plugins curated yet — publish yours under the GitHub topic',
   openPlugin: 'Open',
   copyInstall: 'Copy install command',
+  pluginMdExportDesc: 'Adds an "Export" button to the Markdown toolbar in better-sidebar: one click renders the current .md into standalone HTML (tables / code blocks / Mermaid diagrams inlined, layout follows the preview theme) and saves it next to the .md, or exports to PDF via the print dialog',
   pluginOfficeDesc: 'Office-suite preview (.docx / .xlsx / .pptx) for the better-sidebar editor, keeping the heavy Office render libraries out of the core bundle',
   pluginFlowglassDesc: 'Live session flowgraph with three lanes for user, assistant, and tool calls, plus parallel groups, sub-agent branches, drill-down, and live status; registers a native Flowglass tab when better-sidebar is installed and keeps its standalone drawer as a fallback',
   pluginGitForgeDesc: 'Git Forge tab: GitHub/Gitea (and other forge) account library + per-project grants + hard push policy; tokens stay in local secrets (never in model context); read-only GitForge tool and agent HTTPS credential helper',
+  pluginGithubWorkbenchDesc: 'GitHub Workbench tab: remote repo tree + Issues / Pull requests / Actions with full write support — create Issue/PR, comment, edit, close/reopen, squash·merge·rebase merge (strong confirm), re-run/cancel CI; the repo switcher auto-lists accessible repos and searches public ones; falls back to a standalone right-side panel without better-sidebar',
   pluginGitRemotesDesc: 'Git Remotes tab: branch/upstream/ahead-behind, fetch (optional prune), ff-only pull, and push only after an in-tab confirm. Does not replace the built-in Git stage/commit tab, and does not offer force-push or a model auto-push tool',
+  pluginServerDeckDesc: 'Server card dashboard: one card per host showing online status, OS, uptime and CPU/mem/disk usage with latency; click a card to open an interactive xterm.js terminal; one-click ~/.ssh/config import (git-hosting aliases auto-skipped). Registers a native "Servers" tab when better-sidebar is installed and keeps its standalone drawer as a fallback',
   pluginSentinelDesc: 'Condition-driven agent wakeup: file/process/port/http/command/webhook sensors wake dormant sessions when conditions fire; registers a "Sentinel" tab with the server-wide watch table',
   pluginSidebarQaDesc: 'Select-and-ask: Select conversation text → ask in the right-side panel → a dedicated follow-up session (❓追问) in the same workspace; a fast no-thinking model compresses the main context and injects it with the quote, without interrupting the main conversation. Follow-ups nest, continue, and archive',
+  pluginSidenoteDesc: 'Codex-style side chat + selection annotations: fork the current session into a persistent side panel (archived out of the session list, multi-instance, /side command, survives reload, model follows the main session); select assistant text → numbered badge + note editor → an "N annotations" chip that rides your next message, or ask straight into a side chat',
   pluginSshTunnelDesc: 'SSH Tunnel tab: multi-host inventory + per-project grants + local secrets; SSHManager tool (exec/SFTP/session strategies); center interactive terminal and dual-pane SFTP',
+  pluginSuhuangScrollDesc: 'Connect the local Suhuang Scroll Runtime to DSH settings and better-sidebar for model configuration, connection tests, and continuous grading controls; requires Suhuang Scroll Runtime and dsh-better-sidebar',
   pluginTurnReviewDesc: 'A human gate on the just-finished turn: Approve / Request changes per path with an optional comment; paths grouped by main session / subagent / unattributed; inline snapshot-vs-now diff before you decide. No fork, no /rewind',
   pluginVideoPreviewDesc: 'Inline video preview (.mp4/.webm/.mov/.mkv/.avi etc.) for the better-sidebar editor, backed by a dedicated /video host route with HTTP Range (206) support — scrubbing works and files are not capped by the 20MB mediaLimit',
+  pluginCodeNavDesc: 'Code preview navigator: detects the language by file type and highlights syntax, symbol outline (class / method / variable filters + one-click jump), and in-file search (highlight all matches, prev/next, match case) — takes over code file preview in the better-sidebar editor',
   pluginDocsPanelDesc: 'Global docs in the DSH sidebar: read your own Markdown notes from any workspace — a file list, an outline, open in Chrome / VS Code, and copy buttons; the docs directory is configurable (default ~/.dsh/docs)',
   pluginEgoBrowserDesc: 'The agent browser for DeepSeek Harness: 32 ego_* tools drive a real Chromium, with a native sidebar "ego browser" tab giving a live view of every page the agent visits — you can click, drag, and type to take over. Registers the tab automatically when better-sidebar is present, otherwise falls back to a floating bubble',
+  pluginBetterOverleafDesc: 'Overleaf tab for better-sidebar: direct-CDP browser login (third-party Chromium supported), project list/switch, local git mirrors under <workspace>/overleaf/, two-way git sync with read-only API fallback, and file preview through the sidebar workbench',
+  pluginBilingualReaderDesc: 'Read paper PDFs in the DSH sidebar: native PDF rendering, select text to translate it with the LLM, using context while staying fully isolated from the main conversation — a reading aid only',
+  pluginSentinelName: 'dsh-sentinel Wake-up System',
+  pluginEgoBrowserName: 'ego-browser Agent Browser',
+  pluginBetterOverleafName: 'dsh-better-overleaf Overleaf Tab',
+  pluginDocsPanelName: 'dsh-docs-panel Global Docs',
+  pluginFlowglassName: 'dsh-flowglass Flowglass',
+  pluginGitForgeName: 'dsh-git-forge Git Credentials',
+  pluginGitRemotesName: 'dsh-git-remotes Git Remotes',
+  pluginGithubWorkbenchName: 'dsh-github-workbench GitHub Workbench',
+  pluginSidebarQaName: 'dsh-sidebar-qa Select & Ask',
+  pluginSidenoteName: 'dsh-sidenote Side Chat',
+  pluginServerDeckName: 'dsh-server-deck Server Deck',
+  pluginSuhuangScrollName: 'dsh-suhuang-scroll Suhuang Scroll',
+  pluginSshTunnelName: 'dsh-ssh-tunnel SSH Tunnel',
+  pluginTurnReviewName: 'dsh-turn-review Turn Review',
+  pluginBilingualReaderName: 'dsh-bilingual-reader Bilingual Reader',
+  pluginOfficeName: 'Office Preview',
+  pluginMdExportName: 'Markdown Export',
+  pluginCodeNavName: 'Code Preview Navigator',
+  pluginVideoPreviewName: 'Video Preview',
+  presetDshDesktopDesc: 'Electron advanced (frameless) mode: macOS reserves a 20px top strip; Windows reserves a 32px title bar when WCO is unavailable',
 }
 
 /**
@@ -671,49 +903,14 @@ export const en: Record<keyof typeof zh, string> = {
  */
 export const LOCALE_NS = 'betterSidebar'
 
-// The ja dictionary lives in a sibling file (326 keys) so this module
-// stays readable. Type-checked against the zh key set: a missing or extra
-// ja key is a compile error.
-import { ja as jaDict } from './locales-ja.ts'
-import { de as deDict } from './locales-de.ts'
-import { fr as frDict } from './locales-fr.ts'
-import { pt as ptDict } from './locales-pt.ts'
-import { ko as koDict } from './locales-ko.ts'
-import { ar as arDict } from './locales-ar.ts'
-import { hi as hiDict } from './locales-hi.ts'
-import { id as idDict } from './locales-id.ts'
-import { tr as trDict } from './locales-tr.ts'
-import { vi as viDict } from './locales-vi.ts'
-import { th as thDict } from './locales-th.ts'
-import { ru as ruDict } from './locales-ru.ts'
-import { it as itDict } from './locales-it.ts'
-import { nl as nlDict } from './locales-nl.ts'
-import { sv as svDict } from './locales-sv.ts'
-import { pl as plDict } from './locales-pl.ts'
-import { hongKongTraditionalChinese as zhHKDict } from './locales-zh-HK.ts'
-import { taiwanTraditionalChinese as zhTWDict } from './locales-zh-TW.ts'
-import { macaoTraditionalChinese as zhMODict } from './locales-zh-MO.ts'
-
-/** The ja dictionary (key-set-equal to zh, enforced by the type annotation). */
-export const ja: Record<keyof typeof zh, string> = jaDict as Record<keyof typeof zh, string>
-export const de: Record<keyof typeof zh, string> = deDict as Record<keyof typeof zh, string>
-export const fr: Record<keyof typeof zh, string> = frDict as Record<keyof typeof zh, string>
-export const pt: Record<keyof typeof zh, string> = ptDict as Record<keyof typeof zh, string>
-export const ko: Record<keyof typeof zh, string> = koDict as Record<keyof typeof zh, string>
-export const ar: Record<keyof typeof zh, string> = arDict as Record<keyof typeof zh, string>
-export const hi: Record<keyof typeof zh, string> = hiDict as Record<keyof typeof zh, string>
-export const id: Record<keyof typeof zh, string> = idDict as Record<keyof typeof zh, string>
-export const tr: Record<keyof typeof zh, string> = trDict as Record<keyof typeof zh, string>
-export const vi: Record<keyof typeof zh, string> = viDict as Record<keyof typeof zh, string>
-export const th: Record<keyof typeof zh, string> = thDict as Record<keyof typeof zh, string>
-export const ru: Record<keyof typeof zh, string> = ruDict as Record<keyof typeof zh, string>
-export const it: Record<keyof typeof zh, string> = itDict as Record<keyof typeof zh, string>
-export const nl: Record<keyof typeof zh, string> = nlDict as Record<keyof typeof zh, string>
-export const sv: Record<keyof typeof zh, string> = svDict as Record<keyof typeof zh, string>
-export const pl: Record<keyof typeof zh, string> = plDict as Record<keyof typeof zh, string>
-export const zhHK: Record<keyof typeof zh, string> = zhHKDict as Record<keyof typeof zh, string>
-export const zhTW: Record<keyof typeof zh, string> = zhTWDict as Record<keyof typeof zh, string>
-export const zhMO: Record<keyof typeof zh, string> = zhMODict as Record<keyof typeof zh, string>
+// The 19 non-zh/en dictionaries live in the LAZY `locale` chunk
+// (src/client/chunks/locale.tsx → lib/client-locale.js): `t()` only ever
+// consults zh/en plus the better-locale override store, so those dicts are
+// needed only when better-locale is installed — the client apply fetches the
+// chunk there and registers its `localeDicts` into the override store. They
+// used to sit statically in the core bundle (≈ half its weight) for a code
+// path most sessions never enter. Regional Traditional Chinese files keep
+// descriptive export names for the zh/en fallback-parity gate.
 
 /** The DSH locale service attached by the client apply (absent → browser detection). */
 let localeService: { getSnapshot(): { active: string } } | undefined
@@ -754,11 +951,11 @@ export function attachLocale(service: { getSnapshot(): { active: string } } | un
  * that text wins over the zh/en chain. Detaching (or the store's active
  * being `undefined`) restores the zh/en chain unchanged.
  *
- * The Sidebar root subscribes to the store separately (see Sidebar.tsx)
- * so an override change re-renders the whole tree — the locale service's
- * own revision bump (which better-locale triggers via `publish(active, true)`)
- * does NOT fire the existing `localeRevision` uSES because that snapshot
- * reads `getSnapshot().active` (unchanged) rather than `revision`.
+ * Official tab bodies subscribe through locale / better-locale attach in
+ * `index.ts`. An override change re-renders those trees — the locale
+ * service's own revision bump (which better-locale triggers via
+ * `publish(active, true)`) does NOT fire a `localeRevision` uSES that
+ * snapshots `getSnapshot().active` (unchanged) rather than `revision`.
  */
 export function attachBetterLocale(store: typeof betterLocaleStore): void {
   betterLocaleStore = store
@@ -804,6 +1001,11 @@ export function t(key: CopyKey, params?: Record<string, string | number>): strin
     }
   }
   return text
+}
+
+/** Format the shared editor save title with its platform shortcut. */
+export function saveShortcutTitle(): string {
+  return `${t('save')} (Ctrl/Cmd+S)`
 }
 
 /** Whether the active locale is Chinese (used for selectors). */

@@ -1,16 +1,16 @@
 import { createServer, type Server } from 'node:http'
 import assert from 'node:assert/strict'
 import { Context } from '@deepseek-ai/cordis'
+import type { BrowserWindow as NativeBrowserWindow } from 'electron'
 import { BrowserProfileName } from '@deepseek-ai/dsh-browser-runtime'
 import ElectronBrowserRuntime from '@deepseek-ai/dsh-browser-runtime-electron'
-
-const REAL_PAGE = 'https://example.com/'
 
 /**
  * Drive one real page and two persist partitions through this Electron process.
  */
 export async function runElectronRuntimeE2eCases(): Promise<void> {
   await driveRealPage()
+  await recoverAfterStalledNavigation()
   await isolateCookiesAcrossPartitions()
 }
 
@@ -18,6 +18,7 @@ export async function runElectronRuntimeE2eCases(): Promise<void> {
  * Navigate, observe, screenshot, and focus one temporary Profile.
  */
 export async function driveRealPage(): Promise<void> {
+  const pages = await serveLocalPages()
   const ctx = new Context()
   try {
     await ctx.plugin(ElectronBrowserRuntime, {
@@ -31,16 +32,16 @@ export async function driveRealPage(): Promise<void> {
     const navigated = await ctx.browserRuntime.navigate({
       target: created.target,
       expectedRevision: created.revision,
-      url: REAL_PAGE,
+      url: `${pages.origin}/plain`,
     })
     assert.equal(navigated.status, 'open')
     assert.equal(navigated.revision, 1)
-    assert.equal(navigated.url, REAL_PAGE)
+    assert.equal(navigated.url, `${pages.origin}/plain`)
     assert.equal(typeof navigated.title, 'string')
     assert.deepEqual(await ctx.browserRuntime.observe({ target: created.target }), navigated)
     const shot = await ctx.browserRuntime.screenshot({ target: created.target })
     assert.equal(shot.revision, 1)
-    assert.equal(shot.url, REAL_PAGE)
+    assert.equal(shot.url, `${pages.origin}/plain`)
     assert.equal(shot.mediaType, 'image/png')
     assert.ok(shot.data.length > 0)
     const focused = await ctx.browserRuntime.focus({ target: created.target, expectedRevision: 1 })
@@ -53,6 +54,65 @@ export async function driveRealPage(): Promise<void> {
     assert.deepEqual(closed, { status: 'closed', target: created.target, revision: 3 })
   } finally {
     await ctx.fiber.dispose()
+    await pages.close()
+  }
+}
+
+/**
+ * A navigation that never commits must release the Runtime for recovery and later pages.
+ */
+export async function recoverAfterStalledNavigation(): Promise<void> {
+  const pages = await serveLocalPages()
+  const ctx = new Context()
+  let parent: NativeBrowserWindow | undefined
+  try {
+    const requestTimeoutMs = 2_000
+    const cancelTimeoutMs = 200
+    await ctx.plugin(ElectronBrowserRuntime, {
+      idPrefix: 'electron-e2e-stall',
+      requestTimeoutMs,
+      cancelTimeoutMs,
+    })
+    const stalled = await ctx.browserRuntime.create({ profile: 'temporary' })
+    const { BrowserWindow } = await import('electron')
+    parent = new BrowserWindow({ show: false, width: 640, height: 480 })
+    ;(ctx.browserRuntime as ElectronBrowserRuntime).present(
+      stalled.target,
+      { x: 0, y: 0, width: 640, height: 480 },
+      parent,
+    )
+    parent.showInactive()
+    const startedAt = Date.now()
+    await assert.rejects(ctx.browserRuntime.navigate({
+      target: stalled.target,
+      expectedRevision: stalled.revision,
+      url: `${pages.origin}/stall`,
+    }), (error: unknown) => (
+      error instanceof Error
+      && 'code' in error
+      && error.code === 'BROWSER_RUNTIME_UNAVAILABLE'
+    ))
+    assert.ok(
+      Date.now() - startedAt < requestTimeoutMs + cancelTimeoutMs + 500,
+      'presented stalled navigation must settle within its request and cancellation bounds',
+    )
+    const recovered = await ctx.browserRuntime.observe({ target: stalled.target })
+    assert.equal(recovered.status, 'open')
+    assert.equal(recovered.revision, 2)
+    assert.equal(recovered.url, 'about:blank')
+    const next = await ctx.browserRuntime.create({ profile: 'temporary' })
+    const loaded = await ctx.browserRuntime.navigate({
+      target: next.target,
+      expectedRevision: next.revision,
+      url: `${pages.origin}/plain`,
+    })
+    assert.equal(loaded.status, 'open')
+    assert.equal(loaded.url, `${pages.origin}/plain`)
+    assert.match(loaded.text, /local page ready/u)
+  } finally {
+    parent?.destroy()
+    await ctx.fiber.dispose()
+    await pages.close()
   }
 }
 
@@ -126,6 +186,12 @@ export async function isolateCookiesAcrossPartitions(): Promise<void> {
 async function serveLocalPages(): Promise<{ origin: string; close(): Promise<void> }> {
   const server: Server = createServer((request, response) => {
     const url = new URL(request.url ?? '/', 'http://127.0.0.1')
+    if (url.pathname === '/stall') return
+    if (url.pathname === '/plain') {
+      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
+      response.end('<!doctype html><html><body>local page ready</body></html>')
+      return
+    }
     if (url.pathname === '/form') {
       response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
       response.end(`<!doctype html><html><body>

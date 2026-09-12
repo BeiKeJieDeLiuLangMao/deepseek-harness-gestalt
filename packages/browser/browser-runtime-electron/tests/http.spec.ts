@@ -29,6 +29,86 @@ async function json(
 }
 
 describe('Electron Browser HTTP protocol', () => {
+  it('reports health from committed receipts without waiting for page observation', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-electron-http-health-'))
+    temps.push(root)
+    const tokenFile = join(root, 'api-token')
+    const ctx = new Context()
+    contexts.push(ctx)
+    installElectronTestHost(new FakeElectronHost())
+    await ctx.plugin(ElectronBrowserRuntime, { idPrefix: 'electron-http-health' })
+    const server = await listenElectronBrowserHttp({
+      context: ctx,
+      runtime: ctx.browserRuntime,
+      tokenFile,
+      idPrefix: 'electron-http-health',
+    })
+    servers.push(server)
+    const token = (await readFile(tokenFile, 'utf8')).trim()
+    const created = await json(server.origin, '/sessions/create', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'electron-http-health-tmp-1' }),
+    })
+    expect(created.status).toBe(200)
+    const originalObserve = ctx.browserRuntime.observe.bind(ctx.browserRuntime)
+    ctx.browserRuntime.observe = () => new Promise(() => {})
+    try {
+      await expect(json(server.origin, '/status', { signal: AbortSignal.timeout(100) })).resolves.toMatchObject({
+        status: 200,
+        body: { ready: true, tabs: [{ url: 'about:blank' }] },
+      })
+    } finally {
+      ctx.browserRuntime.observe = originalObserve
+    }
+  })
+
+  it('preserves runtime unavailability for page-content clients', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-electron-http-unavailable-'))
+    temps.push(root)
+    const tokenFile = join(root, 'api-token')
+    const ctx = new Context()
+    contexts.push(ctx)
+    installElectronTestHost(new FakeElectronHost())
+    await ctx.plugin(ElectronBrowserRuntime, { idPrefix: 'electron-http-unavailable' })
+    const server = await listenElectronBrowserHttp({
+      context: ctx,
+      runtime: ctx.browserRuntime,
+      tokenFile,
+      idPrefix: 'electron-http-unavailable',
+    })
+    servers.push(server)
+    const token = (await readFile(tokenFile, 'utf8')).trim()
+    let target: BrowserTarget | undefined
+    ctx.on('browser/runtime-state', (state) => { target = state.target })
+    const created = await json(server.origin, '/sessions/create', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'electron-http-unavailable-tmp-1' }),
+    })
+    const tabId = (created.body as { tab: { id: string } }).tab.id
+    if (target === undefined) throw new Error('expected created target')
+    const unavailableTarget = target
+    const originalObserve = ctx.browserRuntime.observe.bind(ctx.browserRuntime)
+    ctx.browserRuntime.observe = async () => ({
+      status: 'unavailable',
+      target: unavailableTarget,
+      revision: 1,
+      reason: 'unhealthy',
+      reconnecting: true,
+    })
+    try {
+      await expect(json(server.origin, '/page-content', {
+        headers: { authorization: `Bearer ${token}`, 'x-tab-id': tabId },
+      })).resolves.toEqual({
+        status: 503,
+        body: { error: 'tab runtime is unavailable', code: 'BROWSER_RUNTIME_UNAVAILABLE' },
+      })
+    } finally {
+      ctx.browserRuntime.observe = originalObserve
+    }
+  })
+
   it('serves Tandem-shaped session, tab, content, screenshot, focus, and destroy operations', async () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-electron-http-'))
     temps.push(root)
@@ -40,6 +120,7 @@ describe('Electron Browser HTTP protocol', () => {
       idPrefix: 'electron-http',
     })
     const server = await listenElectronBrowserHttp({
+      context: ctx,
       runtime: ctx.browserRuntime,
       tokenFile,
       idPrefix: 'electron-http',
@@ -78,7 +159,16 @@ describe('Electron Browser HTTP protocol', () => {
     const tabId = createdBody.tab.id
 
     const status = await json(server.origin, '/status')
-    expect(status).toMatchObject({ status: 200, body: { ready: true, version: '1.11.4' } })
+    expect(status).toMatchObject({
+      status: 200,
+      body: {
+        ready: true,
+        url: 'about:blank',
+        activeTab: { id: tabId, url: 'about:blank' },
+        tabs: [{ id: tabId, url: 'about:blank' }],
+        version: '1.11.4',
+      },
+    })
 
     const navigated = await json(server.origin, '/navigate', {
       method: 'POST',
@@ -86,6 +176,10 @@ describe('Electron Browser HTTP protocol', () => {
       body: JSON.stringify({ url: 'https://example.test/', tabId }),
     })
     expect(navigated).toMatchObject({ status: 200, body: { ok: true, url: 'https://example.test/' } })
+    await expect(json(server.origin, '/status')).resolves.toMatchObject({
+      status: 200,
+      body: { url: 'https://example.test/', tabs: [{ id: tabId, url: 'https://example.test/' }] },
+    })
 
     const listed = await json(server.origin, '/tabs/list', { headers: { authorization: `Bearer ${token}` } })
     expect(listed).toMatchObject({
@@ -146,6 +240,10 @@ describe('Electron Browser HTTP protocol', () => {
     if (tracked.status === 'open') {
       await ctx.browserRuntime.close({ target: tracked.target, expectedRevision: tracked.revision })
     }
+    await expect(json(server.origin, '/status')).resolves.toMatchObject({
+      status: 200,
+      body: { ready: true, activeTab: null, tabs: [] },
+    })
     const listedClosed = await json(server.origin, '/tabs/list', { headers: { authorization: `Bearer ${token}` } })
     expect(listedClosed.status).toBe(200)
     const closedContent = await json(server.origin, '/page-content', {
@@ -238,6 +336,7 @@ describe('Electron Browser HTTP protocol', () => {
     installElectronTestHost(new FakeElectronHost())
     await ctx.plugin(ElectronBrowserRuntime, { idPrefix: 'electron-http' })
     const server = await listenElectronBrowserHttp({
+      context: ctx,
       runtime: ctx.browserRuntime,
       tokenFile,
       idPrefix: 'electron-http',
@@ -343,6 +442,7 @@ describe('Electron Browser HTTP protocol', () => {
     installElectronTestHost(new FakeElectronHost())
     await ctx.plugin(ElectronBrowserRuntime, { idPrefix: 'electron' })
     const server = await listenElectronBrowserHttp({
+      context: ctx,
       runtime: ctx.browserRuntime,
       tokenFile,
     })
@@ -514,6 +614,7 @@ describe('Electron Browser HTTP protocol', () => {
     installElectronTestHost(new FakeElectronHost())
     await ctx.plugin(ElectronBrowserRuntime, { idPrefix: 'electron-http' })
     const server = await listenElectronBrowserHttp({
+      context: ctx,
       runtime: ctx.browserRuntime,
       tokenFile,
       idPrefix: 'electron-http',
@@ -546,6 +647,10 @@ describe('Electron Browser HTTP protocol', () => {
     }
     expect(recovered.status).toBe('open')
     expect(recovered.revision).toBeGreaterThan(createdRevision)
+    await expect(json(server.origin, '/status')).resolves.toMatchObject({
+      status: 200,
+      body: { ready: true, tabs: [{ id: tabId, url: 'about:blank' }] },
+    })
     const stale = await json(server.origin, '/input', {
       method: 'POST',
       headers,

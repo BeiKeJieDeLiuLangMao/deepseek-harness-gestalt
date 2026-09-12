@@ -10,7 +10,7 @@ Status: implemented
 
 ## Decision
 
-`closeTab` 只收起丢掉最后一个停靠标签的那棵树：右侧没有停靠标签时设 `panelOpen: false`，底部没有时设 `bottomOpen: false`。是否为空不看浮动窗口，因此剩下的浮动窗口不会让空的停靠树保持打开。把最后一个停靠标签拖成浮动窗口不会收起面板。之后带 path 或 URL 的 `openTab` 仍通过既有的内容打开逻辑展开落地面板。
+官方 `ui-sidebar-right` 的 `closeTab` 只收起丢掉最后一个停靠标签的那块表面。是否为空不看浮动窗口，因此剩下的浮动窗口不会让空的停靠树保持打开。把最后一个停靠标签拖成浮动窗口不会收起面板。之后的内容打开仍会展开落地面板。未使用的 Better snapshot store 不再持有这条路径。
 
 ## Alternatives considered
 
@@ -24,4 +24,4 @@ Status: implemented
 
 ## Testing
 
-`packages/client/ui-better-sidebar/tests/open-tab-landing.client.spec.ts` 分别关掉右侧最后一个标签、底部最后一个标签，以及仍有兄弟标签时的关闭。
+`packages/client/ui-sidebar-right/tests/stores.client.spec.ts` 分别关掉最后一个非引导停靠标签、仍有兄弟标签时的关闭，以及不得收起栏的浮动标签。

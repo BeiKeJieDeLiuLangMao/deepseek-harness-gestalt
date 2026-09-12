@@ -2,8 +2,8 @@
 
 .card {
   list-style: none;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 12px;
+  border: 0.5px solid var(--dsw-alias-border-l4);
+  border-radius: 16px;
   background: var(--dsw-alias-bg-layer-3);
   transition: border-color .16s, background .16s;
 }
@@ -73,7 +73,7 @@
 }
 
 .body {
-  border-top: 1px solid var(--dsw-alias-border-l2);
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
   margin: 0 16px;
   padding-bottom: 8px;
 }
@@ -82,7 +82,7 @@
   display: flex;
   align-items: flex-end;
   gap: 18px;
-  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  border-bottom: 0.5px solid var(--dsw-alias-border-l2);
   margin-top: 12px;
 }
 
@@ -128,16 +128,9 @@
 }
 
 /* Carried on the header so a collapsed card still says it holds edits. */
+/* Placement only: the capsule geometry and palette come from `Tag`. */
 .pending {
   flex: none;
-  border-radius: 999px;
-  padding: 1px 8px;
-  font-size: 11px;
-  line-height: 17px;
-  font-weight: 500;
-  white-space: nowrap;
-  background: var(--dsw-alias-bg-module-platform);
-  color: var(--dsw-alias-label-secondary);
 }
 
 .footer {
@@ -146,7 +139,7 @@
   justify-content: flex-end;
   gap: 8px;
   padding: 12px 0 4px;
-  border-top: 1px solid var(--dsw-alias-border-l2);
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
 }
 
 .failed {
@@ -161,7 +154,7 @@
 .test {
   appearance: none;
   margin-right: auto;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 8px;
   padding: 5px 14px;
   font: inherit;

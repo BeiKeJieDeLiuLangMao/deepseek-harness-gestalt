@@ -37,6 +37,15 @@ describe('spawnWebHost', () => {
     expect(diagnostic).toContain('[REDACTED]')
   })
 
+  it('redacts launch-token query values from startup diagnostics', () => {
+    const diagnostic = redactWebHostDiagnostic(
+      'dsh web: http://127.0.0.1:4567/?token=launch-secret\n',
+      {},
+    )
+    expect(diagnostic).not.toContain('launch-secret')
+    expect(diagnostic).toContain('token=[REDACTED]')
+  })
+
   it('redacts before truncating across a credential boundary', () => {
     const secret = 'credential-prefix-and-visible-suffix'
     const output = `SERVICE_API_KEY=${secret}\n${'x'.repeat(900)}\ntail diagnostic`
@@ -85,6 +94,7 @@ describe('spawnWebHost', () => {
     }, 5_000)
     children.push(running)
     expect(running.url).toBe('http://127.0.0.1:34567')
+    expect(running.launchUrl).toBe('http://127.0.0.1:34567/?token=fixture-launch')
     expect(running.child.exitCode).toBeNull()
   })
 

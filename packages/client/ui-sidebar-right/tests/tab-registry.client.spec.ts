@@ -1,0 +1,473 @@
+/**
+ * Stage one of tab-type registration: how the registry decides who opens an
+ * address.
+ *
+ * The decision follows VS Code's editor resolver — declared globs narrow, an
+ * optional predicate vetoes, and survivors rank by band, matched-pattern length,
+ * then registration order — and every step is contract: a type shipped from
+ * another package relies on each one. So each is asserted, not assumed.
+ */
+import { describe, expect, it, vi } from 'vitest'
+import { Context } from '@deepseek-ai/cordis'
+import { SidebarRightTabRegistry } from '../src/client/tab-registry.ts'
+import type {
+  SidebarRightTabDefinition, SidebarRightViewerMatchRequest,
+} from '../src/client/tab-registry.ts'
+import {
+  SIDEBAR_RIGHT_PREFERENCES_DEFAULTS,
+  type SidebarRightPreferences,
+  type SidebarRightPreferencesReader,
+} from '../src/client/preferences.ts'
+
+/** A type recognizing `patterns`, titled by its kind. */
+function typeFor(
+  kind: string,
+  patterns: readonly string[] | undefined,
+  extra: Partial<Omit<SidebarRightTabDefinition, 'kind' | 'patterns'>> = {},
+): SidebarRightTabDefinition {
+  return {
+    id: `test/${kind}`,
+    kind,
+    ...(patterns === undefined ? {} : { patterns }),
+    title: address => `${kind}:${address}`,
+    ...extra,
+  }
+}
+
+/** Kinds of the ranked candidates, best first. */
+function ranked(registry: SidebarRightTabRegistry, address: string): string[] {
+  return registry.candidates(address).map(definition => definition.kind)
+}
+
+describe('SidebarRightTabRegistry — recognition', () => {
+  it('matches a pattern containing ":" against the whole address', () => {
+    const registry = new SidebarRightTabRegistry(new Context())
+    registry.register(typeFor('guide', ['sidebar://guide']))
+    registry.register(typeFor('text', ['dsh-resource://file/**']))
+    expect(registry.claim('sidebar://guide').kind).toBe('guide')
+    expect(registry.claim('dsh-resource://file/session/s/notes/a.txt').kind).toBe('text')
+    expect(ranked(registry, 'sidebar://files')).toEqual([])
+  })
+
+  it('matches a pattern without ":" against the URI path at any depth, ignoring case', () => {
+    const registry = new SidebarRightTabRegistry(new Context())
+    registry.register(typeFor('image', ['*.png']))
+    expect(registry.claim('dsh-resource://file/session/s/deep/er/shot.PNG').kind).toBe('image')
+    expect(ranked(registry, 'dsh-resource://file/session/s/shot.png.txt')).toEqual([])
+  })
+
+  it('matches no path pattern for an address that is not a URI', () => {
+    const registry = new SidebarRightTabRegistry(new Context())
+    registry.register(typeFor('image', ['*.png']))
+    registry.register(typeFor('raw', ['raw:*']))
+    expect(ranked(registry, 'shot.png')).toEqual([])
+    expect(ranked(registry, 'not a uri/shot.png')).toEqual([])
+    // A whole-address pattern still reads the string as given.
+    expect(registry.claim('raw:thing').kind).toBe('raw')
+  })
+
+  it('does not hide dotfiles from a path pattern', () => {
+    const registry = new SidebarRightTabRegistry(new Context())
+    registry.register(typeFor('env', ['.env*']))
+    expect(registry.claim('dsh-resource://file/session/s/proj/.env.local').kind).toBe('env')
+  })
+})
+
+describe('SidebarRightTabRegistry — ranking', () => {
+  it('ranks by band: extension over builtin over fallback, whatever the registration order', () => {
+    const registry = new SidebarRightTabRegistry(new Context())
+    registry.register(typeFor('text', ['dsh-resource://file/**'], { priority: 'fallback' }))
+    registry.register(typeFor('markdown', ['*.md'], { priority: 'builtin' }))
+    registry.register(typeFor('third', ['*.md']))
+    expect(ranked(registry, 'dsh-resource://file/session/s/a.md')).toEqual(['third', 'markdown', 'text'])
+    expect(registry.claim('dsh-resource://file/session/s/a.md').kind).toBe('third')
+  })
+
+  it('lets a more specific builtin beat the fallback viewer despite the viewer\'s longer pattern', () => {
+    const registry = new SidebarRightTabRegistry(new Context())
+    registry.register(typeFor('text', ['dsh-resource://file/**'], { priority: 'fallback' }))
+    registry.register(typeFor('image', ['*.png'], { priority: 'builtin' }))
+    expect(registry.claim('dsh-resource://file/session/s/shot.png').kind).toBe('image')
+    expect(registry.claim('dsh-resource://file/session/s/notes.txt').kind).toBe('text')
+  })
+
+  it('lets an extension take over a builtin kind, and hands it back when the extension leaves', () => {
+    const registry = new SidebarRightTabRegistry(new Context())
+    registry.register(typeFor('text', ['dsh-resource://file/**'], { priority: 'builtin', title: () => 'builtin text' }))
+    const release = registry.register(typeFor('text', ['*.txt'], { id: 'ext/text', title: () => 'extension text' }))
+    // The extension is the type in force: lookups, claims, and the listing.
+    expect(registry.get('text')?.title('x')).toBe('extension text')
+    expect(registry.claim('dsh-resource://file/session/s/a.txt').title).toBe('extension text')
+    expect(registry.entries().map(definition => definition.title('x'))).toEqual(['extension text'])
+    // The shadowed builtin's globs no longer count.
+    expect(ranked(registry, 'dsh-resource://file/session/s/a.bin')).toEqual([])
+    release()
+    expect(registry.get('text')?.title('x')).toBe('builtin text')
+    expect(registry.claim('dsh-resource://file/session/s/a.bin').title).toBe('builtin text')
+  })
+
+  it('lets a builtin register under an extension already holding its kind, shadowed until the extension leaves', () => {
+    const registry = new SidebarRightTabRegistry(new Context())
+    registry.register(typeFor('text', ['dsh-resource://file/**'], { id: 'third-party/text' }))
+    const releaseBuiltin = registry.register(typeFor('text', ['dsh-resource://file/**'], { id: 'shipped/text', priority: 'builtin' }))
+    expect(registry.get('text')?.id).toBe('third-party/text')
+    expect(ranked(registry, 'dsh-resource://file/session/s/a.txt')).toEqual(['text'])
+    // The shadowed builtin leaving changes nothing in force, and its band is free again.
+    releaseBuiltin()
+    expect(registry.get('text')?.id).toBe('third-party/text')
+    expect(() => registry.register(typeFor('text', ['*.md'], { id: 'other/text', priority: 'builtin' }))).not.toThrow()
+  })
+
+  it('refuses a second registration in the same band, and any meeting a fallback of the kind', () => {
+    const registry = new SidebarRightTabRegistry(new Context())
+    registry.register(typeFor('text', ['dsh-resource://file/**'], { id: 'a/text', priority: 'builtin' }))
+    expect(() => registry.register(typeFor('text', ['dsh-resource://file/**'], { id: 'b/text', priority: 'builtin' }))).toThrow('already registered')
+    registry.register(typeFor('text', ['dsh-resource://file/**'], { id: 'c/text' }))
+    expect(() => registry.register(typeFor('text', ['dsh-resource://file/**'], { id: 'd/text' }))).toThrow('already registered')
+    expect(() => registry.register(typeFor('text', ['dsh-resource://file/**'], { id: 'e/text', priority: 'fallback' }))).toThrow('already registered')
+    registry.register(typeFor('hex', ['dsh-resource://file/**'], { id: 'a/hex', priority: 'fallback' }))
+    expect(() => registry.register(typeFor('hex', ['dsh-resource://file/**'], { id: 'b/hex', priority: 'builtin' }))).toThrow('already registered')
+    expect(() => registry.register(typeFor('hex', ['dsh-resource://file/**'], { id: 'c/hex' }))).toThrow('already registered')
+  })
+
+  it('refuses a second registration of an id, whatever its kind', () => {
+    const registry = new SidebarRightTabRegistry(new Context())
+    const dispose = registry.register(typeFor('text', ['dsh-resource://file/**'], { id: 'pkg/viewer', priority: 'builtin' }))
+    expect(() => registry.register(typeFor('hex', ['*.bin'], { id: 'pkg/viewer' }))).toThrow('tab type id "pkg/viewer" is already registered')
+    dispose()
+    expect(() => registry.register(typeFor('hex', ['*.bin'], { id: 'pkg/viewer' }))).not.toThrow()
+  })
+
+  it('within a band, the longer matched pattern wins', () => {
+    const registry = new SidebarRightTabRegistry(new Context())
+    registry.register(typeFor('markdown', ['*.md'], { priority: 'builtin' }))
+    registry.register(typeFor('readme', ['README.md'], { priority: 'builtin' }))
+    expect(ranked(registry, 'dsh-resource://file/session/s/proj/README.md')).toEqual(['readme', 'markdown'])
+    expect(ranked(registry, 'dsh-resource://file/session/s/proj/notes.md')).toEqual(['markdown'])
+  })
+
+  it('then registration order', () => {
+    const registry = new SidebarRightTabRegistry(new Context())
+    registry.register(typeFor('first', ['dsh-resource://file/**']))
+    registry.register(typeFor('second', ['dsh-resource://file/**']))
+    expect(ranked(registry, 'dsh-resource://file/session/s/a.txt')).toEqual(['first', 'second'])
+  })
+
+  it('measures specificity by the longest pattern that matched, not the longest declared', () => {
+    const registry = new SidebarRightTabRegistry(new Context())
+    registry.register(typeFor('wide', ['*.txt', 'some/very/long/**/never.matches']))
+    registry.register(typeFor('narrow', ['notes.txt']))
+    expect(ranked(registry, 'dsh-resource://file/session/s/notes.txt')).toEqual(['narrow', 'wide'])
+  })
+})
+
+describe('SidebarRightTabRegistry — claiming', () => {
+  it('lets canOpen veto an address its globs matched', () => {
+    const registry = new SidebarRightTabRegistry(new Context())
+    registry.register(typeFor('image', ['*.png'], { canOpen: address => address.startsWith('dsh-resource://file/') }))
+    expect(registry.claim('dsh-resource://file/session/s/shot.png').kind).toBe('image')
+    expect(ranked(registry, 'https://example.com/shot.png')).toEqual([])
+  })
+
+  it('opens with a named type, skipping its globs but honouring its canOpen', () => {
+    const registry = new SidebarRightTabRegistry(new Context())
+    registry.register(typeFor('text', ['dsh-resource://file/**'], { canOpen: address => !address.endsWith('.bin') }))
+    expect(registry.claim('sidebar://guide', 'text').kind).toBe('text')
+    expect(() => registry.claim('dsh-resource://file/session/s/a.bin', 'text')).toThrow('tab type "text" refuses')
+    expect(() => registry.claim('dsh-resource://file/session/s/a.txt', 'nope')).toThrow('no tab type is registered as "nope"')
+  })
+
+  it('answers with the address as contentId and the type\'s title', () => {
+    const registry = new SidebarRightTabRegistry(new Context())
+    registry.register(typeFor('text', ['dsh-resource://file/**']))
+    expect(registry.claim('dsh-resource://file/session/s/a.txt')).toEqual({
+      kind: 'text',
+      contentId: 'dsh-resource://file/session/s/a.txt',
+      title: 'text:dsh-resource://file/session/s/a.txt',
+    })
+  })
+
+  it('reads the title fresh, so a language change needs no re-registration', () => {
+    const registry = new SidebarRightTabRegistry(new Context())
+    let language = 'zh'
+    registry.register({ id: 'shipped/guide', kind: 'guide', title: () => language === 'zh' ? '开始' : 'Start' })
+    expect(registry.get('guide')?.title('sidebar://guide')).toBe('开始')
+    language = 'en'
+    expect(registry.get('guide')?.title('sidebar://guide')).toBe('Start')
+  })
+})
+
+describe('SidebarRightTabRegistry — ids and page types', () => {
+  it('answers by kind with the definition in force, whose id is where its body lives', () => {
+    const registry = new SidebarRightTabRegistry(new Context())
+    const disposeBuiltin = registry.register(typeFor('text', ['dsh-resource://file/**'], { id: 'shipped/text', priority: 'builtin' }))
+    expect(registry.get('text')?.id).toBe('shipped/text')
+    const disposeExtension = registry.register(typeFor('text', ['*.txt'], { id: 'third-party/text' }))
+    expect(registry.get('text')?.id).toBe('third-party/text')
+    disposeExtension()
+    expect(registry.get('text')?.id).toBe('shipped/text')
+    disposeBuiltin()
+    expect(registry.get('text')).toBeUndefined()
+  })
+
+  it('projects every visible page type into the guide from the same descriptor inventory', () => {
+    const registry = new SidebarRightTabRegistry(new Context())
+    registry.register({
+      id: 'shipped/files',
+      kind: 'files',
+      priority: 'builtin',
+      order: 10,
+      icon: 'files',
+      title: () => 'Files',
+      guide: [{ description: () => 'Browse' }],
+    })
+    registry.register({ id: 'shipped/tasks', kind: 'tasks', order: 20, icon: 'tasks', title: () => 'Tasks' })
+    registry.register({ id: 'shipped/hidden', kind: 'hidden', hidden: true, title: () => 'Hidden' })
+    registry.register({ id: 'shipped/resource', kind: 'resource', patterns: ['*.txt'], title: () => 'Resource' })
+    expect(ranked(registry, 'dsh-resource://file/session/s/a.md')).toEqual([])
+    expect(registry.get('files')?.title('x')).toBe('Files')
+    expect(registry.guide().map(entry => [
+      entry.kind, entry.order, entry.title(), entry.description(), entry.icon,
+    ])).toEqual([
+      ['files', 10, 'Files', 'Browse', 'files'],
+      ['tasks', 20, 'Tasks', '', 'tasks'],
+    ])
+  })
+})
+
+describe('SidebarRightTabRegistry — lifetime', () => {
+  it('lists registered types in registration order', () => {
+    const registry = new SidebarRightTabRegistry(new Context())
+    registry.register(typeFor('guide', ['sidebar://guide']))
+    registry.register(typeFor('text', ['dsh-resource://file/**']))
+    expect(registry.entries().map(entry => entry.kind)).toEqual(['guide', 'text'])
+  })
+
+  it('refuses a second type for the same kind in the same band', () => {
+    const registry = new SidebarRightTabRegistry(new Context())
+    registry.register(typeFor('text', ['dsh-resource://file/**']))
+    expect(() => registry.register(typeFor('text', ['other://**'], { id: 'other/text' })))
+      .toThrow('tab kind "text" is already registered')
+  })
+
+  it('drops a type when its owner disposes, and frees the kind again', () => {
+    const registry = new SidebarRightTabRegistry(new Context())
+    const dispose = registry.register(typeFor('text', ['dsh-resource://file/**']))
+    dispose()
+    expect(registry.entries()).toEqual([])
+    expect(registry.get('text')).toBeUndefined()
+    expect(() => registry.register(typeFor('text', ['other://**']))).not.toThrow()
+  })
+
+  it('drops a type registered inside another plugin\'s effect when that plugin is disposed', async () => {
+    const ctx = new Context()
+    const registry = new SidebarRightTabRegistry(ctx)
+    const fiber = ctx.plugin({
+      apply(inner: Context) {
+        inner.effect(() => registry.register(typeFor('text', ['dsh-resource://file/**'])), 'test: text type')
+      },
+    })
+    await fiber.await()
+    expect(registry.get('text')).toBeDefined()
+    await fiber.dispose()
+    expect(registry.get('text')).toBeUndefined()
+  })
+
+  it('collects every type\'s guide entries in order, reference-stable between changes', () => {
+    const registry = new SidebarRightTabRegistry(new Context())
+    const entry = (order: number) => ({ order, title: () => `#${order}`, description: () => '' })
+    registry.register(typeFor('files', undefined, { guide: [entry(10)] }))
+    const first = registry.guide()
+    expect(registry.guide()).toBe(first)
+    registry.register(typeFor('artifacts', undefined, { guide: [entry(5)] }))
+    registry.register(typeFor('text', ['dsh-resource://file/**']))
+    expect(registry.guide().map(item => item.kind)).toEqual(['artifacts', 'files'])
+    expect(registry.guide()).not.toBe(first)
+  })
+
+  it('notifies subscribers on registration and on disposal', () => {
+    const registry = new SidebarRightTabRegistry(new Context())
+    const seen = vi.fn()
+    const unsubscribe = registry.subscribe(seen)
+    const dispose = registry.register(typeFor('text', ['dsh-resource://file/**']))
+    expect(seen).toHaveBeenCalledTimes(1)
+    dispose()
+    expect(seen).toHaveBeenCalledTimes(2)
+    unsubscribe()
+    registry.register(typeFor('other', ['other://**']))
+    expect(seen).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps entries reference-stable between changes', () => {
+    const registry = new SidebarRightTabRegistry(new Context())
+    registry.register(typeFor('text', ['dsh-resource://file/**']))
+    const first = registry.entries()
+    expect(registry.entries()).toBe(first)
+    registry.register(typeFor('guide', ['sidebar://guide']))
+    expect(registry.entries()).not.toBe(first)
+  })
+})
+
+/** Mutable preference reader for enablement and registry-invalidation specs. */
+function settingsReader(initial: Partial<SidebarRightPreferences> = {}): {
+  reader: SidebarRightPreferencesReader
+  set(patch: Partial<SidebarRightPreferences>): void
+} {
+  let preferences: SidebarRightPreferences = { ...SIDEBAR_RIGHT_PREFERENCES_DEFAULTS, ...initial }
+  const listeners = new Set<() => void>()
+  return {
+    reader: {
+      getSnapshot: () => ({ status: 'ready', preferences, revision: 1, writable: true }),
+      subscribe: (listener) => {
+        listeners.add(listener)
+        return () => { listeners.delete(listener) }
+      },
+      isTabEnabled: id => preferences.tabsEnabled[id] !== false,
+      isViewerEnabled: id => preferences.viewersEnabled[id] !== false,
+      pluginSettings: id => preferences.pluginSettings[id] ?? {},
+      htmlViewerSafety: () => ({
+        forceUnsandboxed: preferences.htmlViewerNoSandbox,
+        defaultUnsandboxed: preferences.htmlViewerNoSandbox || preferences.htmlViewerDefaultUnsafe,
+      }),
+    },
+    set(patch) {
+      preferences = { ...preferences, ...patch }
+      for (const listener of [...listeners]) listener()
+    },
+  }
+}
+
+describe('SidebarRightTabRegistry — official descriptor inventory', () => {
+  it('keeps pure presentation and behavior metadata in registration order', () => {
+    const registry = new SidebarRightTabRegistry(new Context())
+    const create = vi.fn(() => ({ contentId: 'sidebar://terminal/one' }))
+    registry.register({
+      id: 'test/terminal',
+      kind: 'terminal',
+      title: () => 'Terminal',
+      order: 40,
+      hidden: false,
+      icon: 'terminal',
+      single: true,
+      create,
+      settings: {
+        fields: [{ key: 'terminalFontSize', source: 'preference', control: 'number', title: () => 'Size' }],
+      },
+    })
+    expect(registry.entries()[0]).toMatchObject({
+      id: 'test/terminal', order: 40, hidden: false, icon: 'terminal', single: true,
+    })
+    expect(registry.entries()[0]?.settings?.fields[0]).toMatchObject({
+      key: 'terminalFontSize', source: 'preference', control: 'number',
+    })
+  })
+
+  it('rejects settings rows that cannot reach the official owner', () => {
+    const registry = new SidebarRightTabRegistry(new Context())
+    expect(() => registry.register({
+      id: 'test/bad-setting',
+      kind: 'bad-setting',
+      title: () => 'Bad',
+      settings: { fields: [{ key: 'invented', source: 'preference', title: () => 'Bad' }] },
+    })).toThrow('is not an official preference')
+    expect(() => registry.registerViewer({
+      id: 'bad-select',
+      title: () => 'Bad',
+      extensions: ['bad'],
+      fetchStrategy: 'fsRead',
+      settings: { fields: [{ key: 'mode', source: 'plugin', control: 'select', title: () => 'Mode' }] },
+    })).toThrow('has no options')
+  })
+
+  it('removes disabled definitions from claims and guide entries without removing their inventory record', () => {
+    const settings = settingsReader()
+    const registry = new SidebarRightTabRegistry(new Context(), settings.reader)
+    registry.register({
+      id: 'test/files',
+      kind: 'files',
+      patterns: ['dsh-resource://file/**'],
+      title: () => 'Files',
+      guide: [{ order: 1, title: () => 'Files', description: () => 'Browse' }],
+    })
+    expect(registry.claim('dsh-resource://file/session/s/a.txt').kind).toBe('files')
+    settings.set({ tabsEnabled: { 'test/files': false } })
+    expect(registry.entries()).toHaveLength(1)
+    expect(registry.guide()).toEqual([])
+    expect(() => registry.claim('dsh-resource://file/session/s/a.txt')).toThrow('no registered tab type claims')
+    expect(() => registry.claim('dsh-resource://file/session/s/a.txt', 'files')).toThrow('is disabled')
+  })
+
+  it('routes enabled URL claims in registration order and contains a throwing predicate', () => {
+    const settings = settingsReader({ tabsEnabled: { 'test/disabled': false } })
+    const registry = new SidebarRightTabRegistry(new Context(), settings.reader)
+    registry.register({ id: 'test/disabled', kind: 'disabled', title: () => '', urlTarget: () => true })
+    registry.register({ id: 'test/broken', kind: 'broken', title: () => '', urlTarget: () => { throw new Error('bad claim') } })
+    registry.register({ id: 'test/docs', kind: 'docs', title: () => '', urlTarget: url => url.hostname === 'docs.test' })
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    expect(registry.matchUrlTarget(new URL('https://docs.test/page'))?.kind).toBe('docs')
+    expect(error).toHaveBeenCalledOnce()
+    error.mockRestore()
+  })
+})
+
+describe('SidebarRightTabRegistry — viewer matching', () => {
+  it('matches by priority then registration order, with detection before suffixes and a final catch-all', () => {
+    const registry = new SidebarRightTabRegistry(new Context())
+    registry.registerViewer({
+      id: 'image', title: () => 'Image', icon: 'image', extensions: ['png'], fetchStrategy: 'mediaUrl',
+    })
+    registry.registerViewer({
+      id: 'binary', title: () => 'Binary', extensions: ['doc'], priority: -50,
+      fetchStrategy: 'binary-download', detect: ({ head }) => head.includes(0),
+    })
+    registry.registerViewer({
+      id: 'code', title: () => 'Code', extensions: [], priority: -100, fetchStrategy: 'fsRead',
+    })
+    const file = (path: string, head?: Uint8Array): SidebarRightViewerMatchRequest => ({
+      address: `dsh-resource://file/session/s/${path}`,
+      path,
+      ...(head === undefined ? {} : { head }),
+    })
+    expect(registry.matchViewer(file('shot.PNG'))?.id).toBe('image')
+    expect(registry.matchViewer(file('unknown.bin'))?.id).toBe('code')
+    expect(registry.matchViewer(file('unknown.bin', new Uint8Array([1, 0, 2])))?.id).toBe('binary')
+    expect(registry.viewers().map(viewer => viewer.id)).toEqual(['image', 'binary', 'code'])
+  })
+
+  it('lets a detect-only catch-all yield without bytes and skips disabled viewers', () => {
+    const settings = settingsReader({ viewersEnabled: { magic: false } })
+    const registry = new SidebarRightTabRegistry(new Context(), settings.reader)
+    registry.registerViewer({
+      id: 'magic', title: () => 'Magic', extensions: [], priority: 10,
+      fetchStrategy: 'binary-download', detect: ({ head }) => head[0] === 42,
+    })
+    registry.registerViewer({ id: 'text', title: () => 'Text', extensions: [], fetchStrategy: 'fsRead' })
+    const request = { address: 'dsh-resource://file/session/s/a', path: 'a', head: new Uint8Array([42]) }
+    expect(registry.matchViewer(request)?.id).toBe('text')
+    settings.set({ viewersEnabled: {} })
+    expect(registry.matchViewer({ address: request.address, path: request.path })?.id).toBe('text')
+    expect(registry.matchViewer(request)?.id).toBe('magic')
+  })
+
+  it('validates registrations and releases exactly the HMR-owned viewer', async () => {
+    const ctx = new Context()
+    const registry = new SidebarRightTabRegistry(ctx)
+    expect(() => registry.registerViewer({
+      id: 'bad', title: () => 'Bad', extensions: ['.PNG'], fetchStrategy: 'mediaUrl',
+    })).toThrow('lowercase without a leading dot')
+    expect(() => registry.registerViewer({
+      id: 'custom', title: () => 'Custom', extensions: ['x'], fetchStrategy: 'custom',
+    })).toThrow('must declare load')
+    const fiber = ctx.plugin({
+      apply(inner: Context) {
+        inner.effect(() => registry.registerViewer({
+          id: 'owned', title: () => 'Owned', extensions: ['x'], fetchStrategy: 'fsRead',
+        }), 'test: viewer')
+      },
+    })
+    await fiber.await()
+    expect(registry.viewers().map(viewer => viewer.id)).toEqual(['owned'])
+    await fiber.dispose()
+    expect(registry.viewers()).toEqual([])
+  })
+})

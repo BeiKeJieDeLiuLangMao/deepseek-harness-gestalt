@@ -1,52 +1,78 @@
 /** Documentation build-output lifecycle shared by the standard and MPA entrypoints. */
 
-import { lstatSync, rmSync, unlinkSync } from 'node:fs'
+import { lstatSync, realpathSync, rmSync, unlinkSync } from 'node:fs'
+import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 import { build } from './vitepress.ts'
 
-interface DocumentationBuildOptions {
-  mpa?: string
-  onAfterConfigResolve: (siteConfig: { outDir: string }) => void
+type DocSiteBuildOptions = NonNullable<Parameters<typeof build>[1]>
+
+function escapesRoot(root: string, candidate: string): boolean {
+  const child = relative(root, candidate)
+  return child === '..' || child.startsWith(`..${sep}`) || isAbsolute(child)
+}
+
+function nearestExistingAncestor(path: string): string {
+  let ancestor = path
+  for (;;) {
+    if (lstatSync(ancestor, { throwIfNoEntry: false }) !== undefined) return ancestor
+    const parent = dirname(ancestor)
+    if (parent === ancestor) {
+      throw new Error(`website/build: no existing ancestor found for ${JSON.stringify(path)}.`)
+    }
+    ancestor = parent
+  }
 }
 
 /**
- * Remove the exact disposable output directory resolved for one documentation build.
- *
- * Link-shaped paths are unlinked instead of recursively removed so cleanup cannot
- * traverse a symlink or Windows junction into a target the build does not own.
- *
- * @param outDir Resolved VitePress output directory owned by the upcoming build.
+ * Remove one documentation build output without traversing a link-shaped output or an outside parent.
+ * @param siteRoot - VitePress site root that owns the output.
+ * @param outDir - Resolved VitePress output directory.
+ * @throws When `outDir` is not a proper child of `siteRoot` or its existing parent resolves outside it.
  */
-function resetDocumentationBuildOutput(outDir: string): void {
-  const entry = lstatSync(outDir, { throwIfNoEntry: false })
-  if (entry === undefined) return
-  if (!entry.isDirectory() || entry.isSymbolicLink()) {
-    unlinkSync(outDir)
+export function cleanDocSiteOutput(siteRoot: string, outDir: string): void {
+  const root = resolve(siteRoot)
+  const output = resolve(outDir)
+  const child = relative(root, output)
+  if (child === '' || escapesRoot(root, output)) {
+    throw new Error(`website/build: output directory ${JSON.stringify(output)} must be a child of site root ${JSON.stringify(root)}.`)
+  }
+
+  const realRoot = realpathSync(root)
+  const realParent = realpathSync(nearestExistingAncestor(dirname(output)))
+  if (escapesRoot(realRoot, realParent)) {
+    throw new Error(`website/build: output directory ${JSON.stringify(output)} must resolve inside site root ${JSON.stringify(realRoot)}.`)
+  }
+
+  const outputStats = lstatSync(output, { throwIfNoEntry: false })
+  if (outputStats?.isSymbolicLink()) {
+    unlinkSync(output)
     return
   }
-  rmSync(outDir, { recursive: true, force: true })
+  rmSync(output, { recursive: true, force: true })
 }
 
 /**
- * VitePress options that reset the resolved output before the current build writes it.
- *
- * @param mpa Whether to enable VitePress's MPA build mode.
- * @returns Build options sharing one output-ownership lifecycle across modes.
+ * Create VitePress build options that remove the resolved output directory before bundling.
+ * @param siteRoot - VitePress site root to build.
+ * @param mpa - Whether to use VitePress's multi-page application build.
+ * @returns VitePress options with project-owned output preparation.
  */
-function documentationBuildOptions(mpa: boolean): DocumentationBuildOptions {
+export function docSiteBuildOptions(siteRoot: string, mpa: boolean): DocSiteBuildOptions {
+  const root = resolve(siteRoot)
   return {
-    ...(mpa ? { mpa: 'true' } : {}),
+    ...mpa ? { mpa: 'true' } : {},
     onAfterConfigResolve(siteConfig) {
-      resetDocumentationBuildOutput(siteConfig.outDir)
+      cleanDocSiteOutput(root, siteConfig.outDir)
     },
   }
 }
 
 /**
  * Build the fixed documentation website with a fresh resolved output directory.
- *
- * @param mpa Whether to enable VitePress's MPA build mode.
+ * @param mpa - Whether to use VitePress's multi-page application build.
  * @returns A promise that settles when VitePress finishes the documentation build.
  */
 export async function buildDocumentationSite(mpa: boolean): Promise<void> {
-  await build(import.meta.dirname, documentationBuildOptions(mpa))
+  const siteRoot = resolve(import.meta.dirname)
+  await build(siteRoot, docSiteBuildOptions(siteRoot, mpa))
 }

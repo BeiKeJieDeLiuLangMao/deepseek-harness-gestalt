@@ -3,9 +3,12 @@ import { cleanup, fireEvent, render, screen, within } from '@testing-library/rea
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { PhonePlatformCards } from '../src/client/PhonePlatformCards.tsx'
 import { phoneDeviceIdOf } from '../src/client/phone-device-id.ts'
+import { zh } from '../src/client/locales.ts'
 import type {
   AndroidPreparationPlanView, PhoneAndroidView, PhoneIosView,
 } from '../src/client/phone-runtime-source.ts'
+
+const t = ((key: keyof typeof zh) => zh[key]) as never
 
 afterEach(cleanup)
 
@@ -46,6 +49,7 @@ function props(
   iosUnsupportedMessage = 'iOS simulators require macOS and Xcode.',
 ) {
   return {
+    t,
     android,
     ios,
     iosUnsupportedMessage,

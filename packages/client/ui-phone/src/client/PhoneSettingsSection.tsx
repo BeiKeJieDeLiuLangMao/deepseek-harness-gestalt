@@ -29,12 +29,14 @@ export function PhoneSettingsSection(props: PhoneSettingsSectionProps) {
       <h2 className={css.heading}>{props.t('title')}</h2>
       <p className={css.intro}>{props.t('intro')}</p>
       <PhoneRuntimeBar
+        t={props.t}
         runtime={state.runtime}
         onPrepare={props.prepareRuntime}
         onCancel={props.cancelRuntime}
         onRefresh={props.refreshRuntime}
       />
       <PhonePlatformCards
+        t={props.t}
         android={state.platforms.android}
         ios={state.platforms.ios}
         iosUnsupportedMessage={props.t('iosUnsupported')}
@@ -48,6 +50,7 @@ export function PhoneSettingsSection(props: PhoneSettingsSectionProps) {
         onStartIos={props.startIos}
       />
       <PhoneSettingsCard
+        t={props.t}
         enabled={state.enabled}
         view={state.view}
         onEnabledChange={props.setEnabled}

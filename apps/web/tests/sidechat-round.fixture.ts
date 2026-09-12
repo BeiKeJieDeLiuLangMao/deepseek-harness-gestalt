@@ -14,10 +14,10 @@ const snapshotDirectory = fileURLToPath(new URL('./snapshots/sidechat-round', im
 
 /** Replay configuration used by the shipped Side Chat browser journey. */
 export const sideChatRoundReplayConfig: SideChatReplayConfig = {
-  file: fileURLToPath(new URL('./snapshots/live-interactions/session.jsonl', import.meta.url)),
+  file: fileURLToPath(new URL('../../../snapshots/web/live-interactions/session.v3.jsonl', import.meta.url)),
   childFiles: [
     join(snapshotDirectory, 'restored-child.jsonl'),
-    fileURLToPath(new URL('./snapshots/live-interactions/session.jsonl', import.meta.url)),
+    fileURLToPath(new URL('../../../snapshots/web/live-interactions/session.v3.jsonl', import.meta.url)),
   ],
 }
 
@@ -27,9 +27,16 @@ export const SIDE_CHAT_RESPONSE = 'Event sourcing is a pattern where all changes
 /** Restored Side Chat response visible to the browser. */
 export const SIDE_CHAT_RESUME_RESPONSE = 'After restoration, event sourcing still represents application state as an immutable sequence of recorded changes.'
 
+/** Parent Side Chat response after its nested child settles. */
+export const SIDE_CHAT_DESCENDANT_SETTLED_RESPONSE = 'The nested Side Chat completed and its result is available.'
+
 /** Replay calls the Side Chat journey must consume in first-call bind order. */
 export const sideChatRoundReplayExpectation: readonly SideChatReplayScriptExpectation[] = [
   { calls: [{ visibleAssistantText: SIDE_CHAT_RESPONSE }] },
-  { calls: [{ visibleAssistantText: SIDE_CHAT_RESPONSE }, { visibleAssistantText: SIDE_CHAT_RESUME_RESPONSE }] },
+  { calls: [
+    { visibleAssistantText: SIDE_CHAT_RESPONSE },
+    { visibleAssistantText: SIDE_CHAT_RESUME_RESPONSE },
+    { visibleAssistantText: SIDE_CHAT_DESCENDANT_SETTLED_RESPONSE },
+  ] },
   { calls: [{ visibleAssistantText: SIDE_CHAT_RESPONSE }] },
 ]

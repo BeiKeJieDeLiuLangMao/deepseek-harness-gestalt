@@ -1,5 +1,0 @@
-- dialog "配置模型即可开始使用":
-  - heading "配置模型即可开始使用" [level=2]
-  - paragraph: 在设置中添加一个提供方和 API 密钥，即可开始对话。
-  - button "稍后配置"
-  - button "去配置"

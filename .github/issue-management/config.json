@@ -6,7 +6,8 @@
   "pullRequestReadAuthentication": "token",
   "pullRequestPolicyActivation": "non-draft",
   "priorityField": null,
-  "allowUnassignedOwner": true,
+  "startDateField": "Start Date",
+  "projectTimeZone": "Asia/Shanghai",
   "statuses": [
     "Inbox",
     "Backlog",

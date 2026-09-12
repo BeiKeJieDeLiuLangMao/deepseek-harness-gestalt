@@ -4,7 +4,7 @@
  * see registerSource alone, the conversation wiring layer resolves its
  * per-session controller through sessionOf.
  */
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type { InputTriggerSource } from '../types.ts'
 import type { InputTriggerController } from './controller.ts'
 
@@ -22,10 +22,4 @@ export interface InputTriggerServiceContract {
    * @returns controller that dies with that scope.
    */
   sessionOf(actx: ClientContext): InputTriggerController
-  /**
-   * Fold every source `pasteTransform` over pasted plain text.
-   * @param text - clipboard plain text.
-   * @returns the rewritten text (registration order; unchanged without claimants).
-   */
-  transformPaste(text: string): string
 }

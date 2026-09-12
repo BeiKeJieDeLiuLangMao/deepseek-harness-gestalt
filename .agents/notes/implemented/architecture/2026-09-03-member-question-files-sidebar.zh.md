@@ -1,4 +1,4 @@
-# Agent Note: Member Question references open through Better Sidebar Files
+# Agent Note: Member Question references open through 官方 Sidebar 文件 viewer
 
 Status: implemented
 
@@ -12,7 +12,9 @@ Status: implemented
 
 Host Session materializer 把传输文档 bytes 写到 receiver 所有的隐藏 Workspace 目录：`.dsh/member-questions/<questionId>/<basename>`。同一提问内冲突的 basename 会加上数字后缀。cache 父目录会先 unlink `.dsh`、`.dsh/member-questions` 或提问目录上的预埋符号链接，再创建仅所有者可访问的真实目录。cache 文件会 unlink leftover 或链接形态路径，再以 `wx`、`0o600` 独占创建仅所有者可访问的普通文件，因此写入不会跟随进入同名 Workspace 文件。receiver ledger 只存 `{ path, reason, cachedPath }` 元数据；文档正文不进入该 JSON 文档。
 
-点击材料芯片只会用 receiving Session id 通过 `ctx.betterSidebar.openFile` 打开该缓存 path。没有 `cachedPath` 的芯片是 no-op：提问 Session path 与同名 Workspace 文件都不会被打开。markdown、沙箱 HTML 与不受支持的类型复用普通 Files viewer。Files editor 标签未注册时，芯片回退到 `ctx.workspaces.openPath` 与 Host 系统打开器。详情面板文档席位不再是产品打开路径。
+点击材料芯片只会用 `fileAddressFor` 转换 receiving Session id 与缓存 path，再通过 `ctx.sidebarRight.forSession(sessionId).openResource` 打开该资源。没有 `cachedPath` 的芯片是 no-op：提问 Session path 与同名 Workspace 文件都不会被打开。markdown、HTML 与其他扩展名复用普通 Files viewer registry。HTML 初始运行在 opaque-origin sandbox 中；Files settings 拥有带警告的退出选项。文件地址没有已注册的 viewer 时，芯片调用 `ctx.remote.session.openWorkspacePath({ path: absolute })` 与 Host 系统打开器。导航失败显示在材料卡片上；已注册 viewer 的失败不会改用系统打开器重试。详情面板文档席位不属于产品路径。
+
+卡片订阅官方 Sidebar projection，并且仅在同一 receiving Session 的可见 pane 或 free window 中，其某个缓存参考 path 是 active editor 时折叠。隐藏该 viewer、激活无关标签或切换 Session 会恢复卡片并清除本次本地 reveal。选择另一份被引用文件会清除 reveal 并围绕该文件折叠；重新打开隐藏的参考文件也会再次折叠。订阅跟随晚注册的 provider、viewer 与 receiving Workspace root 变化。卸载时释放 state、registry、Session list 与 Cordis service listener。
 
 [receiving Session 物化记录](2026-09-02-receiving-session-arrival-materialization.zh.md) 仍拥有 Host Session 创建与 brief 注入。[Host receiver ledger](2026-08-31-host-owned-member-question-receiver-ledger.zh.md) 仍拥有 persistence、first claim 与 human-turn reservation。
 
@@ -24,12 +26,14 @@ Host Session materializer 把传输文档 bytes 写到 receiver 所有的隐藏 
 
 **把文档正文存进 receiver ledger。** 否决：Companion document transfer 拥有这些 bytes，ledger 已经排除参考正文。
 
-**始终调用 `ctx.workspaces.openPath` 并让 Better Sidebar 拦截。** 否决：缺少 Files viewer 时必须回退到系统打开器且不得出现第二个产品内 dock，芯片必须指名 receiving Session 而不是当前 Session。
+**始终调用 `ctx.workspaces.openPath` 并让 官方 Sidebar 拦截。** 否决：缺少 Files viewer 时必须回退到系统打开器且不得出现第二个产品内 dock，芯片必须指名 receiving Session 而不是当前 Session。
+
+**从全局 panel DOM state 推断 viewer focus。** 否决：无关标签或其他 Session 也能打开同一 panel。官方 Sidebar projection 可以识别已挂载 Session 与可见文件资源，无需第二个 focus store。
 
 ## Consequences
 
-接收方通过 receiving Session 的普通 Files viewer 阅读传输副本。同名本地 Workspace 文件保持不变。没有 Files 的组合使用 Host 系统打开器。
+接收方通过 receiving Session 的普通 Files viewer 阅读传输副本，同时可以在旁边恢复决策卡。同名本地 Workspace 文件保持不变。没有 Files 的组合使用 Host 系统打开器，也不会围绕不存在的产品内 viewer 折叠卡片。
 
 ## Testing
 
-聚焦 cache 测试钉死隐藏目录写入、同名隔离，以及拒绝预埋符号链接。receiver ingest 测试钉死 materializer 上的传输 bytes，且 ledger 不含正文。Client 插件测试钉死带 receiving Session id 的 Files `openFile`、系统打开器回退，以及缺少 `cachedPath` 时的 no-op。keyless Web assembled coverage 与所属 snapshot 证明 Files 打开的是 `.dsh/member-questions/<questionId>/`，而不是 Workspace 同名文件。
+聚焦 cache 测试钉死隐藏目录写入、同名隔离，以及拒绝预埋符号链接。receiver ingest 测试钉死 materializer 上的传输 bytes，且 ledger 不含正文。Client 插件测试钉死带 receiving Session id 的文件资源导航、系统打开器回退、晚注册 provider subscription 的清理，以及缺少 `cachedPath` 时的 no-op。卡片测试钉死精确 Session 与 path 匹配、viewer 消失时恢复，以及隐藏或另一份被引用文件变为可见时重新折叠。keyless Web assembled coverage 打开传输后的 Markdown 与沙箱 HTML path，观察每次卡片折叠，在每个可见 viewer 旁恢复卡片，并证明未读取 Workspace 同名文件；所属 snapshot 钉死 durable receiving events。

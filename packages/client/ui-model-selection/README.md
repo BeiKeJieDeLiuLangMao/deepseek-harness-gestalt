@@ -1,22 +1,76 @@
+---
+description: "Model selection for the Web GUI: the /model popup and the composer model seat over one per-session provider-grouped directory; for users and maintainers of model routing."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-client-ui-model-selection
 
 English | [中文](README.zh.md)
 
-Model selection plugin, browser half: TWO entries over ONE per-session directory owned by `ModelDirectoryResolver` (`ctx.modelDirectories`). The `/model` popupSelect contribution (registered through `ctx.commandUi`) and the composer's named `conversation.input.model` seat both resolve the Session's model route through `ISessions.modelRoute()` and share one `ModelDirectory` instance. Ordinary Sessions use `session.models` and `session.selectModel`; feature admission adapters may own the route for their Agents. The compact composer trigger opens a two-level Model/Effort menu: models stay provider-grouped, while the selected exact model supplies its adapter-owned effort names, descriptions, and default. `/model` applies the selected model's default effort, and the composer can then choose any advertised effort.
+## Summary
 
-The Host-reported provider/model/reasoning `ModelSelection` is the single selection fact, but it is echoed only when the exact provider/model pair remains in the advertised groups; an absent catalog row leaves the routable selection intact while the trigger prompts `Select model`, no stale row is synthesized, and no Effort row is shown until the user picks an advertised model. Directory loads and selections share a generation counter so an older response never overwrites a newer one; a connection reset drops every resident projection and repulls the Host-restored selection before display. Provider-local metadata failures list inline while usable groups stay selectable, and selection failures retain the prior selection and directory.
+Select a provider model and reasoning effort from either the `/model` popup or the composer. The complete selection takes effect at the next prompt-assembly boundary while a running step keeps its assembled selection. Unroutable sessions disable input until a route returns, and each model supplies its own effort names and default.
 
-When the Host reports that no adapter serves the session's route (`session.models.routable`), this plugin raises a composer block through `ctx.conversation.blocks` and the input goes inert with this plugin's own copy; recovering clears it without a reload. It follows `routable` and nothing else: a `null` — before the first load, or after one failed — never blocks, or a slow Host would lock a working composer, and catalog membership never blocks either, because a route serving a model it stopped advertising is missing from the groups yet perfectly usable. The trigger's own `Select model` fallback still covers that case, which is display, not a gate.
+## Table of Contents
 
-Directories are per-session, resolved lazily through `ctx.modelDirectories.directoryFor(sessionId)`, and disposed with the session scope. A feature route can expose model selection for its own Agent lifecycle, including retaining a validated provisional choice for first admission. A Session with no model route exposes neither entry.
+- [Package contract](#package-contract)
+- [Use this package](#use-this-package)
+- [Understand the implementation](#understand-the-implementation)
+- [Further Exploration](#further-exploration)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
 
-Every resident directory refetches directly on forwarded `llm/adapters-updated` and `settings/document-updated` owner events. Provider topology, provider catalogs, and the default selection therefore converge without the Host or client runtime deriving a separate model-change alias.
+-----
 
-The `/client` exports are the plugin body (`apply`/`inject`), `ModelDirectoryResolver`, `ModelDirectory` with its state fields, and the seat's injected face type.
+<a id="package-contract"></a>
+## Package contract
 
+This package provides model selection in the Web GUI: the `/model` popup command and the composer's model seat, both over one per-session directory of provider-grouped models. Choosing a model submits the complete selection — provider, model, and reasoning effort — which the route owner snapshots at the next prompt-assembly boundary, so the following request uses it while a running step keeps its assembled selection. The composer seat shows a two-level Model/Effort menu: models stay provider-grouped, and the selected exact model supplies its adapter-owned effort names and default. When the route owner reports that no adapter serves the session's selection, the composer input goes inert until a route becomes available.
+
+<a id="use-this-package"></a>
+## Use this package
+
+Mount this plugin alongside `ui-conversation` and the commands package; the composer then shows the model seat next to the pending indicator, and `/model` opens the same directory as a popup. Both entries show the effective current selection when the exact provider/model pair remains in the advertised groups: ordinary Sessions read durable projection state, while feature-owned Sessions use their route's inspection. A missing catalog row leaves the routable selection intact while the trigger prompts `Select model`.
+
+### Model and effort
+
+Models stay grouped by provider. The composer menu shows model and effort names only. The `/model` popup shows provider names and catalog descriptions; it localizes the two built-in DeepSeek descriptions and leaves external provider descriptions verbatim. The popup applies the selected model's default effort; the composer can then choose any advertised effort. An adapter without reasoning metadata leaves the Effort row absent; there is no arbitrary effort input.
+
+### Unroutable sessions
+
+When the route owner reports that no adapter serves the session's selection, this plugin raises a composer block and the input goes inert with its own copy; recovering clears it without a reload. A `null` before the first successful load never blocks, and catalog membership never blocks either — a route serving a model it does not advertise is missing from the groups yet usable.
+
+-----
+
+<a id="understand-the-implementation"></a>
+## Understand the implementation
+
+<details>
+<summary>Implementation internals — click to expand</summary>
+
+Two entries use one per-session directory owned by `ModelDirectoryResolver` (`ctx.modelDirectories`): the `/model` popupSelect contribution registered through `ctx.commandUi` and the composer's named `conversation.input.model` seat both follow live `sessions.modelRoute`. Every directory loads the shared Host advisory catalog. A stock route combines that catalog with the Session's durable `modelSelection` projection and submits through `selectModel`. A feature route supplies `inspect` for its effective selection and routability; the directory inspects on first load and connection reset, and inspects again after a successful selection so the owner-normalized value remains authoritative. A missing `modelRoute` hides both entries. Loads, selections, route changes, and reconnects share a generation counter so an older response never overwrites a newer one. Directories are resolved lazily per Session and disposed with the Session scope. Every resident directory refetches directly on forwarded `llm/adapters-updated` and `settings/document-updated` owner events.
+
+</details>
+
+-----
+
+<a id="further-exploration"></a>
+## Further Exploration
+
+Read these pages when the model surface is not enough. They move from the browser surfaces to the command popup shell and the selection contract.
+
+- [ui-commands](../ui-commands/README.md) — the popupSelect shell the `/model` contribution registers into.
+- [ui-conversation](../ui-conversation/README.md) — declares the composer's `conversation.input.model` seat and the composer block.
+- [dsh-agent-default-model](../../core/agent-default-model/README.md) — the default-model service for sessions that never choose.
+- [Client package map](../README.md) — adjacent browser UI packages.
+
+-----
+
+<a id="model-experience"></a>
 ## Model Experience
 
-Indirectly, through the resolved Session model route, both entries submit the complete `ModelSelection`; ordinary Sessions snapshot it at the next prompt-assembly boundary, Side Chat retains a provisional choice and installs it while creating the child Agent on first submission, the following request uses the selected provider, model, and effort while a running step keeps its assembled selection, the selection becomes durable only when a request header records a request that consumes it, and menu interaction adds no prompt content.
+Indirectly, through the `session.selectModel` selection both entries submit: the Host snapshots the complete `ModelSelection` at the next prompt-assembly boundary and owns the model-visible effect, while a running step keeps its assembled selection.
 
 #### KV Cache effect
 
@@ -24,5 +78,23 @@ Switching the route can reduce or invalidate provider-side cache reuse for subse
 
 ## Known Limitations and Deferred Work
 
+<a id="known-limitations-and-deferred-work"></a>
+
+
+These limits define the current model surface. They are current package constraints, not a general model-router comparison or a task backlog.
+
+- **Generic creation has no model field** — both entries require a Session identity with a live `sessions.modelRoute`. A feature may stage a provisional identity and own its draft selection through a feature route; ordinary `sessions.create()` does not accept a model. A feature that omits `modelRoute` hides both entries.
 - **Directory names are presentation-only** — selection and persistence use provider/model/effort ids; a provider whose catalog or exact-model metadata lookup fails lists as an unselectable failure row until reload.
 - **No arbitrary effort input** — the composer offers only the exact model's adapter-advertised levels; an adapter without reasoning metadata leaves the Effort row absent.
+
+<a id="dev-note"></a>
+### Dev Note
+
+<details>
+<summary>Working context for maintainers — click to expand</summary>
+
+None.
+
+</details>
+
+**Runtime invariant:** No companion is published. A single command contribution registration whose disposal is proven by the HMR-safety spec — it emits no cordis events and owns no cross-plugin mutable state.

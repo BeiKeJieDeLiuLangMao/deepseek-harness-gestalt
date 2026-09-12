@@ -10,12 +10,13 @@
  */
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
-import { createScope } from '@deepseek-ai/dsh-client-runtime/client'
-import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import { createScope } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
+import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { TestRemote } from '@deepseek-ai/dsh-client-test-runtime'
-import type { ModelSelection } from '@deepseek-ai/dsh-api-remotes/client'
-import type { CommandContribution, SelectOption } from '@deepseek-ai/dsh-client-ui-commands/client'
+import type { ModelSelection, ModelSelectionProjection } from '@deepseek-ai/dsh-api-session-controller/types'
+import type { CommandContribution, PopupSelectSpec, SelectOption } from '@deepseek-ai/dsh-client-ui-commands/client'
 import type { ModelSelectInjected } from '../src/client/slots.ts'
 import { apply, inject } from '../src/client/index.ts'
 import { zh } from '../src/client/locales.ts'
@@ -29,6 +30,7 @@ const GROUPS = [{
     {
       id: 'deepseek-v4-flash',
       name: 'DeepSeek-V4-Flash',
+      description: 'Fast, efficient, and economical; suited to focused, routine, or parallel tasks.',
       reasoning: {
         efforts: [
           { id: 'off', name: 'Off' },
@@ -41,6 +43,7 @@ const GROUPS = [{
     {
       id: 'deepseek-v4-pro',
       name: 'DeepSeek-V4-Pro',
+      description: 'Stronger agentic coding, knowledge, and difficult reasoning; suited to complex or quality-critical tasks at higher cost.',
       reasoning: {
         efforts: [
           { id: 'off', name: 'Off' },
@@ -51,36 +54,55 @@ const GROUPS = [{
       },
     },
   ],
+}, {
+  id: 'external',
+  name: 'External Provider',
+  models: [{
+    id: 'deepseek-v4-flash',
+    name: 'External Flash',
+    description: 'Provider-authored description.',
+  }],
 }]
 
 /** Boot the plugin over fake faces + a stateful fake host (current moves on selectModel). */
-async function bench() {
+async function bench(locale: 'zh' | 'en' = 'zh') {
   const ctx = new Context()
-  let current: ModelSelection = { provider: 'deepseek-official', model: 'deepseek-v4-flash' }
+  let defaultSelection: ModelSelection = { provider: 'deepseek-official', model: 'deepseek-v4-flash' }
+  let selected = defaultSelection
+  let groups = GROUPS
   const calls = { models: 0, select: 0 }
-  const sessionsApi = {
-    models: () => {
+  const projections = new Map<SessionId, SnapshotStore<ModelSelectionProjection | undefined>>()
+  // Whether the Host reports an adapter for the current route; the composer
+  // block follows this, never catalog membership.
+  let routable = true
+  const sessionRemote = {
+    modelCatalog: () => {
       calls.models += 1
       return Promise.resolve({
-        result: { ok: true as const, value: { current, routable, groups: GROUPS, failures: [] } },
+        ok: true as const,
+        value: {
+          default: defaultSelection,
+          routableProviders: routable ? ['deepseek-official'] : [],
+          groups,
+          failures: [],
+        },
       })
     },
-    selectModel: (payload: { provider: string; model: string; reasoningEffort?: string }) => {
+    selectModel: (payload: { sessionId: SessionId; provider: string; model: string; reasoningEffort?: string }) => {
       calls.select += 1
-      current = {
+      selected = {
         provider: payload.provider,
         model: payload.model,
         ...payload.reasoningEffort === undefined
           ? {}
           : { reasoningEffort: payload.reasoningEffort },
       }
-      return Promise.resolve({ result: { ok: true as const, value: { selected: current } } })
+      projections.get(payload.sessionId)?.set({ lastUsed: null, next: selected })
+      return Promise.resolve({ ok: true as const, value: { selected } })
     },
   }
-  ctx.provide('connection', { api: { sessions: sessionsApi } })
-  // Whether the Host reports an adapter for the current route; the composer
-  // block follows this, never catalog membership.
-  let routable = true
+  const remote = Object.assign(new TestRemote(ctx), { session: sessionRemote })
+  ctx.reflect.provide('remote.session', sessionRemote)
   const blocks = new Map<SessionId, { reason: string } | undefined>()
   ctx.provide('conversation', {
     blocks: {
@@ -106,49 +128,114 @@ async function bench() {
     },
   })
   const localeRuntime = new LocaleRuntime(ctx)
-  // This spec asserts the shipped Chinese copy. There is no jsdom `window` in
-  // this lane, so browser-language detection never runs and the locale comes
-  // from FALLBACK_LOCALE (en): state the asserted locale explicitly.
-  localeRuntime.setLocale('zh')
+  // There is no jsdom `window` in this lane, so browser-language detection
+  // never runs. Each bench states the locale its assertions require.
+  localeRuntime.setLocale(locale)
   ctx.provide('locale', localeRuntime)
   const scopes = new Map<SessionId, Context>()
   const addressed = new Set<SessionId>()
-  const modelRoutes = new Map<SessionId, {
-    models(): Promise<{ ok: true; value: { current: ModelSelection; routable: boolean; groups: typeof GROUPS; failures: never[] } }>
-    selectModel(selection: ModelSelection): Promise<{ ok: true; value: { selected: ModelSelection } }>
+  const hidden = new Set<SessionId>()
+  const features = new Map<SessionId, {
+    current: ModelSelection
+    routable: boolean
+    inspections: number
   }>()
+  const admissionListeners = new Set<() => void>()
   ctx.provide('sessions', {
     scope: (id: SessionId) => scopes.get(id),
+    binding: (id: SessionId) => {
+      const scope = scopes.get(id)
+      const projection = projections.get(id)
+      return scope === undefined || projection === undefined
+        ? undefined
+        : {
+          sessionId: id,
+          session: { projections: { faceOf: () => projection } },
+          ctx: scope,
+        }
+    },
     subagentAddress: (id: SessionId) => addressed.has(id)
       ? { parentSessionId: sid('parent'), childSessionId: id, mode: 'continuable' as const }
       : undefined,
-    modelRoute: (id: SessionId) => modelRoutes.get(id) ?? (addressed.has(id)
-      ? undefined
-      : {
-        models: async () => (await sessionsApi.models()).result,
-        selectModel: async (selection: ModelSelection) => (await sessionsApi.selectModel(selection)).result,
-      }),
+    modelRoute: (id: SessionId) => {
+      if (hidden.has(id) || scopes.get(id) === undefined) return undefined
+      const feature = features.get(id)
+      if (feature !== undefined) {
+        return {
+          kind: 'feature' as const,
+          inspect: () => {
+            feature.inspections += 1
+            return Promise.resolve({
+              ok: true as const,
+              value: { current: feature.current, routable: feature.routable },
+            })
+          },
+          selectModel: (selection: ModelSelection) => {
+            feature.current = selection
+            return Promise.resolve({ ok: true as const, value: { selected: selection } })
+          },
+        }
+      }
+      return {
+        kind: 'stock' as const,
+        selectModel: (selection: ModelSelection) => sessionRemote.selectModel({
+          sessionId: id,
+          provider: selection.provider,
+          model: selection.model,
+          ...selection.reasoningEffort === undefined ? {} : { reasoningEffort: selection.reasoningEffort },
+        }),
+      }
+    },
+    subscribeAdmission: (listener: () => void) => {
+      admissionListeners.add(listener)
+      return () => { admissionListeners.delete(listener) }
+    },
   })
-  new TestRemote(ctx)
   const fiber = ctx.plugin({ inject: [...inject], apply })
   await fiber.await()
   await ctx.plugin(function probe() {}).await()
   const mint = (key: string) => {
-    const handle = createScope(ctx, sid(key))
-    scopes.set(sid(key), handle.ctx)
+    const id = sid(key)
+    const handle = createScope(ctx, id)
+    scopes.set(id, handle.ctx)
+    projections.set(id, createSnapshotStore<ModelSelectionProjection | undefined>({
+      lastUsed: null,
+      next: null,
+    }))
     return handle
   }
   return {
-    ctx, fiber, mint, calls,
+    ctx, fiber, mint, calls, remote,
     contribution: () => contribution!,
+    popup: (): PopupSelectSpec => {
+      const ui = contribution!.ui
+      if (ui.kind !== 'popupSelect') throw new Error('expected the popupSelect kind')
+      return ui
+    },
     seat: () => seats.get('conversation.input.model')!,
-    hostCurrent: () => current,
-    setHostCurrent: (selection: ModelSelection) => { current = selection },
+    hostCurrent: () => selected,
+    setHostCurrent: (selection: ModelSelection) => { defaultSelection = selection },
+    setProjected: (id: SessionId, value: ModelSelectionProjection) => { projections.get(id)?.set(value) },
     address: (id: SessionId) => { addressed.add(id) },
-    setModelRoute: (id: SessionId, route: NonNullable<ReturnType<typeof modelRoutes.get>>) => {
-      modelRoutes.set(id, route)
+    hideModelRoute: (id: SessionId) => {
+      hidden.add(id)
+      for (const listener of admissionListeners) listener()
+    },
+    showModelRoute: (id: SessionId) => {
+      hidden.delete(id)
+      for (const listener of admissionListeners) listener()
     },
     setRoutable: (next: boolean) => { routable = next },
+    setGroups: (next: typeof GROUPS) => { groups = next },
+    setFeature: (id: SessionId, current: ModelSelection, nextRoutable: boolean) => {
+      features.set(id, { current, routable: nextRoutable, inspections: 0 })
+    },
+    setFeatureRoutable: (id: SessionId, next: boolean) => {
+      const feature = features.get(id)
+      if (feature === undefined) throw new Error(`missing feature ${String(id)}`)
+      feature.routable = next
+    },
+    featureInspections: (id: SessionId) => features.get(id)?.inspections ?? 0,
     blockOf: (key: string) => blocks.get(sid(key)),
   }
 }
@@ -165,13 +252,31 @@ describe('ui-model-selection dual entry', () => {
     expect(b.seat().locale).toBe('model')
   })
 
-  it('popup options mark the host current active with the provider group in the detail', async () => {
+  it('localizes built-in descriptions and preserves external provider descriptions', async () => {
     const b = await bench()
     b.mint('s1')
-    const options = await b.contribution().ui.options(projection('s1'), new AbortController().signal)
-    expect(options.map((o: SelectOption) => o.label)).toEqual(['DeepSeek-V4-Flash', 'DeepSeek-V4-Pro'])
-    expect(options[0]).toMatchObject({ active: true, detail: 'DeepSeek' })
+    const options = await b.popup().options(projection('s1'), new AbortController().signal)
+    expect(options.map((o: SelectOption) => o.label)).toEqual([
+      'DeepSeek-V4-Flash', 'DeepSeek-V4-Pro', 'External Flash',
+    ])
+    expect(options[0]).toMatchObject({
+      active: true,
+      detail: 'DeepSeek · 快速、高效且经济；适合目标明确、常规或并行任务。',
+    })
+    expect(options[1]?.detail)
+      .toBe('DeepSeek · 更强的自主编码、知识与复杂推理能力；适合复杂或质量优先的任务，但成本更高。')
+    expect(options[2]?.detail).toBe('External Provider · Provider-authored description.')
     expect(options[1]?.active).toBeUndefined()
+  })
+
+  it('keeps built-in descriptions unchanged in English', async () => {
+    const b = await bench('en')
+    b.mint('s1')
+    const options = await b.popup().options(projection('s1'), new AbortController().signal)
+    expect(options[0]?.detail)
+      .toBe('DeepSeek · Fast, efficient, and economical; suited to focused, routine, or parallel tasks.')
+    expect(options[1]?.detail)
+      .toBe('DeepSeek · Stronger agentic coding, knowledge, and difficult reasoning; suited to complex or quality-critical tasks at higher cost.')
   })
 
   it('a seat selection is the current the popup marks active next — one shared state', async () => {
@@ -195,51 +300,17 @@ describe('ui-model-selection dual entry', () => {
       reasoningEffort: 'max',
     })
     // The POPUP's next options pass reflects it without a seat-side reload.
-    const options = await b.contribution().ui.options(projection('s1'), new AbortController().signal)
+    const options = await b.popup().options(projection('s1'), new AbortController().signal)
     expect(options.find((o: SelectOption) => o.label === 'DeepSeek-V4-Pro')).toMatchObject({ active: true })
-  })
-
-  it('routes feature-owned Session model selection without calling the ordinary Session wire', async () => {
-    const b = await bench()
-    b.mint('sidechat')
-    const selected: ModelSelection[] = []
-    b.setModelRoute(sid('sidechat'), {
-      models: () => Promise.resolve({
-        ok: true,
-        value: {
-          current: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
-          routable: true,
-          groups: GROUPS,
-          failures: [],
-        },
-      }),
-      selectModel: (selection) => {
-        selected.push(selection)
-        return Promise.resolve({ ok: true, value: { selected: selection } })
-      },
-    })
-
-    const face = b.seat().inject!(sid('sidechat'))
-    expect(await face.select({
-      provider: 'deepseek-official',
-      model: 'deepseek-v4-pro',
-      reasoningEffort: 'max',
-    })).toBe(true)
-    expect(selected).toEqual([{
-      provider: 'deepseek-official',
-      model: 'deepseek-v4-pro',
-      reasoningEffort: 'max',
-    }])
-    expect(b.calls.select).toBe(0)
   })
 
   it('a popup selection lands on the seat store — the reverse direction of the same state', async () => {
     const b = await bench()
     b.mint('s1')
     const seatFace = b.seat().inject!(sid('s1'))
-    const options = await b.contribution().ui.options(projection('s1'), new AbortController().signal)
+    const options = await b.popup().options(projection('s1'), new AbortController().signal)
     const pro = options.find((o: SelectOption) => o.label === 'DeepSeek-V4-Pro')!
-    await b.contribution().ui.onSelect(pro, projection('s1'))
+    await b.popup().onSelect(pro, projection('s1'))
     expect(seatFace.directory.getSnapshot().current).toEqual({
       provider: 'deepseek-official',
       model: 'deepseek-v4-pro',
@@ -258,9 +329,14 @@ describe('ui-model-selection dual entry', () => {
     expect(faceA.directory).not.toBe(faceB.directory)
     // The service face resolves the same instance the seat inject handed out.
     expect(b.ctx.modelDirectories.directoryFor(sid('a')).store).toBe(faceA.directory)
+    await Promise.all([
+      b.popup().options(projection('a'), new AbortController().signal),
+      b.popup().options(projection('b'), new AbortController().signal),
+    ])
+    expect(b.calls.models).toBe(1)
   })
 
-  it('drops an unconsumed local selection and restores the Host target after reconnect', async () => {
+  it('keeps the durable projected selection while the eager catalog reconnects', async () => {
     const b = await bench()
     b.mint('s1')
     const face = b.seat().inject!(sid('s1'))
@@ -268,13 +344,79 @@ describe('ui-model-selection dual entry', () => {
     b.setHostCurrent({ provider: 'deepseek-official', model: 'deepseek-v4-flash' })
 
     b.ctx.emit('connection/reset')
-    expect(face.directory.getSnapshot()).toMatchObject({ current: null, status: 'loading' })
+    expect(face.directory.getSnapshot()).toMatchObject({
+      current: { provider: 'deepseek-official', model: 'deepseek-v4-pro' },
+      status: 'ready',
+    })
+    face.load()
+    expect(face.directory.getSnapshot()).toMatchObject({
+      current: { provider: 'deepseek-official', model: 'deepseek-v4-pro' },
+      status: 'ready',
+    })
+  })
+
+  it('keeps the last complete view while a refreshed catalog catches up with projection', async () => {
+    const b = await bench()
+    b.mint('s1')
+    const face = b.seat().inject!(sid('s1'))
+    face.load()
+    expect(face.directory.getSnapshot().current?.model).toBe('deepseek-v4-flash')
+
+    b.remote.emit('settings/document-updated', ['llm-deepseek', 1])
+    b.setProjected(sid('s1'), {
+      lastUsed: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
+      next: { provider: 'deepseek-official', model: 'deepseek-v4-pro' },
+    })
+    expect(face.directory.getSnapshot()).toMatchObject({
+      current: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
+      status: 'ready',
+    })
+
     await vi.waitFor(() => {
       expect(face.directory.getSnapshot()).toMatchObject({
-        current: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
+        current: { provider: 'deepseek-official', model: 'deepseek-v4-pro' },
         status: 'ready',
       })
     })
+  })
+
+  it('keeps historical selections while deleted-provider models leave existing and new Session pickers', async () => {
+    const b = await bench()
+    b.mint('existing')
+    const existing = b.seat().inject!(sid('existing'))
+    existing.load()
+    expect(existing.directory.getSnapshot()).toMatchObject({
+      current: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
+      routable: true,
+    })
+
+    b.setGroups([])
+    b.setRoutable(false)
+    b.remote.emit('settings/document-updated', ['llm-deepseek', 1])
+    await vi.waitFor(() => {
+      expect(existing.directory.getSnapshot()).toMatchObject({
+        current: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
+        routable: false,
+        groups: [],
+      })
+    })
+    await expect(b.popup().options(
+      projection('existing'),
+      new AbortController().signal,
+    )).resolves.toEqual([])
+
+    b.mint('new')
+    const created = b.seat().inject!(sid('new'))
+    created.load()
+    expect(created.directory.getSnapshot()).toMatchObject({
+      current: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
+      routable: false,
+      groups: [],
+    })
+    await expect(b.popup().options(
+      projection('new'),
+      new AbortController().signal,
+    )).resolves.toEqual([])
   })
 
   it('scope disposal drops the directory; a reborn scope gets a fresh one', async () => {
@@ -299,19 +441,42 @@ describe('ui-model-selection dual entry', () => {
     await Promise.resolve()
     await Promise.resolve()
     expect(b.blockOf('s1')).toBeUndefined()
+    expect(b.calls.models).toBe(1)
 
     b.setRoutable(false)
-    b.ctx.remote.$dispatch('llm/adapters-updated', [])
+    b.remote.emit('settings/document-updated', ['llm-deepseek', 1])
     await Promise.resolve()
     await Promise.resolve()
     expect(b.blockOf('s1')?.reason).toBe(zh['blocked.composer'])
+    expect(b.calls.models).toBe(2)
 
     // Recovering clears it without a reload of the surface.
     b.setRoutable(true)
-    b.ctx.remote.$dispatch('settings/document-updated', ['llm-deepseek', 1])
+    b.remote.emit('llm/adapters-updated', [])
     await Promise.resolve()
     await Promise.resolve()
     expect(b.blockOf('s1')).toBeUndefined()
+    expect(b.calls.models).toBe(3)
+  })
+
+  it('re-inspects feature routability after model inputs change', async () => {
+    const b = await bench()
+    const sessionId = sid('feature')
+    b.mint('feature')
+    b.setFeature(sessionId, { provider: 'deepseek-official', model: 'deepseek-v4-flash' }, true)
+    b.seat().inject!(sessionId)
+    await vi.waitFor(() => { expect(b.featureInspections(sessionId)).toBe(1) })
+    expect(b.blockOf('feature')).toBeUndefined()
+
+    b.setFeatureRoutable(sessionId, false)
+    b.remote.emit('credentials/reference-updated', ['DEEPSEEK_API_KEY'])
+    await vi.waitFor(() => { expect(b.blockOf('feature')).toEqual({ reason: zh['blocked.composer'] }) })
+    expect(b.featureInspections(sessionId)).toBe(2)
+
+    b.setFeatureRoutable(sessionId, true)
+    b.remote.emit('llm/adapters-updated', [])
+    await vi.waitFor(() => { expect(b.blockOf('feature')).toBeUndefined() })
+    expect(b.featureInspections(sessionId)).toBe(3)
   })
 
   it('never blocks on catalog membership alone', async () => {
@@ -336,9 +501,8 @@ describe('ui-model-selection dual entry', () => {
     b.setRoutable(false)
     const face = b.seat().inject!(sid('s1'))
     face.load()
-    await Promise.resolve()
-    await Promise.resolve()
-    expect(b.blockOf('s1')).toBeDefined()
+    b.remote.emit('llm/adapters-updated', [])
+    await vi.waitFor(() => { expect(b.blockOf('s1')).toBeDefined() })
 
     await scope.fiber.dispose()
     expect(b.blockOf('s1')).toBeUndefined()
@@ -349,19 +513,20 @@ describe('ui-model-selection dual entry', () => {
     expect(() => b.seat().inject!(sid('ghost'))).toThrow(/resolved no scope/)
   })
 
-  it('withholds both model entries when the Session has no model route', async () => {
+  it('withholds both model entries when sessions.modelRoute is absent', async () => {
     const b = await bench()
     b.mint('child')
     b.address(sid('child'))
+    b.hideModelRoute(sid('child'))
 
     expect(b.contribution().available(projection('child'))).toBe(false)
-    await expect(b.contribution().ui.options(
+    await expect(b.popup().options(
       projection('child'),
       new AbortController().signal,
     )).rejects.toThrow(/unavailable for this session/)
 
     const face = b.seat().inject!(sid('child'))
-    expect(face.available).toBe(false)
+    expect(face.directory.getSnapshot().available).toBe(false)
     face.load()
     await expect(face.select({ provider: 'deepseek', model: 'deepseek-v4-pro' })).resolves.toBe(false)
     await expect(b.ctx.modelDirectories.directoryFor(sid('child')).load())
@@ -372,6 +537,52 @@ describe('ui-model-selection dual entry', () => {
     })).rejects.toThrow(/unavailable for this session/)
     b.ctx.emit('connection/reset')
     await Promise.resolve()
-    expect(b.calls).toEqual({ models: 0, select: 0 })
+    expect(b.calls).toEqual({ models: 2, select: 0 })
+  })
+
+  it('lists and selects through sessions.modelRoute for an ordinary Session', async () => {
+    const b = await bench()
+    b.mint('s1')
+    expect(b.contribution().available(projection('s1'))).toBe(true)
+    const options = await b.popup().options(projection('s1'), new AbortController().signal)
+    expect(options.map((o: SelectOption) => o.label)).toEqual([
+      'DeepSeek-V4-Flash', 'DeepSeek-V4-Pro', 'External Flash',
+    ])
+    const face = b.seat().inject!(sid('s1'))
+    expect(face.directory.getSnapshot().available).toBe(true)
+    expect(await face.select({
+      provider: 'deepseek-official',
+      model: 'deepseek-v4-pro',
+      reasoningEffort: 'max',
+    })).toBe(true)
+    expect(b.calls.select).toBe(1)
+  })
+
+  it('late hide after composer inject refuses select and detach restores the stock route', async () => {
+    const b = await bench()
+    b.mint('s1')
+    const face = b.seat().inject!(sid('s1'))
+    expect(face.directory.getSnapshot().available).toBe(true)
+    expect(await face.select({
+      provider: 'deepseek-official',
+      model: 'deepseek-v4-pro',
+    })).toBe(true)
+    expect(b.calls.select).toBe(1)
+
+    b.hideModelRoute(sid('s1'))
+    expect(face.directory.getSnapshot().available).toBe(false)
+    expect(await face.select({
+      provider: 'deepseek-official',
+      model: 'deepseek-v4-flash',
+    })).toBe(false)
+    expect(b.calls.select).toBe(1)
+
+    b.showModelRoute(sid('s1'))
+    expect(face.directory.getSnapshot().available).toBe(true)
+    expect(await face.select({
+      provider: 'deepseek-official',
+      model: 'deepseek-v4-flash',
+    })).toBe(true)
+    expect(b.calls.select).toBe(2)
   })
 })

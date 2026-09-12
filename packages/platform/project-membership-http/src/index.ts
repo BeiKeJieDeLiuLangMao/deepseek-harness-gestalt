@@ -35,6 +35,7 @@ import {
   type RosterView,
   type WorkspaceLink,
 } from '@deepseek-ai/dsh-project-membership'
+import type {} from '@deepseek-ai/dsh-host-webserver'
 import {
   CorsOriginPolicy,
   HttpError,
@@ -42,7 +43,7 @@ import {
   writeHttpError,
   writeJson,
   writeRetryAfterError,
-} from '@deepseek-ai/dsh-host-webserver'
+} from '@deepseek-ai/dsh-host-webserver/http'
 import { InProcessPresenceStore, PresenceRegistry } from './presence.ts'
 
 const MAX_JSON_BYTES = 64 * 1024

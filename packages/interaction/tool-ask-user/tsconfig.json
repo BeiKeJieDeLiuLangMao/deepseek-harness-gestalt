@@ -24,6 +24,12 @@
       "path": "../../core/agent"
     },
     {
+      "path": "../../platform/platform-account"
+    },
+    {
+      "path": "../../platform/remote-protocol"
+    },
+    {
       "path": "../../core/system-prompt"
     },
     {
@@ -31,12 +37,6 @@
     },
     {
       "path": "../user-questions"
-    },
-    {
-      "path": "../member-question-sender"
-    },
-    {
-      "path": "../../runtime-diagnostics/invariants"
     }
   ]
 }

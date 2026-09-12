@@ -8,8 +8,6 @@ import {
   BrowserWorkspaceId,
 } from '@deepseek-ai/dsh-browser-runtime'
 import BrowserRuntimeDeterministic from '@deepseek-ai/dsh-browser-runtime-deterministic'
-import InvariantRegistry from '@deepseek-ai/dsh-invariants'
-import * as BrowserRuntimeInvariant from '../../browser-runtime/src/invariant.ts'
 
 const PNG_1X1 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
 
@@ -552,10 +550,4 @@ describe('deterministic Browser Runtime public lifecycle', () => {
     await Promise.resolve()
   })
 
-  it('registers and disposes the type-only Service Definition invariant companion', async () => {
-    const ctx = new Context()
-    await ctx.plugin(InvariantRegistry)
-    const fiber = await ctx.plugin(BrowserRuntimeInvariant)
-    await expect(fiber.dispose()).resolves.toBeUndefined()
-  })
 })

@@ -1,15 +1,33 @@
+---
+description: "Session-owned Browser Workspace binder over Browser Runtime identities."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-browser-workspace
 
 English | [中文](README.zh.md)
 
+## Summary
+
 Session-owned Browser Workspace binder. `ctx.browserWorkspace` binds Browser Runtime identities to one Session log so each Session independently owns zero or more Workspaces, instances, and tabs.
 
+## Table of Contents
+
+- [Service API](#service-api)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
+
+-----
+
+<a id="service-api"></a>
 ## Service API
 
 `create`, `navigate`, `observe`, `screenshot`, `focus`, `input`, and `close` require the owning `Session`. `create` is also `@Remote('create')` so Client `remote.browserWorkspace.create` can mint a Session-owned tab. Creates are serialized; when attach is omitted, a retained shared or named persistent Profile reuses an open matching browser instance in the current Session, while temporary Profiles remain distinct. During matching, a logged target that the current Runtime reports as `BROWSER_NOT_FOUND` is forgotten before create continues; other observe failures still reject create. This lets the next create replace pages lost with a Runtime process restart without treating durable ownership as a live page. A missing Session ownership rejects with `BROWSER_SESSION_MISMATCH`. A target already owned by another live Session rejects with `BROWSER_TRANSFER_UNSUPPORTED`. Explicit attach to another live Session's Workspace or instance rejects with `BROWSER_TRANSFER_UNSUPPORTED`, and attach unknown to this Session rejects with `BROWSER_SESSION_MISMATCH`. The lock is the revision; each tab record stores the last committed Runtime revision and its last non-blank URL. The Binder listens to `browser/runtime-state` and writes advances for an owned, unclosed tab, including advances that never entered a Binder verb. `observe` of a closed tab forgets the listing row. `snapshot` and `foldBrowserWorkspace` return the last logged whole Workspace, or the empty Workspace before the first change. `listBrowserWorkspacePages` is the canonical hierarchy flattening helper for Client consumers. When a live Session leaves the store, the Binder closes its process-local Runtime tabs but retains their recovery records. `cleanup` closes leftover live Runtime tabs and forgets only successfully closed records; a failure rejects the awaited `workspace/session-archived` event, and repeating archive retries cleanup without rewriting the durable archive set.
 
-`browser/workspace` is a log-only, last-wins `SessionEventMap` member. When `ctx.sessionProjections` is composed, the package registers the `browserWorkspace` unit. Cross-Session page transfer is not supported.
+`browser/workspace` is a log-only, last-wins `SessionEventMap` member. `snapshot` folds `Session.snapshotEvents()` — the complete Session log, including a fork-inherited prefix — and writes each committed snapshot with `{ ignorable: true }`. That reconstruction is historical display. Live Runtime verbs, attach, `cleanup`, and Session disposal close only tabs this Binder process `adopt`ed for the calling Session. A fork-inherited snapshot does not grant operate rights. When `ctx.sessionProjections` is composed, the package registers the `browserWorkspace` unit. Cross-Session page transfer is not supported.
 
+<a id="model-experience"></a>
 ## Model Experience
 
 Indirectly, through dsh-tool-browser when a calling Agent Session is present. The Binder itself adds no model tokens.
@@ -19,6 +37,18 @@ Indirectly, through dsh-tool-browser when a calling Agent Session is present. Th
 Logged Workspace snapshots do not enter derived model history.
 
 ## Known Limitations and Deferred Work
+<a id="known-limitations-and-deferred-work"></a>
 
 - Dock chrome, width, and collapse state live in Client packages. This package persists only Session ownership, active identities, and each tab's last committed revision and non-blank URL.
 - Headless Browser Runtime snapshots compose Runtime and Consumer only. Session isolation is Binder-owned and is not claimed for those Binder-free traces.
+- Live Runtime ownership is process-local: this Binder records the creating Session at `adopt` and rebuilds that map after Binder HMR from targets each live Session introduced after its inherited prefix. A later whole snapshot that still lists an inherited tab is display only. Two Sessions that both introduced the same remaining tab fail loudly. Browser Runtime create/state events do not carry a Session id, so a new Runtime still replaces missing pages through the retained-Profile create path.
+
+<a id="dev-note"></a>
+### Dev Note
+
+<details>
+<summary>Working context for maintainers — click to expand</summary>
+
+None.
+
+</details>

@@ -131,6 +131,7 @@
   width: 6px;
   height: 6px;
   border-radius: 999px;
+  corner-shape: round;
 }
 
 .timeDot {
@@ -138,4 +139,5 @@
   height: 6px;
   border-radius: 999px;
   background: var(--dsw-alias-state-success-primary, #10b981);
+  corner-shape: round;
 }

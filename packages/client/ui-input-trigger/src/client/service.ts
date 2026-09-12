@@ -7,7 +7,10 @@
  */
 import { Service } from '@deepseek-ai/cordis'
 import type { Context } from '@deepseek-ai/cordis'
-import type { ClientContext, ISessions, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context as ClientContext } from '@deepseek-ai/cordis'
+import type { ISessions } from '@deepseek-ai/dsh-api-session-controller/client'
+import type {} from '@deepseek-ai/dsh-client-locale/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { InputTriggerSource } from '../types.ts'
 import { InputTriggerController } from './controller.ts'
 import type { InputTriggerServiceContract } from './contract.ts'
@@ -35,6 +38,9 @@ export class InputTriggerService extends Service implements InputTriggerServiceC
    */
   constructor(ctx: Context) {
     super(ctx, 'inputTriggers')
+    ctx.on('locale/change', () => {
+      for (const controller of this.live.controllers.values()) controller.refreshOpenMenu()
+    })
   }
 
   /**
@@ -97,20 +103,6 @@ export class InputTriggerService extends Service implements InputTriggerServiceC
       live.controllers.delete(id)
     }, 'slash: session controller')
     return controller
-  }
-
-  /**
-   * Fold every source `pasteTransform` over pasted plain text.
-   * @param text - clipboard plain text.
-   * @returns the rewritten text (registration order; unchanged without claimants).
-   */
-  transformPaste(text: string): string {
-    let next = text
-    for (const src of this.live.sources) {
-      if (src.pasteTransform === undefined) continue
-      next = src.pasteTransform(next)
-    }
-    return next
   }
 
   private sessions(): ISessions {

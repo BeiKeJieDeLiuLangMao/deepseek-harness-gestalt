@@ -22,6 +22,9 @@
         baseURL: !!js process.env.DSH_GESTALT_ACCOUNT_POOL_BASE_URL
         apiKey: !!js process.env.DSH_GESTALT_ACCOUNT_POOL_API_KEY
 
+- id: ui-schedule
+  disabled: false
+
 # Phone fleet: Desktop always composes environment, stable fleet, stream, and
 # tool Consumers. The explicit executable env remains the operator override;
 # otherwise the environment selects managed current before system discovery.

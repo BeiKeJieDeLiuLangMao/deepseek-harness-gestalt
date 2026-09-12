@@ -154,11 +154,14 @@ Source: [`packages/browser/browser-runtime/src/index.ts`](../../packages/browser
 
 ### `ctx.browserWorkspace` — `BrowserWorkspaceBinder`
 
-Bind Browser Runtime identities to one Session log and project instance and tab ownership from durable Session facts.
+Bind Browser Runtime identities to one Session log and project instance and tab ownership from durable Session facts. Live Runtime authority is the process-local Session that last `adopt`ed a tab in this Binder; a folded snapshot is historical display only.
 
 ```ts cordis-catalog
 /**
  * Read the last logged Workspace for one Session.
+ * Folds the complete Session log, including a fork-inherited prefix.
+ * That reconstruction is historical display; live Runtime verbs still
+ * require this Binder's process-local adopt mapping.
  * @param session - Owning Session.
  * @returns the last logged snapshot, or the empty Workspace.
  */

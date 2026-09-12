@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/llm/llm-gestalt-account-pool/README.md
-README.md: bca3d04def1c43b23464fb0fbf89d8ccdaef5449
-README.zh.md: 48006ab34739afd5a0ae78b0389a3851ec7a02ea
+README.md: 4f5550e375e49a3a1f1e53280bdabf5bb6d2e848
+README.zh.md: 85b5636042839a66807ac57b048874e198a6895d

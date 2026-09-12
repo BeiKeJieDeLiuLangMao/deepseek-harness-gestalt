@@ -1,8 +1,29 @@
+---
+description: "Phone tab and Phone Devices settings for selecting, viewing, and controlling mobilecli-backed Android and iOS devices."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-client-ui-phone
 
 English | [中文](README.zh.md)
 
-Phone tab plugin: registers the Phone tab type into the `ctx.betterSidebar` registry (id `phone`, + menu title 手机 / Phone from `settings.phone-devices`, monochrome inline SVG icon, `order: 55`). The entry is always reachable — `available` never refuses, so a deployment with zero devices still opens the picker instance and lands on the locked design's not-connected empty state: the Android/iOS platform segment, the grouped device list (模拟器 / USB 真机), the USB placeholder row, and the 重新检测环境 control.
+## Summary
+
+Open a singleton Phone tab, select an online Android or iOS device, view its live screen, and send touch, text, button, screenshot, or stream-refresh actions. The Phone Devices settings page prepares the shared mobilecli runtime and platform environments. The feature stays disabled until its durable setting is enabled and produces no model-visible output.
+
+## Table of Contents
+
+- [Package contract](#package-contract)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
+
+-----
+
+<a id="package-contract"></a>
+## Package contract
+
+Phone tab plugin: registers one builtin singleton Phone definition through `ctx.sidebarRightTabs` (id `@deepseek-ai/dsh-client-ui-phone/phone`, kind `phone`, + menu and guide title 手机 / Phone from `settings.phone-devices`, guide description, monochrome icon, `order: 55`). A JSON payload retains the selected device, and the occurrence runtime keeps its controller across body remounts until the official record disappears. The entry is always reachable, so a deployment with zero devices still opens the picker instance and lands on the locked design's not-connected empty state: the Android/iOS platform segment, the grouped device list (模拟器 / USB 真机), the USB placeholder row, and the 重新检测环境 control.
 
 The strip keeps exactly one Phone tab (`single: true`). Bodies split on `meta`: no serial is the empty state; `{ kind: 'device', serial, name }` occupies that same tab with title `手机·<name>` / `Phone · <name>`. Locale changes relabel an already-open picker or occupied Phone tab in place from that persisted `meta`; the update changes only `title`, without reopening, remounting, or rewriting `meta`. `打开` and the device dropdown switch in place through `updateTab` (decision-matrix axis 1: 单例就地切换). A disabled deployment drops the switch: with detection off no stream session can be minted. Rows read the listing wire (`online` derived, `state` verbatim per the #421 `PhoneDeviceRefWire` contract): the empty-state list and the connected dropdown show only online devices; a handset whose `state === 'unauthorized'` still renders the design's warn arm — 真机未授权调试 with 重新检测 as the next action — on the empty-state list and is omitted from the dropdown. Android USB guidance names USB debugging; iOS guidance names unlock, trust, Developer Mode, and the device-control agent. Online rows carry 打开, and a `PHONE_UNRESOLVED` listing pull directs the user to Settings → Phone Devices managed mobilecli preparation without a global-install command. The picker body follows the durable gate reactively: toggling the enable switch refreshes the mounted 「手机连接未启用」 strip (and arms the first fleet pull) on the same invalidation tick.
 
@@ -14,12 +35,13 @@ The Host half registers the durable `ui-phone` settings namespace (`enabled`, bo
 
 The Loader `Config.enabled` (boolean, schemastery-validated, default `false`) remains the composition default. Registration does not depend on it — a disabled deployment keeps the reachable picker tab, and the picker body pins a 「手机连接未启用」 strip above the empty state. When the durable flag is off nothing discovers devices, spawns `mobilecli`, or routes a stream.
 
-Both the strip badge and the bodies read one injected abstraction, `PhoneListingSource` (`getBadge(): { onlineCount }` for the per-render pill, `snapshot()` / `refresh()` / `subscribe()` for the bodies). The shipped source consumes the Host `GET /phone/devices` route: every pull validates the grouped listing, maps emulator and simulator kinds onto the 模拟器 group and real handsets onto USB 真机, and commits only on success — a failed pull keeps the previous listing. The picker and occupying body each subscribe to that source and poll `GET /phone/devices` every 5000 ms (`PHONE_LISTING_POLL_INTERVAL_MS`, Host `phone-runtime` `pollIntervalMs` default) while the tab is mounted and the enable gate is on; a failed refresh keeps the last committed listing, so a plugged USB real appears in the USB group and the connected dropdown without 「重新检测环境」. The picker still re-pulls from that control. The occupying body also exposes 选择设备, which `updateTab`s the singleton back to picker meta (no `kind: 'device'`) so occupation is not a dead end. Desktop overlay Settings may keep a separate listing instance; the Session Surface listing used by PhoneTab and PhoneConnectedView polls itself. The settings inventory follows listing commits after the first detection and polls the same interval while ready. The pill value is the online count when any device is connected and `null` otherwise.
+Both the strip badge and the bodies read one injected abstraction, `PhoneListingSource` (`getBadge(): { onlineCount }` for the per-render pill, `snapshot()` / `refresh()` / `subscribe()` for the bodies). The shipped source consumes the Host `GET /phone/devices` route: every pull validates the grouped listing, maps emulator and simulator kinds onto the 模拟器 group and real handsets onto USB 真机, and commits only on success — a failed pull keeps the previous listing. The picker and occupying body each subscribe to that source and poll `GET /phone/devices` every 5000 ms (`PHONE_LISTING_POLL_INTERVAL_MS`, Host `phone-runtime` `pollIntervalMs` default) while the tab is mounted and the enable gate is on; a failed refresh keeps the last committed listing, so a plugged USB real appears in the USB group and the connected dropdown without 「重新检测环境」. The picker still re-pulls from that control. The occupying body also exposes 选择设备, which updates the official singleton back to an empty picker payload so occupation is not a dead end. Desktop overlay Settings may keep a separate listing instance; the Session Surface listing used by PhoneTab and PhoneConnectedView polls itself. The settings inventory follows listing commits after the first detection and polls the same interval while ready. The pill value is the online count when any device is connected and `null` otherwise.
 
 Composition: the `tsconfig.client.json` aggregate references the package; `packages/bundle/web-app/cordis.patch.yml` carries the `ui-phone` browser row; `packages/bundle/web-app/package.json` declares the dependency. The package invariant companion proves tab register/dispose symmetry on a live cordis fiber against a same-process fake registry.
 
 Android sessions keep H264 visible when the runtime can replace a malformed mobilecli AVC response with the system Annex-B encoder. A managed tap or swipe JSON-RPC error stays on the live picture; agent recovery runs after mint, picture, or socket death, and after io `-32010` or unauthorized messages. A missing agent keeps one-click installation in the error card. OEMs may still require an on-device USB-install or debugging-security confirmation. `INSTALL_FAILED_USER_RESTRICTED` has its own retryable card and never asks the user to download or run the installer manually.
 
+<a id="model-experience"></a>
 ## Model Experience
 
 None, as the browser UI, Host settings namespace, and video playback register no prompt, tool schema, session event, or provider request; model-facing capabilities belong to separate consumers.
@@ -30,8 +52,15 @@ None; UI settings and device state never alter a model request prefix.
 
 ## Known Limitations and Deferred Work
 
+<a id="known-limitations-and-deferred-work"></a>
+
 - **Badge fidelity gap** — the pill node is aria-hidden (accessibility P3: the count never joins the tab's accessible name), but the locked mockup's 灰点 (no device) / 绿色数字 (online count) still needs a dot-and-color rendering path that the pinned better-sidebar badge contract does not offer: it renders one neutral pill around a string or number, and `null` hides the pill entirely. This package therefore ships the value-level two arms (quiet vs count); the dot styling lands when the contract extends. The badge callback also cannot see which tab instance renders it, so every phone tab shows the fleet online count rather than the active device's dot.
 - **截图 is disabled** — the design stores screenshots as session attachments; no client-attachable route exists yet, so the button renders disabled with a tooltip instead of pretending.
 - **最近设备 and per-row 启动 stay future surfaces** — fleet history and picker row-start controls do not exist; the picker ships 打开 only, while default Simulator start belongs to Phone Devices settings.
 - **IME composition and control keys do not reach the device** — printable input and Enter map to `device.io.text`; deletions, shortcuts, and IME pre-edit need a richer text path.
 - **Remaining zh-only copy** — the + menu, picker, and occupied tab titles plus the Phone Devices settings section resolve through `settings.phone-devices`; picker rows, connection cards, and other device-dock chrome still ship Chinese until that pass lands.
+
+<a id="dev-note"></a>
+### Dev Note
+
+None.

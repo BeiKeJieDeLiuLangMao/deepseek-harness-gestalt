@@ -22,6 +22,7 @@ const allSpecs = new Set([
   ...globSync('packages/*/*/tests/**/*.spec.tsx', { cwd: root }),
   ...globSync('apps/*/tests/**/*.spec.ts', { cwd: root }),
   ...globSync('examples/*/tests/**/*.spec.ts', { cwd: root }),
+  ...globSync('examples/*/tests/**/*.spec.tsx', { cwd: root }),
   ...globSync('scripts/**/*.spec.ts', { cwd: root }),
 ].map(path => path.replaceAll('\\', '/')))
 
@@ -45,6 +46,14 @@ describe('coverage-exempt roster', () => {
     for (const suite of coverageExemptIsolatedSuites) {
       expect(coverageExemptHeavySuites).not.toContainEqual(suite)
     }
+  })
+
+  it('selects every Typert suite for the uninstrumented gate', () => {
+    const typertSpecs = filterMatches('packages/typert/')
+    const exemptSpecs = coverageExemptHeavySuites.flatMap(suite => excludeMatches(suite.exclude))
+      .filter(spec => spec.startsWith('packages/typert/')).sort()
+    expect(typertSpecs.length).toBeGreaterThan(0)
+    expect(exemptSpecs).toEqual(typertSpecs)
   })
 
   it.each(coverageExemptSuites.map(suite => [suite.filter, suite] as const))(

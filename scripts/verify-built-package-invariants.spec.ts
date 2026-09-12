@@ -13,32 +13,34 @@ afterEach(() => {
 })
 
 function fixture(options: {
-  name?: string
+  companion?: boolean
   files?: string[]
   invariantSource?: string
   invariantExport?: string
-  clientExport?: { node?: string; default: string }
   runtimeChunks?: Record<string, string>
 } = {}): { root: string; loaderUrl: string } {
   const root = mkdtempSync(join(tmpdir(), 'dsh-built-package-invariants-'))
   roots.push(root)
   const packageDir = join(root, 'packages', 'core', 'probe')
   mkdirSync(join(packageDir, 'lib'), { recursive: true })
+  const companion = options.companion ?? true
   writeFileSync(join(packageDir, 'package.json'), `${JSON.stringify({
-    name: options.name ?? '@deepseek-ai/dsh-probe',
+    name: '@deepseek-ai/dsh-probe',
     type: 'module',
-    files: options.files ?? ['lib/invariant.js'],
-    exports: {
+    files: companion ? (options.files ?? ['lib/invariant.js']) : [],
+    exports: companion ? {
       './invariant': {
         default: options.invariantExport ?? './lib/invariant.js',
       },
-      ...(options.clientExport === undefined ? {} : { './client': options.clientExport }),
-    },
-  }, null, 2)}\n`)
-  writeFileSync(
-    join(packageDir, 'lib/invariant.js'),
-    options.invariantSource ?? "export const name = 'probe-invariant'\nexport const inject = ['invariants']\nexport const apply = () => {}\n",
-  )
+    } : {},
+  }, null, 2)}
+`)
+  if (companion) {
+    writeFileSync(
+      join(packageDir, 'lib/invariant.js'),
+      options.invariantSource ?? "export const name = 'probe-invariant'\nexport const inject = ['invariants']\nexport const apply = () => {}\n",
+    )
+  }
   for (const [relativePath, source] of Object.entries(options.runtimeChunks ?? {})) {
     const path = join(packageDir, ...relativePath.split('/'))
     mkdirSync(dirname(path), { recursive: true })
@@ -49,40 +51,51 @@ function fixture(options: {
   return { root, loaderUrl: pathToFileURL(loaderPath).href }
 }
 
-function verify(root: string, loaderUrl: string) {
-  return spawnSync(process.execPath, [
+function verify(root: string, loaderUrl: string, timeout: number) {
+  const result = spawnSync(process.execPath, [
     verifier,
     '--packages-root', root,
     '--loader-url', loaderUrl,
   ], {
     encoding: 'utf8',
-    timeout: 5_000,
+    // Plain-Node startup and staged imports share the runner's platform budget.
+    timeout,
   })
+  expect(result.error).toBeUndefined()
+  expect(result.signal, result.stderr).toBeNull()
+  return result
 }
 
 describe('built package invariant verifier', () => {
-  it('loads the staged compiled self-reference through plain Node and Loader normalization', () => {
+  it('loads the staged compiled self-reference through plain Node and Loader normalization', ({ task }) => {
     const { root, loaderUrl } = fixture()
-    const result = verify(root, loaderUrl)
+    const result = verify(root, loaderUrl, task.timeout)
     expect(result.status, result.stderr).toBe(0)
     expect(result.stdout).toContain('1 compiled companion(s) passed plain-Node Loader checks')
   })
 
-  it('rejects a default export and a broken invariant export map', () => {
+  it('accepts packages that do not publish a companion', ({ task }) => {
+    const { root, loaderUrl } = fixture({ companion: false })
+    const result = verify(root, loaderUrl, task.timeout)
+    expect(result.status, result.stderr).toBe(0)
+    expect(result.stdout).toContain('0 compiled companion(s) passed plain-Node Loader checks')
+  })
+
+  it('rejects a default export and a broken invariant export map', ({ task }) => {
     const withDefault = fixture({
       invariantSource: "export default {}\nexport const name = 'probe-invariant'\nexport const inject = ['invariants']\nexport const apply = () => {}\n",
     })
-    const defaultResult = verify(withDefault.root, withDefault.loaderUrl)
+    const defaultResult = verify(withDefault.root, withDefault.loaderUrl, task.timeout)
     expect(defaultResult.status).toBe(1)
     expect(defaultResult.stderr).toContain('companion has a default export')
 
     const brokenExport = fixture({ invariantExport: './lib/missing.js' })
-    const exportResult = verify(brokenExport.root, brokenExport.loaderUrl)
+    const exportResult = verify(brokenExport.root, brokenExport.loaderUrl, task.timeout)
     expect(exportResult.status).toBe(1)
     expect(exportResult.stderr).toContain('@deepseek-ai/dsh-probe')
   })
 
-  it('stages manifest-declared transitive chunks from portable package paths', () => {
+  it('stages manifest-declared transitive chunks from portable package paths', ({ task }) => {
     const { root, loaderUrl } = fixture({
       files: ['lib/invariant.js', 'lib/chunks/**/*.js'],
       invariantSource: "export * from './chunks/entry.js'\n",
@@ -91,11 +104,11 @@ describe('built package invariant verifier', () => {
         'lib/chunks/nested/runtime.js': "export const name = 'probe-invariant'\nexport const inject = ['invariants']\nexport const apply = () => {}\n",
       },
     })
-    const result = verify(root, loaderUrl)
+    const result = verify(root, loaderUrl, task.timeout)
     expect(result.status, result.stderr).toBe(0)
   })
 
-  it('rejects an invariant bundle whose staged chunk needs an undeclared transitive chunk', () => {
+  it('rejects an invariant bundle whose staged chunk needs an undeclared transitive chunk', ({ task }) => {
     const { root, loaderUrl } = fixture({
       files: ['lib/invariant.js', 'lib/chunks/entry.js'],
       invariantSource: "export * from './chunks/entry.js'\n",
@@ -104,53 +117,8 @@ describe('built package invariant verifier', () => {
         'lib/chunks/nested/runtime.js': "export const name = 'probe-invariant'\nexport const inject = ['invariants']\nexport const apply = () => {}\n",
       },
     })
-    const result = verify(root, loaderUrl)
+    const result = verify(root, loaderUrl, task.timeout)
     expect(result.status).toBe(1)
     expect(result.stderr).toContain('runtime.js')
-  })
-
-  it('loads the client runtime Node entry without evaluating its browser factory', () => {
-    const { root, loaderUrl } = fixture({
-      name: '@deepseek-ai/dsh-client-runtime',
-      files: ['lib/invariant.js', 'lib/client-node.js', 'lib/client.cjs'],
-      clientExport: { node: './lib/client-node.js', default: './lib/client.cjs' },
-      runtimeChunks: {
-        'lib/client-node.js': 'export function createSnapshotStore() {}\n',
-        'lib/client.cjs': 'window.__dshClientRuntime = true\nmodule.exports = {}\n',
-      },
-    })
-
-    const result = verify(root, loaderUrl)
-    expect(result.status, result.stderr).toBe(0)
-  })
-
-  it.each([
-    {
-      label: 'Node condition falls through to the browser factory',
-      files: ['lib/invariant.js', 'lib/client.cjs'],
-      clientExport: { default: './lib/client.cjs' },
-      expected: 'exports["./client"].node must be ./lib/client-node.js',
-    },
-    {
-      label: 'browser default moves away from the client factory',
-      files: ['lib/invariant.js', 'lib/client-node.js', 'lib/browser.js'],
-      clientExport: { node: './lib/client-node.js', default: './lib/browser.js' },
-      expected: 'exports["./client"].default must remain ./lib/client.cjs',
-    },
-  ])('rejects a client runtime whose $label', ({ files, clientExport, expected }) => {
-    const { root, loaderUrl } = fixture({
-      name: '@deepseek-ai/dsh-client-runtime',
-      files,
-      clientExport,
-      runtimeChunks: {
-        'lib/client-node.js': 'export function createSnapshotStore() {}\n',
-        'lib/client.cjs': 'window.__dshClientRuntime = true\nmodule.exports = {}\n',
-        'lib/browser.js': 'export function createSnapshotStore() {}\n',
-      },
-    })
-
-    const result = verify(root, loaderUrl)
-    expect(result.status).toBe(1)
-    expect(result.stderr).toContain(expected)
   })
 })

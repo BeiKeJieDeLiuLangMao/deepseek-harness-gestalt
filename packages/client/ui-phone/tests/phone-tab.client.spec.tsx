@@ -13,6 +13,9 @@ import { PhoneStreamHttpError } from '../src/client/phone-stream-client.ts'
 import { phoneDeviceIdOf } from '../src/client/phone-device-id.ts'
 import type { PhoneDeviceSummary } from '../src/client/registry.ts'
 import { FakeGate, FakeListingSource, flush, listingOf } from './phone-fakes.client.ts'
+import { zh } from '../src/client/locales.ts'
+
+const t = ((key: keyof typeof zh) => zh[key]) as never
 
 afterEach(cleanup)
 
@@ -24,7 +27,7 @@ const openDevice = vi.fn()
 
 async function renderTab(enabled: boolean, source: FakeListingSource): Promise<{ gate: FakeGate }> {
   const gate = new FakeGate(enabled)
-  render(<PhoneTab gate={gate} source={source} onOpenDevice={openDevice} />)
+  render(<PhoneTab t={t} gate={gate} source={source} onOpenDevice={openDevice} />)
   await act(async () => { await flush() })
   return { gate }
 }
@@ -275,7 +278,7 @@ describe('PhoneTab live listing', () => {
   it('shows a later USB real in the USB group without 重新检测环境', async () => {
     vi.useFakeTimers()
     const source = new FakeListingSource()
-    render(<PhoneTab gate={new FakeGate(true)} source={source} onOpenDevice={openDevice} />)
+    render(<PhoneTab t={t} gate={new FakeGate(true)} source={source} onOpenDevice={openDevice} />)
     await act(async () => { await vi.advanceTimersByTimeAsync(0) })
     expect(source.refreshCount).toBe(1)
     fireEvent.click(screen.getByRole('button', { name: 'iOS' }))
@@ -292,7 +295,7 @@ describe('PhoneTab live listing', () => {
   it('keeps the committed USB row when a poll refresh fails', async () => {
     vi.useFakeTimers()
     const source = new FakeListingSource().seed(listingOf([], [IPHONE]))
-    render(<PhoneTab gate={new FakeGate(true)} source={source} onOpenDevice={openDevice} />)
+    render(<PhoneTab t={t} gate={new FakeGate(true)} source={source} onOpenDevice={openDevice} />)
     await act(async () => { await vi.advanceTimersByTimeAsync(0) })
     fireEvent.click(screen.getByRole('button', { name: 'iOS' }))
     expect(screen.getByText('贝贝猫的iPhone')).toBeTruthy()
@@ -305,7 +308,7 @@ describe('PhoneTab live listing', () => {
   it('does not poll while the enable gate is off', async () => {
     vi.useFakeTimers()
     const source = new FakeListingSource()
-    render(<PhoneTab gate={new FakeGate(false)} source={source} onOpenDevice={openDevice} />)
+    render(<PhoneTab t={t} gate={new FakeGate(false)} source={source} onOpenDevice={openDevice} />)
     await act(async () => { await vi.advanceTimersByTimeAsync(PHONE_LISTING_POLL_INTERVAL_MS) })
     expect(source.refreshCount).toBe(0)
   })

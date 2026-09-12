@@ -25,19 +25,37 @@
       "path": "../locale"
     },
     {
-      "path": "../connection"
+      "path": "../connection/tsconfig.client.json"
     },
     {
       "path": "../modules"
     },
     {
-      "path": "../runtime"
+      "path": "../ui-chat"
     },
     {
       "path": "../ui-conversation"
     },
     {
+      "path": "../ui-deliverables/tsconfig.client.json"
+    },
+    {
       "path": "../ui-renderer"
+    },
+    {
+      "path": "../ui-session"
+    },
+    {
+      "path": "../ui-sidebar-right"
+    },
+    {
+      "path": "../ui-sidebar-documentpreview"
+    },
+    {
+      "path": "../ui-dockkit"
+    },
+    {
+      "path": "../store"
     },
     {
       "path": "../ui-primitives"
@@ -64,16 +82,34 @@
       "path": "../../core/session"
     },
     {
+      "path": "../../session/session-persistence"
+    },
+    {
       "path": "../../settings/settings"
     },
     {
       "path": "../../subagent/subagent"
     },
     {
-      "path": "../../runtime-diagnostics/invariants"
+      "path": "../../api/remotes/tsconfig.client.json"
     },
     {
-      "path": "../../api/remotes/tsconfig.client.json"
+      "path": "../../api/session-controller/tsconfig.client.json"
+    },
+    {
+      "path": "../../api/workspace-files/tsconfig.client.json"
+    },
+    {
+      "path": "../../typert/protocol"
+    },
+    {
+      "path": "../../util/values"
+    },
+    {
+      "path": "../../util/workspace-path"
+    },
+    {
+      "path": "../../browser/browser-workspace"
     }
   ]
 }

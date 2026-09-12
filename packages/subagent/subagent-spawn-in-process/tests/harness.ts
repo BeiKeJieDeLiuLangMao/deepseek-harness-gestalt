@@ -27,7 +27,7 @@ export async function spawnHarness(workdir: string, home: string): Promise<Conte
   // delegation nudge lives in the e2e's user prompt and the subagent tool's
   // own description.
   await mountAgentLoopTestDependencies(ctx, {
-    systemPrompt: { persona: 'You are a coding agent. Report only when the requested work is done.' },
+    systemPrompt: { personaPrefix: 'You are a coding agent. Report only when the requested work is done.' },
   })
   await ctx.plugin(AgentLoop, { agents: [] })
   await ctx.plugin(FileSettingsProvider, { path: join(home, 'settings.yaml'), watch: false })

@@ -3,7 +3,7 @@
 // independent projection and mutations cross the generated Remote gateway.
 import { mkdirSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { join } from 'node:path'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
@@ -17,6 +17,10 @@ import {
 import { newEnglishPage, REPO_ROOT, SCHEDULE_SNAPSHOT_TIMEZONE, saveFailureShot } from './support.ts'
 
 const OVERLAY = fileURLToPath(new URL('../../desktop/cordis.patch.yml', import.meta.url))
+const DESKTOP_INSTALL_ANCHOR = fileURLToPath(new URL('../../desktop/package.json', import.meta.url))
+const DESKTOP_BRIDGE_FIXTURE = fileURLToPath(
+  new URL('../../../packages/client/ui-desktop/tests/desktop-bridge-fixture.client.ts', import.meta.url),
+)
 const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/schedule-board', import.meta.url))
 const FIXTURE = join(SNAPSHOT_DIR, 'session.jsonl')
 const BOARD_EXPECTED = join(SNAPSHOT_DIR, 'board.expected.md')
@@ -32,6 +36,13 @@ async function openSeed(page: Page): Promise<void> {
   await sessionRow.click()
 }
 
+async function installDesktopFixture(page: Page, platform: 'darwin' | 'win32'): Promise<void> {
+  const { installDesktopBridgeFixture } = await import(pathToFileURL(DESKTOP_BRIDGE_FIXTURE).href) as {
+    installDesktopBridgeFixture: (platform: 'darwin' | 'win32') => void
+  }
+  await page.addInitScript(installDesktopBridgeFixture, platform)
+}
+
 describe.skipIf(MODE === 'record')('web e2e: Desktop Session Schedule board', () => {
   let scaffold: WebScaffold
   let browser: Browser
@@ -39,16 +50,20 @@ describe.skipIf(MODE === 'record')('web e2e: Desktop Session Schedule board', ()
   let tripwire: ReturnType<typeof watchConsole>
 
   beforeAll(async () => {
-    scaffold = await launchWebScaffold({ extraOverlayPath: OVERLAY })
+    scaffold = await launchWebScaffold({
+      extraOverlayPath: OVERLAY,
+      extraInstallAnchors: [DESKTOP_INSTALL_ANCHOR],
+    })
     await seedSession(scaffold, await readFile(FIXTURE, 'utf8'), SEED_ID)
     browser = await chromium.launch()
     page = await newEnglishPage(browser, 1000, SCHEDULE_SNAPSHOT_TIMEZONE)
+    await installDesktopFixture(page, 'darwin')
     await page.addInitScript(() => {
       const browserNow = Date.parse('2100-01-01T12:00:00.000Z')
       Date.now = () => browserNow
     })
     tripwire = watchConsole(page)
-    await page.goto(scaffold.baseUrl, { waitUntil: 'load' })
+    await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
     await openSeed(page)
     expect(await page.evaluate(() => Intl.DateTimeFormat().resolvedOptions().timeZone))
@@ -66,17 +81,20 @@ describe.skipIf(MODE === 'record')('web e2e: Desktop Session Schedule board', ()
     await trigger.waitFor({ timeout: 15_000 })
     await trigger.click()
     await page.getByRole('list', { name: 'Scheduled tasks' }).waitFor({ timeout: 10_000 })
-    const snapshot = await captureStableAria(page, 'section[aria-label="Scheduled tasks"]', scaffold.workspaceCwd)
+    const snapshot = await captureStableAria(page, 'ul[aria-label="Scheduled tasks"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(BOARD_EXPECTED, snapshot, MODE)
     mkdirSync(join(REPO_ROOT, '.artifacts'), { recursive: true })
     await page.screenshot({ path: join(REPO_ROOT, '.artifacts', 'issue-25-schedule-board.png') })
   }, 60_000)
 
-  it('persists pause across reload, then resumes and deletes through Remote mutations', async () => {
+  it('persists pause, resume, and delete mutations across reloads', async () => {
     await page.getByRole('button', { name: 'Pause Audit CI' }).click()
     await page.getByRole('button', { name: '1 scheduled task waiting' }).waitFor({ timeout: 10_000 })
     await expect.poll(() => page.locator('[role="treeitem"]').nth(1).isVisible()).toBe(true)
-    await expect.poll(() => page.locator('textarea').isEnabled()).toBe(true)
+    await expect.poll(
+      () => page.locator('[data-composer-input]').first().isEnabled(),
+      { timeout: 10_000 },
+    ).toBe(true)
 
     const warningStart = tripwire.warnings.length
     await page.reload({ waitUntil: 'load' })
@@ -93,6 +111,16 @@ describe.skipIf(MODE === 'record')('web e2e: Desktop Session Schedule board', ()
     expect(await page.getByText('Delete this task?').count()).toBe(1)
     await page.getByRole('button', { name: 'Confirm deleting Paused review' }).click()
     await expect.poll(() => page.getByText('Paused review', { exact: true }).count(), { timeout: 10_000 }).toBe(0)
+
+    const finalWarningStart = tripwire.warnings.length
+    await page.reload({ waitUntil: 'load' })
+    acknowledgeReloadConnectionLoss(tripwire, finalWarningStart)
+    await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
+    const persistedTrigger = page.getByRole('button', { name: '2 scheduled tasks waiting' })
+    await persistedTrigger.waitFor({ timeout: 15_000 })
+    await persistedTrigger.click()
+    await page.getByRole('button', { name: 'Pause Audit CI' }).waitFor({ timeout: 10_000 })
+    expect(await page.getByText('Paused review', { exact: true }).count()).toBe(0)
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
   }, 60_000)

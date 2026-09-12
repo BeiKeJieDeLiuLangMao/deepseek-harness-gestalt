@@ -1,471 +1,252 @@
-/**
- * Phone tab registration core: the shared value vocabulary (listing source,
- * device summaries), the single 「手机」 tab descriptor whose device
- * switches happen in place (U1: user-accepted reversal of the per-device
- * tab model), and the fiber-scoped mount into the better-sidebar registry.
- *
- * This module carries no stylesheet and no JSX on purpose: the Node-face
- * invariant companion imports it to prove register/dispose symmetry against
- * a same-process fake service. The browser-only icon and tab bodies arrive
- * as `PhoneTabView` parts at mount time.
- */
-import type { Context } from '@deepseek-ai/cordis'
+/** Official Phone definition, payload, and occurrence-owned connection runtime. */
+import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type { DeviceId } from '@deepseek-ai/dsh-phone-runtime'
-import type { ReactNode } from 'react'
+import type {
+  SidebarRightDescriptorTab, SidebarRightTabDefinition, SidebarRightTabProjection,
+} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type { PhoneConnectionController } from './phone-connection.ts'
 import { phoneDeviceIdOf } from './phone-device-id.ts'
+import { zh } from './locales.ts'
 
-/** The tab descriptor id; also the `SidebarTab.type` of opened phone tabs. */
+/** Official singleton Phone kind. */
 export const PHONE_TAB_ID = 'phone'
-
-/** zh fallback of the + menu row and picker tab title for Node invariant tests. */
-export const PHONE_TAB_TITLE = '手机'
-
-/** + menu sort order: after the built-in browser (50), before the default 100. */
+/** Stable official definition id. */
+export const PHONE_DEFINITION_ID = '@deepseek-ai/dsh-client-ui-phone/phone'
+/** zh fallback used by React-free helpers and invariants. */
+export const PHONE_TAB_TITLE = zh.tab
+/** + menu position after Browser. */
 export const PHONE_TAB_ORDER = 55
-
-/** Cordis effect label owning the registration inside the plugin fiber. */
-const PHONE_TAB_EFFECT = 'ui-phone: phone tab'
-
-/** Platforms the device list can be grouped under. */
+/** Platforms shown by the picker. */
 export const PHONE_PLATFORMS = ['android', 'ios'] as const
-
-/** One platform segment of the empty state's platform selector. */
+/** Platform families accepted by the Phone picker. */
 export type PhonePlatform = typeof PHONE_PLATFORMS[number]
 
-/**
- * Plain-data snapshot the strip badge reads on every sidebar render. Numbers
- * stay JSON-compatible so a future provider may publish it from any channel
- * (client AGENTS rule: UI domains share plain data and callbacks).
- */
-export interface PhoneBadgeSnapshot {
-  /** How many devices currently report an open connection. */
-  readonly onlineCount: number
-}
-
-/** One row of the device list the empty state renders per platform. */
+/** One platform device row. */
 export interface PhoneDeviceSummary {
-  /** Stable device identity (Android serial or iOS UDID). */
   readonly id: DeviceId
-  /** Display name shown in the row (emulator AVD name, device model). */
   readonly name: string
-  /** Which group header the row belongs under. */
   readonly channel: 'emulator' | 'usb'
-  /** Whether the device currently reports an open connection (derived). */
   readonly online: boolean
-  /**
-   * Upstream device state verbatim (`online`, `offline`, `unauthorized`,
-   * …) — the #421 `PhoneDeviceRefWire.state` contract. The rows and the
-   * connected view read `state === 'unauthorized'` for the design's error
-   * arm instead of keying on a dedicated flag.
-   */
   readonly state: string
-  /**
-   * Current Android logical display pixels from Host `dumpsys display`.
-   * Absent on iOS and when dumpsys misses. Never `device.info.screenSize`.
-   */
   readonly logicalDisplay?: { readonly width: number; readonly height: number }
 }
 
-/** One committed listing: summaries grouped per platform segment. */
+/** Current grouped fleet listing. */
 export interface PhoneListingSnapshot {
-  /** Devices the Android segment lists. */
   readonly android: readonly PhoneDeviceSummary[]
-  /** Devices the iOS segment lists (simulators and physical handsets). */
   readonly ios: readonly PhoneDeviceSummary[]
 }
 
-/** Reactive read of the durable enable gate, seating useSyncExternalStore. */
+/** Synchronous fleet badge projection. */
+export interface PhoneBadgeSnapshot {
+  readonly onlineCount: number
+}
+
+/** Reactive Phone enable gate. */
 export interface PhoneGateSource {
-  /** Current gate value; the same boolean until the scope invalidates. */
   snapshot(): boolean
-  /** Follow gate invalidations; returns the disposer. */
   subscribe(listener: () => void): () => void
 }
 
-/**
- * Device abstraction backing the strip badge and both tab bodies' lists.
- * The shipped implementation consumes the Host `GET /phone/devices` route
- * (see `phone-listing.ts`). PhoneTab and PhoneConnectedView poll
- * `refresh` on the Host 5000 ms interval while mounted and enabled; a
- * failed refresh keeps this snapshot. `getBadge` sits on the per-render
- * hot path and must stay cheap and synchronous; `snapshot` keeps its
- * reference stable between commits so it can seat `useSyncExternalStore`.
- */
+/** Listing source shared by picker, connected view, and descriptor badge. */
 export interface PhoneListingSource {
-  /** Current badge snapshot (strip pill value). */
   getBadge(): PhoneBadgeSnapshot
-  /** Current committed listing; the same reference until the next commit. */
   snapshot(): PhoneListingSnapshot
-  /** Pull the latest fleet listing from the Host; commits only on success. */
   refresh(): Promise<void>
-  /** Subscribe to commits; returns the disposer. */
   subscribe(listener: () => void): () => void
 }
 
+/** Durable device occupation of the singleton Phone occurrence. */
+export type PhoneDeviceTabMeta = {
+  readonly kind: 'device'
+  readonly serial: DeviceId
+  readonly name: string
+}
+
+/** Picker state is an empty object; a device state carries identity and title. */
+export type OfficialPhonePayload = PhoneDeviceTabMeta | Record<string, never>
+
+declare module '@deepseek-ai/dsh-client-ui-sidebar-right/client' {
+  interface SidebarRightTabPayloadMap {
+    phone: OfficialPhonePayload
+  }
+}
+
 /**
- * Strip-badge pill value: the online count when any device is connected,
- * otherwise quiet. `BetterSidebarService` renders null badges as no pill at
- * all — the locked mockup's gray dot has no rendering path through today's
- * string/number pill contract, so the quiet arm stays invisible until the
- * contract extends (see the README's known limitation).
+ * Read a valid device payload; every other JSON value renders the picker.
+ * @param meta - persisted tab payload to inspect.
+ * @returns the device selection, or `undefined` for picker state.
  */
+export function phoneDeviceTabMetaOf(meta: unknown): PhoneDeviceTabMeta | undefined {
+  if (typeof meta !== 'object' || meta === null || Array.isArray(meta)) return undefined
+  const record = meta as Record<string, unknown>
+  if (record.kind !== 'device'
+    || typeof record.serial !== 'string' || record.serial === ''
+    || typeof record.name !== 'string' || record.name === '') return undefined
+  return { kind: 'device', serial: phoneDeviceIdOf(record.serial), name: record.name }
+}
+
 /**
- * Strip-badge pill value from one listing source.
- * @param source - Device listing the strip badge reads.
- * @returns the online count, or `null` when none are connected.
+ * Project the online-device count for the tab strip.
+ * @param source - fleet listing source.
+ * @returns the positive online count, or `null` when the badge is hidden.
  */
 export function phoneBadgeValue(source: PhoneListingSource): number | null {
-  const { onlineCount } = source.getBadge()
-  return onlineCount > 0 ? onlineCount : null
-}
-
-/** What a symmetry probe observed about one registration round-trip. */
-export interface PhoneSymmetryProbe {
-  /** Whether the registry exposed the `phone` tab after activation. */
-  readonly mounted: boolean
-  /** Whether the tab survived the owning plugin fiber's disposal. */
-  readonly survivedDispose: boolean
+  const count = source.getBadge().onlineCount
+  return count > 0 ? count : null
 }
 
 /**
- * Assert register/dispose symmetry for the `phone` tab against any
- * better-sidebar-compatible registry view. Both failure arms attribute to
- * this package's invariant (`PHONE_TAB_ID` names the checked registration).
- * @param probe - observations taken around one mount/dispose round-trip.
- * @param fail - reporter bound to the registering package.
- */
-export function assertPhoneTabSymmetry(
-  probe: PhoneSymmetryProbe,
-  fail: (message: string) => never,
-): void {
-  if (!probe.mounted) fail(`the "${PHONE_TAB_ID}" tab is missing after the plugin fiber activated`)
-  if (probe.survivedDispose) fail(`the "${PHONE_TAB_ID}" tab leaked past plugin-fiber disposal`)
-}
-
-/**
- * zh fallback tab title while a device occupies the tab (`手机·<name>`).
- * Browser live titles use {@link PhoneTabOptions.occupiedTitle}; Node tests
- * that call this helper directly keep the Chinese concatenation.
- * @param name - Display name of the device.
- * @returns the sidebar tab title.
+ * Build the Chinese fallback title for an occupied Phone tab.
+ * @param name - device display name.
+ * @returns the occupied tab title.
  */
 export function phoneTabTitleOf(name: string): string {
   return `手机·${name}`
 }
 
-/** Meta payload while a device occupies the single tab (JSON-serializable). */
-export interface PhoneDeviceTabMeta {
-  /** Closed discriminant separating device occupation from the picker. */
-  readonly kind: 'device'
-  /** Stable device identity the tab streams and addresses io with. */
-  readonly serial: DeviceId
-  /** Display name shown in the tab title and the device dropdown. */
-  readonly name: string
-}
-
-/**
- * Read the device meta back from the persisted single tab. Layout restores
- * carry `meta` verbatim, so anything but a well-formed device payload reads
- * as the picker body.
- * @param meta - untrusted `SidebarTab.meta` value.
- * @returns the device payload when the tab addresses one device.
- */
-export function phoneDeviceTabMetaOf(meta: unknown): PhoneDeviceTabMeta | undefined {
-  if (typeof meta !== 'object' || meta === null) return undefined
-  const record = meta as Record<string, unknown>
-  if (record.kind !== 'device') return undefined
-  if (typeof record.serial !== 'string' || record.serial.length === 0) return undefined
-  if (typeof record.name !== 'string' || record.name.length === 0) return undefined
-  return { kind: 'device', serial: phoneDeviceIdOf(record.serial), name: record.name }
-}
-
-/** Structural slice of the sidebar tab the descriptor callbacks receive. */
-export interface PhoneSidebarTab {
-  /** Minted instance id (`phone`; the strip keeps exactly one tab). */
-  readonly id: string
-  /** Tab title (picker copy, or occupied copy while a device occupies the tab). */
-  readonly title?: string
-  /** Plugin-owned payload persisted with the layout. */
-  readonly meta?: unknown
-}
-
-/** Body props every tab instance receives from the better-sidebar render. */
+/** Props mapped from official tab information into the existing Phone bodies. */
 export interface PhoneTabBodyProps {
-  /** The tab instance being rendered (id, title, meta). */
-  readonly tab: PhoneSidebarTab
-  /** Whether this tab is active and the panel open; false pauses the stream. */
+  readonly tab: { readonly id: string; readonly meta?: unknown }
   readonly visible: boolean
 }
 
-/** Structural slice of `BetterSidebarService` the in-place switch needs. */
-export interface PhoneTabSwitchFace {
-  /** Patch one tab's title/meta in place (U1: no second tab is created). */
-  updateTab(tabId: string, patch: { readonly title?: string; readonly meta?: unknown }): void
+/** Body environment independent of the official Slot renderer. */
+export interface PhoneTabEnvironment {
+  readonly gate: PhoneGateSource
+  readonly source: PhoneListingSource
+  readonly switchDevice: (serial: DeviceId, name: string) => void
+  readonly showPicker: () => void
+  readonly controller: PhoneConnectionController | undefined
+  readonly createController: (serial: DeviceId) => PhoneConnectionController
 }
 
-/** Minimal split-tree node needed to locate the active Phone tab. */
-export type PhoneSidebarSplit = {
-  readonly kind: 'leaf'
-  readonly tabs: readonly (PhoneSidebarTab & { readonly type: string })[]
-  readonly active: string | null
-} | {
-  readonly kind: 'split'
-  readonly children: readonly PhoneSidebarSplit[]
+/** Exact official services used by Phone registration. */
+export type OfficialPhoneContext = Pick<
+  ClientContext,
+  'slots' | 'sidebarRight' | 'sidebarRightTabs'
+>
+
+interface OwnedConnection {
+  readonly serial: DeviceId
+  readonly controller: PhoneConnectionController
 }
 
-/** Minimal current-state projection needed for live title relabeling. */
-export interface PhoneSidebarState {
-  readonly splits: PhoneSidebarSplit
-  readonly bottomSplits: PhoneSidebarSplit
-  readonly floats: readonly { readonly tab: PhoneSidebarTab & { readonly type: string } }[]
+function occurrenceKey(tab: Pick<SidebarRightTabProjection, 'sessionId' | 'record'>): string {
+  return `${tab.sessionId}\u0000${tab.record.id}`
 }
 
-/** Sidebar verbs used when Settings opens a device into the visible panel. */
-export interface PhoneTabOpenFace extends PhoneTabSwitchFace {
-  /** Create or focus the singleton Phone tab. */
-  openTab(seed: { readonly type: string }): void
-  /** Make the right panel visible after the device is selected. */
-  setPanelOpen(open: boolean): void
-  /** Read the active Session's current sidebar projection. */
-  getSnapshot(): { readonly state?: PhoneSidebarState }
-}
+/** Connection owner whose lifetime follows official occurrences rather than React mounts. */
+export class PhoneOccurrenceRuntime {
+  private readonly owned = new Map<string, OwnedConnection>()
 
-/**
- * Find the singleton Phone tab in the active Session without changing state.
- * @param state - current active Session sidebar state.
- * @returns the open or floating Phone tab when one exists.
- */
-export function openPhoneTabOf(state: PhoneSidebarState | undefined): PhoneSidebarTab | undefined {
-  if (state === undefined) return undefined
-  const visit = (node: PhoneSidebarSplit): PhoneSidebarTab | undefined => {
-    if (node.kind === 'leaf') return node.tabs.find(tab => tab.type === PHONE_TAB_ID)
-    for (const child of node.children) {
-      const tab = visit(child)
-      if (tab !== undefined) return tab
+  constructor(
+    private readonly ctx: Pick<ClientContext, 'sidebarRight'>,
+    private readonly createController: (serial: DeviceId) => PhoneConnectionController,
+  ) {}
+
+  /** Reconcile connection owners with the current official tab occurrences. */
+  sync(): void {
+    const seen = new Set<string>()
+    for (const session of this.ctx.sidebarRight.getSnapshot().sessions) {
+      for (const tab of session.tabs) {
+        if (tab.record.kind !== PHONE_TAB_ID) continue
+        const device = phoneDeviceTabMetaOf(tab.state.payload)
+        const key = occurrenceKey(tab)
+        if (device === undefined) {
+          this.release(key)
+          continue
+        }
+        seen.add(key)
+        let owned = this.owned.get(key)
+        if (owned?.serial !== device.serial) {
+          owned?.controller.dispose()
+          owned = { serial: device.serial, controller: this.createController(device.serial) }
+          this.owned.set(key, owned)
+        }
+        owned.controller.setVisible(tab.visible)
+      }
     }
-    return undefined
+    for (const key of this.owned.keys()) {
+      if (!seen.has(key)) this.release(key)
+    }
   }
-  return visit(state.splits)
-    ?? visit(state.bottomSplits)
-    ?? state.floats.find(float => float.tab.type === PHONE_TAB_ID)?.tab
-}
 
-/**
- * Relabel an open Phone tab from its persisted occupation metadata.
- * @param sidebar - current sidebar projection and title update operation.
- * @param title - picker title resolver.
- * @param occupiedTitle - occupied title resolver.
- */
-export function relabelOpenPhoneTab(
-  sidebar: Pick<PhoneTabOpenFace, 'getSnapshot' | 'updateTab'>,
-  title: () => string,
-  occupiedTitle: (name: string) => string,
-): void {
-  const tab = openPhoneTabOf(sidebar.getSnapshot().state)
-  if (tab === undefined) return
-  const meta = phoneDeviceTabMetaOf(tab.meta)
-  sidebar.updateTab(tab.id, { title: meta === undefined ? title() : occupiedTitle(meta.name) })
-}
+  /**
+   * Read the controller owned by one official tab occurrence.
+   * @param sessionId - Session that owns the tab.
+   * @param tabId - tab occurrence id.
+   * @returns the live controller, or `undefined` while the tab shows the picker.
+   */
+  controllerFor(sessionId: string, tabId: string): PhoneConnectionController | undefined {
+    return this.owned.get(`${sessionId}\u0000${tabId}`)?.controller
+  }
 
-/**
- * Build the in-place device switcher against one sidebar face: the single
- * tab's meta flips to the chosen device and the title follows
- * `occupiedTitle(name)` — no second tab is created (U1). A disabled
- * deployment drops the switch: with detection off no stream session can be
- * minted, so the entry must not pretend otherwise.
- * @param sidebar - the better-sidebar face resolved from the client context.
- * @param isEnabled - current `ui-phone.enabled` gate read at call time.
- * @param occupiedTitle - occupied tab title for one device display name.
- * @returns the switcher the picker rows and the device dropdown call.
- */
-export function createPhoneTabSwitcher(
-  sidebar: PhoneTabSwitchFace,
-  isEnabled: () => boolean,
-  occupiedTitle: (name: string) => string,
-): (tabId: string, serial: DeviceId, name: string) => void {
-  return (tabId, serial, name) => {
-    if (!isEnabled()) return
-    sidebar.updateTab(tabId, {
-      title: occupiedTitle(name),
-      meta: { kind: 'device', serial, name },
-    })
+  /** Dispose every occurrence-owned connection. */
+  dispose(): void {
+    for (const connection of this.owned.values()) connection.controller.dispose()
+    this.owned.clear()
+  }
+
+  private release(key: string): void {
+    this.owned.get(key)?.controller.dispose()
+    this.owned.delete(key)
   }
 }
 
-/**
- * Return the singleton Phone tab to the picker body (no `kind: 'device'`
- * meta). Occupation is not a dead end: the picker keeps 「重新检测环境」.
- * An empty object is the picker payload because `updateTab` only writes
- * `meta` when the patch field is present.
- * @param sidebar - the better-sidebar face resolved from the client context.
- * @param tabId - Phone tab instance id (`phone`).
- * @param title - picker tab title resolver.
- */
-export function showPhonePicker(
-  sidebar: PhoneTabSwitchFace,
-  tabId: string,
-  title: () => string,
-): void {
-  sidebar.updateTab(tabId, { title: title(), meta: {} })
+/** Options used to build the official definition. */
+export interface OfficialPhoneDefinitionOptions {
+  readonly source: PhoneListingSource
+  readonly title: () => string
+  readonly occupiedTitle: (name: string) => string
+  readonly guideDescription?: () => string
 }
 
 /**
- * Create or focus the singleton Phone tab, select one device, and reveal it.
- * @param sidebar - Better Sidebar projection owned by the active renderer.
- * @param isEnabled - Current durable Phone gate.
- * @param serial - Online device identity.
- * @param name - Device title shown in the tab strip.
- * @param occupiedTitle - occupied tab title for one device display name.
+ * Build the official singleton Phone descriptor.
+ * @param options - listing and localized presentation providers.
+ * @returns the tab definition registered with the official Sidebar.
  */
-export function openPhoneDevicePanel(
-  sidebar: PhoneTabOpenFace,
+export function buildOfficialPhoneDefinition(options: OfficialPhoneDefinitionOptions): SidebarRightTabDefinition {
+  return {
+    id: PHONE_DEFINITION_ID,
+    kind: PHONE_TAB_ID,
+    priority: 'builtin',
+    order: PHONE_TAB_ORDER,
+    icon: 'phone',
+    title: options.title,
+    guide: [{ description: options.guideDescription ?? options.title }],
+    single: true,
+    create: (request) => {
+      if (request.payload === undefined) return { title: options.title(), payload: {} }
+      const device = phoneDeviceTabMetaOf(request.payload)
+      if (device === undefined) return false
+      return { title: options.occupiedTitle(device.name), payload: device }
+    },
+    dedupeKey: (_tab: SidebarRightDescriptorTab) => PHONE_TAB_ID,
+    badge: () => phoneBadgeValue(options.source),
+  }
+}
+
+/**
+ * Open or focus Phone and switch the singleton occurrence to one device.
+ * @param sidebar - Session-bound official Sidebar controller.
+ * @param isEnabled - current durable Phone enable gate.
+ * @param serial - selected device id.
+ * @param name - selected device display name.
+ * @param occupiedTitle - localized occupied-title formatter.
+ */
+export async function openPhoneDevicePanel(
+  sidebar: ClientContext['sidebarRight'],
   isEnabled: () => boolean,
   serial: DeviceId,
   name: string,
   occupiedTitle: (name: string) => string,
-): void {
+): Promise<void> {
   if (!isEnabled()) return
-  sidebar.openTab({ type: PHONE_TAB_ID })
-  sidebar.updateTab(PHONE_TAB_ID, {
+  const tabId = await sidebar.openTab(PHONE_TAB_ID)
+  sidebar.update(tabId, {
     title: occupiedTitle(name),
-    meta: { kind: 'device', serial, name },
+    payload: { kind: 'device', serial, name },
   })
-  sidebar.setPanelOpen(true)
-}
-
-/** Environment the descriptor hands each tab body at render time. */
-export interface PhoneTabEnvironment {
-  /** Current enable gate, read at open time. */
-  readonly isEnabled: () => boolean
-  /** Reactive gate the picker body follows (the banner refreshes live). */
-  readonly gate: PhoneGateSource
-  /** Listing source backing the picker list and the device dropdown. */
-  readonly source: PhoneListingSource
-  /** Switch the single tab onto one device in place (U1). */
-  readonly switchDevice: (tabId: string, serial: DeviceId, name: string) => void
-  /** Clear device occupation so the picker body with 重新检测环境 renders. */
-  readonly showPicker: (tabId: string) => void
-  /** Create the live connection controller for the occupying device. */
-  readonly createController: (serial: DeviceId) => PhoneConnectionController
-}
-
-/** Chrome that only the browser half can supply (JSX icon + styled bodies).
- *  The body splits picker and connected occupation on the tab meta; the
- *  descriptor supplies the environment, so components stay prop-driven. */
-export interface PhoneTabView {
-  /** Monochrome inline SVG resolving the descriptor's `icon(size)` calls. */
-  readonly icon: (size: number) => ReactNode
-  /** Tab body component; the descriptor forwards props and environment. */
-  readonly component: (props: PhoneTabBodyProps, env: PhoneTabEnvironment) => ReactNode
-}
-
-/**
- * Structural slice of `BetterSidebarService.registerTab` this package
- * consumes. The pinned better-sidebar snapshot is not a composite project
- * in the client typecheck graph, so consumers declare the face locally
- * (the ui-workbench adapter precedent); `service.ts` in
- * `packages/client/ui-better-sidebar` stays the contract owner.
- */
-export interface PhoneTabDescriptor {
-  /** Unique tab type id (also the opened `SidebarTab.type`). */
-  readonly id: string
-  /** Display title; string or i18n resolver. */
-  readonly title: string | (() => string)
-  /** Tab-strip icon: inline node or `(size) => node`. */
-  readonly icon?: (size: number) => ReactNode
-  /** + menu sort order (ascending; default 100). */
-  readonly order?: number
-  /** + menu disabled predicate; returning true keeps the row usable. */
-  readonly available?: (ctx: unknown, scope: unknown, state: unknown) => boolean
-  /** Strip pill value per render; null hides it. */
-  readonly badge?: (ctx: unknown, scope: unknown, state: unknown) => string | number | null | undefined
-  /** Single instance: the strip keeps exactly one Phone tab (U1). */
-  readonly single?: boolean
-  /** Tab body renderer invoked with the sidebar's tab props. */
-  readonly component: (props: PhoneTabBodyProps) => ReactNode
-}
-
-/** The registry face {@link installPhoneTab} touches. */
-interface SidebarRegistry {
-  /** Register one tab descriptor; the return value unregisters it. */
-  registerTab(descriptor: PhoneTabDescriptor): () => void
-}
-
-/** What {@link buildPhoneTabDescriptor} needs beyond the install options. */
-export interface PhoneTabDescriptorOptions extends PhoneTabOptions {
-  /** The switcher {@link installPhoneTab} wired against the resolved sidebar. */
-  readonly switchDevice: (tabId: string, serial: DeviceId, name: string) => void
-  /** Return the occupying tab to the picker body. */
-  readonly showPicker: (tabId: string) => void
-}
-
-/** What {@link installPhoneTab} needs beyond the cordis context. */
-export interface PhoneTabOptions {
-  /** Listing source wired into the badge and the tab bodies. */
-  readonly source: PhoneListingSource
-  /** Browser-only chrome (icon SVG + styled bodies). */
-  readonly view: PhoneTabView
-  /** Current enable gate, read at open time. */
-  readonly isEnabled: () => boolean
-  /** Reactive gate the picker body follows. */
-  readonly gate: PhoneGateSource
-  /** Live connection controller factory for one device tab. */
-  readonly createController: (serial: DeviceId) => PhoneConnectionController
-  /** + menu and picker tab title, resolved at render time. */
-  readonly title: () => string
-  /** Occupied tab title for one device display name. */
-  readonly occupiedTitle: (name: string) => string
-}
-
-/**
- * Build the 「手机」descriptor. Exactly one instance exists (U1: the user-
- * accepted reversal of the per-device tab model): `single: true` keeps the
- * strip at one tab and device switches patch that tab's meta in place.
- * `available` never refuses — the entry stays reachable with zero devices,
- * which routes first-time guidance into the picker body.
- * @param options - sources, chrome, gates, and the wired switcher.
- * @returns the descriptor ready for `BetterSidebarService.registerTab`.
- */
-export function buildPhoneTabDescriptor(options: PhoneTabDescriptorOptions): PhoneTabDescriptor {
-  const env: PhoneTabEnvironment = {
-    isEnabled: options.isEnabled,
-    gate: options.gate,
-    source: options.source,
-    switchDevice: options.switchDevice,
-    showPicker: options.showPicker,
-    createController: options.createController,
-  }
-  return {
-    id: PHONE_TAB_ID,
-    title: options.title,
-    icon: options.view.icon,
-    order: PHONE_TAB_ORDER,
-    available: () => true,
-    badge: () => phoneBadgeValue(options.source),
-    single: true,
-    component: props => options.view.component(props, env),
-  }
-}
-
-/**
- * Mount the phone tab registration inside the caller's plugin fiber. The
- * `ctx.effect` disposer unregisters the tab when the fiber dies (HMR-safe
- * symmetry: after disposal the registry holds no `phone` entry — asserted by
- * this package's invariant companion). Fails loud when the Side card client
- * has not published `betterSidebar`, mirroring the ui-workbench adapter.
- * @param ctx - client context whose service store exposes betterSidebar.
- * @param options - gates, sources, chrome, title functions, and the controller factory.
- */
-export function installPhoneTab(ctx: Context, options: PhoneTabOptions): void {
-  const sidebar = ctx.get('betterSidebar') as (SidebarRegistry & PhoneTabSwitchFace) | undefined
-  if (sidebar === undefined) {
-    throw new Error('ui-phone: betterSidebar is not published; mount the Side card client first')
-  }
-  const switchDevice = createPhoneTabSwitcher(sidebar, options.isEnabled, options.occupiedTitle)
-  const showPicker = (tabId: string): void => { showPhonePicker(sidebar, tabId, options.title) }
-  ctx.effect(
-    () => sidebar.registerTab(buildPhoneTabDescriptor({ ...options, switchDevice, showPicker })),
-    PHONE_TAB_EFFECT,
-  )
 }

@@ -43,6 +43,7 @@ export async function startDesktopBrowserRuntime(userData: string): Promise<Desk
   try {
     await ctx.plugin(ElectronBrowserRuntime, { idPrefix: 'gestalt' })
     const server: ElectronBrowserHttpServer = await listenElectronBrowserHttp({
+      context: ctx,
       runtime: ctx.browserRuntime,
       tokenFile,
       idPrefix: 'gestalt',

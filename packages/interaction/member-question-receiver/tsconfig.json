@@ -12,6 +12,7 @@
     { "path": "../../platform/project-membership" },
     { "path": "../../platform/remote-protocol" },
     { "path": "../../core/session" },
+    { "path": "../../typert/protocol" },
     { "path": "../../runtime-diagnostics/invariants" }
   ]
 }

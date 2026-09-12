@@ -1,0 +1,224 @@
+/**
+ * The outward sessions-service face — what `ctx.sessions` exposes to feature
+ * packages. Transport entry points and implementation internals stay on
+ * the concrete class. Widening this interface is the
+ * explicit act of widening what features may do to the sessions domain.
+ */
+import type { Context } from '@deepseek-ai/cordis'
+import type { SubagentAddress } from '@deepseek-ai/dsh-subagent/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
+import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
+import type {
+  SessionAdmissionAdapter,
+  SessionAdmissionOptions,
+  SessionAdmissionRoute,
+  SessionModelRoute,
+} from './admission.ts'
+import type { AgentContext } from '../scope.ts'
+import type { SessionSearchResultItem } from '../sessions/manager.ts'
+import type { SessionBinding, SessionListState } from '../sessions/service.ts'
+import type { SessionFace } from './session.ts'
+import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
+
+export type { AgentContext } from '../scope.ts'
+export type {
+  SessionAdmissionAdapter,
+  SessionAdmissionOptions,
+  SessionAdmissionRoute,
+  SessionModelRoute,
+} from './admission.ts'
+
+/**
+ * The sessions-service face injected as `ctx.sessions`.
+ * Command methods throw `sessions.<op>: ClientSessions is disposed` after
+ * root disposal; in-flight `search`/`create`/`fork` reject with the same error.
+ * Observational lookups stay undefined; `openForRender` no-ops.
+ */
+export interface ISessions {
+  /** The useSessions standard feed (list rows + current selection; read face — writes stay inside the domain). */
+  readonly list: ObservableSnapshot<SessionListState>
+  /**
+   * The `session.search` result bound the wire schema fixes, exposed to
+   * presentation as injected data. Not per-connection state: every transport
+   * (fixture included) reports the same number.
+   */
+  readonly searchResultLimit: number
+  /**
+   * Create or adopt a Session on the Host.
+   * @param opts - target workspace, directory, and optional preallocated identity.
+   * @returns the Session identity after its local binding is addressable.
+   */
+  create(opts?: {
+    workspaceId?: WorkspaceId
+    cwd?: string
+    sessionId?: SessionId
+  }): Promise<SessionId>
+  /**
+   * Select a session as current.
+   * @param id - session id (must exist in the list; unknown ids fail loud).
+   */
+  open(id: SessionId): void
+  /**
+   * Open a healthy catalog child through its exact direct-parent address.
+   * @param address - catalog-derived parent and child ids.
+   */
+  openSubagent(address: SubagentAddress): void
+  /**
+   * Resolve an already discovered direct-parent address without opening it.
+   * @param id - possible addressed child id.
+   * @returns the retained address, when present.
+   */
+  subagentAddress(id: SessionId): SubagentAddress | undefined
+  /**
+   * Mark whether a catalog menu is consuming live membership updates.
+   * @param parentSessionId - catalog owner.
+   * @param open - current menu state.
+   */
+  setSubagentCatalogOpen(parentSessionId: SessionId, open: boolean): void
+  /**
+   * Refresh one direct-child catalog.
+   * @param parentSessionId - catalog owner.
+   * @returns completion of the current or newly started refresh.
+   * @throws `sessions.refreshSubagents: ClientSessions is disposed` when called after root disposal.
+   */
+  refreshSubagents(parentSessionId: SessionId): Promise<void>
+
+  /** Clear the current selection into the no-session view state. */
+  clear(): void
+  /**
+   * Refresh the Host-authoritative Session list.
+   * @returns completion of the current or newly started Session-list refresh.
+   * @throws `sessions.refresh: ClientSessions is disposed` when called after root disposal.
+   */
+  refresh(): Promise<void>
+  /**
+   * Search the Host's visible message-content index. Results stay
+   * request-local; the list snapshot remains the metadata authority.
+   * @param query - non-blank literal phrase.
+   * @param signal - cancellation for a superseded search.
+   * @returns bounded results, or a business/transport error.
+   */
+  search(
+    query: string,
+    signal: AbortSignal,
+  ): Promise<RemoteResult<{ items: SessionSearchResultItem[]; hasMore: boolean }>>
+  /**
+   * Fork a session from a completed-turn prefix of the source; on resolution
+   * the child is in the list store and `open()` can target it.
+   * @param opts - source session id, the optional event seq anchoring the
+   *   cut (the boundary is the first turn/end at or after it; an in-log
+   *   anchor in an open turn is unavailable rather than clipped backward),
+   *   and whether to increment an inherited durable title before resolving.
+   * @returns the child session id.
+   * @throws when the fork fails, or when a requested child-title rename fails after creation.
+   */
+  fork(opts: { sessionId: SessionId; atSeq?: number; increaseTitle?: boolean }): Promise<SessionId>
+  /**
+   * Resolve an Agent-scoped context view (use-and-discard).
+   * @param id - session id.
+   * @returns scoped ctx, or undefined for a session neither listed nor already scoped.
+   */
+  scope(id: SessionId): AgentContext | undefined
+  /**
+   * Read the Agent scope tag off a context (service-method boundary: fetch
+   * bundles must reach scope resolution through ctx.sessions).
+   * @param ctx - any client context.
+   * @returns the session id, or undefined on root contexts.
+   */
+  scopeOf(ctx: Context): SessionId | undefined
+  /**
+   * Resolve the session face behind an Agent-scoped context.
+   * @param ctx - an Agent-scoped context.
+   * @returns the session face, or undefined when the ctx is untagged or its scope was pruned.
+   */
+  sessionOf(ctx: Context): SessionFace | undefined
+  /**
+   * Resolve the stable session binding (scope-addressed assembly feed).
+   * Render-safe: no Host history or catalog request, and no change to `list.current`.
+   * @param id - session id.
+   * @returns binding, or undefined for a session neither listed nor already scoped.
+   */
+  binding(id: SessionId): SessionBinding | undefined
+  /**
+   * Stage a caller-supplied renderer-only Session identity until Host publication.
+   * Does not change `list.current`. The same identity and binding survive a matching
+   * Host `session-added` publication; a later disposer must not remove that published row.
+   * @param descriptor - preallocated identity, parent lineage, and display title.
+   * @returns disposer that removes the unpublished row and its scope exactly once.
+   *   No-op after publication, a prior release, or ClientSessions disposal.
+   * @throws when the identity is already staged or already listed, or when
+   *   ClientSessions is disposed.
+   */
+  stageProvisional(descriptor: {
+    sessionId: SessionId
+    parentSessionId: SessionId
+    origin: 'subagent'
+    title: string
+  }): () => void
+  /**
+   * Open one explicitly rendered Session without changing `list.current`.
+   * A provisional identity performs no Host history request. A published
+   * Session opens its history window and refreshes its subagent catalog.
+   * An unknown identity is a no-op (same as the former explicit-render open).
+   * @param sessionId - listed, addressed, or staged Session identity.
+   */
+  openForRender(sessionId: SessionId): void
+  /**
+   * Register feature-owned admission route for an exact Session identity.
+   * Late registration, replacement, and revocation take effect immediately
+   * on existing Session bindings.
+   * @param sessionId - exact target Session identity.
+   * @param route - feature-owned handlers for prompt, cancel, queue mutation, and commands.
+   * @param options - conflict strategy; default 'replace' establishes the new single owner.
+   * @returns reference-safe disposer; an outdated disposer does not revoke a newer owner.
+   */
+  registerAdmission(
+    sessionId: SessionId,
+    route: SessionAdmissionRoute,
+    options?: SessionAdmissionOptions,
+  ): () => void
+  /**
+   * Register one feature-owned Session admission adapter across matching sessions.
+   * Duplicate adapter ids are rejected.
+   * @param adapter - adapter implementing handles(sessionId) and dispatch routes.
+   * @returns reference-safe disposer.
+   */
+  registerAdmissionAdapter(adapter: SessionAdmissionAdapter): () => void
+  /**
+   * Subscribe to admission register, replace, and revoke.
+   * @param listener - notified after the admission set changes.
+   * @returns unsubscribe function.
+   */
+  subscribeAdmission(listener: () => void): () => void
+  /**
+   * Model inspection and selection for one Session.
+   * An admission that owns `modelRoute` replaces stock, including an explicit
+   * undefined that hides the selector. Omitting the field leaves stock for an
+   * ordinary listed Session. Catalog-addressed and `origin: 'subagent'`
+   * identities stay hidden until a feature route opens them; this Client does
+   * not call Host `session.selectModel` for those identities or retarget the
+   * parent. Unknown identities stay unavailable.
+   * @param sessionId - target Session identity.
+   * @returns the live route, or undefined when model selection stays unavailable.
+   */
+  modelRoute(sessionId: SessionId): SessionModelRoute | undefined
+  /**
+   * Lookup-only ordinary command-catalog Session identity.
+   * A feature-owned Session that omits the helper hides commands.
+   * A catalog-addressed subagent without a feature route also hides commands.
+   * `ui-commands` reads this for the generic directory; execute stays on the composer Session.
+   * @param sessionId - target Session identity.
+   * @returns the catalog identity, or undefined when commands stay hidden.
+   */
+  commandCatalogSessionId(sessionId: SessionId): SessionId | undefined
+  /**
+   * Lookup-only skill-catalog Session identity.
+   * A feature-owned Session that omits the helper hides skills.
+   * A catalog-addressed subagent without a feature route also hides skills.
+   * `ui-skill` reads this for the suggestion directory.
+   * @param sessionId - target Session identity.
+   * @returns the catalog identity, or undefined when skills stay hidden.
+   */
+  skillCatalogSessionId(sessionId: SessionId): SessionId | undefined
+}

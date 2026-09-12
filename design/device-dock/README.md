@@ -33,7 +33,7 @@ production 不 import 本目录任何文件。
 - `src/client/sidebar.module.css L759/L811/L880/L527/L1595` — Tab 条高 34px、tab 宽 64–160、+ 按钮 22×22、iconButton 28 圆形、browserInput 高 28
 - `src/prefs-shared.ts L227–229` — 默认宽度百分比 20–60（默认 35%，1440 视口 ≈ 504，钳入 [280,640]）
 - `src/client/state.ts L133–138` — 自由窗口已有 390×780「手机比例」先例
-- 注册语义：`builtins/tabs.tsx`（7 类内置描述符与 order）、`Sidebar.tsx L167–179`（buildNewTabOptions 过滤/排序/禁用）、`service.ts L142–244`（TabComponentProps / TabDescriptor）、`BrowserView.tsx`(地址栏+沙箱 iframe 的 tab 长相)、`ui-workbench`（外部包委派样例 workbenchBrowser）
+- 注册语义：`builtins/tabs.tsx`（7 类内置描述符与 order）、官方 `ui-sidebar-right` DockKit `+` 菜单、`service.ts`（TabComponentProps / TabDescriptor）、`BrowserView.tsx`(地址栏+沙箱 iframe 的 tab 长相)、`ui-workbench`（外部包委派样例 workbenchBrowser）
 
 ## 对照稿（保留，非主稿）
 

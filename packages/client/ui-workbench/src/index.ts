@@ -7,7 +7,7 @@
 
 import { FiberState, type Context, type Fiber } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/cordis-plugin-loader'
-import { settingsNamespace } from '@deepseek-ai/dsh-settings'
+import type {} from '@deepseek-ai/dsh-settings'
 import { SNAPSHOT_PREFS_NS, snapshotBrowserProductPatch, type SnapshotBrowserPrefs } from './snapshot-browser.ts'
 
 /** Host plugin identity for cordis.yml rows. */
@@ -93,7 +93,7 @@ function nextSnapshotLifecycle(ctx: Context): { promise: Promise<boolean>; dispo
  * @returns `false` only when adapter disposal cancels the pending registration.
  */
 async function awaitSnapshotRegistration(ctx: Context): Promise<boolean> {
-  const ns = settingsNamespace(SNAPSHOT_PREFS_NS)
+  const ns = SNAPSHOT_PREFS_NS
   const loader = ctx.get('loader') as SnapshotLoader | undefined
   if (loader === undefined) return true
   if (![...loader.entries()].some(isSnapshotEntry)) return true
@@ -132,7 +132,7 @@ function isContextActive(ctx: Context): boolean {
  * @param ctx - Host context that already composed settings and the snapshot.
  */
 export async function apply(ctx: Context): Promise<void> {
-  const ns = settingsNamespace(SNAPSHOT_PREFS_NS)
+  const ns = SNAPSHOT_PREFS_NS
   if (ctx.settings.get(ns) === undefined) {
     if (!await awaitSnapshotRegistration(ctx) || ctx.fiber.uid === null) return
   }

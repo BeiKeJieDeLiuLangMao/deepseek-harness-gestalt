@@ -26,4 +26,4 @@ Status: implemented
 
 ## 测试
 
-`packages/client/ui-renderer/tests/document-title.client.spec.tsx` 固定未设置标题时的回退。`packages/client/ui-sidebar/tests/sidebar-root.client.spec.tsx` 与侧栏快照固定无人占位的名称。`apps/web/tests/built-boot.snapshot.ts` 仍断言官方 wordmark 占据名称，因此回退字符串不出现。
+`packages/client/ui-layout/tests/document-title.client.spec.tsx` 固定未设置标题时的回退。`packages/client/ui-sidebar/tests/sidebar-root.client.spec.tsx` 与侧栏快照固定无人占位的名称。`apps/web/tests/built-boot.snapshot.ts` 仍断言官方 wordmark 占据名称，因此回退字符串不出现。

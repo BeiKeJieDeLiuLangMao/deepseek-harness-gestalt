@@ -1,0 +1,31 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "composite": false,
+    "incremental": false,
+    "rewriteRelativeImportExtensions": false
+  },
+  "files": [
+    "start.ts",
+    "src/provider.ts"
+  ],
+  "include": [],
+  "references": [
+    {
+      "path": "../../vendor/cordis"
+    },
+    {
+      "path": "../../packages/host/webserver"
+    },
+    {
+      "path": "../../packages/platform/platform-account"
+    },
+    {
+      "path": "../../packages/platform/remote-access"
+    },
+    {
+      "path": "../../packages/platform/remote-access-client"
+    }
+  ]
+}

@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-09-04-last-workbench-tab-collapses-panel.md
-2026-09-04-last-workbench-tab-collapses-panel.md: 695a78a5ecbc5c63a2fd27e02af550020f5adc20
-2026-09-04-last-workbench-tab-collapses-panel.zh.md: b4bd858531bb16afad40c6075385eb695221880b
+2026-09-04-last-workbench-tab-collapses-panel.md: f646c59a41f8f0b85063d65a9a3d3cd1f2f53db8
+2026-09-04-last-workbench-tab-collapses-panel.zh.md: 78fb622ebf21bbbf8915afc9f1f43c6850753635

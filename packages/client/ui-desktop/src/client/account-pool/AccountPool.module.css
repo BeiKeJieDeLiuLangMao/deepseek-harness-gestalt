@@ -15,7 +15,7 @@
   padding: 12px 16px;
   border-radius: 12px;
   background: var(--dsw-alias-interactive-bg-subtle, rgba(0, 0, 0, 0.04));
-  border: 1px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.08));
+  border: 0.5px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.08));
 }
 
 .kernelInfo {
@@ -65,6 +65,7 @@
   height: 8px;
   border-radius: 999px;
   background: #10b981;
+  corner-shape: round;
 }
 
 .runtimeText {
@@ -137,7 +138,7 @@
   border-radius: 8px;
   padding: 2px;
   background: var(--dsw-alias-interactive-bg-subtle, rgba(0, 0, 0, 0.05));
-  border: 1px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.08));
+  border: 0.5px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.08));
 }
 
 .faceBtn {
@@ -171,7 +172,7 @@
   z-index: 1000;
   width: 220px;
   background: var(--dsw-alias-bg-layer-2, #ffffff);
-  border: 1px solid var(--dsw-alias-border-inverted, rgba(0, 0, 0, 0.1));
+  border: 0.5px solid var(--dsw-alias-border-inverted, rgba(0, 0, 0, 0.1));
   border-radius: 12px;
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.18);
   padding: 6px;
@@ -247,7 +248,7 @@
   padding: 14px 18px;
   border-radius: 12px;
   background: var(--dsw-alias-bg-layer-1, #ffffff);
-  border: 1px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.08));
+  border: 0.5px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.08));
 }
 
 .overviewLabel {

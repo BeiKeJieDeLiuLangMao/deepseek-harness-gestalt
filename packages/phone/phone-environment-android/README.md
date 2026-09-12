@@ -1,6 +1,28 @@
+---
+description: "Android SDK, system image, and managed AVD preparation for configuring or debugging mobilecli-backed devices."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-phone-environment-android
 
 English | [中文](README.zh.md)
+
+## Summary
+
+Prepare a trusted Android SDK, API 35 system image, and default managed AVD for mobilecli. It reuses a compatible writable SDK when available and otherwise installs under `DSH_HOME`, without changing the user's `PATH`. Fixed manifests, checksums, package ids, and explicit license consent bound preparation.
+
+## Table of Contents
+
+- [Package contract](#package-contract)
+- [Config](#config)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
+
+-----
+
+<a id="package-contract"></a>
+## Package contract
 
 Android platform Provider for `ctx.phoneEnvironment`. It detects a compatible writable Android SDK from `ANDROID_HOME`, `ANDROID_SDK_ROOT`, the Host default, or the `sdkmanager` path. Reuse requires working `sdkmanager` 12+, `avdmanager`, and the `pixel_6` device definition; an obsolete or broken installation falls back to `$DSH_HOME/phone/android/sdk`, and when discovery misses entirely the Provider probes that managed root from disk so redetecting a prepared installation stays ready. The default AVD always lives under `$DSH_HOME/phone/android/avd`, and child-only environment entries expose both roots to mobilecli without changing the user's `PATH`.
 
@@ -10,6 +32,7 @@ Preparation requires a `licenseAccepted: true` request after the settings page d
 
 Preparation installs the SDK and private AVD without starting it. The Provider runs `emulator -accel-check` before every explicit start. Windows Hypervisor Platform and BIOS virtualization, Linux KVM installation and group membership, and unavailable macOS virtualization are `manual-required` states. USB developer mode, USB debugging, RSA trust, and OEM Windows drivers also remain manual. A product-started Emulator process is owned until disable, cancellation, or plugin teardown reaches process exit; an unexpected process exit revokes running readiness immediately. Stop is bounded, shared by concurrent lifecycle callers, and reports a failed Windows process-tree termination instead of claiming quiescence.
 
+<a id="config"></a>
 ## Config
 
 | Field | Default | Meaning |
@@ -18,6 +41,7 @@ Preparation installs the SDK and private AVD without starting it. The Provider r
 
 Preparation failures use stable `PHONE_ANDROID_*` codes for license, download, length, digest, archive, SDK packages, AVD creation, boot timeout, cancellation, unsupported Hosts, and process failures. The Host projects them through the full revisioned `/phone/environment` snapshot.
 
+<a id="model-experience"></a>
 ## Model Experience
 
 Indirectly, through `dsh-tool-phone`. A running Android environment restarts the selected mobilecli generation with the managed SDK/AVD environment, requires that generation to list the emulator online, and recognizes a syntactically valid Annex-B key access unit containing linked SPS, PPS, and IDR slice headers before publishing ready. This Host probe does not decode pixels; final acceptance separately requires a real picture in the GUI. Start, reactivation, listing, and capture share one cancellation owner, so disable, cancellation, and teardown cannot publish stale running readiness. The GUI and model-facing `device_*` tools therefore address the same verified emulator.
@@ -28,6 +52,13 @@ None until `dsh-tool-phone` exposes deferred phone schemas to a model request.
 
 ## Known Limitations and Deferred Work
 
+<a id="known-limitations-and-deferred-work"></a>
+
 - Google SDK packages remain upstream downloads and are not bundled or rehosted by Desktop.
 - Windows hypervisor enablement, Linux KVM permissions, BIOS virtualization, USB debugging, RSA trust, and OEM drivers require the user or administrator.
 - The final release acceptance requires a real API 35 download, H264 picture, GUI control, and real-model `device_act`; fixture evidence does not satisfy it.
+
+<a id="dev-note"></a>
+### Dev Note
+
+None.

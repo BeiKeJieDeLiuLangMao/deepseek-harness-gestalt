@@ -41,7 +41,7 @@ describe('web e2e: annotation drafts persist per session and recover after reloa
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
     tripwire = watchConsole(page)
-    await page.goto(scaffold.baseUrl, { waitUntil: 'load' })
+    await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
     await connectFreshWorkspace(page, scaffold.workspaceCwd)
   }, 120_000)
@@ -53,7 +53,7 @@ describe('web e2e: annotation drafts persist per session and recover after reloa
 
   it('restores the exact draft with its mark after reload and keeps sessions isolated', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-annotation-persistence'))
-    const composer = page.locator('[data-composer-card] textarea').last()
+    const composer = page.locator('[data-composer-input][contenteditable="true"]').last()
     await composer.waitFor({ timeout: 10_000 })
     const firstSettled = scaffold.whenTurnSettled()
     await composer.fill(OPENING_PROMPT)
@@ -96,7 +96,7 @@ describe('web e2e: annotation drafts persist per session and recover after reloa
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
     acknowledgeReloadConnectionLoss(tripwire, warningStart)
     await page.getByText('exact phrase', { exact: true }).waitFor({ timeout: 15_000 })
-    await expect(composer.inputValue()).resolves.toBe(QUESTION)
+    await expect(composer.textContent()).resolves.toBe(QUESTION)
     await expect(summary.isVisible()).resolves.toBe(true)
     expect(await page.evaluate(() => CSS.highlights?.has('annotation-draft-mark') ?? false)).toBe(true)
 
@@ -105,7 +105,7 @@ describe('web e2e: annotation drafts persist per session and recover after reloa
     await page.getByRole('button', { name: 'Discard annotation draft' }).click()
     await expect(page.getByRole('button', { name: '1 annotation' }).count()).resolves.toBe(0)
     expect(await page.evaluate(() => CSS.highlights?.has('annotation-draft-mark') ?? false)).toBe(false)
-    await expect(composer.inputValue()).resolves.toBe(QUESTION)
+    await expect(composer.textContent()).resolves.toBe(QUESTION)
     await selectPhrase()
     await toolbar.getByRole('button', { name: 'Add annotation' }).click()
     await editor.fill('Keep the emphasis')
@@ -130,14 +130,14 @@ describe('web e2e: annotation drafts persist per session and recover after reloa
       { timeout: 10_000 },
     ).not.toBe(parentRowText)
     await composer.waitFor({ timeout: 10_000 })
-    await expect.poll(() => composer.inputValue(), { timeout: 10_000 }).toBe('')
+    await expect.poll(() => composer.textContent(), { timeout: 10_000 }).toBe('')
     await expect(page.getByRole('button', { name: '1 annotation' }).count()).resolves.toBe(0)
     expect(await page.evaluate(() => CSS.highlights?.has('annotation-draft-mark') ?? false)).toBe(false)
 
     // Switching back to the source session restores its exact draft.
     await page.locator('[role="treeitem"]').filter({ hasText: parentRowText }).first().click()
     await page.getByText('exact phrase', { exact: true }).waitFor({ timeout: 15_000 })
-    await expect(composer.inputValue()).resolves.toBe(QUESTION)
+    await expect(composer.textContent()).resolves.toBe(QUESTION)
     await expect(summary.isVisible()).resolves.toBe(true)
 
     // Admission clears the persisted draft only after the send is accepted.
@@ -156,6 +156,6 @@ describe('web e2e: annotation drafts persist per session and recover after reloa
   }, 180_000)
 
   it('keeps the fixture inventory closed', async () => {
-    await assertFixtureInventory(SNAPSHOT_DIR, ['model-visible.expected.md', 'replay.override.json'])
+    await assertFixtureInventory(SNAPSHOT_DIR, ['model-visible.expected.md', 'replay.override.json', 'session.v3.jsonl'])
   })
 })

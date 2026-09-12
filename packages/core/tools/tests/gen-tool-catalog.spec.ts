@@ -26,24 +26,22 @@ describe('gen-tool-catalog collectToolCatalog', () => {
     const catalog = await collectToolCatalog()
     const names = catalog.flatMap(entry => entry.schemas.map(s => s.name)).sort()
     expect(names).toEqual([
-      'ask_user_question', 'bash', 'bash', 'browser_close', 'browser_create',
-      'browser_focus', 'browser_input', 'browser_navigate', 'browser_observe',
-      'browser_screenshot',
+      'ask_user_question', 'bash', 'bash', 'browser_close', 'browser_create', 'browser_focus',
+      'browser_input', 'browser_navigate', 'browser_observe', 'browser_screenshot',
       'cordis_define', 'cordis_inspect_list',
       'cordis_inspect_query', 'cordis_inspect_self', 'cordis_run', 'cordis_stop',
-      'cordis_undefine', 'create_goal', 'device_act', 'device_close', 'device_list',
-      'device_observe', 'device_open', 'device_screenshot', 'edit', 'exit_plan_mode', 'followup_task',
-      'get_goal', 'glob', 'grep',
+      'cordis_undefine', 'create_goal', 'device_act', 'device_close', 'device_list', 'device_observe',
+      'device_open', 'device_screenshot', 'edit', 'exit_plan_mode', 'get_goal', 'glob', 'grep',
       'interrupt_agent', 'interrupt_agent', 'job_kill', 'job_list', 'job_output',
-      'list_agents', 'list_agents', 'lsp', 'project_members', 'pwsh', 'pwsh', 'ralph',
-      'read', 'read_image', 'report', 'run_code', 'schedule_create', 'schedule_delete',
+      'list_agents', 'list_agents', 'lsp', 'present', 'project_members',
+      'pwsh', 'pwsh', 'ralph',
+      'read', 'read_image', 'run_code', 'schedule_create', 'schedule_delete',
       'schedule_list', 'send_message', 'send_message', 'session_event_read', 'session_event_search',
       'session_event_trace', 'session_search', 'session_trace', 'skill', 'spawn_teammate',
       'str_replace_editor', 'subagent', 'team_task_create',
       'team_task_get', 'team_task_list', 'team_task_update', 'terminal_close', 'terminal_list',
       'terminal_open', 'terminal_read', 'terminal_send', 'terminal_signal', 'todo_write',
-      'tool_search',
-      'update_goal', 'wait_agent', 'web_fetch', 'web_search', 'workflow', 'write',
+      'tool_search', 'update_goal', 'wait_agent', 'web_fetch', 'web_search', 'workflow', 'write',
     ])
     // Every tool carries a JSON-Schema `parameters` object (what the model sees).
     for (const entry of catalog) {
@@ -96,6 +94,19 @@ describe('gen-tool-catalog collectToolCatalog', () => {
     const subagent = catalog.find(entry => entry.pkg === '@deepseek-ai/dsh-tool-subagent')
     expect(subagent?.schemas.map(s => s.name)).toEqual(['subagent'])
     expect(subagent?.note).toMatch(/subagent_fork/)
+  })
+
+  it('harvests tool_search from the registry when toolSearch is configured', async () => {
+    const catalog = await collectToolCatalog()
+    const tools = catalog.find(entry => entry.pkg === '@deepseek-ai/dsh-tools')
+    expect(tools?.schemas.map(schema => schema.name).sort()).toEqual(['run_code', 'tool_search'])
+    expect(tools?.sources.tool_search).toBe('packages/core/tools/src/index.ts')
+    const browser = catalog.find(entry => entry.pkg === '@deepseek-ai/dsh-tool-browser')
+    expect(browser?.schemas.map(schema => schema.name)).not.toContain('tool_search')
+    expect(browser?.schemas.map(schema => schema.name)).toEqual([
+      'browser_close', 'browser_create', 'browser_focus', 'browser_input',
+      'browser_navigate', 'browser_observe', 'browser_screenshot',
+    ])
   })
 })
 

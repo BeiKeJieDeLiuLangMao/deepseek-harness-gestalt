@@ -1,6 +1,6 @@
 /**
  * REAL Loader composition: a keyless cordis.yml boots the invariants service,
- * both project-membership companions, and the file-backed provider, and the
+ * project-membership-core companion and the file-backed provider, and the
  * suite asserts observable durable outcomes across two boot generations over
  * one storage root. Only nondeterminism (uuids, wall-clock) is external.
  */
@@ -46,7 +46,6 @@ async function boot(storagePath: string, environment: string): Promise<Booted> {
   const configPath = join(root, 'cordis.yml')
   const yml = [
     "- name: '@deepseek-ai/dsh-invariants'",
-    "- name: '@deepseek-ai/dsh-project-membership/invariant'",
     "- name: '@deepseek-ai/dsh-project-membership-core/invariant'",
     "- name: '@deepseek-ai/dsh-project-membership-core'",
     '  config:',
@@ -62,7 +61,6 @@ async function boot(storagePath: string, environment: string): Promise<Booted> {
   context.loader.builtins.include = Include
   const modules = new Map<string, unknown>([
     ['@deepseek-ai/dsh-invariants', InvariantRegistry],
-    ['@deepseek-ai/dsh-project-membership/invariant', await import('@deepseek-ai/dsh-project-membership/invariant')],
     ['@deepseek-ai/dsh-project-membership-core/invariant', await import('../src/invariant.ts')],
     ['@deepseek-ai/dsh-project-membership-core', ProjectMembershipCore],
   ])
@@ -77,7 +75,7 @@ async function boot(storagePath: string, environment: string): Promise<Booted> {
   await context.loader.await()
   const service = context.get('projectMembership') as InstanceType<typeof ProjectMembershipCore>
   expect(service.storageFile).toBe(join(storagePath, environment, 'project-membership.json'))
-  // Both companions require the `invariants` service at load; settlement proves registration.
+  // The companion requires the `invariants` service at load; settlement proves registration.
   expect(context.get('invariants')).toBeInstanceOf(InvariantRegistry)
   return { service }
 }

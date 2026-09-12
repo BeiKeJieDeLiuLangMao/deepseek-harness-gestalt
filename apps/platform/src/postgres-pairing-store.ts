@@ -691,12 +691,12 @@ function accessKey(accountId: string, installationId: InstallationId): string {
 
 function pairingWriteReferences(state: PersonalPairingTransactionState): Map<string, PlatformAccountId> {
   const references = new Map<string, PlatformAccountId>()
-  for (const [id, record] of state.challenges) references.set(`challenge:${id}`, record.accountId)
-  for (const [id, record] of state.pending) references.set(`pending:${id}`, record.accountId)
-  for (const [id, record] of state.endpointPublications) references.set(`publication:${id}`, record.accountId)
-  for (const [id, record] of state.pairings) references.set(`pairing:${id}`, record.devicePrincipal.accountId)
+  for (const [id, record] of state.challenges) references.set(`challenge:${id}`, parsePlatformAccountId(record.accountId))
+  for (const [id, record] of state.pending) references.set(`pending:${id}`, parsePlatformAccountId(record.accountId))
+  for (const [id, record] of state.endpointPublications) references.set(`publication:${id}`, parsePlatformAccountId(record.accountId))
+  for (const [id, record] of state.pairings) references.set(`pairing:${id}`, parsePlatformAccountId(record.devicePrincipal.accountId))
   for (const [id, record] of state.blobs) references.set(`blob:${id}`, parsePlatformAccountId(record.accountId))
-  for (const record of state.endpointMailbox.challenges) references.set(`mailbox-challenge:${record.challengeId}`, record.accountId)
-  for (const record of state.endpointMailbox.pending) references.set(`mailbox-pending:${record.pendingPairingId}`, record.accountId)
+  for (const record of state.endpointMailbox.challenges) references.set(`mailbox-challenge:${record.challengeId}`, parsePlatformAccountId(record.accountId))
+  for (const record of state.endpointMailbox.pending) references.set(`mailbox-pending:${record.pendingPairingId}`, parsePlatformAccountId(record.accountId))
   return references
 }

@@ -4,13 +4,14 @@ import { tmpdir } from 'node:os'
 import { describe, expect, it } from 'vitest'
 import {
   CLAUDE_AGENT_SDK_PACKAGE,
+  assertRuntimeLicenses,
   claudeDistributionFromManifest,
   collectPythonDependencies,
-  collectRepositorySkillSources,
   isOwnerAuthorizedRuntime,
   isPermissive,
   type Manifest,
   manifestPatterns,
+  normalizeRepo,
   parsePyprojectRequirements,
   parseVendoredRows,
   render,
@@ -25,25 +26,13 @@ describe('THIRD_PARTY_NOTICES.md', () => {
   // already runs in the test lane, so the check costs no extra CI process.
   // Pre-commit regenerates the file whenever a manifest is staged, so reaching
   // this assertion means the notices were committed without that hook.
-  it('matches what the generator produces from the current manifests', () => {
-    const generated = render()
+  // This case resolves all browser build graphs as well as installed license metadata.
+  it('matches what the generator produces from the current manifests', {
+    timeout: 120_000,
+  }, async () => {
+    const generated = await render()
     expect(generated).toContain('It depends on the third-party software listed below.')
     expect(readFileSync(resolve(root, 'THIRD_PARTY_NOTICES.md'), 'utf8'), 'stale notices — run `pnpm run gen-third-party-notices`').toBe(generated)
-  })
-
-  it('discloses every copied repository Skill from its pinned source manifest', () => {
-    const skills = collectRepositorySkillSources()
-
-    expect(skills.map(skill => skill.name)).toEqual([
-      'ego-browser',
-      'implement-spec',
-      'retro',
-      'show-me',
-      'skill-doctor',
-      'unslop',
-    ])
-    expect(skills.every(skill => skill.license === 'MIT')).toBe(true)
-    expect(render()).toContain('## Repository agent Skills (`.agents/skills/`)')
   })
 })
 
@@ -58,6 +47,37 @@ function workspace(entries: Record<string, Manifest>): { manifests: Map<string, 
 }
 
 describe('tierExternalDeps', () => {
+  it('keeps license rejection active when a browser library is declared for development', () => {
+    const { manifests, names } = workspace({
+      'packages/client/ui/package.json': { devDependencies: { 'browser-lib': '^1', 'test-tool': '^1' } },
+    })
+    const tiers = tierExternalDeps(manifests, names, new Set(['browser-lib']))
+    const dependencies = [{ name: 'browser-lib', license: 'GPL-3.0-only' }, { name: 'test-tool', license: 'GPL-3.0-only' }]
+      .filter(dep => tiers.get(dep.name))
+    expect(dependencies.map(dep => dep.name)).toEqual(['browser-lib'])
+    expect(() => { assertRuntimeLicenses(dependencies) }).toThrow('browser-lib (GPL-3.0-only)')
+    expect(() => { assertRuntimeLicenses([{ name: 'browser-lib', license: 'MIT' }]) }).not.toThrow()
+    expect(() => { assertRuntimeLicenses([{ name: CLAUDE_AGENT_SDK_PACKAGE, license: 'SEE LICENSE IN README.md' }]) })
+      .not.toThrow()
+  })
+
+  it('keeps browser-bundled development dependencies in runtime disclosures', () => {
+    const { manifests, names } = workspace({
+      'packages/client/ui/package.json': {
+        name: '@fixture/ui', devDependencies: { react: '^18', 'browser-lib': '^1', 'type-only': '^1' },
+      },
+    })
+    expect(tierExternalDeps(manifests, names, new Set(['react', 'browser-lib']))).toEqual(new Map([
+      ['tsx', true], ['react', true], ['browser-lib', true], ['type-only', false],
+    ]))
+  })
+
+  it('rejects a browser library missing from the disclosed declarations', () => {
+    const { manifests, names } = workspace({})
+    expect(() => tierExternalDeps(manifests, names, new Set(['missing-lib'])))
+      .toThrow('browser package missing-lib has no workspace dependency declaration')
+  })
+
   it('tiers by declaring area, not by the declaring section name', () => {
     const { manifests, names } = workspace({
       // Root tooling and test infrastructure never ship, whichever section declares them.
@@ -92,6 +112,14 @@ describe('tierExternalDeps', () => {
 
     expect(tierExternalDeps(manifests, names).get('shared')).toBe(true)
     expect(tierExternalDeps(manifests, names).has('@deepseek-ai/dsh-cli')).toBe(false)
+  })
+})
+
+describe('normalizeRepo', () => {
+  it('converts SCP-style git+ssh GitHub metadata to a browsable URL', () => {
+    expect(normalizeRepo('git+ssh://git@github.com:react-icons/react-icons.git')).toBe(
+      'https://github.com/react-icons/react-icons',
+    )
   })
 })
 
@@ -130,17 +158,19 @@ describe('virtualManifest', () => {
     }
   })
 
-  it('ignores a platform-filtered virtual-store placeholder', () => {
-    const root = mkdtempSync(join(tmpdir(), 'dsh-notices-platform-placeholder-'))
+  it('selects the requested version when the store retains historical copies', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-notices-version-'))
     try {
       const name = '@scope/pkg'
       const store = join(root, 'store')
-      mkdirSync(join(store, '@scope+pkg@1.0.0'), { recursive: true })
-      const installed = join(store, 'peer-suffixed-entry', 'node_modules', name)
-      mkdirSync(installed, { recursive: true })
-      writeFileSync(join(installed, 'package.json'), JSON.stringify({ name, version: '1.0.0', license: 'MIT' }))
+      for (const version of ['1.0.0', '2.0.0']) {
+        const manifestDir = join(store, `${name.replace('/', '+')}@${version}`, 'node_modules', name)
+        mkdirSync(manifestDir, { recursive: true })
+        writeFileSync(join(manifestDir, 'package.json'), JSON.stringify({ name, version, license: 'MIT' }))
+      }
 
-      expect(virtualManifest(store, name)).toMatchObject({ name, version: '1.0.0' })
+      expect(virtualManifest(store, name, '2.0.0')).toMatchObject({ name, version: '2.0.0' })
+      expect(virtualManifest(store, name, '3.0.0')).toBeUndefined()
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
@@ -365,13 +395,12 @@ describe('official Claude distribution authorization', () => {
 
 describe('manifestPatterns', () => {
   it('derives globs from the declared members, so a new member area is read', () => {
-    expect(manifestPatterns(['packages/*/*', 'tools/*', 'native/landlock-run', 'native/landlock-run/packages/*'])).toEqual([
+    expect(manifestPatterns(['packages/*/*', 'tools/*', 'native/system', 'native/system/packages/*'])).toEqual([
       'package.json',
       'packages/*/*/package.json',
       'tools/*/package.json',
-      'native/landlock-run/package.json',
-      'native/landlock-run/packages/*/package.json',
-      'examples/*/package.json',
+      'native/system/package.json',
+      'native/system/packages/*/package.json',
     ])
   })
 })

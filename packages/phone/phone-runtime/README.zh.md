@@ -1,6 +1,29 @@
+---
+description: "面向 Host 消费方的 mobilecli Android/iOS 设备发现、语义输入、采集与 agent 管理。"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-phone-runtime
 
 [English](README.md) | 中文
+
+## 概述
+
+通过一个 mobilecli 服务发现 Android 与 iOS 设备、发送语义输入、采集屏幕，并管理 iOS 设备 agent。该服务持有回环子进程、健康轮询、超时和 `ctx.phoneDevices` 上的统一设备清单。GUI 与模型消费方位于独立包；调用方持有已发布的采集 body。
+
+## 目录
+
+- [包约定](#package-contract)
+- [配置](#config)
+- [扩展点](#extension-points)
+- [模型体验](#model-experience)
+- [已知限制与后续工作](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+-----
+
+<a id="package-contract"></a>
+## 包约定
 
 基于外部 [mobilecli](https://github.com/mobile-next/mobilecli) 服务进程的手机设备群 Service：本包在受管进程树中启动 `mobilecli server start --listen 127.0.0.1:<serverPort>`，轮询其 HTTP JSON-RPC 端点（方法名遵循上游 [OpenRPC 规范](https://github.com/mobile-next/mobile-openrpc/blob/main/mobilecli/openrpc.md)），并在 `ctx.phoneDevices` 上发布合并后的 Android/iOS 设备清单。进程树持有者覆盖 npm 的 Node 启动器及其派生的原生 mobilecli 进程，使 generation 替换与 teardown 在启动下一代之前释放回环端口。mobilecli 仍是唯一后端，Service Definition 与 Provider 折叠于同一包；面向模型的延迟 Consumer 见 [`dsh-tool-phone`](../tool-phone/README.zh.md)，只 import 本包。
 
@@ -18,6 +41,7 @@
 
 稳定 facade 保留一个 external pool occupancy。非 Service 的 `MobilecliPhoneRuntime` 为每代持有进程树、RPC client、清单、坐标观测与操作完成等待。校验回调在基线发布之前安装。替换先撤销发布权限再取消操作，普通操作不会获取或重启已停用的一代。代际清理保留命令、探针、Android 进程树与未读取采集流的完成状态，包括调用方清理等待超时后才到达的失败。
 
+<a id="config"></a>
 ## 配置
 
 | 字段 | 默认 | 含义 |
@@ -36,10 +60,12 @@
 | `agentTimeoutMs` | `120000` | 单次 `agent status` / `agent install` 子进程的上限。 |
 | `provisioningProfilePath` | — | 在真机上安装或重签 agent 时以 `--provisioning-profile` 传入的 `.mobileprovision`（上游要求真机 iOS 安装必须提供）；设置时该路径必须指向存在的文件。 |
 
+<a id="extension-points"></a>
 ## 扩展点
 
 初始 mobilecli 缺失或不可用时 Service 仍会激活；`listDevices`、`boot`、`shutdown`、`io`、`startCapture`、`screenshot` 与 agent 动词随后以 `PHONE_UNRESOLVED` 拒绝。Host 保持运行，`activateExecutable` 可在不替换 Service、不重启 Host 的情况下装入就绪 child。本包同时导出 `./invariant` 伴生插件：它必须伴随稳定 Service，并校验普通 poll 与 generation removal 通知所标注的差异与其自身清单相对已发布清单的差异完全一致。
 
+<a id="model-experience"></a>
 ## 模型体验
 
 通过 dsh-tool-phone 间接影响模型；该 Consumer 会渲染全部清单、观察、变更、动作与截图事实。
@@ -50,8 +76,15 @@
 
 ## 已知限制与后续工作
 
+<a id="known-limitations-and-deferred-work"></a>
+
 - **外部 FSL-1.1-Apache-2.0 依赖边界** — mobilecli 只被执行，绝不 vendor 或拷入本仓库或 Desktop Bundle。任何固定上游下载及其发布阻塞项由 `phone-environment` 持有。
 - **仅限回环** — 启动的服务始终绑定 `127.0.0.1:<serverPort>`；另一主机上 mobilecli 服务背后的远程设备群不在范围内。
 - **平台工具链仍为外部依赖** — mobilecli 可在运行时激活；Android 仍需 `adb`，iOS 模拟器仍需 macOS 与 Xcode。其准备归属平台环境包。
 - **真机覆盖需显式开启** — 硬件在环套件仅在 `DSH_PHONE_REAL_UDID` 指明已连接真机（`DSH_PHONE_REAL_PROFILE` 指明其签名 profile）时运行；其余环境一律自跳过，因此 CI 只通过 fake mobilecli 垫片钉住真机链路。设备端 agent 工件由 mobilecli 在 `agent install` 时自行下载，本包绝不下载；iOS 设备隧道始终由 mobilecli 服务持有，隧道失败仅通过结构化的 `tunnel-failed` 臂暴露。
 - **Windows npm shim 缺口** — 原生 Windows 套件通过指向当前 Node 可执行文件的测试专用 `fakemobilecli.exe` 符号链接，覆盖生产解析器与进程生命周期。npm 全局 `.cmd` shim 仍未验证；在进程持有者支持批处理 shim 之前，`executablePath` 应指向原生 `mobilecli.exe`。
+
+<a id="dev-note"></a>
+### 开发备注
+
+无。

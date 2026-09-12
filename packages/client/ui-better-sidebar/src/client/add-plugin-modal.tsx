@@ -2,7 +2,7 @@
  * The "add plugin" modals (Side card settings → the dashed cards at the
  * end of the 侧边栏内容 / 文件预览 grids): declare that the sidebar's
  * extension points — tab pages and file previewers — are open to plugins
- * (registered through `ctx.betterSidebar`), point at the GitHub topic page
+ * (registered through `ctx.sidebarRightTabs`), point at the GitHub topic page
  * for discovery, and show the repo's recommended plugin catalog of the
  * matching kind (name / url / description / install script).
  *
@@ -21,7 +21,6 @@
  */
 import { useState, type ReactNode } from 'react'
 import { Modal, writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { BetterSidebarService } from './service.ts'
 import { PLUGIN_TOPIC_URL, type PluginEntry } from './plugins-shared.ts'
 import { builtinTabPlugins } from './plugins-tabs.ts'
 import { builtinViewerPlugins } from './plugins-viewers.ts'
@@ -42,8 +41,8 @@ const COPIED_FEEDBACK_MS = 1500
 
 /** The modal body: the GitHub topic button + the recommended plugin list
  *  with per-entry jump/copy buttons (extracted for direct testing). */
-export function PluginListBody(props: { service: BetterSidebarService; kind: PluginKind }) {
-  const { service, kind } = props
+export function PluginListBody(props: { kind: PluginKind }) {
+  const { kind } = props
   // Which entry's copy button currently shows the "已复制" feedback.
   const [copiedId, setCopiedId] = useState<string | null>(null)
   // Live catalog filter (name / id / description). A free-text search keeps
@@ -56,8 +55,9 @@ export function PluginListBody(props: { service: BetterSidebarService; kind: Plu
   const needle = query.trim().toLowerCase()
   const matches = (entry: PluginEntry): boolean => {
     if (needle === '') return true
+    const name = typeof entry.name === 'function' ? entry.name() : entry.name
     const description = typeof entry.description === 'function' ? entry.description() : entry.description
-    return entry.name.toLowerCase().includes(needle)
+    return name.toLowerCase().includes(needle)
       || entry.id.toLowerCase().includes(needle)
       || description.toLowerCase().includes(needle)
   }
@@ -93,8 +93,12 @@ export function PluginListBody(props: { service: BetterSidebarService; kind: Plu
     window.open(entry.url, '_blank', 'noopener')
   }
 
-  /** One catalog row (extracted so the group render stays flat). */
-  const renderEntry = (entry: PluginEntry): ReactNode => (
+  /** One catalog row (extracted so the group render stays flat). The name
+   *  resolves like the description (string or () => string) so it follows
+   *  the active locale; a plain-string entry keeps its raw name. */
+  const renderEntry = (entry: PluginEntry): ReactNode => {
+    const name = typeof entry.name === 'function' ? entry.name() : entry.name
+    return (
     <div key={entry.id} className={css.pluginEntry}>
       <div className={css.pluginEntryHead}>
         {/* The name is a BUTTON on the same window.open path as the
@@ -104,16 +108,16 @@ export function PluginListBody(props: { service: BetterSidebarService; kind: Plu
         <button
           type="button"
           className={css.pluginName}
-          aria-label={`${t('openPlugin')}: ${entry.name}`}
+          aria-label={`${t('openPlugin')}: ${name}`}
           onClick={() => { jump(entry) }}
         >
-          {entry.name}
+          {name}
         </button>
         <span className={css.pluginEntryActions}>
           <button
             type="button"
             className={css.pluginJumpBtn}
-            aria-label={`${t('openPlugin')}: ${entry.name}`}
+            aria-label={`${t('openPlugin')}: ${name}`}
             onClick={() => { jump(entry) }}
           >
             {t('openPlugin')}
@@ -121,7 +125,7 @@ export function PluginListBody(props: { service: BetterSidebarService; kind: Plu
           <button
             type="button"
             className={css.pluginCopyBtn}
-            aria-label={`${t('copyInstall')}: ${entry.name}`}
+            aria-label={`${t('copyInstall')}: ${name}`}
             onClick={() => { copy(entry) }}
           >
             {copiedId === entry.id ? t('copied') : t('copy')}
@@ -133,7 +137,8 @@ export function PluginListBody(props: { service: BetterSidebarService; kind: Plu
       </div>
       <code className={css.pluginInstall}>{entry.install}</code>
     </div>
-  )
+    )
+  }
 
   return (
     <div className={css.pluginList}>
@@ -177,8 +182,8 @@ export function PluginListBody(props: { service: BetterSidebarService; kind: Plu
 }
 
 /** The modal itself (mounted only while open — see the module comment). */
-export function AddPluginModal(props: { service: BetterSidebarService; onClose: () => void; kind: PluginKind }) {
-  const { service, onClose, kind } = props
+export function AddPluginModal(props: { onClose: () => void; kind: PluginKind }) {
+  const { onClose, kind } = props
   return (
     <Modal
       open
@@ -193,7 +198,7 @@ export function AddPluginModal(props: { service: BetterSidebarService; onClose: 
         </button>
       )}
     >
-      <PluginListBody service={service} kind={kind} />
+      <PluginListBody kind={kind} />
     </Modal>
   )
 }

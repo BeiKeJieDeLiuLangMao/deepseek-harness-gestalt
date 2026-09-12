@@ -25,11 +25,12 @@ import {
 } from './scaffold.ts'
 import { ZH_BROWSER_LOCALE, saveFailureShot } from './support.ts'
 
-const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/models-settings', import.meta.url))
+const SNAPSHOT_DIR = fileURLToPath(new URL('./expected/models-settings', import.meta.url))
 const EMPTY_EXPECTED = join(SNAPSHOT_DIR, 'empty.expected.md')
 const CONFIGURED_EXPECTED = join(SNAPSHOT_DIR, 'configured.expected.md')
 const DECLARED_EXPECTED = join(SNAPSHOT_DIR, 'declared.expected.md')
 const DECLARED_EDIT_EXPECTED = join(SNAPSHOT_DIR, 'declared-edit.expected.md')
+const CAPABILITIES_EXPECTED = join(SNAPSHOT_DIR, 'capabilities.expected.md')
 const MODEL_PICKER_EXPECTED = join(SNAPSHOT_DIR, 'model-picker.expected.md')
 const NATIVE_DELETE_EXPECTED = join(SNAPSHOT_DIR, 'native-delete.expected.md')
 const DELETE_EXPECTED = join(SNAPSHOT_DIR, 'delete.expected.md')
@@ -47,7 +48,7 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
     // The scenario asserts the shipped Chinese copy, so the browser asks for it.
     page = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: ZH_BROWSER_LOCALE })
     tripwire = watchConsole(page)
-    await page.goto(scaffold.baseUrl, { waitUntil: 'load' })
+    await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
   }, 120_000)
 
@@ -179,7 +180,7 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
 
-  it('selects and clears the discovered model catalog in one action', async () => {
+  it('filters the discovered model catalog and clears hidden selections', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-models-picker'))
     const settingsDialog = page.getByRole('dialog', { name: '设置' })
     await settingsDialog.getByRole('button', { name: '编辑 minimax-cn' }).click()
@@ -195,11 +196,20 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
       Array.from({ length: count }, () => true),
     )
 
+    const search = picker.getByRole('searchbox', { name: '搜索模型' })
+    await search.fill('highspeed')
+    await expect.poll(async () => boxes.count()).toBe(1)
     await picker.getByRole('button', { name: '取消全选' }).click()
     expect(await boxes.evaluateAll(nodes => nodes.map(node => (node as HTMLInputElement).checked))).toEqual(
-      Array.from({ length: count }, () => false),
+      [false],
     )
+
+    await search.fill('')
+    await expect.poll(async () => boxes.count()).toBe(count)
+    const restored = await boxes.evaluateAll(nodes => nodes.map(node => (node as HTMLInputElement).checked))
+    expect(restored).toEqual(Array.from({ length: count }, () => false))
     await picker.getByRole('button', { name: '全选' }).waitFor()
+    await picker.getByRole('button', { name: '全选' }).click()
     const snapshot = await captureStableAria(
       page,
       '[role="dialog"][aria-label="选择要添加的模型"]',
@@ -207,7 +217,6 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
     )
     await compareOrRefreshGolden(MODEL_PICKER_EXPECTED, snapshot, MODE)
 
-    await picker.getByRole('button', { name: '全选' }).click()
     expect(await boxes.evaluateAll(nodes => nodes.map(node => (node as HTMLInputElement).checked))).toEqual(
       Array.from({ length: count }, () => true),
     )
@@ -282,6 +291,41 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
 
+  it('saves input and thinking declarations and restores them in the existing provider editor', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-models-capabilities'))
+    const dialog = page.getByRole('dialog', { name: '设置' })
+    await dialog.getByRole('button', { name: '编辑 Acme 网关 (acme-gateway)' }).click()
+    await dialog.getByText('自定义设置').click()
+    await dialog.getByRole('button', { name: '默认接受的输入 图片', exact: true }).click()
+    await dialog.getByRole('button', { name: '高级设置 1', exact: true }).click()
+    await dialog.getByRole('button', { name: '接受的输入 1 文本', exact: true }).click()
+    await dialog.getByRole('button', { name: '接受的输入 1 图片', exact: true }).click()
+    await dialog.getByRole('button', { name: '思考档位 1 关闭', exact: true }).click()
+    await expect.poll(async () => dialog.getByRole('button', { name: '保存', exact: true }).isEnabled()).toBe(false)
+    await dialog.getByRole('button', { name: '思考档位 1 高', exact: true }).click()
+    await dialog.getByRole('button', { name: '添加模型', exact: true }).click()
+    await dialog.getByLabel('模型 ID 2').fill('acme-inherited')
+    await dialog.getByRole('button', { name: '保存', exact: true }).click()
+    await expect.poll(async () => dialog.getByLabel('API 协议').count(), { timeout: 10_000 }).toBe(0)
+
+    const model = await scaffold.ctx.llm.resolveModelInfo('acme-gateway', 'acme-large')
+    expect(model.inputModalities).toEqual(['text', 'image'])
+    expect(model.reasoning?.efforts.map(effort => effort.id)).toEqual(['off', 'high'])
+    const inherited = await scaffold.ctx.llm.resolveModelInfo('acme-gateway', 'acme-inherited')
+    expect(inherited.inputModalities).toEqual(['image'])
+
+    await dialog.getByRole('button', { name: '编辑 Acme 网关 (acme-gateway)' }).click()
+    await dialog.getByText('自定义设置').click()
+    await dialog.getByRole('button', { name: '高级设置 1', exact: true }).click()
+    for (const name of ['默认接受的输入 图片', '接受的输入 1 文本', '接受的输入 1 图片', '思考档位 1 关闭', '思考档位 1 高']) {
+      expect(await dialog.getByRole('button', { name, exact: true }).getAttribute('aria-pressed')).toBe('true')
+    }
+    const snapshot = await captureStableAria(page, '[role="dialog"]', scaffold.workspaceCwd)
+    await compareOrRefreshGolden(CAPABILITIES_EXPECTED, snapshot, MODE)
+    await dialog.getByRole('button', { name: '取消', exact: true }).click()
+    expect(tripwire.pageErrors).toEqual([])
+  }, 60_000)
+
   it('confirms an identified provider deletion before removing its profile and key', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-models-delete'))
     const settingsDialog = page.getByRole('dialog', { name: '设置' })
@@ -316,7 +360,7 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
 
   it.skipIf(MODE === 'record')('keeps the fixture inventory closed', async () => {
     await assertFixtureInventory(SNAPSHOT_DIR, [
-      'configured.expected.md', 'declared-edit.expected.md', 'declared.expected.md',
+      'capabilities.expected.md', 'configured.expected.md', 'declared-edit.expected.md', 'declared.expected.md',
       'delete.expected.md', 'empty.expected.md', 'model-picker.expected.md',
       'native-delete.expected.md',
     ])

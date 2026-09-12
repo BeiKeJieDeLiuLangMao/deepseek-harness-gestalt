@@ -10,7 +10,7 @@ English | [中文](2026-08-22-desktop-web-host-no-open.zh.md)
 
 ## Decision
 
-Desktop Host spawn argv is `web --patch <overlay> --no-open --host 127.0.0.1 --port 0` for packaged and source launches. `--patch` stays ahead of app flags so the launcher consumes the overlay and the Web app receives `--no-open`. The Desktop overlay replaces the `web-runtime` row config with `openBrowser: false` while keeping `printUrl`, `surfaceContext`, and `trustedHosts`. Ordinary `dsh web` keeps `openBrowser: true` as decided in the [open-ready Web UI Agent Note](../feature/2026-08-12-open-ready-web-ui.md). The [Desktop Host Agent Note](../architecture/2026-08-16-deepseek-gestalt-desktop-host.md) records the spawn flags.
+Desktop Host spawn argv is `web --patch <overlay> --no-open --host 127.0.0.1 --port 0` for packaged and source launches. `--patch` stays ahead of app flags so the launcher consumes the overlay and the Web app receives `--no-open`. The Desktop overlay replaces the `web-runtime` row config with `openBrowser: false` while keeping `printUrl`, `surfaceContext`, and `trustedHosts`. Ordinary `dsh web` keeps `openBrowser: true` as decided in the [open-ready Web UI Agent Note](../../archived/feature/2026-08-12-open-ready-web-ui.md). The [Desktop Host Agent Note](../architecture/2026-08-16-deepseek-gestalt-desktop-host.md) records the spawn flags.
 
 ## Alternatives considered
 

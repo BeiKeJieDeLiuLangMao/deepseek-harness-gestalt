@@ -7,7 +7,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
-import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, onTestFailed, onTestFinished } from 'vitest'
 import type { Session, SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
 import {
   assertFixtureInventory, captureStableAria, compareOrRefreshGolden,
@@ -15,15 +15,15 @@ import {
   type WebScaffold,
 } from './scaffold.ts'
 import {
-  connectFreshWorkspace, newEnglishPage, REPO_ROOT, saveFailureShot,
+  connectFreshWorkspace, expandTurnProcesses, newEnglishPage, REPO_ROOT, saveFailureShot,
 } from './support.ts'
 
 const MODE = webSnapshotMode()
-const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/workflow-run', import.meta.url))
+const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/workflow-run', import.meta.url))
 const UI_LIVE_EXPECTED = join(SNAPSHOT_DIR, 'ui-live.expected.md')
 const UI_EXPECTED = join(SNAPSHOT_DIR, 'ui.expected.md')
-const PARENT_FIXTURE = join(REPO_ROOT, 'examples/acp-agent/tests/snapshots/workflow-run/session.jsonl')
-const CHILD_FIXTURE = join(REPO_ROOT, 'examples/acp-agent/tests/snapshots/workflow-run/session.1.jsonl')
+const PARENT_FIXTURE = join(REPO_ROOT, 'snapshots/session/workflow-run/session.v3.jsonl')
+const CHILD_FIXTURE = join(REPO_ROOT, 'snapshots/session/workflow-run/session.1.v3.jsonl')
 const CHILD_PROMPT = 'Reply with exactly the word WF_CHILD_OK and nothing else.'
 
 describe.skipIf(MODE === 'record')('web e2e: durable workflow run in Chat', () => {
@@ -32,6 +32,7 @@ describe.skipIf(MODE === 'record')('web e2e: durable workflow run in Chat', () =
   let page: Page
   let tripwire: ReturnType<typeof watchConsole>
   let prompt: string
+  const releaseChild = Promise.withResolvers<undefined>()
 
   const waitForParentSettlement = (): Promise<SessionId> => new Promise((resolve, reject) => {
     let dispose = (): void => {}
@@ -53,17 +54,24 @@ describe.skipIf(MODE === 'record')('web e2e: durable workflow run in Chat', () =
     scaffold = await launchWebScaffold({
       replayFixture: PARENT_FIXTURE,
       replayChildFixtures: [CHILD_FIXTURE],
-      paceMs: 250,
+      compareReplaySession: false,
     })
+    // Keep the live child available throughout disclosure, layout, and navigation checks.
+    scaffold.ctx.on('llm/stream', async function* (options, next) {
+      const session = options.sessionId === undefined ? undefined : scaffold.ctx.sessions.get(options.sessionId)
+      if (session?.header.origin === 'subagent') await releaseChild.promise
+      yield* next()
+    }, { prepend: true })
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
     tripwire = watchConsole(page)
-    await page.goto(scaffold.baseUrl, { waitUntil: 'load' })
+    await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
     await connectFreshWorkspace(page, scaffold.workspaceCwd)
   }, 120_000)
 
   afterAll(async () => {
+    releaseChild.resolve(undefined)
     await browser?.close()
     await scaffold?.close()
   })
@@ -71,12 +79,15 @@ describe.skipIf(MODE === 'record')('web e2e: durable workflow run in Chat', () =
   it('shows the live member, opens its local child, then retains the settled record beside the tool row', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-workflow-run-live'))
     const settled = waitForParentSettlement()
-    const input = page.locator('textarea').first()
+    onTestFinished(() => {
+      releaseChild.resolve(undefined)
+    })
+    const input = page.locator('[data-composer-input]').first()
     await input.fill(prompt)
     await input.press('Enter')
 
     const workflow = page.locator('[data-workflow-run][data-run-status="running"]')
-    await workflow.waitFor({ timeout: 90_000 })
+    await workflow.waitFor({ timeout: 30_000 })
     const disclosures = workflow.locator('[data-disclosure-row]')
     await disclosures.nth(1).waitFor({ timeout: 15_000 })
     const runDisclosure = disclosures.nth(0)
@@ -90,12 +101,27 @@ describe.skipIf(MODE === 'record')('web e2e: durable workflow run in Chat', () =
     const member = page.getByRole('button', { name: /^Open Reply with exactly the word/ })
     await member.waitFor({ timeout: 15_000 })
 
+    await phaseDisclosure.click()
+    expect(await phaseDisclosure.getAttribute('aria-expanded')).toBe('false')
+    expect(await member.count()).toBe(0)
+    const liveSnapshot = await captureStableAria(page, '[data-workflow-run]', scaffold.workspaceCwd)
+    await compareOrRefreshGolden(UI_LIVE_EXPECTED, liveSnapshot, MODE)
+    await phaseDisclosure.press('Enter')
+    await member.waitFor()
+    await runDisclosure.click()
+    expect(await runDisclosure.getAttribute('aria-expanded')).toBe('false')
+    expect(await disclosures.count()).toBe(1)
+    await runDisclosure.press('Space')
+    expect(await disclosures.count()).toBe(2)
+    expect(await phaseDisclosure.getAttribute('aria-expanded')).toBe('true')
     const lightColor = await member.locator('[data-member-label]').evaluate(element => getComputedStyle(element).color)
     await page.setViewportSize({ width: 560, height: 800 })
     await page.evaluate(() => { document.body.setAttribute('data-ds-dark-theme', '') })
+    // Exercise keyboard focus after the responsive layout has changed.
+    await phaseDisclosure.focus()
+    await phaseDisclosure.press('Tab')
+    await expect.poll(() => member.evaluate(element => element.matches(':focus-visible'))).toBe(true)
     const darkNarrow = await page.locator('[data-workflow-run]').evaluate((element) => {
-      const memberButton = element.querySelector('[data-member-label]')?.closest('button')
-      memberButton?.focus({ focusVisible: true })
       const panel = element as HTMLElement
       panel.style.width = '356px'
       const label = element.querySelector('[data-member-label]')
@@ -141,24 +167,14 @@ describe.skipIf(MODE === 'record')('web e2e: durable workflow run in Chat', () =
     })
     await page.setViewportSize({ width: 1280, height: 800 })
 
-    await phaseDisclosure.click()
-    expect(await phaseDisclosure.getAttribute('aria-expanded')).toBe('false')
-    expect(await member.count()).toBe(0)
-    const liveSnapshot = await captureStableAria(page, '[data-workflow-run]', scaffold.workspaceCwd)
-    await compareOrRefreshGolden(UI_LIVE_EXPECTED, liveSnapshot, MODE)
-    await phaseDisclosure.press('Enter')
-    await member.waitFor()
-    await runDisclosure.click()
-    expect(await runDisclosure.getAttribute('aria-expanded')).toBe('false')
-    expect(await disclosures.count()).toBe(1)
-    await runDisclosure.press('Space')
-    await expect.poll(() => disclosures.count()).toBe(2)
-    await expect.poll(() => phaseDisclosure.getAttribute('aria-expanded')).toBe('true')
-    const openSidebar = page.getByRole('button', { name: 'Open sidebar', exact: true })
-    if (await openSidebar.isVisible()) await openSidebar.click()
+    await member.click()
+    await page.getByText(CHILD_PROMPT, { exact: true }).waitFor({ timeout: 15_000 })
+
     const sessions = page.getByRole('tree', { name: 'Sessions' })
     await sessions.getByRole('treeitem', { name: /Use the workflow tool exactly/ }).click()
+    releaseChild.resolve(undefined)
     await settled
+    await expandTurnProcesses(page)
     await page.locator('[data-workflow-run][data-run-status="completed"]').waitFor()
 
     expect(await page.locator('[data-chat-flow-kind="tool-call"]').count()).toBeGreaterThanOrEqual(1)
@@ -178,22 +194,23 @@ describe.skipIf(MODE === 'record')('web e2e: durable workflow run in Chat', () =
       () => page.getByRole('button', { name: /^Open Reply with exactly the word/ }).count(),
       { timeout: 10_000 },
     ).toBe(0)
-  }, 180_000)
+  }, 90_000)
 
   it('rebuilds the terminal record from history after reload', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-workflow-run-history'))
     await page.reload({ waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
+    await expandTurnProcesses(page)
     const workflow = page.getByRole('button', { name: /^snapshot-flow/ })
     await workflow.waitFor({ timeout: 15_000 })
     expect(await workflow.getAttribute('aria-expanded')).toBe('false')
     const snapshot = await captureStableAria(page, '[data-chat-flow]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(UI_EXPECTED, snapshot, MODE)
-    await workflow.press('Enter')
+    await workflow.click()
     const phase = page.getByRole('button', { name: /^Run/ })
     await phase.waitFor()
     expect(await phase.getAttribute('aria-expanded')).toBe('false')
-    await phase.press('Enter')
+    await phase.click()
     await page.getByText(CHILD_PROMPT, { exact: false }).waitFor()
     expect(await page.getByRole('button', { name: /^Open Reply with exactly the word/ }).count()).toBe(0)
 

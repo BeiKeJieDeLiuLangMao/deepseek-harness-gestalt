@@ -1,5 +1,6 @@
 /** Real HTTP Personal Pairing quota and capacity envelopes. */
 
+import { randomUUID } from 'node:crypto'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { Context } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -94,7 +95,7 @@ function pairingProvider(): PersonalPairingProvider {
         pendingPairingKey: Uint8Array.of(3),
       })),
       activatePairing: vi.fn(async () => ({
-        keyReference: `key-${crypto.randomUUID()}` as never,
+        keyReference: `key-${randomUUID()}` as never,
         activePairingKey: Uint8Array.of(6),
       })),
       destroyChallenge: vi.fn(),
@@ -111,7 +112,7 @@ function pairingProvider(): PersonalPairingProvider {
 function authentication(accessToken: string): PairingAccountAuthentication {
   return {
     accessToken,
-    proof: { jti: parseAccountProofJti(crypto.randomUUID()), issuedAt: 1, signature: 'signature' },
+    proof: { jti: parseAccountProofJti(randomUUID()), issuedAt: 1, signature: 'signature' },
   }
 }
 

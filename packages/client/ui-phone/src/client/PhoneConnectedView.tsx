@@ -9,6 +9,7 @@
  */
 import clsx from 'clsx'
 import type { DeviceId, PhoneCaptureId } from '@deepseek-ai/dsh-phone-runtime'
+import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type {
   CSSProperties,
@@ -31,8 +32,11 @@ import { PhoneH264PlaybackOwner, PhoneH264Surface } from './PhoneH264Surface.tsx
 import css from './PhoneConnectedView.module.css'
 import shared from './PhoneShared.module.css'
 
+type PhoneCopy = PropsLocale<'settings.phone-devices'>['t']
+
 /** Props of one connected device tab body. */
 export interface PhoneConnectedViewProps {
+  readonly t: PhoneCopy
   /** Device the tab streams (Android serial or iOS UDID). */
   readonly serial: DeviceId
   /** Display name shown in the dropdown and the copy. */
@@ -47,79 +51,46 @@ export interface PhoneConnectedViewProps {
   readonly onShowPicker: () => void
   /** Controller factory; the tab owns the created instance for its lifetime. */
   readonly createController: (serial: DeviceId) => PhoneConnectionController
+  /** Occurrence-owned controller supplied by the official workbench. */
+  readonly controller?: PhoneConnectionController
+  /** Whether this React body drives visibility and disposal. Defaults to true. */
+  readonly manageController?: boolean
 }
 
 /** Error-card copy per failure kind, in the design's next-action semantics. */
-const FAILURE_COPY: Record<PhoneStreamFailureKind, {
+function failureCopyOf(kind: PhoneStreamFailureKind, t: PhoneCopy, name: string): {
   readonly tone: 'warn' | 'err'
   readonly title: string
-  readonly detail: (name: string) => string
-}> = {
-  unauthorized: {
-    tone: 'warn',
-    title: '真机未授权调试',
-    detail: name => `${name} 已通过 USB 连接；请在手机上允许「USB 调试」后重新连接。`,
-  },
-  'device-offline': {
-    tone: 'err',
-    title: '设备已离线',
-    detail: name => `${name} 已从设备清单消失；请重新连接设备后再试。`,
-  },
-  interrupted: {
-    tone: 'err',
-    title: '画面流中断',
-    detail: () => '自动重连多次未能恢复画面；请手动重试一次。',
-  },
-  refused: {
-    tone: 'err',
-    title: '画面流被拒绝',
-    detail: () => '宿主拒绝了本次画面会话；请稍后重试。',
-  },
-  unavailable: {
-    tone: 'err',
-    title: '无法连接设备画面',
-    detail: () => '画面服务暂时不可达；请确认宿主服务正在运行。',
-  },
-  'agent-missing': {
-    tone: 'warn',
-    title: '设备控制代理未安装',
-    detail: () => '安装后设备才能稳定接收点击、拖拽与文本操作；Android 会通过 USB 安装，iPhone 会使用 Host 当前配置的签名描述文件。',
-  },
-  'agent-install-restricted': {
-    tone: 'warn',
-    title: '设备拒绝安装控制代理',
-    detail: () => '请保持手机解锁，并在开发者选项中允许「USB 安装」与「USB 调试（安全设置）」后重试。系统确认必须在手机上完成。',
-  },
-  'agent-profile-required': {
-    tone: 'warn',
-    title: '未配置真机签名描述文件',
-    detail: () => '请打开配置文件，为 phone-runtime 选择可用的 provisioningProfilePath，再返回此处安装；产品不会自动创建签名 identity 或 provisioning profile。',
-  },
-  'device-locked': {
-    tone: 'warn',
-    title: 'iPhone 已锁定',
-    detail: () => '请解锁 iPhone、保持屏幕常亮，再重新连接。产品不会代替你输入设备密码。',
-  },
-  'cert-untrusted': {
-    tone: 'warn',
-    title: '设备控制代理未受信任',
-    detail: () => '请在 iPhone 上启用 Developer Mode，并按系统提示信任开发者证书；签名 identity、provisioning 与信任仍需你在 Xcode 和设备上完成。',
-  },
-  'profile-expired': {
-    tone: 'warn',
-    title: '签名描述文件已过期',
-    detail: () => '请先在配置中选择当前可用的 provisioning profile，再重新安装设备控制代理；免费团队签名通常需要定期续签。',
-  },
-  'tunnel-failed': {
-    tone: 'err',
-    title: '真机连接通道未建立',
-    detail: () => '请保持 iPhone 解锁、已信任此 Mac 且数据线连接稳定，然后重新连接。',
-  },
-  'device-unplugged': {
-    tone: 'err',
-    title: 'iPhone 已断开连接',
-    detail: () => '请重新连接数据线并确认设备重新出现在清单中。',
-  },
+  readonly detail: string
+} {
+  switch (kind) {
+    case 'unauthorized':
+      return { tone: 'warn', title: t('connected.failure.unauthorized.title'), detail: t('connected.failure.unauthorized.detail').replace('{name}', name) }
+    case 'device-offline':
+      return { tone: 'err', title: t('connected.failure.offline.title'), detail: t('connected.failure.offline.detail').replace('{name}', name) }
+    case 'interrupted':
+      return { tone: 'err', title: t('connected.failure.interrupted.title'), detail: t('connected.failure.interrupted.detail') }
+    case 'refused':
+      return { tone: 'err', title: t('connected.failure.refused.title'), detail: t('connected.failure.refused.detail') }
+    case 'unavailable':
+      return { tone: 'err', title: t('connected.failure.unavailable.title'), detail: t('connected.failure.unavailable.detail') }
+    case 'agent-missing':
+      return { tone: 'warn', title: t('connected.failure.agentMissing.title'), detail: t('connected.failure.agentMissing.detail') }
+    case 'agent-install-restricted':
+      return { tone: 'warn', title: t('connected.failure.agentRestricted.title'), detail: t('connected.failure.agentRestricted.detail') }
+    case 'agent-profile-required':
+      return { tone: 'warn', title: t('connected.failure.profileRequired.title'), detail: t('connected.failure.profileRequired.detail') }
+    case 'device-locked':
+      return { tone: 'warn', title: t('connected.failure.locked.title'), detail: t('connected.failure.locked.detail') }
+    case 'cert-untrusted':
+      return { tone: 'warn', title: t('connected.failure.untrusted.title'), detail: t('connected.failure.untrusted.detail') }
+    case 'profile-expired':
+      return { tone: 'warn', title: t('connected.failure.expired.title'), detail: t('connected.failure.expired.detail') }
+    case 'tunnel-failed':
+      return { tone: 'err', title: t('connected.failure.tunnel.title'), detail: t('connected.failure.tunnel.detail') }
+    case 'device-unplugged':
+      return { tone: 'err', title: t('connected.failure.unplugged.title'), detail: t('connected.failure.unplugged.detail') }
+  }
 }
 
 /** Pointer travel (px) below which a press still counts as a tap. */
@@ -157,31 +128,32 @@ function playbackChipOf(
   phase: PhoneConnectionPhase,
   surfaceSize: PhoneSurfaceSize | undefined,
   online: boolean,
+  t: PhoneCopy,
 ): PlaybackChip {
   if (phase.kind === 'connecting' || phase.kind === 'checking-agent' || phase.kind === 'repairing-agent') {
-    return { ariaLabel: '画面状态 正在连接', label: '连接中', playing: false }
+    return { ariaLabel: t('connected.chip.connecting.aria'), label: t('connected.chip.connecting'), playing: false }
   }
   if (phase.kind === 'reconnecting') {
-    return { ariaLabel: '画面状态 正在重连', label: '重连中', playing: false }
+    return { ariaLabel: t('connected.chip.reconnecting.aria'), label: t('connected.chip.reconnecting'), playing: false }
   }
   if (phase.kind === 'error') {
-    return { ariaLabel: '画面状态 画面错误', label: '错误', playing: false }
+    return { ariaLabel: t('connected.chip.error.aria'), label: t('connected.chip.error'), playing: false }
   }
   if (phase.kind === 'suspended') {
-    return { ariaLabel: '画面状态 已暂停', label: '已暂停', playing: false }
+    return { ariaLabel: t('connected.chip.paused.aria'), label: t('connected.chip.paused'), playing: false }
   }
   if (phase.kind === 'idle') {
     return {
-      ariaLabel: online ? '画面状态 设备在线' : '画面状态 未连接',
-      label: online ? '在线' : '未连接',
+      ariaLabel: online ? t('connected.chip.online.aria') : t('connected.chip.offline.aria'),
+      label: online ? t('connected.chip.online') : t('connected.chip.offline'),
       playing: false,
     }
   }
   const encoding = phase.format === 'mjpeg' ? 'MJPEG' : 'H264'
   if (surfaceSize === undefined) {
-    return { ariaLabel: `画面状态 等待 ${encoding} 首帧`, label: '等待首帧', caption: encoding, playing: false }
+    return { ariaLabel: t('connected.chip.waiting.aria').replace('{encoding}', encoding), label: t('connected.chip.waiting'), caption: encoding, playing: false }
   }
-  return { ariaLabel: `当前画面编码 ${encoding}`, label: encoding, playing: true }
+  return { ariaLabel: t('connected.chip.encoding.aria').replace('{encoding}', encoding), label: encoding, playing: true }
 }
 
 function ChevronDown(): ReactNode {
@@ -193,6 +165,7 @@ function ChevronDown(): ReactNode {
 }
 
 interface ReconnectAlertProps {
+  readonly t: PhoneCopy
   readonly tone: 'warn' | 'err'
   readonly title: string
   readonly detail: string
@@ -202,7 +175,7 @@ interface ReconnectAlertProps {
 }
 
 function ReconnectAlert({
-  tone, title, detail, onReconnect, agentRecovery, onRecoverAgent,
+  t, tone, title, detail, onReconnect, agentRecovery, onRecoverAgent,
 }: ReconnectAlertProps): ReactNode {
   return (
     <div role="alert" className={`${css.alertCard} ${tone === 'warn' ? css.alertWarn : css.alertErr}`}>
@@ -215,7 +188,7 @@ function ReconnectAlert({
             className={shared.minibtnPrimary}
             onClick={() => { onRecoverAgent(agentRecovery === 'reinstall') }}
           >
-            {agentRecovery === 'install' ? '安装设备控制代理' : '重新安装设备控制代理'}
+            {agentRecovery === 'install' ? t('connected.installAgent') : t('connected.reinstallAgent')}
           </button>
         )}
         <button
@@ -223,7 +196,7 @@ function ReconnectAlert({
           className={agentRecovery === undefined ? shared.minibtnPrimary : shared.minibtnSecondary}
           onClick={onReconnect}
         >
-          {agentRecovery === undefined ? '重新连接' : '重新检测'}
+          {agentRecovery === undefined ? t('connected.reconnect') : t('common.redetect')}
         </button>
       </div>
     </div>
@@ -236,7 +209,8 @@ function ReconnectAlert({
  * @returns the live view, its in-flight notes, or the error card.
  */
 export function PhoneConnectedView({
-  serial, name, visible, source, onOpenDevice, onShowPicker, createController,
+  t, serial, name, visible, source, onOpenDevice, onShowPicker, createController,
+  controller: ownedController, manageController = true,
 }: PhoneConnectedViewProps): ReactNode {
   const createControllerRef = useRef(createController)
   const h264PlaybackOwnerRef = useRef<PhoneH264PlaybackOwner | undefined>(undefined)
@@ -244,7 +218,10 @@ export function PhoneConnectedView({
   createControllerRef.current = createController
   // The tab is a singleton (U1): a serial change disposes the previous
   // controller and mints a new session for the chosen device.
-  const controller = useMemo(() => createControllerRef.current(serial), [serial])
+  const controller = useMemo(
+    () => ownedController ?? createControllerRef.current(serial),
+    [ownedController, serial],
+  )
   // The controller and the listing source are the owning observables; uSES
   // is the render-side adapter (the better-sidebar tab hosts have no slot
   // hook channel).
@@ -304,12 +281,14 @@ export function PhoneConnectedView({
     if (occupyingPlatform !== undefined) controller.notePlatform(occupyingPlatform)
     controller.noteLogicalDisplay(androidLogicalDisplay)
   }, [androidLogicalDisplay, occupyingPlatform, controller])
-  useEffect(() => { controller.setVisible(visible) }, [controller, visible])
+  useEffect(() => {
+    if (manageController) controller.setVisible(visible)
+  }, [controller, manageController, visible])
   useEffect(() => () => {
     releaseDrag()
     releaseWheel()
-    controller.dispose()
-  }, [controller, releaseDrag, releaseWheel])
+    if (manageController) controller.dispose()
+  }, [controller, manageController, releaseDrag, releaseWheel])
   const liveStreamUrl = phase.kind === 'live' ? phase.streamUrl : undefined
   const surfaceIdentity = phase.kind === 'live' && surfaceSize !== undefined
     ? `${phase.captureId}:${String(surfaceSize.width)}:${String(surfaceSize.height)}:${String(surfaceRotation)}`
@@ -439,19 +418,20 @@ export function PhoneConnectedView({
 
   const online = current?.online === true
   const unauthorized = current?.state === 'unauthorized'
-  const chip = playbackChipOf(phase, surfaceSize, online)
+  const chip = playbackChipOf(phase, surfaceSize, online, t)
 
   const screenContent = (): ReactNode => {
     // A listed-unauthorized handset cannot stream: the design's warn arm
     // replaces the stream area (a live stream wins — the device may have
     // been authorized since the listing committed).
     if (unauthorized && phase.kind !== 'live') {
-      const copy = FAILURE_COPY.unauthorized
+      const copy = failureCopyOf('unauthorized', t, name)
       return (
         <ReconnectAlert
+          t={t}
           tone={copy.tone}
           title={copy.title}
-          detail={copy.detail(name)}
+          detail={copy.detail}
           onReconnect={() => { controller.connect() }}
         />
       )
@@ -461,7 +441,7 @@ export function PhoneConnectedView({
         ? (
           <PhoneH264Surface
             owner={h264PlaybackOwner}
-            label={`${name} 实时画面`}
+            label={t('connected.live.label').replace('{name}', name)}
             className={css.stream}
             url={phase.streamUrl}
             onSurface={(width, height, rotation) => {
@@ -474,7 +454,7 @@ export function PhoneConnectedView({
           <img
             ref={mjpegImg}
             src={phase.streamUrl}
-            alt={`${name} 实时画面`}
+            alt={t('connected.live.label').replace('{name}', name)}
             className={css.stream}
             draggable={false}
             onLoad={(event) => { applyMjpegSurface(event.currentTarget, phase.captureId) }}
@@ -493,8 +473,8 @@ export function PhoneConnectedView({
         <div
           role="application"
           aria-label={coordinateIo
-            ? `${name} 画面，点击发送触控，按住拖动或触控板滚动为滑动，键入发送文本`
-            : `${name} 画面，触控坐标平面不可用`}
+            ? t('connected.surface.aria').replace('{name}', name)
+            : t('connected.surface.unavailable').replace('{name}', name)}
           tabIndex={0}
           className={css.screenFrame}
           style={frameStyle}
@@ -508,15 +488,15 @@ export function PhoneConnectedView({
           {surface}
           <span className={css.liveFlag}>
             {chip.playing ? <span aria-hidden="true" className={css.liveDot} /> : undefined}
-            {chip.playing ? '代理中' : '等待首帧'}
+            {chip.playing ? t('connected.proxying') : t('connected.waitingFrame')}
           </span>
           {coordinateUnavailable === 'missing-logical'
             || coordinateUnavailable === 'orientation-mismatch'
             || coordinateUnavailable === 'unknown-platform'
-            ? <span role="status" className={css.actionError}>{coordinateUnavailableCopy(coordinateUnavailable)}</span>
+            ? <span role="status" className={css.actionError}>{coordinateUnavailableCopy(coordinateUnavailable, t)}</span>
             : undefined}
           {actionFailure !== undefined && (
-            <span role="status" className={css.actionError}>操作失败：{actionFailure.message}</span>
+            <span role="status" className={css.actionError}>{t('connected.actionFailed').replace('{message}', actionFailure.message)}</span>
           )}
         </div>
       )
@@ -526,20 +506,21 @@ export function PhoneConnectedView({
       return (
         <div className={css.statusNote}>
           <span aria-hidden="true" className={css.spinner} />
-          {phase.kind === 'connecting' ? '正在连接画面…'
-            : phase.kind === 'reconnecting' ? `画面重连中（第 ${phase.attempt} 次尝试）…`
-              : phase.kind === 'checking-agent' ? '正在检测设备控制代理…'
-                : phase.force ? '正在重新安装设备控制代理…' : '正在安装设备控制代理…'}
+          {phase.kind === 'connecting' ? t('connected.connecting')
+            : phase.kind === 'reconnecting' ? t('connected.reconnecting').replace('{attempt}', String(phase.attempt))
+              : phase.kind === 'checking-agent' ? t('connected.checkingAgent')
+                : phase.force ? t('connected.reinstallingAgent') : t('connected.installingAgent')}
         </div>
       )
     }
     if (phase.kind === 'error') {
-      const copy = FAILURE_COPY[phase.failure.kind]
+      const copy = failureCopyOf(phase.failure.kind, t, name)
       return (
         <ReconnectAlert
+          t={t}
           tone={copy.tone}
           title={copy.title}
-          detail={copy.detail(name)}
+          detail={copy.detail}
           onReconnect={() => { controller.connect() }}
           {...(phase.failure.agentRecovery === undefined ? {} : { agentRecovery: phase.failure.agentRecovery })}
           onRecoverAgent={(force) => { controller.recoverAgent(force) }}
@@ -548,7 +529,7 @@ export function PhoneConnectedView({
     }
     return (
       <div className={css.statusNote}>
-        {phase.kind === 'suspended' ? '已暂停——回到此标签页时恢复画面。' : '未连接。'}
+        {phase.kind === 'suspended' ? t('connected.suspended') : t('connected.idle')}
       </div>
     )
   }
@@ -559,7 +540,7 @@ export function PhoneConnectedView({
         <button
           type="button"
           className={css.devpick}
-          aria-label={`切换设备：${name}`}
+          aria-label={t('connected.switchDevice').replace('{name}', name)}
           aria-expanded={menuOpen}
           aria-haspopup="menu"
           onClick={() => { setMenuOpen(open => !open) }}
@@ -577,10 +558,10 @@ export function PhoneConnectedView({
         <button
           type="button"
           className={shared.minibtnSecondary}
-          aria-label="选择设备"
+          aria-label={t('connected.pickDevice')}
           onClick={onShowPicker}
         >
-          选择设备
+          {t('connected.pickDevice')}
         </button>
         <span className={css.devbarSpacer} />
         <span
@@ -592,7 +573,7 @@ export function PhoneConnectedView({
           {chip.caption !== undefined ? <span className={css.reslv}>{chip.caption}</span> : undefined}
         </span>
         {menuOpen && (
-          <div role="menu" aria-label="切换设备" className={css.pickMenu}>
+          <div role="menu" aria-label={t('connected.switchMenu')} className={css.pickMenu}>
             {switchable.map(device => (
               <button
                 key={device.id}
@@ -606,7 +587,7 @@ export function PhoneConnectedView({
               >
                 <span aria-hidden="true" className={css.dot} />
                 {device.name}
-                <span className={css.pickMeta}>{device.id === serial ? '当前 ✓' : '切换'}</span>
+                <span className={css.pickMeta}>{device.id === serial ? t('connected.current') : t('connected.switch')}</span>
               </button>
             ))}
           </div>
@@ -618,17 +599,17 @@ export function PhoneConnectedView({
       </div>
 
       <div className={css.toolstrip}>
-        <button type="button" className={css.iconButton} aria-label="返回" onClick={() => { controller.button('BACK') }}>
+        <button type="button" className={css.iconButton} aria-label={t('connected.back')} onClick={() => { controller.button('BACK') }}>
           <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none">
             <path d="M15 5l-7 7 7 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </button>
-        <button type="button" className={css.iconButton} aria-label="主屏幕" onClick={() => { controller.button('HOME') }}>
+        <button type="button" className={css.iconButton} aria-label={t('connected.home')} onClick={() => { controller.button('HOME') }}>
           <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none">
             <circle cx="12" cy="12" r="8.4" stroke="currentColor" strokeWidth="2" />
           </svg>
         </button>
-        <button type="button" className={css.iconButton} aria-label="最近任务" onClick={() => { controller.button('RECENTS') }}>
+        <button type="button" className={css.iconButton} aria-label={t('connected.recents')} onClick={() => { controller.button('RECENTS') }}>
           <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none">
             <rect x="4" y="11" width="4.6" height="7" rx="1.4" stroke="currentColor" strokeWidth="1.9" />
             <rect x="9.9" y="6" width="4.6" height="12" rx="1.4" stroke="currentColor" strokeWidth="1.9" />
@@ -637,15 +618,15 @@ export function PhoneConnectedView({
         </button>
         <span aria-hidden="true" className={css.toolSep} />
         <button
-          type="button" className={css.iconButton} aria-label="截图" disabled
-          title="截图将随后续票据存入会话附件"
+          type="button" className={css.iconButton} aria-label={t('connected.screenshot')} disabled
+          title={t('connected.screenshotHint')}
         >
           <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none">
             <path d="M4 8.5h3l1.6-2.4h6.8L17 8.5h3v10H4v-10Z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
             <circle cx="12" cy="13.4" r="3" stroke="currentColor" strokeWidth="2" />
           </svg>
         </button>
-        <button type="button" className={css.iconButton} aria-label="刷新流" onClick={() => { controller.refresh() }}>
+        <button type="button" className={css.iconButton} aria-label={t('connected.refresh')} onClick={() => { controller.refresh() }}>
           <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none">
             <path d="M4 12a8 8 0 0 1 13.66-5.66L20 8.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
             <path d="M20 4v4.5h-4.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
@@ -654,20 +635,21 @@ export function PhoneConnectedView({
           </svg>
         </button>
       </div>
-      <div className={css.hintline}>点击画面即向设备发送触控；按住拖动或触控板滚动为滑动。画面左上角显示当前操作方（你 / Agent）。</div>
+      <div className={css.hintline}>{t('connected.hint')}</div>
     </div>
   )
 }
 
 function coordinateUnavailableCopy(
   reason: Exclude<PhoneCoordinateUnavailableReason, 'missing-surface'>,
+  t: PhoneCopy,
 ): string {
   switch (reason) {
     case 'missing-logical':
-      return '触控不可用：当前设备逻辑尺寸未知'
+      return t('connected.touch.missingLogical')
     case 'orientation-mismatch':
-      return '触控不可用：画面与设备逻辑尺寸方向不一致'
+      return t('connected.touch.orientation')
     case 'unknown-platform':
-      return '触控不可用：设备平台未确认'
+      return t('connected.touch.platform')
   }
 }

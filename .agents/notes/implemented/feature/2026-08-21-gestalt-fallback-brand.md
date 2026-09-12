@@ -26,4 +26,4 @@ Local `pnpm dsh web` without a title define shows DSH Gestalt in the tab and in 
 
 ## Testing
 
-`packages/client/ui-renderer/tests/document-title.client.spec.tsx` pins the unset-title fallback. `packages/client/ui-sidebar/tests/sidebar-root.client.spec.tsx` and the sidebar snapshot pin the unoccupied name. `apps/web/tests/built-boot.snapshot.ts` still asserts the official wordmark occupies the name so the fallback string is absent.
+`packages/client/ui-layout/tests/document-title.client.spec.tsx` pins the unset-title fallback. `packages/client/ui-sidebar/tests/sidebar-root.client.spec.tsx` and the sidebar snapshot pin the unoccupied name. `apps/web/tests/built-boot.snapshot.ts` still asserts the official wordmark occupies the name so the fallback string is absent.

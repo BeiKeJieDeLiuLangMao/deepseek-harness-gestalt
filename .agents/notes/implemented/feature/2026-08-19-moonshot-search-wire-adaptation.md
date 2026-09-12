@@ -18,7 +18,7 @@ The same `deepseek-official` provider still owns `ctx.web` search. Protocol is e
 - **Anthropic** — the same Messages contract at a base the user names; a missing `baseURL` makes the provider unavailable.
 - **Kimi** — Moonshot dedicated search: `POST` the configured URL (default `https://api.kimi.com/coding/v1/search`) with `{ "text_query" }` and `Authorization: Bearer`. Key `KIMI_WEB_SEARCH_API_KEY`, then `DEEPSEEK_API_KEY` if that value is header-safe ASCII.
 
-Extra plugins register more tabs into `settings.plugin.web-search.provider`. The Plugins card's **Test search** calls `settings.testWebSearch`, which runs `ctx.web.search({ query: 'deepseek harness' })`.
+Extra plugins register more tabs into `settings.plugin.web-search.provider`. The Plugins card's **Test search** calls `settings.testWebSearch` on the generated settings Remote, which runs `ctx.web.search({ query: 'deepseek harness' })`.
 
 ## Alternatives considered
 
@@ -36,13 +36,13 @@ Extra plugins register more tabs into `settings.plugin.web-search.provider`. The
 
 A user who wants official DeepSeek stays on the DeepSeek tab. A user who wants Messages on Kimi coding uses the Anthropic tab and names `https://api.kimi.com/coding/v1`. A user who wants Moonshot retrieval uses the Kimi tab and the dedicated search URL. Non-ASCII stored keys are not sent as HTTP headers.
 
-The unused field panel and `useThis` leftover are tracked in [drop the unused provider panel](../../proposed/simplification/2026-08-19-drop-dead-web-search-provider-panel.md).
+The unused field panel and `useThis` leftover are tracked in [drop the unused provider panel](../../rejected/simplification/2026-08-19-drop-dead-web-search-provider-panel.md).
 
 ## Testing
 
-`packages/web/web-search-deepseek/tests/settings.spec.ts` switches `backend` and asserts Messages hits `{baseURL}/messages` while Kimi hits the search URL with no `/messages` suffix. Client tests cover tab selection and the test-search control. The plugin-config snapshot lists one Web Search card.
+`packages/web/web-search-deepseek/tests/settings.spec.ts` switches `backend` and asserts Messages hits `{baseURL}/messages` while Kimi hits the search URL with no `/messages` suffix. `packages/web/web-search-deepseek/tests/deepseek.spec.ts` pins Moonshot `text_query` and Bearer-only headers. `packages/client/ui-settings-plugins` writes `backend` from provider tabs, binds each tab to its settings namespace, and probes through generated `settings.testWebSearch` after awaiting the same settings-scope write tail so a probe cannot race the previous provider. `packages/client/ui-settings-plugins/tests/stores.client.spec.ts` covers the write-tail ordering and the generated `settings.testWebSearch` call. Settings sections install through `SettingsProvider.installSection` on `web-search-deepseek`, `web-search-anthropic`, and `web-search-kimi`.
 
 ## Related
 
 - [Web capability seam](../architecture/2026-06-24-web-capability-seam.md) — providers register capabilities; `dsh-tool-web` owns the stable `web_search` schema.
-- [Web plugin configuration](2026-08-10-web-plugin-configuration.md) — settings cards bind one namespace each.
+- [Web plugin configuration](../../archived/feature/2026-08-10-web-plugin-configuration.md) — settings cards bind one namespace each.

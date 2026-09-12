@@ -9,7 +9,7 @@ import { emitRawMarkdownPages, type ProjectionContext } from './project-doc-site
 
 interface SiteBuildOptions {
   mpa?: string
-  onAfterConfigResolve: (siteConfig: { outDir: string }) => void
+  onAfterConfigResolve: (siteConfig: { outDir: string; root: string }) => void
 }
 
 type SiteBuild = (siteRoot?: string, options?: SiteBuildOptions) => Promise<void>
@@ -28,11 +28,14 @@ afterEach(() => {
 
 function fixture(): { outDir: string; context: ProjectionContext } {
   const repoRoot = mkdtempSync(join(tmpdir(), 'dsh-doc-build-'))
-  roots.push(repoRoot)
+  const outputParent = join(repositoryRoot, 'website/.cache')
+  mkdirSync(outputParent, { recursive: true })
+  const outputRoot = mkdtempSync(join(outputParent, 'dsh-doc-build-'))
+  roots.push(repoRoot, outputRoot)
   mkdirSync(join(repoRoot, 'docs'))
   writeFileSync(join(repoRoot, 'docs/a.md'), '# A\n')
   return {
-    outDir: join(repoRoot, 'website/.dist'),
+    outDir: join(outputRoot, '.dist'),
     context: {
       pages: [{
         locale: 'root',
@@ -55,7 +58,7 @@ function mockCurrentBuild(outDir: string, mpa: boolean, writeCurrentOutput: () =
     expect(siteRoot).toBe(join(repositoryRoot, 'website'))
     if (options === undefined) throw new Error('VitePress build received no options.')
     expect(options.mpa).toBe(mpa ? 'true' : undefined)
-    options.onAfterConfigResolve({ outDir })
+    options.onAfterConfigResolve({ outDir, root: join(repositoryRoot, 'website') })
     writeCurrentOutput()
   })
 }

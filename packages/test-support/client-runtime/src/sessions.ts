@@ -1,43 +1,97 @@
-/** Test-owned sessions face: the SlotRegistry host contract over declarative fixtures. */
+/** Test-owned Session Controller faces over declarative fixtures. */
 import type { Context } from '@deepseek-ai/cordis'
 import type { AttachmentIdType } from '@deepseek-ai/dsh-attachment'
-import { createScope, scopeOf, SessionProvideChannel } from '@deepseek-ai/dsh-client-runtime/client'
-import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
+import {
+  createScope, MutableSessionEventSource, scopeOf, SESSION_SEARCH_RESULT_LIMIT,
+} from '@deepseek-ai/dsh-api-session-controller/client'
 import type {
-  AgentContext, ConversationSnapshot, ISessions, ObservableSnapshot, ProjectionsFace, SessionFace, SessionId,
-  SessionModelRoute,
-  SessionListState, SessionProvideDescriptor, SessionSearchResultItem, SessionSummary, SnapshotStore,
-  SubagentAddress,
-} from '@deepseek-ai/dsh-client-runtime/client'
-// The double reports the wire schema's own search bound, like the production
-// service — a transport-varying limit would be a fiction no client can see.
-import { SESSION_SEARCH_RESULT_LIMIT } from '@deepseek-ai/dsh-host-apiproxy/api'
-import type { HostObservable, SessionMaybeProvideInfo, SessionProvideInfo } from '@deepseek-ai/dsh-client-ui-slots'
-import { conversationSnapshot } from './fixtures.ts'
-import type { SessionFixture, Stabilizer } from './fixtures.ts'
+  AgentContext, ISessions, ProjectionsFace, SessionBinding, SessionFace, SessionListState,
+  SessionAdmissionAdapter, SessionAdmissionModelRoute, SessionAdmissionOptions,
+  SessionAdmissionResult, SessionAdmissionRoute, SessionModelRoute,
+  SessionEventLikeEntry, SessionLiveEventEntry, SessionSearchResultItem,
+  SessionSnapshot, SessionSummary, SubmissionHandle,
+} from '@deepseek-ai/dsh-api-session-controller/client'
+import type { SessionRequestId } from '@deepseek-ai/dsh-api-session-controller/types'
+import type { SubagentAddress } from '@deepseek-ai/dsh-subagent/client'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type { ObservableSnapshot, SnapshotStore } from '@deepseek-ai/dsh-client-store'
+import { RemoteError, remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
+import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { sessionSnapshot } from './fixtures.ts'
+import type {
+  SessionFixture, SessionFixtureSnapshot, Stabilizer,
+} from './fixtures.ts'
+
+async function testAdmissionResult<T>(
+  operation: () => Promise<SessionAdmissionResult<T>>,
+): Promise<RemoteResult<T>> {
+  try {
+    const result = await operation()
+    if (result.ok) return result
+    const failure = remoteErrorOf(result.error)
+      ?? new RemoteError('gateway/internal', result.error.message, {}, { cause: result.error })
+    return { ok: false, error: failure }
+  } catch (cause) {
+    const failure = remoteErrorOf(cause)
+      ?? new RemoteError(
+        'gateway/internal',
+        cause instanceof Error ? cause.message : String(cause),
+        {},
+        { cause },
+      )
+    return { ok: false, error: failure }
+  }
+}
+
+function testModelRoute(route: SessionAdmissionModelRoute): SessionModelRoute {
+  const inspect = route.inspect.bind(route)
+  const selectModel = route.selectModel.bind(route)
+  return {
+    kind: 'feature',
+    inspect: (signal?: AbortSignal) => testAdmissionResult(() => inspect(signal)),
+    selectModel: (selection, signal) =>
+      testAdmissionResult(() => selectModel(selection, signal)),
+  }
+}
+
+function testStockModelRoute(sessionId: SessionId): SessionModelRoute {
+  const unstubbed = (method: 'selectModel'): Promise<never> => Promise.reject(
+    new Error(`test sessions: stock model route "${method}" is not stubbed for session "${sessionId}"`),
+  )
+  return {
+    kind: 'stock',
+    selectModel: (_selection, signal) => {
+      signal?.throwIfAborted()
+      return unstubbed('selectModel')
+    },
+  }
+}
 
 /**
- * The fixture-backed session face: conversation reads delegate to the
- * fixture's snapshot store; ISession verbs are fail-loud stubs unless the
+ * The fixture-backed session face: lifecycle reads delegate to the fixture's
+ * snapshot store; Session verbs are fail-loud stubs unless the
  * fixture supplies them (the runtime never fakes behavior a test did not
  * declare — an unstubbed call names itself instead of half-working). Extra
  * fixture methods are grafted verbatim for feature-side casts.
  */
 export class FixtureSession implements SessionFace {
+  /** Mutable event source consumed only by Conversation assembly. */
+  readonly eventSource = new MutableSessionEventSource()
+
   /**
-   * The useProjection seat: identity-stable per-key faces over the fixture's
-   * projection values (set via {@link TestSessions.setProjection}).
+   * Identity-stable per-key faces over fixture-controlled projection values.
    */
   readonly projections: ProjectionsFace & { set(key: string, value: unknown): void }
 
   /**
    * @param sessionId - host identity (branded view of the fixture id).
-   * @param store - conversation snapshot store (updateSnapshot writes it).
+   * @param store - Session Controller snapshot store.
    * @param overrides - fixture-declared behavior face, grafted over the stubs.
    */
   constructor(
     readonly sessionId: SessionId,
-    private readonly store: SnapshotStore<ConversationSnapshot>,
+    private readonly store: SnapshotStore<SessionFixtureSnapshot>,
     overrides: Record<string, unknown>,
   ) {
     const values = new Map<string, unknown>()
@@ -68,8 +122,8 @@ export class FixtureSession implements SessionFace {
     Object.assign(this, overrides)
   }
 
-  /** @returns the fixture conversation snapshot (useSession read side). */
-  getSnapshot(): ConversationSnapshot {
+  /** @returns the fixture Session Controller snapshot (useSession read side). */
+  getSnapshot(): SessionSnapshot {
     return this.store.getSnapshot()
   }
 
@@ -89,6 +143,22 @@ export class FixtureSession implements SessionFace {
   prompt(): never {
     throw new Error(`test session "${this.sessionId}": prompt is not stubbed — supply it on the fixture's session face`)
   }
+
+  /**
+   * Minimal local-echo registration: mints an identity without touching the
+   * fixture snapshot (submission echoes are client-only presentation state).
+   * Supply `beginSubmission` on the fixture's session face to observe echoes.
+   * @returns a handle whose abandon is a no-op.
+   */
+  beginSubmission(): SubmissionHandle {
+    this.submissionSeq += 1
+    return {
+      requestId: `test-submission-${this.submissionSeq}` as SessionRequestId,
+      abandon: () => {},
+    }
+  }
+
+  private submissionSeq = 0
 
   /**
    * Fail-loud stub; supply `readAttachment` on the fixture's session face to exercise it.
@@ -132,6 +202,14 @@ export class FixtureSession implements SessionFace {
   }
 
   /**
+   * Fail-loud stub; supply `loadThrough` on the fixture's session face to exercise it.
+   * @returns never — always throws.
+   */
+  loadThrough(): never {
+    throw new Error(`test session "${this.sessionId}": loadThrough is not stubbed — supply it on the fixture's session face`)
+  }
+
+  /**
    * Fail-loud stub; supply `rename` on the fixture's session face to exercise it.
    * @returns never — always throws.
    */
@@ -143,50 +221,50 @@ export class FixtureSession implements SessionFace {
 /** One live test session: fixture-derived stores plus its minted scope state. */
 interface SessionRecord {
   summary: SessionSummary
-  snapshot: SnapshotStore<ConversationSnapshot>
+  snapshot: SnapshotStore<SessionFixtureSnapshot>
   session: FixtureSession
   scope: AgentContext | undefined
   scopeFiber: { dispose(): Promise<void> } | undefined
-  /** Materialized standard-props bundle (identity-stable per session; invalidated on roster change). */
-  provideInfo: SessionProvideInfo | undefined
+  binding: SessionBinding | undefined
 }
 
-/** Test binding shape handed to provider resolvers and feature injects (a SessionBinding whose session is the fixture face). */
-export interface TestSessionBinding {
-  readonly sessionId: SessionId
-  readonly session: FixtureSession
-  readonly ctx: AgentContext
+interface ExactAdmissionEntry {
+  readonly route: SessionAdmissionRoute
+  readonly token: symbol
 }
+
+interface AdapterAdmissionEntry {
+  readonly adapter: SessionAdmissionAdapter
+  readonly token: symbol
+}
+
+type SessionSummaryPatch =
+  Partial<Omit<SessionSummary, 'id' | 'provisional'>>
+  & { provisional?: true | undefined }
 
 /**
  * Sessions test double behind the renderer host and feature injects: owns the
- * list/current observable, the standard-props provide channel (the runtime's
- * `useSession` contribution included), scope minting through the production
- * `createScope`, and the session behavior face supplied per fixture.
+ * list/current observable, scope minting through the production `createScope`,
+ * stable Controller bindings, and the session behavior face supplied per
+ * fixture. `ui-session` owns standard-source materialization.
  *
  * Implements the same ISessions face features receive as `ctx.sessions`, so
  * a production face change breaks this double at compile time; the extra
- * members (add/updateSnapshot/setCurrent/remove/behavior/calls/stubSearch and
- * the legacy provideInfo/maybeProvideInfo lookups) are bench-only surface.
+ * members (add/updateSessionSnapshot/event-window drivers/setCurrent/remove/
+ * behavior/calls/stubs) are bench-only surface.
  */
 export class TestSessions implements ISessions {
   /** The useSessions standard feed (list rows + current selection). */
   readonly list: SnapshotStore<SessionListState>
-  /**
-   * Atomic current-session provide projection (production SessionRuntime
-   * mirror): selection changes and provider-roster changes publish through
-   * this one source — the member the SlotRegistry host face hands the
-   * renderer's SessionProvider.
-   */
-  readonly currentProvideInfo: HostObservable<SessionMaybeProvideInfo>
   private readonly records = new Map<SessionId, SessionRecord>()
-  /** The production provide channel (roster, materialization rules, current projection) — no test-side mirror. */
-  private readonly channel: SessionProvideChannel
+  private readonly exactAdmissions = new Map<SessionId, ExactAdmissionEntry>()
+  private readonly admissionAdapters: AdapterAdmissionEntry[] = []
+  private readonly admissionListeners = new Set<() => void>()
 
   /** Calls observed on the service-level face, newest last. */
   readonly calls: {
-    method: 'open' | 'openSubagent' | 'setSubagentCatalogOpen' | 'refreshSubagents'
-      | 'clear' | 'search' | 'fork'
+    method: 'create' | 'open' | 'openSubagent' | 'setSubagentCatalogOpen' | 'refreshSubagents'
+      | 'clear' | 'refresh' | 'search' | 'fork' | 'stageProvisional' | 'openForRender'
     args: unknown[]
   }[] = []
 
@@ -195,6 +273,7 @@ export class TestSessions implements ISessions {
 
   /** Replaceable search behavior (see {@link TestSessions.stubSearch}). */
   private searchStub: ((query: string, signal: AbortSignal) => { items: SessionSearchResultItem[]; hasMore: boolean }) | undefined
+  private createStub: ((opts: Parameters<ISessions['create']>[0]) => Promise<SessionId>) | undefined
 
   /**
    * @param stabilize - the owning runtime's act wrapper.
@@ -205,19 +284,6 @@ export class TestSessions implements ISessions {
       ids: [], byId: {}, current: undefined, phase: 'ready',
       subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined,
     })
-    this.channel = new SessionProvideChannel({
-      rebuildBundles: () => {
-        for (const record of this.records.values()) {
-          if (record.provideInfo !== undefined) {
-            record.provideInfo = this.channel.materializeInfo(this.bindingOf(record.session.sessionId, record))
-          }
-        }
-      },
-      resolveCurrent: () => this.maybeProvideInfo(this.list.getSnapshot().current),
-    })
-    this.currentProvideInfo = this.channel.currentProvideInfo
-    // The projection follows every current write, as in production.
-    this.list.subscribe(() => { this.channel.publishCurrent() })
   }
 
   /**
@@ -237,17 +303,21 @@ export class TestSessions implements ISessions {
       updatedAt: this.records.size + 1,
       ...fixture.summary,
     }
-    const snapshot = createSnapshotStore<ConversationSnapshot>({
-      ...conversationSnapshot(id),
+    const snapshot = createSnapshotStore<SessionFixtureSnapshot>({
+      ...sessionSnapshot(id),
       ...fixture.snapshot,
     })
+    const session = new FixtureSession(id, snapshot, fixture.session ?? {})
+    if (fixture.events !== undefined || fixture.hasMore === true) {
+      session.eventSource.replace(fixture.events ?? [], fixture.hasMore ?? false)
+    }
     this.records.set(id, {
       summary,
       snapshot,
-      session: new FixtureSession(id, snapshot, fixture.session ?? {}),
+      session,
       scope: undefined,
       scopeFiber: undefined,
-      provideInfo: undefined,
+      binding: undefined,
     })
     await this.stabilize(() => {
       this.list.update((draft) => {
@@ -260,14 +330,53 @@ export class TestSessions implements ISessions {
   }
 
   /**
-   * Update a session's conversation snapshot through an immer draft (the
-   * live-stream stand-in: components subscribed via useSession re-render).
+   * Update Session Controller lifecycle state through an immer draft.
    * @param id - session id.
    * @param mutate - draft mutator.
    */
-  async updateSnapshot(id: string, mutate: (draft: ConversationSnapshot) => void): Promise<void> {
+  async updateSessionSnapshot(
+    id: string,
+    mutate: (draft: SessionFixtureSnapshot) => void,
+  ): Promise<void> {
     const record = this.require(id)
     await this.stabilize(() => { record.snapshot.update(mutate) })
+  }
+
+  /**
+   * Replace a Session's complete contiguous event window.
+   * @param id - Session identity.
+   * @param entries - complete event window.
+   * @param hasMore - whether older history remains.
+   */
+  async replaceEvents(
+    id: string,
+    entries: readonly SessionEventLikeEntry[],
+    hasMore = false,
+  ): Promise<void> {
+    await this.stabilize(() => { this.require(id).session.eventSource.replace(entries, hasMore) })
+  }
+
+  /**
+   * Prepend one older contiguous event page.
+   * @param id - Session identity.
+   * @param entries - older entries.
+   * @param hasMore - whether another older page remains.
+   */
+  async prependEvents(
+    id: string,
+    entries: readonly SessionEventLikeEntry[],
+    hasMore = false,
+  ): Promise<void> {
+    await this.stabilize(() => { this.require(id).session.eventSource.prepend(entries, hasMore) })
+  }
+
+  /**
+   * Append one live event to a Session's contiguous window.
+   * @param id - Session identity.
+   * @param entry - live event entry.
+   */
+  async appendEvent(id: string, entry: SessionLiveEventEntry): Promise<void> {
+    await this.stabilize(() => { this.require(id).session.eventSource.append(entry) })
   }
 
   /**
@@ -276,9 +385,18 @@ export class TestSessions implements ISessions {
    * @param id - session id.
    * @param patch - summary fields to merge over the row.
    */
-  async updateSummary(id: string, patch: Partial<Omit<SessionSummary, 'id'>>): Promise<void> {
+  async updateSummary(id: string, patch: SessionSummaryPatch): Promise<void> {
     const record = this.require(id)
-    record.summary = { ...record.summary, ...patch }
+    const { provisional, ...fields } = patch
+    const next = { ...record.summary, ...fields }
+    if ('provisional' in patch) {
+      if (provisional === undefined) {
+        delete next.provisional
+      } else {
+        next.provisional = provisional
+      }
+    }
+    record.summary = next
     await this.stabilize(() => {
       this.list.update((draft) => { draft.byId[id as SessionId] = record.summary })
     })
@@ -298,7 +416,7 @@ export class TestSessions implements ISessions {
   /**
    * Remove a session: list row, scope fiber, and per-session store instances
    * (with persisted state) die together — the same single lifecycle axis the
-   * production SessionRuntime drives on session death, minus staging.
+   * production Client Sessions service drives on session death, minus staging.
    * @param id - session id.
    */
   async remove(id: string): Promise<void> {
@@ -312,74 +430,7 @@ export class TestSessions implements ISessions {
         if (draft.current === id) draft.current = undefined
       })
       if (record.scopeFiber !== undefined) await record.scopeFiber.dispose()
-      this.rootCtx.get('slots')?.pruneStoreScope(id)
     })
-  }
-
-  /**
-   * Register a per-session standard-props provider (production `provide`
-   * contract: hooks become `use<Name>` selector hooks on the render side,
-   * props spread verbatim; duplicate names fail loud at materialization).
-   * @param descriptor - static member roster plus per-session resolver.
-   * @returns disposer removing the provider.
-   */
-  provide(descriptor: SessionProvideDescriptor): () => void {
-    return this.channel.provide(descriptor)
-  }
-
-  /**
-   * Resolve the definite per-session standard-props bundle (host face member).
-   * @param id - session id.
-   * @returns the identity-stable bundle, or undefined for unknown sessions.
-   */
-  provideInfo(id: string): SessionProvideInfo | undefined {
-    const record = this.records.get(id as SessionId)
-    if (record === undefined) return undefined
-    record.provideInfo ??= this.channel.materializeInfo(this.bindingOf(id as SessionId, record))
-    return record.provideInfo
-  }
-
-  /**
-   * Resolve the current-session-optional standard kit (host face member):
-   * unknown or absent ids return the static no-session projection.
-   * @param id - current session id, when selected.
-   * @returns a definite or no-session provide bundle.
-   */
-  maybeProvideInfo(id: string | undefined): SessionMaybeProvideInfo {
-    return (id === undefined ? undefined : this.provideInfo(id)) ?? this.channel.maybeInfo
-  }
-
-  /** Resolve one explicit renderer bundle without changing the fixture current Session. */
-  provideInfoFor(sessionId: SessionId): SessionMaybeProvideInfo {
-    return this.maybeProvideInfo(sessionId)
-  }
-
-  /** Fixture sessions are already resident; explicit rendering needs no additional open step. */
-  openForRender(_sessionId: SessionId): void {}
-
-  /** Tests install feature model routes on their own purpose-built session doubles. */
-  modelRoute(_sessionId: SessionId): SessionModelRoute | undefined {
-    return undefined
-  }
-
-  /** Fixture sessions use their own identity for ordinary command lookup. */
-  commandCatalogSessionId(sessionId: SessionId): SessionId | undefined {
-    return sessionId
-  }
-
-  /** Fixture sessions use their own identity for read-only skill lookup. */
-  skillCatalogSessionId(sessionId: SessionId): SessionId | undefined {
-    return sessionId
-  }
-
-  /** Generic renderer fixtures do not synthesize provisional Host identities. */
-  stageProvisional(_descriptor: {
-    sessionId: SessionId
-    parentSessionId: SessionId
-    origin: 'subagent'
-    title: string
-  }): () => void {
-    return () => {}
   }
 
   /**
@@ -405,10 +456,11 @@ export class TestSessions implements ISessions {
    * @param id - session id.
    * @returns sessionId + behavior face + scoped ctx, or undefined when unknown.
    */
-  binding(id: string): TestSessionBinding | undefined {
+  binding(id: string): SessionBinding | undefined {
     const record = this.records.get(id as SessionId)
     if (record === undefined) return undefined
-    return this.bindingOf(id as SessionId, record)
+    record.binding ??= this.bindingOf(id as SessionId, record)
+    return record.binding
   }
 
   /**
@@ -433,6 +485,25 @@ export class TestSessions implements ISessions {
   }
 
   /**
+   * Install Session creation behavior for navigation tests.
+   * @param impl - implementation that must return an already-added fixture id.
+   */
+  stubCreate(impl: (opts: Parameters<ISessions['create']>[0]) => Promise<SessionId>): void {
+    this.createStub = impl
+  }
+
+  /** Create through the installed test behavior and require an addressable binding. */
+  async create(opts?: Parameters<ISessions['create']>[0]): Promise<SessionId> {
+    this.calls.push({ method: 'create', args: [opts] })
+    if (this.createStub === undefined) {
+      throw new Error('test sessions: create is not stubbed — call stubCreate() first')
+    }
+    const id = await this.createStub(opts)
+    this.require(id)
+    return id
+  }
+
+  /**
    * Service-level selection call (recorded, then applied to the list store
    * synchronously — inject callbacks call this outside any act window; the
    * store notify is microtask-batched so the next stabilized step observes it).
@@ -445,6 +516,150 @@ export class TestSessions implements ISessions {
       draft.current = id
       draft.currentAddress = undefined
     })
+  }
+
+  /**
+   * Stage a renderer-only identity with the ordinary ISessions binding/scope
+   * contract. Fixture benches publish through {@link TestSessions.updateSummary}.
+   * @param descriptor - preallocated identity, parent lineage, and display title.
+   * @returns disposer that removes the unpublished row and scope exactly once.
+   */
+  stageProvisional(descriptor: {
+    sessionId: SessionId
+    parentSessionId: SessionId
+    origin: 'subagent'
+    title: string
+  }): () => void {
+    this.calls.push({ method: 'stageProvisional', args: [descriptor] })
+    const id = descriptor.sessionId
+    if (this.records.has(id) || this.list.getSnapshot().byId[id] !== undefined) {
+      throw new Error(`test sessions: duplicate provisional identity ${id}`)
+    }
+    const summary: SessionSummary = {
+      id,
+      displayTitle: descriptor.title,
+      title: descriptor.title,
+      parentId: descriptor.parentSessionId,
+      origin: descriptor.origin,
+      running: false,
+      blank: true,
+      updatedAt: Date.now(),
+      provisional: true,
+    }
+    const snapshot = createSnapshotStore<SessionFixtureSnapshot>({
+      ...sessionSnapshot(id),
+      blank: true,
+    })
+    const session = new FixtureSession(id, snapshot, {})
+    this.records.set(id, {
+      summary,
+      snapshot,
+      session,
+      scope: undefined,
+      scopeFiber: undefined,
+      binding: undefined,
+    })
+    this.list.update((draft) => {
+      draft.ids = [id, ...draft.ids.filter(existing => existing !== id)]
+      draft.byId[id] = summary
+    })
+    let released = false
+    return () => {
+      if (released) return
+      released = true
+      const current = this.list.getSnapshot().byId[id]
+      if (current?.provisional !== true) return
+      const record = this.records.get(id)
+      this.records.delete(id)
+      this.list.update((draft) => {
+        draft.ids = draft.ids.filter(existing => existing !== id)
+        const { [id]: _dead, ...rest } = draft.byId
+        draft.byId = rest
+      })
+      if (record?.scopeFiber !== undefined) void record.scopeFiber.dispose()
+    }
+  }
+
+  /**
+   * Record an explicit-render open. Fixture benches still drive history windows.
+   * @param sessionId - listed or staged Session identity.
+   */
+  openForRender(sessionId: SessionId): void {
+    this.calls.push({ method: 'openForRender', args: [sessionId] })
+  }
+
+  /** Register or replace one exact feature-owned Session admission route. */
+  registerAdmission(
+    sessionId: SessionId,
+    route: SessionAdmissionRoute,
+    options: SessionAdmissionOptions = {},
+  ): () => void {
+    if (options.conflict === 'reject' && this.exactAdmissions.has(sessionId)) {
+      throw new Error(`test sessions: session "${sessionId}" already has an admission route`)
+    }
+    const token = Symbol('test exact admission')
+    this.exactAdmissions.set(sessionId, { route, token })
+    this.notifyAdmission()
+    return () => {
+      if (this.exactAdmissions.get(sessionId)?.token !== token) return
+      this.exactAdmissions.delete(sessionId)
+      this.notifyAdmission()
+    }
+  }
+
+  /** Register one ordered feature-owned Session admission adapter. */
+  registerAdmissionAdapter(adapter: SessionAdmissionAdapter): () => void {
+    if (this.admissionAdapters.some(entry => entry.adapter.id === adapter.id)) {
+      throw new Error(`test sessions: duplicate admission adapter ${JSON.stringify(adapter.id)}`)
+    }
+    const token = Symbol('test adapter admission')
+    this.admissionAdapters.push({ adapter, token })
+    this.notifyAdmission()
+    return () => {
+      const index = this.admissionAdapters.findIndex(entry => entry.token === token)
+      if (index === -1) return
+      this.admissionAdapters.splice(index, 1)
+      this.notifyAdmission()
+    }
+  }
+
+  /** Subscribe to exact-route and adapter registration changes. */
+  subscribeAdmission(listener: () => void): () => void {
+    this.admissionListeners.add(listener)
+    return () => { this.admissionListeners.delete(listener) }
+  }
+
+  /** Resolve a feature model route or a fail-loud stock-shaped route for an ordinary fixture Session. */
+  modelRoute(sessionId: SessionId): SessionModelRoute | undefined {
+    const admission = this.resolveAdmission(sessionId)
+    if (admission !== undefined && 'modelRoute' in admission) {
+      const route = admission.modelRoute(sessionId)
+      return route === undefined ? undefined : testModelRoute(route)
+    }
+    if (
+      !this.records.has(sessionId)
+      || this.subagentAddress(sessionId) !== undefined
+      || this.list.getSnapshot().byId[sessionId]?.origin === 'subagent'
+    ) {
+      return undefined
+    }
+    return testStockModelRoute(sessionId)
+  }
+
+  /** Resolve the command catalog identity selected by the active admission route. */
+  commandCatalogSessionId(sessionId: SessionId): SessionId | undefined {
+    const admission = this.resolveAdmission(sessionId)
+    if (admission !== undefined) return admission.commandCatalogSessionId?.(sessionId)
+    if (this.subagentAddress(sessionId) !== undefined) return undefined
+    return sessionId
+  }
+
+  /** Resolve the skill catalog identity selected by the active admission route. */
+  skillCatalogSessionId(sessionId: SessionId): SessionId | undefined {
+    const admission = this.resolveAdmission(sessionId)
+    if (admission !== undefined) return admission.skillCatalogSessionId?.(sessionId)
+    if (this.subagentAddress(sessionId) !== undefined) return undefined
+    return sessionId
   }
 
   /** Open an existing fixture through its catalog address. */
@@ -474,14 +689,6 @@ export class TestSessions implements ISessions {
     return Promise.resolve()
   }
 
-  /** Apply a confirmed preset switch into the fixture list, as production does. */
-  noteAgentPreset(sessionId: SessionId, agentPreset: string): void {
-    this.list.update((draft) => {
-      const summary = draft.byId[sessionId]
-      if (summary !== undefined) draft.byId[sessionId] = { ...summary, agentPreset }
-    })
-  }
-
   /** Clear the current selection (recorded; the production no-session flow). */
   clear(): void {
     this.calls.push({ method: 'clear', args: [] })
@@ -489,6 +696,12 @@ export class TestSessions implements ISessions {
       draft.current = undefined
       draft.currentAddress = undefined
     })
+  }
+
+  /** Record a list refresh; fixture callers publish list state explicitly. */
+  refresh(): Promise<void> {
+    this.calls.push({ method: 'refresh', args: [] })
+    return Promise.resolve()
   }
 
   /**
@@ -527,7 +740,7 @@ export class TestSessions implements ISessions {
    * The session face of a fixture (typed view for assertions; fixture
    * behavior methods are grafted onto it).
    * @param id - session id.
-   * @returns the FixtureSession the binding and provide channel carry.
+   * @returns the FixtureSession carried by the Controller binding.
    */
   behavior(id: string): FixtureSession {
     return this.require(id).session
@@ -540,16 +753,38 @@ export class TestSessions implements ISessions {
         await record.scopeFiber.dispose()
         record.scope = undefined
         record.scopeFiber = undefined
+        record.binding = undefined
       }
     }
+    this.exactAdmissions.clear()
+    this.admissionAdapters.length = 0
+    this.admissionListeners.clear()
   }
 
-  private bindingOf(id: SessionId, record: SessionRecord): TestSessionBinding {
+  private bindingOf(id: SessionId, record: SessionRecord): SessionBinding {
     const ctx = this.scope(id)
     /* v8 ignore next 2 -- bindingOf only runs for a live record, whose scope
      * always resolves; kept so a future caller cannot mint a ctx-less binding. */
     if (ctx === undefined) throw new Error(`test session "${id}" resolved no scope`)
-    return { sessionId: id, session: record.session, ctx }
+    return {
+      sessionId: id,
+      session: record.session,
+      eventSource: record.session.eventSource,
+      ctx,
+    }
+  }
+
+  private resolveAdmission(sessionId: SessionId): SessionAdmissionRoute | undefined {
+    const exact = this.exactAdmissions.get(sessionId)
+    if (exact !== undefined) return exact.route
+    for (const entry of this.admissionAdapters) {
+      if (entry.adapter.handles(sessionId)) return entry.adapter
+    }
+    return undefined
+  }
+
+  private notifyAdmission(): void {
+    for (const listener of [...this.admissionListeners]) listener()
   }
 
   private require(id: string): SessionRecord {
@@ -557,4 +792,5 @@ export class TestSessions implements ISessions {
     if (record === undefined) throw new Error(`test session "${id}" is not added`)
     return record
   }
+
 }

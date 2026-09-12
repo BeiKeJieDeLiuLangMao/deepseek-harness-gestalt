@@ -22,12 +22,12 @@ import {
 describe('NO_START_CAPABILITIES', () => {
   it('advertises nothing and is frozen (shared by every out-of-process backend)', () => {
     expect(NO_START_CAPABILITIES).toEqual({
+      agentOptions: false,
+      images: false,
       outputSchema: false,
       depthLimit: false,
       toolFilter: false,
       persona: false,
-      agentOptions: false,
-      images: false,
     })
     expect(Object.isFrozen(NO_START_CAPABILITIES)).toBe(true)
   })

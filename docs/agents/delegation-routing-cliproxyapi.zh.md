@@ -16,7 +16,7 @@
 
 用户排除 `gpt-6-astra` 时，它绝不是静默 fallback。`codex-auto-review` 不是候选。`glm-5.3` 只接受文本；`glm-5.3-flash` 是视觉候选。图片与视频生成 id 不进入文本 agent 候选池。
 
-subagent 工具接受 provider 与模型选择，但没有 reasoning-effort 参数。不得从厂商文档声称已设置 effort、存在持久 KV cache 或得知 proxy 计费。官方模型页只支持档位与能力陈述；验收依赖任务结果与仓库检查。
+当前 Session 授权模型选择时，subagent 工具接受 `provider`、`model` 与 `reasoning_effort`；请使用 `list_subagent_models` 返回的 id。不得从厂商文档推断实际 effort、持久 KV cache 或 proxy 计费。官方模型页只支持档位与能力陈述；验收依赖任务结果与仓库检查。
 
 ## 官方能力来源
 

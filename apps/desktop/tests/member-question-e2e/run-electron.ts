@@ -20,7 +20,7 @@ import {
   reservePort,
   runLogged,
   startHttpsProxy,
-} from './electron-runner-infrastructure.ts'
+} from '../electron-runner-infrastructure.ts'
 import { startKeylessMemberQuestionBroker } from './keyless-broker.ts'
 import { startLocalKeylessPlatform } from './local-platform.ts'
 import { encodeProtocolBase64Url } from '@deepseek-ai/dsh-remote-protocol'

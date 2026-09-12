@@ -12,7 +12,7 @@
 
 /** Node HTTP wire headers (`IncomingHttpHeaders`): one string per header, repeated headers as an array. */
 type NodeHeaderRecord = {
-  readonly [name: string]: string | string[] | undefined
+  readonly [name: string]: string | readonly string[] | undefined
 }
 
 /**

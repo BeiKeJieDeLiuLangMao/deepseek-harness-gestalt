@@ -5,8 +5,22 @@ import { ImageLightbox } from './ImageLightbox.tsx'
 import type { ImageLightboxLabels, ImageLightboxPin } from './ImageLightbox.tsx'
 import css from './MessageImage.module.css'
 
-/** Loads a session-authorized durable image URL. */
-export type ImageLoader = (attachment: ImageAttachmentRef) => Promise<string>
+/** Loads a session-authorized durable image URL and may expose a cached URL synchronously. */
+export type ImageLoader = ((attachment: ImageAttachmentRef) => Promise<string>) & {
+  peek?: (attachment: ImageAttachmentRef) => string | undefined
+}
+
+/** One gallery entry: a durable admitted reference, or a submission echo's local preview. */
+export type MessageImageSpec =
+  | { readonly attachment: ImageAttachmentRef }
+  | {
+    readonly preview: {
+      readonly url: string
+      readonly name?: string
+      readonly width?: number
+      readonly height?: number
+    }
+  }
 
 /** Message-image strings the owner resolves from its own locale namespace. */
 export interface MessageImageLabels {
@@ -29,11 +43,13 @@ export interface MessageImageLabels {
  * `object-fit: cover` — and never upscaled past the image's natural size. The
  * crop anchor keeps the top of very tall images and the left of very wide
  * ones, where the informative content usually starts. */
-function singleFit(attachment: ImageAttachmentRef): { width: number; height: number; objectPosition: string } {
-  const natural = attachment.width / attachment.height
+function singleFit(
+  dimensions: { readonly width: number; readonly height: number },
+): { width: number; height: number; objectPosition: string } {
+  const natural = dimensions.width / dimensions.height
   const ratio = Math.min(4, Math.max(0.25, natural))
   const box = ratio >= 1 ? { width: 240, height: 240 / ratio } : { width: 240 * ratio, height: 240 }
-  const scale = Math.min(1, attachment.width / box.width, attachment.height / box.height)
+  const scale = Math.min(1, dimensions.width / box.width, dimensions.height / box.height)
   return {
     width: Math.max(1, Math.round(box.width * scale)),
     height: Math.max(1, Math.round(box.height * scale)),
@@ -41,19 +57,28 @@ function singleFit(attachment: ImageAttachmentRef): { width: number; height: num
   }
 }
 
+/** Intrinsic dimensions of one gallery entry; a preview's stay unknown until its intake probe resolved. */
+function dimensionsOf(image: MessageImageSpec): { readonly width: number; readonly height: number } | undefined {
+  if ('attachment' in image) return image.attachment
+  return image.preview.width !== undefined && image.preview.height !== undefined
+    ? { width: image.preview.width, height: image.preview.height }
+    : undefined
+}
+
 /**
  * Compact history renderer with retryable loading and click-to-open original
  * preview. A lone image renders at its `singleFit` size; an image among
- * several renders as a fixed 64px square tile.
+ * several renders as a fixed 64px square tile. The preview arm displays its
+ * local URL directly — no loader round-trip, no failure/retry surface.
  *
- * @param props.attachment - the durable image reference to load and bound.
- * @param props.load - session-authorized URL loader.
+ * @param props.image - the durable reference to load, or the local preview to display.
+ * @param props.load - session-authorized URL loader for the durable arm.
  * @param props.variant - `single` for a message's lone image, `tile` otherwise.
  * @param props.labels - resolved strings (tooltip, loading, retry, lightbox).
  * @returns the bounded thumbnail button, or the retry control on failure.
  */
-export function MessageImage({ attachment, load, variant, labels, pinOverlay }: {
-  attachment: ImageAttachmentRef
+export function MessageImage({ image, load, variant, labels, pinOverlay }: {
+  image: MessageImageSpec
   load: ImageLoader
   variant: 'single' | 'tile'
   labels: MessageImageLabels
@@ -68,7 +93,10 @@ export function MessageImage({ attachment, load, variant, labels, pinOverlay }: 
     editor?: ReactNode
   }
 }) {
-  const [src, setSrc] = useState<string | null>(null)
+  const preview = 'preview' in image ? image.preview : undefined
+  const attachment = 'attachment' in image ? image.attachment : undefined
+  const [loaded, setLoaded] = useState<string | null>(() =>
+    attachment === undefined ? null : (load.peek?.(attachment) ?? null))
   const [error, setError] = useState(false)
   const [open, setOpen] = useState(false)
   const [pinMode, setPinMode] = useState(false)
@@ -81,20 +109,30 @@ export function MessageImage({ attachment, load, variant, labels, pinOverlay }: 
     setPinMode(false)
     pinOverlay?.onCloseEditor?.()
   }, [pinOverlay])
+  const dimensions = useMemo(() => dimensionsOf(image), [image])
   const fit = useMemo(
-    () => (variant === 'single' ? singleFit(attachment) : undefined),
-    [attachment, variant],
+    () => {
+      if (variant !== 'single') return undefined
+      // A preview whose intake probe has not resolved sizes as a square crop;
+      // the durable replacement restores the exact fit.
+      return dimensions === undefined
+        ? { width: 240, height: 240, objectPosition: 'center' }
+        : singleFit(dimensions)
+    },
+    [dimensions, variant],
   )
 
   useEffect(() => {
+    if (attachment === undefined) return
     let live = true
     setError(false)
-    setSrc(null)
-    void load(attachment).then((url) => { if (live) setSrc(url) }).catch(() => { if (live) setError(true) })
+    setLoaded(load.peek?.(attachment) ?? null)
+    void load(attachment).then((url) => { if (live) setLoaded(url) }).catch(() => { if (live) setError(true) })
     return () => { live = false }
   }, [attachment, load, attempt])
 
-  const label = attachment.name ?? labels.image
+  const src = preview?.url ?? loaded
+  const label = (preview?.name ?? attachment?.name) ?? labels.image
   if (error) return <button type="button" className={css.error} data-variant={variant} onClick={request}>{labels.loadFailed}</button>
   return (
     <>
@@ -135,11 +173,12 @@ export function MessageImage({ attachment, load, variant, labels, pinOverlay }: 
 }
 
 /** Wrapping image group shared by user and assistant history: a lone image
- * renders large, several render as 64px square tiles (DeepSeek Chat rule). */
-export function ImageGallery({ images, load, align, labels, pinOverlayFor }: {
-  images: readonly { attachment: ImageAttachmentRef }[]
+ * renders large unless its owning mixed-attachment row requests compact tiles. */
+export function ImageGallery({ images, load, align, compact = false, labels, pinOverlayFor }: {
+  images: readonly MessageImageSpec[]
   load: ImageLoader
   align: 'start' | 'end'
+  compact?: boolean
   labels: MessageImageLabels
   pinOverlayFor?: (attachment: ImageAttachmentRef) => {
     pins: readonly ImageLightboxPin[]
@@ -153,15 +192,15 @@ export function ImageGallery({ images, load, align, labels, pinOverlayFor }: {
   } | undefined
 }) {
   if (images.length === 0) return null
-  const variant = images.length === 1 ? 'single' : 'tile'
+  const variant = compact || images.length > 1 ? 'tile' : 'single'
   return (
     <div className={css.gallery} data-align={align}>
       {images.map((image, index) => {
-        const pinOverlay = pinOverlayFor?.(image.attachment)
+        const pinOverlay = 'attachment' in image ? pinOverlayFor?.(image.attachment) : undefined
         return (
           <MessageImage
-            key={`${image.attachment.attachmentId}:${index}`}
-            {...image}
+            key={`${'attachment' in image ? image.attachment.attachmentId : image.preview.url}:${index}`}
+            image={image}
             load={load}
             variant={variant}
             labels={labels}

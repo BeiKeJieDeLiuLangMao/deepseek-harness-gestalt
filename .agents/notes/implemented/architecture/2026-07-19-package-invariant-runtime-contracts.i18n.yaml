@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-07-19-package-invariant-runtime-contracts.md
-2026-07-19-package-invariant-runtime-contracts.md: a3e6e9640931abb5532a52c2563da3deeeece9ec
-2026-07-19-package-invariant-runtime-contracts.zh.md: 980b63848691e469414be3f196420afca31f921f
+2026-07-19-package-invariant-runtime-contracts.md: 607b8e2f73cde1a69e61765d36aad547dd486bbc
+2026-07-19-package-invariant-runtime-contracts.zh.md: c149226807dcafc21b917ba6f9a9618e7a1b9b52

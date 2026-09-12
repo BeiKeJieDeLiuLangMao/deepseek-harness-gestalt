@@ -1,13 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import clsx from 'clsx'
-import { QuestionPresentation } from '@deepseek-ai/dsh-client-ui-user-questions/client'
 import {
   memberBriefOf,
+  presentationQuestionsOf,
   selectMemberQuestion,
   type MemberQuestionComposerProps, type MemberQuestionDockProps,
   type MemberQuestionOrigin, type MemberQuestionRole,
 } from './contract/slots.ts'
-import type { MemberQuestionRecordView } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ReceivingMemberQuestionRecord } from '@deepseek-ai/dsh-api-session-controller/client'
 import css from './MemberQuestionCard.module.css'
 
 export type {
@@ -58,7 +58,7 @@ function roleLabel(t: MemberQuestionComposerProps['t'], role: MemberQuestionRole
 
 /** Passive Host terminal records retained after a card settles. */
 export function MemberQuestionRecords(props: {
-  matched: readonly MemberQuestionRecordView[]
+  matched: readonly ReceivingMemberQuestionRecord[]
   t: MemberQuestionComposerProps['t']
 }) {
   if (props.matched.length === 0) return null
@@ -76,7 +76,7 @@ export function MemberQuestionRecords(props: {
   )
 }
 
-function recordLabel(t: MemberQuestionComposerProps['t'], record: MemberQuestionRecordView): string {
+function recordLabel(t: MemberQuestionComposerProps['t'], record: ReceivingMemberQuestionRecord): string {
   return record.state === 'answered-elsewhere'
     ? t('record.answered-elsewhere', { device: record.settledByDeviceName ?? t('origin.fallback') })
     : t(`record.${record.state}`)
@@ -100,8 +100,11 @@ export function MemberQuestionCard(props: MemberQuestionComposerProps) {
   const bodyRef = useRef<HTMLDivElement | null>(null)
   const [innerCollapsed, setInnerCollapsed] = useState(false)
   const [innerRevealed, setInnerRevealed] = useState(false)
-  const [detailsRevealed, setDetailsRevealed] = useState(false)
-  const [detailsOpen, setDetailsOpen] = useState(false)
+  const [referenceRevealed, setReferenceRevealed] = useState(false)
+  const [referenceError, setReferenceError] = useState<{ questionId: string; message: string }>()
+  const referenceAttempt = useRef(0)
+
+  useEffect(() => () => { referenceAttempt.current += 1 }, [props.matched.questionId])
 
   useEffect(() => {
     const body = bodyRef.current
@@ -117,35 +120,44 @@ export function MemberQuestionCard(props: MemberQuestionComposerProps) {
     return () => { observer.disconnect() }
   }, [])
 
-  // Details-panel linkage: the persistent details column carries its open
-  // state as `aria-expanded` on `[data-details-panel]` (ui-layout's AppFrame);
-  // the same observation mechanism folds the card to its strip while the
-  // panel is open and restores it when the panel closes.
-  useEffect(() => {
-    const sync = (): void => {
-      const panel = document.querySelector('[data-details-panel]')
-      setDetailsOpen(panel?.getAttribute('aria-expanded') === 'true')
-    }
-    sync()
-    const observer = new MutationObserver(sync)
-    observer.observe(document.body, { attributes: true, attributeFilter: ['aria-expanded'], subtree: true })
-    return () => { observer.disconnect() }
-  }, [])
+  const referencePaths = useMemo(() => new Set(brief.references.flatMap(reference =>
+    reference.cachedPath === undefined
+      ? []
+      : [props.referencePath(props.sessionId, reference.cachedPath)])),
+  [brief.references, props.referencePath, props.sessionId])
+  const openedReference = props.useReferenceView(view =>
+    view.sessionId === props.sessionId ? view.paths.find(path => referencePaths.has(path)) : undefined)
+  const referenceOpen = openedReference !== undefined
 
   useEffect(() => {
     if (!innerCollapsed) setInnerRevealed(false)
   }, [innerCollapsed])
 
-  useEffect(() => {
-    if (!detailsOpen) setDetailsRevealed(false)
-  }, [detailsOpen])
+  useEffect(() => { setReferenceRevealed(false) }, [openedReference])
 
-  const folded = (innerCollapsed && !innerRevealed) || (detailsOpen && !detailsRevealed)
+  const folded = (innerCollapsed && !innerRevealed) || (referenceOpen && !referenceRevealed)
   const askerName = brief.origin?.askerDisplayName ?? props.t('origin.fallback')
-  const records = props.session?.memberQuestionRecords ?? []
+  const records = props.useReceivingQuestions(view =>
+    view.byId[props.sessionId]?.records ?? [])
+  const answer = useCallback((batch: { answers: { id: string; selected: string[]; custom?: string }[] }) => (
+    props.settle(props.sessionId, batch.answers)
+  ), [props.sessionId, props.settle])
+  const cancel = useCallback(() => (
+    props.decline(props.sessionId)
+  ), [props.sessionId, props.decline])
+  const presentation = props.renderSlot('question.presentation', {
+    requestKey: `${props.matched.receivingSessionId}:${props.matched.questionId}:${props.matched.revision}`,
+    questions: presentationQuestionsOf(props.matched),
+    answer,
+    cancel,
+  })
 
   return (
-    <div className={css.frame} data-question-key={props.matched.key} data-folded={folded || undefined}>
+    <div
+      className={css.frame}
+      data-question-key={`${props.matched.receivingSessionId}:${props.matched.questionId}`}
+      data-folded={folded || undefined}
+    >
       <MemberQuestionRecords matched={records} t={props.t} />
       <section
         className={clsx(css.card, folded && css.cardFolded)}
@@ -158,7 +170,7 @@ export function MemberQuestionCard(props: MemberQuestionComposerProps) {
             aria-label={props.t('collapsed.bar', { name: askerName })}
             onClick={() => {
               if (innerCollapsed) setInnerRevealed(true)
-              if (detailsOpen) setDetailsRevealed(true)
+              if (referenceOpen) setReferenceRevealed(true)
             }}
           >
             <span className={css.remoteTag}>{props.t('tag.remote')}</span>
@@ -212,7 +224,15 @@ export function MemberQuestionCard(props: MemberQuestionComposerProps) {
                       key={`${chip.filename}-${chip.reason}`}
                       onClick={() => {
                         if (chip.cachedPath === undefined) return
-                        props.openReference(props.sessionId, chip.cachedPath, chip.filename)
+                        const attempt = ++referenceAttempt.current
+                        setReferenceError(undefined)
+                        void props.openReference(props.sessionId, chip.cachedPath, chip.filename).catch((error: unknown) => {
+                          if (attempt !== referenceAttempt.current) return
+                          setReferenceError({
+                            questionId: props.matched.questionId,
+                            message: error instanceof Error ? error.message : String(error),
+                          })
+                        })
                       }}
                     >
                       <span className={css.chipFilename}>{chip.filename}</span>
@@ -220,6 +240,9 @@ export function MemberQuestionCard(props: MemberQuestionComposerProps) {
                     </button>
                   ))}
                 </div>
+                {referenceError?.questionId === props.matched.questionId && (
+                  <p role="alert">{props.t('references.openFailed', { message: referenceError.message })}</p>
+                )}
               </div>
             )}
           </header>
@@ -227,7 +250,7 @@ export function MemberQuestionCard(props: MemberQuestionComposerProps) {
         {/* Kept mounted while folded: the presentation owns the drafts, and
             folding must not spend them. */}
         <div className={clsx(css.body, folded && css.bodyHidden)} ref={bodyRef} data-member-presentation>
-          <QuestionPresentation wait={props.matched} t={props.questionT} />
+          {presentation}
         </div>
       </section>
     </div>
@@ -236,9 +259,10 @@ export function MemberQuestionCard(props: MemberQuestionComposerProps) {
 
 /** Additive Decision Brief dock above the unchanged product composer. */
 export function MemberQuestionDock(props: MemberQuestionDockProps) {
-  const matched = selectMemberQuestion({ interactions: props.session.pending })
+  const row = props.useReceivingQuestions(view => view.byId[props.sessionId])
+  const matched = selectMemberQuestion({ pending: row?.pending })
   if (matched === null) {
-    return <MemberQuestionRecords matched={props.session.memberQuestionRecords ?? []} t={props.t} />
+    return <MemberQuestionRecords matched={row?.records ?? []} t={props.t} />
   }
-  return <MemberQuestionCard {...props} interactions={props.session.pending} matched={matched} />
+  return <MemberQuestionCard {...props} matched={matched} />
 }

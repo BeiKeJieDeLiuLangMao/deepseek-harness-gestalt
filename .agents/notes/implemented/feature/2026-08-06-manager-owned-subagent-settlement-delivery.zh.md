@@ -8,7 +8,7 @@ Status: implemented
 
 可继续后台委派是模型唯一一种能够发起、却无法抵达终点的异步操作。其他每一种形态都有取回原语或返回值：后台 bash 命令与一次性后台 subagent 都通过 Task 结算，`job_output(wait: true)` 可以阻塞等待；workflow 与前台 subagent 会把结果返回给调用方。可继续后台 child 只返回它持久化的 id，而父级既没有可等待的对象，也不会被交付任何东西。
 
-[报告义务](2026-08-06-continuable-child-report-obligation.zh.md)通过要求 child 在结束前上报，补上了这一缺口中协作的那一半。指令无法补上其余部分。被 token 上限、模型失败、取消或拆卸终止的 child 永远走不到能够遵守的那一步——不是很少，而是从不——而这些恰恰是等待中的父级最需要被告知的结束方式。可观察到的下游症状包括：父级忙轮询 `list_agents`、向已经结算的 child 反复发送消息，以及部署放弃 `subagent` 转用 `workflow`，因为 workflow 至少会返回点什么。
+[相邻 Agent 消息](../architecture/2026-08-27-adjacent-agent-steer-messaging.zh.md)通过要求 child 在结束前发送一份自包含结果，补上了这一缺口中协作的那一半。指引无法补上其余部分。被 token 上限、模型失败、取消或拆卸终止的 child 永远走不到能够遵守的那一步——不是很少，而是从不——而这些恰恰是等待中的父级最需要被告知的结束方式。可观察到的下游症状包括：父级忙轮询 `list_agents`、向已经结算的 child 反复发送消息，以及部署放弃 `subagent` 转用 `workflow`，因为 workflow 至少会返回点什么。
 
 信号本身早就存在。自可继续 Activation 发布以来，`subagent/end` 就一直携带 `stopReason` 与 `lastAssistantMessage`。缺的是把它变成父级模型能看到的上下文的那个消费者。
 
@@ -26,9 +26,9 @@ Status: implemented
 
 外部 `ctx.on('subagent/end')` listener 看起来更解耦，但它是错的。`SubagentRunEndInfo` 不指名父级；该边触发时 child handle 已被 dispose，因此无法从中恢复父级；而唤醒父级自身结算 watcher 的所有权释放也已经执行过了。管理器在整个 dispose 过程中都持有父级引用，因此这些障碍对它都不存在。
 
-**发送发生在 `releaseOwnership` 之前。** 此刻父级仍然计入这个 child，因此 `stateOf(parent)` 为 `waiting`，父级在结构上不可能被判定为已结算。改在释放之后投递，则会与一个在下一个 microtask 恢复的 watcher 竞争：它会发现自己没有 child 且处于静止，于是 dispose 一个 Agent，而该 Agent 的 `cancel()` 会清空正装着这条通知的那个 inbox。失效表现是一条静默丢失的消息，任何地方都不会报错。
+**发送发生在 `releaseOwnership` 之前。** 此刻 parent 的 owned-child set 仍然包含这个 child，因此结算判据不可能成立。改在释放之后投递，则会与一个在下一个 microtask 恢复的 watcher 竞争：它会发现自己没有 child 且处于静止，于是 dispose 一个 Agent，而该 Agent 的 `cancel()` 会清空正装着这条通知的那个 inbox。失效表现是一条静默丢失的消息，任何地方都不会报错。
 
-**驻留父级通过 `admitWaking` 接收它。** 在同步发送之前登记消息 id，正是让 `followup()` 与承认它的那个 microtask 之间的窗口不被读作静止的原因。这不是对第一条规则的多余保险：`Agent.status` 会把上下文维护折叠成 `idle`，而维护期间的唤醒发送只会预置一次延后唤醒，因此正在压缩上下文的父级，在所有权释放落地的那一刻会同时被 `status` 与已拥有 child 集合判定为静止。
+**驻留 parent 通过私有 `SubagentInbox` 接收它。** 包装层会在同步唤醒发送前立即检查 Activation 的 closing promise，manager 则会在返回前更新 wake generation。最终结算决策会在 child lock 内重新检查该 generation、Session 序号、待处理 Inbox 与 owned-child set，再通过 `runMaintenance()` 占用 Agent 的 idle 阶段，然后关闭准入。这并非对第一条规则的重复保护：`Agent.status` 会把 context maintenance 折叠成 `idle`，而 maintenance 期间的唤醒发送只会预置一次延后唤醒。
 
 两条规则都有测试固定：把顺序反转或去掉记账，测试就会失败。
 

@@ -1,9 +1,26 @@
+---
+description: "为 Desktop 所有的已认证 Project Membership 读取提供 Web Host Provider。"
+kind: "package-reference"
+---
+
 # `@deepseek-ai/dsh-project-membership-desktop`
 
 [English](README.md) | 中文
 
+## 概述
+
 供 agent preset 使用的 Desktop 专属 Web Host 已鉴权 Project Membership 读取提供方。Electron 保留 Platform Account 会话和安装证明；本包从仅属主可读的文件读取 bearer token，并调用受 token 保护的 loopback 投影，以获取当前公开 Account 身份、与 Agent Workspace 绑定的云端 Project，以及带公开展示字段的完整成员名册。它提供 `ctx.desktopProjectMembership`，且不会把 Platform 凭据放入 Web Host、模型工具参数或 Session log。
 
+## 目录
+
+- [配置](#configuration)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+-----
+
+<a id="configuration"></a>
 ## 配置
 
 - `baseUrl` — Desktop Host 发布的绝对 loopback HTTP origin。非 loopback、非 HTTP 或携带路径的值会在加载时失败。
@@ -13,6 +30,7 @@
 
 所有响应都从 `unknown` 解析。HTTP 失败、Account 状态缺失、身份或名册字段异常、Workspace 未绑定以及 Account 不在所属 Project 中都会失败，不会虚构身份或 Project。
 
+<a id="model-experience"></a>
 ## Model Experience
 
 通过 `@deepseek-ai/dsh-tool-project-members` 的名册结果和 `@deepseek-ai/dsh-tool-ask-user` 的成员提问来源字段间接进入模型上下文。
@@ -22,6 +40,19 @@
 本提供方不增加独立请求前缀；消费方拥有 schema，并且只在相应工具运行时追加由本提供方解析的值。
 
 ## Known Limitations and Deferred Work
+<a id="known-limitations-and-deferred-work"></a>
 
 - **依赖 Desktop Host** — 纯浏览器 `dsh web` 没有 Account proof owner 或 loopback 投影，因此标准 preset 会在那里省略 `project_members` 与成员定向资格。
 - **bridge 只读** — Project 创建、邀请、角色、标签与移除仍由 renderer 经 Desktop 执行，不向 agent preset 暴露。
+
+本包不发布运行时不变式配套插件，因为私有 roster presentation map 由同一服务实现读写，没有独立观察者。
+
+<a id="dev-note"></a>
+### 开发备注
+
+<details>
+<summary>维护者工作上下文——点击展开</summary>
+
+暂无。
+
+</details>

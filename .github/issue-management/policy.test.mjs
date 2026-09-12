@@ -1,178 +1,118 @@
 import assert from 'node:assert/strict'
-import { execFile } from 'node:child_process'
-import { copyFile, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
-import { createServer } from 'node:http'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { readFileSync, readdirSync } from 'node:fs'
 import test from 'node:test'
-import { promisify } from 'node:util'
 
 import {
-  countVisibleUnits,
+  auditIssue,
+  initializeIssueStartDate,
+  initializePullRequestStartDates,
+  issueSnapshot,
   nextResolvingIssueStatus,
   parseReferences,
+  projectDate,
   repositoryCoordinates,
+  repairIssueLabels,
   retainIssueReferences,
   resolvingIssueStatusCommand,
   requiresPullRequestPolicy,
-  validateBody,
   validateIssue,
+  validateLifecycleDeployment,
   validatePullRequest,
-  validatePullRequestMetadata,
 } from './policy.mjs'
 
-const execFileAsync = promisify(execFile)
-const policyEntrypoint = join(import.meta.dirname, 'policy.mjs')
-const policyConfig = join(import.meta.dirname, 'config.json')
-
-const runResourceCleanups = async (cleanups) => {
-  const results = await Promise.allSettled(
-    cleanups.map((cleanup) => Promise.resolve().then(cleanup)),
-  )
-  const errors = results.flatMap((result) =>
-    result.status === 'rejected' ? [result.reason] : [],
-  )
-  if (errors.length > 0) throw new AggregateError(errors, 'fake API resource cleanup failed')
-}
-
-const registerResourceCleanups = (t) => {
-  const cleanups = []
-  t.after(() => runResourceCleanups(cleanups))
-  return (cleanup) => cleanups.push(cleanup)
-}
-
-const withDetails = (summary) =>
-  `${summary}\n\n<details><summary>验收与细节</summary>待补充。</details>`
-
-const preparePullRequestCli = async (
-  t,
-  {
-    priorityField,
-    pullRequestReadAuthentication = 'token',
-    pullRequestPolicyActivation = 'non-draft',
-    issueFieldStatus = 200,
-    issueStatus = 200,
-    pullStatus = 200,
-    pullDraft = false,
-    pullAuthorType = 'User',
-    pullLabels = ['kind/bug-fix', 'area/infra'],
-    reviewEndpointStatus = 200,
-    requiredAreas = [],
-    token = 'test-token',
+const projectGraphqlData = ({
+  projectItem = true,
+  priority = null,
+  priorityField = true,
+  priorityType = 'SINGLE_SELECT',
+  priorityIsIssueField = false,
+  startDate = null,
+  startDateField = true,
+  startDateType = 'DATE',
+  startDateIsIssueField = false,
+} = {}) => ({
+  organization: {
+    projectV2: {
+      id: 'project-id',
+      title: 'DSH Issue Management',
+      fields: {
+        nodes: [
+          {
+            id: 'status-field-id',
+            name: 'Status',
+            dataType: 'SINGLE_SELECT',
+            isIssueField: false,
+            options: [],
+          },
+          ...(priorityField
+            ? [
+                {
+                  id: 'priority-project-field-id',
+                  name: 'Priority',
+                  dataType: priorityType,
+                  isIssueField: priorityIsIssueField,
+                  options: [],
+                },
+              ]
+            : []),
+          ...(startDateField
+            ? [
+                {
+                  id: 'start-date-field-id',
+                  name: 'Start Date',
+                  dataType: startDateType,
+                  isIssueField: startDateIsIssueField,
+                },
+              ]
+            : []),
+        ],
+      },
+    },
   },
-) => {
-  const registerCleanup = registerResourceCleanups(t)
+  repository: {
+    issue: {
+      id: 'issue-id',
+      projectItems: {
+        nodes: projectItem
+          ? [
+              {
+                id: 'item-id',
+                project: { id: 'project-id' },
+                fieldValueByName: { name: 'Inbox', optionId: 'inbox-option-id' },
+                priorityValue:
+                  priority === null ? null : { name: priority, optionId: `${priority}-option-id` },
+                startDateValue: startDate === null ? null : { date: startDate },
+              },
+            ]
+          : [],
+      },
+    },
+  },
+})
+
+const mockGraphql = (t, resolve) => {
   const requests = []
-  const requestDetails = []
-  const server = createServer(async (request, response) => {
-    requests.push(request.url)
-    requestDetails.push({
-      method: request.method,
-      path: request.url,
-      authorization: request.headers.authorization ?? null,
-    })
-    const send = (value, status = 200) => {
-      response.writeHead(status, { 'Content-Type': 'application/json' })
-      response.end(JSON.stringify(value))
-    }
-    if (request.url?.endsWith('/pulls/49')) {
-      send({
-        body: 'Fixes #49',
-        draft: pullDraft,
-        labels: pullLabels.map((name) => ({ name })),
-        user: { type: pullAuthorType },
-      }, pullStatus)
-      return
-    }
-    if (request.url?.endsWith('/pulls/49/requested_reviewers')) {
-      send(
-        reviewEndpointStatus === 200
-          ? { users: [{ login: 'reviewer' }], teams: [] }
-          : { message: 'Not Found' },
-        reviewEndpointStatus,
-      )
-      return
-    }
-    if (request.url?.endsWith('/pulls/49/reviews?per_page=100')) {
-      send(reviewEndpointStatus === 200 ? [] : { message: 'Not Found' }, reviewEndpointStatus)
-      return
-    }
-    if (request.url?.endsWith('/issues/49')) {
-      send(
-        issueStatus === 200
-          ? {
-              node_id: 'issue-id',
-              title: '为个人 tracker 显式关闭 Issue Priority 字段查询',
-              body: withDetails('修复个人 tracker 的 Priority 查询。'),
-              assignees: [],
-              labels: [],
-              type: null,
-              state: 'open',
-              state_reason: null,
-            }
-          : { message: 'Not Found' },
-        issueStatus,
-      )
-      return
-    }
-    if (request.url?.endsWith('/issues/49/issue-field-values?per_page=100')) {
-      send(issueFieldStatus === 200 ? [] : { message: 'Not Found' }, issueFieldStatus)
-      return
-    }
-    send({ message: 'Not Found' }, 404)
+  const previousRepository = process.env.GITHUB_REPOSITORY
+  const previousToken = process.env.GH_TOKEN
+  process.env.GITHUB_REPOSITORY = 'deepseek-harness/deepseek-harness'
+  process.env.GH_TOKEN = 'test-token'
+  t.after(() => {
+    if (previousRepository === undefined) delete process.env.GITHUB_REPOSITORY
+    else process.env.GITHUB_REPOSITORY = previousRepository
+    if (previousToken === undefined) delete process.env.GH_TOKEN
+    else process.env.GH_TOKEN = previousToken
   })
-  server.listen(0, '127.0.0.1')
-  await new Promise((resolve, reject) => {
-    server.once('listening', resolve)
-    server.once('error', reject)
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    assert.equal(url, 'https://api.github.com/graphql')
+    assert.equal(options.headers.Authorization, 'Bearer test-token')
+    const request = JSON.parse(options.body)
+    requests.push(request)
+    return Response.json({ data: resolve(request, requests.length - 1) })
   })
-  registerCleanup(
-    () =>
-      new Promise((resolve, reject) => {
-        server.close((error) => (error ? reject(error) : resolve()))
-      }),
-  )
-  const address = server.address()
-  assert.notEqual(address, null)
-  assert.equal(typeof address, 'object')
-
-  const directory = await mkdtemp(join(tmpdir(), 'dsh-issue-priority-policy-'))
-  registerCleanup(() => rm(directory, { recursive: true, force: true }))
-  const entrypoint = join(await realpath(directory), 'policy.mjs')
-  const eventPath = join(directory, 'pull-request.json')
-  const config = JSON.parse(await readFile(policyConfig, 'utf8'))
-  await copyFile(policyEntrypoint, entrypoint)
-  await writeFile(
-    join(directory, 'config.json'),
-    JSON.stringify({
-      ...config,
-      priorityField,
-      pullRequestReadAuthentication,
-      pullRequestPolicyActivation,
-    }),
-  )
-  await writeFile(eventPath, JSON.stringify({ pull_request: { number: 49 } }))
-
-  return {
-    requests,
-    requestDetails,
-    run: (command = 'pr') =>
-      execFileAsync(process.execPath, [entrypoint, command], {
-        env: {
-          ...(token === null ? {} : { GH_TOKEN: token }),
-          GITHUB_API_URL: `http://127.0.0.1:${address.port}`,
-          GITHUB_EVENT_PATH: eventPath,
-          GITHUB_REPOSITORY: 'BeiKeJieDeLiuLangMao/deepseek-harness-gestalt',
-          DSH_REQUIRED_PR_AREAS: JSON.stringify(requiredAreas),
-        },
-      }),
-  }
+  return requests
 }
 
 const legalIssue = {
-  title: '完成议题管理校验',
-  body: withDetails('完成议题管理校验。'),
-  assignees: [],
   labels: [],
   type: 'Idea',
   priority: null,
@@ -206,556 +146,6 @@ const legacyLabels = [
   'web-search',
 ]
 
-test('routes policy requests to the repository from the workflow event', () => {
-  assert.deepEqual(
-    repositoryCoordinates({ GITHUB_REPOSITORY: 'BeiKeJieDeLiuLangMao/deepseek-harness-gestalt' }),
-    {
-      owner: 'BeiKeJieDeLiuLangMao',
-      name: 'deepseek-harness-gestalt',
-      fullName: 'BeiKeJieDeLiuLangMao/deepseek-harness-gestalt',
-    },
-  )
-  assert.throws(
-    () => repositoryCoordinates({ GITHUB_REPOSITORY: 'deepseek-harness-gestalt' }),
-    /GITHUB_REPOSITORY 必须为 owner\/name/,
-  )
-})
-
-test('skips Issue field requests when Priority integration is disabled', async (t) => {
-  const fixture = await preparePullRequestCli(t, { priorityField: null })
-
-  const result = await fixture.run()
-
-  assert.match(result.stdout, /Issue policy 通过。/)
-  assert.ok(
-    !fixture.requests.includes(
-      '/repos/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt/issues/49/issue-field-values?per_page=100',
-    ),
-  )
-})
-
-test('non-draft activation skips unavailable review endpoints and uses the workflow token', async (t) => {
-  const fixture = await preparePullRequestCli(t, {
-    priorityField: null,
-    pullRequestPolicyActivation: 'non-draft',
-    reviewEndpointStatus: 404,
-  })
-
-  const result = await fixture.run()
-
-  assert.match(result.stdout, /Issue policy 通过。/)
-  assert.deepEqual(
-    fixture.requestDetails.map(({ path }) => path),
-    [
-      '/repos/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt/pulls/49',
-      '/repos/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt/issues/49',
-    ],
-  )
-  for (const request of fixture.requestDetails) {
-    assert.equal(request.method, 'GET')
-    assert.equal(request.authorization, 'Bearer test-token')
-  }
-})
-
-test('Draft, Bot, and App pull requests stop after the initial PR read', async (t) => {
-  const exemptions = [
-    { name: 'Draft', pullDraft: true, pullAuthorType: 'User' },
-    { name: 'Bot', pullDraft: false, pullAuthorType: 'Bot' },
-    { name: 'App', pullDraft: false, pullAuthorType: 'App' },
-  ]
-  for (const pullRequestPolicyActivation of ['non-draft', 'review-activity']) {
-    for (const exemption of exemptions) {
-      await t.test(`${pullRequestPolicyActivation}: ${exemption.name}`, async (t) => {
-        const fixture = await preparePullRequestCli(t, {
-          priorityField: 'Priority',
-          pullRequestPolicyActivation,
-          pullDraft: exemption.pullDraft,
-          pullAuthorType: exemption.pullAuthorType,
-          reviewEndpointStatus: 404,
-          issueStatus: 404,
-        })
-
-        const result = await fixture.run()
-
-        assert.match(result.stdout, /PR 尚未进入 Issue policy 强制范围。/)
-        assert.deepEqual(
-          fixture.requestDetails.map(({ path }) => path),
-          ['/repos/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt/pulls/49'],
-        )
-      })
-    }
-  }
-})
-
-test('preflight validates Draft PR metadata and resolves its same-repository Issue', async (t) => {
-  const fixture = await preparePullRequestCli(t, {
-    priorityField: null,
-    pullDraft: true,
-  })
-
-  const result = await fixture.run('pr-metadata')
-
-  assert.match(result.stdout, /PR metadata 通过。/)
-  assert.deepEqual(
-    fixture.requestDetails.map(({ path }) => path),
-    [
-      '/repos/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt/pulls/49',
-      '/repos/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt/issues/49',
-    ],
-  )
-})
-
-test('preflight rejects malformed Draft PR labels', async (t) => {
-  const fixture = await preparePullRequestCli(t, {
-    priorityField: null,
-    pullDraft: true,
-    pullLabels: [],
-  })
-
-  await assert.rejects(fixture.run('pr-metadata'), (error) => {
-    assert.match(error.stdout, /PR 必须恰好有一个允许的 kind\/\*/)
-    assert.match(error.stdout, /PR 必须至少有一个 area\/\*/)
-    return true
-  })
-})
-
-test('preflight rejects a Draft PR missing a planner-selected area', async (t) => {
-  const fixture = await preparePullRequestCli(t, {
-    priorityField: null,
-    pullDraft: true,
-    requiredAreas: ['area/infra', 'area/web'],
-  })
-
-  await assert.rejects(fixture.run('pr-metadata'), (error) => {
-    assert.match(error.stdout, /PR 缺少相关 area\/\*：area\/web/)
-    return true
-  })
-})
-
-test('eligible non-draft pull requests keep downstream API failures fatal', async (t) => {
-  const fixture = await preparePullRequestCli(t, {
-    priorityField: null,
-    pullRequestPolicyActivation: 'non-draft',
-    issueStatus: 404,
-  })
-
-  await assert.rejects(fixture.run(), (error) => {
-    assert.match(
-      error.stderr,
-      /GET \/repos\/BeiKeJieDeLiuLangMao\/deepseek-harness-gestalt\/issues\/49: 404/,
-    )
-    return true
-  })
-})
-
-test('uses anonymous authentication for every PR policy read', async (t) => {
-  const fixture = await preparePullRequestCli(t, {
-    priorityField: 'Priority',
-    pullRequestReadAuthentication: 'anonymous',
-    pullRequestPolicyActivation: 'review-activity',
-  })
-
-  const result = await fixture.run()
-
-  assert.match(result.stdout, /Issue policy 通过。/)
-  assert.equal(fixture.requestDetails.length, 5)
-  for (const request of fixture.requestDetails) {
-    assert.equal(request.method, 'GET')
-    assert.equal(request.authorization, null)
-  }
-})
-
-test('review-activity activation reads review activity with bearer authentication', async (t) => {
-  const fixture = await preparePullRequestCli(t, {
-    priorityField: 'Priority',
-    pullRequestReadAuthentication: 'token',
-    pullRequestPolicyActivation: 'review-activity',
-  })
-
-  const result = await fixture.run()
-
-  assert.match(result.stdout, /Issue policy 通过。/)
-  assert.deepEqual(
-    fixture.requestDetails.map(({ path }) => path),
-    [
-      '/repos/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt/pulls/49',
-      '/repos/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt/pulls/49/requested_reviewers',
-      '/repos/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt/pulls/49/reviews?per_page=100',
-      '/repos/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt/issues/49',
-      '/repos/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt/issues/49/issue-field-values?per_page=100',
-    ],
-  )
-  for (const request of fixture.requestDetails) {
-    assert.equal(request.method, 'GET')
-    assert.equal(request.authorization, 'Bearer test-token')
-  }
-})
-
-test('rejects a missing token before token-mode PR policy API access', async (t) => {
-  for (const pullRequestPolicyActivation of ['non-draft', 'review-activity']) {
-    const fixture = await preparePullRequestCli(t, {
-      priorityField: null,
-      pullRequestReadAuthentication: 'token',
-      pullRequestPolicyActivation,
-      token: null,
-    })
-
-    await assert.rejects(fixture.run(), (error) => {
-      assert.match(error.stderr, /GH_TOKEN 或 GITHUB_TOKEN 未设置/)
-      return true
-    })
-    assert.deepEqual(fixture.requests, [])
-  }
-})
-
-test('rejects invalid PR-read authentication modes before API access', async (t) => {
-  for (const pullRequestReadAuthentication of ['oauth', '   ']) {
-    const fixture = await preparePullRequestCli(t, {
-      priorityField: null,
-      pullRequestReadAuthentication,
-    })
-
-    await assert.rejects(fixture.run(), (error) => {
-      assert.match(
-        error.stderr,
-        /config\.pullRequestReadAuthentication 必须为 anonymous 或 token/,
-      )
-      return true
-    })
-    assert.deepEqual(fixture.requests, [])
-  }
-})
-
-test('rejects invalid PR policy activation modes before API access', async (t) => {
-  for (const pullRequestPolicyActivation of ['opened', '   ']) {
-    const fixture = await preparePullRequestCli(t, {
-      priorityField: null,
-      pullRequestPolicyActivation,
-    })
-
-    await assert.rejects(fixture.run(), (error) => {
-      assert.match(
-        error.stderr,
-        /config\.pullRequestPolicyActivation 必须为 non-draft 或 review-activity/,
-      )
-      return true
-    })
-    assert.deepEqual(fixture.requests, [])
-  }
-})
-
-test('review-activity API failures remain fatal', async (t) => {
-  const fixture = await preparePullRequestCli(t, {
-    priorityField: null,
-    pullRequestPolicyActivation: 'review-activity',
-    reviewEndpointStatus: 404,
-  })
-
-  await assert.rejects(fixture.run(), (error) => {
-    assert.match(
-      error.stderr,
-      /GET \/repos\/BeiKeJieDeLiuLangMao\/deepseek-harness-gestalt\/pulls\/49\/(?:requested_reviewers|reviews\?per_page=100): 404/,
-    )
-    return true
-  })
-  assert.ok(
-    fixture.requests.some(
-      (path) => path?.endsWith('/requested_reviewers') || path?.endsWith('/reviews?per_page=100'),
-    ),
-  )
-})
-
-test('fails loud on PR API 404 without authentication fallback', async (t) => {
-  for (const pullRequestReadAuthentication of ['anonymous', 'token']) {
-    const fixture = await preparePullRequestCli(t, {
-      priorityField: null,
-      pullRequestReadAuthentication,
-      pullStatus: 404,
-    })
-
-    await assert.rejects(fixture.run(), (error) => {
-      assert.match(
-        error.stderr,
-        /GET \/repos\/BeiKeJieDeLiuLangMao\/deepseek-harness-gestalt\/pulls\/49: 404/,
-      )
-      return true
-    })
-    assert.equal(
-      fixture.requests.filter((path) => path?.endsWith('/pulls/49')).length,
-      1,
-    )
-  }
-})
-
-test('fails loud when enabled Priority integration cannot read Issue fields', async (t) => {
-  const fixture = await preparePullRequestCli(t, {
-    priorityField: 'Priority',
-    issueFieldStatus: 404,
-  })
-
-  await assert.rejects(fixture.run(), (error) => {
-    assert.match(
-      error.stderr,
-      /GET \/repos\/BeiKeJieDeLiuLangMao\/deepseek-harness-gestalt\/issues\/49\/issue-field-values\?per_page=100: 404/,
-    )
-    return true
-  })
-  assert.ok(
-    fixture.requests.includes(
-      '/repos/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt/issues/49/issue-field-values?per_page=100',
-    ),
-  )
-})
-
-test('rejects a malformed Priority integration setting before API access', async (t) => {
-  const fixture = await preparePullRequestCli(t, { priorityField: false })
-
-  await assert.rejects(fixture.run(), (error) => {
-    assert.match(error.stderr, /config\.priorityField 必须为非空字符串或 null/)
-    return true
-  })
-  assert.deepEqual(fixture.requests, [])
-})
-
-test('rejects whitespace-only Priority configuration before API access', async (t) => {
-  const fixture = await preparePullRequestCli(t, { priorityField: '   ' })
-
-  await assert.rejects(fixture.run(), (error) => {
-    assert.match(error.stderr, /config\.priorityField 必须为非空字符串或 null/)
-    return true
-  })
-  assert.deepEqual(fixture.requests, [])
-})
-
-test('attempts every fake API resource cleanup when one disposer fails', async () => {
-  const disposed = []
-
-  await assert.rejects(
-    runResourceCleanups([
-      async () => {
-        disposed.push('server')
-        throw new Error('server close failed')
-      },
-      async () => {
-        disposed.push('directory')
-      },
-    ]),
-    (error) => {
-      assert.ok(error instanceof AggregateError)
-      assert.deepEqual(error.errors.map((entry) => entry.message), ['server close failed'])
-      return true
-    },
-  )
-  assert.deepEqual(disposed.sort(), ['directory', 'server'])
-})
-
-test('routes CLI policy and keeps lifecycle requests token-authenticated', async (t) => {
-  const registerCleanup = registerResourceCleanups(t)
-  const requests = []
-  const server = createServer(async (request, response) => {
-    const chunks = []
-    for await (const chunk of request) chunks.push(chunk)
-    const body = Buffer.concat(chunks).toString('utf8')
-    requests.push({
-      method: request.method,
-      path: request.url,
-      body,
-      authorization: request.headers.authorization ?? null,
-    })
-
-    const send = (value, status = 200) => {
-      response.writeHead(status, { 'Content-Type': 'application/json' })
-      response.end(JSON.stringify(value))
-    }
-    if (request.url === '/graphql') {
-      send({
-        data: {
-          organization: {
-            projectV2: {
-              id: 'project-id',
-              title: 'DSH Issue Management',
-              fields: {
-                nodes: [
-                  {
-                    id: 'status-field-id',
-                    name: 'Status',
-                    options: [
-                      { id: 'inbox-id', name: 'Inbox' },
-                      { id: 'in-progress-id', name: 'In progress' },
-                    ],
-                  },
-                ],
-              },
-            },
-          },
-          repository: {
-            issue: {
-              id: 'issue-id',
-              timelineItems: { nodes: [] },
-              projectItems: {
-                nodes: [
-                  {
-                    id: 'item-id',
-                    project: { id: 'project-id' },
-                    fieldValueByName: { name: 'In progress', optionId: 'in-progress-id' },
-                  },
-                ],
-              },
-            },
-          },
-        },
-      })
-      return
-    }
-    if (request.url?.endsWith('/pulls/48')) {
-      send({
-        body: 'Related to #47',
-        draft: false,
-        labels: [],
-        user: { type: 'Bot' },
-      })
-      return
-    }
-    if (request.url?.endsWith('/pulls/48/requested_reviewers')) {
-      send({ users: [], teams: [] })
-      return
-    }
-    if (request.url?.endsWith('/pulls/48/reviews?per_page=100')) {
-      send([])
-      return
-    }
-    if (request.url?.endsWith('/issues/47')) {
-      send({
-        node_id: 'issue-id',
-        title: '完成议题管理校验',
-        body: withDetails('完成议题管理校验。'),
-        assignees: [],
-        labels: [],
-        type: { name: 'Idea' },
-        state: 'open',
-        state_reason: null,
-      })
-      return
-    }
-    if (request.url?.endsWith('/issues/47/comments?per_page=100')) {
-      send([])
-      return
-    }
-    send({ message: 'Not Found' }, 404)
-  })
-  server.listen(0, '127.0.0.1')
-  await new Promise((resolve, reject) => {
-    server.once('listening', resolve)
-    server.once('error', reject)
-  })
-  registerCleanup(
-    () =>
-      new Promise((resolve, reject) => {
-        server.close((error) => (error ? reject(error) : resolve()))
-      }),
-  )
-  const address = server.address()
-  assert.notEqual(address, null)
-  assert.equal(typeof address, 'object')
-
-  const directory = await mkdtemp(join(tmpdir(), 'dsh-issue-policy-'))
-  registerCleanup(() => rm(directory, { recursive: true, force: true }))
-  const pullEvent = join(directory, 'pull-request.json')
-  const issueEvent = join(directory, 'issue.json')
-  await writeFile(pullEvent, JSON.stringify({ pull_request: { number: 48 } }))
-  await writeFile(issueEvent, JSON.stringify({ action: 'opened', issue: { number: 47 } }))
-  const apiEnvironment = {
-    GITHUB_API_URL: `http://127.0.0.1:${address.port}`,
-  }
-  const environment = { ...apiEnvironment, GH_TOKEN: 'test-token' }
-
-  await assert.rejects(
-    execFileAsync(process.execPath, [policyEntrypoint, 'deployment'], {
-      env: {
-        ...environment,
-        GITHUB_REPOSITORY: 'BeiKeJieDeLiuLangMao/deepseek-harness-gestalt',
-      },
-    }),
-    (error) => {
-      assert.match(error.stderr, /config\.projectOrganization 必须与 GITHUB_REPOSITORY owner 一致/)
-      return true
-    },
-  )
-
-  await execFileAsync(process.execPath, [policyEntrypoint, 'pr'], {
-    env: {
-      ...environment,
-      GITHUB_EVENT_PATH: pullEvent,
-      GITHUB_REPOSITORY: 'BeiKeJieDeLiuLangMao/deepseek-harness-gestalt',
-    },
-  })
-  await execFileAsync(process.execPath, [policyEntrypoint, 'lifecycle'], {
-    env: {
-      ...environment,
-      GITHUB_EVENT_NAME: 'issues',
-      GITHUB_EVENT_PATH: issueEvent,
-      GITHUB_REPOSITORY: 'deepseek-harness/tracker',
-    },
-  })
-
-  const requestCount = requests.length
-  await assert.rejects(
-    execFileAsync(process.execPath, [policyEntrypoint, 'lifecycle'], {
-      env: {
-        ...apiEnvironment,
-        GITHUB_EVENT_NAME: 'issues',
-        GITHUB_EVENT_PATH: issueEvent,
-        GITHUB_REPOSITORY: 'deepseek-harness/tracker',
-      },
-    }),
-    (error) => {
-      assert.match(error.stderr, /GH_TOKEN 或 GITHUB_TOKEN 未设置/)
-      return true
-    },
-  )
-  assert.equal(requests.length, requestCount)
-
-  const restPaths = requests
-    .filter((request) => request.path !== '/graphql')
-    .map((request) => request.path)
-    .sort()
-  assert.deepEqual(restPaths, [
-    '/repos/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt/pulls/48',
-    '/repos/deepseek-harness/tracker/issues/47',
-    '/repos/deepseek-harness/tracker/issues/47/comments?per_page=100',
-  ])
-  const pullRequestReads = requests.filter((request) =>
-    request.path?.startsWith('/repos/BeiKeJieDeLiuLangMao/deepseek-harness-gestalt/'),
-  )
-  assert.ok(pullRequestReads.length > 0)
-  for (const request of pullRequestReads) {
-    assert.equal(request.authorization, 'Bearer test-token')
-  }
-  const lifecycleRequests = requests.filter(
-    (request) =>
-      request.path === '/graphql' || request.path?.startsWith('/repos/deepseek-harness/tracker/'),
-  )
-  assert.ok(lifecycleRequests.length > 0)
-  for (const request of lifecycleRequests) {
-    assert.equal(request.authorization, 'Bearer test-token')
-  }
-  assert.ok(
-    lifecycleRequests.some(
-      (request) => request.path === '/graphql' && request.body.includes('mutation('),
-    ),
-  )
-  const graphqlVariables = requests
-    .filter((request) => request.path === '/graphql')
-    .map((request) => JSON.parse(request.body).variables)
-    .filter((variables) => variables.organization !== undefined)
-  assert.ok(graphqlVariables.length >= 2)
-  for (const variables of graphqlVariables) {
-    assert.equal(variables.organization, 'deepseek-harness')
-    assert.equal(variables.repositoryOwner, 'deepseek-harness')
-    assert.equal(variables.repository, 'tracker')
-  }
-})
-
 const reviewedPull = (labels) => ({
   isDraft: false,
   authorType: 'User',
@@ -766,56 +156,105 @@ const reviewedPull = (labels) => ({
   issues: new Map([[2, { priority: null }]]),
 })
 
-test('counts only text outside details', () => {
-  assert.deepEqual(countVisibleUnits('支持 GitHub Project。<details>隐藏文字</details>'), {
-    units: 4,
-    balanced: true,
-    detailsCount: 1,
-    allCollapsed: true,
-  })
-})
-
-test('requires a balanced default-collapsed details region', () => {
-  assert.deepEqual(validateBody({ body: '完成工作。', assignees: [] }), [
-    '正文必须包含默认收起的 <details> 区域',
-  ])
+test('routes policy requests to the repository from the workflow event', () => {
   assert.deepEqual(
-    validateBody({
-      body: '完成工作。\n\n<details open><summary>细节</summary>待补充。</details>',
-      assignees: [],
-    }),
-    ['details 必须默认收起，不得设置 open'],
+    repositoryCoordinates({ GITHUB_REPOSITORY: 'gestaltrun/deepseek-harness-gestalt' }),
+    {
+      owner: 'gestaltrun',
+      name: 'deepseek-harness-gestalt',
+      fullName: 'gestaltrun/deepseek-harness-gestalt',
+    },
   )
-  assert.deepEqual(
-    validateBody({ body: '完成工作。\n\n<details><summary>细节</summary>', assignees: [] }),
-    ['details 标签必须成对闭合'],
+  assert.throws(
+    () => repositoryCoordinates({ GITHUB_REPOSITORY: 'deepseek-harness-gestalt' }),
+    /GITHUB_REPOSITORY 必须为 owner\/name/,
   )
 })
 
-test('requires Owner for multiple assignees', () => {
-  assert.deepEqual(
-    validateBody({
-      body: withDetails('完成工作。'),
-      assignees: ['tianyicui', 'tianyicui-bot'],
-    }),
-    ['多个 Assignees 时首个非空行必须是 Owner: @login'],
+test('rejects lifecycle when the unconfigured Project owner differs from this tracker', () => {
+  assert.throws(
+    () => validateLifecycleDeployment({ GITHUB_REPOSITORY: 'gestaltrun/deepseek-harness-gestalt' }),
+    /deepseek-harness != gestaltrun/,
+  )
+  assert.doesNotThrow(() =>
+    validateLifecycleDeployment({ GITHUB_REPOSITORY: 'deepseek-harness/deepseek-harness' }),
   )
 })
 
-test('accepts an intended Owner while assignment permission is pending', () => {
+test('keeps only Bug, Feature, and Task Issue templates with used frontmatter', () => {
+  const directory = new URL('../ISSUE_TEMPLATE/', import.meta.url)
+  assert.deepEqual(readdirSync(directory).sort(), ['bug.md', 'config.yml', 'feature.md', 'task.md'])
+
+  for (const file of ['bug.md', 'feature.md', 'task.md']) {
+    const source = readFileSync(new URL(file, directory), 'utf8')
+    const frontmatter = source.match(/^---\n([\s\S]*?)\n---/)?.[1] ?? ''
+    const keys = frontmatter
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => line.slice(0, line.indexOf(':')))
+      .sort()
+    assert.deepEqual(keys, ['about', 'name', 'type'], file)
+    assert.match(source, /^## /m, file)
+    assert.match(source, /<!-- [^\n]+ -->/, file)
+    assert.doesNotMatch(source, /<details\b/i, file)
+  }
+  assert.equal(
+    readFileSync(new URL('config.yml', directory), 'utf8'),
+    'blank_issues_enabled: false\n',
+  )
+})
+
+test('keeps Feature Issues limited to motivation and behavior', () => {
+  const source = readFileSync(
+    new URL('../ISSUE_TEMPLATE/feature.md', import.meta.url),
+    'utf8',
+  )
   assert.deepEqual(
-    validateBody({
-      body: withDetails('Owner: @octocat\n\n完成工作。'),
-      assignees: [],
+    [...source.matchAll(/^## .+$/gm)].map(([heading]) => heading),
+    ['## Motivation', '## Behavior'],
+  )
+})
+
+test('keeps Bug Issues limited to the problem report', () => {
+  const source = readFileSync(new URL('../ISSUE_TEMPLATE/bug.md', import.meta.url), 'utf8')
+  assert.deepEqual(
+    [...source.matchAll(/^## .+$/gm)].map(([heading]) => heading),
+    ['## Summary', '## Reproduction', '## Current behavior', '## Expected behavior', '## Environment'],
+  )
+})
+
+test('keeps Task Issues limited to summary and deliverables', () => {
+  const source = readFileSync(new URL('../ISSUE_TEMPLATE/task.md', import.meta.url), 'utf8')
+  assert.deepEqual(
+    [...source.matchAll(/^## .+$/gm)].map(([heading]) => heading),
+    ['## Summary', '## Deliverables'],
+  )
+})
+
+test('structures the pull request template around motivation, changes, and testing', () => {
+  const source = readFileSync(new URL('../pull_request_template.md', import.meta.url), 'utf8')
+  for (const heading of ['## Motivation', '## Changes', '## Testing']) {
+    assert.match(source, new RegExp(`^${heading.replaceAll('#', '\\#')}$`, 'm'))
+  }
+  assert.doesNotMatch(source, /^### /m)
+  assert.match(
+    source,
+    /<!-- 高层次说明命令[^\n]+ -->\n<!-- 高层次说明用户[^\n]+ -->/,
+  )
+  assert.match(source, /- <!-- [^\n]+ -->\n\n  <details>\n  <summary>Proof<\/summary>/)
+  assert.equal(source.match(/<details>/g)?.length, 1)
+  assert.equal(source.match(/<\/details>/g)?.length, 1)
+})
+
+test('ignores Issue title, body presentation, and assignee ownership', () => {
+  assert.deepEqual(
+    validateIssue({
+      ...legalIssue,
+      title: '[Bug] English title',
+      body: `Owner: @octocat\n\n${'visible '.repeat(60)}<details open>unclosed`,
+      assignees: ['octocat', 'hubot'],
     }),
     [],
-  )
-  assert.deepEqual(
-    validateBody({
-      body: withDetails('Owner: @octocat\n\n完成工作。'),
-      assignees: ['hubot'],
-    }),
-    ['零或一个 Assignee 时不得写 Owner 行'],
   )
 })
 
@@ -824,11 +263,6 @@ test('allows optional metadata in every open Status', () => {
   for (const status of ['Inbox', 'Backlog', 'Ready', 'In progress', 'In review']) {
     assert.deepEqual(validateIssue({ ...legalIssue, status }), [])
   }
-})
-
-test('rejects metadata prefixes in an Issue title', () => {
-  const errors = validateIssue({ ...legalIssue, title: '[Bug] 修复恢复错误' })
-  assert.ok(errors.includes('Issue 标题不得带 Type、Priority、Status、area 或 Owner 前缀'))
 })
 
 test('reserves PR kind and legacy labels for pull requests', () => {
@@ -845,6 +279,109 @@ test('reserves PR kind and legacy labels for pull requests', () => {
     )
   }
   assert.deepEqual(validateIssue({ ...legalIssue, labels: ['area/web', 'source/member'] }), [])
+})
+
+test('removes reserved labels from Issues before validation', async (t) => {
+  const previousRepository = process.env.GITHUB_REPOSITORY
+  const previousToken = process.env.GH_TOKEN
+  process.env.GITHUB_REPOSITORY = 'deepseek-harness/deepseek-harness'
+  process.env.GH_TOKEN = 'test-token'
+  t.after(() => {
+    if (previousRepository === undefined) delete process.env.GITHUB_REPOSITORY
+    else process.env.GITHUB_REPOSITORY = previousRepository
+    if (previousToken === undefined) delete process.env.GH_TOKEN
+    else process.env.GH_TOKEN = previousToken
+  })
+  const requests = []
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    requests.push({ url, method: options.method })
+    assert.equal(options.headers.Authorization, 'Bearer test-token')
+    if (url.endsWith('/labels/bug-fix')) {
+      return Response.json({ message: 'Label does not exist' }, { status: 404 })
+    }
+    return Response.json([])
+  })
+
+  const issue = {
+    ...legalIssue,
+    number: 42,
+    labels: ['area/web', 'kind/bug-fix', 'bug-fix', 'source/member'],
+  }
+  const repaired = await repairIssueLabels(issue)
+
+  assert.deepEqual(repaired.labels, ['area/web', 'source/member'])
+  assert.deepEqual(issue.labels, ['area/web', 'kind/bug-fix', 'bug-fix', 'source/member'])
+  assert.deepEqual(validateIssue(repaired), [])
+  assert.deepEqual(requests, [
+    {
+      url: 'https://api.github.com/repos/deepseek-harness/deepseek-harness/issues/42/labels/kind%2Fbug-fix',
+      method: 'DELETE',
+    },
+    {
+      url: 'https://api.github.com/repos/deepseek-harness/deepseek-harness/issues/42/labels/bug-fix',
+      method: 'DELETE',
+    },
+  ])
+})
+
+test('deletes a stale audit comment after repairing its only violation', async (t) => {
+  const previousRepository = process.env.GITHUB_REPOSITORY
+  const previousToken = process.env.GH_TOKEN
+  process.env.GITHUB_REPOSITORY = 'deepseek-harness/deepseek-harness'
+  process.env.GH_TOKEN = 'test-token'
+  t.after(() => {
+    if (previousRepository === undefined) delete process.env.GITHUB_REPOSITORY
+    else process.env.GITHUB_REPOSITORY = previousRepository
+    if (previousToken === undefined) delete process.env.GH_TOKEN
+    else process.env.GH_TOKEN = previousToken
+  })
+  const requests = []
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    requests.push({ url, method: options.method ?? 'GET' })
+    if (url.endsWith('/issues/42')) {
+      return Response.json({
+        node_id: 'issue-id',
+        labels: [{ name: 'area/web' }, { name: 'kind/bug-fix' }],
+        type: { name: 'Bug' },
+        state: 'open',
+        state_reason: null,
+      })
+    }
+    if (url.endsWith('/graphql')) return Response.json({ data: projectGraphqlData() })
+    if (url.endsWith('/labels/kind%2Fbug-fix')) return Response.json([{ name: 'area/web' }])
+    if (url.endsWith('/issues/42/comments?per_page=100')) {
+      return Response.json([
+        {
+          id: 99,
+          user: { type: 'Bot' },
+          body: '<!-- dsh-issue-policy -->\nold audit',
+        },
+      ])
+    }
+    if (url.endsWith('/issues/comments/99')) return new Response(null, { status: 204 })
+    return Response.json({ message: 'unexpected request' }, { status: 500 })
+  })
+
+  assert.deepEqual(await auditIssue(42), [])
+  assert.deepEqual(
+    requests.map(({ url, method }) => ({ path: new URL(url).pathname + new URL(url).search, method })),
+    [
+      { path: '/repos/deepseek-harness/deepseek-harness/issues/42', method: 'GET' },
+      { path: '/graphql', method: 'POST' },
+      {
+        path: '/repos/deepseek-harness/deepseek-harness/issues/42/labels/kind%2Fbug-fix',
+        method: 'DELETE',
+      },
+      {
+        path: '/repos/deepseek-harness/deepseek-harness/issues/42/comments?per_page=100',
+        method: 'GET',
+      },
+      {
+        path: '/repos/deepseek-harness/deepseek-harness/issues/comments/99',
+        method: 'DELETE',
+      },
+    ],
+  )
 })
 
 test('keeps terminal Status aligned with the native close reason', () => {
@@ -872,6 +409,160 @@ test('separates resolving and informational references', () => {
     }),
     { all: [4, 7, 12], resolving: [12], related: [4, 7] },
   )
+})
+
+test('converts PR creation timestamps to Shanghai Project dates', () => {
+  assert.equal(projectDate('2026-08-27T15:59:59Z', 'Asia/Shanghai'), '2026-08-27')
+  assert.equal(projectDate('2026-08-27T16:00:00Z', 'Asia/Shanghai'), '2026-08-28')
+  assert.throws(() => projectDate('invalid', 'Asia/Shanghai'), /无效的 PR 创建时间/)
+})
+
+test('initializes every referenced Issue only for a PR opened event', async () => {
+  const writes = []
+  const pull = {
+    createdAt: '2026-08-27T16:00:00Z',
+    references: { all: [4, 7, 12] },
+  }
+  const initialize = async (number, date) => writes.push({ number, date })
+
+  await initializePullRequestStartDates(pull, 'opened', initialize)
+  assert.deepEqual(writes, [
+    { number: 4, date: '2026-08-28' },
+    { number: 7, date: '2026-08-28' },
+    { number: 12, date: '2026-08-28' },
+  ])
+
+  for (const action of ['edited', 'synchronize', 'reopened']) {
+    await initializePullRequestStartDates(pull, action, initialize)
+  }
+  assert.equal(writes.length, 3)
+})
+
+test('reads repository Issue and Project Status with separate tokens', async (t) => {
+  const previousRepository = process.env.GITHUB_REPOSITORY
+  const previousGhToken = process.env.GH_TOKEN
+  const previousGithubToken = process.env.GITHUB_TOKEN
+  const previousProjectToken = process.env.PROJECT_TOKEN
+  delete process.env.GH_TOKEN
+  process.env.GITHUB_REPOSITORY = 'gestaltrun/deepseek-harness-gestalt'
+  process.env.GITHUB_TOKEN = 'repository-token'
+  process.env.PROJECT_TOKEN = 'project-token'
+  t.after(() => {
+    if (previousRepository === undefined) delete process.env.GITHUB_REPOSITORY
+    else process.env.GITHUB_REPOSITORY = previousRepository
+    if (previousGhToken === undefined) delete process.env.GH_TOKEN
+    else process.env.GH_TOKEN = previousGhToken
+    if (previousGithubToken === undefined) delete process.env.GITHUB_TOKEN
+    else process.env.GITHUB_TOKEN = previousGithubToken
+    if (previousProjectToken === undefined) delete process.env.PROJECT_TOKEN
+    else process.env.PROJECT_TOKEN = previousProjectToken
+  })
+  const urls = []
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    urls.push(url)
+    if (url.endsWith('/issues/42')) {
+      assert.equal(options.headers.Authorization, 'Bearer repository-token')
+      return Response.json({
+        node_id: 'issue-id',
+        title: 'Project metadata',
+        body: null,
+        assignees: [],
+        labels: [],
+        type: { name: 'Task' },
+        state: 'open',
+        state_reason: null,
+      })
+    }
+    assert.equal(url, 'https://api.github.com/graphql')
+    assert.equal(options.headers.Authorization, 'Bearer project-token')
+    return Response.json({ data: projectGraphqlData({ priority: 'P1' }) })
+  })
+
+  const issue = await issueSnapshot(42)
+
+  assert.equal(issue.priority, null)
+  assert.equal(issue.status, 'Inbox')
+  assert.deepEqual(urls, [
+    'https://api.github.com/repos/gestaltrun/deepseek-harness-gestalt/issues/42',
+    'https://api.github.com/graphql',
+  ])
+})
+
+test('writes an empty Project Start Date with the configured field', async (t) => {
+  const requests = mockGraphql(t, (request) => {
+    if (request.query.includes('query(')) return projectGraphqlData()
+    return { updateProjectV2ItemFieldValue: { projectV2Item: { id: 'item-id' } } }
+  })
+
+  await initializeIssueStartDate(42, '2026-08-28')
+
+  assert.equal(requests.length, 2)
+  assert.match(requests[0].query, /isIssueField/)
+  assert.doesNotMatch(requests[0].query, /issueField\s*\{/)
+  assert.match(requests[0].query, /priorityValue: fieldValueByName/)
+  assert.equal(requests[0].variables.priorityField, '')
+  assert.equal(requests[0].variables.includePriority, false)
+  assert.match(requests[0].query, /ProjectV2ItemFieldDateValue/)
+  assert.match(requests[1].query, /updateProjectV2ItemFieldValue/)
+  assert.match(requests[1].query, /value: \{date: \$date\}/)
+  assert.deepEqual(requests[1].variables, {
+    projectId: 'project-id',
+    itemId: 'item-id',
+    fieldId: 'start-date-field-id',
+    date: '2026-08-28',
+  })
+})
+
+test('preserves an existing Project Start Date', async (t) => {
+  const requests = mockGraphql(t, () => projectGraphqlData({ startDate: '2026-08-01' }))
+
+  await initializeIssueStartDate(42, '2026-08-28')
+
+  assert.equal(requests.length, 1)
+})
+
+test('adds a referenced Issue to the Project before setting Start Date', async (t) => {
+  const requests = mockGraphql(t, (request) => {
+    if (request.query.includes('query(')) return projectGraphqlData({ projectItem: false })
+    if (request.query.includes('addProjectV2ItemById')) {
+      return { addProjectV2ItemById: { item: { id: 'new-item-id' } } }
+    }
+    return { updateProjectV2ItemFieldValue: { projectV2Item: { id: 'new-item-id' } } }
+  })
+
+  await initializeIssueStartDate(42, '2026-08-28')
+
+  assert.equal(requests.length, 3)
+  assert.deepEqual(requests[1].variables, { projectId: 'project-id', contentId: 'issue-id' })
+  assert.deepEqual(requests[2].variables, {
+    projectId: 'project-id',
+    itemId: 'new-item-id',
+    fieldId: 'start-date-field-id',
+    date: '2026-08-28',
+  })
+})
+
+test('rejects a missing, non-Date, or Issue-level Start Date field', async (t) => {
+  let response = projectGraphqlData({ startDateField: false })
+  const requests = mockGraphql(t, () => response)
+
+  await assert.rejects(initializeIssueStartDate(42, '2026-08-28'), /Project 缺少 Start Date 字段/)
+  response = projectGraphqlData({ startDateType: 'TEXT' })
+  await assert.rejects(initializeIssueStartDate(42, '2026-08-28'), /Start Date 字段必须为 Date/)
+  response = projectGraphqlData({ startDateIsIssueField: true })
+  await assert.rejects(
+    initializeIssueStartDate(42, '2026-08-28'),
+    /Start Date 字段必须为 Project Date 字段/,
+  )
+  assert.equal(requests.length, 3)
+})
+
+test('does not require a Project Priority field when PR Priority integration is disabled', async (t) => {
+  const requests = mockGraphql(t, () => projectGraphqlData({ priorityField: false }))
+
+  await initializeIssueStartDate(42, '2026-08-28')
+
+  assert.equal(requests[0].variables.includePriority, false)
 })
 
 test('does not treat pull request references as Issue associations', () => {
@@ -905,34 +596,6 @@ test('allows informational references without cross-object constraints', () => {
   assert.deepEqual(errors, [])
 })
 
-test('validates metadata independently of Draft policy activation', () => {
-  const input = {
-    isDraft: true,
-    authorType: 'User',
-    reviewRequestCount: 0,
-    reviewCount: 0,
-    labels: [],
-    references: { all: [], resolving: [], related: [] },
-    issues: new Map(),
-  }
-
-  assert.deepEqual(validatePullRequest(input), [])
-  assert.ok(validatePullRequestMetadata(input).includes('PR 正文必须引用至少一个同仓库 Issue'))
-  assert.ok(validatePullRequestMetadata(input).includes('PR 必须恰好有一个允许的 kind/*，当前为 0'))
-})
-
-test('requires every planner-selected area label', () => {
-  const input = {
-    authorType: 'User',
-    labels: ['kind/feature', 'area/infra'],
-    references: { all: [256], resolving: [], related: [256] },
-    issues: new Map([[256, { priority: null }]]),
-    requiredAreas: ['area/infra', 'area/web'],
-  }
-
-  assert.deepEqual(validatePullRequestMetadata(input), ['PR 缺少相关 area/*：area/web'])
-})
-
 test('enforces highest resolving Priority without Type or area synchronization', () => {
   const pull = {
     isDraft: false,
@@ -954,29 +617,25 @@ test('enforces highest resolving Priority without Type or area synchronization',
   )
 })
 
-test('activates policy by the configured non-draft or review-activity rule', () => {
-  const unreviewed = {
-    isDraft: false,
-    authorType: 'User',
-    reviewRequestCount: 0,
-    reviewCount: 0,
-  }
-  assert.equal(requiresPullRequestPolicy(unreviewed, 'non-draft'), true)
-  assert.equal(requiresPullRequestPolicy(unreviewed, 'review-activity'), false)
+test('non-draft activation applies policy before review activity', () => {
   assert.equal(
     requiresPullRequestPolicy({
       isDraft: false,
       authorType: 'User',
       reviewRequestCount: 1,
       reviewCount: 0,
-    }, 'review-activity'),
+    }),
     true,
   )
-  for (const activation of ['non-draft', 'review-activity']) {
-    assert.equal(requiresPullRequestPolicy({ ...unreviewed, isDraft: true }, activation), false)
-    assert.equal(requiresPullRequestPolicy({ ...unreviewed, authorType: 'Bot' }, activation), false)
-    assert.equal(requiresPullRequestPolicy({ ...unreviewed, authorType: 'App' }, activation), false)
-  }
+  assert.equal(
+    requiresPullRequestPolicy({
+      isDraft: false,
+      authorType: 'User',
+      reviewRequestCount: 0,
+      reviewCount: 0,
+    }),
+    true,
+  )
 })
 
 test('maps only explicit review handoffs to review status commands', () => {

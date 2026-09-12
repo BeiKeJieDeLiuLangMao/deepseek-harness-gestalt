@@ -2,6 +2,7 @@
 
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
+import { randomUUID } from 'node:crypto'
 import { RemoteRelayError } from '@deepseek-ai/dsh-remote-access'
 import type { SelectedPlatformEnvironment } from '@deepseek-ai/dsh-platform-account'
 import {
@@ -70,7 +71,9 @@ export interface DesktopRemoteRelayOptions {
   liveProjection?: Omit<DesktopCompanionLiveProjectionAdapter, 'reconnect'>
 }
 
-type NodeRelayConnector = typeof NodeRelayEndpointSocket.connect
+type NodeRelayConnector = (
+  ...args: Parameters<typeof NodeRelayEndpointSocket.connect>
+) => Promise<RelayEndpointSocket>
 
 /** Desktop proxy candidate connector; an absent proxy URL means DIRECT. */
 export type DesktopRelayProxyConnector = (
@@ -769,7 +772,7 @@ export function createDesktopRemoteRelay(options: DesktopRemoteRelayOptions): De
     await lifecycle.sendCiphertext(...input)
   }, options.handleOperation, () => options.desktopName(), config.negotiationTimeoutMs, liveProjection)
   const lifecycle = new DesktopRelayEndpointLifecycle({
-    attachmentId: () => parseRelayAttachmentId(crypto.randomUUID()),
+    attachmentId: () => parseRelayAttachmentId(randomUUID()),
     connect: async (signal) => {
       if (options.connect !== undefined) return await options.connect(signal, config)
       const limits = { maxBytes: config.inboundMaxBytes, maxMessages: config.inboundMaxMessages }

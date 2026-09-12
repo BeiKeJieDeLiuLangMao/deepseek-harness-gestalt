@@ -141,6 +141,8 @@ export interface Config {
   viewportHeight?: number
   /** Bound on each Chromium navigation or content read. */
   requestTimeoutMs?: number
+  /** Grace for Chromium to settle after an operation is stopped. */
+  cancelTimeoutMs?: number
 }
 
 /** Runtime configuration schema for the in-process Electron Browser Provider. */
@@ -149,6 +151,7 @@ export const Config: z<Config> = z.object({
   viewportWidth: z.number().default(1280),
   viewportHeight: z.number().default(800),
   requestTimeoutMs: z.number().default(30_000),
+  cancelTimeoutMs: z.number().default(1_000),
 })
 
 type ResolvedConfig = Required<Config>
@@ -226,6 +229,7 @@ export class ElectronBrowserRuntime extends BrowserRuntime {
     readonly key: string
     readonly tab: OpenTab
     readonly bounds: ElectronWindowBounds
+    readonly parent: unknown
   } | undefined
 
   constructor(ctx: Context, config: Config) {
@@ -235,6 +239,7 @@ export class ElectronBrowserRuntime extends BrowserRuntime {
     assertViewport('viewportWidth', resolved.viewportWidth)
     assertViewport('viewportHeight', resolved.viewportHeight)
     assertDuration('requestTimeoutMs', resolved.requestTimeoutMs)
+    assertDuration('cancelTimeoutMs', resolved.cancelTimeoutMs)
     assertElectronAvailable()
     this.config = resolved
     this.host = electronTestHost()
@@ -351,10 +356,7 @@ export class ElectronBrowserRuntime extends BrowserRuntime {
     }
   }
 
-  /**
-   * Race one webContents operation against abort, then stop Chromium and join
-   * the raced promise before the exclusive queue advances.
-   */
+  /** Race one webContents operation against abort and quiesce its owned window. */
   private async raceContents<T>(
     window: ElectronBrowserWindow,
     operation: Promise<T>,
@@ -375,10 +377,41 @@ export class ElectronBrowserRuntime extends BrowserRuntime {
         && !window.webContents.isDestroyed()
       ) {
         window.webContents.stop()
+        const settled = await this.waitForCancellation(operation)
+        if (!settled) window.destroy()
+        throw error
       }
       await operation.then(() => undefined, () => undefined)
       throw error
     }
+  }
+
+  /** Give a stopped Chromium operation a bounded chance to settle. */
+  private async waitForCancellation(operation: Promise<unknown>): Promise<boolean> {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const deadline = new Promise<false>((resolve) => {
+      timer = setTimeout(() => { resolve(false) }, this.config.cancelTimeoutMs)
+    })
+    const settled = operation.then(() => true, () => true)
+    const result = await Promise.race([settled, deadline])
+    if (timer !== undefined) clearTimeout(timer)
+    return result
+  }
+
+  /** Project recovery when a failed operation left one committed target without a live window. */
+  private recoverAfterOperationFailure(
+    target: BrowserTarget,
+    error: unknown,
+  ): BrowserRuntimeState | undefined {
+    if (!(error instanceof BrowserRuntimeError)) return undefined
+    if (error.code === 'BROWSER_RUNTIME_UNAVAILABLE') {
+      return this.scheduleRecovery(target, 'unhealthy', true)
+    }
+    const tab = this.profiles.get(target.profileId)?.tabs.get(target.tabId)
+    if (error.code === 'BROWSER_ABORTED' && tab?.window.isDestroyed() === true) {
+      return this.scheduleRecovery(target, 'unhealthy', true)
+    }
+    return undefined
   }
 
   /** Create or reuse the Chromium session for one persist or ephemeral partition. */
@@ -400,7 +433,9 @@ export class ElectronBrowserRuntime extends BrowserRuntime {
     const key = browserTargetKey(target)
     if (
       this.presented?.key === key
+      && !this.presented.tab.window.isDestroyed()
       && sameWindowBounds(this.presented.bounds, bounds)
+      && this.presented.parent === parent
     ) return
     if (this.presented !== undefined && this.presented.key !== key) {
       this.concealWindow(this.presented.tab.window)
@@ -409,7 +444,7 @@ export class ElectronBrowserRuntime extends BrowserRuntime {
     tab.window.setParentWindow(parent)
     tab.window.setBounds(bounds)
     if (this.presented?.key !== key) tab.window.showInactive()
-    this.presented = { key, tab, bounds }
+    this.presented = { key, tab, bounds, parent }
   }
 
   /**
@@ -427,7 +462,7 @@ export class ElectronBrowserRuntime extends BrowserRuntime {
    * A missing presentation is a no-op.
    */
   raisePresented(): void {
-    this.presented?.tab.window.raise()
+    if (this.presented?.tab.window.isDestroyed() === false) this.presented.tab.window.raise()
   }
 
   /** Open one page window in the Profile partition. */
@@ -483,15 +518,15 @@ export class ElectronBrowserRuntime extends BrowserRuntime {
   }
 
   /** Destroy one hidden window if this Profile still records it. */
-  private destroyExistingTab(profile: OpenProfile, tabId: string): void {
+  private destroyExistingTab(profile: OpenProfile, tabId: string, preservePresentation = false): void {
     const tab = profile.tabs.get(tabId)
     if (tab === undefined) return
-    this.destroyTab(tab)
+    this.destroyTab(tab, preservePresentation)
   }
 
   /** Destroy one hidden window without throwing after Chromium already closed it. */
-  private destroyTab(tab: OpenTab): void {
-    if (this.presented?.tab === tab) this.presented = undefined
+  private destroyTab(tab: OpenTab, preservePresentation = false): void {
+    if (!preservePresentation && this.presented?.tab === tab) this.presented = undefined
     tab.stopCrashWatch()
     if (tab.window.isDestroyed()) return
     tab.window.destroy()
@@ -633,13 +668,19 @@ export class ElectronBrowserRuntime extends BrowserRuntime {
     try {
       const host = await this.hostApis()
       const profile = this.openProfile(lastOpen.target)
-      this.destroyExistingTab(profile, lastOpen.target.tabId)
+      const key = browserTargetKey(lastOpen.target)
+      const presentation = this.presented?.key === key ? this.presented : undefined
+      this.destroyExistingTab(profile, lastOpen.target.tabId, presentation !== undefined)
       const window = this.createWindow(profile, host)
       const tab: OpenTab = { window, stopCrashWatch: this.watchCrash(lastOpen.target, window) }
       profile.tabs.set(lastOpen.target.tabId, tab)
       await this.load(window, lastOpen.url, undefined)
       const restored = await this.page(lastOpen, undefined)
       this.commit({ ...restored, revision: unavailable.revision + 1, focused: false })
+      if (presentation !== undefined && this.presented === presentation) {
+        this.presented = undefined
+        this.present(lastOpen.target, presentation.bounds, presentation.parent)
+      }
     } catch (error) {
       this.ctx.logger.warn('browser-runtime-electron: reconnect attempts exhausted')
       this.ctx.logger.warn(error)
@@ -649,6 +690,10 @@ export class ElectronBrowserRuntime extends BrowserRuntime {
         profile.tabs.delete(lastOpen.target.tabId)
         if (profile.tabs.size === 0) this.profiles.delete(lastOpen.target.profileId)
       }
+      if (
+        this.presented?.key === browserTargetKey(lastOpen.target)
+        && this.presented.tab.window.isDestroyed()
+      ) this.presented = undefined
       this.commitReconnectFailed(unavailable.target)
     }
   }
@@ -733,12 +778,17 @@ export class ElectronBrowserRuntime extends BrowserRuntime {
       assertBrowserNotAborted(request.signal)
       const state = this.openPage(request.target)
       this.expectRevision(state, request.expectedRevision)
-      await this.load(this.openTab(request.target).window, request.url, request.signal)
-      const page = await this.page(state, request.signal, request.url)
-      return this.commit({
-        ...page,
-        revision: state.revision + 1,
-      })
+      try {
+        await this.load(this.openTab(request.target).window, request.url, request.signal)
+        const page = await this.page(state, request.signal, request.url)
+        return this.commit({
+          ...page,
+          revision: state.revision + 1,
+        })
+      } catch (error) {
+        this.recoverAfterOperationFailure(request.target, error)
+        throw error
+      }
     })
   }
 
@@ -752,10 +802,11 @@ export class ElectronBrowserRuntime extends BrowserRuntime {
         return await this.page(state, request.signal)
       } catch (error) {
         if (error instanceof BrowserRuntimeError && error.code === 'BROWSER_RUNTIME_UNAVAILABLE') {
-          return this.scheduleRecovery(request.target, 'unhealthy', true)
+          return this.recoverAfterOperationFailure(request.target, error)
             ?? this.states.get(browserTargetKey(request.target))
             ?? state
         }
+        this.recoverAfterOperationFailure(request.target, error)
         throw error
       }
     })
@@ -766,16 +817,21 @@ export class ElectronBrowserRuntime extends BrowserRuntime {
     return this.exclusive(async () => {
       assertBrowserNotAborted(request.signal)
       const state = this.openPage(request.target)
-      const page = await this.page(state, request.signal)
-      const data = await this.capture(this.openTab(request.target).window, request.signal)
-      return Object.freeze({
-        target: state.target,
-        revision: state.revision,
-        url: page.url,
-        title: page.title,
-        mediaType: 'image/png' as const,
-        data,
-      })
+      try {
+        const page = await this.page(state, request.signal)
+        const data = await this.capture(this.openTab(request.target).window, request.signal)
+        return Object.freeze({
+          target: state.target,
+          revision: state.revision,
+          url: page.url,
+          title: page.title,
+          mediaType: 'image/png' as const,
+          data,
+        })
+      } catch (error) {
+        this.recoverAfterOperationFailure(request.target, error)
+        throw error
+      }
     })
   }
 
@@ -797,18 +853,23 @@ export class ElectronBrowserRuntime extends BrowserRuntime {
       const state = this.openPage(request.target)
       this.expectRevision(state, request.expectedRevision)
       const window = this.openTab(request.target).window
-      if (request.url !== undefined) await this.load(window, request.url, request.signal)
-      window.webContents.focus()
-      if (request.text !== undefined) await this.typeIntoPage(window, request.text, request.signal)
-      const page = await this.page(
-        state,
-        request.signal,
-        request.url !== undefined ? request.url : state.url,
-      )
-      return this.commit({
-        ...page,
-        revision: state.revision + 1,
-      })
+      try {
+        if (request.url !== undefined) await this.load(window, request.url, request.signal)
+        window.webContents.focus()
+        if (request.text !== undefined) await this.typeIntoPage(window, request.text, request.signal)
+        const page = await this.page(
+          state,
+          request.signal,
+          request.url !== undefined ? request.url : state.url,
+        )
+        return this.commit({
+          ...page,
+          revision: state.revision + 1,
+        })
+      } catch (error) {
+        this.recoverAfterOperationFailure(request.target, error)
+        throw error
+      }
     })
   }
 

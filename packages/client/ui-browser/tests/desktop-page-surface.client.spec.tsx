@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, render } from '@testing-library/react'
+import { cleanup, render, waitFor } from '@testing-library/react'
 import type { BrowserTarget } from '@deepseek-ai/dsh-browser-workspace/client'
 import { desktopPageSurfaceOf, presentablePageBounds, useDesktopPageSurface } from '../src/client/desktop-page-surface.ts'
 
@@ -146,6 +146,26 @@ describe('desktop page surface', () => {
       target: TARGET,
       bounds: { x: 12, y: 24, width: 640, height: 400 },
     })
+  })
+
+  it('conceals the native page while a renderer menu is open and restores it after close', async () => {
+    const present = vi.fn()
+    const conceal = vi.fn()
+    ;(globalThis as { dshDesktop?: unknown }).dshDesktop = { browserPresent: present, browserConceal: conceal }
+    const view = render(<Probe target={TARGET} enabled={true} />)
+    const hole = view.getByTestId('hole')
+    hole.getBoundingClientRect = () => ({
+      x: 12, y: 64, width: 640, height: 360, top: 64, left: 12, right: 652, bottom: 424, toJSON: () => ({}),
+    })
+    window.dispatchEvent(new Event('resize'))
+    expect(present).toHaveBeenCalledTimes(1)
+    const before = conceal.mock.calls.length
+    const menu = document.createElement('div')
+    menu.setAttribute('role', 'menu')
+    document.body.append(menu)
+    await waitFor(() => { expect(conceal).toHaveBeenCalledTimes(before + 1) })
+    menu.remove()
+    await waitFor(() => { expect(present).toHaveBeenCalledTimes(2) })
   })
 
   it('presents when location is missing and the overlay attribute is absent', () => {

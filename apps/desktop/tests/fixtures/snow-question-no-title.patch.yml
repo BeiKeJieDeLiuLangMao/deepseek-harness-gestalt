@@ -1,0 +1,4 @@
+# Test overlay: disable the first-prompt title LLM so the mock script serves
+# only the agent conversation requests in this spec.
+- id: session-title-llm
+  disabled: true

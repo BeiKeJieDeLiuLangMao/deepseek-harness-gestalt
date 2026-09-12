@@ -1,6 +1,29 @@
+---
+description: "mobilecli-backed Android and iOS device discovery, semantic input, capture, and agent management for Host consumers."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-phone-runtime
 
 English | [中文](README.zh.md)
+
+## Summary
+
+Discover Android and iOS devices, send semantic input, capture screens, and manage iOS device agents through one mobilecli server. The service owns the loopback child process, health polling, timeouts, and unified device list on `ctx.phoneDevices`. GUI and model consumers live in separate packages, and callers own published capture bodies.
+
+## Table of Contents
+
+- [Package contract](#package-contract)
+- [Config](#config)
+- [Extension points](#extension-points)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
+
+-----
+
+<a id="package-contract"></a>
+## Package contract
 
 The phone device fleet Service over one external [mobilecli](https://github.com/mobile-next/mobilecli) server: the package spawns `mobilecli server start --listen 127.0.0.1:<serverPort>` in an owned process tree, polls its HTTP JSON-RPC endpoint (methods per the upstream [OpenRPC specification](https://github.com/mobile-next/mobile-openrpc/blob/main/mobilecli/openrpc.md)), and publishes the unified Android/iOS device listing on `ctx.phoneDevices`. The process-tree owner covers npm's Node launcher and its native mobilecli descendant, so replacement and teardown release the loopback port before a new generation starts. Service Definition and Provider are folded into one package while mobilecli is the only backend; the deferred model Consumer lives in [`dsh-tool-phone`](../tool-phone/README.md) and imports only this package.
 
@@ -18,6 +41,7 @@ All operations accept an optional `AbortSignal` and enforce validated time ceili
 
 The stable facade retains one external pool occupancy. A non-Service `MobilecliPhoneRuntime` owns each generation's process tree, RPC client, listing, coordinate observations, and operation joins. Validation callbacks are installed before baseline publication. Replacement revokes publication before cancellation, and ordinary operations never acquire or restart a disabled generation. Generation cleanup retains command, probe, Android tree, and unread capture completion, including failures that settle after a caller's cleanup wait expires.
 
+<a id="config"></a>
 ## Config
 
 | Field | Default | Meaning |
@@ -36,10 +60,12 @@ The stable facade retains one external pool occupancy. A non-Service `MobilecliP
 | `agentTimeoutMs` | `120000` | Ceiling on one `agent status` / `agent install` child run. |
 | `provisioningProfilePath` | — | `.mobileprovision` passed as `--provisioning-profile` when installing or re-signing the agent on a real handset (required upstream for real iOS installs); when set, the path must name an existing file. |
 
+<a id="extension-points"></a>
 ## Extension points
 
 A missing or unusable initial mobilecli still activates the Service; `listDevices`, `boot`, `shutdown`, `io`, `startCapture`, `screenshot`, and the agent verbs then reject with `PHONE_UNRESOLVED`. The Host stays up, and `activateExecutable` can install a ready child without replacing the Service or restarting the Host. The package also exports a `./invariant` companion that must ride the stable Service and validates that normal polls and generation-removal notifications name exactly the difference their own listing has versus the published one.
 
+<a id="model-experience"></a>
 ## Model Experience
 
 Indirectly, through dsh-tool-phone, which renders every listing, observation, mutation, action, and screenshot fact.
@@ -50,8 +76,15 @@ Independent of model requests: the Service spawns a local mobilecli child, polls
 
 ## Known Limitations and Deferred Work
 
+<a id="known-limitations-and-deferred-work"></a>
+
 - **External FSL-1.1-Apache-2.0 dependency edge** — mobilecli is executed, never vendored or copied into this repository or Desktop Bundle. `phone-environment` owns any pinned upstream download and its release blocker.
 - **Loopback only** — the spawned server is always bound to `127.0.0.1:<serverPort>`; remote device fleets behind a mobilecli server on another host are out of scope.
 - **Platform toolchains remain external** — mobilecli can be activated at runtime, while Android still needs `adb` and iOS simulators still need macOS with Xcode. Their preparation belongs to the platform environment packages.
 - **Real-iPhone coverage is opt-in** — the hardware-in-the-loop suite runs only when `DSH_PHONE_REAL_UDID` names a connected handset (and `DSH_PHONE_REAL_PROFILE` its provisioning profile); every other host self-skips it, so CI pins the real-device link only against the fake mobilecli double. The on-device agent artifacts are downloaded by mobilecli itself during `agent install`, never by this package, and iOS device tunnels stay owned by the mobilecli server — a failed tunnel surfaces only through the structured `tunnel-failed` arm.
 - **Windows npm-shim gap** — native Windows suites exercise the production resolver and process lifecycle through a test-owned `fakemobilecli.exe` symlink to the current Node executable. npm-global `.cmd` shims remain unverified; `executablePath` should name a native `mobilecli.exe` until the process owners support batch shims.
+
+<a id="dev-note"></a>
+### Dev Note
+
+None.

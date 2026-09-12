@@ -5,7 +5,6 @@
   "references": [
     { "path": "../../core/agent" },
     { "path": "../platform-account" },
-    { "path": "../project-membership" },
-    { "path": "../../runtime-diagnostics/invariants" }
+    { "path": "../project-membership" }
   ]
 }

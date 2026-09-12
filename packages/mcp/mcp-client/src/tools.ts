@@ -23,7 +23,8 @@ import type { AttachmentStore, ImageAttachmentRef, ImageMediaType, SaveImageAtta
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { ToolDefinition, ToolExecution, ToolExecutionResult } from '@deepseek-ai/dsh-tools'
 import { assertSupportedJsonSchema } from '@deepseek-ai/dsh-tools'
-import type { JsonSchemaNode, JsonValue } from '@deepseek-ai/dsh-tools'
+import type { JsonSchemaNode } from '@deepseek-ai/dsh-tools'
+import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 
 /** Resolved options relevant to tool bridging. */
 export interface ToolBridgeOptions {
@@ -31,14 +32,17 @@ export interface ToolBridgeOptions {
   registrationFailure: 'contain' | 'throw'
   serverName: string
   toolCallTimeoutMs: number
-  /** Whether registered schemas are initially deferred behind `tool_search`. */
+  /**
+   * When true, each registered definition uses `ToolDefinition.deferLoading`
+   * so `tool_search` publishes the schema instead of the initial request.
+   */
   deferLoading: boolean
 }
 
 /** State for one sync generation: the current set of disposers keyed by public name. */
 export type ToolDisposers = Map<string, () => void>
 
-/** Canonical MCP result exposed to Code Mode without discarding protocol blocks. */
+/** Canonical MCP result exposed to PTC mode without discarding protocol blocks. */
 export type McpResult<Structured extends JsonValue = JsonValue> = {
   content: JsonValue[]
   structuredContent?: Structured
@@ -125,8 +129,8 @@ export function publicToolName(serverName: string, rawName: string): string {
  *
  * 1. Fetch: drain uncached `tools/list` pagination and build the full next
  *    generation of `ToolDefinition`s under public names. Any failure here
- *    (network error, duplicate raw name in the server's list) rejects and
- *    leaves the previous generation registered untouched.
+ *    (network error, duplicate raw name, repeated continuation cursor) rejects
+ *    and leaves the previous generation registered untouched.
  * 2. Swap: dispose the previous generation, register the new one. A registry
  *    conflict here can only mean a foreign registration squats on this
  *    server's `mcp__<serverName>__` namespace — the partial generation is
@@ -136,7 +140,7 @@ export function publicToolName(serverName: string, rawName: string): string {
  *
  * @param client - Connected MCP Client instance used to list and call tools.
  * @param ctx - Cordis context providing the `tools` service for registration.
- * @param opts - Bridge options: server namespace and per-call timeout.
+ * @param opts - Bridge options: server namespace, per-call timeout, and deferred registration.
  * @param previous - Disposer map from the prior sync generation; disposed
  *   during the swap phase (only after the fetch phase succeeded).
  * @returns A map of registered public tool names to their unregister
@@ -150,6 +154,7 @@ export async function syncTools(
 ): Promise<ToolDisposers> {
   // Phase 1: fetch and build the next generation without touching the registry.
   const definitions = new Map<string, ToolDefinition>()
+  const seenCursors = new Set<string>()
   let cursor: string | undefined
   do {
     const response = await listToolsUncached(client, cursor)
@@ -173,6 +178,14 @@ export async function syncTools(
       ))
     }
     cursor = response.nextCursor
+    if (cursor) {
+      if (seenCursors.has(cursor)) {
+        throw new Error(
+          `mcp-client(${opts.serverName}): server repeated a tools/list continuation cursor — invalid tool list`,
+        )
+      }
+      seenCursors.add(cursor)
+    }
   } while (cursor)
 
   // Phase 2: swap generations.
@@ -259,7 +272,7 @@ function createDefinition(
     name: publicName,
     description,
     parameters,
-    deferLoading: opts.deferLoading,
+    ...opts.deferLoading ? { deferLoading: true } : {},
     output: createOutput(rawName, structuredSchema),
     execute: createExecutor(client, ctx, rawName, taskRequired, opts, projections),
     finalizeContent(exec: Readonly<ToolExecution>, result: Readonly<ToolExecutionResult>) {

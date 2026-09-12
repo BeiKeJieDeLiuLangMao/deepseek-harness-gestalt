@@ -1,5 +1,6 @@
 /** Keyless runnable snapshot for the assembled endpoint-owned Snow product channel. */
 
+import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it } from 'vitest'
@@ -60,7 +61,7 @@ async function attachmentProof(
 describe('Snow product channel runnable snapshot', () => {
   it('executes endpoint mailbox pairing, sealed authority, real Relay attach, IK, and authenticated sync', async () => {
     initializeSnowChannel(readFileSync(new URL('../packages/platform/noise-channel/pkg/dsh_noise_channel_bg.wasm', import.meta.url)))
-    const fixtureIdentity = crypto.randomUUID()
+    const fixtureIdentity = randomUUID()
     const desktopInstallation = `desktop-${fixtureIdentity}`
     const mobileInstallation = `mobile-${fixtureIdentity}`
     const mobileName = `Mobile ${fixtureIdentity}`
@@ -69,7 +70,7 @@ describe('Snow product channel runnable snapshot', () => {
     const routeStore = new SnapshotRouteStore()
     const coordinator = new SnapshotCoordinator()
     const relay = new RemoteRelayProvider(ctx, {
-      instanceId: parseRelayInstanceId(`platform-${crypto.randomUUID()}`),
+      instanceId: parseRelayInstanceId(`platform-${randomUUID()}`),
       routeStore,
       coordinator,
       config: {
@@ -101,7 +102,7 @@ describe('Snow product channel runnable snapshot', () => {
       relay,
       authority: new MemoryPersonalPairingAuthorityStore(),
       randomBytes: size => new Uint8Array(size).fill(29),
-      randomId: kind => `${kind}-${crypto.randomUUID()}`,
+      randomId: kind => `${kind}-${randomUUID()}`,
       pairingLinkOrigin: 'https://platform.example/pair',
     })
     const desktopAuthentication = authentication('desktop', desktopInstallation)
@@ -111,7 +112,7 @@ describe('Snow product channel runnable snapshot', () => {
     const expiresAt = Date.now() + 60_000
     const route = await pairing.createEndpointChallenge({
       desktop: desktopAuthentication,
-      rendezvousId: parsePairingRendezvousId(`rendezvous-${crypto.randomUUID()}`),
+      rendezvousId: parsePairingRendezvousId(`rendezvous-${randomUUID()}`),
       clientIp: '192.0.2.1',
       expiresAt,
     })
@@ -119,7 +120,7 @@ describe('Snow product channel runnable snapshot', () => {
     const invitation = await desktop.createInvitation(expiresAt)
     const mobile = new SnowMobileHandshakeClient()
     const message1 = await mobile.beginEndpointInvitation(invitation.invitationPayload)
-    const completionId = parsePairingCompletionId(`completion-${crypto.randomUUID()}`)
+    const completionId = parsePairingCompletionId(`completion-${randomUUID()}`)
     const pending = await pairing.submitEndpointMessage1({
       mobile: mobileAuthentication,
       challengeId: route.challengeId,
@@ -169,8 +170,8 @@ describe('Snow product channel runnable snapshot', () => {
     const openedGrant = await mobile.openRelayAuthority(mobileStatus.sealedRelayAuthority)
     const openedAttachmentKey = mobile.exportAttachmentKey()
 
-    const mobileAttachmentId = parseRelayAttachmentId(`mobile-${crypto.randomUUID()}`)
-    const desktopAttachmentId = parseRelayAttachmentId(`desktop-${crypto.randomUUID()}`)
+    const mobileAttachmentId = parseRelayAttachmentId(`mobile-${randomUUID()}`)
+    const desktopAttachmentId = parseRelayAttachmentId(`desktop-${randomUUID()}`)
     let livePeerUpdate = false
     const mobileAttachment = await relay.attach({
       message: await attachmentProof(openedGrant.credential, openedGrant.routeId, mobileAttachmentId, 'mobile'),

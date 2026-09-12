@@ -1,6 +1,9 @@
 // @vitest-environment jsdom
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  type CompanionOperation,
   parseCompanionOperationId,
   parseCompanionSessionId,
   parseCompanionInteractionId,
@@ -8,9 +11,15 @@ import {
   parseRelayCredential,
   parseRelayPairingSelector,
   parseRelayRouteId,
+  generateRelayCredential,
 } from '@deepseek-ai/dsh-remote-protocol'
+import {
+  acceptSnowDesktopReconnect, beginSnowCompanionProtocol, beginSnowMobileReconnect, initializeSnowChannel,
+  SnowDesktopEndpointPairingOwner, SnowMobileHandshakeClient,
+} from '@deepseek-ai/dsh-noise-channel'
 import { CompanionForegroundRuntime } from '../src/companion-lifecycle.ts'
-import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { randomUuid } from '../src/random-uuid.ts'
 import type { MobileCompanionTrackedSubmission } from '../src/companion-surface.ts'
 import {
   MobileSnowCompanionConnection,
@@ -119,7 +128,7 @@ describe('Mobile Snow Companion product channel', () => {
     product.cancel(sid('session-v3'))
     const receipt = product.settle({
       kind: 'approval', sessionId: sid('session-v3'), interactionId: parseCompanionInteractionId('interaction-v3'),
-      result: { ok: true, value: { sessionId: 'session-v3', approvalId: 'approval-v3', outcome: 'allowed-once' } },
+      result: { ok: true, value: { outcome: 'allowed-once' } },
     })
     await vi.waitFor(() => {
       const types = seal.mock.calls.map(call => (call[0] as { operation: { type: string } }).operation.type)
@@ -145,6 +154,61 @@ describe('Mobile Snow Companion product channel', () => {
           'load-history', 'refresh-surface', 'load-history', 'refresh-surface',
         ])
     })
+  })
+
+  it('sends typed Question answers and cancellations', async () => {
+    const connection = new MobileSnowCompanionConnection()
+    const seal = vi.fn((_message: unknown) => Uint8Array.of(1))
+    connection.connect({
+      channel: { seal } as never,
+      targetAttachmentId: parseRelayAttachmentId('desktop-question-settlement'),
+      pairingSelector: parseRelayPairingSelector('pairing-question-settlement'),
+      generation: 1,
+    })
+    const product = new MobileSnowCompanionProductChannel({
+      runtime: synchronizedRuntime(),
+      connection,
+      operationSettlement: settlement(),
+      installation: { authorizeCurrentInstallation: vi.fn() },
+      attachmentKeys: { attachmentKeyMaterial: () => undefined },
+      platformOrigin: 'https://platform.example',
+      sendCiphertext: async () => {},
+    })
+
+    const answered = product.settle({
+      kind: 'question',
+      sessionId: sid('session-question-settlement'),
+      interactionId: parseCompanionInteractionId('interaction-question-answered'),
+      result: { ok: true, value: { answer: { answers: [{ id: 'diet', selected: ['vegan'] }] } } },
+    })
+    const cancelled = product.settle({
+      kind: 'question',
+      sessionId: sid('session-question-settlement'),
+      interactionId: parseCompanionInteractionId('interaction-question-cancelled'),
+      result: { ok: false, error: { code: 'cancelled' } },
+    })
+
+    await vi.waitFor(() => { expect(seal).toHaveBeenCalledTimes(2) })
+    const operations = seal.mock.calls.map(([message]) => {
+      const operation = (message as { operation: CompanionOperation }).operation
+      if (operation.type !== 'settle-interaction') throw new Error('Expected an interaction settlement')
+      return operation
+    })
+    expect(operations.map(operation => operation.settlement)).toEqual([
+      { kind: 'question', answers: [{ id: 'diet', selected: ['vegan'] }] },
+      { kind: 'question-cancelled' },
+    ])
+    const [answeredOperation, cancelledOperation] = operations
+    if (answeredOperation === undefined || cancelledOperation === undefined) {
+      throw new Error('Expected both interaction settlements')
+    }
+    product.acceptResult({
+      type: 'interaction-receipt', operationId: answeredOperation.operationId, accepted: true,
+    })
+    product.acceptResult({
+      type: 'interaction-receipt', operationId: cancelledOperation.operationId, accepted: true,
+    })
+    await expect(Promise.all([answered, cancelled])).resolves.toEqual([{ accepted: true }, { accepted: true }])
   })
 
   it('refreshes the authoritative history and surface after a confirmed prompt or cancel', async () => {
@@ -354,6 +418,48 @@ describe('Mobile Snow Companion product channel', () => {
     expect(recoveredReceipt).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
       status: 'committed', operationId: prompt.operationId,
     }))
+  })
+
+  it('retains the real Snow send nonce when the durable unknown fence cannot commit', async () => {
+    const channels = await realSnowChannels()
+    const runtime = synchronizedRuntime()
+    const connection = new MobileSnowCompanionConnection()
+    connection.connect({
+      channel: channels.mobile,
+      targetAttachmentId: channels.desktopAttachmentId,
+      pairingSelector: channels.pairingSelector,
+      generation: 1,
+    })
+    const store = new InMemoryCompanionCacheStore()
+    vi.spyOn(store, 'saveReceipt').mockRejectedValueOnce(new Error('durable fence failed'))
+    const opened: string[] = []
+    const product = new MobileSnowCompanionProductChannel({
+      runtime, connection,
+      operationSettlement: new CompanionUncertainOperationSettlement(
+        store, parseCompanionDesktopId('desktop-real-fence'),
+      ),
+      installation: { authorizeCurrentInstallation: async () => ({
+        accessToken: 'real-fence-installation',
+        proof: { jti: 'real-fence-proof' as never, issuedAt: 1, signature: 'real-fence-signature' },
+      }) },
+      attachmentKeys: { attachmentKeyMaterial: () => channels.attachmentKey.slice() },
+      platformOrigin: 'https://platform.example',
+      sendCiphertext: async (_target, ciphertext) => {
+        const openedMessage = channels.desktop.open(ciphertext)
+        if (openedMessage.type !== 'operation') throw new Error('Desktop expected a Snow operation')
+        opened.push(openedMessage.operation.type)
+      },
+    })
+    try {
+      await expect(product.submit(sid('session-real-fence'), 'do not send').completion)
+        .rejects.toThrow('durable fence failed')
+      await expect(product.search('nonce remains synchronized').completion).resolves.toBeUndefined()
+      expect(opened).toEqual(['search-sessions'])
+    } finally {
+      channels.attachmentKey.fill(0)
+      channels.mobile.dispose()
+      channels.desktop.dispose()
+    }
   })
 
   it('does not attempt Relay send when the durable unknown fence cannot commit', async () => {
@@ -651,9 +757,41 @@ function synchronizedRuntime(): CompanionForegroundRuntime {
   return runtime
 }
 
+async function realSnowChannels() {
+  initializeSnowChannel(readFileSync(join(
+    process.cwd(), 'packages/platform/noise-channel/pkg/dsh_noise_channel_bg.wasm',
+  )))
+  const desktopPairing = new SnowDesktopEndpointPairingOwner()
+  const invitation = await desktopPairing.createInvitation(Date.now() + 60_000)
+  const mobilePairing = new SnowMobileHandshakeClient()
+  const message1 = await mobilePairing.beginEndpointInvitation(invitation.invitationPayload)
+  const message2 = await desktopPairing.acceptMessage1(message1)
+  await mobilePairing.acceptDesktopHandshake(message2)
+  await desktopPairing.finishMessage3(mobilePairing.exportFinishMessage())
+  const attachmentKey = new Uint8Array(32).fill(43)
+  const pairingSelector = parseRelayPairingSelector('pairing-real-fence')
+  const grant = {
+    routeId: parseRelayRouteId('route-real-fence'), endpoint: 'mobile' as const,
+    credential: await generateRelayCredential(), revision: 1, pairingSelector,
+  }
+  await mobilePairing.openRelayAuthority(await desktopPairing.sealMobileRelayAuthority(grant, attachmentKey))
+  const desktopAttachmentId = parseRelayAttachmentId('desktop-real-fence')
+  const mobileAttachmentId = parseRelayAttachmentId('mobile-real-fence')
+  const binding = { routeId: grant.routeId, pairingSelector, desktopAttachmentId, mobileAttachmentId, generation: 1 }
+  const initiator = await beginSnowMobileReconnect(mobilePairing.exportReconnectState(), binding)
+  const responder = await acceptSnowDesktopReconnect(desktopPairing.exportReconnectState(), binding, initiator.message1)
+  const mobileNegotiation = beginSnowCompanionProtocol(initiator.finish(responder.message2), 'mobile')
+  const desktopNegotiation = beginSnowCompanionProtocol(responder.channel, 'desktop')
+  return {
+    mobile: mobileNegotiation.finish(desktopNegotiation.payload),
+    desktop: desktopNegotiation.finish(mobileNegotiation.payload),
+    attachmentKey, pairingSelector, desktopAttachmentId,
+  }
+}
+
 function settlement(): CompanionUncertainOperationSettlement {
   return new CompanionUncertainOperationSettlement(
     new InMemoryCompanionCacheStore(),
-    parseCompanionDesktopId(`desktop-${crypto.randomUUID()}`),
+    parseCompanionDesktopId(`desktop-${randomUuid()}`),
   )
 }

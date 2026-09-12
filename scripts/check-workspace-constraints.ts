@@ -8,7 +8,8 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { DYNAMIC_CLIENT_ARTIFACT } from './client-artifact-contract.ts'
+import { load as loadYaml } from 'js-yaml'
+import { isPublicExperimentalPackageDirectory } from './experimental-package-policy.ts'
 import { hasTypertRemoteNavigation, isForbiddenPublicationFile } from './publication-payload.ts'
 import { collectProjectReferenceFaceViolations } from './project-reference-faces.ts'
 
@@ -19,7 +20,7 @@ const workspaceGlobs = [
   { dir: 'vendor', depth: 1 },
   { dir: 'packages', depth: 2 },
   { dir: 'native', depth: 1 },
-  { dir: 'native/landlock-run/packages', depth: 1 },
+  { dir: 'native/system/packages', depth: 1 },
   { dir: 'apps', depth: 1 },
 ] as const
 const vendoredPackages = new Set([
@@ -33,14 +34,16 @@ const vendoredPackages = new Set([
   '@deepseek-ai/cordis-plugin-hmr',
   '@deepseek-ai/cordis-plugin-logger-console',
 ])
-const publicLandlockPackages = new Set([
-  '@deepseek-ai/node-addon-landlock-run',
-  '@deepseek-ai/node-addon-landlock-run-linux-arm64',
-  '@deepseek-ai/node-addon-landlock-run-linux-x64',
+const publicNativePackages = new Set([
+  '@deepseek-ai/node-addon-system',
+  '@deepseek-ai/node-addon-system-darwin-arm64',
+  '@deepseek-ai/node-addon-system-darwin-x64',
+  '@deepseek-ai/node-addon-system-linux-arm64',
+  '@deepseek-ai/node-addon-system-linux-x64',
 ])
 /** Deliberate source payloads whose exact bytes are part of the package's audit surface. */
 const publicationSourceAllowlist: Readonly<Record<string, readonly string[]>> = {
-  '@deepseek-ai/node-addon-landlock-run': ['src/main.c'],
+  '@deepseek-ai/node-addon-system': ['src/main.c', 'src/flock.c'],
 }
 const repositoryUrl = 'git+https://github.com/deepseek-harness/deepseek-harness.git'
 /**
@@ -49,19 +52,23 @@ const repositoryUrl = 'git+https://github.com/deepseek-harness/deepseek-harness.
  * their trusted publishing against the repository that runs the workflow.
  */
 const publishedRepositoryUrl = 'git+https://github.com/deepseek-ai/deepseek-harness.git'
-/** Private packages that participate in workspace checks but not releases. */
+/** Packages that participate in the experimental policy. */
 const experimentalPackageDirectory = /^packages\/experimental\/[^/]+$/
-/** npm namespace reserved for private experimental packages. */
+/** npm namespace reserved for experimental packages. */
 const experimentalPackageNamePrefix = '@deepseek-ai/dsh-experimental-'
-/** Directories whose packages this repository publishes: one release member each. */
-const releaseMemberDirectory = /^(?:packages\/(?!experimental\/)[^/]+\/[^/]+|apps\/(?:cli|web)|vendor\/[^/]+)$/
-
+/** Ordinary directories whose packages this repository publishes: one release member each. */
+const standardReleaseMemberDirectory = /^(?:packages\/(?!experimental\/)[^/]+\/[^/]+|apps\/(?:cli|web)|vendor\/[^/]+)$/
 const localArtifactDirs = new Set(['node_modules'])
 const appPackageFiles: Readonly<Record<string, readonly string[]>> = {
-  '@deepseek-ai/dsh': ['lib/*.js', 'config'],
-  // The Web build emits sourcemaps for browser debugging; publishing them is
-  // what the payload policy forbids, so the bundle ships without them.
-  '@deepseek-ai/dsh-web-frontend': ['dist', '!dist/**/*.map'],
+  '@deepseek-ai/dsh': ['lib/*.js'],
+  '@deepseek-ai/dsh-desktop-host': [
+    'lib/index.js',
+    'config/desktop.cordis.patch.yml',
+  ],
+  // Sourcemaps stay out by payload policy; the worker-preview surface
+  // (dist/preview.html and dist/preview/) backs private experimental
+  // packages and is not published.
+  '@deepseek-ai/dsh-web-frontend': ['dist', '!dist/**/*.map', '!dist/preview.html', '!dist/preview'],
 }
 
 /** The subset of package.json fields this constraint check cares about. */
@@ -109,8 +116,8 @@ function readJson(path: string): PackageManifest {
 
 const rootManifest = readJson(join(root, 'package.json'))
 const repositoryVersion = rootManifest.version
-const landlockWorkspaceManifest = readJson(join(root, 'native/landlock-run/package.json'))
-const landlockVersion = landlockWorkspaceManifest.version
+const nativeWorkspaceManifest = readJson(join(root, 'native/system/package.json'))
+const nativeVersion = nativeWorkspaceManifest.version
 
 /** Repo-relative dirs holding a package.json, walked to the configured depth. */
 function packageDirs(base: string, depth: number): string[] {
@@ -148,10 +155,9 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   // The glob covers whichever sheets a package emits; sourcemaps stay
   // unpublished, as everywhere else in the repository.
   '@deepseek-ai/dsh-client-ui-primitives': ['lib/**/*.css'],
+  '@deepseek-ai/dsh-client-ui-dockkit': ['lib/**/*.css'],
   '@deepseek-ai/dsh-client-web': ['lib/**/*.css'],
   '@deepseek-ai/dsh-client-ui-theme': ['lib/styles'],
-  // Remote Access keeps browser-safe public protocol surfaces separate from
-  // host-only provider and Node WebSocket adapters.
   '@deepseek-ai/dsh-noise-channel': [
     'pkg/dsh_noise_channel.d.ts',
     'pkg/dsh_noise_channel.js',
@@ -162,69 +168,68 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   '@deepseek-ai/dsh-remote-access': ['lib/relay-provider.js'],
   '@deepseek-ai/dsh-remote-access-client': ['lib/desktop-relay-lifecycle.js', 'lib/node-relay-socket.js'],
   '@deepseek-ai/dsh-remote-access-http': ['lib/relay.js'],
-  // Remote Attachments ships its HTTPS route plugin as its own bundle beside
-  // the blob store entry, mirroring the Remote Access HTTP split.
   '@deepseek-ai/dsh-remote-attachments': ['lib/http.js'],
-  // Desktop bridge types are shared by Electron and the browser overlay through
-  // a runtime subpath, so the protocol is bundled separately from the UI client.
-  '@deepseek-ai/dsh-client-runtime': ['lib/client-node.js'],
-  '@deepseek-ai/dsh-client-ui-desktop': ['lib/protocol.js', 'lib/pairing-source.js'],
-  // The CPython side ships as source .py files, published as-is rather than built.
-  '@deepseek-ai/dsh-code-runtime-python': ['py/**/*.py'],
-  // The Python runtime uses a distinct closed-resolution bin; the public CLI
-  // keeps config-owned bare-package resolution through lib/bin.js.
-  '@deepseek-ai/dsh-sdk-jsonrpc-demo': ['lib/packaged-bin.js'],
-  // The argv-prefix runner entry ships beside the lib as its own bundle;
-  // sandbox-local resolves it through the package's ./runner export. tsdown
-  // also shares its generated FFI code through a hashed runtime chunk.
-  '@deepseek-ai/dsh-sandbox-windows-acl': ['lib/runner.js', 'lib/types-*.js'],
-  // SQLite loads every statement from immutable package resources at runtime.
-  '@deepseek-ai/dsh-session-persistence-sqlite': ['resources/sql/**/*.sql'],
-  '@deepseek-ai/dsh-skill-badge': ['assets'],
-  '@deepseek-ai/dsh-subprocess-local': ['scripts/ensure-spawn-helper.mjs'],
-  // Browser Runtime Providers share their authoritative-state registry with
-  // the invariant companion through a hashed runtime chunk beside the lib; the
-  // Tandem-shaped HTTP Provider also publishes its upstream provenance files.
+  '@deepseek-ai/dsh-phone-runtime': ['lib/runtime-state-*.js'],
+  '@deepseek-ai/dsh-client-ui-desktop': ['lib/protocol.js'],
   '@deepseek-ai/dsh-browser-runtime-deterministic': ['lib/runtime-state-*.js'],
   '@deepseek-ai/dsh-browser-runtime-electron': ['lib/runtime-state-*.js', 'lib/testing.js', 'lib/host-seam.js'],
   '@deepseek-ai/dsh-browser-runtime-tandem': ['lib/runtime-state-*.js', 'THIRD_PARTY_NOTICES.md', 'UPSTREAM.md'],
-  '@deepseek-ai/dsh-phone-runtime': ['lib/runtime-state-*.js'],
   '@deepseek-ai/dsh-client-ui-better-sidebar': [
     'lib/client-terminal.js',
     'lib/client-editor.js',
     'lib/client-mermaid.js',
+    'lib/client-locale.js',
   ],
+  // The CPython side ships as source .py files, published as-is rather than built.
+  '@deepseek-ai/dsh-code-runtime-python': ['py/**/*.py'],
+  '@deepseek-ai/dsh-experimental-code-runtime-python': ['py/**/*.py'],
+  // The shipped preset compositions travel inside the roster package.
+  '@deepseek-ai/dsh-agent-presets': ['presets'],
+  // The Web Host mounts the default-off settings owner independently of each
+  // Agent-scoped delegation-tool instance.
+  '@deepseek-ai/dsh-tool-subagent': ['lib/model-selection-settings.js'],
+  // The JSONL backend resolves its private verification Worker relative to
+  // import.meta.url; it is shipped without a public package subpath.
+  '@deepseek-ai/dsh-session-persistence-jsonl': ['lib/worker.cjs'],
+  // The argv-prefix runner entry ships beside the lib as its own bundle;
+  // sandbox-local resolves it through the package's ./runner export. tsdown
+  // also shares its generated FFI code through a hashed runtime chunk.
+  '@deepseek-ai/dsh-sandbox-windows-acl': ['lib/runner.js', 'lib/types-*.js'],
+  '@deepseek-ai/dsh-skill-badge': ['assets'],
+  // Ordinary native containment ships a path-loaded runner and its shared
+  // runner chunk beside the existing node-pty permission repair.
+  '@deepseek-ai/dsh-subprocess-local': [
+    'lib/runner.js',
+    'lib/runner-*.js',
+    'scripts/ensure-spawn-helper.mjs',
+  ],
+  // tsdown shares the repository/pack code between the lib entry and the bin
+  // through a hashed chunk. The committed bin.js is the link target pnpm can
+  // resolve at install time, before the build produces lib/bin.js.
+  '@deepseek-ai/dsh-experimental-webworker-packer': ['bin.js', 'lib/repository-*.js'],
 }
 
 function sameStringList(actual: readonly string[] | undefined, expected: readonly string[]): boolean {
   return !!actual && actual.length === expected.length && actual.every((value, index) => value === expected[index])
 }
 
-function expectedDshPackageFiles(manifest: PackageManifest): readonly string[] {
-  const declaredPatch = manifest.dsh?.bundle?.patch
-  const bundleFiles = declaredPatch === undefined ? [] : [declaredPatch.replace(/^\.\//, '')]
-  const extras = [
-    ...bundleFiles,
-    ...(manifest.name ? packageFileExtras[manifest.name] ?? [] : []),
-  ]
-  return [
+export function expectedDshPackageFiles(manifest: PackageManifest): readonly string[] {
+  const runtimeFiles = [
     'lib/index.js',
-    // Every package publishes its invariant ownership companion as a separate
-    // bundle; the package-invariant gate validates the companion itself.
-    'lib/invariant.js',
+    // Packages with an invariant export publish its runtime as a separate
+    // bundle; the package-invariant gate validates the source/export pairing.
+    ...manifest.exports?.['./invariant'] ? ['lib/invariant.js'] : [],
     ...manifest.bin ? ['lib/bin.js'] : [],
-    ...manifest.exports?.['./worker'] ? ['lib/worker.cjs'] : [],
-    // Dynamic UI plugin packages ship their CommonJS browser factory beside
-    // the node lib. A package may instead expose an ESM ./client source channel.
-    ...exportDefault(manifest, './client') === DYNAMIC_CLIENT_ARTIFACT.exportPath
-      ? [DYNAMIC_CLIENT_ARTIFACT.relativePath]
-      : [],
+    // Worker-thread packages ship a CJS worker entry; the browser worker
+    // bundle is an ES module a page loads with `new Worker(type: 'module')`.
+    // Keyed on the artifact path, like ./client below.
+    ...exportDefault(manifest, './worker') === './lib/worker.cjs' ? ['lib/worker.cjs'] : [],
+    ...exportDefault(manifest, './worker') === './lib/worker.js' ? ['lib/worker.js'] : [],
+    // UI plugin packages ship their browser bundle beside the node lib
+    // (single-artifact ruling: dist/ retired, ./client resolves lib/client.js).
+    // Keyed on the artifact path, not the subpath name: a package's ./client is
+    // a browser-safe source channel, not a bundle.
     ...exportDefault(manifest, './client') === './lib/client.js' ? ['lib/client.js'] : [],
-    // Shared browser presentation subpaths ship an ESM entry and every CSS
-    // asset that the product shell compiles alongside it.
-    ...exportDefault(manifest, './presentation') === './lib/presentation.js'
-      ? ['lib/presentation.js', 'lib/**/*.css']
-      : [],
     // runtime's shell-held loader subpath ships as its own bundle beside the client half.
     ...exportDefault(manifest, './loader') === './lib/loader.js' ? ['lib/loader.js'] : [],
     // A store subpath ships its own bundle (single-entry builds; no shared chunk).
@@ -232,13 +237,14 @@ function expectedDshPackageFiles(manifest: PackageManifest): readonly string[] {
     // A surface bundle's startup row is its own bundle: the Loader imports it
     // as a row module, so it cannot ride inside the package entry.
     ...exportDefault(manifest, './startup') === './lib/startup.js' ? ['lib/startup.js'] : [],
-    ...extras,
-    // Subpaths whose runtime default is the tsc-emitted tree (lib/types/*.js —
-    // browser-safe source channels rehomed off src so plain Node can import
-    // them without type stripping) publish the emitted JS alongside the
-    // declarations.
-    ...usesEmittedTreeDefaults(manifest) ? ['lib/types/**/*.js'] : [],
-    'lib/types/**/*.d.ts',
+  ]
+  const declaredPatch = manifest.dsh?.bundle?.patch
+  const bundleFiles = declaredPatch === undefined ? [] : [declaredPatch.replace(/^\.\//, '')]
+  const extras = [
+    ...bundleFiles,
+    ...(manifest.name ? packageFileExtras[manifest.name] ?? [] : []),
+  ]
+  const generatedEntryFiles = [
     ...hasExportPair(manifest, './typert', './lib/typert.host.d.ts', './lib/typert.host.js')
       ? ['lib/typert.host.js', 'lib/typert.host.d.ts']
       : [],
@@ -248,6 +254,20 @@ function expectedDshPackageFiles(manifest: PackageManifest): readonly string[] {
     ...hasTypertRemoteNavigation(manifest)
       ? ['lib/typert.remote-client.js', 'lib/typert.remote-client.d.ts']
       : [],
+  ]
+  const listedFiles = new Set([...runtimeFiles, ...extras, ...generatedEntryFiles])
+  const exportedRuntimeFiles = exportedLibRuntimeFiles(manifest).filter(file => !listedFiles.has(file))
+  return [
+    ...runtimeFiles,
+    ...extras,
+    ...exportedRuntimeFiles,
+    // Subpaths whose runtime default is the tsc-emitted tree (lib/types/*.js —
+    // browser-safe source channels rehomed off src so plain Node can import
+    // them without type stripping) publish the emitted JS alongside the
+    // declarations.
+    ...usesEmittedTreeDefaults(manifest) ? ['lib/types/**/*.js'] : [],
+    'lib/types/**/*.d.ts',
+    ...generatedEntryFiles,
   ]
 }
 
@@ -273,13 +293,24 @@ function exportDefault(manifest: PackageManifest, subpath: string): string | und
   return undefined
 }
 
+/** Runtime artifacts directly addressed by supported package export entries. */
+function exportedLibRuntimeFiles(manifest: PackageManifest): string[] {
+  const files = new Set<string>()
+  for (const subpath of Object.keys(manifest.exports ?? {})) {
+    const target = exportDefault(manifest, subpath)
+    if (target?.startsWith('./lib/') !== true || target.startsWith('./lib/types/')) continue
+    files.add(target.slice(2))
+  }
+  return [...files]
+}
+
 /** Whether any export's runtime default points into the tsc-emitted lib/types tree. */
 function usesEmittedTreeDefaults(manifest: PackageManifest): boolean {
   return Object.keys(manifest.exports ?? {}).some(subpath =>
     exportDefault(manifest, subpath)?.startsWith('./lib/types/') === true)
 }
 
-/** Experimental manifest requirements enforced independently from release metadata. */
+/** Experimental manifest requirements, including explicit public exceptions. */
 export function checkExperimentalManifest({ dir, manifest }: WorkspaceManifest): string[] {
   if (!experimentalPackageDirectory.test(dir)) return []
   const label = manifest.name ?? dir
@@ -287,20 +318,62 @@ export function checkExperimentalManifest({ dir, manifest }: WorkspaceManifest):
   if (manifest.name?.startsWith(experimentalPackageNamePrefix) !== true) {
     errors.push(`${label}: experimental package name must start with ${JSON.stringify(experimentalPackageNamePrefix)}`)
   }
-  if (manifest.private !== true) errors.push(`${label}: experimental package must set "private": true`)
-  if (manifest.publishConfig !== undefined) errors.push(`${label}: experimental package must omit publishConfig`)
+  if (isPublicExperimentalPackageDirectory(dir)) {
+    if (manifest.private === true) errors.push(`${label}: public experimental package must not set "private": true`)
+    if (manifest.publishConfig?.access !== 'public') {
+      errors.push(`${label}: public experimental package must set publishConfig.access to "public"`)
+    }
+  } else {
+    if (manifest.private !== true) errors.push(`${label}: experimental package must set "private": true`)
+    if (manifest.publishConfig !== undefined) errors.push(`${label}: experimental package must omit publishConfig`)
+  }
   return errors
 }
 
-function checkWorkspace({ dir, manifest }: WorkspaceManifest): string[] {
+function isReleaseMemberDirectory(dir: string): boolean {
+  return standardReleaseMemberDirectory.test(dir) || isPublicExperimentalPackageDirectory(dir)
+}
+
+/**
+ * Require a dsh-family manifest to carry the workspace version.
+ *
+ * The dsh release sequence keeps its public packages, CLI/Web apps, and
+ * private Desktop Host package on the version written by `release:dsh` and
+ * shared with the workspace root. Product applications with separate release
+ * sequences are excluded by the caller.
+ * @param manifest - the workspace package manifest.
+ * @param expected - the version every dsh-family manifest must carry (the root's).
+ * @returns one violation naming the manifest and the expected version, or
+ * undefined when the manifest is compliant or not in the family.
+ */
+export function checkDshFamilyVersion(manifest: PackageManifest, expected: string | undefined): string | undefined {
+  const name = manifest.name
+  if (name !== '@deepseek-ai/dsh' && name?.startsWith('@deepseek-ai/dsh-') !== true) return undefined
+  if (manifest.version !== expected) {
+    return `${name}: package.json version must match root version ${expected ?? '(missing)'}`
+  }
+  return undefined
+}
+
+/**
+ * Check one workspace manifest against publication and dsh-package policy.
+ * @param workspace - package directory and parsed manifest.
+ * @returns path-qualified policy violations.
+ */
+export function checkWorkspaceManifest({ dir, manifest }: WorkspaceManifest): string[] {
   const errors = checkExperimentalManifest({ dir, manifest })
   const label = manifest.name ?? dir
-  const isLandlockPackageDir = dir.startsWith('native/landlock-run/packages/')
-  const isPublicLandlockPackage = isLandlockPackageDir
+  const sharesRepositoryVersion = isReleaseMemberDirectory(dir) || dir === 'apps/desktop-host'
+  const familyVersionError = sharesRepositoryVersion
+    ? checkDshFamilyVersion(manifest, repositoryVersion)
+    : undefined
+  if (familyVersionError !== undefined) errors.push(familyVersionError)
+  const isNativePackageDir = dir.startsWith('native/system/packages/')
+  const isPublicNativePackage = isNativePackageDir
     && manifest.name !== undefined
-    && publicLandlockPackages.has(manifest.name)
+    && publicNativePackages.has(manifest.name)
 
-  if (isPublicLandlockPackage) {
+  if (isPublicNativePackage) {
     if (manifest.private === true) {
       errors.push(`${label}: published Landlock package must not set "private": true`)
     }
@@ -313,17 +386,16 @@ function checkWorkspace({ dir, manifest }: WorkspaceManifest): string[] {
       || manifest.repository.directory !== expectedDirectory) {
       errors.push(`${label}: published Landlock package repository must use ${repositoryUrl} with directory ${expectedDirectory} for trusted publishing`)
     }
-  } else if (releaseMemberDirectory.test(dir)) {
+  } else if (isReleaseMemberDirectory(dir)) {
     // Release members state that they are publishable: npm refuses a private
     // package, and the repository field is how a consumer finds the source of
     // the package it installed.
     //
     // Access is per release sequence, not per scope: the vendored framework and
     // the Landlock packages publish publicly because outside consumers install
-    // them, while the dsh family stays restricted until its own sequence goes
-    // public. A mixed scope is why no publish path passes `--access` — one flag
-    // cannot serve both, so each packed manifest decides
-    // ([rationale](../.agents/notes/implemented/process/2026-08-13-public-vendor-and-native-sequences.md)).
+    // them, and the dsh family published publicly with its own sequence on
+    // 2026-08-13. No publish path passes `--access`; each packed manifest declares
+    // it, and this gate requires every release member to be public.
     if (manifest.private === true) {
       errors.push(`${label}: release member must not set "private": true`)
     }
@@ -352,7 +424,7 @@ function checkWorkspace({ dir, manifest }: WorkspaceManifest): string[] {
     }
   }
 
-  if (releaseMemberDirectory.test(dir) && dir.startsWith('apps/') && manifest.name?.startsWith('@deepseek-ai/')) {
+  if (isReleaseMemberDirectory(dir) && dir.startsWith('apps/') && manifest.name?.startsWith('@deepseek-ai/')) {
     const expectedFiles = appPackageFiles[manifest.name]
     if (expectedFiles === undefined) {
       errors.push(`${label}: app package has no publication files policy`)
@@ -361,12 +433,12 @@ function checkWorkspace({ dir, manifest }: WorkspaceManifest): string[] {
     }
   }
 
-  if (isLandlockPackageDir) {
-    if (!isPublicLandlockPackage) {
+  if (isNativePackageDir) {
+    if (!isPublicNativePackage) {
       errors.push(`${label}: unexpected package in the public Landlock package family`)
     }
-    if (manifest.version !== landlockVersion) {
-      errors.push(`${label}: package.json version must match Landlock workspace version ${landlockVersion ?? '(missing)'}`)
+    if (manifest.version !== nativeVersion) {
+      errors.push(`${label}: package.json version must match native workspace version ${nativeVersion ?? '(missing)'}`)
     }
   }
 
@@ -378,9 +450,6 @@ function checkWorkspace({ dir, manifest }: WorkspaceManifest): string[] {
     if (!dev) errors.push(`${label}: @deepseek-ai/cordis must also be a devDependency`)
     if (peer && dev && peer !== dev) {
       errors.push(`${label}: @deepseek-ai/cordis peer (${peer}) and dev (${dev}) ranges must match`)
-    }
-    if (manifest.version !== repositoryVersion) {
-      errors.push(`${label}: package.json version must match root version ${repositoryVersion ?? '(missing)'}`)
     }
     if (manifest.type !== 'module') {
       errors.push(`${label}: package.json must set "type": "module"`)
@@ -445,6 +514,17 @@ function checkHierarchyShape(): string[] {
   return errors
 }
 
+interface WorkspacePolicy {
+  readonly allowBuilds?: Readonly<Record<string, unknown>>
+}
+
+/** Require every pnpm lifecycle-script decision to be an explicit boolean. */
+export function checkPnpmBuildPolicy(policy: WorkspacePolicy): string[] {
+  return Object.entries(policy.allowBuilds ?? {})
+    .filter(([, decision]) => typeof decision !== 'boolean')
+    .map(([name, decision]) => `pnpm-workspace.yaml: allowBuilds.${name} must be true or false, got ${JSON.stringify(decision)}`)
+}
+
 function checkRepositoryVersion(): string[] {
   // The root carries the dsh release family's version, so a prerelease such as
   // 0.0.1-rc.1 is a valid state between `release:dsh` and its publication.
@@ -469,7 +549,7 @@ export function checkExperimentalDependencyIsolation(manifests: readonly Workspa
     .filter(name => name !== undefined))
   const errors: string[] = []
   for (const { dir, manifest } of manifests) {
-    if (!releaseMemberDirectory.test(dir) && dir !== 'python/sdk-runtime') continue
+    if (!standardReleaseMemberDirectory.test(dir) && dir !== 'python/sdk-runtime') continue
     for (const section of runtimeDependencySections) {
       for (const name of Object.keys(manifest[section] ?? {})) {
         if (!experimentalNames.has(name)) continue
@@ -512,8 +592,9 @@ export function main(): void {
     { dir: 'python/sdk-runtime', manifest: readJson(join(root, 'python/sdk-runtime/package.json')) },
   ]
   const errors = [
+    ...checkPnpmBuildPolicy(loadYaml(readFileSync(join(root, 'pnpm-workspace.yaml'), 'utf8')) as WorkspacePolicy),
     ...checkRepositoryVersion(),
-    ...manifests.flatMap(checkWorkspace),
+    ...manifests.flatMap(checkWorkspaceManifest),
     ...checkWorkspaceProtocol(manifests),
     ...checkExperimentalDependencyIsolation(dependencyManifests),
     ...checkHierarchyShape(),

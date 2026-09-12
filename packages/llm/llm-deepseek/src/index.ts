@@ -5,20 +5,24 @@
  * `llm-deepseek` user-settings section (`ctx.settings`) and resolves the API
  * key through the optional credential seam (`ctx.credentials`), so a changed
  * base URL, catalog, or key reaches the very next request without restarting
- * anything, while an in-flight stream keeps the facts it started with. The
- * one registration-captured fact — the retry policy — re-registers the route
- * in place when it changes.
+ * anything, while an in-flight stream keeps the facts it started with. With
+ * settings attached, an explicit empty user section and no credential withdraw
+ * the route atomically; a never-written first run remains available for setup.
+ * Retry-policy and occupancy changes share the registration's atomic replace.
  * @module @deepseek-ai/dsh-llm-deepseek
  */
 
-import type { Context } from '@deepseek-ai/cordis'
+import { FiberState, type Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { assertUsableApiKey, LlmError, resolveRetryPolicy, RetryPolicySchema } from '@deepseek-ai/dsh-llm'
+import { assertUsableApiKey, LlmError, resolveImageAttachmentAccess, resolveRetryPolicy, RetryPolicySchema } from '@deepseek-ai/dsh-llm'
 import type { ModelModality, RetryPolicyConfig } from '@deepseek-ai/dsh-llm'
+import type {} from '@deepseek-ai/dsh-fs'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
+import type { CredentialProvider, CredentialRef } from '@deepseek-ai/dsh-credentials'
 import { launchEnvironmentOf, type LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
-import { deepEqualJson, installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
+import type { SettingsProvider } from '@deepseek-ai/dsh-settings'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
+import { deepEqualJson } from '@deepseek-ai/dsh-util-values'
 import { getOrCreateAnonymousUserId, type AnonymousUserId } from '@deepseek-ai/dsh-anonymous-user-id'
 import {
   DEFAULT_CONTEXT_WINDOW,
@@ -29,17 +33,19 @@ import {
   DEFAULT_IMAGE_OFFLOAD_BYTE_QUANTUM,
   DEFAULT_IMAGE_OFFLOAD_COUNT_QUANTUM,
   DEFAULT_INLINE_IMAGE_OFFLOAD_BYTE_QUANTUM,
-  DEFAULT_LOW_DETAIL_IMAGE_PIXEL_BUDGET,
   DEFAULT_MAX_INLINE_REQUEST_IMAGE_BYTES,
-  DEFAULT_MAX_IMAGES_PER_REQUEST,
-  DEFAULT_MAX_REQUEST_FILES_BYTES,
   DEFAULT_MAX_TOKENS,
-  DEFAULT_REQUEST_IMAGE_MAX_BYTES,
-  DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET,
   DEFAULT_STREAM_IDLE_TIMEOUT_MS,
   DeepSeekAdapter,
 } from './adapter.ts'
 import type { DeepSeekCatalogModel, DeepSeekConnectionOptions } from './adapter.ts'
+import {
+  DEFAULT_LOW_DETAIL_IMAGE_PIXEL_BUDGET,
+  DEFAULT_MAX_IMAGES_PER_REQUEST,
+  DEFAULT_MAX_REQUEST_FILES_BYTES,
+  DEFAULT_REQUEST_IMAGE_MAX_BYTES,
+  DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET,
+} from './request-pricing.ts'
 
 export {
   DEFAULT_CONTEXT_WINDOW,
@@ -50,17 +56,22 @@ export {
   DEFAULT_IMAGE_OFFLOAD_BYTE_QUANTUM,
   DEFAULT_IMAGE_OFFLOAD_COUNT_QUANTUM,
   DEFAULT_INLINE_IMAGE_OFFLOAD_BYTE_QUANTUM,
-  DEFAULT_LOW_DETAIL_IMAGE_PIXEL_BUDGET,
   DEFAULT_MAX_INLINE_REQUEST_IMAGE_BYTES,
-  DEFAULT_MAX_IMAGES_PER_REQUEST,
-  DEFAULT_MAX_REQUEST_FILES_BYTES,
   DEFAULT_MAX_TOKENS,
-  DEFAULT_REQUEST_IMAGE_MAX_BYTES,
-  DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET,
   DEFAULT_STREAM_IDLE_TIMEOUT_MS,
   DeepSeekAdapter,
 } from './adapter.ts'
 export type { DeepSeekAdapterOptions, DeepSeekCatalogModel, DeepSeekConnectionOptions } from './adapter.ts'
+export {
+  DEFAULT_LOW_DETAIL_IMAGE_PIXEL_BUDGET,
+  DEFAULT_MAX_IMAGES_PER_REQUEST,
+  DEFAULT_MAX_REQUEST_FILES_BYTES,
+  DEFAULT_REQUEST_IMAGE_MAX_BYTES,
+  DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET,
+  deepSeekImageRequestPricing,
+  resolveRequestImagePolicy,
+} from './request-pricing.ts'
+export { deepSeekImageTokens } from './image-tokens.ts'
 export { DeepSeekFileStore, MAX_CHAT_IMAGE_BYTES } from './file-store.ts'
 export type { DeepSeekFileConnection, DeepSeekFilePolicy, DeepSeekFileReference } from './file-store.ts'
 export { DeepSeekFilesClient, MAX_FILE_EXPIRY_SECONDS, MAX_FILE_UPLOAD_BYTES, MAX_STORED_FILE_BYTES, MAX_STORED_FILE_COUNT, MIN_FILE_EXPIRY_SECONDS } from './files-api.ts'
@@ -75,14 +86,24 @@ export type * from './types.ts'
 export const name = 'llm-deepseek'
 export const inject = ['llm']
 
-const NS = settingsNamespace('llm-deepseek')
+const NS = 'llm-deepseek'
 const DEFAULT_API_KEY_ENV = 'DEEPSEEK_API_KEY'
 /** The single provider route this plugin owns. */
 const PROVIDER = 'deepseek-official'
 
 const DEFAULT_MODELS: DeepSeekCatalogModel[] = [
-  { id: 'deepseek-v4-flash', name: 'DeepSeek-V4-Flash', contextWindow: DEFAULT_CONTEXT_WINDOW },
-  { id: 'deepseek-v4-pro', name: 'DeepSeek-V4-Pro', contextWindow: DEFAULT_CONTEXT_WINDOW },
+  {
+    id: 'deepseek-v4-flash',
+    name: 'DeepSeek-V4-Flash',
+    description: 'Fast, efficient, and economical; suited to focused, routine, or parallel tasks.',
+    contextWindow: DEFAULT_CONTEXT_WINDOW,
+  },
+  {
+    id: 'deepseek-v4-pro',
+    name: 'DeepSeek-V4-Pro',
+    description: 'Stronger agentic coding, knowledge, and difficult reasoning; suited to complex or quality-critical tasks at higher cost.',
+    contextWindow: DEFAULT_CONTEXT_WINDOW,
+  },
   {
     id: 'deepseek-v4-flash-vision-exp',
     name: 'DeepSeek-V4-Flash-Vision-Exp',
@@ -151,9 +172,9 @@ const catalogModel: z<DeepSeekCatalogModel> = z.object({
   contextWindow: z.number().step(1).min(1),
   maxTokens: z.number().step(1).min(1),
   inputModalities: z.array(z.union(MODEL_MODALITIES)).min(1).default(['text']),
-  imagePixelBudget: z.number().step(1).min(1),
+  imagePixelBudget: z.union([z.number().step(1).min(1), 'low']),
   imageMaxBytes: z.number().step(1).min(1),
-  imageDetail: z.union(['auto', 'low']),
+  systemPromptUpdate: z.const('in-history'),
 })
 
 export const Config: z<Config> = z.object({
@@ -196,6 +217,9 @@ export type ResolvedDeepSeekOptions = DeepSeekConnectionOptions
 function resolveModels(models: readonly DeepSeekCatalogModel[] | undefined): DeepSeekCatalogModel[] {
   const seen = new Set<string>()
   return (models ?? DEFAULT_MODELS).map((model) => {
+    if (Object.hasOwn(model, 'imageDetail')) {
+      throw new Error('llm-deepseek: catalog model imageDetail is no longer supported; use imagePixelBudget')
+    }
     if (model.id.length === 0) throw new Error('llm-deepseek: catalog model ids must be non-empty')
     if (model.name !== undefined && model.name.length === 0) {
       throw new Error(`llm-deepseek: catalog model "${model.id}" has an empty name`)
@@ -225,17 +249,22 @@ function resolveModels(models: readonly DeepSeekCatalogModel[] | undefined): Dee
       throw new Error(`llm-deepseek: catalog model "${model.id}" inputModalities must not contain duplicates`)
     }
     const hasImage = inputModalities.includes('image')
-    if (!hasImage && (model.imagePixelBudget !== undefined
-      || model.imageMaxBytes !== undefined || model.imageDetail !== undefined)) {
+    if (!hasImage && (model.imagePixelBudget !== undefined || model.imageMaxBytes !== undefined)) {
       throw new Error(`llm-deepseek: text-only catalog model "${model.id}" cannot declare image request limits`)
     }
     if (model.imagePixelBudget !== undefined
+      && model.imagePixelBudget !== 'low'
       && (!Number.isSafeInteger(model.imagePixelBudget) || model.imagePixelBudget <= 0)) {
-      throw new Error(`llm-deepseek: catalog model "${model.id}" imagePixelBudget must be a positive safe integer`)
+      throw new Error(`llm-deepseek: catalog model "${model.id}" imagePixelBudget must be "low" or a positive safe integer`)
     }
     if (model.imageMaxBytes !== undefined
       && (!Number.isSafeInteger(model.imageMaxBytes) || model.imageMaxBytes <= 0)) {
       throw new Error(`llm-deepseek: catalog model "${model.id}" imageMaxBytes must be a positive safe integer`)
+    }
+    // Widened: a dynamic config update reaches this check without schema validation.
+    const systemPromptUpdate: string | undefined = model.systemPromptUpdate
+    if (systemPromptUpdate !== undefined && systemPromptUpdate !== 'in-history') {
+      throw new Error(`llm-deepseek: catalog model "${model.id}" systemPromptUpdate must be "in-history" when present`)
     }
     if (seen.has(model.id)) throw new Error(`llm-deepseek: duplicate catalog model "${model.id}"`)
     seen.add(model.id)
@@ -245,15 +274,14 @@ function resolveModels(models: readonly DeepSeekCatalogModel[] | undefined): Dee
       ...model.description === undefined ? {} : { description: model.description },
       ...model.contextWindow === undefined ? {} : { contextWindow: model.contextWindow },
       ...model.maxTokens === undefined ? {} : { maxTokens: model.maxTokens },
+      ...model.systemPromptUpdate === undefined ? {} : { systemPromptUpdate: model.systemPromptUpdate },
       inputModalities: [...inputModalities],
       ...hasImage
         ? {
-          imagePixelBudget: model.imagePixelBudget
-            ?? (model.imageDetail === 'low'
-              ? DEFAULT_LOW_DETAIL_IMAGE_PIXEL_BUDGET
-              : DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET),
+          imagePixelBudget: model.imagePixelBudget === 'low'
+            ? DEFAULT_LOW_DETAIL_IMAGE_PIXEL_BUDGET
+            : model.imagePixelBudget ?? DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET,
           imageMaxBytes: model.imageMaxBytes ?? DEFAULT_REQUEST_IMAGE_MAX_BYTES,
-          ...model.imageDetail === undefined ? {} : { imageDetail: model.imageDetail },
         }
         : {},
     }
@@ -438,6 +466,16 @@ export function apply(ctx: Context, config: Config): void {
     resolveApiKey,
     resolveUserId,
     resolveAttachments: () => ctx.get('attachments'),
+    resolveImageAccess: (attachments, ref) => resolveImageAttachmentAccess(
+      attachments,
+      hostPath => ctx.get('fs')?.processPathFromHostPath(hostPath),
+      ref,
+    ),
+    prepareExtensions: (request) => {
+      const extensions = ctx.get('deepseekLlmApiExtensions')
+      return extensions?.prepare(request)
+        ?? Promise.resolve({ fields: {}, accept: () => Promise.resolve() })
+    },
   })
   ctx.llm.registerConfigurableProviders([
     { provider: PROVIDER, displayName: 'DeepSeek', settingsNs: NS, settingsPath: [] },
@@ -445,23 +483,108 @@ export function apply(ctx: Context, config: Config): void {
   // Route effects bind to this apply fiber via the stable `ctx` reference,
   // even when a swap runs inside the scoped settings callback below.
   const registration = ctx.llm.registerAdapter([PROVIDER], adapter)
+  let routeActive = true
   let registeredPolicy = options().retryPolicy
-  const ensureRegistrationFacts = (): void => {
+  const ensureRegistrationFacts = (active = routeActive): void => {
     const policy = options().retryPolicy
-    if (deepEqualJson(policy, registeredPolicy)) return
-    // The registry captures the retry policy at registration, so it is the one
-    // fact per-request resolution cannot refresh. `replace` re-reads it in one
-    // synchronous registry section: disposing and re-registering instead would
-    // publish an empty route set between the two, and an observer that reacted
-    // to it would see this provider disappear and come back.
-    registration.replace([PROVIDER])
+    if (active === routeActive && deepEqualJson(policy, registeredPolicy)) return
+    // The registry captures the retry policy and route set. One replace swaps
+    // both facts, so topology observers never see a dispose/register gap.
+    registration.replace(active ? [PROVIDER] : [])
+    routeActive = active
     registeredPolicy = policy
   }
 
-  installSettingsSection(ctx, NS, Config, config, {
-    setSource: (source) => {
-      current = source
-    },
-    onChange: ensureRegistrationFacts,
+  let activeSettings: SettingsProvider | undefined
+  let activeCredentials: CredentialProvider | undefined
+  let occupancyGeneration = 0
+
+  const rawUserSection = (settings: SettingsProvider): unknown => settings.describe()
+    .find(descriptor => descriptor.ns === NS)?.user
+
+  const environmentCredentialConfigured = (ref: CredentialRef): boolean => {
+    const value = launchEnvironmentOf(ctx).get(ref)?.value
+    return value !== undefined && value.length > 0
+  }
+
+  /** Reconcile the route with first-run, user-section, and credential occupancy. */
+  const reconcileOccupancy = (): void => {
+    if (ctx.fiber.state === FiberState.UNLOADING || ctx.fiber.state === FiberState.DISPOSED) return
+    const generation = ++occupancyGeneration
+    const settings = activeSettings
+    // A composition without settings keeps the declared provider route. With
+    // settings, an absent user section is the never-written first run; the
+    // Models page writes an explicit empty object when the user deletes the
+    // official provider.
+    if (settings === undefined) {
+      ensureRegistrationFacts(true)
+      return
+    }
+    const user = rawUserSection(settings)
+    const explicitlyEmpty = user !== undefined
+      && typeof user === 'object'
+      && user !== null
+      && !Array.isArray(user)
+      && Object.keys(user).length === 0
+    if (!explicitlyEmpty) {
+      ensureRegistrationFacts(true)
+      return
+    }
+
+    const ref = options().apiKeyEnv
+    const credentials = activeCredentials
+    if (credentials === undefined) {
+      ensureRegistrationFacts(environmentCredentialConfigured(ref))
+      return
+    }
+    void credentials.describe(ref).then((info) => {
+      if (generation !== occupancyGeneration) return
+      try {
+        ensureRegistrationFacts(info.configured)
+      } catch (error) {
+        ctx.logger.error('llm-deepseek: keeping the previous route occupancy after a refused adapter update')
+        ctx.logger.error(error)
+      }
+    }, (error: unknown) => {
+      if (generation !== occupancyGeneration) return
+      // Credential presence is an availability fact. A failed read cannot
+      // prove absence, so retain the last topology until a later commit or
+      // service generation provides a conclusive answer.
+      ctx.logger.error(`llm-deepseek: keeping the previous route occupancy after credential description failed for ${ref}`)
+      ctx.logger.error(error)
+    })
+  }
+
+  ctx.inject(['settings'], (settingsCtx) => {
+    const provider = settingsCtx.settings
+    activeSettings = provider
+    settingsCtx.on('settings/document-updated', (ns) => {
+      if (ns === NS) reconcileOccupancy()
+    })
+    settingsCtx.effect(() => () => {
+      if (activeSettings !== provider) return
+      activeSettings = undefined
+      reconcileOccupancy()
+    })
+    settingsCtx.settings.installSection(ctx, NS, Config, config, {
+      setSource: (source) => {
+        current = source
+      },
+      onChange: reconcileOccupancy,
+    })
+  })
+
+  ctx.inject(['credentials'], (credentialsCtx) => {
+    const provider = credentialsCtx.credentials
+    activeCredentials = provider
+    credentialsCtx.on('credentials/reference-updated', (ref) => {
+      if (ref === options().apiKeyEnv) reconcileOccupancy()
+    })
+    reconcileOccupancy()
+    credentialsCtx.effect(() => () => {
+      if (activeCredentials !== provider) return
+      activeCredentials = undefined
+      reconcileOccupancy()
+    })
   })
 }

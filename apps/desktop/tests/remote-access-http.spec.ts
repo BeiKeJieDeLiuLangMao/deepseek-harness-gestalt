@@ -7,6 +7,7 @@ import {
   parseDesktopInstallationPresentation,
   parseInstallationId,
   parsePlatformAccountId,
+  type AuthenticatedInstallationView,
 } from '@deepseek-ai/dsh-platform-account'
 import {
   MemoryPersonalPairingAuthorityStore,
@@ -46,7 +47,7 @@ describe('Desktop Settings Remote Access composition', () => {
             kind: 'desktop' as const,
             presentation: parseDesktopInstallationPresentation({ name: 'Settings Desktop', platform: 'macos' }),
           },
-        })),
+        } satisfies AuthenticatedInstallationView)),
       },
       handshake: handshakeFixture(),
       relay: {
@@ -123,7 +124,7 @@ describe('Desktop Settings Remote Access composition', () => {
 function authentication(accessToken: string): PairingAccountAuthentication {
   return {
     accessToken,
-    proof: { jti: parseAccountProofJti(crypto.randomUUID()), issuedAt: 1, signature: 'signature' },
+    proof: { jti: parseAccountProofJti(randomUUID()), issuedAt: 1, signature: 'signature' },
   }
 }
 

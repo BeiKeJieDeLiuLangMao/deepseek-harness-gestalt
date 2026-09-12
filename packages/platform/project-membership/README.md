@@ -1,6 +1,28 @@
+---
+description: "Project Membership Service Definition for cloud projects, member roles, function tags, and invitations."
+kind: "package-reference"
+---
+
 # `@deepseek-ai/dsh-project-membership`
 
 English | [中文](README.zh.md)
+
+## Summary
+
+Model cloud projects with one normalized Git remote, role-bearing memberships, function tags, and explicit invitation transitions. A remote belongs to at most one Project per environment; collaboration roles remain independent from Git-platform permissions. The Service owns branded ids, role gates, invite grants, project recovery, and presence without exposing provider storage.
+
+## Table of Contents
+
+- [Package contract](#package-contract)
+- [Service surface](#service-surface)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
+
+-----
+
+<a id="package-contract"></a>
+## Package contract
 
 Project Membership Service Definition for cloud projects: a project binds one normalized git remote as a validated unique property and carries memberships with the three permission roles `owner|admin|member` plus project-defined function tags. The remote may be a Git origin or the Git-less Workspace sentinel `local://workspace/<id>`. A remote belongs to at most one Project in an environment (`PROJECT_REMOTE_TAKEN`), so recovery cannot choose an arbitrary association. Roles govern only this collaboration plane; they never derive from Git-platform permissions, and Git permissions never derive from them.
 
@@ -8,6 +30,7 @@ Invitations move through `pending → accepted | declined | retracted` and carry
 
 Reading is gated too: `roster` requires an active membership of the caller, so removed accounts lose enumeration immediately. Each mutation that changes what a roster view returns publishes one `project-membership/roster-invalidated` event strictly after durability, carrying both roster projection versions; consumers key caches on `rosterVersion(projectId)` and rebuild from the event instead of trusting stale views.
 
+<a id="service-surface"></a>
 ## Service surface
 
 `createProject(actor, {name, remoteUrl})` (creator becomes founding owner) · `invite` · `retractInvitation` (issuer or owner) · `acceptInvitation` · `declineInvitation` (addressee; addressee identity stays private, so other accounts see `INVITATION_NOT_FOUND`) · `changeRole` · `setMemberTags` · `removeMember` · `roster` · `pendingInvitationsFor` · `pendingInvitationsIssuedBy` (admin-or-owner) · `projectByRemote` · `rosterVersion`.
@@ -16,17 +39,29 @@ Stable failure codes: `DUPLICATE_INVITEE`, `ROLE_REQUIRED`, `NOT_A_MEMBER`, `PRO
 
 `normalizeGitRemoteUrl` produces the canonical binding form from `https://host/path[.git]`, scp-like `user@host:path[.git]`, and `local://workspace/<id>`: scheme/host lower-cased for Git spellings, one terminal `.git` suffix dropped case-insensitively, trailing slashes trimmed, mid-path segments and the Workspace identity left case-exact. `localWorkspaceRemoteUrl(workspaceId)` is the Git-less constructor. Browser bundles that need only this pure operation import `@deepseek-ai/dsh-project-membership/remote-url`; the invitation grant policy lives at `@deepseek-ai/dsh-project-membership/invite-role`. Neither subpath carries Service or registry identity.
 
-The trusted Account deletion owner uses `accountDeletionProjects` to obtain sole-owner projects and joined successor candidates, then `deleteAccountMemberships` to apply explicit transfers and remove personal references. An unavailable successor returns unresolved projects without committing removals. The operation never leaves a project ownerless or deletes another member’s workspace files. These owner methods are not general membership HTTP routes.
-
+<a id="model-experience"></a>
 ## Model Experience
 
-None, as Project Membership authority stays outside agent sessions and model requests.
+Indirectly, through roster, role, function-tag, invitation, and presence state rendered by `project_members` and member-question consumers.
 
 #### KV Cache effect
 
-None.
+The Service Definition adds no stable request prefix; downstream tools and routing append its current values only when used.
 
 ## Known Limitations and Deferred Work
+<a id="known-limitations-and-deferred-work"></a>
 
 - This package defines vocabulary and gates only; it owns no storage. The file-backed development provider lives in [`dsh-project-membership-core`](../project-membership-core/README.md), and operated deployments supply their own backend.
 - Routed member questions and presence derivation consume this capability but are not part of it; production activation of routed questions stays behind the standing encryption review gate recorded in [the placement Agent Note](../../../.agents/notes/implemented/feature/2026-08-27-project-membership-core.md).
+
+No runtime invariant companion is published because this Service Definition owns no Provider state, while the Project Membership Core companion checks the durable roster-version stream.
+
+<a id="dev-note"></a>
+### Dev Note
+
+<details>
+<summary>Working context for maintainers — click to expand</summary>
+
+None.
+
+</details>

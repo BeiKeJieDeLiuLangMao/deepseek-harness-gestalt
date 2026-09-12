@@ -61,7 +61,7 @@ import { DesktopHostLifecycle } from './host-lifecycle.ts'
 import { bindCurrentOverlay, revealCurrentHost } from './reveal-current-host.ts'
 import {
   autoUpdaterFromModule, configurePackagedAutoUpdater, startAutoUpdater,
-  type AutoUpdaterLifecycle, type AutoUpdaterModule,
+  type AutoUpdaterLifecycle, type AutoUpdaterModule, type NativeStagePort,
 } from './updater.ts'
 import { windowChromeOptions } from './window-options.ts'
 import { desktopIconOptions } from './app-icon.ts'
@@ -97,7 +97,10 @@ import type { DesktopCompanionOperationOutput } from './companion-product.ts'
 import {
   DesktopCompanionOperationLedger, FileDesktopCompanionOperationStore,
 } from './companion-operation-ledger.ts'
-import { createDesktopHostRpc } from './host-rpc.ts'
+import {
+  bootstrapDesktopHostCookie, createDesktopHostRpc, createDesktopHostSession,
+  pageDesktopHostSession, promptDesktopHostSession,
+} from './host-rpc.ts'
 import { desktopInstallationPresentation } from './desktop-installation.ts'
 import { downloadCompanionAttachment } from './companion-attachments.ts'
 import { projectDesktopRendererEvent } from './renderer-projection.ts'
@@ -136,6 +139,16 @@ const desktopE2EProfile = applyDesktopE2EProfile({
 })
 const windowPresentation: DesktopWindowPresentation = desktopE2EProfile?.windowPresentation ?? 'visible'
 let systemFetch: typeof globalThis.fetch
+/**
+ * Native window title for the Desktop Host.
+ * @uiI18n brand
+ */
+const DESKTOP_WINDOW_TITLE = 'DeepSeek Gestalt'
+/**
+ * macOS application-menu item that starts an update check.
+ * @uiI18n protocol
+ */
+const DESKTOP_UPDATE_MENU_LABEL = 'Check for Updates…'
 const PRELOAD = join(here, 'preload.cjs')
 const OPERATED_PLATFORM_CONFIG = join(here, 'operated-platform.json')
 const CLIPROXYAPI_SOURCE_CONFIG = join(here, 'cliproxyapi-source.json')
@@ -144,6 +157,23 @@ function smokeLog(line: string): void {
   const file = process.env.DSH_DESKTOP_SMOKE_FILE
   if (file === undefined || file.length === 0) return
   appendFileSync(file, line + '\n')
+}
+
+function electronNativeStagePort(): NativeStagePort {
+  return {
+    addDownloadedListener(listener) {
+      electronAutoUpdater.on('update-downloaded', listener)
+    },
+    removeDownloadedListener(listener) {
+      electronAutoUpdater.removeListener('update-downloaded', listener)
+    },
+    addErrorListener(listener) {
+      electronAutoUpdater.on('error', listener)
+    },
+    removeErrorListener(listener) {
+      electronAutoUpdater.removeListener('error', listener)
+    },
+  }
 }
 
 let host: RunningWebHost | undefined
@@ -352,18 +382,19 @@ async function boot(): Promise<void> {
         () => !hostLifecycle.closed,
       )
     if (shuttingDown || hostLifecycle.current !== started.value) return
-    host = started.value
-    installCompanionHost(host)
-    observeHostExit(host)
-
-    smokeLog('host ' + host.url + ' pid ' + String(host.child.pid))
-    await revealHost(target, host.url)
-    if (hostLifecycle.closed) return
+    const running = started.value
+    host = running
+    await installCompanionHost(running)
+    if (!isCurrentWebHost(running)) return
+    observeHostExit(running)
+    smokeLog('host ' + running.url + ' pid ' + String(running.child.pid))
+    await revealHost(target, running.launchUrl)
+    if (hostLifecycle.closed || hostLifecycle.current !== running || host !== running) return
     if (process.env.DSH_DESKTOP_SMOKE === '1') {
-      await finishSmoke(window, host.url)
+      await finishSmoke(window, running.url)
       return
     }
-    void ensureChromeOverlay(window, host.url)
+    void ensureChromeOverlay(window, running.url)
   } catch (error) {
     smokeLog('error ' + (error instanceof Error ? error.message : String(error)))
     await showError(target, error)
@@ -390,14 +421,7 @@ async function boot(): Promise<void> {
       updater: autoUpdater,
       onStateChange: pushStatus,
       autoInstallOnAppQuit: process.platform === 'darwin',
-      ...process.platform === 'darwin' ? {
-        nativeStage: {
-          addDownloadedListener: (listener) => { electronAutoUpdater.on('update-downloaded', listener) },
-          removeDownloadedListener: (listener) => { electronAutoUpdater.removeListener('update-downloaded', listener) },
-          addErrorListener: (listener) => { electronAutoUpdater.on('error', listener) },
-          removeErrorListener: (listener) => { electronAutoUpdater.removeListener('error', listener) },
-        },
-      } : {},
+      ...process.platform === 'darwin' ? { nativeStage: electronNativeStagePort() } : {},
     })
   } catch (error) {
     pushStatus({
@@ -420,17 +444,21 @@ async function handleDesktopCompanionOperation(
   }
   const attachmentKey = snowPairingVault.attachmentKey(selector)
   if (attachmentKey === undefined) {
+    /** @uiI18n diagnostic */
+    const pairingRevoked = 'Personal Pairing is no longer active'
     return {
       type: 'operation-failed', operationId: operation.operationId,
-      failure: { kind: 'business', code: 'pairing-revoked', message: 'Personal Pairing is no longer active' },
+      failure: { kind: 'business', code: 'pairing-revoked', message: pairingRevoked },
     }
   }
   const desktopName = account.installationPresentation()?.name
   if (desktopName === undefined) {
     attachmentKey.fill(0)
+    /** @uiI18n diagnostic */
+    const installationUnavailable = 'Desktop Installation presentation is unavailable'
     return {
       type: 'operation-failed', operationId: operation.operationId,
-      failure: { kind: 'business', code: 'installation-unavailable', message: 'Desktop Installation presentation is unavailable' },
+      failure: { kind: 'business', code: 'installation-unavailable', message: installationUnavailable },
     }
   }
   try {
@@ -504,7 +532,7 @@ function createWindow(): BrowserWindow {
     minHeight: 560,
     ...desktopWindowConstructorOptions(windowPresentation),
     backgroundColor: bootBackgroundColor(nativeTheme.shouldUseDarkColors),
-    title: 'DeepSeek Gestalt',
+    title: DESKTOP_WINDOW_TITLE,
     webPreferences: {
       preload: PRELOAD,
       contextIsolation: true,
@@ -624,6 +652,10 @@ function observeHostExit(running: RunningWebHost): void {
   observeWebHostExit(running, smokeLog, () => onHostExit(running))
 }
 
+function isCurrentWebHost(running: RunningWebHost): boolean {
+  return !shuttingDown && hostLifecycle.current === running && host === running
+}
+
 /**
  * Stop the current Web Host (and any in-flight spawn), start a fresh one, and
  * point the window and the native overlay at its new URL. The Electron window
@@ -635,11 +667,14 @@ async function replaceWebHost(startTimeoutMs?: number): Promise<RunningWebHost> 
   const started = await hostLifecycle.replace(startTimeoutMs)
   if (shuttingDown || hostLifecycle.current !== started) throw new Error('dsh web startup aborted')
   host = started
-  installCompanionHost(started)
+  await installCompanionHost(started)
+  if (!isCurrentWebHost(started)) {
+    throw new Error('dsh web startup aborted')
+  }
   observeHostExit(started)
   smokeLog('host replaced ' + started.url + ' pid ' + String(started.child.pid))
   if (window !== undefined && !window.isDestroyed()) {
-    await revealHost(window, started.url)
+    await revealHost(window, started.launchUrl)
     if (hostLifecycle.closed || hostLifecycle.current !== started) throw new Error('dsh web startup aborted')
     void ensureChromeOverlay(window, started.url)
   }
@@ -750,13 +785,15 @@ async function finishSmoke(target: BrowserWindow, hostUrl: string): Promise<void
   })
   const sessionId = 'desktop-smoke-indexed-session'
   const needle = 'desktop-companion-smoke-indexed-needle'
-  const created = await smokeRpc.call('session.create', { sessionId })
+  const created = await createDesktopHostSession(smokeRpc, sessionId)
+  const promptRequestId = parseCompanionOperationId('desktop-smoke-prompt')
   const prompted = created.ok
-    ? await smokeRpc.call('session.prompt', {
+    ? await promptDesktopHostSession(smokeRpc, {
+      requestId: promptRequestId,
       sessionId,
       mode: 'queue',
       content: [{ type: 'text', text: needle }],
-    })
+    }, { rpcId: promptRequestId })
     : created
   if (!created.ok || !prompted.ok) {
     smokeLog(`companion entry seed failed ${JSON.stringify(!created.ok ? created : prompted)}`)
@@ -767,13 +804,27 @@ async function finishSmoke(target: BrowserWindow, hostUrl: string): Promise<void
   const turnDeadline = Date.now() + 10_000
   let turnSettled = false
   let turnEvidence: unknown
+  const follow = new AbortController()
+  const frames: unknown[] = []
+  const watching = smokeRpc.followSession(sessionId, follow.signal, (frame) => { frames.push(frame) })
   while (Date.now() < turnDeadline) {
-    const history = await smokeRpc.call('session.history', { sessionId, maxMessages: 1 })
-    turnEvidence = history
-    turnSettled = history.ok && smokeHistoryHasTurnEnd(history.value)
-    if (turnSettled) break
+    const snapshot = frames.find(frame => smokeFollowHasTurnEnd(frame))
+    if (snapshot !== undefined) {
+      turnSettled = true
+      turnEvidence = snapshot
+      break
+    }
+    const cursor = smokeFollowCursor(frames)
+    if (cursor !== undefined) {
+      const history = await pageDesktopHostSession(smokeRpc, { sessionId, throughSeq: cursor, maxMessages: 20 })
+      turnEvidence = history
+      turnSettled = history.ok && smokePageHasTurnEnd(history.value)
+      if (turnSettled) break
+    }
     await new Promise(resolve => setTimeout(resolve, 50))
   }
+  follow.abort()
+  await watching.catch(() => {})
   if (!turnSettled) {
     smokeLog(`companion entry turn did not settle ${JSON.stringify(turnEvidence)}`)
     console.error('dsh desktop smoke: Companion Session turn did not settle', turnEvidence)
@@ -824,11 +875,39 @@ async function finishSmoke(target: BrowserWindow, hostUrl: string): Promise<void
   target.close()
 }
 
-function smokeHistoryHasTurnEnd(value: unknown): boolean {
-  if (value === null || typeof value !== 'object' || !('events' in value) || !Array.isArray(value.events)) return false
-  return value.events.some((entry: unknown) => entry !== null && typeof entry === 'object'
-    && 'event' in entry && entry.event !== null && typeof entry.event === 'object'
-    && 'type' in entry.event && entry.event.type === 'turn/end')
+function isSmokeRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function smokeFollowCursor(frames: readonly unknown[]): number | undefined {
+  for (let index = frames.length - 1; index >= 0; index--) {
+    const frame = frames[index]
+    if (isSmokeRecord(frame) && frame.type === 'snapshot' && typeof frame.cursor === 'number') {
+      return frame.cursor
+    }
+  }
+  return undefined
+}
+
+function smokeEventType(value: unknown): string | undefined {
+  if (!isSmokeRecord(value)) return undefined
+  if (typeof value.type === 'string' && value.type === 'turn/end') return value.type
+  if (isSmokeRecord(value.event) && typeof value.event.type === 'string') return value.event.type
+  return undefined
+}
+
+function smokeFollowHasTurnEnd(frame: unknown): boolean {
+  if (!isSmokeRecord(frame)) return false
+  if (frame.type === 'event') return smokeEventType(frame.event) === 'turn/end'
+  if (frame.type !== 'snapshot' || !Array.isArray(frame.records)) return false
+  return frame.records.some(record => smokeEventType(record) === 'turn/end'
+    || (isSmokeRecord(record) && smokeEventType(record.event) === 'turn/end'))
+}
+
+function smokePageHasTurnEnd(value: unknown): boolean {
+  if (!isSmokeRecord(value) || !Array.isArray(value.records)) return false
+  return value.records.some(record => smokeEventType(record) === 'turn/end'
+    || (isSmokeRecord(record) && smokeEventType(record.event) === 'turn/end'))
 }
 
 function requestShutdown(exitCode: number, mode: 'exit' | 'allow-quit' = 'exit'): void {
@@ -896,10 +975,12 @@ async function cleanupDesktop(mode: 'exit' | 'allow-quit'): Promise<void> {
   smokeLog(`relay quit ${JSON.stringify(pairing.getRelayState())}`)
 }
 
-function installCompanionHost(running: RunningWebHost): void {
+async function installCompanionHost(running: RunningWebHost): Promise<void> {
   if (shuttingDown || hostLifecycle.current !== running) return
   clearCompanionHost()
-  uninstallCompanionHost = companionProduct.installHost(running.url)
+  const cookieHeader = await bootstrapDesktopHostCookie(running.launchUrl, running.url)
+  if (!isCurrentWebHost(running)) return
+  uninstallCompanionHost = companionProduct.installHost(running.url, cookieHeader)
   companionHostReady = true
   void startPairingForCurrentDesktop()
 }
@@ -1164,7 +1245,7 @@ function installMenu(): void {
       submenu: [
         { role: 'about' as const },
         { type: 'separator' as const },
-        { label: 'Check for Updates…', click: () => { updater?.checkForUpdates() } },
+        { label: DESKTOP_UPDATE_MENU_LABEL, click: () => { updater?.checkForUpdates() } },
         { type: 'separator' as const },
         { role: 'quit' as const },
       ],

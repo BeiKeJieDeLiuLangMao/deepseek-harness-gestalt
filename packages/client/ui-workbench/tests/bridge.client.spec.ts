@@ -1,5 +1,6 @@
+import { recoverListedMutation } from '@deepseek-ai/dsh-client-ui-browser/client'
 import { describe, expect, it, vi } from 'vitest'
-import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {
   BrowserPageState, BrowserTarget, BrowserWorkspaceProjection,
 } from '@deepseek-ai/dsh-browser-workspace/client'
@@ -78,6 +79,7 @@ function bench(input: {
   const remote: BoundBrowserWorkspace = {
     create: vi.fn(async () => page()),
     close: vi.fn(async () => undefined),
+    focus: vi.fn(async () => page()),
     refresh: vi.fn(async () => page()),
     observe: vi.fn(async () => page()),
     screenshot: vi.fn(async () => ({
@@ -86,6 +88,7 @@ function bench(input: {
   }
   const bridge = new OfficialBrowserBridge({
     sidebar,
+    recoverListedMutation,
     bindRemote: () => remote,
     projectionOf: () => currentProjection,
     createRequest: () => ({ profile: 'persistent', name: 'test' }),
@@ -101,6 +104,77 @@ function bench(input: {
 }
 
 describe('OfficialBrowserBridge', () => {
+  it('does not bind a navigation reply after disposal or accept new calls', async () => {
+    const navigation = Promise.withResolvers<BrowserPageState>()
+    const b = bench({ projection: projection(false), tabs: [{ id: 'browser:1', type: 'browser', path: page().url }] })
+    vi.mocked(b.remote.refresh).mockReturnValue(navigation.promise)
+    b.bridge.ensureOfficial('browser:1')
+    await vi.waitFor(() => { expect(b.remote.refresh).toHaveBeenCalledOnce() })
+    const stopping = b.bridge.dispose()
+    expect(b.bridge.dispose()).toBe(stopping)
+    b.bridge.tick()
+    b.bridge.reveal(SESSION)
+    b.bridge.ensureOfficial('browser:1')
+    await expect(b.bridge.recoverOfficial('browser:1', TARGET)).resolves.toBeUndefined()
+    navigation.resolve(page())
+    await stopping
+    expect(b.remote.create).toHaveBeenCalledOnce()
+    expect(b.sidebar.updateTab).not.toHaveBeenCalled()
+    expect(b.sidebar.setPanelOpen).not.toHaveBeenCalled()
+  })
+
+  it('drains an accepted close but drops remaining actions and queued ticks on disposal', async () => {
+    const closing = Promise.withResolvers<unknown>()
+    const b = bench({ tabs: [{ id: 'browser:1', type: 'browser', meta: officialTabMeta(TARGET) }] })
+    b.bridge.tick()
+    await Promise.resolve()
+    const listed = projection()
+    const workspace = listed.workspaces[0]!
+    const browser = workspace.browsers[0]!
+    b.setProjection({
+      ...listed,
+      workspaces: [{ ...workspace, browsers: [{
+        ...browser, tabs: [...browser.tabs, { tabId: 'second' as BrowserTarget['tabId'], revision: 0 }],
+      }] }],
+    })
+    b.setState(state([]))
+    vi.mocked(b.remote.close).mockReturnValue(closing.promise)
+    b.bridge.tick()
+    await vi.waitFor(() => { expect(b.remote.close).toHaveBeenCalledOnce() })
+    b.bridge.tick()
+    const stopping = b.bridge.dispose()
+    closing.resolve(undefined)
+    await stopping
+    expect(b.remote.close).toHaveBeenCalledOnce()
+    expect(b.remote.create).not.toHaveBeenCalled()
+    expect(b.sidebar.openTab).not.toHaveBeenCalled()
+  })
+
+  it('ignores a create rejection after disposal without recording a tab failure', async () => {
+    const creation = Promise.withResolvers<BrowserPageState>()
+    const b = bench({ projection: projection(false) })
+    vi.mocked(b.remote.create).mockReturnValue(creation.promise)
+    b.bridge.ensureOfficial('browser:1')
+    const stopping = b.bridge.dispose()
+    creation.reject(new Error('Runtime closed during unload'))
+    await stopping
+    expect(b.sidebar.updateTab).not.toHaveBeenCalled()
+  })
+
+  it('settles disposal and reports a rejected owned reconcile operation', async () => {
+    const b = bench({ tabs: [] })
+    const failure = new Error('sidebar failed to add a tab')
+    vi.mocked(b.sidebar.openTab).mockImplementation(() => { throw failure })
+    const report = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      b.bridge.tick()
+      await b.bridge.dispose()
+      expect(report).toHaveBeenCalledWith('[ui-workbench] browser operation failed', failure)
+    } finally {
+      report.mockRestore()
+    }
+  })
+
   it('attaches an existing official page to an empty sidebar tab', async () => {
     const b = bench()
     b.bridge.tick()

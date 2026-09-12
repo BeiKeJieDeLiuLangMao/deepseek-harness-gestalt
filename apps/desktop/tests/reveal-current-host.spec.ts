@@ -10,7 +10,10 @@ function gate() {
 
 function fixture() {
   const target = { destroyed: false }
-  const running = { url: 'http://127.0.0.1:1234' }
+  const running = {
+    url: 'http://127.0.0.1:1234',
+    launchUrl: 'http://127.0.0.1:1234/?token=secret',
+  }
   const state: { current: typeof running | undefined; window: typeof target; shuttingDown: boolean; closed: boolean } = {
     current: running, window: target, shuttingDown: false, closed: false,
   }
@@ -41,7 +44,7 @@ const changes = ['shutdown', 'closed', 'replacement', 'missing', 'destroyed-wind
 function invalidate(test: Fixture, change: typeof changes[number]) {
   if (change === 'shutdown') test.state.shuttingDown = true
   if (change === 'closed') test.state.closed = true
-  if (change === 'replacement') test.state.current = { url: test.running.url }
+  if (change === 'replacement') test.state.current = { ...test.running }
   if (change === 'missing') test.state.current = undefined
   if (change === 'destroyed-window') test.target.destroyed = true
   if (change === 'replaced-window') test.state.window = { destroyed: false }
@@ -50,7 +53,7 @@ function invalidate(test: Fixture, change: typeof changes[number]) {
 describe('reopened window ownership across reveal and overlay binding', () => {
   it('publishes only after binding on the exact captured target and Host', async () => {
     const test = fixture()
-    expect(test.reveal).toHaveBeenCalledWith(test.target, test.running.url)
+    expect(test.reveal).toHaveBeenCalledWith(test.target, test.running.launchUrl)
     expect(test.installOverlay).not.toHaveBeenCalled()
     test.revealGate.release()
     await Promise.resolve()

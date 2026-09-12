@@ -9,13 +9,13 @@ import {
 } from './companion-history.ts'
 import type { MobileCompanionOperationFailure, MobileCompanionSearchSnapshot } from './companion-surface.ts'
 import { MobileConversation } from './MobileConversation.tsx'
-import type {
-  SessionId, SessionListState, WorkspaceView,
-} from '@deepseek-ai/dsh-client-runtime/client'
-import type { ConversationPresentationLocale } from '@deepseek-ai/dsh-client-ui-conversation/presentation'
+import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { WorkspaceView } from '@deepseek-ai/dsh-api-workspace-controller/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { MobileConversationLocale } from './mobile-conversation-copy.ts'
 import {
-  expandedSessionGroups, SessionListPresentation, workspacePresentationTranslate,
-} from '@deepseek-ai/dsh-client-ui-workspace/presentation'
+  expandedSessionGroups, MobileSessionList, workspacePresentationTranslate,
+} from './mobile-session-list.tsx'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import css from './MobileBrowse.module.css'
 import type { MobilePresentationClock } from './mobile-clock.ts'
@@ -40,7 +40,7 @@ export interface MobileBrowseProps {
   /** Desktop conversations keyed by the same Session ids. */
   conversations: CompanionConversationMap
   /** Product locale inherited by list and detail views. */
-  locale: ConversationPresentationLocale
+  locale: MobileConversationLocale
   /** Product theme inherited by shared detail components. */
   theme: 'light' | 'dark'
   /** Session-authorized historical-image loader. */
@@ -163,11 +163,11 @@ export function MobileBrowse({
     : connection === 'online'
       ? locale === 'zh' ? '远程在线' : 'Remote Online'
       : locale === 'zh' ? '远程离线' : 'Remote Offline'
-  const groups = useMemo(
-    () => expandedSessionGroups(sessions, workspaces),
-    [sessions, workspaces],
-  )
   const tw = useMemo(() => workspacePresentationTranslate(locale), [locale])
+  const groups = useMemo(
+    () => expandedSessionGroups(sessions, workspaces, tw),
+    [sessions, tw, workspaces],
+  )
   const subscribeClock = useCallback((listener: () => void) => clock.subscribe(listener), [clock])
   const now = useSyncExternalStore(
     subscribeClock,
@@ -489,7 +489,7 @@ export function MobileBrowse({
                   </header>
                   {!collapsed && (
                     <>
-                      <SessionListPresentation
+                      <MobileSessionList
                         label={label}
                         nodes={paged.items}
                         currentId={openId}
@@ -572,7 +572,7 @@ function BrowseRouteHeader({
 
 function companionConnectionFailureMessage(
   failure: CompanionConnectionFailure,
-  locale: ConversationPresentationLocale,
+  locale: MobileConversationLocale,
 ): string {
   if (failure.code === 'COMPANION_UPDATE_REQUIRED'
     || failure.code === 'COMPANION_SECURITY_CAPABILITY_MISSING') {
@@ -609,13 +609,13 @@ function companionConnectionFailureMessage(
     : `Remote connection failed (${failure.code}). Retrying.`
 }
 
-function formatRetryDelay(milliseconds: number, locale: ConversationPresentationLocale): string {
+function formatRetryDelay(milliseconds: number, locale: MobileConversationLocale): string {
   const seconds = (milliseconds / 1_000).toFixed(3).replace(/(?:\.0+|(\.\d*?)0+)$/u, '$1')
   if (locale === 'zh') return `${seconds} 秒`
   return `${seconds} ${seconds === '1' ? 'second' : 'seconds'}`
 }
 
-function companionCreateFailureMessage(locale: ConversationPresentationLocale): string {
+function companionCreateFailureMessage(locale: MobileConversationLocale): string {
   return locale === 'zh'
     ? '无法创建会话。目标项目可能已被删除，请返回后重试。'
     : 'The Session could not be created. The target Workspace may have been removed. Go back and try again.'
@@ -629,7 +629,7 @@ function AuthoritativeSearchResults({
 }: {
   search: MobileCompanionSearchSnapshot
   sessions: SessionListState
-  locale: ConversationPresentationLocale
+  locale: MobileConversationLocale
   onOpen: (id: SessionId) => void
 }): ReactNode {
   const text = locale === 'zh'

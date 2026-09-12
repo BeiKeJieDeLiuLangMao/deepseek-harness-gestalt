@@ -44,8 +44,23 @@
      page draggable left-right and up-down while any panel was collapsed.
      The host is exactly viewport-sized (inset: 0), so the clip is invisible
      until a panel slides in from the edge; internal scroll containers and
-     the app's fixed overlay stack are unaffected. */
+     the app's fixed overlay stack are unaffected. `clip`, not `hidden`: a
+     hidden box stays a PROGRAMMATICALLY scrollable container, and a
+     scrollIntoView fired from panel content (the file tree's "Show in
+     folder" reveal) scrolled the host itself — shifting the whole panel,
+     tab bar included, out of the viewport with no way to scroll back.
+     The same class covers any scroll-into-view fixup — focus moving into
+     an off-viewport region, a nested iframe/workbench claiming focus
+     while it loads — so the guard belongs on the layer itself, not per
+     call site. The `hidden` declaration BEFORE `clip` is an old-engine
+     fallback, not dead style: engines without `clip` support (Safari < 16)
+     drop the `clip` line, which would leave this box `overflow: visible`
+     — no clipping at all, and the page-draggable regression above
+     returns. With `hidden` first those engines keep the clipping (plus
+     its pre-clip scrollability) while every clip-aware engine applies
+     the later `clip`. */
   overflow: hidden;
+  overflow: clip;
 }
 
 :global([data-dsh-panel-host][data-dsh-panel-host-degraded]) {
@@ -75,6 +90,11 @@
   flex-direction: row;
   gap: 4px;
   pointer-events: auto;
+  /* The cluster recenters between the panel's tab strip (top: 3) and DSH's
+     session header row (top: 14, see the collapsed rule below) on every
+     expand/collapse — ride the panel slide's own duration/easing so the two
+     moves stay in lockstep instead of the cluster snapping. */
+  transition: top var(--ds-transition-duration-slow) var(--ds-ease-in-out);
 }
 
 :global(body:has([data-desktop-chrome])) .toggleCluster {
@@ -107,6 +127,7 @@
   transition:
     background var(--ds-transition-duration-slow) var(--ds-ease-in-out),
     color var(--ds-transition-duration-slow) var(--ds-ease-in-out);
+  corner-shape: round;
 }
 
 .toggleButton:hover:not(:disabled):not([aria-disabled='true']) {
@@ -146,7 +167,7 @@
      app's own left nav and a panel consuming it loses its fill or clashes
      with labels (#60/#105/#106). */
   background: var(--dsw-alias-bg-layer-1);
-  border-left: 1px solid var(--dsw-alias-border-l2);
+  border-left: 0.5px solid var(--dsw-alias-border-l2);
   /* Bottom safe-area (notched phones): the drawer's bottom content clears
      the home indicator; 0 on desktops. */
   padding-bottom: env(safe-area-inset-bottom);
@@ -214,7 +235,7 @@
   display: flex;
   flex-direction: column;
   background: var(--dsw-alias-bg-layer-1);
-  border-top: 1px solid var(--dsw-alias-border-l2);
+  border-top: 0.5px solid var(--dsw-alias-border-l2);
   /* Re-enable interaction inside the click-transparent panel host. */
   pointer-events: auto;
   /* Bottom safe-area (notched phones); 0 on desktops. */
@@ -305,6 +326,7 @@ body[data-dsh-sidebar-dragging] .bottomPanel {
   color: var(--dsw-alias-label-secondary);
   cursor: pointer;
   flex: none;
+  corner-shape: round;
 }
 
 .bottomClose:hover:not(:disabled) {
@@ -336,7 +358,7 @@ body[data-dsh-sidebar-dragging] .bottomPanel {
   /* Re-enable interaction inside the click-transparent panel host. */
   pointer-events: auto;
   background: var(--dsw-alias-bg-layer-1);
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0;
   border-radius: 8px;
   box-shadow: var(--dsw-shadow-lv3);
   overflow: hidden;
@@ -359,7 +381,7 @@ body[data-dsh-sidebar-dragging] .bottomPanel {
   font: var(--dsw-font-xxs-12);
   color: var(--dsw-alias-label-secondary);
   background: var(--dsw-alias-bg-layer-1);
-  border-bottom: 1px solid var(--dsw-alias-border-l1);
+  border-bottom: 0.5px solid var(--dsw-alias-border-l1);
   cursor: grab;
   user-select: none;
 }
@@ -457,7 +479,8 @@ body[data-dsh-sidebar-dragging] .bottomPanel {
   font: var(--dsw-font-xxs-12);
   color: var(--dsw-alias-label-primary);
   background: var(--dsw-alias-bg-layer-1);
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  corner-shape: round;
 }
 
 /* ── Desktop drag-region opt-out ──────────────────────────────────────── */
@@ -471,7 +494,6 @@ body[data-dsh-sidebar-dragging] .bottomPanel {
    browsers and in shells without drag regions — safe everywhere. */
 .toggleCluster,
 .toggleButton,
-.tabBar,
 .floatHeader {
   -webkit-app-region: no-drag;
 }
@@ -497,6 +519,25 @@ body[data-dsh-sidebar-dragging] .bottomPanel {
      surface full-height and push the content (the tab strip) below the
      strip instead. .panelResize is absolutely positioned and unaffected. */
   padding-top: var(--dsh-title-bar-strip, 40px);
+}
+
+/* ── Collapsed cluster alignment with the DSH web session header ───────── */
+
+/* While the right panel is open, the cluster rides the panel's 34px tab
+   strip (28px buttons at top: 3). Collapsed, it floats over DSH's own
+   session header instead — whose controls (title, "Session log" capsule)
+   are vertically centered at 28px on both desktop and narrow viewports.
+   top: 3 then strands the cluster ~11px above that row; re-center the
+   28px buttons at 14px. The attribute disappears while the panel is open,
+   so the tab-strip alignment above is untouched. With position
+   compatibility active the DSH header sits below the caption strip, hence
+   strip + 14. */
+:global(body[data-dsh-sidebar-collapsed]) .toggleCluster {
+  top: calc(14px + env(safe-area-inset-top));
+}
+
+:global(body[data-dsh-sidebar-collapsed][data-dsh-title-bar-compat]) .toggleCluster {
+  top: calc(var(--dsh-title-bar-strip, 40px) + 14px);
 }
 
 /* The shared corner (both panels open): the intersection of the right
@@ -539,6 +580,7 @@ body[data-dsh-sidebar-dragging] .bottomPanel {
   color: var(--dsw-alias-label-secondary);
   cursor: pointer;
   flex: none;
+  corner-shape: round;
 }
 
 .iconButton:hover:not(:disabled) {
@@ -736,7 +778,7 @@ body[data-dsh-sidebar-dragging] .bottomPanel {
   gap: 6px;
   min-width: 0;
   padding: 12px 8px;
-  border: 1px solid var(--dsw-alias-border-l1);
+  border: 0.5px solid var(--dsw-alias-border-l1);
   border-radius: 8px;
   background: var(--dsw-alias-bg-layer-1);
   color: var(--dsw-alias-label-secondary);
@@ -765,7 +807,7 @@ body[data-dsh-sidebar-dragging] .bottomPanel {
   display: flex;
   align-items: stretch;
   height: 34px;
-  border-bottom: 1px solid var(--dsw-alias-border-l1);
+  border-bottom: 0.5px solid var(--dsw-alias-border-l1);
   background: var(--dsw-alias-bg-layer-1);
 }
 
@@ -820,7 +862,7 @@ body[data-dsh-tab-dragging] .windowDragSpace {
   padding: 0 4px 0 10px;
   font: var(--dsw-font-xxs-12);
   color: var(--dsw-alias-label-secondary);
-  border-right: 1px solid var(--dsw-alias-border-l1);
+  border-right: 0.5px solid var(--dsw-alias-border-l1);
   background: transparent;
   cursor: pointer;
   user-select: none;
@@ -905,6 +947,20 @@ body[data-dsh-tab-dragging] .windowDragSpace {
   color: var(--dsw-alias-label-primary);
 }
 
+/* ── Pinned-terminal tab (v0.17.0+) ───────────────────────────────────── */
+
+/* Pinned virtual tabs (injected from other sessions) render inline in the
+   tab bar with a pin icon and a subtle tint to distinguish them from the
+   session's own tabs. Token-driven so skins follow. */
+.pinnedTab {
+  color: var(--dsw-alias-label-tertiary);
+  font-style: italic;
+}
+
+.pinnedTab:hover {
+  color: var(--dsw-alias-label-secondary);
+}
+
 /* ── Explorer ──────────────────────────────────────────────────────────── */
 
 .explorer {
@@ -973,10 +1029,27 @@ body[data-dsh-tab-dragging] .windowDragSpace {
 }
 
 /* A "Show in folder" reveal highlight: the target row stays tinted until
-   the transient reveal set is cleared (a reload starts unhighlighted). */
+   the transient reveal set is cleared (a reload starts unhighlighted).
+   The DSH business-blue surface (the same source the host's nav items use
+   for their active accent) — a flat tint, deliberately no left bar. */
 .explorerRowRevealed {
-  background: color-mix(in srgb, var(--dsw-alias-interactive-bg-hover-accent) 18%, transparent);
-  box-shadow: inset 2px 0 0 var(--dsw-alias-interactive-bg-hover-accent);
+  background: var(--dsw-alias-state-business-tertiary);
+}
+
+/* Reveal sets usually list sibling files — consecutive tinted rows merge
+   into ONE rounded block: the touching edges square off, so a multi-file
+   highlight has no per-row radius notches. A solo revealed row (or the
+   first/last of a run) keeps its full radius. Rows are flat siblings in
+   the tree body (depth is inline padding), so the sibling combinator sees
+   every adjacency. */
+.explorerRowRevealed + .explorerRowRevealed {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+
+.explorerRowRevealed:has(+ .explorerRowRevealed) {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
 }
 
 .explorerDir {
@@ -1008,21 +1081,107 @@ body[data-dsh-tab-dragging] .windowDragSpace {
   white-space: nowrap;
 }
 
+/* ── Inline rename editor ─────────────────────────────────────────────────
+   The row swaps its name span for a plain input (same row metrics: 34px
+   height, 6px gap, xxs type); only tokens, no hardcoded colors. */
+.explorerRenaming {
+  cursor: text;
+}
+
+.explorerRenameInput {
+  box-sizing: border-box;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid var(--dsw-alias-state-business-primary);
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font: var(--dsw-font-xxs-12);
+}
+
+.explorerRenameInput:focus {
+  outline: none;
+  border-color: var(--dsw-alias-state-business-primary);
+}
+
+/* The dismissable mutation-failure strip above the root row (rename/delete
+   refusals — raw server text, same policy as the fence notice). */
+.explorerActionError {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  box-sizing: border-box;
+  width: 100%;
+  margin-bottom: 4px;
+  padding: 6px 8px;
+  border: 1px solid var(--dsw-alias-state-error-primary);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.explorerActionErrorText {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font: var(--dsw-font-xxs-12);
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.explorerActionErrorClose {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+
+.explorerActionErrorClose:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+/* The delete-confirmation modal's description paragraph (the git lens's
+   .gitConfirmDesc sibling — same quiet single-question look). */
+.explorerConfirmDesc {
+  margin: 0;
+  font: var(--dsw-font-s-14);
+  color: var(--dsw-alias-label-primary);
+  overflow-wrap: anywhere;
+}
+
 /* The hover-revealed @-reference button at the row's far right (and the
-   transient "copied" label that replaces it after a copy). Hidden rows
-   keep the name at full width; hovering or focusing the row reveals it. */
+   transient "copied" label that replaces it after a copy). The only auto
+   margin in the row absorbs the filename's spare width, so a short name
+   cannot leave either affordance stranded in the middle. */
+.explorerRef,
+.explorerCopied {
+  margin-left: auto;
+}
+
+/* Hidden rows keep the name at full width; hovering or focusing the row
+   reveals the reference button. */
 .explorerRef {
   flex: none;
   display: none;
   align-items: center;
   height: 20px;
   padding: 0 8px;
-  border: 1px solid var(--dsw-alias-border-l1);
+  border: 0.5px solid var(--dsw-alias-border-l1);
   border-radius: 999px;
   background: var(--dsw-alias-bg-layer-2);
   color: var(--dsw-alias-label-tertiary);
   font: var(--dsw-font-xxxs-strong-11);
   cursor: pointer;
+  corner-shape: round;
 }
 
 .explorerRef:hover {
@@ -1112,12 +1271,13 @@ body[data-dsh-tab-dragging] .windowDragSpace {
   gap: 6px;
   max-width: 100%;
   padding: 6px 12px;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0;
   border-radius: 999px;
   background: var(--dsw-alias-bg-layer-2);
   box-shadow: var(--dsw-shadow-lv2);
   color: var(--dsw-alias-label-primary);
   font: var(--dsw-font-xxs-strong-12);
+  corner-shape: round;
 }
 
 .uploadDropZoneText {
@@ -1180,7 +1340,7 @@ body[data-dsh-tab-dragging] .windowDragSpace {
   min-width: 280px;
   max-width: min(420px, calc(100% - 48px));
   padding: 20px 24px;
-  border: 1px solid var(--dsw-alias-border-inverted);
+  border: 0;
   border-radius: 24px;
   background: var(--dsw-alias-bg-layer-2);
   box-shadow: var(--dsw-shadow-lv3);
@@ -1233,7 +1393,7 @@ body[data-dsh-tab-dragging] .windowDragSpace {
   align-self: flex-end;
   height: 28px;
   padding: 0 14px;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 8px;
   background: transparent;
   color: var(--dsw-alias-label-primary);
@@ -1255,6 +1415,9 @@ body[data-dsh-tab-dragging] .windowDragSpace {
 
 .editor {
   flex: 1;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -1266,7 +1429,7 @@ body[data-dsh-tab-dragging] .windowDragSpace {
   align-items: center;
   gap: 6px;
   padding: 6px 8px;
-  border-bottom: 1px solid var(--dsw-alias-border-l1);
+  border-bottom: 0.5px solid var(--dsw-alias-border-l1);
 }
 
 .editorTitle {
@@ -1287,7 +1450,7 @@ body[data-dsh-tab-dragging] .windowDragSpace {
   box-sizing: border-box;
   height: 28px;
   padding: 0 10px;
-  border: 1px solid var(--dsw-alias-border-l1);
+  border: 0.5px solid var(--dsw-alias-border-l1);
   border-radius: 6px;
   background: var(--dsw-alias-bg-layer-1);
   color: var(--dsw-alias-label-primary);
@@ -1328,7 +1491,7 @@ body[data-dsh-tab-dragging] .windowDragSpace {
   flex: none;
   min-height: 0;
   display: flex;
-  border-left: 1px solid var(--dsw-alias-border-l1);
+  border-left: 0.5px solid var(--dsw-alias-border-l1);
 }
 
 .editorTreeResize {
@@ -1369,7 +1532,7 @@ body[data-dsh-tab-dragging] .windowDragSpace {
   align-items: center;
   gap: 6px;
   padding: 6px 8px;
-  border-bottom: 1px solid var(--dsw-alias-border-l1);
+  border-bottom: 0.5px solid var(--dsw-alias-border-l1);
 }
 
 .editorSearchInput {
@@ -1377,7 +1540,7 @@ body[data-dsh-tab-dragging] .windowDragSpace {
   min-width: 0;
   height: 26px;
   padding: 0 10px;
-  border: 1px solid var(--dsw-alias-border-l1);
+  border: 0.5px solid var(--dsw-alias-border-l1);
   border-radius: 6px;
   background: var(--dsw-alias-bg-layer-1);
   color: var(--dsw-alias-label-primary);
@@ -1430,6 +1593,7 @@ body[data-dsh-tab-dragging] .windowDragSpace {
   border-radius: 50%;
   background: var(--dsw-alias-state-warn-primary);
   flex: none;
+  corner-shape: round;
 }
 
 .editorPlaceholder {
@@ -1475,7 +1639,7 @@ body[data-dsh-tab-dragging] .windowDragSpace {
   align-items: center;
   gap: 6px;
   padding: 6px 14px;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 6px;
   background: var(--dsw-alias-bg-layer-2);
   color: var(--dsw-alias-label-primary);
@@ -1494,6 +1658,18 @@ body[data-dsh-tab-dragging] .windowDragSpace {
 
 .editorError {
   padding: 12px 16px;
+  font: var(--dsw-font-xxs-12);
+  color: var(--dsw-alias-state-error-primary);
+}
+
+/* The workspace-fence refusal row (FenceErrorNotice): reason text plus the
+ * one-click global-off button share one baseline, wrapping when narrow. */
+.fenceError {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 16px;
   font: var(--dsw-font-xxs-12);
   color: var(--dsw-alias-state-error-primary);
 }
@@ -1522,7 +1698,7 @@ body[data-dsh-tab-dragging] .windowDragSpace {
 .sandboxStatusOn {
   color: var(--dsw-alias-label-secondary);
   background: var(--dsw-alias-bg-layer-1);
-  border-bottom: 1px solid var(--dsw-alias-border-l1);
+  border-bottom: 0.5px solid var(--dsw-alias-border-l1);
 }
 
 .sandboxStatusOff {
@@ -1537,6 +1713,7 @@ body[data-dsh-tab-dragging] .windowDragSpace {
   height: 6px;
   border-radius: 50%;
   background: var(--dsw-alias-state-success-primary);
+  corner-shape: round;
 }
 
 .sandboxStatusOff .sandboxDot {
@@ -1554,7 +1731,7 @@ body[data-dsh-tab-dragging] .windowDragSpace {
 .sandboxAction {
   flex: none;
   padding: 2px 8px;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 6px;
   background: transparent;
   font: inherit;
@@ -1592,7 +1769,7 @@ body[data-dsh-tab-dragging] .windowDragSpace {
   align-items: center;
   gap: 4px;
   padding: 6px 8px;
-  border-bottom: 1px solid var(--dsw-alias-border-l1);
+  border-bottom: 0.5px solid var(--dsw-alias-border-l1);
 }
 
 .browserInput {
@@ -1600,7 +1777,7 @@ body[data-dsh-tab-dragging] .windowDragSpace {
   min-width: 0;
   height: 28px;
   padding: 0 10px;
-  border: 1px solid var(--dsw-alias-border-l1);
+  border: 0.5px solid var(--dsw-alias-border-l1);
   border-radius: 6px;
   background: var(--dsw-alias-bg-layer-1);
   color: var(--dsw-alias-label-primary);
@@ -1674,7 +1851,7 @@ body[data-dsh-tab-dragging] .windowDragSpace {
 
 .browserBlockedButton {
   padding: 4px 12px;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 6px;
   background: var(--dsw-alias-bg-layer-1);
   color: var(--dsw-alias-label-primary);
@@ -1720,7 +1897,7 @@ body[data-dsh-tab-dragging] .windowDragSpace {
   align-items: center;
   gap: 2px;
   padding: 2px;
-  border: 1px solid var(--dsw-alias-border-l1);
+  border: 0.5px solid var(--dsw-alias-border-l1);
   border-radius: 6px;
   background: var(--dsw-alias-bg-layer-1);
 }
@@ -1768,6 +1945,19 @@ body[data-dsh-tab-dragging] .windowDragSpace {
   font: var(--dsw-font-xs-13);
 }
 
+/* The DSH CodeBlock banner is position:sticky (top:0, z-index:6) so a block
+   keeps its copy action reachable inside a per-message scroll container —
+   the right call in chat, where each block owns its scroll box. In the file
+   preview every fence shares one `.editorMd` scroll container, so that sticky
+   banner pins to the top of the viewport until the *whole block* scrolls
+   past, which reads as a floating header over the document. Neutralize the
+   stickiness here (bannerWrap is the first element child of `.md-code-block`;
+   mermaid mounts are excluded since their own chrome replaces the banner). */
+.editorMd :global(.md-code-block:not([data-mermaid-processed])) > :global(div):first-child {
+  position: static;
+  z-index: auto;
+}
+
 /* ── Mermaid diagram block (markdown preview, mermaid lazy chunk) ────────
    Mirrors the md-code-block chrome the DSH CodeBlock renders, so a diagram
    reads as a peer of the surrounding fences: hairline border, layer-2
@@ -1778,7 +1968,7 @@ body[data-dsh-tab-dragging] .windowDragSpace {
 
 .mermaidWrap {
   margin: 6px 0;
-  border: 1px solid var(--dsw-alias-border-l1);
+  border: 0.5px solid var(--dsw-alias-border-l1);
   border-radius: 6px;
   background: var(--dsw-alias-bg-layer-1);
   overflow: hidden;
@@ -1790,7 +1980,7 @@ body[data-dsh-tab-dragging] .windowDragSpace {
   justify-content: space-between;
   gap: 6px;
   padding: 4px 8px;
-  border-bottom: 1px solid var(--dsw-alias-border-l1);
+  border-bottom: 0.5px solid var(--dsw-alias-border-l1);
   background: var(--dsw-alias-bg-layer-2);
 }
 
@@ -1833,7 +2023,7 @@ body[data-dsh-tab-dragging] .windowDragSpace {
 
 .mermaidError {
   padding: 6px 10px;
-  border-bottom: 1px solid var(--dsw-alias-border-l1);
+  border-bottom: 0.5px solid var(--dsw-alias-border-l1);
   color: var(--dsw-alias-state-error-primary);
   font: var(--dsw-font-xxxs-11);
 }
@@ -1886,7 +2076,7 @@ body[data-dsh-tab-dragging] .windowDragSpace {
   width: 36px;
   height: 36px;
   border-radius: 8px;
-  border: 1px solid var(--dsw-alias-border-l1);
+  border: 0.5px solid var(--dsw-alias-border-l1);
   background: var(--dsw-alias-bg-layer-2);
   color: var(--dsw-alias-label-primary);
   font: var(--dsw-font-xs-strong-13);
@@ -1949,7 +2139,7 @@ body[data-dsh-tab-dragging] .windowDragSpace {
   align-items: center;
   height: 28px;
   padding: 0 10px;
-  border: 1px solid var(--dsw-alias-border-l1);
+  border: 0.5px solid var(--dsw-alias-border-l1);
   border-radius: 6px;
   background: var(--dsw-alias-bg-layer-2);
   color: var(--dsw-alias-label-primary);
@@ -1975,7 +2165,7 @@ body[data-dsh-tab-dragging] .windowDragSpace {
   display: flex;
   justify-content: flex-end;
   padding: 6px 8px;
-  border-bottom: 1px solid var(--dsw-alias-border-l1);
+  border-bottom: 0.5px solid var(--dsw-alias-border-l1);
 }
 
 .editorPdfStage {
@@ -2073,7 +2263,7 @@ body[data-dsh-tab-dragging] .windowDragSpace {
   align-items: flex-start;
   padding: 16px;
   background: var(--dsw-alias-bg-layer-1);
-  border-left: 1px solid var(--dsw-alias-border-l2);
+  border-left: 0.5px solid var(--dsw-alias-border-l2);
   font: var(--dsw-font-xxs-12);
   color: var(--dsw-alias-state-error-primary);
   overflow: auto;
@@ -2082,12 +2272,13 @@ body[data-dsh-tab-dragging] .windowDragSpace {
 .terminalRetry {
   flex: none;
   padding: 1px 8px;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 999px;
   background: var(--dsw-alias-bg-layer-2);
   color: var(--dsw-alias-label-secondary);
   font: var(--dsw-font-xxxs-strong-11);
   cursor: pointer;
+  corner-shape: round;
 }
 
 .terminalRetry:hover {
@@ -2140,7 +2331,7 @@ body[data-dsh-tab-dragging] .windowDragSpace {
   user-select: text;
   color: var(--dsw-alias-label-primary);
   background: var(--dsw-alias-bg-layer-2);
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 4px;
   max-height: 160px;
   overflow: auto;
@@ -2172,141 +2363,9 @@ body[data-dsh-tab-dragging] .windowDragSpace {
   color: var(--dsw-alias-state-error-primary);
 }
 
-/* ── Git ───────────────────────────────────────────────────────────────── */
-
-.git {
-  flex: 1;
-  min-height: 0;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  overflow-y: auto;
-  /* Tab pages never scroll horizontally: content wraps or truncates to the
-     panel width instead of panning sideways. */
-  overflow-x: hidden;
-}
-
-.gitHeader {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 36px;
-  padding: 0 8px 0 12px;
-}
-
-.gitWorktreeRow {
-  flex: none;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 8px 0 12px;
-}
-
-.gitWorktreeLabel {
-  flex: none;
-  color: var(--dsw-alias-label-tertiary);
-  font: var(--dsw-font-xxxs-11);
-}
-
-.gitBranchSelect {
-  flex: 1;
-  min-width: 0;
-  height: 26px;
-  padding: 0 6px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 6px;
-  background: var(--dsw-alias-bg-base);
-  color: var(--dsw-alias-label-primary);
-  font: var(--dsw-font-xxs-12);
-}
-
-.gitSection {
-  border-top: 1px solid var(--dsw-alias-border-l1);
-}
-
-.gitSectionHeader {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 6px 12px 4px;
-  font: var(--dsw-font-xxxs-strong-11);
-  color: var(--dsw-alias-label-tertiary);
-  text-transform: uppercase;
-}
-
-.gitLink {
-  border: none;
-  background: transparent;
-  font: var(--dsw-font-xxxs-11);
-  color: var(--dsw-alias-brand-primary);
-  cursor: pointer;
-  padding: 0;
-}
-
-.gitLink:hover:not(:disabled) {
-  text-decoration: underline;
-}
-
-.gitLink:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
-.gitRow {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 34px;
-  margin: 0 6px;
-  padding: 0 8px;
-  border-radius: 8px;
-  animation: dsh-row-in 150ms var(--ds-ease-in-out);
-}
-
-.gitRow:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
-}
-
-.gitRowSelected {
-  background: var(--dsw-alias-interactive-bg-active);
-}
-
-.gitRowMain {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  border: none;
-  background: transparent;
-  padding: 3px 0;
-  cursor: pointer;
-  text-align: left;
-}
-
-.gitBadge {
-  flex: none;
-  width: 20px;
-  height: 16px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 4px;
-  font: var(--dsw-font-xxxs-strong-11);
-  background: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-label-secondary);
-}
-
-.gitName {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font: var(--dsw-font-s-14);
-  color: var(--dsw-alias-label-primary);
-}
+/* ── Diff tab (generic states + shell; the changes tab owns the rest in
+   changes.module.css, and the diff rows themselves live in
+   diff/diff.module.css) ────────────────────────────────────────────────── */
 
 .gitEmpty {
   padding: 4px 12px 8px;
@@ -2328,13 +2387,9 @@ body[data-dsh-tab-dragging] .windowDragSpace {
   white-space: pre-wrap;
 }
 
-.gitDiff {
-  border-top: 1px solid var(--dsw-alias-border-l1);
-  padding: 8px;
-}
-
-/* The diff tab (a change opened from the git panel, like VSCode's diff
-   editor): header + scrollable diff body, no horizontal panning. */
+/* The diff tab (a change expanded from the changes tab's preview, like
+   VSCode's diff editor): header + scrollable diff body, no horizontal
+   panning; rows render through the shared diff module. */
 .gitDiffTab {
   flex: 1;
   min-height: 0;
@@ -2352,7 +2407,7 @@ body[data-dsh-tab-dragging] .windowDragSpace {
   gap: 8px;
   height: 36px;
   padding: 0 8px 0 12px;
-  border-bottom: 1px solid var(--dsw-alias-border-l1);
+  border-bottom: 0.5px solid var(--dsw-alias-border-l1);
 }
 
 .gitDiffTabTitle {
@@ -2365,276 +2420,12 @@ body[data-dsh-tab-dragging] .windowDragSpace {
   color: var(--dsw-alias-label-primary);
 }
 
-/* One changed file's section: path header, hunk headers, aligned lines. */
-.gitDiffFile {
-  width: 100%;
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  padding: 8px 2px 2px;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.gitDiffFile:disabled {
-  cursor: default;
-}
-
-.gitDiffFile:hover:not(:disabled) {
-  background: var(--dsw-alias-interactive-bg-hover);
-}
-
-.gitDiffFileChevron {
-  flex: none;
-  color: var(--dsw-alias-label-tertiary);
-  transform: rotate(0deg);
-}
-
-.gitDiffFileChevronExpanded {
-  transform: rotate(90deg);
-}
-
-.gitDiffFilePath {
-  font: var(--dsw-font-xxs-strong-12);
-  color: var(--dsw-alias-label-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.gitDiffFileOld {
-  flex: none;
-  font: var(--dsw-font-xxxs-11);
-  color: var(--dsw-alias-label-tertiary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 40%;
-}
-
-.gitDiffFileTag {
-  flex: none;
-  padding: 0 6px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 999px;
-  font: var(--dsw-font-xxxs-strong-11);
-  color: var(--dsw-alias-label-secondary);
-}
-
-.gitDiffHunk {
-  display: flex;
-  gap: 8px;
-  padding: 3px 2px;
-  font: var(--dsw-font-markdown-code-block-small);
-  color: var(--dsw-alias-label-tertiary);
-}
-
-.gitDiffHunkHeader {
-  flex: none;
-  color: var(--dsw-alias-label-secondary);
-}
-
-.gitDiffHunkSection {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 /* One aligned diff line: old gutter / new gutter / code. Lines WRAP instead
    of scrolling horizontally (the tab-page rule: fill the width adaptively),
    with the long-token fallback breaking anywhere a space never comes. */
-.gitDiffLine {
-  display: flex;
-  align-items: stretch;
-  font: var(--dsw-font-markdown-code-block-small);
-  line-height: 20px;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  min-width: 0;
-}
-
-.gitDiffNum {
-  flex: none;
-  width: 36px;
-  padding-right: 8px;
-  text-align: right;
-  color: var(--dsw-alias-label-tertiary);
-  user-select: none;
-}
-
-.gitDiffCode {
-  flex: 1;
-  min-width: 0;
-  overflow: visible;
-}
-
-.gitDiffCtx {
-  color: var(--dsw-alias-label-primary);
-}
-
-.gitDiffDel {
-  color: var(--dsw-alias-state-error-primary);
-  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 12%, transparent);
-}
-
-.gitDiffAdd {
-  color: var(--dsw-alias-state-success-primary);
-  background: color-mix(in srgb, var(--dsw-alias-state-success-primary) 12%, transparent);
-}
-
-.gitDiffMeta {
-  padding-left: 2px;
-}
-
-.gitDiffMetaText {
-  font: var(--dsw-font-xxxs-11);
-  font-style: italic;
-  color: var(--dsw-alias-label-tertiary);
-}
-
-.gitDiffExpand {
-  display: block;
-  width: 100%;
-  margin: 4px 0;
-  border: none;
-  background: transparent;
-  font: var(--dsw-font-xxs-12);
-  color: var(--dsw-alias-brand-primary);
-  cursor: pointer;
-  text-align: center;
-}
-
-.gitDiffExpand:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
-}
-
-.gitConfirmDesc {
-  margin: 0;
-  font: var(--dsw-font-s-14);
-  color: var(--dsw-alias-label-primary);
-  white-space: pre-wrap;
-}
-
-.gitCommit {
-  display: flex;
-  gap: 6px;
-  padding: 8px 12px;
-  border-top: 1px solid var(--dsw-alias-border-l1);
-  align-items: center;
-}
-
-.gitCommitInput {
-  flex: 1;
-  min-width: 0;
-}
-
-.gitCommitButton {
-  flex: none;
-  height: 26px;
-  padding: 0 12px;
-  border: none;
-  border-radius: 6px;
-  background: var(--dsw-alias-button-primary-fill);
-  color: var(--dsw-alias-label-primary-inverted);
-  font: var(--dsw-font-xxs-strong-12);
-  cursor: pointer;
-}
-
-.gitCommitButton:hover:not(:disabled) {
-  background: var(--dsw-alias-button-primary-hover);
-}
-
-.gitCommitButton:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
 
 /* A history row: line 1 = hash + subject, line 2 = ref badges + author/date
    (badges live on the second line so they never crowd the subject). */
-.gitLogRow {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 5px 12px;
-  cursor: pointer;
-  border-radius: 8px;
-}
-
-.gitLogRow:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
-}
-
-.gitLogLine1 {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  min-width: 0;
-}
-
-.gitLogHash {
-  flex: none;
-  font: var(--dsw-font-markdown-code-block-small);
-  color: var(--dsw-alias-label-tertiary);
-}
-
-.gitLogLine2 {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  flex-wrap: wrap;
-}
-
-.gitLogRef {
-  flex: none;
-  padding: 0 5px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 999px;
-  font: var(--dsw-font-xxxs-strong-11);
-  color: var(--dsw-alias-brand-primary);
-  white-space: nowrap;
-}
-
-.gitLogSubject {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font: var(--dsw-font-s-14);
-  color: var(--dsw-alias-label-primary);
-}
-
-.gitLogMeta {
-  font: var(--dsw-font-xxxs-11);
-  color: var(--dsw-alias-label-tertiary);
-}
-
-.gitLogMore {
-  display: block;
-  width: calc(100% - 24px);
-  margin: 4px 12px 8px;
-  padding: 6px 0;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 6px;
-  background: transparent;
-  font: var(--dsw-font-xxs-12);
-  color: var(--dsw-alias-label-secondary);
-  cursor: pointer;
-}
-
-.gitLogMore:hover:not(:disabled) {
-  background: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-label-primary);
-}
-
-.gitLogMore:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
 
 /* ── Intercepted produced-files row ────────────────────────────────────── */
 
@@ -2657,13 +2448,14 @@ body[data-dsh-tab-dragging] .windowDragSpace {
   gap: 4px;
   max-width: 200px;
   padding: 2px 8px;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 999px;
   background: var(--dsw-alias-bg-layer-2);
   color: var(--dsw-alias-label-secondary);
   font: var(--dsw-font-xxs-12);
   cursor: pointer;
   overflow: hidden;
+  corner-shape: round;
 }
 
 .producedChip:hover {
@@ -2742,7 +2534,6 @@ body[data-dsh-tab-dragging] .windowDragSpace {
   .tabBarPlus,
   .paneCard,
   .explorerRow,
-  .gitRow,
   .divider,
   .dividerRow::after,
   .dividerCol::after {
@@ -2805,15 +2596,16 @@ body[data-dsh-tab-dragging] .windowDragSpace {
 }
 
 /* The pushpin toggle on an "open with" submenu row: brand ink once the
-   target is pinned to the menu's top level. */
+   target is pinned to the menu's top level. Sized for the compact menu's
+   26px rows (16px box, 12px glyph) — proportionate without overflowing. */
 .openWithPin {
   flex: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
-  border-radius: 6px;
+  width: 16px;
+  height: 16px;
+  border-radius: 5px;
   color: var(--dsw-alias-label-tertiary);
   cursor: pointer;
 }
@@ -2854,11 +2646,15 @@ body[data-dsh-tab-dragging] .windowDragSpace {
 
 /* The zero-height sticky bar: occupies no layout, keeps the button visible
    while the preview scrolls, and lets pointer events pass through the bar
-   itself (only the interactive children re-enable them). */
+   itself (only the interactive children re-enable them). The bar's stacking
+   context also frames the outline panel, so its z-index must clear the DSH
+   CodeBlock banner (z-index:6) or the popover paints beneath a sticky fence
+   header. 7 sits just above that banner and below the portalled selection
+   popup (60) / mermaid modal (1000). */
 .tocBar {
   position: sticky;
   top: 0;
-  z-index: 3;
+  z-index: 7;
   display: flex;
   justify-content: flex-end;
   height: 0;
@@ -2874,7 +2670,7 @@ body[data-dsh-tab-dragging] .windowDragSpace {
   height: 26px;
   margin: 4px 2px 0 0;
   padding: 0;
-  border: 1px solid var(--dsw-alias-border-l1);
+  border: 0.5px solid var(--dsw-alias-border-l1);
   border-radius: 6px;
   background: var(--dsw-alias-bg-layer-1);
   color: var(--dsw-alias-label-secondary);
@@ -2898,7 +2694,7 @@ body[data-dsh-tab-dragging] .windowDragSpace {
   max-height: 60vh;
   overflow-y: auto;
   padding: 4px;
-  border: 1px solid var(--dsw-alias-border-l1);
+  border: 0;
   border-radius: 8px;
   background: var(--dsw-alias-bg-layer-2);
   box-shadow: var(--dsw-shadow-lv2);
@@ -2957,4 +2753,50 @@ body[data-dsh-tab-dragging] .windowDragSpace {
 .tocFlash {
   animation: dsh-toc-flash 1.2s ease-out;
   border-radius: 4px;
+}
+/* The Settings shell supplies a generic external-section glyph. The retained
+   marker replaces only this package's row while following native colors. */
+:global([data-dsh-better-sidebar-settings-nav]) > svg:first-child {
+  display: none;
+}
+
+:global([data-dsh-better-sidebar-settings-nav])::before {
+  content: '';
+  flex: none;
+  width: 16px;
+  height: 16px;
+  background: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 7v10'/%3E%3Cpath d='M6 5v14'/%3E%3Crect width='12' height='18' x='10' y='3' rx='2'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 7v10'/%3E%3Cpath d='M6 5v14'/%3E%3Crect width='12' height='18' x='10' y='3' rx='2'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+
+/* File-tree "open with" submenu: primitives Menu grows nested lists up and
+   right with no viewport clamp. menu-flip.ts publishes these tokens on body
+   for the lifetime of that menu. */
+:global(body[data-dsh-sidebar-submenu] div[role="menu"] button[aria-expanded="true"]) {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+:global(body[data-dsh-sidebar-submenu] div[role="menu"] div[role="menu"]) {
+  left: calc(100% + 4px);
+}
+
+:global(body[data-dsh-sidebar-submenu] div[role="menu"] div[role="menu"]::before) {
+  left: -4px;
+  width: 4px;
+}
+
+:global(body[data-dsh-sidebar-submenu~="down"] div[role="menu"] div[role="menu"]) {
+  top: -4px;
+  bottom: auto;
+}
+
+:global(body[data-dsh-sidebar-submenu~="left"] div[role="menu"] div[role="menu"]) {
+  left: auto;
+  right: calc(100% + 4px);
+}
+
+:global(body[data-dsh-sidebar-submenu~="left"] div[role="menu"] div[role="menu"]::before) {
+  left: auto;
+  right: -4px;
 }

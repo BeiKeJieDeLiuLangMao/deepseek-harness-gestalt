@@ -1,6 +1,6 @@
 import { EventEmitter, getEventListeners } from 'node:events'
 import { describe, expect, it, vi } from 'vitest'
-import { HttpError } from '@deepseek-ai/dsh-host-webserver'
+import { HttpError } from '@deepseek-ai/dsh-host-webserver/http'
 import { PhoneDevicesError } from '@deepseek-ai/dsh-phone-runtime'
 import { ServerResponseCaptureSink } from '../src/server-response-capture-sink.ts'
 

@@ -31,20 +31,20 @@
  * switches: a real checkbox (native semantics and focus) driving a styled
  * track/thumb.
  *
- * Writes ride the plugin's own fenced settings route (the host calls the
- * settings seam in-process — the DSH settings RPC domain does not serve
- * third-party namespaces to configuration clients); the shared SidebarStore
- * is refreshed on success so the very next brand-new session seeds from the
- * new values and the sidebar's consumption points (the + menu, derived
- * flows) re-render immediately. Any failure reverts the optimistic UI and
- * shows the wire error inline — a broken settings surface never crashes the
- * shell.
+ * Writes go through the official global preferences controller. Its snapshot
+ * updates the section and every official sidebar consumer after a successful
+ * write. A failed write leaves the retained snapshot in force and reports the
+ * error inline.
  */
-import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react'
 import {
   IconChevronDownOutline14,
+  IconCodeOutline16,
+  IconDownloadOutline16,
   IconPlusOutline16,
+  IconNewChatOutline16,
   IconSettingsOutline16,
+  IconThinkOutline16,
   Input,
   Menu,
   Modal,
@@ -52,40 +52,42 @@ import {
 import clsx from 'clsx'
 // Type-only: pulls the settings shell's SlotMap merges ('settings.section').
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
-import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type {
+  SidebarRightPreferences,
+  SidebarRightSettingDefinition,
+  SidebarRightTabDefinition,
+  SidebarRightViewerDefinition,
+} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
+import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import {
   clampWidthPercent,
   TITLE_BAR_STRIP_MAX,
   TITLE_BAR_STRIP_MIN,
   WIDTH_PERCENT_MAX,
   WIDTH_PERCENT_MIN,
-  type SidebarPrefs,
-  type TitleBarScheme,
 } from '../prefs-shared.ts'
-import { api } from './api.ts'
-import { parsePrefs } from './prefs.ts'
 import { AddPluginModal, type PluginKind } from './add-plugin-modal.tsx'
 import { t } from './locales.ts'
 import { parseDesktopEnv } from './desktop-env.ts'
 import { getShellPreset, getShellPresets } from './shell-presets.ts'
-import type { SidebarStore } from './state.ts'
-import type {
-  BetterSidebarService,
-  FileViewerDescriptor,
-  SidebarSettingsRenderProps,
-  SidebarSettingToggle,
-  TabDescriptor,
-} from './service.ts'
+import { SIDEBAR_SERVICE_VERSION } from './service.ts'
+import {
+  IconDiffOutline16, IconHtmlOutline16, IconImageOutline16, IconMarkdownOutline16,
+  IconPdfOutline16, IconTerminalOutline16,
+} from './icons.tsx'
 import css from './SideCardSection.module.css'
 
-/** Injected business face: the shared store (prefs cache) + the sidebar service (registries). */
+/** Injected official descriptor and preference owners. */
 export interface SideCardSectionInjected {
-  store: SidebarStore
-  service: BetterSidebarService
+  tabs: import('@deepseek-ai/cordis').Context['sidebarRightTabs']
+  preferences: import('@deepseek-ai/cordis').Context['sidebarRightPreferences']
 }
 
 /** Full section props: the runtime share plus the injected face. */
-export type SideCardSectionProps = PropsRuntime<'settings.section'> & SideCardSectionInjected
+export type SideCardSectionProps = PropsRuntime<'settings.section'>
+  & PropsRenderSlots<'sidebar.right.tab.settings' | 'sidebar.right.viewer.settings'>
+  & SideCardSectionInjected
 
 /** Map one wire failure to the inline message (the conflict gets friendly copy). */
 function messageOf(error: unknown): string {
@@ -101,14 +103,29 @@ function textOf(value: string | (() => string) | undefined): string {
   return typeof value === 'function' ? value() : value
 }
 
-/** Resolve a descriptor icon (ReactNode or size function). */
 function iconOf(icon: ReactNode | ((size: number) => ReactNode) | undefined, size: number): ReactNode {
   if (icon === undefined) return null
   return typeof icon === 'function' ? icon(size) : icon
 }
 
+function descriptorIconOf(icon: string | undefined): ReactNode {
+  switch (icon) {
+    case 'sidechat': return <IconNewChatOutline16 size={16} />
+    case 'terminal': return <IconTerminalOutline16 size={16} />
+    case 'diff': return <IconDiffOutline16 size={16} />
+    case 'tasks': return <IconThinkOutline16 size={16} />
+    case 'image': return <IconImageOutline16 size={16} />
+    case 'pdf': return <IconPdfOutline16 size={16} />
+    case 'markdown': return <IconMarkdownOutline16 size={16} />
+    case 'html': return <IconHtmlOutline16 size={16} />
+    case 'code': return <IconCodeOutline16 size={16} />
+    case 'download': return <IconDownloadOutline16 size={16} />
+    default: return null
+  }
+}
+
 /** Tab inventory order: hidden types (editor/diff) last, then + menu order. */
-function tabOrder(a: TabDescriptor, b: TabDescriptor): number {
+function tabOrder(a: SidebarRightTabDefinition, b: SidebarRightTabDefinition): number {
   if (a.hidden !== b.hidden) return a.hidden === true ? 1 : -1
   return (a.order ?? 100) - (b.order ?? 100)
 }
@@ -118,70 +135,26 @@ function tabOrder(a: TabDescriptor, b: TabDescriptor): number {
  * while a preset is active. Falls back to `auto` when the stored preset id
  * is no longer registered (the strip resolves to 0 then anyway).
  */
-function titleBarSchemeValue(prefs: SidebarPrefs): string {
+function titleBarSchemeValue(prefs: SidebarRightPreferences): string {
   if (prefs.titleBarScheme !== 'preset') return prefs.titleBarScheme
   const preset = getShellPreset(prefs.titleBarPresetId)
   return preset !== undefined ? `preset:${preset.id}` : 'auto'
 }
 
 /** Viewer inventory order: priority desc (the catch-all `code` comes last). */
-function viewerOrder(a: FileViewerDescriptor, b: FileViewerDescriptor): number {
+function viewerOrder(a: SidebarRightViewerDefinition, b: SidebarRightViewerDefinition): number {
   return (b.priority ?? 0) - (a.priority ?? 0)
 }
 
 /** Whether a feature declares any secondary settings (gear button shows). */
-function hasSettings(feature: TabDescriptor | FileViewerDescriptor): boolean {
+function hasSettings(feature: SidebarRightTabDefinition | SidebarRightViewerDefinition): boolean {
   const settings = feature.settings
-  return settings !== undefined && (
-    (settings.toggles?.length ?? 0) > 0
-    || (settings.pluginToggles?.length ?? 0) > 0
-    || settings.render !== undefined
-  )
+  return settings !== undefined && (settings.fields.length > 0 || settings.custom === true)
 }
 
 /** A feature's display name (viewers fall back to their id). */
-function featureNameOf(feature: TabDescriptor | FileViewerDescriptor): string {
-  return textOf('title' in feature ? feature.title : undefined) || feature.id
-}
-
-/**
- * Merge one plugin-owned setting into a pluginSettings map (pure, v0.12.0+).
- * Sequential merges are additive: each call spreads the map it was GIVEN,
- * so building from the latest optimistic map keeps earlier keys intact
- * (two same-tick writes must not drop each other).
- */
-export function mergePluginSetting(
-  pluginSettings: Record<string, Record<string, unknown>>,
-  descriptorId: string,
-  key: string,
-  value: unknown,
-): Record<string, Record<string, unknown>> {
-  return {
-    ...pluginSettings,
-    [descriptorId]: { ...(pluginSettings[descriptorId] ?? {}), [key]: value },
-  }
-}
-
-/**
- * Render a custom settings panel (`settings.render`) with error containment:
- * a throwing panel shows an inline error line instead of breaking the whole
- * settings page.
- */
-function SettingsRender(props: {
-  render: (renderProps: SidebarSettingsRenderProps) => ReactNode
-  renderProps: SidebarSettingsRenderProps
-}) {
-  let content: ReactNode
-  try {
-    content = props.render(props.renderProps)
-  } catch (error) {
-    content = (
-      <div className={css.error} role="alert">
-        {t('settingsSaveFailed')} {error instanceof Error ? error.message : String(error)}
-      </div>
-    )
-  }
-  return <>{content}</>
+function featureNameOf(feature: SidebarRightTabDefinition | SidebarRightViewerDefinition): string {
+  return ('kind' in feature ? feature.title('') : feature.title()) || feature.id
 }
 
 /**
@@ -219,17 +192,17 @@ function Switch(props: {
  * without opening the Modal (the Modal portal renders only while open).
  */
 export function FeatureSettingsRows(props: {
-  toggles: readonly SidebarSettingToggle[]
-  prefs: SidebarPrefs
-  onToggle: (toggle: SidebarSettingToggle, next: boolean) => void
+  toggles: readonly SidebarRightSettingDefinition[]
+  prefs: SidebarRightPreferences
+  onToggle: (toggle: SidebarRightSettingDefinition, next: boolean) => void
   /** Commit one text/number row; returns the canonical value the row should
    *  display (clamped for numbers, the current pref when the input is
    *  invalid). Optional: rows with no handler keep their draft. */
-  onCommit?: (toggle: SidebarSettingToggle, raw: string) => string
+  onCommit?: (toggle: SidebarRightSettingDefinition, raw: string) => string
   /** Commit one select row: the picked option's value (single) or the array
    *  of picked values (`multi: true`). Optional: rows with no handler are
    *  display-only. */
-  onSelectValue?: (toggle: SidebarSettingToggle, next: unknown) => void
+  onSelectValue?: (toggle: SidebarRightSettingDefinition, next: unknown) => void
   /** Explicit value source (v0.12.0+): when given, rows read their values
    *  from it instead of the `prefs` face — plugin-owned rows read their
    *  own blob, so a plugin key can never collide with (or silently read)
@@ -243,7 +216,7 @@ export function FeatureSettingsRows(props: {
     <div className={css.popupRows}>
       {toggles.map((toggle) => {
         const title = textOf(toggle.title)
-        if (toggle.type === 'select') {
+        if (toggle.control === 'select') {
           return (
             <SelectRow
               key={toggle.key}
@@ -254,12 +227,12 @@ export function FeatureSettingsRows(props: {
             />
           )
         }
-        if ((toggle.type ?? 'switch') === 'switch') {
+        if ((toggle.control ?? 'switch') === 'switch') {
           return (
             <div key={toggle.key} className={css.popupRow}>
               <span className={css.rowText}>
                 <span className={css.title}>{title}</span>
-                {textOf(toggle.desc) !== '' && <span className={css.desc}>{textOf(toggle.desc)}</span>}
+                {textOf(toggle.description) !== '' && <span className={css.desc}>{textOf(toggle.description)}</span>}
               </span>
               <Switch
                 label={title}
@@ -294,10 +267,10 @@ export function FeatureSettingsRows(props: {
  * input); a `unit` suffix renders after the input (e.g. 'px').
  */
 function TypedRow(props: {
-  toggle: SidebarSettingToggle
+  toggle: SidebarRightSettingDefinition
   title: string
   value: string
-  onCommit?: (toggle: SidebarSettingToggle, raw: string) => string
+  onCommit?: (toggle: SidebarRightSettingDefinition, raw: string) => string
 }) {
   const { toggle, title, value, onCommit } = props
   const [draft, setDraft] = useState(value)
@@ -305,12 +278,12 @@ function TypedRow(props: {
     const canonical = onCommit?.(toggle, draft) ?? draft
     setDraft(canonical)
   }
-  const number = toggle.type === 'number'
+  const number = toggle.control === 'number'
   return (
     <div className={css.popupRow}>
       <span className={css.rowText}>
         <span className={css.title}>{title}</span>
-        {textOf(toggle.desc) !== '' && <span className={css.desc}>{textOf(toggle.desc)}</span>}
+        {textOf(toggle.description) !== '' && <span className={css.desc}>{textOf(toggle.description)}</span>}
       </span>
       <span className={css.control}>
         <Input
@@ -465,24 +438,28 @@ function SelectMenu(props: {
  * order), and stays open.
  */
 function SelectRow(props: {
-  toggle: SidebarSettingToggle
+  toggle: SidebarRightSettingDefinition
   title: string
   value: unknown
-  onSelectValue?: (toggle: SidebarSettingToggle, next: unknown) => void
+  onSelectValue?: (toggle: SidebarRightSettingDefinition, next: unknown) => void
 }) {
   const { toggle, title, value, onSelectValue } = props
   return (
     <div className={css.popupRow}>
       <span className={css.rowText}>
         <span className={css.title}>{title}</span>
-        {textOf(toggle.desc) !== '' && <span className={css.desc}>{textOf(toggle.desc)}</span>}
+        {textOf(toggle.description) !== '' && <span className={css.desc}>{textOf(toggle.description)}</span>}
       </span>
       <span className={css.control}>
         <SelectMenu
           label={title}
           value={value}
-          options={toggle.options ?? []}
-          multi={toggle.multi === true}
+          options={(toggle.options ?? []).map(option => ({
+            value: option.value,
+            title: option.title,
+            desc: option.description,
+          }))}
+          multi={toggle.multiple === true}
           onSelect={(next) => { onSelectValue?.(toggle, next) }}
         />
       </span>
@@ -501,45 +478,44 @@ function SelectRow(props: {
  *   open-behavior picker) and still ship a custom configuration area.
  */
 export function SettingsBody(props: {
-  feature: TabDescriptor | FileViewerDescriptor
-  prefs: SidebarPrefs
-  store: SidebarStore
-  service: BetterSidebarService
-  onToggle: (toggle: SidebarSettingToggle, next: boolean) => void
-  onCommit: (toggle: SidebarSettingToggle, raw: string) => string
-  onSelectValue: (toggle: SidebarSettingToggle, next: unknown) => void
-  onPluginToggle: (toggle: SidebarSettingToggle, next: boolean) => void
-  onPluginCommit: (toggle: SidebarSettingToggle, raw: string) => string
-  onPluginSelectValue: (toggle: SidebarSettingToggle, next: unknown) => void
-  onPluginWrite: (key: string, value: unknown) => void
+  feature: SidebarRightTabDefinition | SidebarRightViewerDefinition
+  prefs: SidebarRightPreferences
+  onToggle: (toggle: SidebarRightSettingDefinition, next: boolean) => void
+  onCommit: (toggle: SidebarRightSettingDefinition, raw: string) => string
+  onSelectValue: (toggle: SidebarRightSettingDefinition, next: unknown) => void
+  onPluginToggle: (toggle: SidebarRightSettingDefinition, next: boolean) => void
+  onPluginCommit: (toggle: SidebarRightSettingDefinition, raw: string) => string
+  onPluginSelectValue: (toggle: SidebarRightSettingDefinition, next: unknown) => void
   onClose: () => void
+  renderSlot: SideCardSectionProps['renderSlot']
 }) {
-  const { feature, prefs, store, service, onToggle, onCommit, onSelectValue, onPluginToggle, onPluginCommit, onPluginSelectValue, onPluginWrite, onClose } = props
-  const render = feature.settings?.render
-  const toggles = feature.settings?.toggles ?? []
-  const pluginToggles = feature.settings?.pluginToggles ?? []
-  if (render === undefined && toggles.length === 0 && pluginToggles.length === 0) return null
-  // Plugin rows read their values from the descriptor's OWN blob through
-  // an explicit value source — no projection onto the prefs face, so a
-  // plugin key can never collide with (or silently read) a host pref of
-  // the same name.
-  const pluginBlob = prefs.pluginSettings[feature.id] ?? {}
+  const {
+    feature, prefs, onToggle, onCommit, onSelectValue, onPluginToggle, onPluginCommit,
+    onPluginSelectValue, onClose, renderSlot,
+  } = props
+  const settings = feature.settings
+  if (settings === undefined) return null
+  const preferenceFields = settings.fields.filter(field => field.source === 'preference')
+  const pluginFields = settings.fields.filter(field => field.source === 'plugin')
+  const settingsId = settings.settingsId ?? feature.id
+  const pluginBlob = prefs.pluginSettings[settingsId] ?? {}
+  const seat = 'extensions' in feature ? 'sidebar.right.viewer.settings' : 'sidebar.right.tab.settings'
   return (
     <div>
-      {(toggles.length > 0 || pluginToggles.length > 0) && (
+      {(preferenceFields.length > 0 || pluginFields.length > 0) && (
         <div className={css.popupRows}>
-          {toggles.length > 0 && (
+          {preferenceFields.length > 0 && (
             <FeatureSettingsRows
-              toggles={toggles}
+              toggles={preferenceFields}
               prefs={prefs}
               onToggle={onToggle}
               onCommit={onCommit}
               onSelectValue={onSelectValue}
             />
           )}
-          {pluginToggles.length > 0 && (
+          {pluginFields.length > 0 && (
             <FeatureSettingsRows
-              toggles={pluginToggles}
+              toggles={pluginFields}
               prefs={prefs}
               onToggle={onPluginToggle}
               onCommit={onPluginCommit}
@@ -549,34 +525,36 @@ export function SettingsBody(props: {
           )}
         </div>
       )}
-      {render !== undefined && (
-        <SettingsRender
-          render={render}
-          renderProps={{
-            store,
-            service,
-            prefs,
-            pluginSettings: prefs.pluginSettings[feature.id] ?? {},
-            updatePluginSetting: onPluginWrite,
-            close: onClose,
-          }}
-         />
-      )}
+      {settings.custom === true && renderSlot(seat, {
+        descriptorId: feature.id,
+        settingsId,
+        close: onClose,
+      }, { entryKey: feature.id })}
     </div>
   )
 }
 
 /**
  * Render the Side card preferences section.
- * @param props - composed slot props (runtime share + injected store/service).
+ * @param props - composed slot props and the official descriptor/preference owners.
  * @returns the section element tree.
  */
-export function SideCardSection({ store, service }: SideCardSectionProps) {
-  const [prefs, setPrefs] = useState<SidebarPrefs>(() => store.getPrefs())
-  const [widthDraft, setWidthDraft] = useState<string>(String(store.getPrefs().defaultWidthPercent))
+export function SideCardSection({ tabs: registry, preferences, renderSlot, close }: SideCardSectionProps) {
+  const subscribeTabs = useCallback((listener: () => void) => registry.subscribe(listener), [registry])
+  const readTabs = useCallback(() => registry.entries(), [registry])
+  const readViewers = useCallback(() => registry.viewers(), [registry])
+  const tabs = [...useSyncExternalStore(subscribeTabs, readTabs)].sort(tabOrder)
+  const viewers = [...useSyncExternalStore(subscribeTabs, readViewers)].sort(viewerOrder)
+  const subscribePreferences = useCallback(
+    (listener: () => void) => preferences.subscribe(listener),
+    [preferences],
+  )
+  const readPreferences = useCallback(() => preferences.getSnapshot(), [preferences])
+  const prefs = useSyncExternalStore(subscribePreferences, readPreferences).preferences
+  const [widthDraft, setWidthDraft] = useState<string>(String(prefs.defaultWidthPercent))
   const [error, setError] = useState<string | null>(null)
   // Which feature's secondary settings popup is open (null = closed).
-  const [settingsFor, setSettingsFor] = useState<TabDescriptor | FileViewerDescriptor | null>(null)
+  const [settingsFor, setSettingsFor] = useState<SidebarRightTabDefinition | SidebarRightViewerDefinition | null>(null)
   // Whether the position-compat strip popup (the gear on the 常规 row) is open.
   const [stripSettingsOpen, setStripSettingsOpen] = useState(false)
   // The parsed desktop environment (URL stamps — see desktop-env.ts). Used
@@ -587,115 +565,33 @@ export function SideCardSection({ store, service }: SideCardSectionProps) {
   // 侧边栏内容 / 文件预览 grids) is open, and for which extension point
   // (null = closed).
   const [addPluginsOpen, setAddPluginsOpen] = useState<PluginKind | null>(null)
-  // The LATEST optimistic prefs, kept in sync with the state. Nested-map
-  // merges (tabsEnabled / viewersEnabled / pluginSettings) MUST build from
-  // this ref, not from the render-time `prefs`: two same-tick writes (e.g.
-  // a settings panel updating several plugin keys at once) would otherwise
-  // both spread the stale map and the later patch would drop the earlier
-  // key even though the commits are serialized.
-  const optimisticRef = useRef(prefs)
-  useEffect(() => { optimisticRef.current = prefs }, [prefs])
+  useEffect(() => { setWidthDraft(String(prefs.defaultWidthPercent)) }, [prefs.defaultWidthPercent])
 
-  // The declarative inventory: the registered tab types and file viewers.
-  // Local state + service.subscribe (registry changes are rare — plugin
-  // load/unload — so a plain effect is enough; no external-store ceremony).
-  const [tabs, setTabs] = useState<TabDescriptor[]>(() => [...service.getTabs()].sort(tabOrder))
-  const [viewers, setViewers] = useState<FileViewerDescriptor[]>(() => [...service.getFileViewers()].sort(viewerOrder))
-  useEffect(() => service.subscribe(() => {
-    setTabs([...service.getTabs()].sort(tabOrder))
-    setViewers([...service.getFileViewers()].sort(viewerOrder))
-  }), [service])
-
-  // The settings document revision (guards concurrent writes). A ref: commits
-  // read the freshest value at execution time, no re-render needed.
-  const revisionRef = useRef<number | undefined>(undefined)
-  // Whether the user already wrote since mount: the mount read must not
-  // clobber a newer optimistic edit (the window is milliseconds, but a slow
-  // route must never silently revert a just-made change).
-  const dirtyRef = useRef(false)
-  // Serialize commits: a queued write must observe the previous write's
-  // revision; a failed write must not poison the queue for later ones.
-  const inFlightRef = useRef<Promise<unknown>>(Promise.resolve())
-
-  // Sync the persisted document once on mount: the revision and the current
-  // values (another tab may have changed them since the store hydrated).
-  useEffect(() => {
-    let cancelled = false
-    void api.settingsGet().then((view) => {
-      if (cancelled) return
-      revisionRef.current = view.revision
-      if (dirtyRef.current) return
-      const next = parsePrefs(view.value)
-      setPrefs(next)
-      setWidthDraft(String(next.defaultWidthPercent))
-    }).catch(() => { /* the store's defaults stay authoritative */ })
-    return () => { cancelled = true }
-  }, [])
-
-  /** Persist one patch through the settings route (serialized, revision-guarded). */
-  const commit = (patch: Record<string, unknown>): Promise<{ ok: boolean; prefs: SidebarPrefs }> => {
-    dirtyRef.current = true
-    const run = inFlightRef.current.then(async () => {
-      const view = await api.settingsUpdate(
-        { ...patch },
-        revisionRef.current,
-      )
-      const next = parsePrefs(view.value)
-      revisionRef.current = view.revision
-      store.setPrefs(next)
-      return next
-    })
-    // A failed commit must not poison the queue: later writes still run.
-    inFlightRef.current = run.then(() => undefined, () => undefined)
-    return run.then(
-      next => ({ ok: true, prefs: next }),
-      (caught) => {
-        setError(messageOf(caught))
-        return { ok: false, prefs }
-      },
-    )
-  }
-
-  /** Settle one commit: success adopts the server values, failure reverts. */
-  const applyOutcome = (previous: SidebarPrefs, outcome: { ok: boolean; prefs: SidebarPrefs }): void => {
-    const settled = outcome.ok ? outcome.prefs : previous
-    setPrefs(settled)
-    setWidthDraft(String(settled.defaultWidthPercent))
-  }
-
-  /** Optimistically apply one pref patch, then commit (revert on failure). */
-  const applyPref = (patch: Record<string, unknown>): void => {
-    const previous = optimisticRef.current
-    const next = { ...previous, ...patch } as SidebarPrefs
-    optimisticRef.current = next
-    setPrefs(next)
+  const write = (operation: Promise<void>): void => {
     setError(null)
-    void commit(patch).then(outcome => applyOutcome(previous, outcome))
+    void operation.catch((caught: unknown) => { setError(messageOf(caught)) })
   }
+
+  const applyPref = (patch: Partial<SidebarRightPreferences>): void => { write(preferences.update(patch)) }
 
   const onToggle = (next: boolean): void => {
     applyPref({ openByDefault: next })
   }
 
-  /** Flip one per-tab enable switch (merge into the tabsEnabled map). */
   const onToggleTab = (id: string, next: boolean): void => {
-    applyPref({ tabsEnabled: { ...optimisticRef.current.tabsEnabled, [id]: next } })
+    write(preferences.setTabEnabled(id, next))
   }
 
-  /** Flip one per-viewer enable switch (merge into the viewersEnabled map). */
   const onToggleViewer = (id: string, next: boolean): void => {
-    applyPref({ viewersEnabled: { ...optimisticRef.current.viewersEnabled, [id]: next } })
+    write(preferences.setViewerEnabled(id, next))
   }
 
-  /** Flip one declaratively-declared toggle (a SidebarPrefs boolean field). */
-  const onToggleSetting = (toggle: SidebarSettingToggle, next: boolean): void => {
-    applyPref({ [toggle.key]: next })
+  const onToggleSetting = (toggle: SidebarRightSettingDefinition, next: boolean): void => {
+    applyPref({ [toggle.key]: next } as Partial<SidebarRightPreferences>)
   }
 
-  /** Commit one declaratively-declared select row (the option's value, or an
-   *  array of values under `multi`). */
-  const onSelectSetting = (toggle: SidebarSettingToggle, next: unknown): void => {
-    applyPref({ [toggle.key]: next })
+  const onSelectSetting = (toggle: SidebarRightSettingDefinition, next: unknown): void => {
+    applyPref({ [toggle.key]: next } as Partial<SidebarRightPreferences>)
   }
 
   /**
@@ -705,8 +601,8 @@ export function SideCardSection({ store, service }: SideCardSectionProps) {
    * persist as-is (empty is meaningful, e.g. the theme-default font).
    * Returns the canonical value the row should display.
    */
-  const onCommitSetting = (toggle: SidebarSettingToggle, raw: string): string => {
-    if (toggle.type === 'number') {
+  const onCommitSetting = (toggle: SidebarRightSettingDefinition, raw: string): string => {
+    if (toggle.control === 'number') {
       const parsed = Number(raw)
       const fallback = String((prefs as unknown as Record<string, unknown>)[toggle.key] ?? '')
       if (!Number.isFinite(parsed)) return fallback
@@ -720,11 +616,6 @@ export function SideCardSection({ store, service }: SideCardSectionProps) {
     return raw
   }
 
-  /**
-   * Pick the title-bar / shell compatibility scheme. Mirrors the legacy
-   * `titleBarCompat` flag (true = anything but the conservative auto) so
-   * documents stay readable by older plugin versions.
-   */
   /**
    * Pick the title-bar / shell compatibility scheme from the dropdown. The
    * option values are `auto` | `web` | `custom` | `preset:<id>`; selecting
@@ -752,30 +643,27 @@ export function SideCardSection({ store, service }: SideCardSectionProps) {
     applyPref({ customCss: raw })
   }
 
-  /** Persist one plugin-owned setting of one descriptor (merged into the pluginSettings blob). */
-  const applyPluginSetting = (descriptorId: string, key: string, value: unknown): void => {
-    applyPref({ pluginSettings: mergePluginSetting(optimisticRef.current.pluginSettings, descriptorId, key, value) })
+  const applyPluginSetting = (settingsId: string, key: string, value: unknown): void => {
+    write(preferences.setPluginSetting(settingsId, key, value as JsonValue))
   }
 
-  /** Flip one plugin-owned switch row (same row shape, plugin-scoped key). */
-  const onPluginToggle = (descriptorId: string, toggle: SidebarSettingToggle, next: boolean): void => {
-    applyPluginSetting(descriptorId, toggle.key, next)
+  const onPluginToggle = (settingsId: string, toggle: SidebarRightSettingDefinition, next: boolean): void => {
+    applyPluginSetting(settingsId, toggle.key, next)
   }
 
-  /** Commit one plugin-owned text/number row (clamped like the host rows). */
-  const onPluginCommitSetting = (descriptorId: string, toggle: SidebarSettingToggle, raw: string): string => {
-    if (toggle.type === 'number') {
+  const onPluginCommitSetting = (settingsId: string, toggle: SidebarRightSettingDefinition, raw: string): string => {
+    if (toggle.control === 'number') {
       const parsed = Number(raw)
-      const blob = prefs.pluginSettings[descriptorId] ?? {}
+      const blob = prefs.pluginSettings[settingsId] ?? {}
       const fallback = String(blob[toggle.key] ?? '')
       if (!Number.isFinite(parsed)) return fallback
       let clamped = Math.round(parsed)
       if (toggle.min !== undefined) clamped = Math.max(toggle.min, clamped)
       if (toggle.max !== undefined) clamped = Math.min(toggle.max, clamped)
-      applyPluginSetting(descriptorId, toggle.key, clamped)
+      applyPluginSetting(settingsId, toggle.key, clamped)
       return String(clamped)
     }
-    applyPluginSetting(descriptorId, toggle.key, raw)
+    applyPluginSetting(settingsId, toggle.key, raw)
     return raw
   }
 
@@ -786,11 +674,12 @@ export function SideCardSection({ store, service }: SideCardSectionProps) {
       return
     }
     const clamped = clampWidthPercent(parsed)
-    const previous = prefs
-    setPrefs({ ...previous, defaultWidthPercent: clamped })
     setWidthDraft(String(clamped))
     setError(null)
-    void commit({ defaultWidthPercent: clamped }).then(outcome => applyOutcome(previous, outcome))
+    void preferences.update({ defaultWidthPercent: clamped }).catch((caught: unknown) => {
+      setWidthDraft(String(prefs.defaultWidthPercent))
+      setError(messageOf(caught))
+    })
   }
 
   /**
@@ -856,13 +745,10 @@ export function SideCardSection({ store, service }: SideCardSectionProps) {
     <div className={css.section}>
       <p className={css.intro}>{t('settingsIntro')}</p>
 
-      {/* The managing plugin's own identity: name + version badge, so the
-          section is attributable at a glance (the version is the service
-          instance's, kept in lockstep with package.json by
-          tests/service.spec.ts). */}
+      {/* The managing plugin's own identity: name + retained Better version. */}
       <div className={css.versionBadge}>
-        <span className={css.versionBadgeName}>DSH-better-sidebar</span>
-        <span className={css.versionBadgeTag}>v{service.version}</span>
+        <span className={css.versionBadgeName} translate="no">DSH-better-sidebar</span>
+        <span className={css.versionBadgeTag} translate="no">v{SIDEBAR_SERVICE_VERSION}</span>
       </div>
 
       {/* 常规: the DSH settings-row recipe — title/desc left, control right. */}
@@ -947,9 +833,11 @@ export function SideCardSection({ store, service }: SideCardSectionProps) {
                 ...getShellPresets().map(preset => ({
                   value: `preset:${preset.id}`,
                   title: preset.title,
+                  // The preset desc is i18n-friendly (string or () => string)
+                  // — resolve it like every other settings text here.
                   desc: preset.detect?.(detectedEnv) === true
-                    ? `${preset.desc}（${t('settingsSchemeDetectedSuffix')}）`
-                    : preset.desc,
+                    ? `${textOf(preset.desc)}（${t('settingsSchemeDetectedSuffix')}）`
+                    : textOf(preset.desc),
                 })),
                 { value: 'custom', title: t('settingsSchemeCustomTitle'), desc: t('settingsSchemeCustomDesc') },
               ]}
@@ -982,9 +870,9 @@ export function SideCardSection({ store, service }: SideCardSectionProps) {
           {tabs.map(tab => (
             <Fragment key={tab.id}>
               {renderCard({
-                title: textOf(tab.title),
+                title: featureNameOf(tab),
                 desc: tab.id,
-                icon: iconOf(tab.icon, 16),
+                icon: descriptorIconOf(tab.icon),
                 enabled: prefs.tabsEnabled[tab.id] !== false,
                 onToggle: (next) => { onToggleTab(tab.id, next) },
                 // The settings gear only while the feature is enabled: its
@@ -1025,8 +913,8 @@ export function SideCardSection({ store, service }: SideCardSectionProps) {
             <Fragment key={viewer.id}>
               {renderCard({
                 title: textOf(viewer.title) || viewer.id,
-                desc: viewer.exts.length === 0 ? t('settingsViewerCatchAll') : viewer.exts.join(' · '),
-                icon: iconOf(viewer.icon, 16),
+                desc: viewer.extensions.length === 0 ? t('settingsViewerCatchAll') : viewer.extensions.join(' · '),
+                icon: descriptorIconOf(viewer.icon),
                 enabled: prefs.viewersEnabled[viewer.id] !== false,
                 onToggle: (next) => { onToggleViewer(viewer.id, next) },
                 onOpenSettings: prefs.viewersEnabled[viewer.id] !== false && hasSettings(viewer)
@@ -1082,13 +970,19 @@ export function SideCardSection({ store, service }: SideCardSectionProps) {
             onToggle={onToggleSetting}
             onCommit={onCommitSetting}
             onSelectValue={onSelectSetting}
-            onPluginToggle={(toggle, next) => { onPluginToggle(settingsFor.id, toggle, next) }}
-            onPluginCommit={(toggle, raw) => onPluginCommitSetting(settingsFor.id, toggle, raw)}
-            onPluginSelectValue={(toggle, next) => { applyPluginSetting(settingsFor.id, toggle.key, next) }}
-            onPluginWrite={(key, value) => { applyPluginSetting(settingsFor.id, key, value) }}
-            onClose={() => { setSettingsFor(null) }}
-            store={store}
-            service={service}
+            onPluginToggle={(toggle, next) => {
+              onPluginToggle(settingsFor.settings?.settingsId ?? settingsFor.id, toggle, next)
+            }}
+            onPluginCommit={(toggle, raw) => onPluginCommitSetting(
+              settingsFor.settings?.settingsId ?? settingsFor.id,
+              toggle,
+              raw,
+            )}
+            onPluginSelectValue={(toggle, next) => {
+              applyPluginSetting(settingsFor.settings?.settingsId ?? settingsFor.id, toggle.key, next)
+            }}
+            onClose={close}
+            renderSlot={renderSlot}
           />
         </Modal>
       )}
@@ -1116,9 +1010,10 @@ export function SideCardSection({ store, service }: SideCardSectionProps) {
             <FeatureSettingsRows
               toggles={[{
                 key: 'titleBarStripPx',
-                type: 'number',
+                source: 'preference',
+                control: 'number',
                 title: () => t('settingsTitleBarStripTitle'),
-                desc: () => t('settingsTitleBarStripDesc'),
+                description: () => t('settingsTitleBarStripDesc'),
                 min: TITLE_BAR_STRIP_MIN,
                 max: TITLE_BAR_STRIP_MAX,
                 unit: 'px',
@@ -1147,7 +1042,6 @@ export function SideCardSection({ store, service }: SideCardSectionProps) {
           — same SSR rule as the settings popup above). */}
       {addPluginsOpen !== null && (
         <AddPluginModal
-          service={service}
           onClose={() => { setAddPluginsOpen(null) }}
           kind={addPluginsOpen}
         />

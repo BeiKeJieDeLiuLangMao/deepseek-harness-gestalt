@@ -11,6 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import type { DeviceId } from '@deepseek-ai/dsh-phone-runtime'
 import { PhoneConnectedView } from '../src/client/PhoneConnectedView.tsx'
+import { zh } from '../src/client/locales.ts'
 import { PHONE_LISTING_POLL_INTERVAL_MS } from '../src/client/phone-listing-poll.ts'
 import { PhoneConnectionController } from '../src/client/phone-connection.ts'
 import { PhoneStreamHttpError } from '../src/client/phone-stream-client.ts'
@@ -20,6 +21,8 @@ import {
   FakeGateway, FakeListingSource, flush, installFakeH264Playback, listingOf, ManualScheduler,
   SESSION_A, SESSION_B, SESSION_C,
 } from './phone-fakes.client.ts'
+
+const t = ((key: keyof typeof zh) => zh[key]) as never
 
 const EMULATOR_DEVICE_ID = phoneDeviceIdOf('emulator-5554')
 const USB_DEVICE_ID = phoneDeviceIdOf('R3CN30')
@@ -73,6 +76,7 @@ function renderView(visible = true, mintError?: unknown, source = new FakeListin
   if (mintError !== undefined) gateway.queueMint({ error: mintError })
   render(
     <PhoneConnectedView
+      t={t}
       serial={EMULATOR_DEVICE_ID}
       name="Pixel_6_API_35"
       visible={visible}
@@ -327,6 +331,7 @@ describe('PhoneConnectedView chrome', () => {
     gateway.queueMint({ error: new PhoneStreamHttpError(502, 'upstream', 'device unauthorized: allow USB debugging') })
     render(
       <PhoneConnectedView
+        t={t}
         serial={USB_DEVICE_ID}
         name="SM-S9310"
         visible={true}
@@ -363,6 +368,7 @@ describe('PhoneConnectedView chrome', () => {
     const scheduler = new ManualScheduler()
     render(
       <PhoneConnectedView
+        t={t}
         serial={USB_DEVICE_ID}
         name="SM-S9310"
         visible={true}
@@ -428,6 +434,7 @@ describe('PhoneConnectedView chrome', () => {
     const source = new FakeListingSource().seed(listingOf(DEVICES))
     const { rerender } = render(
       <PhoneConnectedView
+        t={t}
         serial={EMULATOR_DEVICE_ID}
         name="Pixel_6_API_35"
         visible={true}
@@ -448,6 +455,7 @@ describe('PhoneConnectedView chrome', () => {
     expect(gateway.mintedDevices).toEqual([EMULATOR_DEVICE_ID])
     rerender(
       <PhoneConnectedView
+        t={t}
         serial={USB_DEVICE_ID}
         name="SM-S9310"
         visible={true}
@@ -484,18 +492,18 @@ describe('PhoneConnectedView chrome', () => {
         gateway, deviceId: serial, schedule: scheduler.schedule,
       }),
     }
-    const { rerender } = render(<PhoneConnectedView {...props} visible={true} />)
+    const { rerender } = render(<PhoneConnectedView t={t} {...props} visible={true} />)
     await flush()
     await step(() => { gateway.lastSocket!.accept() })
     await vi.waitFor(() => { expect(h264Runtime.abortSignals).toHaveLength(1) })
 
-    rerender(<PhoneConnectedView {...props} visible={false} />)
+    rerender(<PhoneConnectedView t={t} {...props} visible={false} />)
     await act(async () => {})
     expect(h264Runtime.abortSignals[0]!.aborted).toBe(true)
     expect(h264Runtime.decoderCloseCounts[0]).toBe(1)
     expect(screen.queryByRole('img')).toBeNull()
 
-    rerender(<PhoneConnectedView {...props} visible={true} />)
+    rerender(<PhoneConnectedView t={t} {...props} visible={true} />)
     await flush()
     await step(() => { gateway.lastSocket!.accept() })
     await vi.waitFor(() => { expect(h264Runtime.abortSignals).toHaveLength(2) })
@@ -565,6 +573,7 @@ describe('PhoneConnectedView screen frame aspect', () => {
     gateway.queueMint({ session: { ...SESSION_A, preferredFormat: 'mjpeg' } })
     render(
       <PhoneConnectedView
+        t={t}
         serial={EMULATOR_DEVICE_ID}
         name="Pixel_6_API_35"
         visible={true}
@@ -728,6 +737,7 @@ describe('PhoneConnectedView screen frame aspect', () => {
     gateway.queueMint({ session: portraitAgain })
     render(
       <PhoneConnectedView
+        t={t}
         serial={androidMi8.id}
         name={androidMi8.name}
         visible={true}
@@ -835,6 +845,7 @@ describe('PhoneConnectedView screen frame aspect', () => {
     gateway.queueMint({ session: SESSION_B })
     render(
       <PhoneConnectedView
+        t={t}
         serial={EMULATOR_DEVICE_ID}
         name="Pixel_6_API_35"
         visible={true}
@@ -888,6 +899,7 @@ describe('PhoneConnectedView screen frame aspect', () => {
     gateway.queueMint({ session: SESSION_C })
     render(
       <PhoneConnectedView
+        t={t}
         serial={EMULATOR_DEVICE_ID}
         name="Pixel_6_API_35"
         visible={true}
@@ -963,11 +975,11 @@ describe('PhoneConnectedView screen frame aspect', () => {
         gateway, deviceId: serial, schedule: scheduler.schedule,
       }),
     }
-    const { rerender } = render(<PhoneConnectedView {...props} visible={true} />)
+    const { rerender } = render(<PhoneConnectedView t={t} {...props} visible={true} />)
     await flush()
     await step(() => { gateway.lastSocket!.accept() })
     expect(gateway.mintedDevices).toHaveLength(1)
-    rerender(<PhoneConnectedView {...props} visible={false} />)
+    rerender(<PhoneConnectedView t={t} {...props} visible={false} />)
     await act(async () => {})
     source.scriptNext(listingOf([{
       id: EMULATOR_DEVICE_ID,
@@ -981,7 +993,7 @@ describe('PhoneConnectedView screen frame aspect', () => {
     expect(gateway.mintedDevices).toHaveLength(1)
     expect(screen.queryByRole('img')).toBeNull()
     gateway.queueMint({ session: SESSION_B })
-    rerender(<PhoneConnectedView {...props} visible={true} />)
+    rerender(<PhoneConnectedView t={t} {...props} visible={true} />)
     await flush()
     await step(() => { gateway.lastSocket!.accept() })
     expect(gateway.mintedDevices).toHaveLength(2)
@@ -1057,6 +1069,7 @@ describe('PhoneConnectedView screen frame aspect', () => {
     gateway.queueMint({ session: { ...SESSION_A, preferredFormat: 'mjpeg' } })
     render(
       <PhoneConnectedView
+        t={t}
         serial={EMULATOR_DEVICE_ID}
         name="Pixel_6_API_35"
         visible={true}
@@ -1097,6 +1110,7 @@ describe('PhoneConnectedView screen frame aspect', () => {
     gateway.queueMint({ session: { ...SESSION_A, deviceId: IOS_DEVICE_ID } })
     render(
       <PhoneConnectedView
+        t={t}
         serial={IOS_DEVICE_ID}
         name="Yishu iPhone"
         visible={true}
@@ -1159,6 +1173,7 @@ describe('PhoneConnectedView screen frame aspect', () => {
       const bitmap = stubCurrentMjpegFrame(1080, 2400)
       render(
         <PhoneConnectedView
+          t={t}
           serial={EMULATOR_DEVICE_ID}
           name="Pixel_6_API_35"
           visible={true}
@@ -1353,6 +1368,7 @@ describe('PhoneConnectedView touch and keys', () => {
     ]))
     const view = render(
       <PhoneConnectedView
+        t={t}
         serial={DEVICE_A_ID}
         name="Device A"
         visible={true}
@@ -1378,6 +1394,7 @@ describe('PhoneConnectedView touch and keys', () => {
 
     view.rerender(
       <PhoneConnectedView
+        t={t}
         serial={DEVICE_A_ID} name="Device A" visible={false} source={source} onOpenDevice={() => {}} onShowPicker={() => {}}
         createController={serial => new PhoneConnectionController({ gateway: firstGateway, deviceId: serial })}
       />,
@@ -1385,6 +1402,7 @@ describe('PhoneConnectedView touch and keys', () => {
     expect(releasePointerCapture).toHaveBeenCalledWith(11)
     view.rerender(
       <PhoneConnectedView
+        t={t}
         serial={DEVICE_A_ID} name="Device A" visible={true} source={source} onOpenDevice={() => {}} onShowPicker={() => {}}
         createController={serial => new PhoneConnectionController({ gateway: firstGateway, deviceId: serial })}
       />,
@@ -1403,6 +1421,7 @@ describe('PhoneConnectedView touch and keys', () => {
     fireEvent.pointerDown(target, { pointerId: 12, clientX: 20, clientY: 20 })
     view.rerender(
       <PhoneConnectedView
+        t={t}
         serial={DEVICE_B_ID} name="Device B" visible={true} source={source} onOpenDevice={() => {}} onShowPicker={() => {}}
         createController={serial => new PhoneConnectionController({ gateway: secondGateway, deviceId: serial })}
       />,
@@ -1483,6 +1502,7 @@ describe('PhoneConnectedView error and recovery arms', () => {
     } })
     render(
       <PhoneConnectedView
+        t={t}
         serial={IOS_DEVICE_ID}
         name="Yishu iPhone"
         visible={true}
@@ -1518,6 +1538,7 @@ describe('PhoneConnectedView error and recovery arms', () => {
     })
     render(
       <PhoneConnectedView
+        t={t}
         serial={REAL_IOS_DEVICE_ID}
         name="MI 8"
         visible={true}
@@ -1555,6 +1576,7 @@ describe('PhoneConnectedView error and recovery arms', () => {
       })
       const mounted = render(
         <PhoneConnectedView
+          t={t}
           serial={IOS_DEVICE_ID}
           name="Yishu iPhone"
           visible={true}
@@ -1579,6 +1601,7 @@ describe('PhoneConnectedView error and recovery arms', () => {
     vi.spyOn(checkingGateway, 'agentStatus').mockReturnValue(new Promise(() => {}))
     const checking = render(
       <PhoneConnectedView
+        t={t}
         serial={IOS_DEVICE_ID}
         name="Yishu iPhone"
         visible={true}
@@ -1609,6 +1632,7 @@ describe('PhoneConnectedView error and recovery arms', () => {
     vi.spyOn(reinstallGateway, 'installAgent').mockReturnValue(new Promise(() => {}))
     render(
       <PhoneConnectedView
+        t={t}
         serial={IOS_DEVICE_ID}
         name="Yishu iPhone"
         visible={true}
@@ -1636,6 +1660,7 @@ describe('PhoneConnectedView error and recovery arms', () => {
     gateway.queueMint({ error: new TypeError('network down') })
     render(
       <PhoneConnectedView
+        t={t}
         serial={EMULATOR_DEVICE_ID}
         name="Pixel_6_API_35"
         visible={true}

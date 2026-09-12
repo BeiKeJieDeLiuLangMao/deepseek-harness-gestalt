@@ -3,7 +3,8 @@
  * @module @deepseek-ai/dsh-schedule
  */
 
-import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import { SessionLogOffset } from '@deepseek-ai/dsh-session'
+import type { SessionEvent, SessionLogOffset as SessionLogOffsetType } from '@deepseek-ai/dsh-session'
 import type {
   AfterScheduleRecord,
   AtInput,
@@ -86,7 +87,7 @@ export class ScheduleInputError extends Error {
   }
 }
 
-/** Pure replay result, retaining active create order and every used id. */
+/** Pure replay result, retaining create order and every used id. */
 export interface FoldedSchedules {
   /** Deliverable records in their original create order. */
   readonly active: readonly ScheduleRecord[]
@@ -487,15 +488,33 @@ export function decodeScheduleChange(value: unknown): ScheduleChange {
         operation: 'create',
         schedule: decodeScheduleRecord(value['schedule']),
       })
-    case 'delete':
-    case 'pause':
-    case 'resume': {
+    case 'delete': {
       if (!hasExactKeys(value, ['version', 'operation', 'id'])) {
-        throw new ScheduleLogError(`schedule ${value['operation']} must contain exactly version, operation, and id`)
+        throw new ScheduleLogError('schedule delete must contain exactly version, operation, and id')
       }
       return Object.freeze({
         version: SCHEDULE_CHANGE_VERSION,
-        operation: value['operation'],
+        operation: 'delete',
+        id: decodeId(value['id']),
+      })
+    }
+    case 'pause': {
+      if (!hasExactKeys(value, ['version', 'operation', 'id'])) {
+        throw new ScheduleLogError('schedule pause must contain exactly version, operation, and id')
+      }
+      return Object.freeze({
+        version: SCHEDULE_CHANGE_VERSION,
+        operation: 'pause',
+        id: decodeId(value['id']),
+      })
+    }
+    case 'resume': {
+      if (!hasExactKeys(value, ['version', 'operation', 'id'])) {
+        throw new ScheduleLogError('schedule resume must contain exactly version, operation, and id')
+      }
+      return Object.freeze({
+        version: SCHEDULE_CHANGE_VERSION,
+        operation: 'resume',
         id: decodeId(value['id']),
       })
     }
@@ -564,16 +583,8 @@ export function resolveEveryOccurrence(
 
 type DecodedDispatch = Extract<ScheduleChange, { operation: 'dispatch' }>
 
-/**
- * Apply one decoded dispatch to its exact active record.
- * @param record - Active reminder receiving the dispatch.
- * @param change - Decoded dispatch for that reminder.
- * @returns The advanced Every record, or undefined for a terminal dispatch.
- */
-export function advanceDispatchedSchedule(
-  record: ScheduleRecord,
-  change: DecodedDispatch,
-): ScheduleRecord | undefined {
+/** Apply one decoded dispatch to its exact active record. */
+function dispatchedRecord(record: ScheduleRecord, change: DecodedDispatch): ScheduleRecord | undefined {
   const hasAcceptedAt = 'acceptedAt' in change
   if (record.kind !== 'every') {
     if (hasAcceptedAt) throw new ScheduleLogError('one-shot dispatch must not contain acceptedAt')
@@ -587,23 +598,22 @@ export function advanceDispatchedSchedule(
 }
 
 /**
- * Fold the package-owned stream after the durable fork seed boundary.
- * @param events - Complete ordered session log or candidate-extended log.
- * @param seedLength - Inherited prefix length excluded from child ownership.
- * @returns Active records and all previously used ids.
+ * Apply already-decoded Schedule changes to one complete fold value.
+ *
+ * This is the single transition authority shared by full-log replay and the
+ * incremental Session projection. One mutable Map/Set pair spans the whole
+ * batch; the returned arrays are materialized and frozen once.
+ * @param folded - complete retained records and used-id history before the changes.
+ * @param changes - strictly decoded durable mutations in log order.
+ * @returns the complete fold value after every mutation.
  */
-export function foldScheduleEvents(
-  events: readonly SessionEvent[],
-  seedLength = 0,
+export function applyScheduleChanges(
+  folded: FoldedSchedules,
+  changes: Iterable<ScheduleChange>,
 ): FoldedSchedules {
-  if (!Number.isSafeInteger(seedLength) || seedLength < 0 || seedLength > events.length) {
-    throw new ScheduleLogError('schedule seedLength must be within the supplied event log')
-  }
-  const retained = new Map<ScheduleIdType, FoldedSchedule>()
-  const seen = new Set<ScheduleIdType>()
-  for (const event of events.slice(seedLength)) {
-    if (event.type !== 'schedule/change') continue
-    const change = decodeScheduleChange(event.data)
+  const retained = new Map(folded.schedules.map(schedule => [schedule.record.id, schedule]))
+  const seen = new Set(folded.seenIds)
+  for (const change of changes) {
     switch (change.operation) {
       case 'create':
         if (seen.has(change.schedule.id)) {
@@ -638,7 +648,7 @@ export function foldScheduleEvents(
         if (schedule === undefined || schedule.paused) {
           throw new ScheduleLogError(`schedule dispatch targets inactive id ${JSON.stringify(change.id)}`)
         }
-        const next = advanceDispatchedSchedule(schedule.record, change)
+        const next = dispatchedRecord(schedule.record, change)
         if (next === undefined) retained.delete(change.id)
         else retained.set(change.id, Object.freeze({ record: next, paused: false }))
         break
@@ -657,6 +667,35 @@ export function foldScheduleEvents(
     schedules,
     seenIds: Object.freeze([...seen]),
   })
+}
+
+/**
+ * Fold the package-owned stream after `Session.inheritedEventCount`.
+ * @param events - Complete ordered session log or candidate-extended log.
+ * @param inheritedEventCount - Session-owned inherited prefix length excluded from child ownership.
+ * @returns Retained records and all previously used ids.
+ */
+export function foldScheduleEvents(
+  events: readonly SessionEvent[],
+  inheritedEventCount: SessionLogOffsetType = SessionLogOffset(0),
+): FoldedSchedules {
+  if (!Number.isSafeInteger(inheritedEventCount)
+    || inheritedEventCount < 0
+    || inheritedEventCount > events.length) {
+    throw new ScheduleLogError('schedule inheritedEventCount must be within the supplied event log')
+  }
+  const initial: FoldedSchedules = Object.freeze({
+    active: Object.freeze([]),
+    paused: Object.freeze([]),
+    schedules: Object.freeze([]),
+    seenIds: Object.freeze([]),
+  })
+  const changes = function* (): Generator<ScheduleChange> {
+    for (const event of events.slice(inheritedEventCount)) {
+      if (event.type === 'schedule/change') yield decodeScheduleChange(event.data)
+    }
+  }
+  return applyScheduleChanges(initial, changes())
 }
 
 /**

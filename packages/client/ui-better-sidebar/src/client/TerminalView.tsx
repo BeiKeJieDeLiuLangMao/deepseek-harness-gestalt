@@ -37,11 +37,18 @@ import { FitAddon } from '@xterm/addon-fit'
 import { writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
 import '@xterm/xterm/css/xterm.css'
 import { t } from './locales.ts'
+import { ONE_DARK, ONE_LIGHT } from './one-dark-palette.ts'
 import { openWhenSized } from './open-when-sized.ts'
 import { api, type SessionScope, type TerminalDepsStatus } from './api.ts'
 import { agentUuidOf, isAgentTabId, type SidebarStore } from './state.ts'
 import { isDarkScheme, subscribeColorScheme, effectiveTokenValue, tokenValue } from './theme.ts'
 import { resolveTerminalFont } from './terminal-font.ts'
+import type { SidebarPrefs } from '../prefs-shared.ts'
+import {
+  buildTerminalLinks,
+  shouldActivateTerminalLink,
+  openTerminalUrl,
+} from './terminal-links.ts'
 import css from './sidebar.module.css'
 
 /** How many consecutive unreasoned failures before showing the error banner. */
@@ -55,6 +62,13 @@ const FAILURE_LIMIT = 3
  */
 const PTY_DEPS_MISSING = 'pty-deps-missing'
 
+/**
+ * The WS close-reason prefix the host sends when the CONFIGURED shell was
+ * not found (mirror of src/index.ts wsCloseReasonOf; wire contract, keep the
+ * literal in lockstep). The view renders a localized, actionable banner.
+ */
+const SHELL_NOT_FOUND_PREFIX = 'shell-not-found:'
+
 /** The degraded-mode payload rendered by {@link TerminalDepsBanner}. */
 type TerminalDepsInfo = Extract<TerminalDepsStatus, { ok: false }>
 
@@ -62,24 +76,24 @@ type TerminalDepsInfo = Extract<TerminalDepsStatus, { ok: false }>
  * Curated ANSI palettes for the terminal. The surface colors (background,
  * foreground, cursor, selection) ride the theme tokens so the terminal
  * blends with the panel in both schemes; the 16 ANSI colors are the same
- * designed palettes the app's code surfaces use (one-dark family for dark,
- * one-light family for light), read live so a scheme flip re-themes in
- * place.
+ * designed syntax families the app's code surfaces use — one-dark for
+ * dark, one-light for light (one-dark-palette.ts, shared with the
+ * CodeMirror themes) — read live so a scheme flip re-themes in place.
  */
 const ANSI_DARK: Record<string, string> = {
-  black: '#282c34', red: '#e06c75', green: '#98c379', yellow: '#e5c07b',
-  blue: '#61afef', magenta: '#c678dd', cyan: '#56b6c2', white: '#abb2bf',
-  brightBlack: '#5c6370', brightRed: '#e06c75', brightGreen: '#98c379',
-  brightYellow: '#e5c07b', brightBlue: '#61afef', brightMagenta: '#c678dd',
-  brightCyan: '#56b6c2', brightWhite: '#ffffff',
+  black: ONE_DARK.black, red: ONE_DARK.red, green: ONE_DARK.green, yellow: ONE_DARK.yellow,
+  blue: ONE_DARK.blue, magenta: ONE_DARK.magenta, cyan: ONE_DARK.cyan, white: ONE_DARK.gray,
+  brightBlack: ONE_DARK.faintGray, brightRed: ONE_DARK.red, brightGreen: ONE_DARK.green,
+  brightYellow: ONE_DARK.yellow, brightBlue: ONE_DARK.blue, brightMagenta: ONE_DARK.magenta,
+  brightCyan: ONE_DARK.cyan, brightWhite: ONE_DARK.white,
 }
 
 const ANSI_LIGHT: Record<string, string> = {
-  black: '#383a42', red: '#e45649', green: '#50a14f', yellow: '#c18401',
-  blue: '#0184bc', magenta: '#a626a4', cyan: '#0997b3', white: '#a0a1a7',
-  brightBlack: '#4f525e', brightRed: '#e45649', brightGreen: '#50a14f',
-  brightYellow: '#c18401', brightBlue: '#0184bc', brightMagenta: '#a626a4',
-  brightCyan: '#0997b3', brightWhite: '#fafafa',
+  black: ONE_LIGHT.black, red: ONE_LIGHT.red, green: ONE_LIGHT.green, yellow: ONE_LIGHT.yellow,
+  blue: ONE_LIGHT.blue, magenta: ONE_LIGHT.magenta, cyan: ONE_LIGHT.cyan, white: ONE_LIGHT.gray,
+  brightBlack: ONE_LIGHT.faintGray, brightRed: ONE_LIGHT.red, brightGreen: ONE_LIGHT.green,
+  brightYellow: ONE_LIGHT.yellow, brightBlue: ONE_LIGHT.blue, brightMagenta: ONE_LIGHT.magenta,
+  brightCyan: ONE_LIGHT.cyan, brightWhite: ONE_LIGHT.offWhite,
 }
 
 /** The xterm theme for the current scheme (surface from tokens, ANSI curated). */
@@ -103,8 +117,32 @@ function xtermTheme(): ITheme {
   }
 }
 
-export function TerminalView(props: { scope: SessionScope; tabId: string; store: SidebarStore }) {
-  const { scope, tabId, store } = props
+/** Live font values consumed by xterm independently of either workbench store. */
+export interface TerminalPreferenceSource {
+  getSnapshot(): Pick<SidebarPrefs, 'terminalFontFamily' | 'terminalFontSize'>
+  subscribe(listener: () => void): () => void
+}
+
+/** Occurrence lifecycle operations supplied by the official workbench adapter. */
+export interface TerminalViewLifecycle {
+  /** Whether this unmount follows a Session switch and must park a UI PTY. */
+  shouldParkOnUnmount(): boolean
+  /** Make the current socket reachable by the true-close hook while mounted. */
+  registerCloseSender(sendClose: () => void): () => void
+}
+
+/**
+ * One terminal attachment. Legacy callers supply `store`; the official
+ * occurrence adapter supplies the smaller preference and lifecycle faces.
+ */
+export function TerminalView(props: {
+  scope: SessionScope
+  tabId: string
+  store?: SidebarStore
+  preferences?: TerminalPreferenceSource
+  lifecycle?: TerminalViewLifecycle
+}) {
+  const { scope, tabId, store, preferences, lifecycle } = props
   const hostRef = useRef<HTMLDivElement>(null)
   const [connected, setConnected] = useState(false)
   const [fatal, setFatal] = useState<string | null>(null)
@@ -117,7 +155,12 @@ export function TerminalView(props: { scope: SessionScope; tabId: string; store:
     if (host === null) return
     // The custom font prefs (side card settings, terminal card) resolve at
     // mount; store changes re-apply them live below.
-    const font = resolveTerminalFont(store.getPrefs(), tokenValue('--ds-font-family-code'))
+    const terminalPreferences = (): Pick<SidebarPrefs, 'terminalFontFamily' | 'terminalFontSize'> => {
+      if (preferences !== undefined) return preferences.getSnapshot()
+      if (store !== undefined) return store.getPrefs()
+      throw new Error('TerminalView requires a preference source')
+    }
+    const font = resolveTerminalFont(terminalPreferences(), tokenValue('--ds-font-family-code'))
     const term = new Terminal({
       cursorBlink: true,
       fontSize: font.fontSize,
@@ -129,6 +172,41 @@ export function TerminalView(props: { scope: SessionScope; tabId: string; store:
     })
     const fit = new FitAddon()
     term.loadAddon(fit)
+    // Ctrl+Click (Cmd+Click on mac) opens http(s) URLs printed in the
+    // pty stream — a plain click is left for xterm's text-selection
+    // gesture. Only http(s) is dispatched; file:// / mailto: / etc. are
+    // underlined for visibility but rejected at activation. See
+    // terminal-links.ts for the line scanner, modifier gate and scheme
+    // guard.
+    const linkProvider = term.registerLinkProvider({
+      provideLinks: (lineNumber, callback) => {
+        // xterm's `provideLinks` hands us a 1-based buffer line number
+        // (its own built-in ILinkProvider does `buffer.lines.get(e - 1)`,
+        // i.e. the public `bufferLineNumber` is 1-based while `getLine`
+        // takes a 0-based index). Passing `lineNumber` straight through
+        // would fetch the row *below* the one xterm asked us to scan, so
+        // the URL text would come from the wrong row while `range.y` still
+        // pointed at the requested row — links landed one line too high.
+        const line = term.buffer.active.getLine(lineNumber - 1)
+        if (line === undefined) {
+          callback(undefined)
+          return
+        }
+        const descriptors = buildTerminalLinks(line.translateToString(true), lineNumber)
+        if (descriptors.length === 0) {
+          callback(undefined)
+          return
+        }
+        callback(descriptors.map(descriptor => ({
+          range: descriptor.range,
+          text: descriptor.text,
+          activate: (event) => {
+            if (!shouldActivateTerminalLink(event)) return
+            openTerminalUrl(descriptor.text)
+          },
+        })))
+      },
+    })
     // Re-theme in place when the app's scheme flips (tokens + palette).
     const applyTheme = (): void => {
       term.options.theme = xtermTheme()
@@ -140,6 +218,11 @@ export function TerminalView(props: { scope: SessionScope; tabId: string; store:
     let closed = false
     let retry: number | undefined
     let failures = 0
+    const unregisterCloseSender = lifecycle?.registerCloseSender(() => {
+      if (socket !== null && socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({ type: 'close' }))
+      }
+    })
 
     const wsUrl = (): string => {
       const url = new URL('/sidebar/ws/terminal', location.origin)
@@ -188,17 +271,23 @@ export function TerminalView(props: { scope: SessionScope; tabId: string; store:
         // pasteable command. A failed fetch falls back to the plain banner.
         if (event.code === 1011 && event.reason === PTY_DEPS_MISSING) {
           void api.terminalDeps().then((status) => {
-            if (status.ok) {
-              // The host recovered between the close and the fetch — the
-              // plain banner with a retry is the honest state.
-              setFatal(t('terminalDepsFailed'))
+            if (status.ok === false) {
+              setFatal(null)
+              setDepsFatal(status)
               return
             }
-            setFatal(null)
-            setDepsFatal(status)
+            // The host recovered between the close and the fetch — the
+            // plain banner with a retry is the honest state.
+            setFatal(t('terminalDepsFailed'))
           }).catch(() => {
             setFatal(t('terminalDepsFailed'))
           })
+          return
+        }
+        // The configured shell could not be found (settings page or yaml):
+        // a localized banner beats the raw English close reason.
+        if (event.code === 1011 && event.reason.startsWith(SHELL_NOT_FOUND_PREFIX)) {
+          setFatal(t('terminalShellNotFound', { name: event.reason.slice(SHELL_NOT_FOUND_PREFIX.length) || '?' }))
           return
         }
         // A server-side refusal carries a close code + reason; retrying it
@@ -228,13 +317,23 @@ export function TerminalView(props: { scope: SessionScope; tabId: string; store:
     const inputSub = term.onData((data) => {
       if (socket !== null && socket.readyState === WebSocket.OPEN) socket.send(data)
     })
+    // Resize streams fire per layout frame during panel open/close
+    // animations; fit() measures glyphs, so coalesce to one fit per
+    // animation frame (same pattern as the core's frame-batcher, kept
+    // local — this view lives in the lazy terminal chunk and does not
+    // import core-bundle modules).
+    let resizeFrame: number | null = null
     const observer = new ResizeObserver(() => {
-      try {
-        fit.fit()
-        sendResize()
-      } catch {
-        // The terminal may be mid-dispose; ignore.
-      }
+      if (resizeFrame !== null) return
+      resizeFrame = requestAnimationFrame(() => {
+        resizeFrame = null
+        try {
+          fit.fit()
+          sendResize()
+        } catch {
+          // The terminal may be mid-dispose; ignore.
+        }
+      })
     })
     observer.observe(host)
 
@@ -243,8 +342,8 @@ export function TerminalView(props: { scope: SessionScope; tabId: string; store:
     // when they moved (the grid dimensions may change with the font). The
     // subscribe fires on every store change (tabs, panels…), so the diff is
     // what keeps this cheap.
-    const fontSub = store.subscribe(() => {
-      const next = resolveTerminalFont(store.getPrefs(), tokenValue('--ds-font-family-code'))
+    const fontSub = (preferences ?? store)?.subscribe(() => {
+      const next = resolveTerminalFont(terminalPreferences(), tokenValue('--ds-font-family-code'))
       if (next.fontFamily !== term.options.fontFamily || next.fontSize !== term.options.fontSize) {
         term.options.fontFamily = next.fontFamily
         term.options.fontSize = next.fontSize
@@ -255,7 +354,7 @@ export function TerminalView(props: { scope: SessionScope; tabId: string; store:
           // The terminal may be mid-dispose; ignore.
         }
       }
-    })
+    }) ?? (() => {})
 
     // The terminal must not be opened in a zero-size container: xterm's
     // renderer creation fails there and the next Viewport refresh crashes
@@ -283,9 +382,11 @@ export function TerminalView(props: { scope: SessionScope; tabId: string; store:
       cancelOpen()
       window.clearTimeout(retry)
       observer.disconnect()
+      if (resizeFrame !== null) cancelAnimationFrame(resizeFrame)
       fontSub()
       schemeSub()
       inputSub.dispose()
+      unregisterCloseSender?.()
       // Three unmount cases, distinguished by the store's tab/open state and
       // the active session id:
       // 1. The tab was closed by the user (NOT in its session's state): send
@@ -303,23 +404,31 @@ export function TerminalView(props: { scope: SessionScope; tabId: string; store:
       // Agent terminals follow the close-frame rule; their lifetime is owned
       // by the agent, so a bare drop (case 3) already leaves them alive
       // indefinitely — no park frame needed.
-      const tabStillOpen = store.tabOpen(scope.sessionId, tabId)
-      const sessionSwitched = store.getSnapshot().sessionId !== scope.sessionId
-      if (!tabStillOpen
-        && socket !== null && socket.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({ type: 'close' }))
-      } else if (tabStillOpen && sessionSwitched && !isAgentTabId(tabId)
-        && socket !== null && socket.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify({ type: 'park' }))
+      if (lifecycle !== undefined) {
+        if (lifecycle.shouldParkOnUnmount() && !isAgentTabId(tabId)
+          && socket !== null && socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({ type: 'park' }))
+        }
+      } else if (store !== undefined) {
+        const tabStillOpen = store.tabOpen(scope.sessionId, tabId)
+        const sessionSwitched = store.getSnapshot().sessionId !== scope.sessionId
+        if (!tabStillOpen
+          && socket !== null && socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({ type: 'close' }))
+        } else if (tabStillOpen && sessionSwitched && !isAgentTabId(tabId)
+          && socket !== null && socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({ type: 'park' }))
+        }
       }
       socket?.close()
+      linkProvider.dispose()
       term.dispose()
       connectRef.current = null
     }
-  }, [scope.sessionId, scope.cwd, tabId, store])
+  }, [scope.sessionId, scope.cwd, tabId, store, preferences, lifecycle])
 
   return (
-    <div className={css.terminalWrap}>
+    <div className={css.terminalWrap} data-dockkit-scroll-owner>
       {depsFatal !== null && (
         <TerminalDepsBanner deps={depsFatal} onRetry={() => { setDepsFatal(null); connectRef.current?.() }} />
       )}

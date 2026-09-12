@@ -51,7 +51,7 @@ export function AccountPoolControl({ t, useAccountPool }: AccountPoolControlProp
     <section className={css.prototypeHost} data-desktop-account-pool-state={snapshot.state}>
       <div className={css.kernelBar}>
         <div className={css.kernelInfo}>
-          <span className={css.kernelBadge}>DESKTOP BUILT-IN</span>
+          <span className={css.kernelBadge}>{t('pool.badge')}</span>
           <strong className={css.kernelTitle} data-testid="account-pool-title">{t('sub2api.title')}</strong>
           <span className={css.kernelDesc}>{t('sub2api.offerBody')}</span>
         </div>
@@ -64,24 +64,24 @@ export function AccountPoolControl({ t, useAccountPool }: AccountPoolControlProp
         <div className={css.headerLeft}>
           <h2 className={css.pageTitle}>{t('sub2api.workspaceTitle')}</h2>
           <div className={css.summaryCounts}>
-            <span>共 {snapshot.accounts.length} 个凭证</span>
-            <span className={css.countActive}>{snapshot.accounts.filter(account => account.enabled).length} 个启用</span>
+            <span>{t('pool.count').replace('{count}', String(snapshot.accounts.length))}</span>
+            <span className={css.countActive}>{t('pool.enabledCount').replace('{count}', String(snapshot.accounts.filter(account => account.enabled).length))}</span>
           </div>
         </div>
         <div className={css.headerRight}>
           <div className={css.globalFaceSwitch}>
-            <span className={css.switchTitle}>卡片视图:</span>
+            <span className={css.switchTitle}>{t('pool.cardView')}</span>
             <div className={css.switchGroup}>
               <button type="button" className={`${css.faceBtn} ${globalFace === 'A' ? css.faceBtnActive : ''}`} onClick={() => { commandFace('A') }} data-testid="global-face-btn-a">
-                管理面
+                {t('pool.face.manage')}
               </button>
               <button type="button" className={`${css.faceBtn} ${globalFace === 'B' ? css.faceBtnActive : ''}`} onClick={() => { commandFace('B') }} data-testid="global-face-btn-b">
-                额度面
+                {t('pool.face.quota')}
               </button>
             </div>
           </div>
           <div className={css.addDropdownContainer}>
-            <Button variant="primary" onClick={() => { setShowDropdown(open => !open) }}>+ 添加账号 ▾</Button>
+            <Button variant="primary" onClick={() => { setShowDropdown(open => !open) }}>{t('pool.add')}</Button>
             {showDropdown && (
               <div className={css.dropdownMenu}>
                 {(['kimi', 'xai', 'codex', 'anthropic', 'antigravity', 'glm'] as const).map(kind => (
@@ -95,7 +95,7 @@ export function AccountPoolControl({ t, useAccountPool }: AccountPoolControlProp
         </div>
       </header>
       <div className={css.filterBar}>
-        <Pill active={filter === 'all'} onClick={() => { setFilter('all') }}>全部 ({snapshot.accounts.length})</Pill>
+        <Pill active={filter === 'all'} onClick={() => { setFilter('all') }}>{t('pool.filter.all').replace('{count}', String(snapshot.accounts.length))}</Pill>
         {['codex', 'antigravity', 'anthropic', 'kimi', 'xai', 'glm'].map(provider => (
           <Pill key={provider} active={filter === provider} onClick={() => { setFilter(provider) }}>
             {provider} ({snapshot.accounts.filter(account => account.provider === provider).length})
@@ -106,6 +106,7 @@ export function AccountPoolControl({ t, useAccountPool }: AccountPoolControlProp
         {accounts.map(account => (
           <AccountCard
             key={account.authIndex}
+            t={t}
             item={account}
             globalFace={globalFace}
             globalEpoch={globalEpoch}
@@ -117,6 +118,7 @@ export function AccountPoolControl({ t, useAccountPool }: AccountPoolControlProp
       </div>
       {loginKind !== undefined && (
         <LoginModal
+          t={t}
           initialProvider={loginKind}
           {...snapshot.login === undefined ? {} : { login: snapshot.login }}
           onClose={() => { setLoginKind(undefined) }}

@@ -1,6 +1,27 @@
+---
+description: "Personal Pairing authority and stateless multi-instance Remote Relay lifecycle."
+kind: "package-reference"
+---
+
 # `@deepseek-ai/dsh-remote-access`
 
 English | [中文](README.zh.md)
+
+## Summary
+
+Pair a Desktop Installation explicitly with a Mobile Installation on the same Account and grant a bounded Device Principal. The service keeps Mobile Access off until Settings enables it, uses short-lived endpoint mailboxes, and enforces pairing, blob, upload, connection, and capacity quotas. Relay providers carry ciphertext only; Account identity, explicit confirmation, and revocation own authority.
+
+## Table of Contents
+
+- [Package contract](#package-contract)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
+
+-----
+
+<a id="package-contract"></a>
+## Package contract
 
 Remote Access Service Definitions and Personal Pairing Service Provider. `ctx.remoteAccess` keeps Mobile Access disabled per Desktop Installation until Settings enables it, allocates two-minute endpoint mailbox routes, authenticates each Account Session's Installation id, kind, and Mobile presentation through `AccountService.currentInstallation()`, requires both Installations to resolve to the same Account, and grants a Device Principal only after explicit Desktop confirmation. Endpoint completion carries no caller-supplied device metadata; pending and confirmed records copy the authenticated Mobile Installation presentation. Open-registration quotas cap installations, pairings, and blobs; capacity watermarks reject new login, pairing, blob, or WSS attach with `PLATFORM_CAPACITY` and `retryAfter` while established ciphertext streams continue. Pairing Challenge HTTP supplies the TCP peer address and ignores `x-forwarded-for`. Hourly challenge, concurrent blob, and daily upload windows live in the shared pairing-transaction state, so two providers with one `PersonalPairingAuthorityStore` enforce one Account-complete limit. Hard caps return a 60-second `retryAfter`; sliding windows return remaining-window seconds. `admitAttachmentBlob` commits an Account quota lease with an absolute expiry before returning; every later successful pairing transaction migrates legacy reservations to a bounded lease and evicts expired leases. The operated lease duration is twice the configured attachment capability lifetime, and attachment stores reject a lease that ends before blob authority. This permits only bounded orphan overcount after an indeterminate publish and prevents active-blob undercount. `releaseAttachmentBlob` performs eager cleanup without storing ciphertext. Development and production keep separate origins, OAuth Apps, callbacks, credentials, databases, and identity namespaces; secrets come from deployment-managed references and fail closed when missing. `PersonalPairingAuthorityStore` atomically owns shared Desktop route association, endpoint mailbox, prepared publication and compensation records, confirmed Mobile results, and quota windows; the memory adapter is a deterministic test adapter, while deployment supplies one durable adapter to every Platform Instance.
 
@@ -18,19 +39,31 @@ The project peer grant surface runs beside Personal Pairing and lets one member'
 
 Persistent deployment state is limited to route identity, credential digest, monotonic revision, and revocation/association state. Ephemeral coordination is limited to expiring attachment locations, invalidation events, and direct ciphertext Pub/Sub. Instance exit closes its sockets; Mobile and Desktop acquire a fresh non-sticky connection, and Desktop sends an authoritative encrypted resynchronization instead of migrating a live socket. Every capacity, directory, heartbeat, buffer, connection, and attach timeout is an explicit validated composition value.
 
-The operated Account deletion composition receives a trusted `accountDeletion` owner distinct from public Personal Pairing authentication. It disables captured Desktop authorities, awaits Relay and endpoint revocation, then removes the deleted account’s pairing, mailbox, replay, quota and challenge references. Public tokens are already revoked when this owner runs; it cannot restore a login or grant a new pairing. Attachment ciphertext belongs to the separate attachment owner and must finish cleanup before Account completion.
-
+<a id="model-experience"></a>
 ## Model Experience
 
-None, as pairing metadata, Device Principal origin, and Settings state never enter a model request.
+None, as the services carry pairing authority and delivery routes without creating model-bound content.
 
 #### KV Cache effect
 
-None.
+The services add no model request content, so they do not affect provider cache reuse.
 
 ## Known Limitations and Deferred Work
+<a id="known-limitations-and-deferred-work"></a>
 
 - Product composition assembles the endpoint-only mailbox, durable authority stores, sealed Mobile authority, and Snow channel. Independent security review and WKWebView/Android WebView device evidence remain release evidence rather than runtime feature switches.
 - Operated Platform persists mailbox, publication, pairing-to-route, and Relay digest authority through PostgreSQL and uses Redis only for expiring attachment discovery and ciphertext delivery. This repository does not provision PostgreSQL, Redis, TLS, or cloud instances.
 - Product Desktop and Mobile use the endpoint-owned Snow mailbox and Companion channel; Platform mounts no pairing cryptography. Physical WebView evidence and independent review of the exact implementation remain release blockers.
 - Project peer grant delivery stops at the sealed envelope and durable record: opening the envelope on the peer's installation and the cross-machine registry transport that carries it are deferred until that transport exists, and production sealing stays behind the independent encryption review.
+
+No runtime invariant companion is published because its route store and coordinator are constructor-private adapters, and the Provider checks revision and compensation relationships at each operation without exposing an independent Context observation.
+
+<a id="dev-note"></a>
+### Dev Note
+
+<details>
+<summary>Working context for maintainers — click to expand</summary>
+
+None.
+
+</details>

@@ -1,15 +1,15 @@
-- img
-- text: New thread
-- button "Close":
-  - img
 - banner:
-  - tablist:
-    - tab "Chat" [selected]
-    - tab "Trajectory"
-- textbox "Message the agent"
-- button "Commands and skills":
+  - text: New thread
+  - button "Send back to the sidebar":
+    - img
+  - button "Close":
+    - img
+- textbox "Message or run a task, / commands, @ files or sessions"
+- button "Commands":
+  - img
+- button "Add attachment":
   - img
 - button "Select model, current DeepSeek-V4-Flash":
-  - text: DeepSeek-V4-Flash
+  - img
   - img
 - button "Send message" [disabled]

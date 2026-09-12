@@ -7,7 +7,7 @@ import { builtinTabs } from '../src/client/builtins/tabs.tsx'
 import { api } from '../src/client/api.ts'
 import { createBetterSidebarService } from '../src/client/service.ts'
 import { allLeaves, SidebarStore } from '../src/client/state.ts'
-import type { Context, SidebarSessionList } from '../src/context-types.ts'
+import type { SidebarContext as Context, SidebarSessionList } from '../src/context-types.ts'
 import type { SidebarTab } from '../src/client/state.ts'
 
 afterEach(() => {
@@ -175,21 +175,23 @@ describe('SideChatView', () => {
   })
 
   it('mounts the canonical conversation slot for the tab thread without changing the selected Session', () => {
+    const mainThread = 'main-thread' as SessionId
+    const sideThread = 'side-thread' as SessionId
     const snapshot: SidebarSessionList = {
-      current: 'main-thread',
+      current: mainThread,
       byId: {
-        'main-thread': { id: 'main-thread', displayTitle: 'Main', blank: false },
-        'side-thread': {
-          id: 'side-thread',
+        [mainThread]: { id: mainThread, displayTitle: 'Main', blank: false },
+        [sideThread]: {
+          id: sideThread,
           displayTitle: 'Side: question',
           origin: 'subagent',
-          parentId: 'main-thread',
+          parentId: mainThread,
           blank: true,
         },
       },
     }
     const unmount = vi.fn()
-    const mountSession = vi.fn(() => unmount)
+    const mountSession = vi.fn<Context['uiRenderer']['mountSession']>(() => unmount)
     const open = vi.fn()
     const unstage = vi.fn()
     const stageProvisional = vi.fn(() => unstage)
@@ -211,17 +213,21 @@ describe('SideChatView', () => {
     const view = render(
       <SideChatView
         ctx={ctx}
-        scope={{ sessionId: 'main-thread' }}
-        tab={tab('side-thread')}
+        scope={{ sessionId: mainThread }}
+        tab={tab(sideThread)}
         visible
       />,
     )
 
     expect(mountSession).toHaveBeenCalledWith(
       expect.any(HTMLDivElement),
-      'conversation',
-      'side-thread',
-      { renderMode: 'sidechat', openSession: expect.any(Function) },
+      'main.conversation',
+      sideThread,
+      {
+        renderMode: 'sidechat',
+        displayHostSessionId: mainThread,
+        openSession: expect.any(Function),
+      },
     )
     const owner = mountSession.mock.calls[0]?.[3] as {
       openSession?: (sessionId: SessionId) => void
@@ -230,12 +236,12 @@ describe('SideChatView', () => {
     expect(updateTab).toHaveBeenCalledWith('sidechat:side-thread', {
       meta: { threadId: 'nested-child', rootThreadId: 'side-thread' },
     })
-    expect(snapshot.current).toBe('main-thread')
+    expect(snapshot.current).toBe(mainThread)
     expect(open).not.toHaveBeenCalled()
     expect(view.queryByRole('button')).toBeNull()
     expect(stageProvisional).toHaveBeenCalledWith({
-      sessionId: 'side-thread',
-      parentSessionId: 'main-thread',
+      sessionId: sideThread,
+      parentSessionId: mainThread,
       origin: 'subagent',
       title: 'Side: New thread',
     })

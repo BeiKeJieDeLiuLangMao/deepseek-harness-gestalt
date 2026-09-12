@@ -1,11 +1,34 @@
+---
+description: "Deferred model-facing phone tools for listing, observing, controlling, and capturing devices from ctx.phoneDevices."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-tool-phone
 
 English | [中文](README.zh.md)
 
-Model-facing Consumer for `ctx.phoneDevices`. It registers `device_list`, `device_open`, `device_close`, `device_observe`, `device_act`, and `device_screenshot` as ordinary deferred tools. `device_act` accepts exactly one closed tap, swipe, type, or hardware-button action; there is no arbitrary `adb` or shell path. `device_list` and `device_observe` answers carry `id`/`name`/`kind`/`state`/`online`/`platform` per entry.
+## Summary
+
+Use deferred `device_*` tools to list, open, close, observe, act on, and screenshot devices from `ctx.phoneDevices`. The complete tool set exists only while the fleet is ready, and discovery never activates it. Actions accept only closed tap, swipe, type, or hardware-button requests; no arbitrary `adb` or shell path is exposed.
+
+## Table of Contents
+
+- [Package contract](#package-contract)
+- [Configuration](#configuration)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
+
+-----
+
+<a id="package-contract"></a>
+## Package contract
+
+Model-facing Consumer for `ctx.phoneDevices`. It registers `device_list`, `device_open`, `device_close`, `device_observe`, `device_act`, and `device_screenshot` as ordinary deferred tools. `device_act` accepts exactly one closed tap, swipe, type, or hardware-button action; there is no arbitrary `adb` or shell path. `device_list` and `device_observe` answers carry `id`/`name`/`kind`/`state`/`online`/`platform` per entry. No runtime invariant companion is published because `dsh-tools` owns registration, eligibility, deferred discovery, execution, and disposal relationships.
 
 All six definitions exist only while `phoneDevices.isReady()` is true. The Consumer subscribes to generation readiness, registers the complete set on activation, and disposes the complete set before a generation stops or is replaced. A fleet implementation without the readiness methods retains the static registration contract for out-of-tree compatibility.
 
+<a id="configuration"></a>
 ## Configuration
 
 `timeoutMs` is the positive safe-integer cooperative timeout for every call and defaults to `30000`. Invalid values fail plugin load. The Consumer requires the phone fleet Service and tool registry; registration fails loud when `toolSearch` is disabled.
@@ -16,6 +39,7 @@ All six definitions exist only while `phoneDevices.isReady()` is true. The Consu
 
 Fleet failures that already carry a `PhoneDevicesError` code (`PHONE_DISPOSED`, `PHONE_ABORTED`, `PHONE_TIMEOUT`, `PHONE_UNAVAILABLE`, `PHONE_UNRESOLVED`, `PHONE_PROTOCOL`, `PHONE_UPSTREAM`, `PHONE_DEVICE_NOT_FOUND`, `PHONE_REAL_DEVICE`) are rethrown as `HarnessError` with that same code. `device_act` forwards a closed tap, swipe, type, or button onto `phoneDevices.io`. A swipe forwards semantic endpoints and leaves platform/rotation conversion to `PhoneDevices.io()` ([input ownership](../../../.agents/notes/implemented/bug-fix/2026-09-04-ios-semantic-input-rotation.md)). Empty type text, or an injected fleet missing `io` / `screenshot`, uses `PHONE_UNSUPPORTED`. `device_screenshot` calls `phoneDevices.screenshot` and returns `{ deviceId, path }` for the owner-only PNG on disk; rendered tool text is those two fields, never PNG bytes or a base64 image block. `PHONE_UNSUPPORTED` remains only when an injected test fleet omits that method. Live MJPEG/H264 capture stays on `dsh-phone-stream`.
 
+<a id="model-experience"></a>
 ## Model Experience
 
 ### Phone tool discovery and results
@@ -34,4 +58,11 @@ The first request keeps the device schemas out of the prefix. Discovery changes 
 
 ## Known Limitations and Deferred Work
 
+<a id="known-limitations-and-deferred-work"></a>
+
 - The shipped headless keyless snapshot mounts this Consumer over a recorded fake fleet and proves zero initial device schemas, `tool_search` reconstruction, and one closed action. Desktop does not mount the Consumer. Live video, signed stream routes, and GUI chrome stay in their own packages.
+
+<a id="dev-note"></a>
+### Dev Note
+
+None.

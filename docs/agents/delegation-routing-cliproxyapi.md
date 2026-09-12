@@ -16,7 +16,7 @@ This profile supplements [the provider-neutral routing reference](delegation-rou
 
 `gpt-6-astra` is never a silent fallback when the user excludes it. `codex-auto-review` is not a candidate. `glm-5.3` accepts text only; `glm-5.3-flash` is the visual candidate. Image and video generation ids do not enter the text-agent pool.
 
-The subagent tools accept provider and model selection but no reasoning-effort argument. Do not claim an effort setting, persistent KV cache, or proxy billing from vendor documentation. Official model pages support tier and capability statements only; acceptance depends on the task result and repository checks.
+When the current Session authorizes model selection, the subagent tools accept `provider`, `model`, and `reasoning_effort`; use ids returned by `list_subagent_models`. Do not infer effective effort, persistent KV cache, or proxy billing from vendor documentation. Official model pages support tier and capability statements only; acceptance depends on the task result and repository checks.
 
 ## Official capability sources
 

@@ -14,6 +14,9 @@ afterEach(() => {
 })
 
 const t = (key: string) => (en as Record<string, string>)[key] ?? key
+const useResource = (() => ({
+  status: 'none' as const, value: undefined, failure: undefined, reload: () => {},
+})) as import('@deepseek-ai/dsh-client-ui-slots').GlobalStandardProps['useResource']
 
 function mount(status: UpdaterStatus, bridge?: Partial<DesktopBridge>) {
   const desktop = mountBridge({
@@ -24,7 +27,10 @@ function mount(status: UpdaterStatus, bridge?: Partial<DesktopBridge>) {
     <UpdateControl
       wide
       t={t as never}
+      useResource={useResource}
+      usePanelInfo={selector => selector({ activePanelId: null })}
       useSessions={(() => { throw new Error('unused') })}
+      useSessionPendingInteraction={(() => { throw new Error('unused') })}
       useWorkspaces={(() => { throw new Error('unused') })}
       useUpdater={select => select(status)}
     />,
@@ -38,7 +44,10 @@ describe('UpdateControl', () => {
       <UpdateControl
         wide
         t={t as never}
+        useResource={useResource}
+        usePanelInfo={selector => selector({ activePanelId: null })}
         useSessions={(() => { throw new Error('unused') })}
+        useSessionPendingInteraction={(() => { throw new Error('unused') })}
         useWorkspaces={(() => { throw new Error('unused') })}
         useUpdater={select => select({ state: 'idle', lastCheckedAt: null })}
       />,
@@ -80,7 +89,10 @@ describe('UpdateControl', () => {
       <UpdateControl
         wide
         t={t as never}
+        useResource={useResource}
+        usePanelInfo={selector => selector({ activePanelId: null })}
         useSessions={(() => { throw new Error('unused') })}
+        useSessionPendingInteraction={(() => { throw new Error('unused') })}
         useWorkspaces={(() => { throw new Error('unused') })}
         useUpdater={useUpdater}
       />,
@@ -185,7 +197,10 @@ describe('UpdateControl', () => {
       <UpdateControl
         wide={false}
         t={t as never}
+        useResource={useResource}
+        usePanelInfo={selector => selector({ activePanelId: null })}
         useSessions={(() => { throw new Error('unused') })}
+        useSessionPendingInteraction={(() => { throw new Error('unused') })}
         useWorkspaces={(() => { throw new Error('unused') })}
         useUpdater={select => select({ state: 'available', lastCheckedAt: 1 })}
       />,

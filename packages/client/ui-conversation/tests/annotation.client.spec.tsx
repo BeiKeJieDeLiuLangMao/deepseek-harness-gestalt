@@ -2,20 +2,21 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render } from '@testing-library/react'
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context } from '@deepseek-ai/cordis'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
+import { AnnotationEditor } from '@deepseek-ai/dsh-client-ui-primitives'
 import {
   compileAnnotationSubmission, createTextAnchor, TextAnnotationId,
 } from '../src/client/annotation/model.ts'
 import type { TextAnchor } from '../src/client/annotation/model.ts'
-import { AnnotationEditor } from '../src/client/annotation/AnnotationEditor.tsx'
-import { AssistantMarkdown } from '../src/client/chat/AssistantMarkdown.tsx'
-import { zh } from '../src/client/locales.ts'
+import { AssistantMarkdown } from '../../ui-chat/src/client/chat/AssistantMarkdown.tsx'
+import { zh } from '../../ui-chat/src/client/locale.ts'
 import {
   removeDraftHighlightOwner, replaceDraftHighlightRanges,
-} from '../src/client/annotation/draft-highlights.ts'
+} from '../../ui-chat/src/client/chat/draft-highlights.ts'
 import type { SessionInputDeps } from '../src/client/input/facade.ts'
+import type { DraftAttachmentId } from '../src/client/contract/input.ts'
 
 import { SessionInputShell } from '../src/client/input/facade.ts'
 
@@ -37,7 +38,12 @@ function textPosition(node: Node, value: string): { node: Text; offset: number }
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
-/** Compiler labels required by every shell construction (the hub always supplies them). */
+const commandAttachments = {
+  serialize: () => Promise.resolve([]),
+  release: () => {},
+  unsupportedNotice: (token: string) => `${token.trim()} attachments-unsupported`,
+}
+
 const LABELS = {
   heading: (index: number) => `Annotation ${index}`,
   quote: (value: string) => `Quoted text: “${value}”`,
@@ -368,7 +374,7 @@ describe('text annotation mechanics', () => {
     try {
       const view = render(<AssistantMarkdown {...props} annotations={[]} />)
       fireEvent.click(view.getByRole('button', { name: '复制' }))
-      await view.findByRole('button', { name: '复制成功' })
+      await view.findByRole('button', { name: '已复制' })
       const start = textPosition(view.container.querySelector('.md-code-block')!, 'ready')
       const range = document.createRange()
       range.setStart(start.node, start.offset)
@@ -615,6 +621,8 @@ describe('text annotation mechanics', () => {
       fireEvent.keyDown(editor, { key: 'Enter' })
       expect(save).not.toHaveBeenCalled()
       vi.advanceTimersByTime(20)
+      fireEvent.keyDown(editor, { key: 'Enter', keyCode: 229 })
+      expect(save).not.toHaveBeenCalled()
       fireEvent.keyDown(editor, { key: 'Enter' })
       expect(save).toHaveBeenCalledTimes(1)
     } finally {
@@ -624,8 +632,8 @@ describe('text annotation mechanics', () => {
 
   it('submits annotation-only prose through one owned reservation and clears only after admission', () => {
     const sink = vi.fn<SessionInputDeps['defaultSink']>(() => new Promise(() => {}))
-    const shell = new SessionInputShell({
-      actx: {} as ClientContext,
+    const shell = new SessionInputShell({ commandAttachments,
+      actx: {} as Context,
       defaultSink: sink,
       annotationLabels: LABELS,
     })
@@ -653,11 +661,42 @@ describe('text annotation mechanics', () => {
     expect(shell.snapshot.annotationSubmitting).toBe(false)
   })
 
+  it('compiles Composer image pins when an attachment is sent without question text', () => {
+    const sink = vi.fn<SessionInputDeps['defaultSink']>(() => new Promise(() => {}))
+    const shell = new SessionInputShell({
+      commandAttachments,
+      actx: {} as Context,
+      defaultSink: sink,
+      annotationLabels: LABELS,
+    })
+    const attachmentId = 'draft-image-1' as DraftAttachmentId
+    shell.addAttachments([attachmentId])
+    const annotationId = shell.actions.addImagePin(
+      attachmentId,
+      'diagram.png',
+      25,
+      40,
+      'inspect this corner',
+      'composer',
+    )
+
+    shell.submit()
+
+    expect(sink).toHaveBeenCalledWith(
+      'Annotation 1\nImage “diagram.png” at 25.0%, 40.0%\nNote: inspect this corner',
+      [attachmentId],
+      'queue',
+      expect.any(AbortSignal),
+    )
+    expect(shell.snapshot.attachmentIds).toEqual([])
+    expect(shell.annotationReservation).toEqual({ restoreText: '', ids: [annotationId] })
+  })
+
   it('failure releases the reservation without deleting its annotations', async () => {
     const sink = vi.fn<SessionInputDeps['defaultSink']>()
       .mockImplementationOnce(() => Promise.resolve({ kind: 'error' }))
       .mockImplementation(() => new Promise(() => {}))
-    const shell = new SessionInputShell({ actx: {} as ClientContext, defaultSink: sink, annotationLabels: LABELS })
+    const shell = new SessionInputShell({ commandAttachments, actx: {} as Context, defaultSink: sink, annotationLabels: LABELS })
     shell.setDraft('Please revise this.')
     const anchor = createTextAnchor('message-1', 'Exact quotation', 'Exact quotation', 0)
     const id = shell.actions.addTextAnnotation(anchor, 'Original note')
@@ -689,8 +728,8 @@ describe('text annotation mechanics', () => {
   })
 
   it('edits and deletes an unsent annotation through the Composer actions', () => {
-    const shell = new SessionInputShell({
-      actx: {} as ClientContext,
+    const shell = new SessionInputShell({ commandAttachments,
+      actx: {} as Context,
       defaultSink: () => Promise.resolve({ kind: 'success' }),
       annotationLabels: LABELS,
     })

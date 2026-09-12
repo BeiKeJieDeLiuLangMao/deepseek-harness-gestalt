@@ -2,7 +2,7 @@
 
 [English](schedule.md) | 中文
 
-Schedule 拥有持久提醒；这些提醒会作为普通的后续对话轮次返回原 live Session。[持久 Schedule Agent Note](../../.agents/notes/implemented/feature/2026-08-05-durable-web-schedule.zh.md) 负责持久化与生命周期决策，[Session Schedule 任务板](../../.agents/notes/implemented/feature/2026-08-17-session-schedule-board.zh.md) 负责人工管理与 projection 决策，[对话式交付](../../.agents/notes/implemented/simplification/2026-08-09-conversational-schedule-delivery.zh.md) 负责无回执边界，[显式时区边界](../../.agents/notes/implemented/simplification/2026-08-09-explicit-schedule-time-zone.zh.md) 负责浏览器本地解释，[有界固定速率 Schedule](../../.agents/notes/implemented/simplification/2026-08-09-bounded-fixed-rate-schedule.zh.md) 负责重复调度。本页记录 [`packages/schedule/schedule/src/types.ts`](../../packages/schedule/schedule/src/types.ts) 中的持久数据形状和面向模型的数据形状；[包 README](../../packages/schedule/schedule/README.zh.md) 负责组合、工具行为与确切的提醒 framing。
+Schedule 拥有持久提醒；这些提醒会作为普通的后续对话轮次返回原 live Session。[持久 Schedule Agent Note](../../.agents/notes/implemented/feature/2026-08-05-durable-web-schedule.zh.md) 负责持久化与生命周期决策，[Session Schedule 任务板](../../.agents/notes/implemented/feature/2026-08-17-session-schedule-board.zh.md) 负责人工管理与 projection 决策，[对话式交付](../../.agents/notes/archived/simplification/2026-08-09-conversational-schedule-delivery.md) 负责无回执边界，[显式时区边界](../../.agents/notes/implemented/simplification/2026-08-09-explicit-schedule-time-zone.zh.md) 负责浏览器本地解释，[有界固定速率 Schedule](../../.agents/notes/archived/simplification/2026-08-09-bounded-fixed-rate-schedule.md) 负责重复调度。本页记录 [`packages/schedule/schedule/src/types.ts`](../../packages/schedule/schedule/src/types.ts) 中的持久数据形状和面向模型的数据形状；[包 README](../../packages/schedule/schedule/README.zh.md) 负责组合、工具行为与确切的提醒 framing。
 
 ## 持久记录
 
@@ -111,7 +111,7 @@ interface ScheduleCreateChange {
 ```
 
 ```ts type-equiv
-/** Deletes one currently active reminder. */
+/** Deletes one currently retained reminder, including a paused reminder. */
 interface ScheduleDeleteChange {
   readonly version: 1
   readonly operation: 'delete'
@@ -172,7 +172,7 @@ type ScheduleChange =
   | ScheduleDispatchChange
 ```
 
-严格 decoder 与 fold 会拒绝未知版本、额外字段、复用 id、不匹配的一次性提醒或 Every dispatch 形状，以及针对非活动记录的 delete 或 dispatch 转换。普通 Session 折叠完整事件流。fork 只折叠 `SessionHeader.seedLength` 位置及其后的事件，因此保留历史，但不会接管父 Session 的活动提醒。`schedule/change` 声明和源码位置也编入[持久化目录](../persistence-catalog.zh.md#schedulechange--log-only)。
+严格 decoder 与 fold 会拒绝未知版本、额外字段、复用 id、不匹配的一次性提醒或 Every dispatch 形状，以及针对缺失、已暂停、已活动或其他不兼容记录的转换。普通 Session 折叠完整事件流。fork 只折叠 `Session.inheritedEventCount` 位置及其后的事件，因此保留历史，但不会接管父 Session 的提醒。`schedule/change` 声明和源码位置也编入[持久化目录](../persistence-catalog.zh.md#schedulechange--log-only)。
 
 ## 活动视图与管理
 
@@ -198,13 +198,19 @@ type ScheduleView = ScheduleRecord & {
 }
 ```
 
-生成的[工具目录](../tool-catalog.zh.md#deepseek-aidsh-schedule)负责 `schedule_create`、`schedule_list` 和 `schedule_delete` 的参数与结果 schema。list 包含已暂停记录，delete 接受活动或已暂停记录；不存在面向模型的 pause 或 resume 工具。一条由 Schedule Service 拥有、按 Session 串行化的 FIFO 会把管理调用与到期工作串行化。每次读取或判断都会先等待共享的 Session 持久化 barrier；create 与实际执行的 delete 在追加后还会再次等待。插件拆卸会关闭准入并等待已接纳事务，而独立 Context 拥有独立队列。barrier 失败会报告 `persistence_uncertain`，而不是猜测 eager write 是否已提交。其他稳定错误代码是 `invalid_prompt`、`invalid_selector`、`invalid_rule`、`invalid_time_zone`、`not_future`、`time_out_of_range`、`frequency_too_high`、`corrupt_schedule_log` 和 `internal_error`。
+```ts type-equiv
+/** Whole projected value for one retained reminder. */
+type ScheduleProjectionItem = ScheduleRecord & {
+  /** Durable delivery suspension; timing state is derived by the Client clock. */
+  readonly paused: boolean
+}
+```
 
-`ctx.schedules` Remote Service 接受 branded Session id，而不会调用 cold Agent resume。存在 live 根 Agent 时直接使用；否则预留并 enter 精确的 prepared Session，但不 announce；它在 fold 前 flush，append 并再次 flush，随后 detach，整个过程不发布 Session 或 Agent 生命周期，也不启动投递。preparation 或 enter 冲突会在同一 FIFO 内针对精确 live root 重新计算。同一组持久化 barrier 与 Service-owned queue 覆盖工具、人工变更与到期工作。
+生成的[工具目录](../tool-catalog.zh.md#deepseek-aidsh-schedule)负责 `schedule_create`、`schedule_list` 和 `schedule_delete` 的参数与结果 schema。list 按创建顺序读取保留记录，包含 `state: 'paused'` 的暂停行；delete 接受活动或暂停 id。不存在面向模型的 pause 或 resume 工具。到期投递仍只使用 `active` fold。`ctx.schedules` 通过生成 Remote 方法公开人工 pause、resume 与 delete；Typert 会在调用前把 Session wire 身份解析为精确的 live 根 Agent。Remote 与工具管理会通过一条由插件拥有、按 Session 串行化的 FIFO 同到期工作串行化。每次读取或判断都会先等待共享的 Session 持久化 barrier；每项 mutation 在追加后还会再次等待。插件拆卸会关闭准入并等待已接纳事务，而独立 Context 拥有独立队列。模型工具的 barrier 失败会报告 `persistence_uncertain`，而不是猜测 eager write 是否已提交。其他稳定工具错误代码是 `invalid_prompt`、`invalid_selector`、`invalid_rule`、`invalid_time_zone`、`not_future`、`time_out_of_range`、`frequency_too_high`、`corrupt_schedule_log` 和 `internal_error`。[Session Schedule 任务板](../../.agents/notes/implemented/feature/2026-08-17-session-schedule-board.zh.md) 决策拥有人工作业与呈现。
 
 ## 浏览器 Projection
 
-`schedules` Session projection 是对 `schedule/change` 的 `owned-suffix` fold。其完整值按创建顺序保留记录，只增加持久化的 `paused` 标志；Client 时钟根据 `scheduledAt` 推导等待中或待补跑展示。Desktop 会把该值显示为紧接在后台任务之后的 Session 标题栏当前状态任务板。其活跃计数排除已暂停记录，控件支持暂停、恢复以及行内二次确认删除。任务板没有创建表单，也绝不从 transcript 或工具调用渲染重建状态。
+Host projection 的 key 是 `schedule`。apply 会跳过 `seq` 小于 `Session.inheritedEventCount` 的 `schedule/change` 事件；定义没有 `eventScope` 字段。其检查点是 `{ inheritedEventCount, active, paused, schedules, seenIds }`，wire 值是按创建顺序保留的 `ScheduleProjectionItem[]`。Client 时钟根据 `scheduledAt` 推导等待中或待补跑展示；`paused` 是持久的。Host 工具与人工 Remote mutation 使用该保留集合。Desktop overlay 会启用 Web 会话头任务板，浏览器 Web 仍需显式选择。projection 绝不从 transcript 或工具调用渲染重建状态。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -218,35 +224,35 @@ Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnp
 
 ### `ctx.schedules` — `ScheduleService`
 
-Durable Schedule owner, Remote mutation namespace, and live Agent runtime installer.
+Durable Schedule owner, human Remote namespace, and live Agent runtime installer.
 
 ```ts cordis-catalog
 /**
  * Pause one retained deliverable reminder.
- * @param sessionId - Exact root Session identity; a cold mutation publishes no Agent.
+ * @param agent - Exact live root Agent resolved from the Session wire identity.
  * @param id - Session-local reminder identity.
  * @returns The paused durable view after its persistence barrier.
  */
-@Remote('pause') pause(sessionId: SessionId, id: ScheduleId): Promise<ScheduleView>
+@Remote('pause') pause(agent: Agent, id: ScheduleId): Promise<ScheduleView>
 
 /**
  * Resume one paused reminder without changing its target.
- * @param sessionId - Exact root Session identity; a cold mutation publishes no Agent.
+ * @param agent - Exact live root Agent resolved from the Session wire identity.
  * @param id - Session-local reminder identity.
  * @returns The resumed timing view after its persistence barrier.
  */
-@Remote('resume') resume(sessionId: SessionId, id: ScheduleId): Promise<ScheduleView>
+@Remote('resume') resume(agent: Agent, id: ScheduleId): Promise<ScheduleView>
 
 /**
  * Delete one retained reminder, including a paused reminder.
- * @param sessionId - Exact root Session identity; a cold mutation publishes no Agent.
+ * @param agent - Exact live root Agent resolved from the Session wire identity.
  * @param id - Session-local reminder identity.
  * @returns The deleted identity after its persistence barrier.
  */
-@Remote('delete') async delete(sessionId: SessionId, id: ScheduleId): Promise<ScheduleDeleteResult>
+@Remote('delete') async delete(agent: Agent, id: ScheduleId): Promise<ScheduleDeleteResult>
 ```
 
-Types: [SessionId](core.zh.md)
+Types: [Agent](core.zh.md)
 
 Source: [`packages/schedule/schedule/src/index.ts`](../../packages/schedule/schedule/src/index.ts)
 <!-- END GENERATED cordis-surface -->
@@ -257,4 +263,4 @@ Source: [`packages/schedule/schedule/src/index.ts`](../../packages/schedule/sche
 
 到期工作会先等待 Agent 完全 idle 并认领 maintenance phase，再重新折叠状态、采样本次判断、将一个 `followup()` 排入队列，并追加对应的 dispatch 变更。它绝不会调用 `steer()`，也绝不会中断当前轮次。
 
-获得准入的一次性提醒或固定速率批次会启动一个普通的后续轮次，并通过普通对话 transcript（文本记录）出现；Schedule 不提供独立的持久投递回执。浏览器任务板展示当前提醒管理状态，而不是模型完成或确认状态。如果 framing 构造或同步队列准入失败，则不会记录 dispatch，提醒仍保持活动。队列准入后、持久 dispatch 前的狭窄崩溃窗口可能使提醒内容在恢复后重复，因此该边界提供的是尽力而为的至少一次交付，而非恰好一次交付。
+获得准入的一次性提醒或固定速率批次会启动一个普通的后续轮次，并通过普通对话 transcript（文本记录）出现；Schedule 不提供独立的持久投递回执。Host 工具可以列出暂停状态，浏览器任务板可以改变该状态，但不会声称模型完成或确认。如果 framing 构造或同步队列准入失败，则不会记录 dispatch，提醒仍保持活动。队列准入后、持久 dispatch 前的狭窄崩溃窗口可能使提醒内容在恢复后重复，因此该边界提供的是尽力而为的至少一次交付，而非恰好一次交付。

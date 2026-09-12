@@ -4,16 +4,17 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
-import type {
-  SessionId, SessionListState, SessionSummary, WorkspaceId, WorkspaceListState, WorkspaceView,
-} from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionListState, SessionSummary } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { WorkspaceId, WorkspaceSnapshot, WorkspaceView } from '@deepseek-ai/dsh-api-workspace-controller/client'
+import type { SessionPendingInteractionSnapshot } from '@deepseek-ai/dsh-client-ui-session/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
-import { en as commonEn } from '@deepseek-ai/dsh-client-locale/src/locales/en.ts'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
-import type { ProjectMembershipErrorCode } from '@deepseek-ai/dsh-project-membership'
-import type { ProjectMembershipGateway, WorkspaceBrowserProps } from '../src/client/contract/slots.ts'
+import type {
+  ProjectMembershipGateway, WorkspaceBrowserProps, WorkspacePendingInvitation,
+} from '../src/client/contract/slots.ts'
 import { createWorkspaceViewStore } from '../src/client/stores.ts'
-import { WorkspaceBrowser } from '../src/client/WorkspaceBrowser.tsx'
+import { WorkspaceBrowser } from '../src/client/rows/WorkspaceBrowser.tsx'
 import {
   cloneDirectoryName,
   InviteWizardModal,
@@ -21,14 +22,13 @@ import {
   membershipUserMessage,
   WorkspaceSettingsModal,
 } from '../src/client/WorkspaceSettings.tsx'
-import { en, zh } from '../src/client/locales.ts'
+import { zh } from '../src/client/locales.ts'
 
 afterEach(cleanup)
 
 beforeEach(() => { localStorage.clear() })
 
 const t: WorkspaceBrowserProps['t'] = makeTranslate(zh, commonZh)
-const tEn: WorkspaceBrowserProps['t'] = makeTranslate(en, commonEn)
 
 const sid = (id: string) => id as SessionId
 const wid = (id: string) => id as WorkspaceId
@@ -47,15 +47,27 @@ const workspace = (id: string, sessionIds: string[], title = id, path = `/projec
   workspaceId: wid(id), path, title,
   sessionIds: sessionIds.map(sid), createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
 })
-const workspaceState = (items: readonly WorkspaceView[]): WorkspaceListState => ({
-  items, archivedSessionIds: [], state: 'idle', phase: 'ready', error: null, baselinesReady: true,
-  recentWorkspaceId: items[0]?.workspaceId,
+const workspaceState = (items: readonly WorkspaceView[]): WorkspaceSnapshot => ({
+  items, archivedSessionIds: [], state: 'idle', phase: 'ready', error: null,
 })
+const noPendingInteraction: SessionPendingInteractionSnapshot = new Map()
+const useResource = (() => ({
+  status: 'none' as const, value: undefined, failure: undefined, reload: () => {},
+})) as import('@deepseek-ai/dsh-client-ui-slots').GlobalStandardProps['useResource']
 function hook<T>(snapshot: T) {
   return function select<S>(selector: (state: T) => S): S { return selector(snapshot) }
 }
 
 const SAME_REMOTE = 'https://github.com/octocat/repo'
+const pendingInvitation: WorkspacePendingInvitation = {
+  invitationId: 'invitation-1',
+  receivingAccountId: 'account-2',
+  projectId: 'project-1',
+  projectName: 'Assembled',
+  inviterName: 'mona',
+  remoteUrl: SAME_REMOTE,
+  grantedRole: 'admin',
+}
 
 function gateway(overrides: Partial<ProjectMembershipGateway> = {}) {
   return {
@@ -91,12 +103,59 @@ function gateway(overrides: Partial<ProjectMembershipGateway> = {}) {
   }
 }
 
+function invitationsHook(invitations: readonly WorkspacePendingInvitation[] = [], epoch = 0) {
+  const snapshot = { invitations, epoch }
+  return bindSnapshotSelector({
+    getSnapshot: () => snapshot,
+    subscribe: () => () => {},
+  })
+}
+
+function liveMembership(available: boolean, epoch = 0) {
+  let current = { available, epoch }
+  const listeners = new Set<() => void>()
+  return {
+    hook: bindSnapshotSelector({
+      getSnapshot: () => current,
+      subscribe: (listener: () => void) => {
+        listeners.add(listener)
+        return () => { listeners.delete(listener) }
+      },
+    }),
+    set(next: { available: boolean; epoch: number }): void {
+      current = next
+      for (const listener of listeners) listener()
+    },
+  }
+}
+
+function liveInvitations(invitations: readonly WorkspacePendingInvitation[], epoch = 1) {
+  let current = { invitations, epoch }
+  const listeners = new Set<() => void>()
+  return {
+    hook: bindSnapshotSelector({
+      getSnapshot: () => current,
+      subscribe: (listener: () => void) => {
+        listeners.add(listener)
+        return () => { listeners.delete(listener) }
+      },
+    }),
+    bump(): void {
+      current = { invitations: current.invitations, epoch: current.epoch + 1 }
+      for (const listener of listeners) listener()
+    },
+  }
+}
+
 function mount(membership: ProjectMembershipGateway | undefined, overrides: Partial<WorkspaceBrowserProps> = {}) {
   const store = createWorkspaceViewStore().create()
   const props: WorkspaceBrowserProps = {
     wide: true,
     expandSidebar: vi.fn(),
+    useResource,
     useSessions: hook(sessionState([summary('alpha-s', 2)])),
+    useSessionPendingInteraction: hook(noPendingInteraction),
+    usePanelInfo: hook({ activePanelId: null }),
     useWorkspaces: hook(workspaceState([workspace('proj', ['alpha-s'])])),
     useStore: bindSnapshotSelector(store),
     actions: store.actions,
@@ -113,10 +172,15 @@ function mount(membership: ProjectMembershipGateway | undefined, overrides: Part
     insertSessionBefore: vi.fn(async () => {}),
     createWorkspace: vi.fn(async () => workspace('created', [])),
     useDirectoryFlow: bindSnapshotSelector({ getSnapshot: () => true, subscribe: () => () => {} }),
-    useHostDescription: selector => selector(undefined),
+    useHostInfo: selector => selector({ home: '/Users/octocat', isLoopback: true }),
+    usePendingInvitations: invitationsHook(),
+    useMembership: bindSnapshotSelector({
+      getSnapshot: () => ({ available: membership !== undefined, epoch: 0 }),
+      subscribe: () => () => {},
+    }),
     renderSlot: ((_name: string, owner: { open: boolean }) => (owner.open ? <div data-testid="directory-flow" /> : null)) as never,
     t,
-    projectMembership: membership,
+    projectMembership: membership ?? gateway(),
     ...overrides,
   }
   return render(<WorkspaceBrowser {...props} />)
@@ -155,15 +219,6 @@ function deferred<T>() {
 const projectView = {
   id: 'project-1', name: 'Assembled', boundRemoteUrl: SAME_REMOTE, receivingAccountId: 'account-owner',
 }
-const pendingInvitation = {
-  invitationId: 'invitation-1',
-  receivingAccountId: 'account-2',
-  projectId: 'project-1',
-  projectName: 'Assembled',
-  inviterName: 'mona',
-  remoteUrl: SAME_REMOTE,
-  grantedRole: 'admin' as const,
-}
 
 describe('workspace settings and invite wizard (M4)', () => {
   it('derives a safe clone directory name from HTTPS and scp-like remotes', () => {
@@ -172,6 +227,29 @@ describe('workspace settings and invite wizard (M4)', () => {
     expect(cloneDirectoryName('https://example.test/o/CON.git', 'fallback')).toBe('project-CON')
     expect(cloneDirectoryName('https://example.test/o/a*b.git', 'fallback')).toBe('a-b')
     expect(cloneDirectoryName(':', '..')).toBe('project')
+  })
+
+  it('closes settings when membership unloads and ignores a stale project lookup', async () => {
+    const firstLookup = deferred<undefined>()
+    const first = gateway({
+      projectForWorkspace: vi.fn().mockReturnValue(firstLookup.promise),
+    })
+    const membership = liveMembership(true, 0)
+    vi.useFakeTimers()
+    try {
+      mount(first, { useMembership: membership.hook })
+      openWorkspaceMenu()
+      fireEvent.click(screen.getByRole('menuitem', { name: '工作区设置' }))
+      expect(screen.getByText('正在查找已绑定的云项目…')).toBeTruthy()
+      membership.set({ available: false, epoch: 1 })
+      await flush()
+      expect(screen.queryByText('正在查找已绑定的云项目…')).toBeNull()
+      firstLookup.resolve(undefined)
+      await flush()
+      expect(screen.queryByRole('dialog')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('offers 工作区设置 as the first workspace-row menu item', () => {
@@ -330,41 +408,31 @@ describe('workspace settings and invite wizard (M4)', () => {
   })
 
   it('runs the invite wizard: accept, mandatory link with same-remote advice, close returns undecided', async () => {
-    const membership = gateway({
-      pendingInvitations: vi.fn(async () => [{
-        invitationId: 'invitation-1', receivingAccountId: 'account-2', projectId: 'project-1',
-        projectName: 'Assembled', inviterName: 'mona', remoteUrl: SAME_REMOTE, grantedRole: 'admin' as const,
-      }]),
-    })
+    const membership = gateway()
+    const offered = liveInvitations([pendingInvitation])
     vi.useFakeTimers()
     try {
-      mount(membership)
-      // Poll fires immediately: the wizard opens on the invitation card.
+      mount(membership, { usePendingInvitations: offered.hook })
       await tick()
       expect(screen.getByText('mona 邀请你加入云项目“Assembled”。')).toBeTruthy()
       expect(screen.getByText('加入后角色：admin')).toBeTruthy()
       expect(screen.getByText(SAME_REMOTE)).toBeTruthy()
 
-      // Closing at the card decides nothing: the invitation stays pending.
       fireEvent.click(screen.getByRole('button', { name: '关闭' }))
       expect(screen.queryByText('mona 邀请你加入云项目“Assembled”。')).toBeNull()
       expect(membership.decideInvitation).not.toHaveBeenCalled()
-      expect(membership.pendingInvitations).toHaveBeenCalled()
 
-      // Next poll re-offers the still-pending invitation.
-      await tick(15_000)
+      await act(async () => { offered.bump() })
       fireEvent.click(screen.getByRole('button', { name: '接受' }))
       await tick()
 
-      // Link step: no 暂不关联 — confirm stays disabled until a candidate (or the
-      // clone item) is selected, and the same-remote workspace is recommended.
       const confirm = screen.getByRole('button', { name: '关联并加入' }) as HTMLButtonElement
       expect(confirm.disabled).toBe(true)
       expect(screen.getByText('同源推荐')).toBeTruthy()
       fireEvent.click(screen.getByRole('button', { name: '关闭' }))
       expect(screen.queryByText('关联本地工作区')).toBeNull()
       expect(membership.decideInvitation).not.toHaveBeenCalled()
-      await tick(15_000)
+      await act(async () => { offered.bump() })
       expect(screen.getByText('加入后角色：admin')).toBeTruthy()
       fireEvent.click(screen.getByRole('button', { name: '接受' }))
       await tick()
@@ -395,15 +463,17 @@ describe('workspace settings and invite wizard (M4)', () => {
         workspaceId: wid('clone'), title: 'Assembled', normalizedRemoteUrl: SAME_REMOTE,
       })
     const membership = gateway({
-      pendingInvitations: vi.fn(async () => [{
-        invitationId: 'invitation-clone', receivingAccountId: 'account-2', projectId: 'project-1',
-        projectName: 'Assembled', inviterName: 'mona', remoteUrl: SAME_REMOTE, grantedRole: 'member' as const,
-      }]),
       cloneWorkspace,
     })
     vi.useFakeTimers()
     try {
-      mount(membership)
+      mount(membership, {
+        usePendingInvitations: invitationsHook([{
+          ...pendingInvitation,
+          invitationId: 'invitation-clone',
+          grantedRole: 'member',
+        }], 1),
+      })
       await tick()
       fireEvent.click(screen.getByRole('button', { name: '接受' }))
       await tick()
@@ -431,15 +501,10 @@ describe('workspace settings and invite wizard (M4)', () => {
   })
 
   it('declining from the wizard card routes the decline decision', async () => {
-    const membership = gateway({
-      pendingInvitations: vi.fn(async () => [{
-        invitationId: 'invitation-1', receivingAccountId: 'account-2', projectId: 'project-1',
-        projectName: 'Assembled', inviterName: 'mona', remoteUrl: SAME_REMOTE, grantedRole: 'admin' as const,
-      }]),
-    })
+    const membership = gateway()
     vi.useFakeTimers()
     try {
-      mount(membership)
+      mount(membership, { usePendingInvitations: invitationsHook([pendingInvitation], 1) })
       await tick()
       fireEvent.click(screen.getByRole('button', { name: '拒绝' }))
       await tick()
@@ -710,7 +775,7 @@ describe('workspace settings and invite wizard (M4)', () => {
     const tags = screen.getAllByLabelText(t('members.tagsPlaceholder'))[1]!
     fireEvent.blur(tags)
     expect(setMemberTags).not.toHaveBeenCalled()
-    fireEvent.change(tags, { target: { value: ' triage， , qa ' } })
+    fireEvent.change(tags, { target: { value: ' triage, , qa ' } })
     fireEvent.keyDown(tags, { key: 'Escape' })
     expect(setMemberTags).not.toHaveBeenCalled()
     fireEvent.keyDown(tags, { key: 'Enter' })
@@ -895,32 +960,6 @@ describe('workspace settings and invite wizard (M4)', () => {
     expect(screen.getByRole<HTMLButtonElement>('button', { name: '创建云项目' }).disabled).toBe(false)
   })
 
-  it('maps every stable Project Membership failure to safe localized copy', () => {
-    const expected = {
-      DUPLICATE_INVITEE: ['该成员已被邀请或已在项目中。', 'That person is already invited or already a member.'],
-      ROLE_REQUIRED: ['没有权限执行该操作。', 'You do not have permission to do that.'],
-      NOT_A_MEMBER: ['你不是该项目的成员。', 'You are not a member of that project.'],
-      PROJECT_NOT_FOUND: ['找不到该云项目。', 'That cloud project could not be found.'],
-      MEMBERSHIP_NOT_FOUND: ['找不到该项目成员。', 'That project member could not be found.'],
-      INVITATION_NOT_FOUND: ['该邀请已失效，请等待新的待确认邀请。', 'This invitation is no longer pending. Wait for a new one.'],
-      INVITATION_NOT_PENDING: ['该邀请已失效，请等待新的待确认邀请。', 'This invitation is no longer pending. Wait for a new one.'],
-      PROJECT_NAME_TAKEN: ['该云项目名称已被使用。', 'That cloud project name is already in use.'],
-      PROJECT_REMOTE_TAKEN: ['该 Git remote 已绑定到另一个云项目。', 'That Git remote is already bound to another cloud project.'],
-      INVALID_PROJECT_NAME: ['请输入有效的云项目名称。', 'Enter a valid cloud project name.'],
-      INVALID_REMOTE_URL: ['Git remote 地址无效。', 'The Git remote URL is invalid.'],
-      INVALID_TAGS: ['职能标签无效，请检查数量、长度和重复项。', 'The function tags are invalid. Check the count, length, and duplicates.'],
-      LAST_OWNER: ['不能移除最后一位负责人。', 'The last owner cannot be removed.'],
-      INVALID_LINK: ['本地工作区关联无效。', 'The local workspace link is invalid.'],
-    } satisfies Record<ProjectMembershipErrorCode, readonly [zh: string, en: string]>
-
-    for (const [code, [zhCopy, enCopy]] of Object.entries(expected)) {
-      const wrapped = `Error invoking remote method: Project Membership request failed (409 ${code}): private diagnostic`
-      expect(membershipUserMessage(new Error(wrapped), t)).toBe(zhCopy)
-      expect(membershipUserMessage(new Error(wrapped), tEn)).toBe(enCopy)
-    }
-    expect(membershipUserMessage('PREFIX_INVALID_TAGS_SUFFIX', t)).toBe(t('error.generic'))
-  })
-
   it('maps Electron IPC prefixes and closes a retracted invitation without leaving the raw 409', async () => {
     const ipc = 'Error invoking remote method \'projectMembership:decide\': Error: Project Membership request failed (409 INVITATION_NOT_PENDING): invitation a74b233f-4f29-44e0-b09d-6ca68eb48b0 already reached retracted'
     expect(isInvitationNoLongerPending(new Error(ipc))).toBe(true)
@@ -961,21 +1000,23 @@ describe('workspace settings and invite wizard (M4)', () => {
   })
 
   it('does not reopen a retracted invitation after decide reports it is not pending', async () => {
+    const retracted = {
+      invitationId: 'invitation-retracted', receivingAccountId: 'account-2', projectId: 'project-1',
+      projectName: 'Assembled', inviterName: 'mona', remoteUrl: SAME_REMOTE, grantedRole: 'admin' as const,
+    }
     const membership = gateway({
-      pendingInvitations: vi.fn(async () => [{
-        invitationId: 'invitation-retracted', receivingAccountId: 'account-2', projectId: 'project-1',
-        projectName: 'Assembled', inviterName: 'mona', remoteUrl: SAME_REMOTE, grantedRole: 'admin' as const,
-      }]),
       decideInvitation: vi.fn().mockRejectedValue(new Error(
         'Error invoking remote method \'projectMembership:decide\': INVITATION_NOT_PENDING invitation already reached retracted',
       )),
     })
+    const offered = liveInvitations([retracted])
     vi.useFakeTimers()
     try {
       mount(membership, {
         useWorkspaces: hook(workspaceState([
           workspace('proj', ['alpha-s'], 'IdeaProjects', '/Users/yishu.cy/IdeaProjects/deepseek-harness'),
         ])),
+        usePendingInvitations: offered.hook,
       })
       await tick()
       fireEvent.click(screen.getByRole('button', { name: '接受' }))
@@ -987,7 +1028,7 @@ describe('workspace settings and invite wizard (M4)', () => {
       await tick()
       expect(screen.queryByText('关联本地工作区')).toBeNull()
       expect(screen.queryByText(/Error invoking remote method/)).toBeNull()
-      await tick(15_000)
+      await act(async () => { offered.bump() })
       expect(screen.queryByText('mona 邀请你加入云项目“Assembled”。')).toBeNull()
       expect(membership.decideInvitation).toHaveBeenCalledOnce()
     } finally {

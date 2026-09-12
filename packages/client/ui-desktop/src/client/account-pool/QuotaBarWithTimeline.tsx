@@ -1,7 +1,11 @@
 /** Quota remaining fill with an optional time-window needle. */
+import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import css from './QuotaBarWithTimeline.module.css'
 
+type DesktopCopy = PropsLocale<'desktop'>['t']
+
 export interface QuotaBarWithTimelineProps {
+  t: DesktopCopy
   percentRemaining?: number
   timeRemainingPercent?: number
   name: string
@@ -11,6 +15,7 @@ export interface QuotaBarWithTimelineProps {
 }
 
 export function QuotaBarWithTimeline({
+  t,
   percentRemaining,
   timeRemainingPercent,
   name,
@@ -38,7 +43,7 @@ export function QuotaBarWithTimeline({
         </div>
         <div className={css.metaGroup}>
           <span className={css.percentText} style={{ color: quotaFill === undefined ? 'var(--dsw-alias-label-tertiary, #94a3b8)' : quotaColor }}>
-            {quotaFill === undefined ? '未知' : `${String(Math.round(quotaFill))}%`}
+            {quotaFill === undefined ? t('pool.quota.unknown') : `${String(Math.round(quotaFill))}%`}
           </span>
           <span className={css.resetTime}>{resetText}</span>
         </div>
@@ -48,7 +53,7 @@ export function QuotaBarWithTimeline({
           <div className={css.quotaFill} style={{ width: `${String(quotaFill)}%`, backgroundColor: quotaColor }} />
         )}
         {timeFill !== undefined && (
-          <div className={css.timelineMarker} style={{ left: `${String(timeFill)}%` }} title={`时间窗口剩余: ${String(Math.round(timeFill))}%`}>
+          <div className={css.timelineMarker} style={{ left: `${String(timeFill)}%` }} title={t('pool.quota.timeRemainingTitle').replace('{percent}', String(Math.round(timeFill)))}>
             <div className={css.needleArrow} style={{ borderTopColor: quotaColor }} />
             <div className={css.needleLine} style={{ background: quotaColor }} />
           </div>
@@ -58,11 +63,11 @@ export function QuotaBarWithTimeline({
         <div className={css.legendRow}>
           <span className={css.legendItem}>
             <span className={css.quotaDot} style={{ backgroundColor: quotaColor }} />
-            额度剩余 {String(Math.round(quotaFill ?? 0))}%
+            {t('pool.quota.remaining').replace('{percent}', String(Math.round(quotaFill ?? 0)))}
           </span>
           <span className={css.legendItem}>
             <span className={css.timeDot} style={{ background: quotaColor }} />
-            时间窗口剩余 {String(Math.round(timeFill))}%
+            {t('pool.quota.windowRemaining').replace('{percent}', String(Math.round(timeFill)))}
           </span>
         </div>
       )}

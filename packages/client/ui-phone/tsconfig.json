@@ -24,13 +24,16 @@
       "path": "../../settings/settings"
     },
     {
-      "path": "../runtime"
+      "path": "../store"
     },
     {
       "path": "../ui-slots"
     },
     {
       "path": "../ui-settings"
+    },
+    {
+      "path": "../ui-renderer"
     },
     {
       "path": "../ui-desktop"
@@ -40,6 +43,9 @@
     },
     {
       "path": "../locale"
+    },
+    {
+      "path": "../ui-sidebar-right"
     }
   ]
 }

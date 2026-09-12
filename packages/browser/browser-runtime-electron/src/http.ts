@@ -10,8 +10,10 @@ import { randomBytes } from 'node:crypto'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
+import type { Context } from '@deepseek-ai/cordis'
 import {
   assertBrowserProfileName,
+  browserTargetKey,
   BrowserRuntimeError,
   requireExpectedBrowserRevision,
   type BrowserCreateRequest,
@@ -36,6 +38,7 @@ interface TabRecord {
   readonly id: string
   readonly target: BrowserTarget
   revision: number
+  page: BrowserPageState
 }
 
 interface SessionRecord {
@@ -158,6 +161,7 @@ async function mutateOpenPage(
 /** Remember the engine revision as the HTTP tab's last committed value. */
 function rememberRevision(tab: TabRecord, page: BrowserPageState): number {
   tab.revision = page.revision
+  tab.page = page
   return page.revision
 }
 
@@ -173,6 +177,8 @@ function failureStatus(error: BrowserRuntimeError): number {
     case 'BROWSER_PROFILE_BUSY':
     case 'BROWSER_REVISION_CONFLICT':
       return 409
+    case 'BROWSER_RUNTIME_UNAVAILABLE':
+      return 503
     default:
       return 500
   }
@@ -184,6 +190,7 @@ function failureStatus(error: BrowserRuntimeError): number {
  * @returns origin, token file, and closer for the bound listener.
  */
 export async function listenElectronBrowserHttp(options: {
+  readonly context: Context
   readonly runtime: BrowserRuntime
   readonly tokenFile: string
   readonly idPrefix?: string
@@ -196,6 +203,21 @@ export async function listenElectronBrowserHttp(options: {
   await writeFile(options.tokenFile, `${token}\n`, { mode: 0o600 })
   const sessions = new Map<string, SessionRecord>()
   let tabSeq = 0
+
+  const stopStateSync = options.context.on('browser/runtime-state', (state) => {
+    const key = browserTargetKey(state.target)
+    for (const session of sessions.values()) {
+      for (const [tabId, tab] of session.tabs) {
+        if (browserTargetKey(tab.target) !== key) continue
+        if (state.status === 'open') {
+          rememberRevision(tab, state)
+        } else if (state.status === 'closed') {
+          session.tabs.delete(tabId)
+        }
+        return
+      }
+    }
+  })
 
   const findTab = (tabId: string): { session: SessionRecord; tab: TabRecord } | undefined => {
     for (const session of sessions.values()) {
@@ -215,6 +237,10 @@ export async function listenElectronBrowserHttp(options: {
     }
     return tabs
   }
+
+  const cachedTabs = () => [...sessions.values()].flatMap(session => (
+    [...session.tabs.values()].map(tab => inventoryTab(tab.id, tab.page, true))
+  ))
 
   const createOrAttach = async (sessionName: string, url: string | undefined): Promise<{
     session: SessionRecord
@@ -257,7 +283,7 @@ export async function listenElectronBrowserHttp(options: {
     }
     tabSeq += 1
     const tabId = `electron-tab-${String(tabSeq)}`
-    const tab: TabRecord = { id: tabId, target: page.target, revision: page.revision }
+    const tab: TabRecord = { id: tabId, target: page.target, revision: page.revision, page }
     const session = existing ?? {
       name: sessionName,
       persistent: request.profile !== 'temporary',
@@ -282,7 +308,7 @@ export async function listenElectronBrowserHttp(options: {
       return
     }
     if (url.pathname === '/status') {
-      const tabs = await listedTabs()
+      const tabs = cachedTabs()
       json(response, 200, {
         ready: true,
         url: tabs.at(-1)?.url ?? 'about:blank',
@@ -381,6 +407,9 @@ export async function listenElectronBrowserHttp(options: {
       }
       const state = await options.runtime.observe({ target: found.tab.target })
       if (state.status !== 'open') {
+        if (state.status === 'unavailable') {
+          throw new BrowserRuntimeError('tab runtime is unavailable', 'BROWSER_RUNTIME_UNAVAILABLE')
+        }
         json(response, 404, { error: 'tab is not open' })
         return
       }
@@ -456,15 +485,21 @@ export async function listenElectronBrowserHttp(options: {
       json(response, 500, { error: (error as Error).message })
     })
   })
-  await new Promise<void>((resolve, reject) => {
-    server.once('error', reject)
-    server.listen(options.port ?? 0, options.host ?? '127.0.0.1', resolve)
-  })
+  try {
+    await new Promise<void>((resolve, reject) => {
+      server.once('error', reject)
+      server.listen(options.port ?? 0, options.host ?? '127.0.0.1', resolve)
+    })
+  } catch (error) {
+    stopStateSync()
+    throw error
+  }
   const address = server.address() as { port: number }
   return {
     origin: `http://127.0.0.1:${String(address.port)}`,
     tokenFile: options.tokenFile,
     close: () => new Promise<void>((resolve) => {
+      stopStateSync()
       server.close(() => { resolve() })
     }),
   }

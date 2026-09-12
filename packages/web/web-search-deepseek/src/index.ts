@@ -11,7 +11,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-agent'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
-import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
+import type {} from '@deepseek-ai/dsh-settings'
 import { launchEnvironmentOf } from '@deepseek-ai/dsh-launch-environment'
 import type {} from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-web'
@@ -123,13 +123,13 @@ export const AnthropicSearchConfig: z<AnthropicSearchConfig> = z.object({
 const SEARCH_BASE_URL_ENV = 'DEEPSEEK_SEARCH_BASE_URL'
 
 /** Settings namespace for the official DeepSeek search card. */
-export const WEB_SEARCH_DEEPSEEK_SETTINGS_NAMESPACE = settingsNamespace('web-search-deepseek')
+export const WEB_SEARCH_DEEPSEEK_SETTINGS_NAMESPACE = 'web-search-deepseek'
 
 /** Settings namespace for the Anthropic-protocol search tab. */
-export const WEB_SEARCH_ANTHROPIC_SETTINGS_NAMESPACE = settingsNamespace('web-search-anthropic')
+export const WEB_SEARCH_ANTHROPIC_SETTINGS_NAMESPACE = 'web-search-anthropic'
 
 /** Settings namespace for the Kimi / Moonshot search tab. */
-export const WEB_SEARCH_KIMI_SETTINGS_NAMESPACE = settingsNamespace('web-search-kimi')
+export const WEB_SEARCH_KIMI_SETTINGS_NAMESPACE = 'web-search-kimi'
 
 /** Moonshot dedicated search endpoint. The URL is POSTed as-is. */
 export const KIMI_DEFAULT_BASE_URL = 'https://api.kimi.com/coding/v1/search'
@@ -215,8 +215,8 @@ function resolveOptions(
       if (backend === 'anthropic-messages' || backend === 'kimi') {
         const kimiRef = credentialRef(KIMI_API_KEY_ENV)
         if (!tried.some(ref => ref === kimiRef)) {
-          const kimi = asciiSecret(await read(kimiRef))
-          if (kimi !== undefined) return kimi
+          const kimiKey = asciiSecret(await read(kimiRef))
+          if (kimiKey !== undefined) return kimiKey
         }
       }
       return undefined
@@ -242,23 +242,27 @@ export function apply(ctx: Context, config: Config): void {
   let currentDeepseek: () => Config = () => config
   let currentAnthropic: () => AnthropicSearchConfig = () => ({})
   let currentKimi: () => KimiSearchConfig = () => ({})
-  installSettingsSection(ctx, WEB_SEARCH_DEEPSEEK_SETTINGS_NAMESPACE, Config, config, {
-    setSource: (source) => {
-      currentDeepseek = source
-    },
-    onChange: () => {},
-  })
-  installSettingsSection(ctx, WEB_SEARCH_ANTHROPIC_SETTINGS_NAMESPACE, AnthropicSearchConfig, {}, {
-    setSource: (source) => {
-      currentAnthropic = source
-    },
-    onChange: () => {},
-  })
-  installSettingsSection(ctx, WEB_SEARCH_KIMI_SETTINGS_NAMESPACE, KimiSearchConfig, {}, {
-    setSource: (source) => {
-      currentKimi = source
-    },
-    onChange: () => {},
+  ctx.inject(['settings'], (settingsCtx) => {
+    settingsCtx.settings.installSection(ctx, WEB_SEARCH_DEEPSEEK_SETTINGS_NAMESPACE, Config, config, {
+      setSource: (source) => {
+        currentDeepseek = source
+      },
+      // The registration carries no resolved value: the provider projects the
+      // section per search, so a committed change needs no re-registration.
+      onChange: () => {},
+    })
+    settingsCtx.settings.installSection(ctx, WEB_SEARCH_ANTHROPIC_SETTINGS_NAMESPACE, AnthropicSearchConfig, {}, {
+      setSource: (source) => {
+        currentAnthropic = source
+      },
+      onChange: () => {},
+    })
+    settingsCtx.settings.installSection(ctx, WEB_SEARCH_KIMI_SETTINGS_NAMESPACE, KimiSearchConfig, {}, {
+      setSource: (source) => {
+        currentKimi = source
+      },
+      onChange: () => {},
+    })
   })
   ctx.web.registerSearchProvider(new DeepSeekSearchProvider(
     () => resolveOptions(ctx, currentDeepseek(), currentAnthropic(), currentKimi()),
@@ -266,7 +270,6 @@ export function apply(ctx: Context, config: Config): void {
 }
 
 /** A header-safe secret: fetch rejects non-Latin-1 values as a ByteString error. */
-// TODO(double-ascii): fold with asciiHeaders in provider.ts once the probe path is stable.
 function asciiSecret(value: string | undefined): string | undefined {
   if (value === undefined || value.length === 0) return undefined
   for (let i = 0; i < value.length; i++) {

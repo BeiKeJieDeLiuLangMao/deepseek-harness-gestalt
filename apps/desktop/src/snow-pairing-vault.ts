@@ -33,7 +33,7 @@ interface PersistedSnowPairingState {
   pairingId: PersonalPairingId
   reconnectState: Uint8Array
   attachmentKey: Uint8Array
-  desktopGrant: RelayCredentialGrant
+  desktopGrant: RelayCredentialGrant & { pairingSelector: RelayPairingSelector }
 }
 
 interface DesktopSnowConfirmationTransaction {
@@ -82,7 +82,7 @@ export class EncryptedDesktopSnowPairingStore {
       throw new TypeError('Desktop Snow pairing store must contain an object')
     }
     const document = value as Record<string, unknown>
-    const active = boundedArray(document.active, 'active').map((item) => {
+    const active = boundedArray(document.active, 'active').map((item): PersistedSnowPairingState => {
       if (typeof item !== 'object' || item === null || Array.isArray(item)) {
         throw new TypeError('Desktop Snow pairing store record must be an object')
       }
@@ -177,7 +177,7 @@ export class DesktopSnowPairingVault {
   private readonly active = new Map<PersonalPairingId, {
     reconnectState: Uint8Array
     attachmentKey: Uint8Array
-    desktopGrant: RelayCredentialGrant
+    desktopGrant: RelayCredentialGrant & { pairingSelector: RelayPairingSelector }
   }>()
   private readonly confirmations = new Map<PendingPairingId, DesktopSnowConfirmationTransaction>()
   private persistence: Promise<void> = Promise.resolve()
@@ -333,7 +333,9 @@ export class DesktopSnowPairingVault {
   }
 
   /** Read the pairing-scoped Desktop Relay grant before committing its transaction. */
-  desktopRelayGrant(pendingPairingId: PendingPairingId): RelayCredentialGrant {
+  desktopRelayGrant(
+    pendingPairingId: PendingPairingId,
+  ): RelayCredentialGrant & { pairingSelector: RelayPairingSelector } {
     const transaction = this.confirmations.get(pendingPairingId)
     if (transaction?.pairingId === undefined || transaction.routeId === undefined
       || transaction.relayRevision === undefined) {
@@ -459,7 +461,7 @@ export class DesktopSnowPairingVault {
   private activeRecord(selector: RelayPairingSelector): {
     reconnectState: Uint8Array
     attachmentKey: Uint8Array
-    desktopGrant: RelayCredentialGrant
+    desktopGrant: RelayCredentialGrant & { pairingSelector: RelayPairingSelector }
   } | undefined {
     for (const record of this.active.values()) {
       if (record.desktopGrant.pairingSelector === selector) return record

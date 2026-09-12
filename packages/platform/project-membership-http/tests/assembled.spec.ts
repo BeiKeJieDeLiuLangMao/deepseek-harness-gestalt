@@ -1,7 +1,7 @@
 /**
  * REAL Loader and TCP composition for the Project Membership HTTP surface:
- * keyless cordis.yml mounts the WebServer, the invariants service with every
- * invariant companion, the Account provider, both project-membership packages,
+ * keyless cordis.yml mounts the WebServer, the invariants service with the
+ * Project Membership Core companion, the Account provider, both project-membership packages,
  * and this HTTP consumer; P-256 Account sessions sign in through the real
  * provider and the suite drives the full member lifecycle plus the stable
  * error envelopes through genuine TCP dispatch.
@@ -36,12 +36,8 @@ import {
 import InvariantRegistry from '@deepseek-ai/dsh-invariants'
 import WebServer from '@deepseek-ai/dsh-host-webserver'
 import ProjectMembershipCore from '@deepseek-ai/dsh-project-membership-core'
-import * as PlatformAccountInvariant from '@deepseek-ai/dsh-platform-account/invariant'
-import * as PlatformAccountCoreInvariant from '@deepseek-ai/dsh-platform-account-core/invariant'
-import * as ProjectMembershipInvariant from '@deepseek-ai/dsh-project-membership/invariant'
 import * as ProjectMembershipCoreInvariant from '@deepseek-ai/dsh-project-membership-core/invariant'
 import * as ProjectMembershipHttp from '../src/index.ts'
-import * as ProjectMembershipHttpInvariant from '../src/invariant.ts'
 
 const ENVIRONMENT_PAIR = validatePlatformEnvironmentPair({
   development: {
@@ -546,16 +542,12 @@ async function loadComposition(options: {
     "    host: '127.0.0.1'",
     '    port: 0',
     "- name: '@deepseek-ai/dsh-invariants'",
-    "- name: '@deepseek-ai/dsh-platform-account/invariant'",
-    "- name: '@deepseek-ai/dsh-platform-account-core/invariant'",
     "- name: 'assembled-platform-account-provider'",
-    "- name: '@deepseek-ai/dsh-project-membership/invariant'",
     "- name: '@deepseek-ai/dsh-project-membership-core/invariant'",
     "- name: '@deepseek-ai/dsh-project-membership-core'",
     '  config:',
     `    storagePath: '${options.storagePath}'`,
     "    environment: 'development'",
-    "- name: '@deepseek-ai/dsh-project-membership-http/invariant'",
     "- name: '@deepseek-ai/dsh-project-membership-http'",
     ...httpConfigLines(options.config),
     '',
@@ -583,13 +575,9 @@ async function loadComposition(options: {
   const modules = new Map<string, unknown>([
     ['@deepseek-ai/dsh-host-webserver', WebServer],
     ['@deepseek-ai/dsh-invariants', InvariantRegistry],
-    ['@deepseek-ai/dsh-platform-account/invariant', PlatformAccountInvariant],
-    ['@deepseek-ai/dsh-platform-account-core/invariant', PlatformAccountCoreInvariant],
     ['assembled-platform-account-provider', provider],
-    ['@deepseek-ai/dsh-project-membership/invariant', ProjectMembershipInvariant],
     ['@deepseek-ai/dsh-project-membership-core/invariant', ProjectMembershipCoreInvariant],
     ['@deepseek-ai/dsh-project-membership-core', ProjectMembershipCore],
-    ['@deepseek-ai/dsh-project-membership-http/invariant', ProjectMembershipHttpInvariant],
     ['@deepseek-ai/dsh-project-membership-http', ProjectMembershipHttp],
   ])
   context.loader.internal = {

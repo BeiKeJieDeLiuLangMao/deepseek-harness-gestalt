@@ -7,18 +7,20 @@ import { createElement, useLayoutEffect, useState, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
 import { createRoot, hydrateRoot, type Root } from 'react-dom/client'
 import type { Context } from '@deepseek-ai/cordis'
-import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { OwnerOf, SessionSlotKey } from '@deepseek-ai/dsh-client-ui-slots'
 import { createSlotRenderer } from './scoped-slots.tsx'
 import { buildRenderApp } from './app.tsx'
+import { SlotRegistry } from './registry.ts'
 
-/** Selector hook over a session's conversation snapshot. */
-export type UseSession<Snap extends object = object> = SnapshotSelectorHook<Snap>
+export { SlotRegistry } from './registry.ts'
+export type { RootOwnerProps } from './registry.ts'
 
 export type {
-  ChainRenderOpts, HostObservable, RenderOpts, SessionProvideInfo, SnapshotSelectorHook,
-  SlotRenderer, SlotRendererHost, StoreInstanceLike,
+  ChainRenderOpts, HostObservable, RenderOpts, SnapshotSelectorHook, SlotRenderer,
+  ScopedStandardSourceBinding, SlotRendererHost, SlotScopeAdapter,
+  StandardSourceBinding, StoreInstanceLike,
 } from '@deepseek-ai/dsh-client-ui-slots'
-export type { SessionProviderProps } from './session-provider.tsx'
 
 /** Mount operation exposed to the framework-free boot kernel. */
 export interface UiRendererService {
@@ -29,26 +31,40 @@ export interface UiRendererService {
    */
   mount: (container: HTMLElement) => () => void
   /**
-   * Mount one declared Session slot under an explicit identity without changing shell selection.
-   * The caller owns the container and must invoke the returned disposer before discarding it.
-   * @param container - Empty mount point owned by the feature shell.
-   * @param slotKey - Declared non-root Session slot.
-   * @param sessionId - Exact Session identity supplying the standard props.
-   * @param ownerProps - Owner share for the target slot.
-   * @returns Disposer that unmounts the independent React root.
+   * Mount one declared Session-scoped slot without changing shell selection.
+   * @param container - independent React mount point.
+   * @param slotKey - declared non-root Session or Session-maybe slot.
+   * @param sessionId - Session identity resolved by the installed adapter.
+   * @param ownerProps - owner props for the slot occurrence.
+   * @returns idempotent disposer that unmounts the independent React root.
    */
-  mountSession: (container: HTMLElement, slotKey: string, sessionId: string, ownerProps?: object) => () => void
+  mountSession: <K extends SessionSlotKey>(
+    container: HTMLElement,
+    slotKey: K,
+    sessionId: SessionId,
+    ownerProps: OwnerOf<K>,
+  ) => () => void
 }
 
 declare module '@deepseek-ai/cordis' {
+  interface Events {
+    /**
+     * A slot declaration or registration set changed.
+     * @mode emit
+     * @param key - mutated SlotMap key.
+     */
+    'slots/changed'(key: string): void
+  }
   interface Context {
+    /** Renderer-owned UI composition registry. */
+    slots: SlotRegistry
     /** Mount face provided after the UI renderer activates. */
     uiRenderer: UiRendererService
   }
 }
 
 /** Services required before application assembly. */
-export const inject = ['slots', 'sessions']
+export const inject: string[] = []
 
 interface BootSnapshot {
   className: string
@@ -86,23 +102,48 @@ function mountApp(container: HTMLElement, app: () => ReactNode): Root {
  * @param ctx - Plugin context.
  */
 export function apply(ctx: Context): void {
-  ctx.slots.install(createSlotRenderer())
+  const slots = new SlotRegistry(ctx)
+  const roots = new Map<Root, () => void>()
+  slots.install(createSlotRenderer())
+  ctx.effect(() => () => {
+    for (const [root, release] of [...roots]) {
+      roots.delete(root)
+      root.unmount()
+      release()
+    }
+  }, 'ui-renderer: mounted React roots')
+
+  const ownRoot = (root: Root, release: () => void = () => {}): (() => void) => {
+    roots.set(root, release)
+    let disposed = false
+    return () => {
+      if (disposed) return
+      disposed = true
+      roots.delete(root)
+      root.unmount()
+      release()
+    }
+  }
+
   ctx.reflect.provide('uiRenderer', {
-    mount: (container: HTMLElement): (() => void) => {
-      const root = mountApp(container, buildRenderApp({ ctx }))
-      return () => { root.unmount() }
-    },
-    mountSession: (
+    mount: (container: HTMLElement): (() => void) =>
+      ownRoot(mountApp(container, buildRenderApp({ ctx }))),
+    mountSession: <K extends SessionSlotKey>(
       container: HTMLElement,
-      slotKey: string,
-      sessionId: string,
-      ownerProps: object = {},
+      slotKey: K,
+      sessionId: SessionId,
+      ownerProps: OwnerOf<K>,
     ): (() => void) => {
+      const prepared = slots.prepareSessionSlot(slotKey, sessionId, ownerProps)
       const root = createRoot(container)
-      flushSync(() => {
-        root.render(ctx.slots.renderSessionSlot(slotKey, sessionId, ownerProps))
-      })
-      return () => { root.unmount() }
+      try {
+        flushSync(() => { root.render(prepared.element) })
+      } catch (error) {
+        root.unmount()
+        prepared.release()
+        throw error
+      }
+      return ownRoot(root, prepared.release)
     },
   })
 }

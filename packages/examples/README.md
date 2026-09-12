@@ -1,18 +1,39 @@
-# examples/ — ready-to-run demo bundles
+---
+description: "Runnable example packages for readers choosing assembled process paths that exercise DeepSeek Harness capabilities outside package-local tests."
+kind: "package-group"
+---
+
+# examples/ — Runnable assembled application examples
 
 English | [中文](README.zh.md)
 
-Pre-composed plugin bundles a thin leaf `cordis.yml` loads instead of assembling the spine and an entry point by hand. These are **demo / reference** packages — the `-demo` npm suffix marks each one as non-product surface, readable straight off the package name. The runnable leaves under the repo-root [`examples/`](../../examples/AGENTS.md) and the [Python SDK runtime](../../python/sdk-runtime/README.md) are the consumers; each is just its swappable backends plus one bundle entry.
+## Summary
 
-| Package | npm name | Role |
-|---|---|---|
-| [`agent-spine-demo/`](agent-spine-demo/README.md) | `@deepseek-ai/dsh-agent-spine-demo` | Reusable agent-spine bundle |
-| [`acp-demo/`](acp-demo/README.md) | `@deepseek-ai/dsh-acp-demo` | ACP automation application bundle |
-| [`jsonrpc-demo/`](jsonrpc-demo/README.md) | `@deepseek-ai/dsh-sdk-jsonrpc-demo` | External-config JSON-RPC runtime |
-| [`phone-capture-wire-demo/`](phone-capture-wire-demo/README.md) | `@deepseek-ai/dsh-phone-capture-wire-demo` | External-config phone capture wire runtime |
+These packages provide runnable entry paths for assembled DeepSeek Harness examples. Use them to execute a concrete Cordis composition through a shipped artifact and inspect its process output. Each package owns one executable path; the capability packages own the runtime behavior it assembles. Leaf configurations under repository `examples/` choose the concrete composition.
 
-`agent-spine-demo` is the shared bundle; `acp-demo` adds its automation entry point, while `jsonrpc-demo` and `phone-capture-wire-demo` boot external plugin trees. Product one-shot execution belongs to `dsh --profile headless`; no package in this directory provides it.
+## Table of Contents
 
-These packages are not product API. Product seams and entry points remain in their owning groups; demo bundles select concrete compositions.
+- [Packages](#packages)
+- [Related documentation](#related-documentation)
+- [Dev Note](#dev-note)
 
-Do not confuse this group with the repo-root [`examples/`](../../examples/AGENTS.md): that directory holds the runnable `cordis.yml` **leaves**; this group holds the **bundles** those leaves load.
+-----
+
+<a id="packages"></a>
+## Packages
+
+The group exposes one process entry for the phone capture wire.
+
+| Package | Role |
+|---|---|
+| [`phone-capture-wire-demo/`](phone-capture-wire-demo/README.md) | Boots an external Cordis config through the shipped bin and emits the keyless Android capture-source Host transcript |
+
+<a id="related-documentation"></a>
+## Related documentation
+
+- [Phone Runtime subsystem](../../docs/subsystems/phone-runtime.md) — Defines the device-fleet runtime, capture stream, and ownership used by the demo.
+
+<a id="dev-note"></a>
+## Dev Note
+
+None.

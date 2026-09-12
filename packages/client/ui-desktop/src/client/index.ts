@@ -2,9 +2,10 @@
  * Desktop-only chrome plus Platform Account state in Mobile Pairing Settings.
  * Mounted only through the Desktop `--patch` overlay.
  */
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-project-membership-client'
@@ -46,7 +47,7 @@ export const inject = ['slots', 'locale']
  * Register Desktop chrome into sidebar holes declared by ui-sidebar.
  * @param ctx - client root context.
  */
-export function apply(ctx: ClientContext): void {
+export function apply(ctx: Context): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-desktop: dictionaries')
 
   const updater = createUpdaterSource()
@@ -65,8 +66,8 @@ export function apply(ctx: ClientContext): void {
     ctx.effect(() => bindDesktopAccountPool(accountPool, desktop), 'ui-desktop: account-pool status')
   }
 
-  ctx.slots.inject('sidebar.brand', () => ctx.slots.register(
-    { name: 'sidebar.brand', select: () => ({}), locale: NS },
+  ctx.slots.inject('sidebar.brand.name', () => ctx.slots.register(
+    { name: 'sidebar.brand.name', priority: -1 },
     BrandSeat,
   ))
   ctx.slots.inject('sidebar.chrome.drag', () => ctx.slots.register(

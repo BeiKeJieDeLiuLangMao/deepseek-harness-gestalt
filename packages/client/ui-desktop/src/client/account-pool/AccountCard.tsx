@@ -1,11 +1,15 @@
 /** Dual-face account card: management on A, quota on B. */
 import { useEffect, useState } from 'react'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { DesktopAccountPoolAccount } from '../../protocol.ts'
 import { QuotaBarWithTimeline } from './QuotaBarWithTimeline.tsx'
 import css from './AccountCard.module.css'
 
+type DesktopCopy = PropsLocale<'desktop'>['t']
+
 export interface AccountCardProps {
+  t: DesktopCopy
   item: DesktopAccountPoolAccount
   globalFace: 'A' | 'B'
   globalEpoch: number
@@ -15,7 +19,7 @@ export interface AccountCardProps {
 }
 
 export function AccountCard({
-  item, globalFace, globalEpoch, onToggleStatus, onRefreshQuota, onDelete,
+  t, item, globalFace, globalEpoch, onToggleStatus, onRefreshQuota, onDelete,
 }: AccountCardProps) {
   const [localOverride, setLocalOverride] = useState<'A' | 'B' | null>(null)
   useEffect(() => { setLocalOverride(null) }, [globalEpoch])
@@ -33,10 +37,10 @@ export function AccountCard({
         </div>
         <div className={css.topRightActions}>
           <button type="button" className={css.faceFlipBtn} onClick={flipFace} data-testid={`card-flip-btn-${item.authIndex}`}>
-            {currentFace === 'A' ? '⇄ 额度面' : '⇄ 管理面'}
+            {currentFace === 'A' ? t('pool.flip.quota') : t('pool.flip.manage')}
           </button>
           <span className={`${css.statusBadge} ${item.enabled ? css.status_active : css.status_expired}`}>
-            {item.enabled ? '启用' : '停用'}
+            {item.enabled ? t('pool.status.enabled') : t('pool.status.disabled')}
           </span>
         </div>
       </div>
@@ -45,22 +49,22 @@ export function AccountCard({
           {item.statusMessage !== undefined && <div className={css.alertBanner}>{item.statusMessage}</div>}
           <div className={css.statsRow}>
             <div className={css.statCol}>
-              <span className={css.statLabel}>账号主体</span>
+              <span className={css.statLabel}>{t('pool.subject')}</span>
               <strong className={css.statValue}>{item.email ?? item.label}</strong>
             </div>
             <div className={css.statCol}>
-              <span className={css.statLabel}>调用统计</span>
+              <span className={css.statLabel}>{t('pool.stats')}</span>
               <div className={css.reqCount}>
-                <span className={css.successNum}>成功 {item.successCount}</span>
-                <span className={css.failNum}>失败 {item.failCount}</span>
+                <span className={css.successNum}>{t('pool.success').replace('{count}', String(item.successCount))}</span>
+                <span className={css.failNum}>{t('pool.failure').replace('{count}', String(item.failCount))}</span>
               </div>
             </div>
           </div>
           <div className={css.metaFooter}>
             <span className={css.dateText}>{item.createdAt ?? ''}</span>
             <div className={css.footerActions}>
-              <Button size="sm" variant="outline" onClick={() => { onDelete(item.name) }}>删除</Button>
-              <Button size="sm" variant="ghost" onClick={flipFace}>查看配额</Button>
+              <Button size="sm" variant="outline" onClick={() => { onDelete(item.name) }}>{t('pool.delete')}</Button>
+              <Button size="sm" variant="ghost" onClick={flipFace}>{t('pool.viewQuota')}</Button>
               <label className={css.switchLabel}>
                 <input type="checkbox" checked={item.enabled} onChange={() => { onToggleStatus(item.name, !item.enabled) }} className={css.toggleInput} />
                 <span className={css.toggleSlider} />
@@ -73,17 +77,18 @@ export function AccountCard({
         <div className={css.faceB} data-testid="card-face-b">
           {item.quota.length === 0 ? (
             <div className={css.emptyQuota}>
-              <p>暂未获取到该账号配额数据，或该提供商不提供主动额度查询。</p>
-              <Button size="sm" variant="primary" onClick={() => { onRefreshQuota(item.authIndex) }}>立即探测刷新</Button>
+              <p>{t('pool.quota.empty')}</p>
+              <Button size="sm" variant="primary" onClick={() => { onRefreshQuota(item.authIndex) }}>{t('pool.quota.probe')}</Button>
             </div>
           ) : (
             <div className={css.quotaList}>
               {item.quota.map(window => (
                 <QuotaBarWithTimeline
                   key={window.key}
+                  t={t}
                   name={window.label}
                   windowLabel={window.label}
-                  resetText={window.status === 'known' ? '已观测' : window.status}
+                  resetText={window.status === 'known' ? t('pool.quota.observed') : window.status}
                   isReliable={window.status === 'known' && window.remainingPercent !== undefined}
                   {...window.remainingPercent === undefined ? {} : { percentRemaining: window.remainingPercent }}
                   {...window.timeRemainingPercent === undefined ? {} : { timeRemainingPercent: window.timeRemainingPercent }}
@@ -92,10 +97,10 @@ export function AccountCard({
             </div>
           )}
           <div className={css.quotaFooter}>
-            <span className={css.quotaHint}>同轴对比：色条为额度剩余，针为本周期剩余时间；未知窗口不绘制精确比例。</span>
+            <span className={css.quotaHint}>{t('pool.quota.hint')}</span>
             <div className={css.footerActions}>
-              <Button size="sm" variant="ghost" onClick={() => { onRefreshQuota(item.authIndex) }}>刷新额度</Button>
-              <Button size="sm" variant="outline" onClick={flipFace}>返回管理</Button>
+              <Button size="sm" variant="ghost" onClick={() => { onRefreshQuota(item.authIndex) }}>{t('pool.quota.refresh')}</Button>
+              <Button size="sm" variant="outline" onClick={flipFace}>{t('pool.quota.back')}</Button>
             </div>
           </div>
         </div>

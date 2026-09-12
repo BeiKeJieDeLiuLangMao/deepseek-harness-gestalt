@@ -1,12 +1,13 @@
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
-import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
-import type { WorkspaceId } from '@deepseek-ai/dsh-client-runtime/client'
+import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
+import { RemoteError, TestRemote } from '@deepseek-ai/dsh-client-test-runtime'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { apply, inject } from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type { WorkspaceBrowserInjected, WorkspacePickerInjected } from '@deepseek-ai/dsh-client-ui-workspace/client'
-import { WorkspaceBrowser } from '../src/client/WorkspaceBrowser.tsx'
+import { WorkspaceBrowser } from '../src/client/rows/WorkspaceBrowser.tsx'
 import { WorkspacePicker } from '../src/client/WorkspacePicker.tsx'
+import { apply as hostApply } from '../src/index.ts'
 
 async function bench() {
   const ctx = new Context()
@@ -16,11 +17,12 @@ async function bench() {
     path: 'name' in input ? `/projects/${input.name}` : input.path,
     title: 'new', sessionIds: [], createdAt: '0', updatedAt: '0',
   }))
-  const startSession = vi.fn()
   const rename = vi.fn(async () => ({}))
   const insertSessionBefore = vi.fn(async () => ({}))
   const open = vi.fn()
   const clear = vi.fn()
+  const selectPanel = vi.fn()
+  ctx.provide('layout', { selectPanel, beginNavigation: () => new AbortController().signal })
   const search = vi.fn(async () => ({
     ok: true as const,
     value: { items: [{ sessionId: 'session' as never, snippet: 'match' }], hasMore: false },
@@ -28,44 +30,41 @@ async function bench() {
   const renameSession = vi.fn(async (title: string) => ({ ok: true, value: { title, seq: 1 } }))
   const binding = vi.fn(() => ({ session: { rename: renameSession } }))
   const fork = vi.fn(async () => 'forked' as never)
-  const gitRemote = vi.fn(async (): Promise<string | undefined> => 'https://github.com/o/r.git')
-  const pickDirectory = vi.fn<() => Promise<string | null>>().mockResolvedValue('/projects')
-  const cloneGit = vi.fn(async () => ({
-    workspaceId: 'cloned' as never, path: '/projects/cloned', title: 'cloned',
-    sessionIds: [], createdAt: '0', updatedAt: '0',
-  }))
-  const bindWorkspace = vi.fn(async () => ({
-    rpcId: 'binding-rpc' as never,
-    result: { ok: true as const, value: { bound: true as const } },
-  }))
-  const workspaceBinding = vi.fn(async () => ({
-    rpcId: 'binding-read-rpc' as never,
-    result: { ok: true as const, value: { state: 'missing' as const } },
-  }))
-  const ensureWorkspaceBinding = vi.fn(async (input: { workspaceId: WorkspaceId }): Promise<{
-    rpcId: never
-    result: {
-      ok: true
-      value: {
-        state: 'created' | 'existing' | 'repaired'
-        workspaceId: WorkspaceId
-      }
-    }
-  }> => ({
-    rpcId: 'binding-ensure-rpc' as never,
-    result: {
-      ok: true as const,
-      value: { state: 'created' as const, workspaceId: input.workspaceId },
-    },
-  }))
+  const subscribe = () => () => {}
   ctx.provide('workspaces', {
-    create, startSession, rename, insertSessionBefore, gitRemote, pickDirectory, cloneGit,
+    list: {
+      getSnapshot: () => ({
+        items: [], archivedSessionIds: [], state: 'idle', phase: 'ready', error: null,
+      }),
+      subscribe,
+    },
+    create,
+    rename,
+    delete: vi.fn(async () => undefined),
+    insertBefore: vi.fn(async () => undefined),
+    archiveSession: vi.fn(async () => undefined),
+    insertSessionBefore,
   } as never)
-  ctx.provide('sessions', { open, clear, search, searchResultLimit: 20, binding, fork } as never)
-  ctx.provide('connection', {
-    hostDescription: { getSnapshot: () => undefined, subscribe: () => () => {} },
-    api: { memberQuestions: { workspaceBinding, ensureWorkspaceBinding, bindWorkspace } },
+  ctx.provide('sessions', {
+    list: {
+      getSnapshot: () => ({
+        ids: [], byId: {}, current: undefined, phase: 'ready',
+        subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined,
+      }),
+      subscribe,
+    },
+    create: vi.fn(async () => 'created' as never),
+    open,
+    clear,
+    search,
+    searchResultLimit: 20,
+    binding,
+    fork,
   } as never)
+  const pickDirectory = vi.fn(() => Promise.resolve({ ok: true as const, value: '/projects/picked' }))
+  const directoryPicker = { pick: pickDirectory }
+  Object.assign(new TestRemote(ctx), { directoryPicker })
+  ctx.provide('remote.directoryPicker', directoryPicker as never)
   const locale = new LocaleRuntime(ctx)
   // These specs assert the shipped Chinese copy. There is no jsdom `window`
   // in this lane, so browser-language detection never runs and the locale
@@ -73,9 +72,27 @@ async function bench() {
   locale.setLocale('zh')
   ctx.provide('locale', locale)
   return {
-    ctx, slots: ctx.get('slots') as SlotRegistry, locale, create, startSession, rename,
-    insertSessionBefore, open, clear, search, renameSession, binding, fork,
-    workspaceBinding, ensureWorkspaceBinding, bindWorkspace, gitRemote, pickDirectory, cloneGit,
+    ctx, slots: ctx.get('slots') as SlotRegistry, locale, create, rename,
+    insertSessionBefore, open, clear, selectPanel, search, renameSession, binding, fork, pickDirectory,
+  }
+}
+
+function membershipClient(overrides: Record<string, unknown> = {}) {
+  return {
+    createProject: vi.fn(),
+    projectByRemote: vi.fn(),
+    roster: vi.fn(),
+    heartbeat: vi.fn(),
+    closePresence: vi.fn(),
+    invite: vi.fn(),
+    issuedInvitations: vi.fn(),
+    retractInvitation: vi.fn(),
+    decideInvitation: vi.fn(),
+    changeRole: vi.fn(),
+    setMemberTags: vi.fn(),
+    removeMember: vi.fn(),
+    pendingInvitations: vi.fn(async () => []),
+    ...overrides,
   }
 }
 
@@ -88,8 +105,14 @@ function declare(slots: SlotRegistry, ...names: HoleName[]): () => void {
 }
 
 describe('ui-workspace apply', () => {
+  it('keeps the host Loader entry inert', () => {
+    expect(hostApply).not.toThrow()
+  })
+
   it('declares the services it drives', () => {
-    expect(inject).toEqual(['slots', 'sessions', 'workspaces', 'locale', 'connection'])
+    expect(inject).toEqual([
+      'slots', 'sessions', 'workspaces', 'locale', 'remote', 'remote.directoryPicker', 'layout',
+    ])
   })
 
   it('registers browser and pickers for declarations arriving before or after apply', async () => {
@@ -112,42 +135,16 @@ describe('ui-workspace apply', () => {
 
   it('routes browser actions and picker creation to the services', async () => {
     const b = await bench()
-    const createProject = vi.fn(async () => ({
-      id: 'project-1', name: 'Atlas', boundRemoteUrl: 'https://github.com/o/r', createdAt: 1,
-      receivingAccountId: 'account-1',
-    }))
-    const projectByRemote = vi.fn(async () => ({
-      id: 'project-1', name: 'Atlas', boundRemoteUrl: 'https://github.com/o/r', createdAt: 1,
-      receivingAccountId: 'account-1',
-    }))
-    const pendingInvitations = vi.fn(async () => [{
-      invitationId: 'invitation-1', receivingAccountId: 'account-2',
-      projectId: 'project-1', projectName: 'Atlas',
-      remoteUrl: 'https://github.com/o/r', inviterName: 'Mona', invitedAt: 1, grantedRole: 'admin' as const,
-    }])
-    const decideInvitation = vi.fn(async () => undefined)
-    b.ctx.provide('projectMembershipClient', {
-      createProject,
-      projectByRemote,
-      roster: vi.fn(),
-      invite: vi.fn(),
-      decideInvitation,
-      retractInvitation: vi.fn(),
-      pendingInvitations,
-      issuedInvitations: vi.fn(async () => []),
-      changeRole: vi.fn(),
-      setMemberTags: vi.fn(),
-      removeMember: vi.fn(),
-    } as never)
     declare(b.slots, 'sidebar.workspaces', 'conversation.hero.workspace')
     await b.ctx.plugin({ inject: [...inject], apply }).await()
+    const startSession = vi.spyOn(b.ctx.uiWorkspace, 'startSession').mockImplementation(() => undefined)
 
     const browser = (b.slots.entries('sidebar.workspaces')[0]!.inject as () => WorkspaceBrowserInjected)()
-    // Both arms delegate to the runtime's shared New Session action.
+    // Both arms delegate to the shared Session navigation action.
     browser.startSession('ws' as never)
-    expect(b.startSession).toHaveBeenCalledWith('ws')
+    expect(startSession).toHaveBeenCalledWith('ws')
     browser.startSession()
-    expect(b.startSession).toHaveBeenLastCalledWith(undefined)
+    expect(startSession).toHaveBeenLastCalledWith(undefined)
     browser.open('session' as never)
     expect(b.open).toHaveBeenCalledWith('session')
     const signal = new AbortController().signal
@@ -171,86 +168,10 @@ describe('ui-workspace apply', () => {
     expect(b.insertSessionBefore).toHaveBeenCalledWith('ws', 's1', 's2')
     await browser.createWorkspace({ path: '/tmp/browser-project' })
     expect(b.create).toHaveBeenCalledWith({ path: '/tmp/browser-project' })
-    await expect(browser.projectMembership?.createProject({
-      name: 'Atlas', localWorkspaceId: 'ws' as never,
-    })).resolves.toEqual({
-      id: 'project-1', name: 'Atlas', boundRemoteUrl: 'https://github.com/o/r',
-      receivingAccountId: 'account-1',
-    })
-    expect(createProject).toHaveBeenCalledWith({ name: 'Atlas', remoteUrl: 'https://github.com/o/r' })
-    expect(b.bindWorkspace).toHaveBeenCalledWith({
-      receivingAccountId: 'account-1', projectId: 'project-1', workspaceId: 'ws',
-    })
-    b.gitRemote.mockResolvedValueOnce('git@github.com:o/scp-repo.git')
-    await browser.projectMembership?.createProject({ name: 'SCP', localWorkspaceId: 'ws' as never })
-    expect(createProject).toHaveBeenLastCalledWith({ name: 'SCP', remoteUrl: 'git@github.com:o/scp-repo' })
-    b.gitRemote.mockResolvedValueOnce(undefined)
-    await browser.projectMembership?.createProject({ name: 'Gitless', localWorkspaceId: 'ws' as never })
-    expect(createProject).toHaveBeenLastCalledWith({ name: 'Gitless', remoteUrl: 'local://workspace/ws' })
-    await expect(browser.projectMembership?.projectForWorkspace('ws' as never)).resolves.toMatchObject({
-      id: 'project-1', name: 'Atlas', boundRemoteUrl: 'https://github.com/o/r',
-    })
-    expect(projectByRemote).toHaveBeenCalledWith('https://github.com/o/r')
-    expect(b.ensureWorkspaceBinding).toHaveBeenCalledWith({
-      receivingAccountId: 'account-1', projectId: 'project-1', workspaceId: 'ws',
-    })
-    const bindingWrites = b.bindWorkspace.mock.calls.length
-    b.ensureWorkspaceBinding.mockResolvedValueOnce({
-      rpcId: 'binding-ensure-rpc' as never,
-      result: {
-        ok: true as const,
-        value: {
-          state: 'existing' as const,
-          workspaceId: 'different-workspace' as never,
-        },
-      },
-    })
-    await expect(browser.projectMembership?.projectForWorkspace('ws' as never))
-      .rejects.toThrow('already linked to another local Workspace')
-    expect(b.bindWorkspace).toHaveBeenCalledTimes(bindingWrites)
-    await expect(browser.projectMembership?.pendingInvitations()).resolves.toEqual([{
-      invitationId: 'invitation-1', receivingAccountId: 'account-2', projectId: 'project-1',
-      projectName: 'Atlas', inviterName: 'Mona',
-      remoteUrl: 'https://github.com/o/r', grantedRole: 'admin',
-    }])
-    expect(pendingInvitations).toHaveBeenCalledOnce()
-    await expect(browser.projectMembership?.localRemoteFor('ws' as never))
-      .resolves.toBe('https://github.com/o/r')
-    b.gitRemote.mockResolvedValueOnce('file:///tmp/not-platform-safe')
-    await expect(browser.projectMembership?.localRemoteFor('ws' as never)).resolves.toBeUndefined()
-    b.gitRemote.mockResolvedValueOnce(undefined)
-    await expect(browser.projectMembership?.projectForWorkspace('ws' as never)).resolves.toMatchObject({
-      id: 'project-1', name: 'Atlas', boundRemoteUrl: 'https://github.com/o/r',
-    })
-    expect(projectByRemote).toHaveBeenCalledWith('local://workspace/ws')
-    await expect(browser.projectMembership?.cloneWorkspace({
-      remoteUrl: 'https://github.com/o/r.git', directoryName: 'cloned',
-    })).resolves.toEqual({
-      workspaceId: 'cloned', title: 'cloned', normalizedRemoteUrl: 'https://github.com/o/r',
-    })
-    expect(b.cloneGit).toHaveBeenCalledWith({
-      remoteUrl: 'https://github.com/o/r.git', parentPath: '/projects', directoryName: 'cloned',
-    })
-    b.pickDirectory.mockResolvedValueOnce(null)
-    await expect(browser.projectMembership?.cloneWorkspace({
-      remoteUrl: 'https://github.com/o/r.git', directoryName: 'cancelled',
-    })).resolves.toBeUndefined()
-    await browser.projectMembership?.decideInvitation('invitation-1', {
-      decision: 'accept-with-link',
-      localWorkspaceId: 'ws' as never,
-      receivingAccountId: 'account-2',
-      projectId: 'project-1',
-      link: { workspaceName: 'Atlas', normalizedRemoteUrl: 'https://github.com/o/r' },
-    })
-    expect(b.bindWorkspace).toHaveBeenCalledWith({
-      receivingAccountId: 'account-2', projectId: 'project-1', workspaceId: 'ws',
-    })
-    expect(decideInvitation).toHaveBeenCalledWith('invitation-1', {
-      decision: 'accept-with-link',
-      link: { workspaceName: 'Atlas', normalizedRemoteUrl: 'https://github.com/o/r' },
-    })
-    expect(b.bindWorkspace.mock.invocationCallOrder[0])
-      .toBeLessThan(decideInvitation.mock.invocationCallOrder[0]!)
+    expect(browser.projectMembership).toBeDefined()
+    expect(browser.hooks.membership.getSnapshot()).toEqual({ available: false, epoch: 0 })
+    await expect(browser.projectMembership.roster('project-1'))
+      .rejects.toThrow('requires a membership client')
 
     const picker = (b.slots.entries('conversation.hero.workspace')[0]!.inject as () => WorkspacePickerInjected)()
     await picker.createWorkspace({ path: '/tmp/project' })
@@ -268,7 +189,7 @@ describe('ui-workspace apply', () => {
     const browser = (b.slots.entries('sidebar.workspaces')[0]!.inject as () => WorkspaceBrowserInjected)()
     const picker = (b.slots.entries('conversation.hero.workspace')[0]!.inject as () => WorkspacePickerInjected)()
     expect(browser.hooks.directoryFlow.getSnapshot()).toBe(false)
-    expect(browser.hooks.hostDescription.getSnapshot()).toBeUndefined()
+    expect(browser.hooks.hostInfo.getSnapshot()).toMatchObject({ home: undefined })
     expect(picker.hooks.directoryFlow.getSnapshot()).toBe(false)
     // A flow occupant flips exactly its own surface, and the source notifies.
     const notified = vi.fn()
@@ -283,11 +204,91 @@ describe('ui-workspace apply', () => {
     unsubscribe()
   })
 
-  it('rejects the browser search callback on a runtime business error', async () => {
+  it('keeps one cached inject object live across late bind, replace, and unload', async () => {
+    const b = await bench()
+    declare(b.slots, 'sidebar.workspaces')
+    const fiber = b.ctx.plugin({ inject: [...inject], apply })
+    await fiber.await()
+    const entry = b.slots.entries('sidebar.workspaces')[0]!
+    const injected = (entry.inject as () => WorkspaceBrowserInjected)()
+    expect(injected.hooks.membership.getSnapshot().available).toBe(false)
+    const notified = vi.fn()
+    injected.hooks.membership.subscribe(notified)
+
+    const firstRoster = vi.fn(async () => ({
+      project: { id: 'p1', name: 'First', boundRemoteUrl: 'https://github.com/o/first' },
+      members: [],
+    }))
+    const first = membershipClient({ roster: firstRoster })
+    const stopFirst = b.ctx.provide('projectMembershipClient', first)
+    expect(injected.hooks.membership.getSnapshot()).toEqual({ available: true, epoch: 1 })
+    expect(notified).toHaveBeenCalledTimes(1)
+    await expect(injected.projectMembership.roster('p1')).resolves.toMatchObject({
+      project: { id: 'p1', name: 'First' },
+    })
+    expect(firstRoster).toHaveBeenCalledOnce()
+
+    stopFirst()
+    const secondRoster = vi.fn(async () => ({
+      project: { id: 'p2', name: 'Second', boundRemoteUrl: 'https://github.com/o/second' },
+      members: [],
+    }))
+    const second = membershipClient({ roster: secondRoster })
+    const stopSecond = b.ctx.provide('projectMembershipClient', second)
+    expect(injected.hooks.membership.getSnapshot()).toEqual({ available: true, epoch: 3 })
+    await expect(injected.projectMembership.roster('p2')).resolves.toMatchObject({
+      project: { id: 'p2', name: 'Second' },
+    })
+    expect(firstRoster).toHaveBeenCalledOnce()
+    expect(secondRoster).toHaveBeenCalledOnce()
+
+    stopSecond()
+    expect(injected.hooks.membership.getSnapshot().available).toBe(false)
+    await expect(injected.projectMembership.roster('p2'))
+      .rejects.toThrow('requires a membership client')
+    await fiber.dispose()
+  })
+
+  it('injects membership callbacks when a projectMembershipClient is present', async () => {
+    const b = await bench()
+    const pendingInvitations = vi.fn(async () => [])
+    b.ctx.provide('projectMembershipClient', {
+      createProject: vi.fn(),
+      projectByRemote: vi.fn(),
+      roster: vi.fn(),
+      heartbeat: vi.fn(),
+      closePresence: vi.fn(),
+      invite: vi.fn(),
+      issuedInvitations: vi.fn(),
+      retractInvitation: vi.fn(),
+      decideInvitation: vi.fn(),
+      changeRole: vi.fn(),
+      setMemberTags: vi.fn(),
+      removeMember: vi.fn(),
+      pendingInvitations,
+    })
+    declare(b.slots, 'sidebar.workspaces')
+    const fiber = b.ctx.plugin({ inject: [...inject], apply })
+    await fiber.await()
+    const browser = (b.slots.entries('sidebar.workspaces')[0]!.inject as () => WorkspaceBrowserInjected)()
+    expect(browser.projectMembership).toBeDefined()
+    expect(browser.projectMembership).not.toHaveProperty('heartbeat')
+    await vi.waitFor(() => {
+      expect(pendingInvitations).toHaveBeenCalled()
+    })
+    const firstSource = browser.hooks.pendingInvitations
+    const again = (b.slots.entries('sidebar.workspaces')[0]!.inject as () => WorkspaceBrowserInjected)()
+    expect(again.hooks.pendingInvitations).toBe(firstSource)
+    await expect(browser.projectMembership.localRemoteFor('ws' as never))
+      .rejects.toThrow('#590')
+    await fiber.dispose()
+  })
+
+  it('rejects the browser search callback on a Session Controller business error', async () => {
     const b = await bench()
     b.search.mockImplementationOnce(async () => ({
       ok: false,
-      error: { code: 'internal', message: 'index unavailable', details: {} },
+      error: new RemoteError('gateway/internal', 'index unavailable', {}),
     }) as never)
     declare(b.slots, 'sidebar.workspaces')
     await b.ctx.plugin({ inject: [...inject], apply }).await()

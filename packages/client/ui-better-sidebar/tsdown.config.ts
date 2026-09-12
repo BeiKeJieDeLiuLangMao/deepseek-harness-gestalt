@@ -1,13 +1,21 @@
 /**
- * tsdown build for dsh-better-sidebar: the host-half lib (lib/index.js and
- * the lib/invariant.js companion, ESM node) plus the browser client bundle
- * (lib/client.cjs, CJS closure factory). The bundle serves the official
- * profile channel and registers with the package-name id
- * `dsh-better-sidebar` (the client-modules compose keys on the package name;
- * keep it in sync with package.json `name`). The registry channel is omitted.
+ * tsdown build for dsh-better-sidebar: the host-half lib (lib/index.js,
+ * ESM node) plus the two browser client
+ * bundles (lib/client.js and lib/client-registry.js, CJS closure factory) —
+ * one per install channel:
  *
- * The bundle replicates the official DSH client-bundle preset
- * (packages/client/tsdown.client.ts) and compiles src/client/index.tsx:
+ * - `lib/client.js` serves the official profile channel, registering with
+ *   the package-name id `dsh-better-sidebar` (the client-modules compose
+ *   keys on the package name; keep it in sync with package.json `name`),
+ * - `lib/client-registry.js` serves the plugin-registry channel
+ *   (dsh.plugin.json), registering with the manifest id
+ *   `dsh-external/dsh-better-sidebar` (the registry browser-side `arrive()`
+ *   check requires bundle id === plugin id).
+ *
+ * Both bundles replicate the official DSH client-bundle preset
+ * (packages/client/tsdown.client.ts) and are compiled from the same
+ * src/client/index.ts source — only the registered id and the output file
+ * name differ, so they cannot drift:
  * - externals resolve through the loader module table at runtime (the
  *   PLATFORM_MODULES seed list from apps/web's platform.ts, plus the
  *   runtime/client exemption),
@@ -20,14 +28,14 @@
  *   factory}) with the (require) => exports CJS closure shape.
  *
  * Lazy chunks (lib/client-<name>.js): the heavy preview/terminal libraries
- * (CodeMirror, xterm, Mermaid) build as three standalone chunk bundles
- * (src/client/chunks/<name>.tsx). Each script
+ * (CodeMirror, xterm) build as two standalone chunk bundles
+ * (src/client/chunks/<name>.tsx), shared by both channels. Each script
  * assigns its factory to the plugin-owned global registry
  * (globalThis.__dshChunks__) and is fetched by
  * the client on first use from the plugin's own /sidebar/bundle route —
  * chunks deliberately do NOT go through the module loader (see
  * src/client/chunk-loader.ts). `codeSplitting: false` keeps every chunk a
- * single script; the core client.cjs must never statically import a chunks/
+ * single script; the core client.js must never statically import a chunks/
  * entry.
  *
  * Types ship from lib/types (tsc -p tsconfig.build.json), not from tsdown.
@@ -39,7 +47,7 @@ import { builtinModules, createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import type { UserConfig } from 'tsdown'
 import { transform } from 'lightningcss'
-import { DYNAMIC_CLIENT_ARTIFACT } from '../../../scripts/client-artifact-contract.ts'
+import { INLINE_SAFE } from '../tsdown.client.ts'
 
 const require = createRequire(import.meta.url)
 
@@ -49,16 +57,16 @@ const NODE_BUILTINS = new Set([
   ...builtinModules.map(id => `node:${id}`),
 ])
 
-/** Module specifiers the web shell shares into the frozen module table (the official PLATFORM_MODULES list, plus the runtime/client exemption). */
+/** Module specifiers the web shell shares into the frozen module table. */
 const CLIENT_EXTERNALS = [
   'react',
   'react/jsx-runtime',
   'react-dom',
   'react-dom/client',
   '@deepseek-ai/cordis',
+  '@deepseek-ai/dsh-client-store',
   '@deepseek-ai/dsh-client-ui-slots',
   '@deepseek-ai/dsh-client-ui-primitives',
-  '@deepseek-ai/dsh-client-runtime/client',
 ]
 
 /**
@@ -73,20 +81,11 @@ const REACT_ICONS_ESM_ALIAS = {
   'react-icons/vsc': join(reactIconsRoot, 'vsc/index.mjs'),
 }
 
-/**
- * Wire/type layers a client bundle may inline (mirror of the official
- * INLINE_SAFE list): browser-safe contract surfaces with no runtime identity
- * to share. Everything else under @deepseek-ai/* is either a module-table
- * entry (external) or a leak the purity gate rejects.
- */
-const INLINE_SAFE = /^@deepseek-ai\/dsh-(host-apiproxy|session|llm|tools|brand)(\/|$)/
-
 /** Virtual-id wrapper keeping module CSS away from tsdown's own css pipeline. */
 const CSS_VIRTUAL_PREFIX = '\0dsh-css:'
 const CSS_VIRTUAL_SUFFIX = '.mjs'
 
-const PACKAGE_ROOT = fileURLToPath(new URL('.', import.meta.url))
-const REPOSITORY_ROOT = fileURLToPath(new URL('../../../', import.meta.url))
+const REPOSITORY_ROOT = fileURLToPath(new URL('.', import.meta.url))
 
 let snapshotDtsEmitted = false
 
@@ -103,7 +102,7 @@ function emitSnapshotDts(): BuildPlugin {
       snapshotDtsEmitted = true
       const tsc = fileURLToPath(new URL('../../../node_modules/typescript/bin/tsc', import.meta.url))
       const result = spawnSync(process.execPath, [tsc, '-p', 'tsconfig.dts.json', '--pretty', 'false'], {
-        cwd: PACKAGE_ROOT,
+        cwd: REPOSITORY_ROOT,
         encoding: 'utf8',
       })
       if (result.status !== 0) {
@@ -138,14 +137,19 @@ function browserSourcePath(source: string, sourcemapPath: string): string {
 }
 
 /**
- * Build the official client bundle registered under its package id.
+ * One client bundle build for a plugin id. The same src/client/index.ts is
+ * compiled twice with only the registered id and the output file name
+ * differing: the official channel uses the package name (`dsh-better-sidebar`)
+ * and the registry channel uses the manifest id
+ * (`dsh-external/dsh-better-sidebar`).
  * @param pluginId - the `__ModuleLoader__.load({ id })` value and the
  *   data-plugin style-tag prefix of this bundle.
  * @param entryFile - the output file name under lib/.
  */
 function clientBundle(pluginId: string, entryFile: string): UserConfig {
   return {
-    entry: { client: 'src/client/index.tsx' },
+    name: `${pluginId}/client`,
+    entry: { client: 'src/client/index.ts' },
     outDir: 'lib',
     format: 'cjs',
     platform: 'browser',
@@ -203,8 +207,9 @@ function clientBundle(pluginId: string, entryFile: string): UserConfig {
  * loader (src/client/chunk-loader.ts) materializes it with a require built
  * from the module table's seed words.
  *
- * Chunk css tags use the package id `dsh-better-sidebar` to match the
- * official client bundle.
+ * Chunk css tags use the constant plugin id `dsh-better-sidebar` (matching
+ * the official channel; the registry channel re-injects an identical copy
+ * of the shared module css — same content, no functional impact).
  * @param name - chunk name; entry src/client/chunks/<name>.tsx, output
  *   lib/client-<name>.js. Keep in sync with CHUNK_NAMES in src/bundle-route.ts.
  */
@@ -340,23 +345,22 @@ function makeCssPlugin(pluginId: string): BuildPlugin {
 }
 
 /** The lazy chunk names (keep in sync with src/bundle-route.ts CHUNK_NAMES). */
-const CHUNKS = ['terminal', 'editor', 'mermaid']
+const CHUNKS = ['terminal', 'editor', 'mermaid', 'locale']
 
 const nodeLibrary: UserConfig = {
-  entry: { index: 'src/index.ts', invariant: 'src/invariant.ts' },
+  entry: { index: 'src/index.ts' },
   outDir: 'lib',
   format: ['esm'],
   platform: 'node',
   target: 'es2024',
   fixedExtension: false,
   dts: false,
-  // package-invariants: lib/types/invariant.js
   clean: false,
   plugins: [emitSnapshotDts()],
 }
 
 const clientBundles: UserConfig[] = [
-  clientBundle('@deepseek-ai/dsh-client-ui-better-sidebar', DYNAMIC_CLIENT_ARTIFACT.entryFileName),
+  clientBundle('@deepseek-ai/dsh-client-ui-better-sidebar', 'client.js'),
   ...CHUNKS.map(chunkBundle),
 ]
 

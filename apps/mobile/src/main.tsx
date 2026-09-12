@@ -22,11 +22,11 @@ import {
   SnowMobileHandshakeClient,
   type SnowCompanionProtocolChannel,
 } from '@deepseek-ai/dsh-noise-channel'
-import '@deepseek-ai/dsh-client-ui-theme/styles/base.css'
-import '@deepseek-ai/dsh-client-ui-theme/styles/design-platform.css'
-import '@deepseek-ai/dsh-client-ui-theme/styles/scrollbar.css'
-import '@deepseek-ai/dsh-client-ui-theme/styles/gradient-shadow-text.css'
-import '@deepseek-ai/dsh-client-ui-theme/styles/shiki.css'
+import '@deepseek-ai/dsh-client-ui-theme/src/styles/base.css'
+import '@deepseek-ai/dsh-client-ui-theme/src/styles/design-platform.css'
+import '@deepseek-ai/dsh-client-ui-theme/src/styles/scrollbar.css'
+import '@deepseek-ai/dsh-client-ui-theme/src/styles/gradient-shadow-text.css'
+import '@deepseek-ai/dsh-client-ui-theme/src/styles/shiki.css'
 import {
   bindCompanionProcessVisibility,
   CompanionForegroundRuntime,

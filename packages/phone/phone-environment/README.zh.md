@@ -1,6 +1,28 @@
+---
+description: "供「手机设备」设置流程使用的 Host 手机工具链检测与可信 mobilecli 准备。"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-phone-environment
 
 [English](README.md) | 中文
+
+## 概述
+
+在运行时和平台准备期间提供一份不可变的「手机设备」环境快照。该服务将共享 mobilecli 状态与可扩展的 Android/iOS 准备状态分开，并在非 macOS Host 上准确报告不受支持的 iOS 工作。它校验操作所有权、取消、进度与托管运行时激活，并且不修改用户环境。
+
+## 目录
+
+- [包约定](#package-contract)
+- [配置](#config)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+-----
+
+<a id="package-contract"></a>
+## 包约定
 
 Host 在 `ctx.phoneEnvironment` 上持有手机工具链状态。该服务为「手机设备」设置客户端发布一份不可变全量快照，并在启用开关或活动 mobilecli 代变化时保持自身身份。共享运行时状态是 missing / downloading / verifying / activating / ready / failed 闭合联合。Android 与 iOS 准备使用各自可扩展状态。Host 持有的一键 iOS 准备会在 `checking` 状态中标记 `operation: 'prepare'`；被动检测不携带该标记。非 macOS Host 会报告 iOS Simulator 与 iPhone 真机控制需要安装完整 Xcode 的 macOS，不提供无法执行的操作。
 
@@ -10,6 +32,7 @@ Host 通过共享同源信任栅栏，在 `GET /phone/environment` 提供全量�
 
 mobilecli 使用 FSL-1.1，并带 Apache-2.0 future license。运行时从上游 Release 直连下载不等于把副本放进 Desktop Bundle，但在法务或上游许可方确认预期产品用途获准之前，产品发布仍被阻塞。本包不 vendor 或再分发 mobilecli。
 
+<a id="config"></a>
 ## 配置
 
 | 字段 | 默认 | 含义 |
@@ -24,6 +47,7 @@ mobilecli 使用 FSL-1.1，并带 Apache-2.0 future license。运行时从上游
 
 并发准备以 `PHONE_ENVIRONMENT_BUSY` 拒绝，取消使用 `PHONE_ENVIRONMENT_ABORTED`。下载信任失败使用 `PHONE_ENVIRONMENT_DOWNLOAD`、`PHONE_ENVIRONMENT_LENGTH` 或 `PHONE_ENVIRONMENT_DIGEST`；归档、版本、current 指针与文件系统失败使用 `PHONE_ENVIRONMENT_ARCHIVE`、`PHONE_ENVIRONMENT_VERSION`、`PHONE_ENVIRONMENT_CURRENT` 或 `PHONE_ENVIRONMENT_DISK`。激活与运行时意外丢失使用 `PHONE_ENVIRONMENT_ACTIVATION` 和 `PHONE_ENVIRONMENT_RUNTIME_LOST`。检测或准备失败时，服务不会静默选择低优先级 candidate，也不会让旧子进程与工具继续活动。
 
+<a id="model-experience"></a>
 ## Model Experience
 
 通过 `dsh-tool-phone` 间接影响模型；仅当启用的运行时代就绪后，该消费方才注册延迟 `device_*` 工具。
@@ -34,5 +58,12 @@ mobilecli 使用 FSL-1.1，并带 Apache-2.0 future license。运行时从上游
 
 ## Known Limitations and Deferred Work
 
+<a id="known-limitations-and-deferred-work"></a>
+
 - Apple 许可接受、首次启动授权、Apple ID、系统权限、真机信任、Developer Mode、签名身份与 provisioning profile 保持手动。
 - FSL-1.1 产品用途许可确认仍是 Desktop 发布阻塞项。
+
+<a id="dev-note"></a>
+### 开发备注
+
+无。

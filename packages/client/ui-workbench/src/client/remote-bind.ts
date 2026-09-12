@@ -2,7 +2,7 @@
  * Session-bound Browser Workspace Remote verbs for the official tab chrome.
  */
 
-import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import {
   unwrapBrowserWorkspaceRemote,
   type BrowserPageState,
@@ -24,6 +24,11 @@ export interface BrowserWorkspaceRemoteFace {
     target: BrowserTarget,
     expectedRevision: number,
   ) => Promise<RemoteResult<unknown>>
+  focus?: (
+    sessionId: SessionId,
+    target: BrowserTarget,
+    expectedRevision: number,
+  ) => Promise<RemoteResult<BrowserPageState>>
   navigate: (
     sessionId: SessionId,
     target: BrowserTarget,
@@ -38,6 +43,7 @@ export interface BrowserWorkspaceRemoteFace {
 export interface BoundBrowserWorkspace {
   create: (request: BrowserWorkspaceCreateRemoteRequest) => Promise<BrowserPageState>
   close: (target: BrowserTarget, expectedRevision: number) => Promise<unknown>
+  focus: (target: BrowserTarget, expectedRevision: number) => Promise<BrowserPageState>
   refresh: (target: BrowserTarget, expectedRevision: number, url: string) => Promise<BrowserPageState>
   observe: (target: BrowserTarget) => Promise<BrowserRuntimeState>
   screenshot: (target: BrowserTarget) => Promise<BrowserScreenshot>
@@ -61,6 +67,10 @@ export function bindBrowserWorkspace(
       return unwrapBrowserWorkspaceRemote(remote.create(sessionId, request))
     },
     close: (target, expectedRevision) => unwrapBrowserWorkspaceRemote(remote.close(sessionId, target, expectedRevision)),
+    focus: (target, expectedRevision) => {
+      if (remote.focus === undefined) return Promise.reject(new Error('remote.browserWorkspace.focus is not mounted'))
+      return unwrapBrowserWorkspaceRemote(remote.focus(sessionId, target, expectedRevision))
+    },
     refresh: (target, expectedRevision, url) =>
       unwrapBrowserWorkspaceRemote(remote.navigate(sessionId, target, expectedRevision, url)),
     observe: target => unwrapBrowserWorkspaceRemote(remote.observe(sessionId, target)),

@@ -99,7 +99,10 @@ export class PostgresProjectMembershipPersistence implements ProjectMembershipPe
   async exportSnapshot(): Promise<{ document: string; digest: string }> {
     return await this.transact((transaction) => {
       if (transaction.document === undefined) throw new Error('Membership authority is not initialized')
-      return { document: transaction.document, digest: createHash('sha256').update(transaction.document).digest('hex') }
+      return Promise.resolve({
+        document: transaction.document,
+        digest: createHash('sha256').update(transaction.document).digest('hex'),
+      })
     })
   }
 

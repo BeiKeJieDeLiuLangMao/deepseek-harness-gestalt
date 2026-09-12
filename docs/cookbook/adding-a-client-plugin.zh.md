@@ -6,7 +6,7 @@
 
 ## 添加插件包
 
-1. 创建 `packages/client/<name>`，包含 `package.json`、`tsconfig.json`、`tsdown.config.ts`、`src/index.ts`、`src/invariant.ts` 和 `README.md`。浏览器插件还提供 `src/client/`、声明的 `./client` export，以及使用 CSS Modules 时的 `src/css-modules.d.ts`。包名使用 `@deepseek-ai/dsh-client-<name>`，README 包含 Model Experience 部分。
+1. 创建 `packages/client/<name>`，包含 `package.json`、`tsconfig.json`、`tsdown.config.ts`、`src/index.ts` 和 `README.md`。仅当包拥有独立运行时关系时才添加 `src/invariant.ts` 与 `./invariant` export。浏览器插件还提供 `src/client/`、声明的 `./client` export，以及使用 CSS Modules 时的 `src/css-modules.d.ts`。包名使用 `@deepseek-ai/dsh-client-<name>`，README 包含 Model Experience 部分；不发布 invariant 时在 README 中说明原因。
 2. 在 `tsconfig.client.json` 注册包，在 `packages/bundle/web-app/cordis.patch.yml` 添加 `dsh.client` 行，并在 `packages/bundle/web-app/package.json` 声明依赖。三项缺一不可：每个缺失面会在不同的后续阶段失败——`tsconfig.client.json` 的 `references` 项在编译时失败，patch 行在 Loader 组合时失败，依赖在 profile 启动时失败；此时裸行名只能经修复后的扁平 `$DSH_HOME/profiles/node_modules` 回退目录解析，该目录镜像应用与各 bundle 声明的依赖，没有任何 manifest 声明的包会 import 失败。
 3. 设置 `platform: 'web'`。只有 stage-one 预取基础设施使用 `immediately: true`。`dsh.client.inject` 是信息性包边；Cordis service injection 控制激活，非 baseline 的 `external` 请求控制同步模块物化。
 4. 向其他包的 slot 贡献内容时，使用 `ctx.slots.inject(name, () => ctx.slots.register(...))`。它等待声明，并在重新声明过程中管理清理。只为贡献实际读取的 service 保留 Cordis service 边。
@@ -20,6 +20,6 @@
 1. 把 slot 加入 `SlotMap`，在父注册的 `children` 中声明，再注册组件。
 2. 从 `PropsRuntime`、`PropsRenderSlots`、`PropsStore` 与 inject face 派生 props。共享或跨 remount 保留的交互状态放入已注册 store factory，组件私有状态保持本地。
 3. 用直接、真实的 props 测试组件，在不引入 render machinery 的情况下断言用户可见行为。
-4. 通过 CSS Modules 使用共享 token；产品文案使用中文，代码注释使用英文。
+4. 通过 CSS Modules 使用共享 token；产品文案遵循常驻本地化规则，代码注释使用英文。
 
 验证 `pnpm run test:gui`；可见组装输出改变时增加 replayed Web 测试。

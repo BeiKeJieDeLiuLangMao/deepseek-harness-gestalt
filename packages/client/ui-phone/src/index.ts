@@ -5,7 +5,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import { settingsNamespace } from '@deepseek-ai/dsh-settings'
+import type {} from '@deepseek-ai/dsh-settings'
 import { PHONE_SETTINGS_NAMESPACE, PhoneSettingsSchema } from './phone-settings.ts'
 
 export {
@@ -13,15 +13,13 @@ export {
 } from './phone-settings.ts'
 export type { PhoneSettings } from './phone-settings.ts'
 
-const PHONE_NAMESPACE = settingsNamespace(PHONE_SETTINGS_NAMESPACE)
-
 /**
  * Register the durable phone section when settings is composed.
  * @param ctx - Host context that may acquire settings.
  */
 export function apply(ctx: Context): void {
   ctx.inject(['settings'], (settingsCtx) => {
-    const scope = settingsCtx.settings.register(PHONE_NAMESPACE, PhoneSettingsSchema)
+    const scope = settingsCtx.settings.register(PHONE_SETTINGS_NAMESPACE, PhoneSettingsSchema)
     settingsCtx.inject(['phoneEnvironment'], (environmentCtx) => {
       const environment = environmentCtx.get('phoneEnvironment') as {
         setEnabled(enabled: boolean): Promise<void>

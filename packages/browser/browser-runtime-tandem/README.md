@@ -1,9 +1,26 @@
+---
+description: "Tandem-shaped HTTP Service Provider for the Browser Runtime capability."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-browser-runtime-tandem
 
 English | [中文](README.zh.md)
 
+## Summary
+
 Tandem-shaped HTTP Service Provider for the Browser Runtime capability. It drives a loopback HTTP API whose operations are sessions, tabs, navigate, input, page-content, screenshot, focus, and destroy, and exposes temporary, named persistent, and shared Browser Profiles through `ctx.browserRuntime`. Tandem is the protocol source, not a sidecar binary: production Desktop points this client at the in-process Electron HTTP adapter. Provenance is recorded in [UPSTREAM.md](UPSTREAM.md) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md); no upstream source is vendored, and this package never launches Tandem.app.
 
+## Table of Contents
+
+- [Configuration](#configuration)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
+
+-----
+
+<a id="configuration"></a>
 ## Configuration
 
 | Field | Meaning | Default |
@@ -29,8 +46,9 @@ Tandem-shaped HTTP Service Provider for the Browser Runtime capability. It drive
 
 Operations enter one serialized queue. Mutations require the caller's last observed `expectedRevision`; reads return the current revision without advancing it. Each Profile maps to one HTTP session created with `POST /sessions/create`. Synthetic Agent `input` calls `POST /input` with the client's `expectedRevision` and adopts the engine's committed page and revision; a mismatch is `BROWSER_REVISION_CONFLICT`. Observe and page-content adopt the server revision so both sides hold one counter. Named Profiles restore a `persist:session-*` partition; the shared Profile restores `persist:session-*-shared` without `BROWSER_PROFILE_BUSY`; temporary Profiles use unique `tmp-N` session names on ephemeral `session-*` partitions and leave no reusable identity. A second open writer of the same named Profile rejects with `BROWSER_PROFILE_BUSY`. After disposal starts, operations reject with `BROWSER_DISPOSED`. Disposal stops admission, drains the queue, destroys remaining open sessions with `POST /sessions/destroy` whether or not a fixture child exists, and joins an optional fixture child under `processGraceMs`.
 
-An unexpected fixture-child exit or a failed health check commits a `BrowserUnavailableState` with reason `crashed` or `unhealthy` and `reconnecting` set by configuration, then attempts up to `reconnectAttempts` child restarts when a fixture child exists; a restored runtime re-commits open page state at the next revision with the same target, and exhausted reconnects commit `reason: 'reconnect-failed'` with `reconnecting: false`. The projection is truthful: while unavailable, operations on the target reject with `BROWSER_RUNTIME_UNAVAILABLE` instead of reporting stale page facts. Malformed HTTP responses, oversized bodies, and failed field validation reject with `BROWSER_PROTOCOL`.
+An unexpected fixture-child exit or an HTTP `BROWSER_RUNTIME_UNAVAILABLE` response commits a `BrowserUnavailableState` with reason `crashed` or `unhealthy`. A fixture child gets up to `reconnectAttempts` restarts. With `sidecar: false`, the client instead polls the externally owned Host for the same target until `startupTimeoutMs`; a restored target re-commits open page state at the next revision, and an exhausted recovery commits `reason: 'reconnect-failed'` with `reconnecting: false`. The projection is truthful: while unavailable, operations on the target reject with `BROWSER_RUNTIME_UNAVAILABLE` instead of reporting stale page facts. Malformed HTTP responses, oversized bodies, and failed field validation reject with `BROWSER_PROTOCOL`.
 
+<a id="model-experience"></a>
 ## Model Experience
 
 Indirectly, through dsh-tool-browser, which renders every page, screenshot, lifecycle, and availability fact.
@@ -40,6 +58,17 @@ Indirectly, through dsh-tool-browser, which renders every page, screenshot, life
 The Provider itself contributes no request text; Consumer schemas and logged results determine cache changes.
 
 ## Known Limitations and Deferred Work
+<a id="known-limitations-and-deferred-work"></a>
 
 - Production Desktop never launches Tandem.app. The HTTP client talks to the in-process Electron adapter; unit tests run against the in-repository HTTP fixture.
 - Upstream-contribution candidates — isolated-session security stack and extension loading, persisted session registry, close/forget/wipe storage erasure, MCP tool allowlist/profiles, and first-class Linux support — are listed in [UPSTREAM.md](UPSTREAM.md).
+
+<a id="dev-note"></a>
+### Dev Note
+
+<details>
+<summary>Working context for maintainers — click to expand</summary>
+
+None.
+
+</details>

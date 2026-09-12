@@ -13,7 +13,7 @@
   width: 100%;
   max-width: var(--dsh-chat-content-width);
   max-height: min(70vh, 560px);
-  border: 1px solid var(--dsw-alias-border-l2-darkmode-thin);
+  border: 0;
   border-radius: 20px;
   background: var(--dsw-specific-input-major);
   box-shadow: var(--dsw-shadow-lv2);
@@ -48,7 +48,7 @@
   flex-direction: column;
   gap: 8px;
   padding: 12px 16px 10px;
-  border-bottom: 1px solid var(--dsw-alias-border-l2-darkmode-thin);
+  border-bottom: 0.5px solid var(--dsw-alias-border-l2-darkmode-thin);
 }
 
 .originRow {
@@ -62,10 +62,11 @@
   flex-shrink: 0;
   padding: 1px 8px;
   border-radius: 999px;
-  border: 1px solid var(--dsw-alias-border-l2-darkmode-thin);
+  border: 0.5px solid var(--dsw-alias-border-l2-darkmode-thin);
   font-size: 12px;
   line-height: 18px;
   color: var(--dsw-alias-label-secondary);
+  corner-shape: round;
 }
 
 .asker {
@@ -80,6 +81,7 @@
   width: 20px;
   height: 20px;
   border-radius: 50%;
+  corner-shape: round;
   flex-shrink: 0;
 }
 
@@ -178,7 +180,7 @@
   flex-direction: column;
   gap: 1px;
   padding: 4px 8px;
-  border: 1px solid var(--dsw-alias-border-l2-darkmode-thin);
+  border: 0.5px solid var(--dsw-alias-border-l2-darkmode-thin);
   border-radius: 8px;
   min-width: 0;
   font: inherit;
@@ -251,7 +253,7 @@
   justify-content: space-between;
   gap: 16px;
   padding: 8px 12px;
-  border: 1px solid var(--dsw-alias-border-l2-darkmode-thin);
+  border: 0.5px solid var(--dsw-alias-border-l2-darkmode-thin);
   border-radius: 8px;
   color: var(--dsw-alias-label-secondary);
   font-size: 12px;

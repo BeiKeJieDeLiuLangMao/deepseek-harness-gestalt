@@ -1,24 +1,24 @@
-- img
-- text: Reply with a one-sentence description of …
-- button "Close":
-  - img
-- button "New tab":
-  - img
-- banner:
-  - tablist:
-    - tab "Chat" [selected]
-    - tab "Trajectory"
-- button "Context injection dsh-better-sidebar":
-  - img
-  - img
-  - text: Context injection dsh-better-sidebar
+- tablist:
+  - tab "Start Close":
+    - text: Start
+    - button "Close":
+      - img
+  - tab "Reply with a one-sentence description of … Close" [selected]:
+    - text: Reply with a one-sentence description of …
+    - button "Close":
+      - img
+  - button "Split"
+  - button "Fullscreen"
+  - button "Collapse sidebar"
+- tablist:
+  - tab "Chat" [selected]
+  - tab "Trajectory"
 - text: Reply with a one-sentence description of event sourcing, then stop. {{clock}}
 - button "Copy":
   - img
-- button "Think The user is asking for a one-sentence description of event sourcing. This is a straightforward knowledge question that doesn't require any skill loading or tool calls.":
+- button "Thought for a while":
+  - text: Thought for a while
   - img
-  - img
-  - text: Think The user is asking for a one-sentence description of event sourcing. This is a straightforward knowledge question that doesn't require any skill loading or tool calls.
 - paragraph: Event sourcing is a pattern where all changes to an application's state are stored as an immutable, append-only sequence of events, rather than persisting only the current state, enabling full auditability, temporal queries, and event-driven architectures.
 - button "Copy":
   - img
@@ -28,9 +28,14 @@
   - img
 - button "Branch into a new conversation":
   - img
-- text: {{clock}} Ran for {{duration}} TTFT {{duration}} {{throughput}} tok/s
-- textbox "Message the agent"
-- button "Commands and skills":
+- button "Ran for {{duration}}":
+  - img
+  - text: Ran for {{duration}}
+- text: {{clock}}
+- textbox "Message or run a task, / commands, @ files or sessions"
+- button "Commands":
+  - img
+- button "Add attachment" [disabled]:
   - img
 - 'button "Access mode, current: Read Only"': Read Only
 - button "Select model, current DeepSeek-V4-Flash":
@@ -38,4 +43,9 @@
   - img
 - button "6% of context used"
 - button "Send message" [disabled]
-- text: 2 turns · 2 steps LLM {{duration}} TTFT avg {{duration}} · {{throughput}} tok/s Cache hit 99% Input 15.6K tok · Output 158 tok
+- button "2 turns 2 steps · {{throughput}} tok/s":
+  - img
+  - text: 2 turns 2 steps{{throughput}} tok/s
+- button "15.7K tok · Cache hit 99%":
+  - img
+  - text: 15.7K tokCache hit 99%

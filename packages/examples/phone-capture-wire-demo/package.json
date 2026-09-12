@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-phone-capture-wire-demo",
   "description": "Bin that boots an external Cordis config for the keyless Android capture-source Host wire",
-  "version": "0.1.1-rc.2",
+  "version": "0.1.5-alpha.2",
   "publishConfig": {
     "access": "public"
   },
@@ -21,10 +21,6 @@
       "types": "./lib/types/index.d.ts",
       "default": "./lib/index.js"
     },
-    "./invariant": {
-      "types": "./lib/types/invariant.d.ts",
-      "default": "./lib/invariant.js"
-    },
     "./bin": {
       "types": "./lib/types/bin.d.ts",
       "default": "./lib/bin.js"
@@ -34,7 +30,6 @@
   },
   "files": [
     "lib/index.js",
-    "lib/invariant.js",
     "lib/bin.js",
     "lib/types/**/*.d.ts"
   ],
@@ -43,11 +38,9 @@
     "@deepseek-ai/dsh-app-boot": "workspace:^"
   },
   "peerDependencies": {
-    "@deepseek-ai/dsh-invariants": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   },
   "devDependencies": {
-    "@deepseek-ai/dsh-invariants": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
   }
 }

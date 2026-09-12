@@ -1,11 +1,29 @@
+---
+description: "Desktop 拥有的 CLIProxyAPI 提供方：从 Host 注入的 loopback /v1 端点发布 gestalt-account-pool。"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-llm-gestalt-account-pool
 
 [English](README.md) | 中文
 
-Desktop 仅为其拥有的 CLIProxyAPI 进程组合此插件。Host 通过子进程环境提供 IPv4-loopback HTTPS `/v1` 端点、仅用于 inference 的 key，以及作为 `NODE_EXTRA_CA_CERTS` 的运行代证书；这些值既不存入 settings，也不暴露给 renderer 代码。
+## 概述
 
-插件认证访问 `/v1/models`，仅在返回目录至少包含一个模型时发布 `gestalt-account-pool`，目录变化后重新发布拓扑，并在核心不可用时撤回 route。Registry 冲突会在注册时失败，而不会替换用户 provider。
+Desktop 仅为其拥有的 CLIProxyAPI 进程组合此插件。Host 提供 loopback HTTPS `/v1` 端点、仅用于 inference 的 key，以及作为 `NODE_EXTRA_CA_CERTS` 的运行代证书；这些值既不存入 settings，也不暴露给 renderer 代码。目录至少有一个模型时发布 `gestalt-account-pool`，核心不可用时撤回 route。
 
+## 目录
+
+- [Composition](#composition)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+<a id="composition"></a>
+## Composition
+
+插件认证访问 `/v1/models`，目录变化后重新发布拓扑，并在核心不可用时撤回 route。Registry 冲突会在注册时失败，而不会替换用户 provider。不发布运行时 invariant 伴生体，因为本适配器没有独立于 `dsh-llm` 已断言注册表契约之外的事件流或可变数据。
+
+<a id="model-experience"></a>
 ## Model Experience
 
 ### 账号池请求
@@ -24,5 +42,17 @@ Desktop 仅为其拥有的 CLIProxyAPI 进程组合此插件。Host 通过子进
 
 ## Known Limitations and Deferred Work
 
+<a id="known-limitations-and-deferred-work"></a>
+
 - 账号登录、renderer 投影、额度观测与 provider 专用模型元数据属于后续账号池 slice。
 - 在核心提供经验证的能力元数据前，目录项按支持文本的模型 id 处理。
+
+<a id="dev-note"></a>
+### 开发备注
+
+<details>
+<summary>维护者的工作上下文——点击展开</summary>
+
+无。
+
+</details>

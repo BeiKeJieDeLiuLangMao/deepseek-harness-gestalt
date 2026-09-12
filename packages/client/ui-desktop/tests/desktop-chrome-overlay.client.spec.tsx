@@ -36,6 +36,9 @@ describe('overlayMenuIcon', () => {
     expect(overlayMenuIcon('browser')).toBeTruthy()
     expect(overlayMenuIcon('terminal')).toBeTruthy()
     expect(overlayMenuIcon('phone')).toBeTruthy()
+    expect(overlayMenuIcon('files')).toBeTruthy()
+    expect(overlayMenuIcon('diff')).toBeTruthy()
+    expect(overlayMenuIcon('tasks')).toBeTruthy()
   })
 })
 

@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { randomUUID } from 'node:crypto'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -181,7 +182,7 @@ const environment = selectPlatformEnvironment(validatePlatformEnvironmentPair({
     databaseIdentity: 'database-production', identityNamespace: 'namespace-production',
   },
 }), 'development')
-const installationIdentity = crypto.randomUUID()
+const installationIdentity = randomUUID()
 const installationPlatform = (crypto.getRandomValues(new Uint8Array(1))[0] ?? 0) % 2 === 0 ? 'ios' : 'android'
 
 const attempt: LoginAttemptView = {

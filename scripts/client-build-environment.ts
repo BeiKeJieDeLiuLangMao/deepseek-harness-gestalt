@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import {
   existsSync,
   globSync,
@@ -9,7 +9,6 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { dirname, resolve } from 'node:path'
-import { DYNAMIC_CLIENT_ARTIFACT } from './client-artifact-contract.ts'
 
 /** Prefix reserved for build-time values that may be embedded in browser artifacts. */
 const CLIENT_BUILD_ENV_PREFIX = 'DSH_CLIENT_'
@@ -26,18 +25,18 @@ const OFFICIAL_CLIENT_BUILD_ENVIRONMENT = {
 /** Public variable carrying the source commit embedded in client artifacts. */
 const CLIENT_COMMIT_HASH_VARIABLE = 'DSH_CLIENT_COMMIT_HASH'
 
+/** Public variable carrying the repository package version embedded in client artifacts. */
+const CLIENT_VERSION_VARIABLE = 'DSH_CLIENT_VERSION'
+
 /** Repository-relative path of the complete client build record. */
 export const CLIENT_BUILD_RECORD_PATH = '.dsh-build/client-build-environment.json'
 
 const CLIENT_BUILD_RECORD_FORMAT = 1
 const CLIENT_ARTIFACT_PATTERNS = [
   'apps/web/dist/**/*',
-  `packages/*/*/${DYNAMIC_CLIENT_ARTIFACT.relativePath}`,
-  `packages/*/*/${DYNAMIC_CLIENT_ARTIFACT.sourceMapPath}`,
+  'packages/*/*/lib/client.js',
+  'packages/*/*/lib/client.js.map',
 ] as const
-const DYNAMIC_CLIENT_SOURCE_MAP_PATTERN = `packages/*/*/${DYNAMIC_CLIENT_ARTIFACT.sourceMapPath}`
-const DYNAMIC_CLIENT_BUNDLE_PATTERN = `packages/*/*/${DYNAMIC_CLIENT_ARTIFACT.relativePath}`
-const CLIENT_MANIFEST_PATTERNS = ['packages/*/*/package.json', 'apps/*/package.json', 'vendor/*/package.json']
 
 /** Public values embedded in one set of client artifacts. */
 export type ClientBuildEnvironment = Readonly<Record<string, string>>
@@ -62,6 +61,76 @@ export function repositoryCommitHash(root: string, environment: NodeJS.ProcessEn
 }
 
 /**
+ * Resolve the repository package version used by browser build metadata.
+ * @param root - repository root containing the authoritative package.json.
+ * @returns the repository's semver-compatible package version.
+ */
+export function repositoryVersion(root: string): string {
+  const path = resolve(root, 'package.json')
+  let manifest: unknown
+  try {
+    manifest = JSON.parse(readFileSync(path, 'utf8'))
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error)
+    throw new Error(`cannot read repository version from ${path}: ${detail}`)
+  }
+  if (!isObject(manifest) || typeof manifest.version !== 'string'
+    || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(manifest.version)) {
+    throw new Error(`repository package.json has an invalid version ${JSON.stringify(isObject(manifest) ? manifest.version : undefined)}`)
+  }
+  return manifest.version
+}
+
+/**
+ * Read whether Git reports any staged, unstaged, untracked, or submodule change.
+ * @param root - repository root whose worktree is inspected.
+ * @returns true or false inside a Git worktree; undefined without Git metadata.
+ */
+export function repositoryGitDirty(root: string): boolean | undefined {
+  const probe = spawnSync('git', ['rev-parse', '--is-inside-work-tree'], {
+    cwd: root,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'ignore'],
+  })
+  if (probe.error !== undefined || probe.status !== 0 || probe.stdout.trim() !== 'true') return undefined
+
+  const status = spawnSync('git', ['status', '--porcelain=v1', '--untracked-files=normal'], {
+    cwd: root,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  if (status.error !== undefined) throw status.error
+  if (status.status !== 0) {
+    throw new Error(`git status failed in ${root}: ${status.stderr.trim() || String(status.status)}`)
+  }
+  return status.stdout !== ''
+}
+
+/**
+ * Resolve the public environment for a complete default build from one checkout.
+ * Repository-owned metadata replaces inherited values; other public values pass through.
+ * @param root - repository root supplying version and Git metadata.
+ * @param environment - caller environment supplying optional commit and public extensions.
+ * @returns complete public client environment for the default build.
+ */
+export function repositoryClientBuildEnvironment(
+  root: string,
+  environment: NodeJS.ProcessEnv = process.env,
+): ClientBuildEnvironment {
+  const inherited = { ...clientBuildEnvironment(environment) }
+  delete inherited.DSH_CLIENT_COMMIT_HASH
+  delete inherited.DSH_CLIENT_GIT_DIRTY
+  delete inherited.DSH_CLIENT_VERSION
+  const dirty = repositoryGitDirty(root)
+  return {
+    ...inherited,
+    DSH_CLIENT_COMMIT_HASH: repositoryCommitHash(root, environment),
+    ...(dirty === true ? { DSH_CLIENT_GIT_DIRTY: 'true' } : {}),
+    DSH_CLIENT_VERSION: repositoryVersion(root),
+  }
+}
+
+/**
  * Resolve the exact public values required by an official build at one commit.
  * @param root - repository root whose HEAD must match the built source.
  * @param environment - optional explicit commit source for non-Git build environments.
@@ -73,6 +142,7 @@ export function officialClientBuildEnvironment(
 ): Readonly<Record<`DSH_CLIENT_${string}`, string>> {
   return {
     DSH_CLIENT_COMMIT_HASH: repositoryCommitHash(root, environment),
+    DSH_CLIENT_VERSION: repositoryVersion(root),
     ...OFFICIAL_CLIENT_BUILD_ENVIRONMENT,
   }
 }
@@ -119,10 +189,18 @@ export function resolveClientBuildEnvironment(
   if (profile === undefined) return clientBuildEnvironment(environment)
   if (profile === 'official') {
     const commitHash = environment[CLIENT_COMMIT_HASH_VARIABLE]
+    const version = environment[CLIENT_VERSION_VARIABLE]
     if (commitHash === undefined) {
       throw new Error(`${CLIENT_COMMIT_HASH_VARIABLE} is required for the official client build profile`)
     }
-    return { DSH_CLIENT_COMMIT_HASH: commitHash, ...OFFICIAL_CLIENT_BUILD_ENVIRONMENT }
+    if (version === undefined) {
+      throw new Error(`${CLIENT_VERSION_VARIABLE} is required for the official client build profile`)
+    }
+    return {
+      DSH_CLIENT_COMMIT_HASH: commitHash,
+      DSH_CLIENT_VERSION: version,
+      ...OFFICIAL_CLIENT_BUILD_ENVIRONMENT,
+    }
   }
   throw new Error(`unknown client build profile ${JSON.stringify(profile)}; expected "official"`)
 }
@@ -202,10 +280,6 @@ export function writeClientBuildRecord(
   root: string,
   environment: ClientBuildEnvironment,
 ): ClientBuildRecord {
-  const sourceMapViolations = collectDynamicClientSourceMapViolations(root)
-  if (sourceMapViolations.length > 0) {
-    throw new Error(`dynamic client source maps are invalid:\n${sourceMapViolations.join('\n')}`)
-  }
   const record: ClientBuildRecord = {
     formatVersion: CLIENT_BUILD_RECORD_FORMAT,
     environment: clientBuildEnvironment(environment),
@@ -215,77 +289,6 @@ export function writeClientBuildRecord(
   mkdirSync(dirname(path), { recursive: true })
   writeFileSync(path, `${JSON.stringify(record, null, 2)}\n`)
   return record
-}
-
-/**
- * Find dynamic client maps whose browser frames stop at emitted tsc JavaScript.
- * @param root - repository root containing generated dynamic client bundles.
- * @returns sorted map-and-source diagnostics for invalid artifacts.
- */
-export function collectDynamicClientSourceMapViolations(root: string): string[] {
-  const violations: string[] = []
-  const paths = globSync(DYNAMIC_CLIENT_SOURCE_MAP_PATTERN, { cwd: root })
-    .map(path => path.replaceAll('\\', '/'))
-    .sort()
-  const sourceMapPaths = new Set(paths)
-  const bundlePaths = globSync(DYNAMIC_CLIENT_BUNDLE_PATTERN, { cwd: root })
-    .map(path => path.replaceAll('\\', '/'))
-    .sort()
-
-  for (const manifestPath of globSync(CLIENT_MANIFEST_PATTERNS, { cwd: root }).sort()) {
-    const manifest: unknown = JSON.parse(readFileSync(resolve(root, manifestPath), 'utf8'))
-    if (!isObject(manifest) || !isObject(manifest.dsh) || !isObject(manifest.dsh.client)) continue
-    const packageDirectory = dirname(manifestPath).replaceAll('\\', '/')
-    const bundlePath = `${packageDirectory}/${DYNAMIC_CLIENT_ARTIFACT.relativePath}`
-    const sourceMapPath = `${packageDirectory}/${DYNAMIC_CLIENT_ARTIFACT.sourceMapPath}`
-    if (!existsSync(resolve(root, bundlePath))) violations.push(`${bundlePath}: missing`)
-    if (!existsSync(resolve(root, sourceMapPath))) violations.push(`${sourceMapPath}: missing`)
-  }
-
-  for (const bundlePath of bundlePaths) {
-    const sourceMapPath = `${bundlePath}.map`
-    if (!sourceMapPaths.has(sourceMapPath)) violations.push(`${sourceMapPath}: missing`)
-  }
-
-  for (const path of paths) {
-    let parsed: unknown
-    try {
-      parsed = JSON.parse(readFileSync(resolve(root, path), 'utf8'))
-    } catch (error) {
-      const detail = error instanceof Error ? error.message : String(error)
-      violations.push(`${path}: invalid JSON: ${detail}`)
-      continue
-    }
-    if (!isObject(parsed) || !Array.isArray(parsed.sources)
-      || !parsed.sources.every(source => typeof source === 'string')) {
-      violations.push(`${path}: sources must be a string array`)
-      continue
-    }
-    if (!Array.isArray(parsed.sourcesContent)
-      || parsed.sourcesContent.length !== parsed.sources.length
-      || !parsed.sourcesContent.every(content => typeof content === 'string')) {
-      violations.push(`${path}: sourcesContent must contain one string per source`)
-    }
-    for (const source of parsed.sources) {
-      const normalized = source.replaceAll('\\', '/')
-      if (/(?:^|\/)lib\/types\/.*\.js$/u.test(normalized)
-        || /(?:^|\/)types\/.*\.js$/u.test(normalized)) {
-        violations.push(`${path}: ${source}`)
-        continue
-      }
-      if (/^\.\.\/\.\.\/\.\.\/packages\/[^/]+\/[^/]+\/lib\/.*\.js$/u.test(normalized)
-        && !normalized.endsWith('/lib/typert.remote-client.js')) {
-        violations.push(`${path}: ${source}`)
-        continue
-      }
-      if (/\.(?:ts|tsx)$/u.test(normalized) && !normalized.includes('/node_modules/')
-        && !/^\.\.\/\.\.\/\.\.\/packages\/[^/]+\/[^/]+\/src\//u.test(normalized)
-        && !/^\.\.\/\.\.\/\.\.\/\.\.\/vendor\/[^/]+\/src\//u.test(normalized)) {
-        violations.push(`${path}: ${source}`)
-      }
-    }
-  }
-  return [...new Set(violations)].sort()
 }
 
 /**
@@ -324,7 +327,10 @@ export function readClientBuildRecord(
 
 /** Return the deterministic digest of every artifact affected by the public client environment. */
 function clientArtifactDigest(root: string): ClientArtifactDigest {
-  const paths = clientArtifactPaths(root)
+  const paths = globSync([...CLIENT_ARTIFACT_PATTERNS], { cwd: root })
+    .map(path => path.replaceAll('\\', '/'))
+    .filter(path => statSync(resolve(root, path)).isFile())
+    .sort()
   if (paths.length === 0) throw new Error('complete client build produced no Vite or dynamic client artifacts')
 
   const digest = createHash('sha256')
@@ -336,18 +342,6 @@ function clientArtifactDigest(root: string): ClientArtifactDigest {
     digest.update(content)
   }
   return { fileCount: paths.length, sha256: digest.digest('hex') }
-}
-
-/**
- * List every generated file bound to the client build record.
- * @param root - repository root containing generated client artifacts.
- * @returns sorted repository-relative artifact paths using forward slashes.
- */
-export function clientArtifactPaths(root: string): string[] {
-  return globSync([...CLIENT_ARTIFACT_PATTERNS], { cwd: root })
-    .map(path => path.replaceAll('\\', '/'))
-    .filter(path => statSync(resolve(root, path)).isFile())
-    .sort()
 }
 
 /** Parse and validate the persisted record before any consumer trusts it. */

@@ -1,21 +1,26 @@
-- button "New tab":
+- tablist:
+  - tab "Start" [selected]
+  - button "Split"
+  - button "Fullscreen"
+  - button "Collapse sidebar"
+- paragraph: The sidebar holds what you want to keep looking at.
+- paragraph: Files and artifacts from the conversation open in this column; the entries below open more.
+- button "Files Browse the files in this session's workspace and open any of them.":
   - img
-- button "Files":
+  - text: Files Browse the files in this session's workspace and open any of them.
+- button "Changes Review and manage file changes from this session and Git worktree.":
   - img
-  - text: Files
-- button "Source Control":
+  - text: Changes Review and manage file changes from this session and Git worktree.
+- button "Tasks Track subagents and background tasks started from this session.":
   - img
-  - text: Source Control
-- button "Tasks":
+  - text: Tasks Track subagents and background tasks started from this session.
+- button "Side Chat Start a separate conversation in the sidebar.":
   - img
-  - text: Tasks
-- button "Side Chat":
+  - text: Side Chat Start a separate conversation in the sidebar.
+- button "Terminal Open an interactive terminal in the current workspace.":
   - img
-  - text: Side Chat
-- button "Terminal":
+  - text: Terminal Open an interactive terminal in the current workspace.
+- button "Browser Open a browser page in the sidebar.":
   - img
-  - text: Terminal
-- button "Browser":
-  - img
-  - text: Browser
-- button "Phone"
+  - text: Browser Open a browser page in the sidebar.
+- button "Phone Connect or inspect an Android or iOS device."

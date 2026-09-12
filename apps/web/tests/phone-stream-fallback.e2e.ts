@@ -3,7 +3,6 @@ import { join } from 'node:path'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import {
   captureStableAria, compareOrRefreshGolden, launchWebScaffold, seedSession,
   webSnapshotMode, type WebScaffold,
@@ -66,7 +65,7 @@ describe('web e2e: phone H264 fallback', () => {
 
   beforeAll(async () => {
     scaffold = await launchWebScaffold({})
-    await scaffold.ctx.settings.update(settingsNamespace('ui-phone'), { enabled: true })
+    await scaffold.ctx.settings.update('ui-phone', { enabled: true })
     await seedSession(scaffold, seedLog(), 'phone-fallback')
     browser = await chromium.launch()
     page = await browser.newPage({ viewport: { width: 1280, height: 800 }, locale: 'zh-CN' })
@@ -152,7 +151,7 @@ describe('web e2e: phone H264 fallback', () => {
   })
 
   it('keeps H264 first for real devices and skips known-failing AVC on iOS Simulator', async () => {
-    const expand = page.getByRole('button', { name: /展开侧边栏|Expand sidebar/ })
+    const expand = page.getByRole('button', { name: /打开侧边栏|Open sidebar/ })
     await expand.waitFor({ timeout: 10_000 })
     await expand.click()
     const newTab = page.getByRole('button', { name: /新.*标签|New tab/ }).last()
