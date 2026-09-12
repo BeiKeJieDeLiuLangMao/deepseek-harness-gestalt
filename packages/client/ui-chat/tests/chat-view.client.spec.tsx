@@ -21,7 +21,7 @@ import type { WorkspaceSnapshot } from '@deepseek-ai/dsh-api-workspace-controlle
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SessionPendingInteractionSnapshot } from '@deepseek-ai/dsh-client-ui-session/client'
 import type { KeyedSnapshotSelectorHook, SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
-import { bindSnapshotSelector, inputActions, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
+import { bindSnapshotSelector, inputActions, inputState, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { createSnapshotStore, type ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import { EMPTY_CONVERSATION_SNAPSHOT } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
@@ -266,6 +266,7 @@ function makeHarness(
   // Rows and the harness must observe the same chat-store instance.
   const chat = createChatStore().create()
   const transcriptView = createSnapshotStore<TranscriptViewMode>('compact')
+  const input = createSnapshotStore(inputState())
   const t = makeTranslate(zh, commonZh)
   const toolOwners: Array<{
     callId: string
@@ -380,7 +381,7 @@ function makeHarness(
     ),
     useWorkspaces: emptyWorkspaces(),
     useProjection: () => outlineValue,
-    useInput: (() => { throw new Error('unused') }),
+    useInput: bindSnapshotSelector(input),
     inputActions: inputActions(),
     useStore: bindSnapshotSelector(chat),
     actions: chat.actions,
@@ -2196,9 +2197,24 @@ describe('ChatView', () => {
     expect((owner.node.data as { readonly root: ToolCallBlock }).root).toBe(block)
     expect(owner.openFile).not.toBe(h.openFile)
     owner.openFile('src/a.ts')
-    expect(h.openFile).toHaveBeenCalledWith('src/a.ts')
+    expect(h.openFile).toHaveBeenCalledWith('src/a.ts', undefined, undefined)
     owner.inspectCall('a')
     expect(h.openView).toHaveBeenCalledWith('trajectory', 'a')
+  })
+
+  it('forwards file options and display destinations to the injected opener', () => {
+    const optionsHarness = makeHarness({ nodes: [toolResult(3, 'options')] })
+    render(<optionsHarness.ChatView {...optionsHarness.props} />)
+    optionsHarness.toolOwners[0]!.openFile('src/options.ts', { line: 12 })
+    expect(optionsHarness.openFile).toHaveBeenCalledWith('src/options.ts', { line: 12 }, undefined)
+
+    const hostHarness = makeHarness({ nodes: [toolResult(4, 'host')] })
+    hostHarness.props.displayHostSessionId = 'display-host' as SessionId
+    render(<hostHarness.ChatView {...hostHarness.props} />)
+    hostHarness.toolOwners[0]!.openFile('src/host.ts')
+    hostHarness.toolOwners[0]!.openFile('src/host-line.ts', { line: 24 })
+    expect(hostHarness.openFile).toHaveBeenNthCalledWith(1, 'src/host.ts', undefined, 'display-host')
+    expect(hostHarness.openFile).toHaveBeenNthCalledWith(2, 'src/host-line.ts', { line: 24 }, 'display-host')
   })
 
   it('shows a Host open refusal with the reason and retries the same path', async () => {
@@ -2218,8 +2234,8 @@ describe('ChatView', () => {
       expect(screen.queryByRole('dialog')).toBeNull()
     })
     expect(openFile).toHaveBeenCalledTimes(2)
-    expect(openFile).toHaveBeenNthCalledWith(1, 'src/a.ts')
-    expect(openFile).toHaveBeenNthCalledWith(2, 'src/a.ts')
+    expect(openFile).toHaveBeenNthCalledWith(1, 'src/a.ts', undefined, undefined)
+    expect(openFile).toHaveBeenNthCalledWith(2, 'src/a.ts', undefined, undefined)
   })
 
   it('keeps a non-Error Host refusal visible and dismisses it on cancel', async () => {
