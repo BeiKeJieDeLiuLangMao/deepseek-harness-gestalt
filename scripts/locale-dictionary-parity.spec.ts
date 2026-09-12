@@ -120,6 +120,7 @@ function dictionariesIn(file: string): Dictionary[] {
     if (!ts.isImportDeclaration(statement)) continue
     const specifier = statement.moduleSpecifier
     const bindings = statement.importClause?.namedBindings
+    if (bindings === undefined) continue
     if (!ts.isStringLiteral(specifier) || !specifier.text.startsWith('.') || !ts.isNamedImports(bindings)) continue
     const importedFile = resolve(dirname(file), specifier.text)
     const importedSource = ts.createSourceFile(
