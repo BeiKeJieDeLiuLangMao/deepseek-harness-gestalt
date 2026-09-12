@@ -36,17 +36,37 @@ if (start < 0) {
   console.error("platform: oss cat stdout has no JSON object");
   process.exit(1);
 }
-let obj;
-let end;
-for (let i = start + 1; i <= text.length; i++) {
-  try {
-    obj = JSON.parse(text.slice(start, i));
-    end = i;
-    break;
-  } catch (error) {
-    if (error instanceof SyntaxError) continue;
-    throw error;
+let depth = 0;
+let inString = false;
+let escape = false;
+let end = -1;
+for (let i = start; i < text.length; i++) {
+  const ch = text[i];
+  if (inString) {
+    if (escape) escape = false;
+    else if (ch === "\\") escape = true;
+    else if (ch === "\"") inString = false;
+    continue;
   }
+  if (ch === "\"") {
+    inString = true;
+    continue;
+  }
+  if (ch === "{") depth++;
+  else if (ch === "}") {
+    depth--;
+    if (depth === 0) {
+      end = i + 1;
+      break;
+    }
+  }
+}
+let obj;
+try {
+  obj = end < 0 ? undefined : JSON.parse(text.slice(start, end));
+} catch {
+  // JSON.parse throws SyntaxError for a brace-balanced but invalid object.
+  obj = undefined;
 }
 if (obj === undefined || typeof obj !== "object" || obj === null || Array.isArray(obj)) {
   console.error("platform: oss cat stdout is not a JSON object");

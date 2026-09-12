@@ -114,6 +114,8 @@ gh pr checks
 
 Report pending checks as pending. Inspect failures before attributing them to the branch or the environment.
 
+When a required Linux job (`node 24 / coverage`, `node 24 / snapshots and artifacts`) fails on a `vm-backup` runner with Docker inventory (`Cannot confirm the test transaction container inventory`) or `spawn pwsh ENOENT`, inspect `DSH_CI_FAILOVER_LINUX` and [switch back](../../notes/implemented/process/2026-07-26-ci-failover-runbook.md#switch-back) to hosted instead of rerunning failed jobs on that pool.
+
 When `gh pr checks` reports "no checks reported" and `/actions/runs?head_sha=<sha>` returns `total_count: 0`, read mergeability before suspecting the push or a dropped GitHub event:
 
 ```sh

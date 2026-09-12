@@ -3,6 +3,8 @@
 set -eEuo pipefail
 
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# Recover always sources the extract helper; tests stub platform_cloud_run first, so recover
+# skips platform-cloud-assistant.sh and cannot inherit the helper from the assistant.
 if ! declare -F platform_extract_json_object >/dev/null; then
   source "$script_dir/platform-oss-json.sh"
 fi
