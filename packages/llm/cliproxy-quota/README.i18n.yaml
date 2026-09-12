@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/llm/cliproxy-quota/README.md
-README.md: 05dd8800286d29b5af3f4409484e809de75cc29d
-README.zh.md: 2b052d8319020a8ecc874575b717673a87b83806
+README.md: 669cff8c58de57b645e4a9bd017bec9237e2bdfd
+README.zh.md: b3a47f801267e7684bddfe93f325a11a2fcd72dc
