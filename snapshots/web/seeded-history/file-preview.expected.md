@@ -2,6 +2,7 @@
 - button "Open with": Plain text
 - button "Line wrap" [pressed]:
   - img
+- button "Edit"
 - button "Read the file again":
   - img
 - text: alpha

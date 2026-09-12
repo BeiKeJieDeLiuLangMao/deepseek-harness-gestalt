@@ -588,12 +588,17 @@ describe.skipIf(MODE === 'record')('web e2e: Side Chat provisional model authori
       await page.getByRole('button', { name: 'Open sidebar', exact: true }).click()
     }
     expect(await restoredPanel.locator('[data-dockkit-tab]', { hasText: childTabTitle }).count()).toBe(0)
-    const liveChildrenBeforeNavigation = scaffold.ctx.agents.list().map(agent => agent.id)
+    const durableChildrenBeforeNavigation = (await scaffold.ctx.subagents
+      .remoteExportList(parentId, new AbortController().signal)).entries.map(entry => entry.id)
+    const requestCountBeforeNavigation = adapter.requests.length
     const descendants = page.getByRole('button', { name: '1 subagent', exact: true })
     await descendants.hover()
     await page.getByRole('tree', { name: 'Subagent sessions' })
       .getByRole('treeitem', { name: new RegExp(childTabTitle, 'u') }).click()
-    expect(scaffold.ctx.agents.list().map(agent => agent.id)).toEqual(liveChildrenBeforeNavigation)
+    expect((await scaffold.ctx.subagents.remoteExportList(parentId, new AbortController().signal))
+      .entries.map(entry => entry.id)).toEqual(durableChildrenBeforeNavigation)
+    expect(durableChildrenBeforeNavigation).toEqual([childId])
+    expect(adapter.requests).toHaveLength(requestCountBeforeNavigation)
     await restoredPanel.getByRole('button', { name: `Select model, current ${ALTERNATE_MODEL_NAME}`, exact: true })
       .waitFor({ timeout: 15_000 })
     await restoredPanel.getByRole('button', { name: 'Access mode, current: Read Only', exact: true }).waitFor()
