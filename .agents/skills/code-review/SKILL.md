@@ -11,7 +11,7 @@ Two-axis review of the diff between `HEAD` and a fixed point the user supplies:
 - **Standards**: does the code conform to this repo's documented coding standards?
 - **Spec**: does the code faithfully implement the originating issue / spec?
 
-Both axes run as **parallel sub-agents** so they don't pollute each other's context, then this skill aggregates their findings.
+Both axes run independently and are reported separately. Ordinary reviews use parallel fresh sub-agents; an orchestrated delivery may reuse its stable independent reviewer for both reports.
 
 Use the repository's issue-tracker instructions when present. If no tracker owner exists, ask where the originating specification lives; do not require an inaccessible setup skill.
 
