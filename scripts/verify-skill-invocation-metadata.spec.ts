@@ -60,6 +60,9 @@ describe('cross-product skill invocation metadata gate', () => {
     expect(source).toContain('write RED before any skill or documentation tour')
     expect(source).toContain('the replacement brief names that merged SHA')
     expect(source).toContain('it does not implement')
+    expect(source).toContain('The user selects the root model; the root never routes or changes itself')
+    expect(source).toContain('Quality completes E2E before human acceptance')
+    expect(source).toContain('fixes return to their original module owners')
   })
 
   it('keeps work-in-progress review layers explicit', () => {
