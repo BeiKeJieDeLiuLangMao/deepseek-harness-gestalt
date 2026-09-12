@@ -112,8 +112,12 @@ export function TextPreview({
   const pathTextRef = useRef<HTMLSpanElement | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const retained = editorState(tab.sessionId, tab.id)
-  const [editorSource, setEditorHolderSource] = useState<{ text: string; version: string }>(() =>
-    retained?.source === undefined ? undefined : { text: retained.source, version: current?.version ?? '' })
+  const retainedSource = retained?.source?.address === tab.contentId
+    && retained.source.documentId === selected?.id
+    && retained.source.version === current?.version
+    ? { text: retained.source.text, version: retained.source.version }
+    : undefined
+  const [editorSource, setEditorHolderSource] = useState<{ text: string; version: string }>(retainedSource)
   const [editorFailure, setEditorFailure] = useState<string>()
   const [editorLoading, setEditorLoading] = useState(false)
   const displayPath = meta.value?.absolutePath ?? current?.complete?.absolutePath ?? file.path
@@ -129,7 +133,11 @@ export function TextPreview({
   useEffect(() => {
     armEditor(tab.sessionId, tab.id, signal)
   }, [armEditor, tab.sessionId, tab.id, signal])
+  const identityRef = useRef({ address: tab.contentId, documentId: selected?.id })
   useEffect(() => {
+    const identity = identityRef.current
+    if (identity.address === tab.contentId && identity.documentId === selected?.id) return
+    identityRef.current = { address: tab.contentId, documentId: selected?.id }
     setEditorHolderSource(undefined)
     setEditorFailure(undefined)
     setEditorLoading(false)
@@ -382,7 +390,12 @@ export function TextPreview({
             content: editorSource,
             wrap: state.wrap,
             retained,
-            retain: (next) => { retainEditor(tab.sessionId, tab.id, { ...next, source: editorSource.text }) },
+            retain: (next) => {
+              retainEditor(tab.sessionId, tab.id, {
+                ...next,
+                source: { address: tab.contentId, documentId: selected.id, version: editorSource.version, text: editorSource.text },
+              })
+            },
             setDirty: (dirty) => { setEditorDirty(tab.sessionId, tab.id, dirty) },
             saved: () => {
               if (signal.aborted) return

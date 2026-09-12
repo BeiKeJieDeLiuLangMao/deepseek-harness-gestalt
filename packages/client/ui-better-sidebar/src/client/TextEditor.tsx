@@ -111,12 +111,21 @@ export function TextEditor(props: FileViewerProps) {
   )
 }
 
-/** CodeMirror-backed code, Markdown, and HTML viewer. */
-/** Serialize CodeMirror's normalized document using the source file's line-ending convention. */
+/**
+ * Serialize CodeMirror's normalized document using the source file's line-ending convention.
+ * @param source - byte-exact text originally admitted to the editor.
+ * @param text - current CodeMirror document, whose line separators are normalized to LF.
+ * @returns text with the source's LF or CRLF convention restored.
+ */
 export function serializeEditorText(source: string, text: string): string {
   return source.includes('\r\n') ? text.replaceAll('\r\n', '\n').replaceAll('\n', '\r\n') : text
 }
 
+/**
+ * CodeMirror-backed code, Markdown, and HTML viewer.
+ * @param props - loaded source, file capabilities, retained state, and toolbar ownership.
+ * @returns the source editor or rendered preview.
+ */
 export function TextEditorCore(props: TextEditorCoreProps) {
   const { scope, path, viewerId, content, truncated } = props
   const [mode, setMode] = useState<ViewMode>(() => props.retained?.mode ?? 'preview')

@@ -7,7 +7,7 @@ import type { SidebarRightTabCloseContext } from '@deepseek-ai/dsh-client-ui-sid
 /** Editor state retained by one official preview tab while its editor body is unmounted. */
 export interface DocumentEditorState {
   /** Byte-exact source originally admitted for editing, retained across body remounts. */
-  readonly source?: string
+  readonly source?: { readonly address: string; readonly documentId: string; readonly version: string; readonly text: string }
   readonly content: string
   readonly dirty: boolean
   readonly mode: 'preview' | 'edit'

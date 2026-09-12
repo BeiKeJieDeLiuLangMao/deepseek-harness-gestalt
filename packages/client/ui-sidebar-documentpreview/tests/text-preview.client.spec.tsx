@@ -359,6 +359,46 @@ describe('TextPreview — editor supplement', () => {
     expect(lines(view.container)).toEqual(['saved whole file\n'])
   })
 
+  it('restores a dirty editor across body remounts without rereading or writing', async () => {
+    const h = harness({ 1: page(1, ['whole preview'], true) })
+    const base = h.props()
+    const retained = {
+      source: { address: ADDRESS, documentId: PLAIN_BODY_ID, version: 'v1', text: 'whole source\r\n' },
+      content: 'dirty draft', dirty: true, mode: 'edit' as const, localUnlock: false, previewScroll: 4, editorScroll: 8,
+    }
+    h.instance.actions.loading(TAB_ID, 'text-pages', 'v1')
+    h.instance.actions.page(TAB_ID, {
+      absolutePath: ABSOLUTE_PATH, version: 'v1', offset: 1, text: 'whole preview', lines: 1, eof: true, bytes: 13,
+    })
+    h.instance.actions.editorMode(TAB_ID, 'edit')
+    const retain = vi.fn()
+    const renderSlot = vi.fn((key: string, owner: unknown, options: { hookContext: TextPreviewProps['useTabInfo'] }) => key === 'sidebar.right.tab.document.editor'
+      ? <div data-test-editor data-source={(owner as OwnerOf<'sidebar.right.tab.document.editor'>).content.text} data-draft={(owner as OwnerOf<'sidebar.right.tab.document.editor'>).retained?.content} />
+      : <TextBody {...base} {...owner as OwnerOf<'sidebar.right.tab.document'>} useTabInfo={options.hookContext} />)
+    const props = {
+      ...base,
+      useDocumentEditors: (selector: (value: readonly { id: string; documentIds: readonly string[] }[]) => unknown) => selector([{ id: 'better/editor', documentIds: [PLAIN_BODY_ID] }]),
+      editorState: () => retained,
+      retainEditor: retain,
+      renderSlot,
+    } as unknown as TextPreviewProps
+    const first = render(<TextPreview {...props} />)
+    await settle()
+    expect(first.container.querySelector('[data-test-editor]')).toMatchObject({
+      dataset: { source: 'whole source\r\n', draft: 'dirty draft' },
+    })
+    first.unmount()
+    const second = render(<TextPreview {...props} />)
+    await settle()
+    expect(second.container.querySelector('[data-test-editor]')).toMatchObject({
+      dataset: { source: 'whole source\r\n', draft: 'dirty draft' },
+    })
+    expect(h.bytes).not.toHaveBeenCalled()
+    expect(retain).not.toHaveBeenCalled()
+    expect(h.instance.getSnapshot().byTab[TAB_ID]?.editorMode).toBe('edit')
+    h.controller.abort()
+  })
+
   it('shows a complete-read rejection in preview and retries without writing', async () => {
     const h = harness({ 1: page(1, ['whole preview'], true) })
     const base = h.props()

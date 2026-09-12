@@ -28,10 +28,13 @@ describe('DocumentEditorRegistry', () => {
     const controller = new AbortController()
     registry.arm(SESSION, TAB, controller.signal)
     registry.retain(SESSION, TAB, {
-      source: 'complete file\r\n', content: 'complete file', dirty: true, mode: 'edit', localUnlock: false,
+      source: { address: 'file', documentId: 'text', version: 'v1', text: 'complete file\r\n' },
+      content: 'complete file', dirty: true, mode: 'edit', localUnlock: false,
       previewScroll: 1, editorScroll: 2,
     })
-    expect(registry.state(SESSION, TAB)).toMatchObject({ source: 'complete file\r\n', content: 'complete file' })
+    expect(registry.state(SESSION, TAB)).toMatchObject({
+      source: { address: 'file', documentId: 'text', version: 'v1', text: 'complete file\r\n' }, content: 'complete file',
+    })
     controller.abort()
     expect(registry.state(SESSION, TAB)).toBeUndefined()
   })
