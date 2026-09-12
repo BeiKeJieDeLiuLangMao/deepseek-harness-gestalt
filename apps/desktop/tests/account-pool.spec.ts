@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createDesktopAccountPool } from '../src/account-pool.ts'
-import type { CLIProxyAPISupervisor } from '../src/cliproxyapi-runtime.ts'
+import type { CLIProxyAPICoreRequest, CLIProxyAPISupervisor } from '../src/cliproxyapi-runtime.ts'
 
 describe('Desktop account-pool GLM key submit', () => {
   it('PUTs the first Coding Plan key and PATCHes later keys at the existing length', async () => {
@@ -8,7 +8,7 @@ describe('Desktop account-pool GLM key submit', () => {
     let plans: unknown[] = []
     const pool = createDesktopAccountPool({
       supervisor: () => ({
-        coreRequest: async (request) => {
+        coreRequest: async (request: CLIProxyAPICoreRequest) => {
           calls.push({ method: request.method, path: request.path, ...request.body === undefined ? {} : { body: request.body } })
           if (request.path === '/v0/management/glm-coding-plan' && request.method === 'GET') {
             return { statusCode: 200, body: JSON.stringify({ 'glm-coding-plan': plans }) }
@@ -27,7 +27,7 @@ describe('Desktop account-pool GLM key submit', () => {
           }
           return { statusCode: 404, body: '{"error":"unexpected"}' }
         },
-      } as CLIProxyAPISupervisor),
+      } as unknown as CLIProxyAPISupervisor),
       management: () => undefined,
       wait: async () => {},
     })
@@ -52,7 +52,7 @@ describe('Desktop account-pool GLM key submit', () => {
     const waits: number[] = []
     const pool = createDesktopAccountPool({
       supervisor: () => ({
-        coreRequest: async (request) => {
+        coreRequest: async (request: CLIProxyAPICoreRequest) => {
           if (request.path === '/v0/management/glm-coding-plan' && request.method === 'GET') {
             return { statusCode: 200, body: JSON.stringify({ 'glm-coding-plan': [] }) }
           }
@@ -69,7 +69,7 @@ describe('Desktop account-pool GLM key submit', () => {
           }
           return { statusCode: 404, body: '{"error":"unexpected"}' }
         },
-      } as CLIProxyAPISupervisor),
+      } as unknown as CLIProxyAPISupervisor),
       management: () => undefined,
       wait: async (ms) => { waits.push(ms) },
     })
@@ -102,7 +102,7 @@ describe('Desktop account-pool GLM key submit', () => {
           seen.push(pool.getSnapshot().login?.kind ?? '')
           return { statusCode: 200, body: JSON.stringify({ url: 'https://example.test/xai', state: 'xai-1', user_code: 'XAI-99' }) }
         },
-      } as CLIProxyAPISupervisor),
+      } as unknown as CLIProxyAPISupervisor),
       management: () => undefined,
       wait: async () => {},
     })
@@ -121,7 +121,7 @@ describe('Desktop account-pool GLM key submit', () => {
     const calls: { method: string; path: string; body?: string }[] = []
     const pool = createDesktopAccountPool({
       supervisor: () => ({
-        coreRequest: async (request) => {
+        coreRequest: async (request: CLIProxyAPICoreRequest) => {
           calls.push({ method: request.method, path: request.path, ...request.body === undefined ? {} : { body: request.body } })
           if (request.path === '/v0/management/oauth-callback' && request.method === 'POST') {
             return { statusCode: 200, body: '{"status":"ok"}' }
@@ -145,7 +145,7 @@ describe('Desktop account-pool GLM key submit', () => {
           }
           return { statusCode: 404, body: '{"error":"unexpected"}' }
         },
-      } as CLIProxyAPISupervisor),
+      } as unknown as CLIProxyAPISupervisor),
       management: () => undefined,
       wait: async () => {},
     })
@@ -172,7 +172,7 @@ describe('Desktop account-pool GLM key submit', () => {
     const calls: { method: string; path: string; body?: string }[] = []
     const pool = createDesktopAccountPool({
       supervisor: () => ({
-        coreRequest: async (request) => {
+        coreRequest: async (request: CLIProxyAPICoreRequest) => {
           calls.push({ method: request.method, path: request.path, ...request.body === undefined ? {} : { body: request.body } })
           if (request.path.startsWith('/v0/management/auth-files/models')) {
             return { statusCode: 200, body: JSON.stringify({ models: [{ id: 'grok-4', display_name: 'Grok 4', owned_by: 'xai' }, { id: '' }] }) }
@@ -197,7 +197,7 @@ describe('Desktop account-pool GLM key submit', () => {
           }
           return { statusCode: 404, body: '{"error":"unexpected"}' }
         },
-      } as CLIProxyAPISupervisor),
+      } as unknown as CLIProxyAPISupervisor),
       management: () => undefined,
       wait: async () => {},
     })

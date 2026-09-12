@@ -31,17 +31,17 @@ function toneClass(provider: string): string {
   switch (provider) {
     case 'anthropic':
     case 'claude':
-      return css.claude
+      return css.claude ?? ''
     case 'antigravity':
-      return css.antigravity
+      return css.antigravity ?? ''
     case 'codex':
-      return css.codex
+      return css.codex ?? ''
     case 'xai':
-      return css.xai
+      return css.xai ?? ''
     case 'kimi':
-      return css.kimi
+      return css.kimi ?? ''
     case 'glm':
-      return css.glm
+      return css.glm ?? ''
     default:
       return ''
   }

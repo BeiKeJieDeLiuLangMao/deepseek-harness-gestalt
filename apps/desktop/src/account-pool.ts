@@ -276,7 +276,8 @@ export function createDesktopAccountPool(options: {
       if (!Array.isArray(models)) return []
       return models.flatMap((entry) => {
         const record = asRecord(entry)
-        const id = typeof record?.id === 'string' ? record.id : ''
+        if (record === undefined) return []
+        const id = typeof record.id === 'string' ? record.id : ''
         if (id.length === 0) return []
         const display = typeof record.display_name === 'string' ? record.display_name : undefined
         const ownedBy = typeof record.owned_by === 'string' ? record.owned_by : undefined
@@ -536,7 +537,10 @@ function redactEditableFields(name: string, body: string): DesktopAccountPoolEdi
     ...stringList(record.excluded_models) === undefined && stringList(record['excluded-models']) === undefined
       ? {}
       : { excludedModels: stringList(record.excluded_models) ?? stringList(record['excluded-models']) ?? [] },
-    ...stringMap(record.headers) === undefined ? {} : { headers: stringMap(record.headers) },
+    ...(() => {
+      const headers = stringMap(record.headers)
+      return headers === undefined ? {} : { headers }
+    })(),
   }
   for (const key of Object.keys(record)) {
     if (SECRET_KEYS.has(key)) continue

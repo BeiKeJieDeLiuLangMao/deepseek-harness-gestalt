@@ -152,8 +152,10 @@ describe('AccountPoolControl', () => {
   })
 
   it('opens models and settings dialogs from the management-face actions', async () => {
-    const desktop = bridge()
-    desktop.accountPoolListModels = vi.fn(async () => [{ id: 'kimi-k2', name: 'Kimi K2', ownedBy: 'kimi' }])
+    const desktop = {
+      ...bridge(),
+      accountPoolListModels: vi.fn(async () => [{ id: 'kimi-k2', name: 'Kimi K2', ownedBy: 'kimi' }]),
+    }
     window.dshDesktop = desktop
     renderControl({ state: 'ready', accounts: [account] })
     fireEvent.click(screen.getByRole('button', { name: '模型' }))
@@ -187,8 +189,10 @@ describe('AccountPoolControl', () => {
   })
 
   it('shows an empty-models dialog when the Host returns no models', async () => {
-    const desktop = bridge()
-    desktop.accountPoolListModels = vi.fn(async () => [])
+    const desktop = {
+      ...bridge(),
+      accountPoolListModels: vi.fn(async () => []),
+    }
     window.dshDesktop = desktop
     renderControl({ state: 'ready', accounts: [account] })
     fireEvent.click(screen.getByRole('button', { name: '模型' }))

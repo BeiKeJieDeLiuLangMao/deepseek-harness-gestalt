@@ -96,7 +96,7 @@ export function SettingsDialog({ t, account, details, models = [], onClose, onSa
         </label>
         <p className={css.fieldTip}>{t('sub2api.fieldWebsocketsTip')}</p>
         <label className={css.fieldLabel} htmlFor="account-pool-excluded">{t('sub2api.fieldExcluded')}</label>
-        <ExcludedModelsPicker t={t} models={models} selected={excludedExact} onChange={setExcludedExact} />
+        <ExcludedModelsPicker t={t} models={models} selected={excludedExact} onChange={(next) => { setExcludedExact([...next]) }} />
         <label className={css.fieldLabel} htmlFor="account-pool-wildcards">{t('sub2api.fieldWildcards')}</label>
         <textarea
           id="account-pool-wildcards"
