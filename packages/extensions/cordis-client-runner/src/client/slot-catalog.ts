@@ -2575,12 +2575,9 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       },
     ],
     ownerProps: [
-      '/**\n * Contents prepared by the preview owner using ordinary file reads.\n * Byte arrays are transient UI input, never persisted layout or Session data.\n */\nexport type DocumentContent =\n  | { readonly kind: \'text\'; readonly text: string; readonly pages: readonly DocumentTextPage[]; readonly eof: boolean }\n  | { readonly kind: \'bytes\'; readonly data: Uint8Array<ArrayBuffer> }',
       '/** Editor state retained by one official preview tab while its editor body is unmounted. */\nexport interface DocumentEditorState {\n  readonly content: string\n  readonly dirty: boolean\n  readonly mode: \'preview\' | \'edit\'\n  readonly localUnlock: boolean\n  readonly previewScroll: number\n  readonly editorScroll: number\n}',
     ],
-    ownerPropsReferences: [
-      'DocumentTextPage',
-    ],
+    ownerPropsReferences: [],
     standardProps: [
       'useResource: UseResource',
       'useWorkspaces: SnapshotSelectorHook<WorkspaceSnapshot>',

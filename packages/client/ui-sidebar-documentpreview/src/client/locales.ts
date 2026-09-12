@@ -29,6 +29,8 @@ export const zh = {
   edit: '编辑',
   preview: '预览',
   editIncomplete: '请先加载完整文件再编辑。',
+  editNotText: '完整文件不是有效的 UTF-8 文本，无法安全编辑。',
+  editChanged: '文件在准备编辑时已更新，请重新载入后再试。',
   discardUnsaved: '此文件有未保存的更改，是否放弃更改并关闭？',
 } satisfies Record<string, string>
 
@@ -58,5 +60,7 @@ export const en = {
   edit: 'Edit',
   preview: 'Preview',
   editIncomplete: 'Load the complete file before editing.',
+  editNotText: 'The complete file is not valid UTF-8 text and cannot be edited safely.',
+  editChanged: 'The file changed while preparing the editor. Reload and try again.',
   discardUnsaved: 'This file has unsaved changes. Discard them and close?',
 } satisfies Record<SidebarDocumentPreviewKey, string>

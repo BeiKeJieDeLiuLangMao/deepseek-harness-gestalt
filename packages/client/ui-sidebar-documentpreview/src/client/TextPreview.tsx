@@ -21,7 +21,7 @@ import type { TextInjected } from './face.ts'
 import { failureLine } from './failure-line.ts'
 import { IconNowrapFill16, IconWrapFill16 } from './icons.tsx'
 import { LoadingIndicator } from './LoadingIndicator.tsx'
-import { hostFileOf } from './rpc.ts'
+import { documentFileBytes, hostFileOf } from './rpc.ts'
 import type { TextStore } from './store.ts'
 import type { DocumentContent } from './document/contract.ts'
 import type { DocumentEditorDefinition, DocumentEditorRegistry } from './document/editor.ts'
@@ -67,6 +67,7 @@ export interface TextPreviewInjected extends TextInjected {
   readonly retainEditor: DocumentEditorRegistry['retain']
   readonly setEditorDirty: DocumentEditorRegistry['setDirty']
   readonly armEditor: DocumentEditorRegistry['arm']
+  readonly readEditorSource: (file: ReturnType<typeof hostFileOf>, signal: AbortSignal) => ReturnType<import('./rpc.ts').ReadDocumentBytes>
 }
 
 /** The body's composed props: the tab, its navigation, the shared store and face, and copy. */
@@ -85,7 +86,7 @@ export type TextPreviewProps =
 export function TextPreview({
   useTabInfo, useResource, useStore, actions, loadPage, reloadPages,
   loadAll, reloadAll, useDocumentPreviews, useDocumentEditors, editorState,
-  retainEditor, setEditorDirty, armEditor, renderSlot, t,
+  retainEditor, setEditorDirty, armEditor, readEditorSource, renderSlot, t,
 }: TextPreviewProps): ReactNode {
   const { tab } = useTabInfo()
   const { navigation, signal } = tab
@@ -110,6 +111,9 @@ export function TextPreview({
   const pathRef = useRef<HTMLDivElement | null>(null)
   const pathTextRef = useRef<HTMLSpanElement | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [editorSource, setEditorHolderSource] = useState<{ text: string; version: string }>()
+  const [editorFailure, setEditorFailure] = useState<string>()
+  const [editorLoading, setEditorLoading] = useState(false)
   const displayPath = meta.value?.absolutePath ?? current?.complete?.absolutePath ?? file.path
   usePathClipped(pathRef, pathTextRef, displayPath, state !== undefined)
   // Every tab of this type is a `file` resource address, so its params are the
@@ -123,6 +127,11 @@ export function TextPreview({
   useEffect(() => {
     armEditor(tab.sessionId, tab.id, signal)
   }, [armEditor, tab.sessionId, tab.id, signal])
+  useEffect(() => {
+    setEditorHolderSource(undefined)
+    setEditorFailure(undefined)
+    setEditorLoading(false)
+  }, [tab.contentId, selected?.id])
   useEffect(() => {
     if (state?.editorMode === 'edit' && (editor === undefined || selected?.editable !== true || mode !== 'text-pages')) {
       actions.editorMode(tab.id, 'preview')
@@ -281,11 +290,48 @@ export function TextPreview({
             <button
               type="button"
               className={css.tool}
-              disabled={current?.eof !== true}
+              disabled={current?.eof !== true || editorLoading}
               aria-pressed={state.editorMode === 'edit'}
               aria-label={t(state.editorMode === 'edit' ? 'preview' : 'edit')}
               data-document-editor-toggle
-              onClick={() => { actions.editorMode(tab.id, state.editorMode === 'edit' ? 'preview' : 'edit') }}
+              onClick={() => {
+                if (state.editorMode === 'edit') {
+                  actions.editorMode(tab.id, 'preview')
+                  return
+                }
+                if (editorLoading) return
+                setEditorLoading(true)
+                setEditorFailure(undefined)
+                void readEditorSource(file, signal).then((result) => {
+                  if (signal.aborted) return
+                  if (!result.ok) {
+                    setEditorFailure(result.error.message)
+                    return
+                  }
+                  const bytes = documentFileBytes(result.value)
+                  if (bytes.data.includes(0)) {
+                    setEditorFailure(t('editNotText'))
+                    return
+                  }
+                  if (current?.version !== undefined && bytes.version !== current.version) {
+                    setEditorFailure(t('editChanged'))
+                    return
+                  }
+                  let text: string
+                  try {
+                    text = new TextDecoder('utf-8', { fatal: true }).decode(bytes.data)
+                  } catch {
+                    setEditorFailure(t('editNotText'))
+                    return
+                  }
+                  setEditorHolderSource({ text, version: bytes.version })
+                  actions.editorMode(tab.id, 'edit')
+                }).catch((error: unknown) => {
+                  if (!signal.aborted) setEditorFailure(error instanceof Error ? error.message : String(error))
+                }).finally(() => {
+                  if (!signal.aborted) setEditorLoading(false)
+                })
+              }}
             >
               {t(state.editorMode === 'edit' ? 'preview' : 'edit')}
             </button>
@@ -319,23 +365,25 @@ export function TextPreview({
           <LoadingIndicator className={css.statusLine} label={t('loading')} />
         )}
         {content !== undefined && (state.editorMode === 'edit' && content.kind === 'text' && editor !== undefined
-          ? renderSlot('sidebar.right.tab.document.editor', {
-            documentId: selected.id,
-            resourceAddress: tab.contentId,
-            content,
-            wrap: state.wrap,
-            retained: editorState(tab.sessionId, tab.id),
-            retain: (retained) => { retainEditor(tab.sessionId, tab.id, retained) },
-            setDirty: (dirty) => { setEditorDirty(tab.sessionId, tab.id, dirty) },
-            saved: () => {
-              if (signal.aborted) return
-              actions.editorMode(tab.id, 'preview')
-              reloadPages(tab.id, file, signal, meta.value?.version)
-            },
-          }, {
-            entryKey: selected.id, hookContext: useTabInfo,
-            fallback: <p className={css.statusLine}>{t('rendererUnavailable', { name: selected.title() })}</p>,
-          })
+          ? editorSource === undefined
+            ? <p className={css.statusLine}>{editorFailure ?? t('loading')}</p>
+            : renderSlot('sidebar.right.tab.document.editor', {
+              documentId: selected.id,
+              resourceAddress: tab.contentId,
+              content: editorSource,
+              wrap: state.wrap,
+              retained: editorState(tab.sessionId, tab.id),
+              retain: (retained) => { retainEditor(tab.sessionId, tab.id, retained) },
+              setDirty: (dirty) => { setEditorDirty(tab.sessionId, tab.id, dirty) },
+              saved: () => {
+                if (signal.aborted) return
+                actions.editorMode(tab.id, 'preview')
+                reloadPages(tab.id, file, signal, meta.value?.version)
+              },
+            }, {
+              entryKey: selected.id, hookContext: useTabInfo,
+              fallback: <p className={css.statusLine}>{t('rendererUnavailable', { name: selected.title() })}</p>,
+            })
           : renderSlot('sidebar.right.tab.document', {
             resourceAddress: tab.contentId, content, wrap: state.wrap,
           }, {

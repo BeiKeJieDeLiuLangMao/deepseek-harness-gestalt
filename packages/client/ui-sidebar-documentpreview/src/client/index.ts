@@ -118,6 +118,7 @@ export function apply(ctx: ClientContext): void {
         retainEditor: editors.retain.bind(editors),
         setEditorDirty: editors.setDirty.bind(editors),
         armEditor: editors.arm.bind(editors),
+        readEditorSource: (file, signal) => ctx.remote.workspaceFiles.readAll(file.sessionId, file.path, signal),
       }),
     },
     TextPreview,

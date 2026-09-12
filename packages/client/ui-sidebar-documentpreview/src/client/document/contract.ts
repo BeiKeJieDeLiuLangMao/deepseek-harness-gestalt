@@ -48,8 +48,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
         readonly documentId: string
         /** Original file address naming the Session and path. */
         readonly resourceAddress: string
-        /** Complete text established by the official paged reader at EOF. */
-        readonly content: Extract<DocumentContent, { readonly kind: 'text' }>
+        /** Byte-exact UTF-8 text from the official bounded complete-file read. */
+        readonly content: { readonly text: string; readonly version: string }
         /** Current wrap preference. */
         readonly wrap: boolean
         /** State retained for this tab occurrence while the editor is unmounted. */

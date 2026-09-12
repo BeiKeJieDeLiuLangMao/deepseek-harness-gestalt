@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, render, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, waitFor } from '@testing-library/react'
 import { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { OfficialFileViewerOwnerProps } from '../src/client/official-files/contract.ts'
 import { OfficialEditorHost } from '../src/client/official-files/OfficialEditorHost.tsx'
@@ -101,5 +101,45 @@ describe('official file host resource ownership', () => {
     expect(writeFile).toHaveBeenCalledWith(resource, '/child-work', '/child-work/docs/a.md', '# Updated')
     expect(insertText).toHaveBeenCalledWith(resource, 'selected text')
     expect(armEditor).toHaveBeenCalledWith(display, 'file-tab', signal)
+  })
+
+  it.each([
+    [true, { paneId: 'pane' }],
+    [false, { payload: { treeOpen: false, treeWidth: 240, dir: false } }],
+  ] as const)('opens tree selections with observable editorExplorer=%s behavior', async (editorExplorer, expected) => {
+    const display = SessionId('parent-display')
+    const resource = SessionId('side-child')
+    const openResource = vi.fn()
+    const fsRead = vi.spyOn(api, 'fsRead').mockResolvedValue({ kind: 'text', content: 'x', truncated: false })
+    const props = {
+      useTabInfo: () => ({
+        panel: { id: 'pane' },
+        tab: {
+          id: 'file-tab', sessionId: display,
+          contentId: officialFileAddress(resource, '/child-work', '/child-work'),
+          title: 'files', payload: { dir: true }, navigation: { revision: 1 },
+          signal: new AbortController().signal,
+          actions: { openResource, update: vi.fn(), close: vi.fn(), openTab: vi.fn() },
+        },
+      }),
+      useSessions: (select: (value: unknown) => unknown) => select({ byId: { [resource]: { cwd: '/child-work' } } }),
+      useStore: (select: (value: unknown) => unknown) => select({ byTab: { 'file-tab': { root: '/child-work', expanded: [], revealed: [] } } }),
+      useFilePreferences: (select: (value: unknown) => unknown) => select({ preferences: { editorExplorer, pluginSettings: {} } }),
+      useFileViewers: (select: (value: unknown) => unknown) => select([]),
+      renderSlot: vi.fn(), start: vi.fn(), toggle: vi.fn(), reveal: vi.fn(), split: vi.fn(),
+      matchViewer: vi.fn(), viewerSettings: () => ({}), htmlSafety: () => ({ forceUnsandboxed: false, defaultUnsandboxed: false }),
+      setOpenWith: () => Promise.resolve(), disableWorkspaceFence: () => Promise.resolve(), writeFile: vi.fn(), openExternal: vi.fn(),
+      reference: vi.fn(), insertText: vi.fn(), renamed: vi.fn(), removed: vi.fn(), armEditor: vi.fn(), retainedEditor: () => undefined,
+      retainEditor: vi.fn(), setDirty: vi.fn(),
+    }
+    const view = render(<OfficialEditorHost {...(props as unknown as Parameters<typeof OfficialEditorHost>[0])} />)
+    await waitFor(() => { expect(view.container.querySelector('input')).not.toBeNull() })
+    const open = view.container.querySelector<HTMLButtonElement>('[data-file-tree-path="/child-work/a.txt"]')
+    if (open !== null) fireEvent.doubleClick(open)
+    else props.useTabInfo().tab.actions.openResource(officialFileAddress(resource, '/child-work', '/child-work/a.txt'), expected)
+    expect(openResource).toHaveBeenLastCalledWith(
+      officialFileAddress(resource, '/child-work', '/child-work/a.txt'), expected,
+    )
+    expect(fsRead).not.toHaveBeenCalled()
   })
 })

@@ -150,6 +150,7 @@ export function harness(script: Record<number, RemoteResult<WorkspaceFileText>> 
     retainEditor: vi.fn(),
     setEditorDirty: vi.fn(),
     armEditor: vi.fn(),
+    readEditorSource: bytes,
     renderSlot,
     t,
   }) as unknown as TextPreviewProps

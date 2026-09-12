@@ -48,6 +48,13 @@ const TREE_WIDTH_DEFAULT = 240
 const TREE_WIDTH_MIN = 160
 const TREE_WIDTH_MAX = 480
 
+/** Official navigator options preserving merged-in-pane versus split-new-tab behavior. */
+export function treeSelectionOpenOptions(inPlace: boolean, paneId: string): { paneId: string } | { payload: OfficialFileTabPayload } {
+  return inPlace
+    ? { paneId }
+    : { payload: { treeOpen: false, treeWidth: TREE_WIDTH_DEFAULT, dir: false } }
+}
+
 function payloadOf(value: JsonValue | undefined): OfficialFileTabPayload {
   const record = value !== null && typeof value === 'object' && !Array.isArray(value)
     ? value as Record<string, JsonValue>
@@ -131,11 +138,7 @@ export function OfficialEditorHost(props: OfficialFileBodyProps): ReactNode {
   const openFile = (absolute: string): void => {
     const address = addressFor(absolute)
     if (address === undefined) return
-    if (inPlace) {
-      tab.actions.openResource(address)
-    } else {
-      tab.actions.openResource(address, { payload: { treeOpen: false, treeWidth: TREE_WIDTH_DEFAULT, dir: false } })
-    }
+    tab.actions.openResource(address, treeSelectionOpenOptions(inPlace, panel.id))
   }
   const openFileNewTab = (absolute: string): void => {
     const address = addressFor(absolute)

@@ -315,6 +315,13 @@ describe('TextPreview — editor supplement', () => {
   it('keeps preview primary until EOF, then returns to official paging after save', async () => {
     const h = harness({ 1: page(1, ['head'], false), 2: page(2, ['tail'], true) })
     const base = h.props()
+    h.bytes.mockResolvedValue({
+      ok: true,
+      value: {
+        absolutePath: ABSOLUTE_PATH, version: 'v1', offset: 0,
+        data: btoa('head\r\ntail\r\n\r\n'), eof: true, bytes: 15,
+      },
+    })
     let editorOwner: OwnerOf<'sidebar.right.tab.document.editor'> | undefined
     const props: TextPreviewProps = {
       ...base,
@@ -339,8 +346,10 @@ describe('TextPreview — editor supplement', () => {
     await settle()
     expect(toggle?.disabled).toBe(false)
     fireEvent.click(toggle!)
+    await settle()
+    expect(h.bytes).toHaveBeenCalledWith({ sessionId: SESSION, path: PATH }, h.controller.signal)
     expect(view.container.querySelector('[data-test-editor]')).not.toBeNull()
-    expect(editorOwner?.content.text).toBe('head\ntail')
+    expect(editorOwner?.content.text).toBe('head\r\ntail\r\n\r\n')
 
     h.script(1, page(1, ['saved whole file'], true, 'v2'))
     editorOwner?.saved()
