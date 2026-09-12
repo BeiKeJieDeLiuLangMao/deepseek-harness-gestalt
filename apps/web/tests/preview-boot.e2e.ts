@@ -447,10 +447,16 @@ async function bootEmptyPreview(origin: string, browser: Browser): Promise<void>
   const page = await newEnglishPage(browser)
   const pageErrors: Error[] = []
   const consoleErrors: string[] = []
-  const failedResponses: string[] = []
+  const failedResponses: { method: string; pathname: string; status: number }[] = []
   page.on('pageerror', (error) => { pageErrors.push(error) })
   page.on('response', (response) => {
-    if (response.status() >= 400) failedResponses.push(new URL(response.url()).pathname)
+    if (response.status() >= 400) {
+      failedResponses.push({
+        method: response.request().method(),
+        pathname: new URL(response.url()).pathname,
+        status: response.status(),
+      })
+    }
   })
   const treeActive = new Promise<string>((reported) => {
     page.on('console', (message) => {
@@ -499,12 +505,14 @@ async function bootEmptyPreview(origin: string, browser: Browser): Promise<void>
     //   the runtime source falls back to unavailable (designed degradation).
     // - '/sidebar/api/shell.get': terminal shell probe has no host JSON API;
     //   the tab definition falls back to default title (designed degradation).
-    expect([...failedResponses].sort()).toEqual([
-      '/open-in-app/apps',
-      '/phone/environment',
-      '/phone/environment',
-      '/plugins/events',
-      '/sidebar/api/shell.get',
+    expect(failedResponses.every(r => r.status === 404)).toBe(true)
+    const formattedResponses = failedResponses.map(r => `${r.method} ${r.pathname} ${r.status}`)
+    expect([...formattedResponses].sort()).toEqual([
+      'GET /open-in-app/apps 404',
+      'GET /phone/environment 404',
+      'GET /phone/environment 404',
+      'GET /plugins/events 404',
+      'POST /sidebar/api/shell.get 404',
     ])
     expect(consoleErrors.filter(line => !line.includes('Failed to load resource: the server responded with a status of 404')))
       .toEqual([])

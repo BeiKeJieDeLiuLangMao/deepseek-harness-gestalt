@@ -2,6 +2,8 @@
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import { IconCodeOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { TurnTailOwnerProps } from '@deepseek-ai/dsh-client-ui-chat/client'
+import type { DeliverablesTurnData } from '@deepseek-ai/dsh-client-ui-deliverables/client'
 import type { SidebarContext } from '../context-types.ts'
 import { t } from './locales.ts'
 import { wrapOpenWorkspacePath, type OpenWorkspacePathService } from './openpath-intercept.ts'
@@ -152,37 +154,25 @@ function reportOpenFailure(subject: string, error: unknown): void {
 }
 
 /**
- * Check whether the closing turn declared explicit deliverables.
+ * Check whether the closing turn declared explicit deliverables before this closing sequence.
  *
  * When presented files exist, the official Deliverables component must own the
  * turn tail so it renders both the presented cards and produced files.
+ * @param owner - Typed turn tail owner from the conversation chain.
+ * @returns True when at least one presented deliverable precedes this closing.
  */
-export function hasPresentedDeliverables(owner: unknown): boolean {
-  const record = owner as {
-    turn?: { data?: { get?: (key: string) => unknown } }
-    seq?: unknown
-  } | null
-  if (record === null || typeof record !== 'object') return false
-  const seq = typeof record.seq === 'number' ? record.seq : Number.POSITIVE_INFINITY
-  const data = record.turn?.data?.get?.('deliverables') as
-    | { presented?: unknown }
-    | null
-    | undefined
-  if (data !== null && typeof data === 'object' && Array.isArray(data.presented)) {
-    return data.presented.some((item) => {
-      if (item === null || typeof item !== 'object') return false
-      const file = item as { seq?: unknown }
-      return typeof file.seq !== 'number' || file.seq < seq
-    })
-  }
-  return false
+function hasPresentedDeliverables(owner: TurnTailOwnerProps): boolean {
+  if (typeof owner?.seq !== 'number' || !Number.isFinite(owner.seq)) return false
+  const data = owner.turn?.data?.get?.('deliverables') as DeliverablesTurnData | undefined
+  if (data?.presented === undefined || !Array.isArray(data.presented)) return false
+  return data.presented.some(file => typeof file.seq === 'number' && file.seq < owner.seq)
 }
 
 /** Register the official produced-file row through the conversation chain. */
 export function registerOfficialTurnTail(ctx: OfficialOpenRoutingContext): () => void {
   return ctx.slots.inject('conversation.chat.turnTail', () => ctx.slots.register({
     name: 'conversation.chat.turnTail',
-    select: (owner) => {
+    select: (owner: TurnTailOwnerProps) => {
       const preferences = ctx.sidebarRightPreferences.getSnapshot().preferences
       if (!preferences.interceptOpenPath || !ctx.sidebarRightTabs.isTabEnabled(OFFICIAL_FILE_ID)) return null
       if (hasPresentedDeliverables(owner)) return null

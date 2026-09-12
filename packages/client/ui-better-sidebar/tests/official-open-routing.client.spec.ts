@@ -1,6 +1,7 @@
 import { Children, isValidElement, type ReactElement, type ReactNode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { TurnTailOwnerProps } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type { TabId } from '@deepseek-ai/dsh-client-ui-dockkit'
 import { officialFileAddress, parseOfficialFileAddress } from '../src/client/official-files/address.ts'
 import {
@@ -212,31 +213,58 @@ describe('official open routing', () => {
       },
     })
     const release = registerOfficialTurnTail(ctx)
-    const owner = {
-      seq: 2,
-      turn: { data: { get: () => ({ produced: [{ seq: 1, path: 'src/a.ts' }] }) } },
-    }
-    expect(definition!.select(owner)).toBeNull()
-    interceptOpenPath = true
-    enabled = false
-    expect(definition!.select(owner)).toBeNull()
-    enabled = true
-    expect(definition!.select(owner)).toEqual(['src/a.ts'])
-    // When the turn includes explicitly presented deliverables, the takeover declines
-    // so the official Deliverables component can render both presented cards and produced files.
-    const ownerWithPresented = {
-      seq: 2,
+    const makeOwner = (
+      deliverables: { produced?: { seq: number; path: string }[]; presented?: { seq: number; path: string; description?: string }[] } | undefined,
+      seq = 2,
+    ): TurnTailOwnerProps => ({
+      seq,
       turn: {
+        turn: 1,
+        status: 'closed',
+        start: undefined,
+        end: undefined,
+        steps: [],
         data: {
-          get: () => ({
-            produced: [{ seq: 1, path: 'src/a.ts' }],
-            presented: [{ seq: 1, path: 'src/a.ts', description: 'desc' }],
-          }),
+          get: (key: string) => (key === 'deliverables' ? deliverables : undefined),
+          source: () => ({ snapshot: () => undefined, subscribe: () => () => {} }),
         },
       },
-    }
-    expect(definition!.select(ownerWithPresented)).toBeNull()
-    expect(definition!.select({})).toBeNull()
+      openFile: vi.fn(),
+    })
+
+    const ownerOnlyProduced = makeOwner({ produced: [{ seq: 1, path: 'src/a.ts' }] })
+    expect(definition!.select(ownerOnlyProduced)).toBeNull()
+    interceptOpenPath = true
+    enabled = false
+    expect(definition!.select(ownerOnlyProduced)).toBeNull()
+    enabled = true
+
+    // 1. 无 present（仅 produced）：返回 produced files 列表
+    expect(definition!.select(ownerOnlyProduced)).toEqual(['src/a.ts'])
+
+    // 2. Mixed（既有 produced 也有当前 closing 之前的 presented）：让渡给官方 Deliverables
+    const ownerMixed = makeOwner({
+      produced: [{ seq: 1, path: 'src/a.ts' }],
+      presented: [{ seq: 1, path: 'src/a.ts', description: 'desc' }],
+    }, 2)
+    expect(definition!.select(ownerMixed)).toBeNull()
+
+    // 3. Present-only（仅有 presented，无 produced）：返回 null
+    const ownerPresentOnly = makeOwner({
+      presented: [{ seq: 1, path: 'src/delivered.txt' }],
+    }, 2)
+    expect(definition!.select(ownerPresentOnly)).toBeNull()
+
+    // 4. 未来 seq 的 presented（file.seq >= owner.seq，不抢历史 closing）：不让渡，正常返回当前轮次的 produced
+    const ownerFuturePresented = makeOwner({
+      produced: [{ seq: 1, path: 'src/a.ts' }],
+      presented: [{ seq: 3, path: 'src/future.txt' }],
+    }, 2)
+    expect(definition!.select(ownerFuturePresented)).toEqual(['src/a.ts'])
+
+    // 5. Other turn 隔离：若当前 turn 没有任何 deliverables 数据，返回 null
+    const ownerOtherTurn = makeOwner(undefined, 2)
+    expect(definition!.select(ownerOtherTurn)).toBeNull()
 
     const injected = definition!.inject(SESSION)
     injected.openInSidebar('src/a.ts')

@@ -1,6 +1,6 @@
 # Agent Note: 存在显式交付物时让渡官方 turn-tail 接管
 
-状态: implemented
+Status: implemented
 
 [English](2026-09-12-official-turn-tail-deliverables-fusion.md) | 中文
 
@@ -12,10 +12,16 @@
 
 ## 决策
 
-1. 在 `packages/client/ui-better-sidebar/src/client/official-open-routing.tsx` 中，`registerOfficialTurnTail` 现通过 `hasPresentedDeliverables(owner)` 进行前置检查。若当前轮次包含显式交付物（`deliverables.presented`），接管让渡（返回 `null`），使官方 `ui-deliverables` 正常渲染产出文件行与全部交付文件卡片。
-2. 在 `packages/client/ui-better-sidebar/tests/official-open-routing.client.spec.ts` 中补充负例测试，验证当存在交付物时 `definition.select(ownerWithPresented)` 返回 `null`。
-3. 在 `apps/web/tests/preview-boot.e2e.ts` 中，将 `/phone/environment` 与 `/sidebar/api/shell.get` 纳入允许的静态 404 响应列表，并记录其在无宿主后台时的设计降级原因。
+1. 在 `packages/client/ui-better-sidebar/src/client/official-open-routing.tsx` 中，`registerOfficialTurnTail` 现通过 `hasPresentedDeliverables(owner)` 对 `TurnTailOwnerProps` 进行类型化检查。若当前轮次在 `owner.seq` 之前包含显式交付物（`deliverables.presented`），接管让渡（返回 `null`），使官方 `ui-deliverables` 正常渲染产出文件行与全部交付文件卡片。
+2. 在 `packages/client/ui-better-sidebar/tests/official-open-routing.client.spec.ts` 中补充完整的负例测试矩阵，验证当存在显式交付物或混合交付物时 `definition.select` 返回 `null`，而在仅产出、未来序列交付物或其它轮次时保持原有行为。
+3. 在 `apps/web/tests/preview-boot.e2e.ts` 中，精确断言每个失败响应的 `status === 404`（`GET /open-in-app/apps 404`、`GET /phone/environment 404` x2、`GET /plugins/events 404`、`POST /sidebar/api/shell.get 404`），记录其在无宿主后台时的设计降级原因。
 4. 使用 `DSH_SNAPSHOT=refresh` 重新生成 `snapshots/web/present-svg/session.v3.jsonl`，同步吸收上游 `subagent/model-selection-policy` 会话事件，同时完整保留既有的模型输出与 SVG 产物。
+
+## 被否决的方案
+
+**在测试中强行设置 `interceptOpenPath: false`。** 否决：通过将配置设为 false 掩盖了 Better Sidebar 的 turn-tail 接管在默认设置下遮蔽交付卡片的问题。默认产品行为必须开箱即用地完整保留交付物卡片。
+
+**在 `OfficialProducedFiles` 中重新实现交付卡片。** 否决：`@deepseek-ai/dsh-client-ui-deliverables` 已经完整持有交付物卡片渲染、宿主桌面可用性状态及动作菜单能力，在 Better Sidebar 内部平行重复造轮子会造成长期的维护负担。
 
 ## 影响
 
