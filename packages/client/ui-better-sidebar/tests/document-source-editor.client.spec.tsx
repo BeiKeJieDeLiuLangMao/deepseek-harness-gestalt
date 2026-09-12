@@ -21,6 +21,7 @@ describe('DocumentSourceEditor', () => {
     const saved = vi.fn()
     const controller = new AbortController()
     render(<DocumentSourceEditor {...({
+      useSessions: (selector: (value: unknown) => unknown) => selector({ byId: { [sessionId]: { cwd: '/work' } } }),
       useTabInfo: () => ({ tab: { title: 'a.md', navigation: { revision: 1 }, signal: controller.signal } }),
       documentId: '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/markdown',
       resourceAddress: sessionFileAddress(sessionId, 'a.md'),
@@ -34,7 +35,7 @@ describe('DocumentSourceEditor', () => {
       insertText: vi.fn(),
     } as unknown as Parameters<typeof DocumentSourceEditor>[0])} />)
     await waitFor(() => { expect(saved).toHaveBeenCalledTimes(1) })
-    expect(writeFile).toHaveBeenCalledWith(sessionId, 'a.md', 'whole edited file')
+    expect(writeFile).toHaveBeenCalledWith(sessionId, '/work/a.md', 'whole edited file')
   })
 
   it('does not publish a save completion after the official tab closes', async () => {
@@ -43,6 +44,7 @@ describe('DocumentSourceEditor', () => {
     const saved = vi.fn()
     const controller = new AbortController()
     render(<DocumentSourceEditor {...({
+      useSessions: (selector: (value: unknown) => unknown) => selector({ byId: { [sessionId]: { cwd: '/work' } } }),
       useTabInfo: () => ({ tab: { title: 'a.md', navigation: { revision: 1 }, signal: controller.signal } }),
       documentId: '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/markdown',
       resourceAddress: sessionFileAddress(sessionId, 'a.md'),

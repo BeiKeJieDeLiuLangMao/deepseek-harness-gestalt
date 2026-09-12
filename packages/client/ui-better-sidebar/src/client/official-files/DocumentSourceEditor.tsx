@@ -4,6 +4,8 @@ import { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { InjectFace, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { parseFileAddress } from '@deepseek-ai/dsh-util-workspace-path'
 import { TextEditorCore } from '../TextEditor.tsx'
+import { isAbsolutePath } from '../paths.ts'
+import { resolveSidebarPath } from '../produced-files.ts'
 import type {} from './contract.ts'
 
 /** Capabilities kept private to Better's editor implementation. */
@@ -15,11 +17,14 @@ export interface DocumentSourceEditorInjected {
 /** Renderer-specific editor body; preview loading and tab lifetime remain official-owned. */
 export function DocumentSourceEditor(props: PropsRuntime<'sidebar.right.tab.document.editor'> & InjectFace<DocumentSourceEditorInjected>): ReactNode {
   const { tab } = props.useTabInfo()
+  const sessions = props.useSessions(value => value)
   const parsed = parseFileAddress(props.resourceAddress)
   if (parsed?.scope !== 'session') return null
   const sessionId = SessionId(parsed.sessionId)
-  const scope = { sessionId }
-  const path = parsed.path
+  const cwd = sessions.byId[sessionId]?.cwd
+  const scope = { sessionId, cwd }
+  const path = isAbsolutePath(parsed.path) ? parsed.path : cwd === undefined ? undefined : resolveSidebarPath(cwd, parsed.path)
+  if (path === undefined) return null
   return (
     <TextEditorCore
       scope={scope}
