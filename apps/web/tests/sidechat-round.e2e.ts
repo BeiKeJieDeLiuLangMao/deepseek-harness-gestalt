@@ -377,6 +377,7 @@ describe.skipIf(MODE === 'record')('web e2e: Side Chat through the shipped workb
     const stepEnd = stepEnds[0]
     const turnEnd = turnEnds[0]
     if (thirdRequest === undefined || stepStart === undefined || settledMessage === undefined
+      || settledMessage.type !== 'user/message'
       || assistant === undefined || stepEnd === undefined || turnEnd === undefined) {
       throw new Error('Nested Side Chat wake did not produce one complete parent turn')
     }
