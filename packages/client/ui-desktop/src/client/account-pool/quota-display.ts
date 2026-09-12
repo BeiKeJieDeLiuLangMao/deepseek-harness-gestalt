@@ -3,6 +3,7 @@ import type { Translate } from '@deepseek-ai/dsh-client-ui-slots'
 import type { DesktopKey } from '../locales.ts'
 import type { DesktopAccountPoolQuotaWindow } from '../../protocol.ts'
 
+/** Desktop locale translator used by account-pool quota copy. */
 export type AccountPoolCopy = Translate<DesktopKey>
 
 /** One window the quota face should draw. */
@@ -20,6 +21,9 @@ export interface VisibleQuotaWindow {
 /**
  * Map observed windows to original management-center titles
  * and keep group headings when the source supplied them.
+ * @param windows - Host quota windows in observation order.
+ * @param t - Desktop locale translator for period labels.
+ * @returns windows the quota face should draw, omitting untitled rows.
  */
 export function visibleQuotaWindows(
   windows: readonly DesktopAccountPoolQuotaWindow[],
@@ -41,7 +45,12 @@ export function visibleQuotaWindows(
   })
 }
 
-/** Human title for one quota window, or undefined to hide it. */
+/**
+ * Human title for one quota window, or undefined to hide it.
+ * @param window - one observed quota window.
+ * @param t - Desktop locale translator for period labels.
+ * @returns the management-center title, or undefined when the window should stay hidden.
+ */
 export function quotaWindowTitle(window: DesktopAccountPoolQuotaWindow, t: AccountPoolCopy): string | undefined {
   const named = namedLimit(window, t)
   if (named !== undefined) return named
@@ -62,7 +71,11 @@ export function quotaWindowTitle(window: DesktopAccountPoolQuotaWindow, t: Accou
   return undefined
 }
 
-/** Plan chip copy matching the original management-center badges. */
+/**
+ * Plan chip copy matching the original management-center badges.
+ * @param planType - vendor plan identifier from the quota observation.
+ * @returns the badge text, or undefined when the observation omitted a plan.
+ */
 export function quotaPlanLabel(planType: string | undefined): string | undefined {
   if (planType === undefined || planType.length === 0) return undefined
   switch (planType.toLowerCase()) {
@@ -77,7 +90,13 @@ export function quotaPlanLabel(planType: string | undefined): string | undefined
   }
 }
 
-/** Reset stamp plus relative remainder, matching `09/11 13:17 · 1 hour ago`. */
+/**
+ * Reset stamp plus relative remainder, matching `09/11 13:17 · 1 hour ago`.
+ * @param resetAtMs - Unix millisecond reset instant, if the observation supplied one.
+ * @param t - Desktop locale translator for relative remainder copy.
+ * @param now - comparison instant; defaults to `Date.now()`.
+ * @returns formatted stamp and remainder, or an empty string when the reset is missing.
+ */
 export function quotaResetText(resetAtMs: number | undefined, t: AccountPoolCopy, now = Date.now()): string {
   if (resetAtMs === undefined) return ''
   const date = new Date(resetAtMs)

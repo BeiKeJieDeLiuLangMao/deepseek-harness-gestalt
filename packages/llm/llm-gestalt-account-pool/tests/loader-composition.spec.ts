@@ -154,7 +154,7 @@ describe('account-pool Loader composition', () => {
     const previous = process.env.DSH_GESTALT_ACCOUNT_POOL_API_KEY
     process.env.DSH_GESTALT_ACCOUNT_POOL_API_KEY = key
     try {
-      const server = createServer((request, response) => {
+      const server = createServer((_request, response) => {
         response.setHeader('content-type', 'application/json')
         response.end(JSON.stringify({
           data: [{ id: 'gemini-3-flash', display_name: 'Gemini 3 Flash' }, { id: 'claude-sonnet-4-6' }, { id: 'gpt-5.4' }],
