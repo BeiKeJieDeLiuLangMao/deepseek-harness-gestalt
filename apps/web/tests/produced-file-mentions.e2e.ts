@@ -128,6 +128,10 @@ describe('web e2e: inline-code mentions of produced files', () => {
 
   beforeAll(async () => {
     scaffold = await launchWebScaffold({})
+    // Pin the official deliverables produced row copy ("Files changed").
+    await scaffold.ctx.settings.mutate('dsh-better-sidebar', [
+      { op: 'set', path: ['interceptOpenPath'], value: false },
+    ])
     await seedSession(scaffold, mentionFixture(), SEED_ID)
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
