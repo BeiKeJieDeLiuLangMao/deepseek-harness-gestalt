@@ -11,7 +11,6 @@ import {
 } from '@deepseek-ai/dsh-remote-protocol'
 import { DesktopCompanionOperationLedger } from '../src/companion-operation-ledger.ts'
 import type { DesktopCompanionLiveProjectionChange } from '../src/companion-live-projection.ts'
-import { DesktopCompanionProductOwner, handleCompanionProductOperation } from '../src/companion-product.ts'
 import type { DesktopCompanionPairingDependencies } from '../src/companion-product.ts'
 import {
   admitDesktopHostAttachment,
@@ -32,9 +31,12 @@ import {
 
 const children: RunningWebHost[] = []
 const homes: string[] = []
+let DesktopCompanionProductOwner: typeof import('../src/companion-product.ts').DesktopCompanionProductOwner
+let handleCompanionProductOperation: typeof import('../src/companion-product.ts').handleCompanionProductOperation
 
-beforeAll(() => {
+beforeAll(async () => {
   generateDesktopHostTypertArtifacts()
+  ;({ DesktopCompanionProductOwner, handleCompanionProductOperation } = await import('../src/companion-product.ts'))
 }, 120_000)
 
 afterEach(async () => {
