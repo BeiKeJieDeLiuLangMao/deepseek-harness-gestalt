@@ -1,7 +1,9 @@
+import { execFileSync } from 'node:child_process'
 import { accessSync, constants as fsConstants, mkdirSync, readFileSync } from 'node:fs'
 import { glob, mkdtemp, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
+import { parseGenerationLogFilename } from '../../../packages/session/session-persistence-jsonl/src/format.ts'
 import { decompressZstdFrame, scanZstdFrames } from '../../../packages/session/session-persistence-jsonl/src/zstd.ts'
 import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { parsePersonalPairingId } from '@deepseek-ai/dsh-remote-access'
@@ -35,6 +37,7 @@ let DesktopCompanionProductOwner: typeof import('../src/companion-product.ts').D
 let handleCompanionProductOperation: typeof import('../src/companion-product.ts').handleCompanionProductOperation
 
 beforeAll(async () => {
+  buildHostNativeSystemArtifact()
   generateDesktopHostTypertArtifacts()
   ;({ DesktopCompanionProductOwner, handleCompanionProductOperation } = await import('../src/companion-product.ts'))
 }, 120_000)
@@ -42,6 +45,16 @@ beforeAll(async () => {
 afterEach(async () => {
   await stopShippedWebHosts(children, homes)
 })
+
+function buildHostNativeSystemArtifact(): void {
+  execFileSync(process.execPath, [
+    'native/system/scripts/build.ts',
+    '--host-addon-only',
+  ], {
+    cwd: join(import.meta.dirname, '..', '..', '..'),
+    stdio: 'inherit',
+  })
+}
 
 async function startShippedHost(
   env: NodeJS.ProcessEnv = {},
@@ -887,12 +900,15 @@ async function runAssembledApproval(input: {
 
 async function durableSessionLog(home: string, sessionId: string): Promise<string> {
   const root = join(home, '.dsh', 'sessions')
-  const matches: string[] = []
-  for await (const match of glob(`**/${sessionId}/session.jsonl.zstd`, { cwd: root })) {
-    matches.push(match)
+  let selected: { path: string; version: number } | undefined
+  for await (const match of glob(`**/${sessionId}/session*.jsonl.zstd`, { cwd: root })) {
+    const version = parseGenerationLogFilename(basename(match), 'zstd')
+    if (version !== undefined && (selected === undefined || version > selected.version)) {
+      selected = { path: match, version }
+    }
   }
-  if (matches[0] === undefined) return ''
-  const bytes = await readFile(join(root, matches[0]))
+  if (selected === undefined) return ''
+  const bytes = await readFile(join(root, selected.path))
   const scan = scanZstdFrames(bytes)
   const chunks: Buffer[] = []
   for (const frame of scan.frames) {
