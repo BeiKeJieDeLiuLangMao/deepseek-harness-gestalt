@@ -2575,7 +2575,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       },
     ],
     ownerProps: [
-      '/** Editor state retained by one official preview tab while its editor body is unmounted. */\nexport interface DocumentEditorState {\n  readonly content: string\n  readonly dirty: boolean\n  readonly mode: \'preview\' | \'edit\'\n  readonly localUnlock: boolean\n  readonly previewScroll: number\n  readonly editorScroll: number\n}',
+      '/** Editor state retained by one official preview tab while its editor body is unmounted. */\nexport interface DocumentEditorState {\n  /** Byte-exact source originally admitted for editing, retained across body remounts. */\n  readonly source?: { readonly address: string; readonly documentId: string; readonly version: string; readonly text: string }\n  readonly content: string\n  readonly dirty: boolean\n  readonly mode: \'preview\' | \'edit\'\n  readonly localUnlock: boolean\n  readonly previewScroll: number\n  readonly editorScroll: number\n}',
     ],
     ownerPropsReferences: [],
     standardProps: [

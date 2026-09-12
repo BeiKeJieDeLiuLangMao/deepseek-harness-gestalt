@@ -6,6 +6,7 @@ import type {
 } from '@deepseek-ai/dsh-client-ui-slots'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type { SidebarRightViewerDefinition } from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
+import type { PaneId } from '@deepseek-ai/dsh-client-ui-dockkit'
 import { IconCheckOutline16, IconFolderOpen16, IconRefreshOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { api, isOutsideWorkspaceMessage, mediaUrl, type SessionScope } from '../api.ts'
 import { BinaryDownload } from '../binary-download.tsx'
@@ -49,7 +50,7 @@ const TREE_WIDTH_MIN = 160
 const TREE_WIDTH_MAX = 480
 
 /** Official navigator options preserving merged-in-pane versus split-new-tab behavior. */
-export function treeSelectionOpenOptions(inPlace: boolean, paneId: string): { paneId: string } | { payload: OfficialFileTabPayload } {
+export function treeSelectionOpenOptions(inPlace: boolean, paneId: PaneId): { paneId: PaneId } | { payload: OfficialFileTabPayload } {
   return inPlace
     ? { paneId }
     : { payload: { treeOpen: false, treeWidth: TREE_WIDTH_DEFAULT, dir: false } }

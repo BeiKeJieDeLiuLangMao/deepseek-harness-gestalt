@@ -117,7 +117,7 @@ export function TextPreview({
     && retained.source.version === current?.version
     ? { text: retained.source.text, version: retained.source.version }
     : undefined
-  const [editorSource, setEditorHolderSource] = useState<{ text: string; version: string }>(retainedSource)
+  const [editorSource, setEditorHolderSource] = useState<{ text: string; version: string } | undefined>(retainedSource)
   const [editorFailure, setEditorFailure] = useState<string>()
   const [editorLoading, setEditorLoading] = useState(false)
   const displayPath = meta.value?.absolutePath ?? current?.complete?.absolutePath ?? file.path
@@ -258,6 +258,30 @@ export function TextPreview({
     if (mode === 'text-pages') reloadPages(tab.id, file, signal, meta.value?.version)
     else reloadAll(tab.id, file, signal, meta.value?.version)
   }
+  const editorBody = state.editorMode === 'edit' && content?.kind === 'text' && editor !== undefined && editorSource !== undefined
+    ? renderSlot('sidebar.right.tab.document.editor', {
+      documentId: selected.id,
+      resourceAddress: tab.contentId,
+      content: editorSource,
+      wrap: state.wrap,
+      retained,
+      retain: (next) => {
+        retainEditor(tab.sessionId, tab.id, {
+          ...next,
+          source: { address: tab.contentId, documentId: selected.id, version: editorSource.version, text: editorSource.text },
+        })
+      },
+      setDirty: (dirty) => { setEditorDirty(tab.sessionId, tab.id, dirty) },
+      saved: () => {
+        if (signal.aborted) return
+        actions.editorMode(tab.id, 'preview')
+        reloadPages(tab.id, file, signal, meta.value?.version)
+      },
+    }, {
+      entryKey: selected.id, hookContext: useTabInfo,
+      fallback: <p className={css.statusLine}>{t('rendererUnavailable', { name: selected.title() })}</p>,
+    })
+    : undefined
   return (
     <div className={css.preview} data-textpreview-state="text" data-textpreview-url={tab.contentId} data-document-preview={selected.id}>
       {meta.failure !== undefined && hasContent
@@ -383,29 +407,8 @@ export function TextPreview({
             <button type="button" className={css.action} data-document-editor-retry onClick={openEditor}>{t('retry')}</button>
           </p>
         )}
-        {content !== undefined && (state.editorMode === 'edit' && content.kind === 'text' && editor !== undefined
-          ? renderSlot('sidebar.right.tab.document.editor', {
-            documentId: selected.id,
-            resourceAddress: tab.contentId,
-            content: editorSource,
-            wrap: state.wrap,
-            retained,
-            retain: (next) => {
-              retainEditor(tab.sessionId, tab.id, {
-                ...next,
-                source: { address: tab.contentId, documentId: selected.id, version: editorSource.version, text: editorSource.text },
-              })
-            },
-            setDirty: (dirty) => { setEditorDirty(tab.sessionId, tab.id, dirty) },
-            saved: () => {
-              if (signal.aborted) return
-              actions.editorMode(tab.id, 'preview')
-              reloadPages(tab.id, file, signal, meta.value?.version)
-            },
-          }, {
-            entryKey: selected.id, hookContext: useTabInfo,
-            fallback: <p className={css.statusLine}>{t('rendererUnavailable', { name: selected.title() })}</p>,
-          })
+        {content !== undefined && (editorBody !== undefined
+          ? editorBody
           : renderSlot('sidebar.right.tab.document', {
             resourceAddress: tab.contentId, content, wrap: state.wrap,
           }, {
