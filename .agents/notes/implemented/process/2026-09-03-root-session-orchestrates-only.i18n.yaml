@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-09-03-root-session-orchestrates-only.md
-2026-09-03-root-session-orchestrates-only.md: 3f22d3ca09323a639325858f796fc934a8690efd
-2026-09-03-root-session-orchestrates-only.zh.md: 384ebe19c4be48d2dcc78a67ae40bd8f72ad3a71
+2026-09-03-root-session-orchestrates-only.md: c14ee07b32a73faae560fa5849d7789011a14236
+2026-09-03-root-session-orchestrates-only.zh.md: 1bc0a3b6ae64395264d225598017ce71e81e1c3d

@@ -1,9 +1,9 @@
 import { spawn, spawnSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { delimiter as pathDelimiter, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import * as yaml from 'js-yaml'
 import { describe, expect, it } from 'vitest'
@@ -36,7 +36,170 @@ const cloudAssistantSource = readFileSync(new URL('../scripts/platform-cloud-ass
 const hostDeploySource = readFileSync(new URL('../scripts/platform-host-deploy.sh', import.meta.url), 'utf8')
 const recoveryScript = fileURLToPath(new URL('../scripts/platform-recover.sh', import.meta.url))
 const recoverySource = readFileSync(recoveryScript, 'utf8')
+const ossJsonSource = readFileSync(new URL('../scripts/platform-oss-json.sh', import.meta.url), 'utf8')
 const repoRoot = resolve(import.meta.dirname, '../../..')
+
+function executableNames(name: string): string[] {
+  if (process.platform !== 'win32') return [name]
+  const extensions = (process.env.PATHEXT ?? '.EXE;.CMD;.BAT').split(';').filter(Boolean)
+  return [name, ...extensions.flatMap(ext => [`${name}${ext}`, `${name}${ext.toLowerCase()}`])]
+}
+
+function hiddenNameSet(names: readonly string[]): Set<string> {
+  return new Set(names.flatMap(name => executableNames(name).map(candidate => candidate.toLowerCase())))
+}
+
+function recoveryPath(path = process.env.PATH ?? ''): string {
+  const nodeDir = resolve(process.execPath, '..')
+  return path.split(pathDelimiter).includes(nodeDir) ? path : `${nodeDir}${pathDelimiter}${path}`
+}
+
+function isWindowsAppsDir(dir: string): boolean {
+  return /(^|[\\/])WindowsApps$/i.test(dir.replace(/[/\\]+$/, ''))
+}
+
+function dirEntries(dir: string): string[] | undefined {
+  try {
+    return readdirSync(dir)
+  } catch {
+    // Skip unreadable PATH entries instead of treating them as empty.
+    return
+  }
+}
+
+function executableInDir(dir: string, name: string): string | undefined {
+  if (!dir || isWindowsAppsDir(dir)) return
+  const entries = dirEntries(dir)
+  if (entries === undefined) return
+  const wanted = new Set(executableNames(name).map(candidate => candidate.toLowerCase()))
+  const match = entries.find(entry => wanted.has(entry.toLowerCase()))
+  return match === undefined ? undefined : join(dir, match)
+}
+
+function dirContainsHidden(dir: string, hidden: ReadonlySet<string>): boolean {
+  if (!dir || isWindowsAppsDir(dir)) return true
+  const entries = dirEntries(dir)
+  if (entries === undefined) return true
+  return entries.some(entry => hidden.has(entry.toLowerCase()))
+}
+
+function pathHasExecutable(path: string, name: string): boolean {
+  return path.split(pathDelimiter).some(dir => executableInDir(dir, name) !== undefined)
+}
+
+function hostBash(): string {
+  const fromPath = recoveryPath().split(pathDelimiter)
+    .map(dir => executableInDir(dir, 'bash'))
+    .find(full => full !== undefined)
+  if (fromPath === undefined) throw new Error('cannot locate host bash')
+  return fromPath
+}
+
+function spawnEnv(path: string, extra: NodeJS.Dict<string> = {}): NodeJS.ProcessEnv {
+  return {
+    ...process.env,
+    PATH: path,
+    ...extra,
+  }
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replaceAll('\'', '\'\\\'\'')}'`
+}
+
+function placeExecutable(dir: string, name: string, target: string, hidden: ReadonlySet<string>): void {
+  if (hidden.has(name.toLowerCase())) return
+  const dest = join(dir, name)
+  if (existsSync(dest)) return
+  if (process.platform === 'win32') {
+    for (const candidate of executableNames(name)) {
+      if (hidden.has(candidate.toLowerCase())) continue
+      const winDest = join(dir, candidate)
+      if (existsSync(winDest)) continue
+      try {
+        copyFileSync(target, winDest)
+        continue
+      } catch {
+        try {
+          symlinkSync(target, winDest)
+        } catch {
+          writeFileSync(winDest, `@echo off\r\n${target} %*\r\n`)
+        }
+      }
+    }
+    return
+  }
+  writeFileSync(dest, `#!/bin/sh\nexec ${shellQuote(target)} "$@"\n`)
+  chmodSync(dest, 0o755)
+}
+
+function commandLocation(path: string, name: string): string {
+  return spawnSync(hostBash(), ['--noprofile', '--norc', '-c', `command -v ${JSON.stringify(name)} || true`], {
+    encoding: 'utf8',
+    env: spawnEnv(path),
+  }).stdout.trim()
+}
+
+function commandOnPath(path: string, name: string): boolean {
+  return commandLocation(path, name) !== ''
+}
+
+// Chatter recovery must stay green when PATH has neither python3 nor jq, matching Windows Git Bash.
+function pathWithoutExecutables(names: readonly string[]): { PATH: string; dispose: () => void } {
+  const hidden = hiddenNameSet(names)
+  const root = mkdtempSync(join(tmpdir(), 'dsh-recovery-path-'))
+  const keepBin = join(root, 'bin')
+  mkdirSync(keepBin)
+  const keep = ['bash', 'dirname', 'mktemp', 'cat', 'sed', 'tr', 'tail', 'true', 'node', 'python']
+    .filter(name => !hidden.has(name.toLowerCase()))
+  const sourceDirs = recoveryPath().split(pathDelimiter).filter(Boolean)
+  for (const name of keep) {
+    const target = name === 'node' ? process.execPath : sourceDirs
+      .map(dir => executableInDir(dir, name))
+      .find(full => full !== undefined)
+    if (target === undefined) continue
+    placeExecutable(keepBin, name, target, hidden)
+  }
+  const next = [keepBin]
+  const required = ['bash', 'tr', 'mktemp', 'cat']
+  if (required.some(name => executableInDir(keepBin, name) === undefined)) {
+    for (const dir of sourceDirs) {
+      if (dirContainsHidden(dir, hidden)) continue
+      next.push(dir)
+    }
+  }
+  const dropLeaking = (name: string): boolean => {
+    const located = commandLocation(next.join(pathDelimiter), name)
+    if (located === '') return false
+    const index = next.findIndex(dir => located === dir || located.startsWith(`${dir}/`)
+      || located.startsWith(`${dir}\\`)
+      || located.toLowerCase().startsWith(`${dir.toLowerCase()}/`)
+      || located.toLowerCase().startsWith(`${dir.toLowerCase()}\\`))
+    if (index > 0) {
+      next.splice(index, 1)
+      return true
+    }
+    throw new Error(`cannot hide ${name}: Git Bash still resolves ${located}`)
+  }
+  for (let round = 0; round < next.length; round++) {
+    if (!names.some(name => dropLeaking(name))) break
+  }
+  const path = next.join(pathDelimiter)
+  const missing = required.filter(name => !pathHasExecutable(path, name) && !commandOnPath(path, name))
+  if (missing.length > 0) {
+    throw new Error(`cannot hide ${names.join(', ')} while keeping ${missing.join(', ')} on PATH`)
+  }
+  for (const name of names) {
+    const located = commandLocation(path, name)
+    if (located !== '') throw new Error(`cannot hide ${name}: Git Bash still resolves ${located}`)
+  }
+  return {
+    PATH: path,
+    dispose: () => {
+      rmSync(root, { recursive: true, force: true })
+    },
+  }
+}
 
 function bashPath(filePath: string, platform: NodeJS.Platform = process.platform): string {
   if (platform !== 'win32') return filePath
@@ -261,6 +424,8 @@ function runRecoveryHarness(
   phase: 'rollbackable' | 'commit-pending' | 'committed',
   failure: 'none' | 'second-rollback' | 'state-write' | 'target-mismatch' = 'none',
   mode: 'rolling' | 'bootstrap' = 'rolling',
+  chatter: 'none' | 'prefix' | 'suffix' | 'second-json' = 'none',
+  path = recoveryPath(),
 ) {
   const harness = [
     'set -u',
@@ -270,12 +435,21 @@ function runRecoveryHarness(
     'trap \'cat "$LOG"\' EXIT',
     'aliyun() {',
     '  if [ "$1 $2" = "oss cat" ]; then',
+    '    if [ "$RECOVERY_CHATTER" = prefix ]; then',
+    '      printf \'\\n\\n\\n0.006891(s) elapsed\\n\'',
+    '    fi',
     '    if [ "$RECOVERY_MODE" = bootstrap ]; then',
     '      printf \'{"version":2,"mode":"bootstrap","phase":"%s","objectRoot":"deploy-artifacts/platform/123-1","candidateCommit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","instanceIds":["i-first123","i-second456"]}\\n\' "$RECOVERY_PHASE"',
     '    else',
     '      printf \'{"version":1,"phase":"%s","objectRoot":"deploy-artifacts/platform/123-1","instanceIds":["i-first123","i-second456"]}\\n\' "$RECOVERY_PHASE"',
     '    fi',
-    '    printf \'%1000000s\' \'\'',
+    '    if [ "$RECOVERY_CHATTER" = suffix ]; then',
+    '      printf \'\\naverage: 419(byte/s)\\n\'',
+    '    elif [ "$RECOVERY_CHATTER" = second-json ]; then',
+    '      printf \'\\n{"version":1}\\n\'',
+    '    else',
+    '      printf \'%1000000s\' \'\'',
+    '    fi',
     '  elif [ "$1 $2" = "oss cp" ]; then',
     '    printf \'STATE:committed\\n\' >> "$LOG"',
     '    [ "$RECOVERY_FAILURE" != state-write ]',
@@ -284,6 +458,34 @@ function runRecoveryHarness(
     '  fi',
     '}',
     'jq() {',
+    '  if [ "${RECOVERY_CHATTER:-none}" != none ]; then',
+    '    if type -P jq >/dev/null 2>&1; then',
+    '      command jq "$@"',
+    '      return',
+    '    fi',
+    '    _jq_input=$(cat)',
+    '    printf \'%s\' "$_jq_input" | node -e \'',
+    'const fs = require("fs");',
+    'const args = process.argv.slice(1).filter((arg) => arg !== "--");',
+    'const flag = args[0];',
+    'const query = args[1] || "";',
+    'const fail = flag === "-e" || flag === "-er";',
+    'let obj;',
+    'try { obj = JSON.parse(fs.readFileSync(0, "utf8")); } catch { process.exit(fail ? 1 : 0); }',
+    'const out = (value) => process.stdout.write(String(value) + "\\n");',
+    'if (query === ".kind // empty") { out(obj.kind ?? ""); process.exit(0); }',
+    'if (query.includes(".version") && (obj.version === 1 || obj.version === 2)) { out(obj.version); process.exit(0); }',
+    'if (query.includes(".mode") && (obj.mode === "rolling" || obj.mode === "bootstrap")) { out(obj.mode); process.exit(0); }',
+    'if (query.includes(".phase") && ["rollbackable","commit-pending","committed"].includes(obj.phase)) { out(obj.phase); process.exit(0); }',
+    'if (query.includes(".objectRoot") && obj.objectRoot) { out(obj.objectRoot); process.exit(0); }',
+    'if (query.includes(".candidateCommit") && /^[0-9a-f]{40}$/.test(obj.candidateCommit || "")) { out(obj.candidateCommit); process.exit(0); }',
+    'if (query.includes(".instanceIds") && Array.isArray(obj.instanceIds) && obj.instanceIds.length === 2) {',
+    '  out(obj.instanceIds.join("\\n")); process.exit(0);',
+    '}',
+    'process.exit(fail ? 1 : 0);',
+    '\' -- "$@"',
+    '    return',
+    '  fi',
     '  case "$1" in',
     '    -er)',
     '      case "$2" in',
@@ -322,14 +524,14 @@ function runRecoveryHarness(
     '}',
     'source "$RECOVERY_SCRIPT"',
   ].join('\n')
-  return spawnSync('bash', ['-c', harness], {
+  return spawnSync(hostBash(), ['-c', harness], {
     encoding: 'utf8',
-    env: {
-      PATH: process.env.PATH,
+    env: spawnEnv(path, {
       RECOVERY_SCRIPT: bashPath(recoveryScript),
       RECOVERY_PHASE: phase,
       RECOVERY_FAILURE: failure,
       RECOVERY_MODE: mode,
+      RECOVERY_CHATTER: chatter,
       PLATFORM_ALIYUN_REGION: 'cn-hangzhou',
       PLATFORM_ECS_INSTANCE_IDS: failure === 'target-mismatch'
         ? 'i-newfirst,i-newsecond'
@@ -337,7 +539,7 @@ function runRecoveryHarness(
       PLATFORM_OSS_BUCKET: 'bucket',
       PLATFORM_DEPLOY_OSS_UPLOAD_ENDPOINT: 'oss-cn-hangzhou.aliyuncs.com',
       PLATFORM_DEPLOY_OSS_OBJECT_PREFIX: 'deploy-artifacts/platform',
-    },
+    }),
   })
 }
 
@@ -355,6 +557,8 @@ function runRealBootstrapRecoveryHarness(
   const log = join(temp, 'docker.log')
   writeFileSync(log, '')
   writeFileSync(recoveryCopy, recoverySource)
+  // Recover locates siblings via BASH_SOURCE; a copied recover script copies those siblings too.
+  writeFileSync(join(temp, 'platform-oss-json.sh'), ossJsonSource)
   writeFileSync(cloudCopy, 'true\n')
   writeFileSync(hostCopy, hostDeploySource
     .replace('candidate_env=/run/dsh-platform-candidate.env', `candidate_env=${JSON.stringify(candidateEnv)}`)
@@ -1061,6 +1265,8 @@ describe('Platform release workflows', () => {
     const applySource = String(apply.run)
     expect(applySource).toContain('set -eEuo pipefail')
     expect(applySource).toContain('source apps/platform/scripts/platform-cloud-assistant.sh')
+    expect(applySource).toContain('source apps/platform/scripts/platform-oss-json.sh')
+    expect(applySource).toContain('platform_extract_json_object')
     expect(applySource).toContain('source apps/platform/scripts/platform-public-readiness.sh')
     expect(applySource).toContain('aliyun oss cp')
     expect(applySource).toContain('aliyun oss sign')
@@ -1128,6 +1334,11 @@ describe('Platform release workflows', () => {
       && step.run.includes('platform-recover.sh'))?.run)
     expect(recoverWorkflowSource.trim()).toBe('bash apps/platform/scripts/platform-recover.sh')
     expect(recoverySource).toContain('active-state.json')
+    expect(recoverySource).toContain('platform-oss-json.sh')
+    expect(recoverySource).toContain('platform_extract_json_object')
+    expect(ossJsonSource).toContain('command -v python3')
+    expect(ossJsonSource).toContain('command -v python')
+    expect(ossJsonSource).toContain('command -v node')
     expect(recoverySource).toContain('run_recovery_on_all rollback 2100')
     expect(recoverySource).toContain('run_recovery_on_all complete-rollback-cleanup 2100')
     expect(recoverySource).toContain('write_recovery_command cutover')
@@ -1312,6 +1523,34 @@ describe('Platform release workflows', () => {
     expect(ambiguous.status).toBe(1)
     expect(ambiguous.stderr).toContain('bootstrap recovery state is ambiguous')
     expect(ambiguous.stdout).not.toContain('RUN:')
+  })
+
+  it('extracts one JSON object from oss cat CLI chatter', { timeout: 20_000 }, () => {
+    // Hosted Windows Git Bash already lacks python3 and jq; hiding them also drops tr/mktemp/cat.
+    const hidden = process.platform === 'win32' ? undefined : pathWithoutExecutables(['python3', 'jq'])
+    const path = hidden?.PATH ?? recoveryPath()
+    try {
+      if (hidden !== undefined) {
+        expect(commandOnPath(path, 'python3')).toBe(false)
+        expect(commandOnPath(path, 'jq')).toBe(false)
+        expect(commandOnPath(path, 'python') || commandOnPath(path, 'node')).toBe(true)
+      }
+      const prefix = runRecoveryHarness('rollbackable', 'none', 'rolling', 'prefix', path)
+      expect(prefix.status, prefix.stderr).toBe(0)
+      expect(prefix.stdout).toContain('RUN:rollback:i-first123:2100')
+      expect(prefix.stdout).toContain('DELETE:oss://bucket/deploy-artifacts/platform/active-state.json')
+
+      const suffix = runRecoveryHarness('rollbackable', 'none', 'rolling', 'suffix', path)
+      expect(suffix.status, suffix.stderr).toBe(0)
+      expect(suffix.stdout).toContain('DELETE:oss://bucket/deploy-artifacts/platform/active-state.json')
+
+      const extra = runRecoveryHarness('rollbackable', 'none', 'rolling', 'second-json', path)
+      expect(extra.status).not.toBe(0)
+      expect(extra.stderr).toContain('platform: oss cat stdout contains extra JSON')
+      expect(extra.stdout).not.toContain('DELETE:')
+    } finally {
+      hidden?.dispose()
+    }
   })
 
   it('keeps durable state after partial instance or state-write failure', () => {

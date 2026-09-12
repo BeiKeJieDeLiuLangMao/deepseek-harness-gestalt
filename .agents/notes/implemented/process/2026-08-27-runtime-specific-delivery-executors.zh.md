@@ -12,7 +12,7 @@ Status: implemented
 
 根协调器根据当前运行时选择执行器，并且不实现。[根会话只做编排](2026-09-03-root-session-orchestrates-only.zh.md)拥有该拆分。Codex 在可用时使用隔离的 Codex worktree 任务。当 Codex 任务 API 不可用但仍能隔离 worktree 时，根任务通过 Agent 工具把 writer 顺序派发进一个专用 worktree。DSH 在执行器受益于当前对话时使用 `subagent_fork`，在继承上下文没有帮助时使用普通 `subagent`。UI prototype 不在协调会话里绘制：Codex 获得带短 brief 的独立 worktree 任务；DSH 在 brief 写好后才派发 subagent。[融入现有页面的高保真 UI prototype 变体](2026-09-02-fused-ui-prototype-variants.zh.md) 负责 UI 稿规则。结构方案遵循[给人看的方案评审材料](2026-09-02-human-scheme-review-pack.zh.md)。模型选择仍由根协调器按 ticket 决定。
 
-在正常路径上，每个执行器只接收一个 ticket、分支和隔离 worktree。Writer 不开 pull request；merger 子代理按[规格 PR 决策](2026-09-02-spec-pr-delivery-and-retro.zh.md)把 ticket 分支集成进规格分支。失去 worktree 隔离或 Agent 工具是要报告的阻塞；根会话不在协调会话里写。产品塑形原型保存在独立的已推送分支中，作为规划输入；实现 ticket 会改造这些代码，而不是直接合并原型分支。清理流程通过实际运行的执行器验证终态；只有确实创建过 Codex 任务时才会归档，而且绝不移除共享 checkout。精确验证专用 worktree 和分支仍是所有运行时共用的清理行为。
+在正常路径上，每个执行器只接收一个 ticket、分支和隔离 worktree。Writer 不开 pull request；merger 子代理按[规格 PR 决策](2026-09-02-spec-pr-delivery-and-retro.zh.md)把 ticket 分支集成进规格分支。失去 worktree 隔离或 Agent 工具是要报告的阻塞；根会话不在协调会话里写。产品塑形原型保存在独立的已推送分支中，作为规划输入；实现 ticket 会改造这些代码，而不是直接合并原型分支。清理流程通过实际运行的执行器验证终态；只有确实创建过 Codex 任务时才会归档，而且绝不移除共享 checkout。精确验证专用 worktree 和分支仍是所有运行时共用的清理行为。该 `Closes` pull request 显示 MERGED 后，缺失的专用 worktree 已经退役。
 
 ## 曾考虑的替代方案
 

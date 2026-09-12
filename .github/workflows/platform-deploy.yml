@@ -600,6 +600,7 @@ jobs:
         run: |
           set -eEuo pipefail
           source apps/platform/scripts/platform-cloud-assistant.sh
+          source apps/platform/scripts/platform-oss-json.sh
           source apps/platform/scripts/platform-public-readiness.sh
           source apps/platform/scripts/platform-membership-cutover.sh
           IFS=',' read -r -a instance_ids <<< "$PLATFORM_ECS_INSTANCE_IDS"
@@ -627,10 +628,16 @@ jobs:
           state_probe=$(aliyun oss cat "$state_object" --region "$PLATFORM_ALIYUN_REGION" --endpoint "$PLATFORM_DEPLOY_OSS_UPLOAD_ENDPOINT" 2>&1)
           state_probe_status=$?
           set -e
-          if [ "$state_probe_status" = 0 ] && [ "$PLATFORM_MEMBERSHIP_CUTOVER" != true ]; then
-            echo 'platform: an unresolved deployment exists; dispatch recover before deploying again' >&2
-            exit 1
-          elif [ "$state_probe_status" != 0 ] && ! grep -Fq 'StatusCode=404' <<< "$state_probe"; then
+          if [ "$state_probe_status" = 0 ]; then
+            if ! platform_extract_json_object <<< "$state_probe" >/dev/null; then
+              echo 'platform: failed to determine whether an unresolved deployment exists' >&2
+              exit 1
+            fi
+            if [ "$PLATFORM_MEMBERSHIP_CUTOVER" != true ]; then
+              echo 'platform: an unresolved deployment exists; dispatch recover before deploying again' >&2
+              exit 1
+            fi
+          elif ! grep -Fq 'StatusCode=404' <<< "$state_probe"; then
             echo 'platform: failed to determine whether an unresolved deployment exists' >&2
             exit 1
           fi
